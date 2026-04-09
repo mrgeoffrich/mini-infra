@@ -1,4 +1,4 @@
-import { AxiosInstance } from 'axios';
+import { HttpClient } from '../../../lib/http-client';
 
 // ====================
 // Mixin Type Helpers
@@ -8,16 +8,22 @@ import { AxiosInstance } from 'axios';
 export type Constructor<T = {}> = new (...args: any[]) => T;
 
 export interface IHAProxyClientBase {
-  axiosInstance: AxiosInstance;
   handleApiError(error: unknown, operation: string, context?: Record<string, any>): void;
   getVersion(): Promise<number>;
   beginTransaction(): Promise<string>;
   commitTransaction(transactionId: string): Promise<void>;
   rollbackTransaction(transactionId: string): Promise<void>;
+  executeInTransaction<T>(operations: () => Promise<T>): Promise<T>;
   withRetry<T>(operation: () => Promise<T>, maxRetries?: number, baseDelay?: number): Promise<T>;
 }
 
-export type HAProxyBaseConstructor = Constructor<IHAProxyClientBase>;
+/** Extended interface used by mixins — includes httpClient for internal use only */
+interface IHAProxyClientInternal extends IHAProxyClientBase {
+  /** @internal — do not access outside the dataplane module */
+  httpClient: HttpClient;
+}
+
+export type HAProxyBaseConstructor = Constructor<IHAProxyClientInternal>;
 
 // ====================
 // Types and Interfaces

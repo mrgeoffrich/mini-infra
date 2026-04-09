@@ -1,4 +1,4 @@
-import axios from "axios";
+import { HttpClient, HttpError, isHttpError } from "../lib/http-client";
 import { ValidationResult } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 
@@ -61,10 +61,12 @@ export class HealthCheckService {
   private static readonly RESPONSE_TIME_THRESHOLD = 30000; // 30 seconds
 
   private circuitBreakers = new Map<string, CircuitBreakerState>();
+  private httpClient: HttpClient;
 
   constructor() {
-    // Initialize axios defaults
-    axios.defaults.timeout = HealthCheckService.DEFAULT_TIMEOUT;
+    this.httpClient = new HttpClient({
+      timeout: HealthCheckService.DEFAULT_TIMEOUT,
+    });
   }
 
   /**
@@ -220,14 +222,21 @@ export class HealthCheckService {
     const startTime = Date.now();
 
     try {
-      const response = await axios({
-        method: config.method || "GET",
-        url: config.endpoint,
+      const requestConfig = {
         headers: config.headers,
         timeout: config.timeout || HealthCheckService.DEFAULT_TIMEOUT,
-        validateStatus: () => true, // Don't throw on any status code
-        maxRedirects: 5,
-      });
+        validateStatus: () => true, // Accept all status codes
+      };
+
+      const method = config.method || "GET";
+      let response;
+      if (method === "POST") {
+        response = await this.httpClient.post(config.endpoint, undefined, requestConfig);
+      } else if (method === "HEAD") {
+        response = await this.httpClient.head(config.endpoint, requestConfig);
+      } else {
+        response = await this.httpClient.get(config.endpoint, requestConfig);
+      }
 
       const responseTime = Date.now() - startTime;
       const expectedStatuses =
@@ -283,11 +292,11 @@ export class HealthCheckService {
       let statusCode: number | undefined = undefined;
 
 
-      if (axios.isAxiosError(error)) {
-        // Handle axios errors with response (e.g., 4xx, 5xx status codes)
+      if (isHttpError(error)) {
+        // Handle HTTP errors with response (e.g., 4xx, 5xx status codes)
         if (error.response) {
           statusCode = error.response.status;
-          errorMessage = `Health check failed validation: statusCode`;
+          errorMessage = `Health check failed validation: ${statusCode}`;
         } else {
           // Handle network/connection errors
           if (error.code === "ECONNREFUSED") {

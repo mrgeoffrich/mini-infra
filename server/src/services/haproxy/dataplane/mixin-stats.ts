@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, ServerStats, BackendStats } from './types';
 
@@ -11,7 +11,7 @@ export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async getServerStats(backendName: string, serverName: string): Promise<ServerStats | null> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/stats/native?type=server&parent=${backendName}&name=${serverName}`
         );
 
@@ -43,7 +43,7 @@ export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
           warnings_redis: stats.wredis || 0
         };
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return null;
         }
         this.handleApiError(error, 'get server stats', { backendName, serverName });
@@ -56,7 +56,7 @@ export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async getBackendStats(backendName: string): Promise<BackendStats | null> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/stats/native?type=backend&name=${backendName}`
         );
 
@@ -86,7 +86,7 @@ export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
           bck_servers: stats.bck
         };
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return null;
         }
         this.handleApiError(error, 'get backend stats', { backendName });

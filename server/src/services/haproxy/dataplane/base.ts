@@ -1,8 +1,8 @@
-import axios, { AxiosInstance } from 'axios';
+import { HttpClient, HttpError, createHttpClient, isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
-import { HAProxyEndpointInfo } from './types';
+import { HAProxyEndpointInfo, ServerConfig } from './types';
 
 const logger = loadbalancerLogger();
 
@@ -11,7 +11,8 @@ const logger = loadbalancerLogger();
 // ====================
 
 export class HAProxyDataPlaneClientBase {
-  axiosInstance: AxiosInstance;
+  /** @internal — do not access outside the dataplane module; use typed methods instead */
+  httpClient: HttpClient;
   private dockerService: DockerService;
   private endpointInfo: HAProxyEndpointInfo | null = null;
   private username = 'admin';
@@ -20,8 +21,8 @@ export class HAProxyDataPlaneClientBase {
   constructor() {
     this.dockerService = DockerService.getInstance();
 
-    // Initialize axios instance with defaults
-    this.axiosInstance = axios.create({
+    // Initialize http client with defaults
+    this.httpClient = createHttpClient({
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
@@ -47,9 +48,9 @@ export class HAProxyDataPlaneClientBase {
       // Discover HAProxy endpoint
       this.endpointInfo = await this.discoverHAProxyEndpoint(haproxyContainerId);
 
-      // Configure axios instance with discovered endpoint
-      this.axiosInstance.defaults.baseURL = this.endpointInfo.baseUrl;
-      this.axiosInstance.defaults.auth = {
+      // Configure http client with discovered endpoint
+      this.httpClient.defaults.baseURL = this.endpointInfo.baseUrl;
+      this.httpClient.defaults.auth = {
         username: this.username,
         password: this.password
       };
@@ -165,7 +166,7 @@ export class HAProxyDataPlaneClientBase {
    */
   private async testConnection(): Promise<void> {
     try {
-      const response = await this.axiosInstance.get('/info');
+      const response = await this.httpClient.get('/info');
 
       if (response.status !== 200) {
         throw new Error(`DataPlane API health check failed with status ${response.status}`);
@@ -180,7 +181,7 @@ export class HAProxyDataPlaneClientBase {
         'DataPlane API connection test successful'
       );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      if (isHttpError(error)) {
         const message = error.response?.data?.message || error.message;
         throw new Error(`DataPlane API connection failed: ${message}`);
       }
@@ -197,7 +198,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async getVersion(): Promise<number> {
     try {
-      const response = await this.axiosInstance.get('/services/haproxy/configuration/version');
+      const response = await this.httpClient.get('/services/haproxy/configuration/version');
       // API returns plain number, not an object
       return typeof response.data === 'number' ? response.data : parseInt(response.data, 10);
     } catch (error) {
@@ -216,7 +217,7 @@ export class HAProxyDataPlaneClientBase {
   async beginTransaction(): Promise<string> {
     try {
       const version = await this.getVersion();
-      const response = await this.axiosInstance.post(`/services/haproxy/transactions?version=${version}`, {
+      const response = await this.httpClient.post(`/services/haproxy/transactions?version=${version}`, {
         version
       });
 
@@ -239,7 +240,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async commitTransaction(transactionId: string): Promise<void> {
     try {
-      await this.axiosInstance.put(`/services/haproxy/transactions/${transactionId}`, {
+      await this.httpClient.put(`/services/haproxy/transactions/${transactionId}`, {
         force_reload: true
       });
 
@@ -257,7 +258,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async rollbackTransaction(transactionId: string): Promise<void> {
     try {
-      await this.axiosInstance.delete(`/services/haproxy/transactions/${transactionId}`);
+      await this.httpClient.delete(`/services/haproxy/transactions/${transactionId}`);
 
       logger.info(
         { transactionId },
@@ -265,6 +266,75 @@ export class HAProxyDataPlaneClientBase {
       );
     } catch (error) {
       this.handleApiError(error, 'rollback transaction', { transactionId });
+    }
+  }
+
+  /**
+   * Execute multiple operations atomically within a transaction.
+   * Temporarily patches httpClient methods to inject transaction_id into all
+   * configuration-endpoint URLs, stripping any version= parameter first.
+   */
+  async executeInTransaction<T>(operations: () => Promise<T>): Promise<T> {
+    const transaction = await this.beginTransaction();
+
+    try {
+      const originalGet = this.httpClient.get;
+      const originalPost = this.httpClient.post;
+      const originalPut = this.httpClient.put;
+      const originalDelete = this.httpClient.delete;
+
+      // addServer / addServerInternal are mixed in downstream — save them
+      // using duck-typing so the base class doesn't depend on the mixin.
+      const self = this as any;
+      const originalAddServer = self.addServer;
+
+      // Override addServer to use non-transactional version inside the transaction
+      if (typeof self.addServerInternal === 'function') {
+        self.addServer = (backendName: string, config: ServerConfig) =>
+          self.addServerInternal(backendName, config, false);
+      }
+
+      const shouldUse = (url: string) =>
+        !url.includes('/transactions') && !url.includes('/version');
+
+      const withTxn = (url: string): string => {
+        const [base, qs] = url.split('?');
+        let queryParams = '';
+        if (qs) {
+          const params = new URLSearchParams(qs);
+          params.delete('version');
+          if (params.toString()) queryParams = `?${params.toString()}`;
+        }
+        const sep = queryParams ? '&' : '?';
+        return `${base}${queryParams}${sep}transaction_id=${transaction}`;
+      };
+
+      (this.httpClient.get as any) = (url: string, config?: any) =>
+        originalGet.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config);
+
+      (this.httpClient.post as any) = (url: string, data?: any, config?: any) =>
+        originalPost.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config);
+
+      (this.httpClient.put as any) = (url: string, data?: any, config?: any) =>
+        originalPut.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config);
+
+      (this.httpClient.delete as any) = (url: string, config?: any) =>
+        originalDelete.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config);
+
+      try {
+        const result = await operations();
+        await this.commitTransaction(transaction);
+        return result;
+      } finally {
+        this.httpClient.get = originalGet;
+        this.httpClient.post = originalPost;
+        this.httpClient.put = originalPut;
+        this.httpClient.delete = originalDelete;
+        if (originalAddServer) self.addServer = originalAddServer;
+      }
+    } catch (error) {
+      await this.rollbackTransaction(transaction);
+      throw error;
     }
   }
 
@@ -290,7 +360,7 @@ export class HAProxyDataPlaneClientBase {
    * Handle API errors consistently
    */
   handleApiError(error: unknown, operation: string, context?: Record<string, any>): void {
-    if (axios.isAxiosError(error)) {
+    if (isHttpError(error)) {
       const status = error.response?.status;
       const message = error.response?.data?.message || error.message;
       const errorDetails = {

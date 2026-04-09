@@ -1,3 +1,4 @@
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, FrontendConfig } from './types';
 
@@ -17,7 +18,7 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
           ...(config.default_backend && { default_backend: config.default_backend })
         };
 
-        await this.axiosInstance.post(`/services/haproxy/configuration/frontends?version=${version}`, frontendData);
+        await this.httpClient.post(`/services/haproxy/configuration/frontends?version=${version}`, frontendData);
 
         logger.info(
           { frontendName: config.name, mode: config.mode, version },
@@ -48,7 +49,7 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
           }
         }
 
-        await this.axiosInstance.post(
+        await this.httpClient.post(
           `/services/haproxy/configuration/frontends/${frontendName}/binds?version=${version}`,
           bindData
         );
@@ -68,7 +69,7 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
     async deleteFrontend(name: string): Promise<void> {
       try {
         const version = await this.getVersion();
-        await this.axiosInstance.delete(`/services/haproxy/configuration/frontends/${name}?version=${version}`);
+        await this.httpClient.delete(`/services/haproxy/configuration/frontends/${name}?version=${version}`);
 
         logger.info(
           { frontendName: name, version },
@@ -80,12 +81,28 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
     }
 
     /**
+     * Get frontend configuration
+     */
+    async getFrontend(name: string): Promise<any | null> {
+      try {
+        const response = await this.httpClient.get(`/services/haproxy/configuration/frontends/${name}`);
+        return response.data.data || response.data;
+      } catch (error) {
+        if (isHttpError(error) && error.response?.status === 404) {
+          return null;
+        }
+        this.handleApiError(error, 'get frontend', { frontendName: name });
+        return null;
+      }
+    }
+
+    /**
      * Delete a bind from a frontend
      */
     async deleteFrontendBind(frontendName: string, bindName: string): Promise<void> {
       try {
         const version = await this.getVersion();
-        await this.axiosInstance.delete(
+        await this.httpClient.delete(
           `/services/haproxy/configuration/frontends/${frontendName}/binds/${bindName}?version=${version}`
         );
 

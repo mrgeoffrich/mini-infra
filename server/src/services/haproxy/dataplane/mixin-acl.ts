@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor } from './types';
 
@@ -11,13 +11,13 @@ export function ACLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async getACLs(frontendName: string): Promise<any[]> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/configuration/frontends/${frontendName}/acls`
         );
 
         return response.data || [];
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return [];
         }
         this.handleApiError(error, 'get ACLs', { frontendName });
@@ -65,7 +65,7 @@ export function ACLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
         const updatedACLs = [...existingACLs, newACL];
 
         // Replace the entire ACL list
-        await this.axiosInstance.put(
+        await this.httpClient.put(
           `/services/haproxy/configuration/frontends/${frontendName}/acls?version=${version}&force_reload=true`,
           updatedACLs
         );
@@ -85,7 +85,7 @@ export function ACLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
     async deleteACL(frontendName: string, index: number): Promise<void> {
       try {
         const version = await this.getVersion();
-        await this.axiosInstance.delete(
+        await this.httpClient.delete(
           `/services/haproxy/configuration/frontends/${frontendName}/acls/${index}?version=${version}`
         );
 
@@ -94,7 +94,7 @@ export function ACLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
           'Deleted ACL from frontend successfully'
         );
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           logger.warn({ frontendName, index }, 'ACL not found, already deleted');
           return;
         }
