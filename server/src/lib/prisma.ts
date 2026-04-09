@@ -6,17 +6,21 @@ import { getDatabaseFilePath } from "./database-url-parser";
 // Re-export PrismaClient type for use by other modules
 export { PrismaClient };
 
+const isTestEnvironment = process.env.NODE_ENV === "test";
+
 // Enable WAL journal mode for better concurrent read/write performance.
 // WAL allows readers to proceed without blocking writers and vice versa,
 // which is important for backup operations and general application responsiveness.
-try {
-  const dbPath = getDatabaseFilePath();
-  const db = new Database(dbPath);
-  const result = db.pragma("journal_mode = WAL");
-  db.close();
-  console.log(`[STARTUP] SQLite journal_mode set to: ${JSON.stringify(result)}`);
-} catch (err) {
-  console.warn("[STARTUP] Failed to set SQLite WAL mode:", err);
+if (!isTestEnvironment) {
+  try {
+    const dbPath = getDatabaseFilePath();
+    const db = new Database(dbPath);
+    const result = db.pragma("journal_mode = WAL");
+    db.close();
+    console.log(`[STARTUP] SQLite journal_mode set to: ${JSON.stringify(result)}`);
+  } catch (err) {
+    console.warn("[STARTUP] Failed to set SQLite WAL mode:", err);
+  }
 }
 
 declare global {
@@ -25,7 +29,7 @@ declare global {
 }
 
 // Create Prisma logger instance
-const logger = prismaLogger();
+const logger = !isTestEnvironment ? prismaLogger() : null;
 
 const prisma =
   globalThis.prisma ??
@@ -54,7 +58,7 @@ const prisma =
   } as any);
 
 // Set up Prisma event listeners to route logs to dedicated logger
-if (process.env.NODE_ENV !== "test") {
+if (!isTestEnvironment && logger) {
   (prisma as any).$on("query", (e: any) => {
     logger.debug(
       {

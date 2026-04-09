@@ -1,4 +1,5 @@
 import request from "supertest";
+import type { Application } from "express";
 
 // Mock logger factory first
 vi.mock("../lib/logger-factory", () => {
@@ -53,21 +54,6 @@ vi.mock("../services/image-inspect", () => ({
   }),
 }));
 
-// Mock RegistryCredentialService
-vi.mock("../services/registry-credential", () => ({
-  RegistryCredentialService: vi.fn().mockImplementation(function () {
-    return {
-      getCredentialsForImage: vi.fn().mockResolvedValue(null),
-    };
-  }),
-}));
-
-// Mock prisma
-vi.mock("../lib/prisma", () => ({
-  default: {},
-  PrismaClient: vi.fn(),
-}));
-
 // Mock self-backup services
 vi.mock("../services/backup/self-backup-executor", () => ({
   SelfBackupExecutor: vi.fn(),
@@ -76,11 +62,25 @@ vi.mock("../services/backup/self-backup-scheduler", () => ({
   SelfBackupScheduler: vi.fn(),
 }));
 
-import app from "../app";
+import { createApp } from "../app-factory";
+import createImagesRouter from "../routes/images";
 
 describe("GET /api/images/inspect-ports", () => {
+  let app: Application;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    app = createApp({
+      includeRouteIds: ["images"],
+      routeOverrides: {
+        images: createImagesRouter({
+          registryCredentialService: {
+            getCredentialsForImage: vi.fn().mockResolvedValue(null),
+          },
+        }),
+      },
+      quiet: true,
+    });
   });
 
   it("returns ports for a valid image", async () => {

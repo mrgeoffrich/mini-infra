@@ -6,8 +6,9 @@ import {
   RetryableHAProxyClient
 } from '../services/haproxy/haproxy-dataplane-client';
 import DockerService from '../services/docker';
-import { testPrisma, createTestUser } from './setup';
+import { testPrisma, createTestUser } from "./integration-test-helpers";
 import { DockerConfigService } from '../services/docker-config';
+import { buildSystemSettingRecord } from "./test-data-factories";
 
 // Integration tests for HAProxy DataPlane Client
 // These tests require a running HAProxy container with DataPlane API enabled
@@ -36,28 +37,25 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
 
     // Set up Docker configuration for test environment
     const testUser = await createTestUser();
+    const dockerHostSetting = buildSystemSettingRecord(testUser.id, {
+      category: 'docker',
+      key: 'host',
+      value: 'unix:///var/run/docker.sock',
+    });
 
     // Configure Docker host setting in test database
     await testPrisma.systemSettings.upsert({
       where: {
         category_key: {
-          category: 'docker',
-          key: 'host'
+          category: dockerHostSetting.category,
+          key: dockerHostSetting.key
         }
       },
-      create: {
-        category: 'docker',
-        key: 'host',
-        value: 'unix:///var/run/docker.sock',
-        isEncrypted: false,
-        isActive: true,
-        createdBy: testUser.id,
-        updatedBy: testUser.id
-      },
+      create: dockerHostSetting,
       update: {
-        value: 'unix:///var/run/docker.sock',
-        isActive: true,
-        updatedBy: testUser.id
+        value: dockerHostSetting.value,
+        isActive: dockerHostSetting.isActive,
+        updatedBy: dockerHostSetting.updatedBy
       }
     });
 
@@ -160,13 +158,6 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       // Reset Docker service singleton to prevent state leakage
       (DockerService as any).instance = null;
 
-      // Clean up Docker configuration from test database
-      await testPrisma.systemSettings.deleteMany({
-        where: {
-          category: 'docker',
-          key: 'host'
-        }
-      });
     } catch (error) {
       console.warn('Cleanup failed:', error);
     }

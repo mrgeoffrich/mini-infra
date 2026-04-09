@@ -1,4 +1,5 @@
 import request from "supertest";
+import type { Application } from "express";
 
 // Mock logger factory first (before other imports)
 vi.mock("../lib/logger-factory", () => {
@@ -63,40 +64,29 @@ vi.mock("../services/backup/self-backup-scheduler", () => ({
   SelfBackupScheduler: vi.fn(),
 }));
 
-// Mock prisma with a Proxy that defers to testPrisma (which is set in beforeAll)
-// This is needed because vi.mock factories run before beforeAll,
-// but testPrisma is only created in setup.ts's beforeAll
-const { prismaHolder } = vi.hoisted(() => ({
-  prismaHolder: { ref: null as any },
-}));
-
-vi.mock("../lib/prisma", () => ({
-  default: new Proxy({} as any, {
-    get(_target, prop) {
-      return prismaHolder.ref?.[prop];
-    },
-  }),
-  PrismaClient: vi.fn(),
-}));
-
-import { testPrisma, createTestUser } from "./setup";
-
-import app from "../app";
+import { testPrisma, createTestUser } from "./integration-test-helpers";
+import { createApp } from "../app-factory";
+import createRegistryCredentialsRouter from "../routes/registry-credentials";
 import { RegistryCredentialService } from "../services/registry-credential";
+import { buildRegistryCredentialRequest } from "./test-data-factories";
 
 describe("Registry Credentials API", () => {
+  let app: Application;
   let authToken: string;
   let userId: string;
   let registryCredentialService: RegistryCredentialService;
 
   beforeEach(async () => {
-    // Set the prisma reference for the Proxy mock
-    prismaHolder.ref = testPrisma;
-
     registryCredentialService = new RegistryCredentialService(testPrisma);
-
-    // Clean up existing test data
-    await testPrisma.registryCredential.deleteMany({});
+    app = createApp({
+      includeRouteIds: ["registryCredentials"],
+      routeOverrides: {
+        registryCredentials: createRegistryCredentialsRouter({
+          registryCredentialService,
+        }),
+      },
+      quiet: true,
+    });
 
     // Create test user
     const user = await createTestUser();
@@ -106,20 +96,30 @@ describe("Registry Credentials API", () => {
     authToken = `Bearer test-token-${userId}`;
   });
 
-  afterEach(async () => {
-    // Clean up test data
-    await testPrisma.registryCredential.deleteMany({});
-  });
+  function buildCredentialPayload(
+    overrides: Parameters<typeof buildRegistryCredentialRequest>[0] = {},
+  ) {
+    return buildRegistryCredentialRequest(overrides);
+  }
+
+  function createCredential(
+    overrides: Parameters<typeof buildRegistryCredentialRequest>[0] = {},
+  ) {
+    return registryCredentialService.createCredential(
+      buildCredentialPayload(overrides),
+      userId,
+    );
+  }
 
   describe("POST /api/registry-credentials", () => {
     test("should create a new registry credential", async () => {
-      const credentialData = {
+      const credentialData = buildCredentialPayload({
         name: "Test Registry",
         registryUrl: "ghcr.io",
         username: "testuser",
         password: "testpassword123",
         description: "Test description",
-      };
+      });
 
       const response = await request(app)
         .post("/api/registry-credentials")
@@ -152,12 +152,12 @@ describe("Registry Credentials API", () => {
     });
 
     test("should succeed without explicit auth header (auth middleware is mocked)", async () => {
-      const credentialData = {
+      const credentialData = buildCredentialPayload({
         name: "Test Registry",
         registryUrl: "ghcr.io",
         username: "testuser",
         password: "testpassword123",
-      };
+      });
 
       // Auth middleware is mocked to always authenticate,
       // so requests without explicit auth headers still succeed
@@ -171,27 +171,21 @@ describe("Registry Credentials API", () => {
   describe("GET /api/registry-credentials", () => {
     test("should return all active credentials", async () => {
       // Create test credentials
-      await registryCredentialService.createCredential(
-        {
-          name: "Registry 1",
-          registryUrl: "registry1.example.com",
-          username: "user1",
-          password: "pass1",
-          isActive: true,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Registry 1",
+        registryUrl: "registry1.example.com",
+        username: "user1",
+        password: "pass1",
+        isActive: true,
+      });
 
-      await registryCredentialService.createCredential(
-        {
-          name: "Registry 2",
-          registryUrl: "registry2.example.com",
-          username: "user2",
-          password: "pass2",
-          isActive: true,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Registry 2",
+        registryUrl: "registry2.example.com",
+        username: "user2",
+        password: "pass2",
+        isActive: true,
+      });
 
       const response = await request(app)
         .get("/api/registry-credentials")
@@ -204,27 +198,21 @@ describe("Registry Credentials API", () => {
     });
 
     test("should exclude inactive credentials by default", async () => {
-      await registryCredentialService.createCredential(
-        {
-          name: "Active Registry",
-          registryUrl: "active.example.com",
-          username: "user",
-          password: "pass",
-          isActive: true,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Active Registry",
+        registryUrl: "active.example.com",
+        username: "user",
+        password: "pass",
+        isActive: true,
+      });
 
-      await registryCredentialService.createCredential(
-        {
-          name: "Inactive Registry",
-          registryUrl: "inactive.example.com",
-          username: "user",
-          password: "pass",
-          isActive: false,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Inactive Registry",
+        registryUrl: "inactive.example.com",
+        username: "user",
+        password: "pass",
+        isActive: false,
+      });
 
       const response = await request(app)
         .get("/api/registry-credentials")
@@ -237,27 +225,21 @@ describe("Registry Credentials API", () => {
     });
 
     test("should include inactive credentials when requested", async () => {
-      await registryCredentialService.createCredential(
-        {
-          name: "Active Registry",
-          registryUrl: "active.example.com",
-          username: "user",
-          password: "pass",
-          isActive: true,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Active Registry",
+        registryUrl: "active.example.com",
+        username: "user",
+        password: "pass",
+        isActive: true,
+      });
 
-      await registryCredentialService.createCredential(
-        {
-          name: "Inactive Registry",
-          registryUrl: "inactive.example.com",
-          username: "user",
-          password: "pass",
-          isActive: false,
-        },
-        userId,
-      );
+      await createCredential({
+        name: "Inactive Registry",
+        registryUrl: "inactive.example.com",
+        username: "user",
+        password: "pass",
+        isActive: false,
+      });
 
       const response = await request(app)
         .get("/api/registry-credentials?includeInactive=true")
@@ -271,15 +253,12 @@ describe("Registry Credentials API", () => {
 
   describe("GET /api/registry-credentials/:id", () => {
     test("should return a specific credential", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "Test Registry",
-          registryUrl: "test.example.com",
-          username: "testuser",
-          password: "testpass",
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "Test Registry",
+        registryUrl: "test.example.com",
+        username: "testuser",
+        password: "testpass",
+      });
 
       const response = await request(app)
         .get(`/api/registry-credentials/${credential.id}`)
@@ -305,15 +284,12 @@ describe("Registry Credentials API", () => {
 
   describe("PUT /api/registry-credentials/:id", () => {
     test("should update a credential", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "Original Name",
-          registryUrl: "test.example.com",
-          username: "originaluser",
-          password: "originalpass",
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "Original Name",
+        registryUrl: "test.example.com",
+        username: "originaluser",
+        password: "originalpass",
+      });
 
       const updateData = {
         name: "Updated Name",
@@ -332,15 +308,12 @@ describe("Registry Credentials API", () => {
     });
 
     test("should update password", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "Test Registry",
-          registryUrl: "test.example.com",
-          username: "user",
-          password: "oldpassword",
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "Test Registry",
+        registryUrl: "test.example.com",
+        username: "user",
+        password: "oldpassword",
+      });
 
       const updateData = {
         password: "newpassword123",
@@ -364,15 +337,12 @@ describe("Registry Credentials API", () => {
 
   describe("DELETE /api/registry-credentials/:id", () => {
     test("should soft delete a credential", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "To Delete",
-          registryUrl: "delete.example.com",
-          username: "user",
-          password: "pass",
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "To Delete",
+        registryUrl: "delete.example.com",
+        username: "user",
+        password: "pass",
+      });
 
       const response = await request(app)
         .delete(`/api/registry-credentials/${credential.id}`)
@@ -391,16 +361,13 @@ describe("Registry Credentials API", () => {
 
   describe("POST /api/registry-credentials/:id/set-default", () => {
     test("should set a credential as default", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "Test Registry",
-          registryUrl: "test.example.com",
-          username: "user",
-          password: "pass",
-          isDefault: false,
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "Test Registry",
+        registryUrl: "test.example.com",
+        username: "user",
+        password: "pass",
+        isDefault: false,
+      });
 
       const response = await request(app)
         .post(`/api/registry-credentials/${credential.id}/set-default`)
@@ -417,27 +384,21 @@ describe("Registry Credentials API", () => {
     });
 
     test("should unset previous default when setting new default", async () => {
-      const first = await registryCredentialService.createCredential(
-        {
-          name: "First Registry",
-          registryUrl: "first.example.com",
-          username: "user",
-          password: "pass",
-          isDefault: true,
-        },
-        userId,
-      );
+      const first = await createCredential({
+        name: "First Registry",
+        registryUrl: "first.example.com",
+        username: "user",
+        password: "pass",
+        isDefault: true,
+      });
 
-      const second = await registryCredentialService.createCredential(
-        {
-          name: "Second Registry",
-          registryUrl: "second.example.com",
-          username: "user",
-          password: "pass",
-          isDefault: false,
-        },
-        userId,
-      );
+      const second = await createCredential({
+        name: "Second Registry",
+        registryUrl: "second.example.com",
+        username: "user",
+        password: "pass",
+        isDefault: false,
+      });
 
       await request(app)
         .post(`/api/registry-credentials/${second.id}/set-default`)
@@ -460,15 +421,12 @@ describe("Registry Credentials API", () => {
 
   describe("POST /api/registry-credentials/:id/test", () => {
     test("should test a credential", async () => {
-      const credential = await registryCredentialService.createCredential(
-        {
-          name: "Test Registry",
-          registryUrl: "test.example.com",
-          username: "user",
-          password: "pass",
-        },
-        userId,
-      );
+      const credential = await createCredential({
+        name: "Test Registry",
+        registryUrl: "test.example.com",
+        username: "user",
+        password: "pass",
+      });
 
       const response = await request(app)
         .post(`/api/registry-credentials/${credential.id}/test`)
@@ -483,11 +441,11 @@ describe("Registry Credentials API", () => {
 
   describe("POST /api/registry-credentials/test-connection", () => {
     test("should test a connection without saving", async () => {
-      const testData = {
+      const testData = buildCredentialPayload({
         registryUrl: "ghcr.io",
         username: "testuser",
         password: "testpass",
-      };
+      });
 
       const response = await request(app)
         .post("/api/registry-credentials/test-connection")

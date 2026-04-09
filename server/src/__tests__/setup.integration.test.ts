@@ -1,4 +1,4 @@
-import { testPrisma, createTestUser } from "./setup";
+import { testPrisma, createTestUser } from "./integration-test-helpers";
 
 describe("Test Environment Setup", () => {
   it("should connect to test database", async () => {

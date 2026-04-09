@@ -1,6 +1,6 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
-import prisma from "./prisma";
+import prisma, { PrismaClient } from "./prisma";
 import { authConfig } from "./config-new";
 import { appLogger } from "./logger-factory";
 import type {
@@ -9,6 +9,17 @@ import type {
 } from "@mini-infra/types";
 
 const logger = appLogger();
+let passportPrisma: Pick<PrismaClient, "user"> = prisma;
+
+export function setPassportPrismaClientForTesting(
+  prismaClient: Pick<PrismaClient, "user">,
+): void {
+  passportPrisma = prismaClient;
+}
+
+export function resetPassportPrismaClientForTesting(): void {
+  passportPrisma = prisma;
+}
 
 /**
  * Dynamically configure (or reconfigure) the Google OAuth strategy.
@@ -57,19 +68,19 @@ export function configureGoogleStrategy(
           }
 
           // Find or create user
-          let user = await prisma.user.findUnique({
+          let user = await passportPrisma.user.findUnique({
             where: { googleId: profile.id },
           });
 
           if (!user) {
             // Check if user exists with same email
-            user = await prisma.user.findUnique({
+            user = await passportPrisma.user.findUnique({
               where: { email: email.toLowerCase() },
             });
 
             if (user) {
               // Link existing local user to Google
-              user = await prisma.user.update({
+              user = await passportPrisma.user.update({
                 where: { id: user.id },
                 data: {
                   googleId: profile.id,
@@ -86,7 +97,7 @@ export function configureGoogleStrategy(
               );
             } else {
               // Create new Google-only user
-              user = await prisma.user.create({
+              user = await passportPrisma.user.create({
                 data: {
                   email: email.toLowerCase(),
                   name,
@@ -103,7 +114,7 @@ export function configureGoogleStrategy(
             }
           } else {
             // Update existing Google user
-            user = await prisma.user.update({
+            user = await passportPrisma.user.update({
               where: { id: user.id },
               data: {
                 name: name || user.name,
@@ -131,7 +142,7 @@ passport.serializeUser((user: any, done: PassportDoneCallback) => {
 
 passport.deserializeUser(async (id: string, done: PassportDoneCallback) => {
   try {
-    const user = await prisma.user.findUnique({ where: { id } });
+    const user = await passportPrisma.user.findUnique({ where: { id } });
     done(null, user);
   } catch (error) {
     done(error, null);

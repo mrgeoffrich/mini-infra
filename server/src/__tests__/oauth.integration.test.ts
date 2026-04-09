@@ -1,10 +1,5 @@
-import { testPrisma, createTestUser } from "./setup";
+import { testPrisma, createTestUser } from "./integration-test-helpers";
 import type { GoogleOAuthProfile } from "@mini-infra/types";
-
-// Store reference to testPrisma that persists across resetModules
-const { prismaRef } = vi.hoisted(() => ({
-  prismaRef: { current: null as any },
-}));
 
 // Capture the verify callback when GoogleStrategy is constructed
 const { verifyCallbackRef } = vi.hoisted(() => ({
@@ -65,11 +60,6 @@ vi.mock("../lib/config-new", () => ({
   default: {},
 }));
 
-// Mock prisma to use our test instance
-vi.mock("../lib/prisma.ts", () => ({
-  default: prismaRef.current,
-}));
-
 // Mock passport-google-oauth20 to capture the verify callback
 vi.mock("passport-google-oauth20", () => ({
   Strategy: vi.fn().mockImplementation(function(_options: any, callback: any) {
@@ -85,14 +75,6 @@ describe("OAuth Strategy and Callback Handling", () => {
     mockDone = vi.fn();
     vi.clearAllMocks();
     verifyCallbackRef.current = null;
-
-    // Set the prisma reference so the mock uses the real test database
-    prismaRef.current = testPrisma;
-
-    // Clean up any existing users to ensure test isolation
-    await testPrisma.apiKey.deleteMany();
-    await testPrisma.passwordResetToken.deleteMany();
-    await testPrisma.user.deleteMany();
   });
 
   /**
@@ -102,6 +84,7 @@ describe("OAuth Strategy and Callback Handling", () => {
   async function setupStrategy() {
     vi.resetModules();
     const passportModule = await import("../lib/passport");
+    passportModule.setPassportPrismaClientForTesting(testPrisma);
     passportModule.configureGoogleStrategy("test-client-id", "test-client-secret");
     return verifyCallbackRef.current;
   }
@@ -338,10 +321,11 @@ describe("OAuth Strategy and Callback Handling", () => {
     });
 
     it("should handle database errors during deserialization", async () => {
-      const originalFindUnique = testPrisma.user.findUnique;
-      (testPrisma.user as any).findUnique = vi
-        .fn()
-        .mockRejectedValue(new Error("Database error") as any);
+      const mockPrisma = {
+        user: {
+          findUnique: vi.fn().mockRejectedValue(new Error("Database error")),
+        },
+      };
 
       let deserializeFunction: any;
 
@@ -358,7 +342,8 @@ describe("OAuth Strategy and Callback Handling", () => {
       }));
 
       vi.resetModules();
-      await import("../lib/passport");
+      const passportModule = await import("../lib/passport");
+      passportModule.setPassportPrismaClientForTesting(mockPrisma as any);
 
       if (deserializeFunction) {
         const mockDeserializeDone = vi.fn();
@@ -371,8 +356,6 @@ describe("OAuth Strategy and Callback Handling", () => {
           null,
         );
       }
-
-      (testPrisma.user as any).findUnique = originalFindUnique;
     });
   });
 });

@@ -1,9 +1,13 @@
-import { testPrisma } from "./setup";
+import { testPrisma } from "./integration-test-helpers";
 import { RegistryCredentialService } from "../services/registry-credential";
 import type {
   CreateRegistryCredentialRequest,
   UpdateRegistryCredentialRequest,
 } from "@mini-infra/types";
+import {
+  buildRegistryCredentialRequest,
+  buildRegistryCredentialUpdateRequest,
+} from "./test-data-factories";
 
 describe("RegistryCredentialService", () => {
   let service: RegistryCredentialService;
@@ -13,15 +17,19 @@ describe("RegistryCredentialService", () => {
   beforeEach(async () => {
     // Create a fresh service instance for each test
     service = new RegistryCredentialService(testPrisma, testEncryptionKey);
-
-    // Clean up existing test data
-    await testPrisma.registryCredential.deleteMany({});
   });
 
-  afterEach(async () => {
-    // Clean up test data after each test
-    await testPrisma.registryCredential.deleteMany({});
-  });
+  function buildCredentialRequest(
+    overrides: Partial<CreateRegistryCredentialRequest> = {},
+  ): CreateRegistryCredentialRequest {
+    return buildRegistryCredentialRequest(overrides);
+  }
+
+  function buildCredentialUpdate(
+    overrides: Partial<UpdateRegistryCredentialRequest> = {},
+  ): UpdateRegistryCredentialRequest {
+    return buildRegistryCredentialUpdateRequest(overrides);
+  }
 
   describe("Registry URL Extraction", () => {
     test("should extract registry from ghcr.io image", async () => {
@@ -46,7 +54,7 @@ describe("RegistryCredentialService", () => {
 
   describe("Create Credential", () => {
     test("should create a new credential with encrypted password", async () => {
-      const request: CreateRegistryCredentialRequest = {
+      const request: CreateRegistryCredentialRequest = buildCredentialRequest({
         name: "GitHub Container Registry",
         registryUrl: "ghcr.io",
         username: "testuser",
@@ -54,7 +62,7 @@ describe("RegistryCredentialService", () => {
         isDefault: false,
         isActive: true,
         description: "Test registry",
-      };
+      });
 
       const credential = await service.createCredential(request, testUserId);
 
@@ -70,25 +78,25 @@ describe("RegistryCredentialService", () => {
 
     test("should set credential as default and unset other defaults", async () => {
       // Create first credential as default
-      const first: CreateRegistryCredentialRequest = {
+      const first: CreateRegistryCredentialRequest = buildCredentialRequest({
         name: "First Registry",
         registryUrl: "registry1.example.com",
         username: "user1",
         password: "pass1",
         isDefault: true,
-      };
+      });
 
       const firstCredential = await service.createCredential(first, testUserId);
       expect(firstCredential.isDefault).toBe(true);
 
       // Create second credential as default
-      const second: CreateRegistryCredentialRequest = {
+      const second: CreateRegistryCredentialRequest = buildCredentialRequest({
         name: "Second Registry",
         registryUrl: "registry2.example.com",
         username: "user2",
         password: "pass2",
         isDefault: true,
-      };
+      });
 
       const secondCredential = await service.createCredential(
         second,
@@ -104,12 +112,12 @@ describe("RegistryCredentialService", () => {
 
   describe("Get Credential", () => {
     test("should retrieve credential by ID", async () => {
-      const request: CreateRegistryCredentialRequest = {
+      const request: CreateRegistryCredentialRequest = buildCredentialRequest({
         name: "Test Registry",
         registryUrl: "test.example.com",
         username: "testuser",
         password: "testpass",
-      };
+      });
 
       const created = await service.createCredential(request, testUserId);
       const retrieved = await service.getCredential(created.id);
@@ -224,10 +232,10 @@ describe("RegistryCredentialService", () => {
         testUserId,
       );
 
-      const updateRequest: UpdateRegistryCredentialRequest = {
+      const updateRequest: UpdateRegistryCredentialRequest = buildCredentialUpdate({
         name: "Updated Name",
         username: "updated-user",
-      };
+      });
 
       const updated = await service.updateCredential(
         created.id,
