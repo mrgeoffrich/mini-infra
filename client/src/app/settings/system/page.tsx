@@ -34,7 +34,6 @@ import {
   IconDeviceFloppy,
   IconLoader2,
   IconSettings,
-  IconBrandDocker,
   IconNetwork,
   IconShield,
   IconHistory,
@@ -66,24 +65,6 @@ const systemSettingsSchema = z.object({
   // Production mode setting
   isProduction: z.boolean(),
 
-  // Backup container settings
-  backupDockerImage: z
-    .string()
-    .min(1, "Backup Docker image is required")
-    .regex(
-      /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
-      "Invalid Docker image format (e.g., ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)",
-    ),
-
-  // Restore container settings
-  restoreDockerImage: z
-    .string()
-    .min(1, "Restore Docker image is required")
-    .regex(
-      /^[a-zA-Z0-9\-._/]+(?::[a-zA-Z0-9\-._]+)?$/,
-      "Invalid Docker image format (e.g., ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)",
-    ),
-
   // Docker Host IP Configuration
   dockerHostIp: z
     .string()
@@ -104,10 +85,6 @@ const systemSettingsSchema = z.object({
 });
 
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
-
-// Default Docker images and settings
-const DEFAULT_BACKUP_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
-const DEFAULT_RESTORE_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
 
 export default function SystemSettingsPage() {
   const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
@@ -172,8 +149,6 @@ export default function SystemSettingsPage() {
       publicUrl: "",
       corsEnabled: false,
       isProduction: false,
-      backupDockerImage: DEFAULT_BACKUP_IMAGE,
-      restoreDockerImage: DEFAULT_RESTORE_IMAGE,
       dockerHostIp: "",
       userEventsRetentionDays: "30",
     },
@@ -207,14 +182,6 @@ export default function SystemSettingsPage() {
         settingsMap.is_production?.value === "true",
       );
       form.setValue(
-        "backupDockerImage",
-        settingsMap.backup_docker_image?.value || DEFAULT_BACKUP_IMAGE,
-      );
-      form.setValue(
-        "restoreDockerImage",
-        settingsMap.restore_docker_image?.value || DEFAULT_RESTORE_IMAGE,
-      );
-      form.setValue(
         "dockerHostIp",
         settingsMap.docker_host_ip?.value || "",
       );
@@ -246,18 +213,6 @@ export default function SystemSettingsPage() {
           category: "system" as const,
           key: "is_production",
           value: data.isProduction.toString(),
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "backup_docker_image",
-          value: data.backupDockerImage,
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "restore_docker_image",
-          value: data.restoreDockerImage,
           isEncrypted: false,
         },
         {
@@ -465,78 +420,6 @@ export default function SystemSettingsPage() {
                         It helps visually distinguish production instances from development or staging environments.
                       </AlertDescription>
                     </Alert>
-                  </CardContent>
-                </Card>
-
-                {/* Backup Container Settings */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <IconBrandDocker className="h-5 w-5" />
-                      <span>Backup Container Settings</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Configure the Docker container used for database backup
-                      operations
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="backupDockerImage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Docker Image</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Docker image for backup operations (e.g.,
-                            ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* Restore Container Settings */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <IconBrandDocker className="h-5 w-5" />
-                      <span>Restore Container Settings</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Configure the Docker container used for database restore
-                      operations
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="restoreDockerImage"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Docker Image</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Docker image for restore operations (e.g.,
-                            ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                   </CardContent>
                 </Card>
 
