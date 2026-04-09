@@ -84,6 +84,26 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
     }
 
     /**
+     * Update a backend switching rule by index
+     */
+    async updateBackendSwitchingRule(frontendName: string, index: number, rule: Record<string, unknown>): Promise<void> {
+      try {
+        const version = await this.getVersion();
+        await this.httpClient.put(
+          `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules/${index}?version=${version}`,
+          { index, ...rule }
+        );
+
+        logger.info(
+          { frontendName, index, version },
+          'Updated backend switching rule successfully'
+        );
+      } catch (error) {
+        this.handleApiError(error, 'update backend switching rule', { frontendName, index });
+      }
+    }
+
+    /**
      * Delete a backend switching rule from a frontend by index
      */
     async deleteBackendSwitchingRule(frontendName: string, index: number): Promise<void> {

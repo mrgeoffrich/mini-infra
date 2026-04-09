@@ -624,9 +624,7 @@ export class ManualFrontendManager {
           if (frontend.backendName) {
             logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
             try {
-              await haproxyClient["httpClient"].delete(
-                `/services/haproxy/configuration/backends/${frontend.backendName}`
-              );
+              await haproxyClient.deleteBackend(frontend.backendName);
             } catch (error: any) {
               if (error?.response?.status !== 404) {
                 logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
@@ -643,10 +641,7 @@ export class ManualFrontendManager {
         if (frontend.backendName) {
           logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
           try {
-            const version = await haproxyClient.getVersion();
-            await haproxyClient["httpClient"].delete(
-              `/services/haproxy/configuration/backends/${frontend.backendName}?version=${version}`
-            );
+            await haproxyClient.deleteBackend(frontend.backendName);
           } catch (error: any) {
             // If backend doesn't exist, log warning but continue
             if (error?.response?.status !== 404) {

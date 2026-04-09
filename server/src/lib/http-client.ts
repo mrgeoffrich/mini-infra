@@ -106,6 +106,10 @@ export class HttpClient {
     return this.request<T>('PUT', url, body, config);
   }
 
+  async head<T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+    return this.request<T>('HEAD', url, undefined, config);
+  }
+
   async delete<T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('DELETE', url, undefined, config);
   }

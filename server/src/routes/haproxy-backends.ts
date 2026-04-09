@@ -337,11 +337,7 @@ router.patch(
           }
 
           // Use DataPlane API to update backend
-          const version = await haproxyClient.getVersion();
-          await (haproxyClient as any).httpClient.put(
-            `/services/haproxy/configuration/backends/${backendName}?version=${version}`,
-            haproxyUpdate
-          );
+          await haproxyClient.updateBackend(backendName, haproxyUpdate);
 
           logger.info(
             { backendName, updates },
@@ -613,10 +609,7 @@ router.patch(
           runtimePayload.operational_state = effectiveEnabled ? "up" : "down";
           runtimePayload.admin_state = effectiveMaintenance ? "maint" : "ready";
 
-          await (haproxyClient as any).httpClient.put(
-            `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
-            runtimePayload
-          );
+          await haproxyClient.updateServerRuntime(backendName, serverName, runtimePayload);
 
           logger.info(
             { backendName, serverName, updates },

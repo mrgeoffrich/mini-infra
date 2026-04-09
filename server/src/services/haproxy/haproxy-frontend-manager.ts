@@ -322,11 +322,7 @@ export class HAProxyFrontendManager {
     logger.info({ frontendName }, "Removing frontend");
 
     try {
-      const version = await haproxyClient.getVersion();
-
-      await haproxyClient["httpClient"].delete(
-        `/services/haproxy/configuration/frontends/${frontendName}?version=${version}`
-      );
+      await haproxyClient.deleteFrontend(frontendName);
 
       logger.info({ frontendName }, "Successfully removed frontend");
     } catch (error: any) {
@@ -391,18 +387,11 @@ export class HAProxyFrontendManager {
       }
 
       // Update the existing rule
-      const version = await haproxyClient.getVersion();
-      const ruleData = {
-        index: ruleIndex,
+      await haproxyClient.updateBackendSwitchingRule(frontendName, ruleIndex, {
         name: newBackendName,
         cond: "if",
         cond_test: aclName,
-      };
-
-      await haproxyClient["httpClient"].put(
-        `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules/${ruleIndex}?version=${version}`,
-        ruleData
-      );
+      });
 
       logger.info(
         { frontendName, hostname, newBackendName },
@@ -518,18 +507,7 @@ export class HAProxyFrontendManager {
     frontendName: string,
     haproxyClient: HAProxyDataPlaneClient
   ): Promise<any | null> {
-    try {
-      const response = await haproxyClient["httpClient"].get(
-        `/services/haproxy/configuration/frontends/${frontendName}`
-      );
-
-      return response.data.data || response.data;
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        return null;
-      }
-      throw error;
-    }
+    return haproxyClient.getFrontend(frontendName);
   }
 
   /**

@@ -152,6 +152,25 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
     }
 
     /**
+     * Update server runtime state (weight, admin_state, operational_state)
+     */
+    async updateServerRuntime(backendName: string, serverName: string, updates: Record<string, unknown>): Promise<void> {
+      try {
+        await this.httpClient.put(
+          `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
+          updates
+        );
+
+        logger.info(
+          { backendName, serverName, updates },
+          'Updated server runtime state in HAProxy backend'
+        );
+      } catch (error) {
+        this.handleApiError(error, 'update server runtime', { backendName, serverName });
+      }
+    }
+
+    /**
      * List all servers in a backend
      */
     async listServers(backendName: string): Promise<Server[]> {

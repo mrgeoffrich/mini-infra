@@ -7,7 +7,7 @@ import { servicesLogger } from "../lib/logger-factory";
  */
 export interface HealthCheckConfig {
   endpoint: string;
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "HEAD";
   headers?: Record<string, string>;
   timeout?: number;
   retries?: number;
@@ -232,6 +232,8 @@ export class HealthCheckService {
       let response;
       if (method === "POST") {
         response = await this.httpClient.post(config.endpoint, undefined, requestConfig);
+      } else if (method === "HEAD") {
+        response = await this.httpClient.head(config.endpoint, requestConfig);
       } else {
         response = await this.httpClient.get(config.endpoint, requestConfig);
       }
@@ -294,7 +296,7 @@ export class HealthCheckService {
         // Handle HTTP errors with response (e.g., 4xx, 5xx status codes)
         if (error.response) {
           statusCode = error.response.status;
-          errorMessage = `Health check failed validation: statusCode`;
+          errorMessage = `Health check failed validation: ${statusCode}`;
         } else {
           // Handle network/connection errors
           if (error.code === "ECONNREFUSED") {

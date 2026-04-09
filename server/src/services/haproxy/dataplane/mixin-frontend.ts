@@ -1,3 +1,4 @@
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, FrontendConfig } from './types';
 
@@ -76,6 +77,22 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
         );
       } catch (error) {
         this.handleApiError(error, 'delete frontend', { frontendName: name });
+      }
+    }
+
+    /**
+     * Get frontend configuration
+     */
+    async getFrontend(name: string): Promise<any | null> {
+      try {
+        const response = await this.httpClient.get(`/services/haproxy/configuration/frontends/${name}`);
+        return response.data.data || response.data;
+      } catch (error) {
+        if (isHttpError(error) && error.response?.status === 404) {
+          return null;
+        }
+        this.handleApiError(error, 'get frontend', { frontendName: name });
+        return null;
       }
     }
 

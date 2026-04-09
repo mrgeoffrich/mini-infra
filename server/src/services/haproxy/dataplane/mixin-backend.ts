@@ -35,6 +35,26 @@ export function BackendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) 
     }
 
     /**
+     * Update an existing backend's configuration
+     */
+    async updateBackend(name: string, config: Record<string, unknown>): Promise<void> {
+      try {
+        const version = await this.getVersion();
+        await this.httpClient.put(
+          `/services/haproxy/configuration/backends/${name}?version=${version}`,
+          { name, ...config }
+        );
+
+        logger.info(
+          { backendName: name, version },
+          'Updated HAProxy backend successfully'
+        );
+      } catch (error) {
+        this.handleApiError(error, 'update backend', { backendName: name });
+      }
+    }
+
+    /**
      * Delete a backend
      */
     async deleteBackend(name: string): Promise<void> {
