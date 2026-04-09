@@ -239,8 +239,9 @@ export class StackContainerManager {
     // Check if container has a healthcheck configured
     const info = await container.inspect();
 
-    if (!info.Config?.Healthcheck?.Test || info.Config.Healthcheck.Test.length === 0) {
-      // No healthcheck — just verify the container is running
+    const hcTest = info.Config?.Healthcheck?.Test;
+    if (!hcTest || hcTest.length === 0 || (hcTest.length === 1 && hcTest[0] === 'NONE')) {
+      // No healthcheck or HEALTHCHECK NONE — just verify the container is running
       const status = await this.dockerExecutor.getContainerStatus(containerId);
       return status.running;
     }
