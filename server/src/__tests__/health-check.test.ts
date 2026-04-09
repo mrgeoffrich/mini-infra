@@ -727,19 +727,20 @@ describe("HealthCheckService", () => {
 
     it("should override defaults with provided values", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      mockGet.mockResolvedValueOnce(mockResponse);
+      mockPost.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
-        method: "GET",
+        method: "POST",
         timeout: 5000,
         headers: { "Content-Type": "application/json" },
       };
 
       await healthCheckService.performHealthCheck(config);
 
-      expect(mockGet).toHaveBeenCalledWith(
+      expect(mockPost).toHaveBeenCalledWith(
         "http://example.com/health",
+        undefined,
         expect.objectContaining({
           timeout: 5000,
           headers: { "Content-Type": "application/json" },

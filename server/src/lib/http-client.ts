@@ -147,6 +147,9 @@ export class HttpClient {
         // FormData from 'form-data' package — let it set its own Content-Type with boundary
         fetchBody = body.getBuffer();
         const formHeaders = body.getHeaders();
+        // Remove any existing Content-Type (case-insensitive) before applying FormData headers
+        delete headers['Content-Type'];
+        delete headers['content-type'];
         Object.assign(headers, formHeaders);
       } else {
         fetchBody = JSON.stringify(body);

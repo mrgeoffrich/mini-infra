@@ -7,7 +7,7 @@ import { servicesLogger } from "../lib/logger-factory";
  */
 export interface HealthCheckConfig {
   endpoint: string;
-  method?: "GET" | "POST" | "HEAD";
+  method?: "GET" | "POST";
   headers?: Record<string, string>;
   timeout?: number;
   retries?: number;
