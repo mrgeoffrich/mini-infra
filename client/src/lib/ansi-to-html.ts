@@ -56,6 +56,7 @@ function escapeHtml(text: string): string {
 const ANSI_RE = /\x1b\[([0-9;]*)m/g;
 
 export function ansiToHtml(input: string): string {
+  ANSI_RE.lastIndex = 0;
   let result = "";
   let lastIndex = 0;
   let openSpans = 0;
