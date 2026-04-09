@@ -1,0 +1,57 @@
+// Mock environment variables for testing
+process.env.NODE_ENV = "test";
+process.env.LOG_LEVEL = "silent";
+
+import { securityConfig } from "../lib/security-config";
+
+// Initialize security config for tests
+securityConfig.setAppSecret("test-secret-key-for-testing-only");
+
+// Mock logger factory to silence logs during tests
+vi.mock("../lib/logger-factory.ts", () => {
+  const createMockLogger = () => {
+    const logger: any = {
+      info: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      fatal: vi.fn(),
+      trace: vi.fn(),
+      silent: vi.fn(),
+      child: vi.fn(() => logger),
+      level: "info",
+      levels: { values: { fatal: 60, error: 50, warn: 40, info: 30, debug: 20, trace: 10 } },
+    };
+    return logger;
+  };
+  return {
+    createLogger: vi.fn(() => createMockLogger()),
+    appLogger: vi.fn(() => createMockLogger()),
+    httpLogger: vi.fn(() => createMockLogger()),
+    prismaLogger: vi.fn(() => createMockLogger()),
+    servicesLogger: vi.fn(() => createMockLogger()),
+    dockerExecutorLogger: vi.fn(() => createMockLogger()),
+    deploymentLogger: vi.fn(() => createMockLogger()),
+    loadbalancerLogger: vi.fn(() => createMockLogger()),
+    tlsLogger: vi.fn(() => createMockLogger()),
+    agentLogger: vi.fn(() => createMockLogger()),
+  };
+});
+
+// Mock Passport for authentication tests
+vi.mock("passport", () => ({
+  default: {
+    use: vi.fn(),
+    initialize: vi.fn(() => (req: any, res: any, next: any) => next()),
+    session: vi.fn(() => (req: any, res: any, next: any) => next()),
+    authenticate: vi.fn(() => (req: any, res: any, next: any) => next()),
+    serializeUser: vi.fn(),
+    deserializeUser: vi.fn(),
+  },
+  use: vi.fn(),
+  initialize: vi.fn(() => (req: any, res: any, next: any) => next()),
+  session: vi.fn(() => (req: any, res: any, next: any) => next()),
+  authenticate: vi.fn(() => (req: any, res: any, next: any) => next()),
+  serializeUser: vi.fn(),
+  deserializeUser: vi.fn(),
+}));

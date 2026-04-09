@@ -1,31 +1,18 @@
+import { testPrisma } from "./integration-test-helpers";
 import { PostgresDatabaseManager } from "../services/postgres";
-import { PrismaClient } from "@prisma/client";
 import { CreatePostgresDatabaseRequest } from "@mini-infra/types";
+import { buildPostgresDatabaseRequest } from "./test-data-factories";
 
 describe("PostgreSQL System-Wide Database Management", () => {
-  let prisma: PrismaClient;
   let databaseConfigService: PostgresDatabaseManager;
 
-  beforeAll(async () => {
-    prisma = new PrismaClient();
-    await prisma.$connect();
-    databaseConfigService = new PostgresDatabaseManager(prisma);
-  });
-
-  afterAll(async () => {
-    // Clean up any test data
-    await prisma.postgresDatabase.deleteMany();
-    await prisma.$disconnect();
-  });
-
-  beforeEach(async () => {
-    // Clean up before each test
-    await prisma.postgresDatabase.deleteMany();
+  beforeAll(() => {
+    databaseConfigService = new PostgresDatabaseManager(testPrisma);
   });
 
   describe("Database Creation", () => {
     it("should create a database without requiring userId", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
         name: "test-database",
         host: "localhost",
         port: 5432,
@@ -34,7 +21,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
         password: "testpass",
         sslMode: "prefer",
         tags: ["test"],
-      };
+      });
 
       const createdDatabase = await databaseConfigService.createDatabase(createRequest);
 
@@ -47,7 +34,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
     });
 
     it("should enforce system-wide unique database names", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
         name: "unique-database",
         host: "localhost",
         port: 5432,
@@ -55,7 +42,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
         username: "testuser",
         password: "testpass",
         sslMode: "prefer",
-      };
+      });
 
       // Create first database
       await databaseConfigService.createDatabase(createRequest);
@@ -69,7 +56,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
   describe("Database Retrieval", () => {
     it("should retrieve database by ID without userId filter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
         name: "retrievable-database",
         host: "localhost",
         port: 5432,
@@ -77,7 +64,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
         username: "testuser",
         password: "testpass",
         sslMode: "prefer",
-      };
+      });
 
       const createdDatabase = await databaseConfigService.createDatabase(createRequest);
 
@@ -91,7 +78,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
     it("should list all databases system-wide", async () => {
       // Create multiple databases
       const databases = [
-        {
+        buildPostgresDatabaseRequest({
           name: "database-1",
           host: "host1.example.com",
           port: 5432,
@@ -99,8 +86,8 @@ describe("PostgreSQL System-Wide Database Management", () => {
           username: "user1",
           password: "pass1",
           sslMode: "prefer" as const,
-        },
-        {
+        }),
+        buildPostgresDatabaseRequest({
           name: "database-2",
           host: "host2.example.com",
           port: 5433,
@@ -108,7 +95,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
           username: "user2",
           password: "pass2",
           sslMode: "require" as const,
-        },
+        }),
       ];
 
       for (const dbConfig of databases) {
@@ -125,7 +112,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
   describe("Database Updates", () => {
     it("should update database without userId parameter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
         name: "updatable-database",
         host: "localhost",
         port: 5432,
@@ -133,7 +120,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
         username: "testuser",
         password: "testpass",
         sslMode: "prefer",
-      };
+      });
 
       const createdDatabase = await databaseConfigService.createDatabase(createRequest);
 
@@ -156,7 +143,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
   describe("Database Deletion", () => {
     it("should delete database without userId parameter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
         name: "deletable-database",
         host: "localhost",
         port: 5432,
@@ -164,7 +151,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
         username: "testuser",
         password: "testpass",
         sslMode: "prefer",
-      };
+      });
 
       const createdDatabase = await databaseConfigService.createDatabase(createRequest);
 
