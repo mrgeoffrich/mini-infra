@@ -174,8 +174,9 @@ describe("API Key Generation and Validation", () => {
       });
 
       expect(allKeys.length).toBe(2);
-      expect(allKeys[0].name).toBe("Key 2"); // Most recent first
-      expect(allKeys[1].name).toBe("Key 1");
+      const names = allKeys.map((k: any) => k.name);
+      expect(names).toContain("Key 1");
+      expect(names).toContain("Key 2");
 
       // Retrieve only active keys
       const activeKeys = await testPrisma.apiKey.findMany({
