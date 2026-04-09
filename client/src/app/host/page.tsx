@@ -1,4 +1,4 @@
-import { StacksList } from "@/components/environments/stacks-list";
+import { HostTemplatesList } from "@/components/host/host-templates-list";
 import { IconServer } from "@tabler/icons-react";
 
 export function HostPage() {
@@ -11,13 +11,12 @@ export function HostPage() {
         <div>
           <h1 className="text-2xl font-bold">Host</h1>
           <p className="text-sm text-muted-foreground">
-            Infrastructure stacks running at the host level, outside of any
-            environment
+            Host-level infrastructure templates and their deployments
           </p>
         </div>
       </div>
 
-      <StacksList scope="host" />
+      <HostTemplatesList />
     </div>
   );
 }

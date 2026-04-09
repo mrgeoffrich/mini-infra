@@ -112,7 +112,7 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
     const { environmentId, scope, source } = req.query;
-    const where: any = { status: { not: 'removed' } };
+    const where: any = {};
     if (scope === 'host') {
       where.environmentId = null;
     } else if (environmentId && typeof environmentId === 'string') {
@@ -1240,22 +1240,10 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           }
         }
 
-        // Step 6: Update stack DB records
+        // Step 6: Delete the stack record (cascades to deployments, services, resources)
         const duration = Date.now() - startTime;
-        await prisma.stackDeployment.create({
-          data: {
-            stackId,
-            action: 'destroy',
-            success: true,
-            status: 'removed',
-            duration,
-            triggeredBy: triggeredBy ?? null,
-          },
-        });
-
-        await prisma.stack.update({
+        await prisma.stack.delete({
           where: { id: stackId },
-          data: { status: 'removed', removedAt: new Date() },
         });
 
         // Build structured logs for the destroy result

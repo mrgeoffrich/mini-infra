@@ -12,11 +12,10 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useContainers, useContainerFilters } from "@/hooks/useContainers";
+import { useContainers } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useSocket } from "@/hooks/use-socket";
 import { ContainerTable } from "./ContainerTable";
-import { ContainerFilters } from "./ContainerFilters";
 import {
   IconAlertCircle,
   IconSettings,
@@ -32,8 +31,6 @@ interface ContainerGroup {
 
 export function ContainerDashboard() {
   const { formatDateTime } = useFormattedDate();
-  const filterState = useContainerFilters();
-  const { queryParams } = filterState;
   const { connected } = useSocket();
 
   // Check Docker connectivity first
@@ -58,7 +55,6 @@ export function ContainerDashboard() {
     isFetching,
     refetch,
   } = useContainers({
-    queryParams,
     enabled: isDockerConnected === true, // Only fetch when explicitly connected
   });
 
@@ -110,27 +106,44 @@ export function ContainerDashboard() {
   const containerGroups = React.useMemo((): ContainerGroup[] => {
     if (!containerData?.containers) return [];
 
-    const groups = new Map<string, ContainerGroup>();
+    const envGroups = new Map<string, ContainerGroup>();
+    const hostStackGroups = new Map<string, ContainerGroup>();
+    const selfContainers: any[] = [];
     const managedPostgresContainers: any[] = [];
     const unmanagedContainers: any[] = [];
 
     containerData.containers.forEach((container) => {
-      // Check if this is a managed PostgreSQL container
-      const isManagedPostgres = managedContainerIds.has(container.id);
-      
-      if (isManagedPostgres) {
+      const stackName = container.labels["mini-infra.stack"];
+
+      // Check if this is a Mini Infra container (main or sidecar)
+      if (container.selfRole) {
+        selfContainers.push(container);
+      } else if (managedContainerIds.has(container.id)) {
         managedPostgresContainers.push(container);
       } else if (container.environmentInfo) {
         const envId = container.environmentInfo.id;
-        if (!groups.has(envId)) {
-          groups.set(envId, {
+        if (!envGroups.has(envId)) {
+          envGroups.set(envId, {
             environmentId: envId,
             environmentName: container.environmentInfo.name,
             environmentType: container.environmentInfo.type,
             containers: [],
           });
         }
-        groups.get(envId)!.containers.push(container);
+        envGroups.get(envId)!.containers.push(container);
+      } else if (stackName) {
+        // Host-scoped stack containers (e.g. monitoring) — group by stack name
+        if (!hostStackGroups.has(stackName)) {
+          const displayName = stackName
+            .replace(/-/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase());
+          hostStackGroups.set(stackName, {
+            environmentId: `stack-${stackName}`,
+            environmentName: displayName,
+            containers: [],
+          });
+        }
+        hostStackGroups.get(stackName)!.containers.push(container);
       } else {
         unmanagedContainers.push(container);
       }
@@ -138,7 +151,19 @@ export function ContainerDashboard() {
 
     const result: ContainerGroup[] = [];
 
-    // Add managed Postgres servers group first if there are any
+    // Add Mini Infra group first if there are any
+    if (selfContainers.length > 0) {
+      result.push({
+        environmentId: "mini-infra",
+        environmentName: "Mini Infra",
+        containers: selfContainers,
+      });
+    }
+
+    // Add host-scoped stack groups (e.g. Monitoring)
+    result.push(...Array.from(hostStackGroups.values()));
+
+    // Add managed Postgres servers group if there are any
     if (managedPostgresContainers.length > 0) {
       result.push({
         environmentId: "managed-postgres",
@@ -148,7 +173,7 @@ export function ContainerDashboard() {
     }
 
     // Add environment groups
-    result.push(...Array.from(groups.values()));
+    result.push(...Array.from(envGroups.values()));
 
     // Add unmanaged containers group if there are any
     if (unmanagedContainers.length > 0) {
@@ -330,7 +355,6 @@ export function ContainerDashboard() {
     <div data-tour="containers-table">
       <Card>
           <CardContent className="space-y-4 pt-6">
-            <ContainerFilters {...filterState} />
 
             {isLoading && !containerData ? (
               <div className="space-y-2">
@@ -374,10 +398,7 @@ export function ContainerDashboard() {
                     </div>
                     <ContainerTable
                       containers={group.containers}
-                      totalCount={group.containers.length}
                       isLoading={isLoading || isFetching}
-                      filterState={filterState}
-                      showPagination={false}
                       postgresContainerIds={postgresContainerIds}
                       managedContainerIds={managedContainerIds}
                       managedContainerMap={managedContainerMap}

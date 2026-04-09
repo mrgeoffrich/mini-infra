@@ -23,39 +23,39 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ContainerInfo, ContainerFilters } from "@mini-infra/types";
+import { ContainerInfo } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { IconArrowsSort, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
+import { IconArrowsSort } from "@tabler/icons-react";
 import { ServerModal } from "@/components/postgres-server/server-modal";
 import { toast } from "sonner";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
-  totalCount: number;
   isLoading: boolean;
-  filterState: {
-    filters: ContainerFilters;
-    sortBy: string;
-    sortOrder: "asc" | "desc";
-    page: number;
-    limit: number;
-    updateSort: (field: string, order?: "asc" | "desc") => void;
-    setPage: (page: number) => void;
-    setLimit: (limit: number) => void;
-  };
   postgresContainerIds?: Set<string>;
   managedContainerIds?: Set<string>;
   managedContainerMap?: Record<string, string>; // container ID -> server ID
-  showPagination?: boolean;
 }
 
+const SELF_ROLE_LABELS: Record<string, string> = {
+  main: "Mini Infra",
+  "agent-sidecar": "Agent Sidecar",
+  "update-sidecar": "Update Sidecar",
+};
+
 const ContainerNameCell = React.memo(
-  ({ name }: { name: string }) => (
-    <div className="flex items-center min-h-[2rem]">
+  ({ name, selfRole }: { name: string; selfRole?: string }) => (
+    <div className="flex items-center gap-2 min-h-[2rem]">
       <span className="font-medium truncate">{name}</span>
+      {selfRole && SELF_ROLE_LABELS[selfRole] && (
+        <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded">
+          {SELF_ROLE_LABELS[selfRole]}
+        </span>
+      )}
     </div>
   ),
-  (prevProps, nextProps) => prevProps.name === nextProps.name,
+  (prevProps, nextProps) =>
+    prevProps.name === nextProps.name && prevProps.selfRole === nextProps.selfRole,
 );
 
 ContainerNameCell.displayName = "ContainerNameCell";
@@ -244,15 +244,23 @@ ContainerRow.displayName = "ContainerRow";
 
 export const ContainerTable = React.memo(function ContainerTable({
   containers,
-  totalCount,
   isLoading,
-  filterState,
-  showPagination = true,
   postgresContainerIds,
   managedContainerIds,
   managedContainerMap,
 }: ContainerTableProps) {
-  const { page, limit, setPage, updateSort, sortBy, sortOrder } = filterState;
+  const [sortBy, setSortBy] = React.useState("name");
+  const [sortOrder, setSortOrder] = React.useState<"asc" | "desc">("asc");
+  const updateSort = React.useCallback((field: string) => {
+    setSortBy((prev) => {
+      if (prev === field) {
+        setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+      } else {
+        setSortOrder("asc");
+      }
+      return field;
+    });
+  }, []);
   const navigate = useNavigate();
 
   // Modal state for adding postgres servers
@@ -346,7 +354,7 @@ export const ContainerTable = React.memo(function ContainerTable({
             <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
-        cell: ({ row }) => <ContainerNameCell name={row.getValue("name")} />,
+        cell: ({ row }) => <ContainerNameCell name={row.getValue("name")} selfRole={row.original.selfRole} />,
       },
       {
         accessorKey: "status",
@@ -447,15 +455,6 @@ export const ContainerTable = React.memo(function ContainerTable({
     },
   });
 
-  const totalPages = React.useMemo(
-    () => Math.ceil(totalCount / limit),
-    [totalCount, limit],
-  );
-  const startItem = React.useMemo(() => (page - 1) * limit + 1, [page, limit]);
-  const endItem = React.useMemo(
-    () => Math.min(page * limit, totalCount),
-    [page, limit, totalCount],
-  );
 
   // Fixed column widths to prevent layout shifts
   const getColumnWidth = React.useCallback((index: number) => {
@@ -474,15 +473,6 @@ export const ContainerTable = React.memo(function ContainerTable({
         return "";
     }
   }, []);
-
-  const handlePrevPage = React.useCallback(
-    () => setPage(page - 1),
-    [setPage, page],
-  );
-  const handleNextPage = React.useCallback(
-    () => setPage(page + 1),
-    [setPage, page],
-  );
 
   // Only show skeleton on initial load, not on refresh
   if (isLoading && containers.length === 0) {
@@ -547,108 +537,6 @@ export const ContainerTable = React.memo(function ContainerTable({
           </TableBody>
         </Table>
       </div>
-
-      {/* Pagination */}
-      {showPagination && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Showing {startItem} to {endItem} of {totalCount} containers
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrevPage}
-              disabled={page <= 1}
-            >
-              <IconChevronLeft className="h-4 w-4" />
-              Previous
-            </Button>
-
-            <div className="flex items-center gap-1">
-              {totalPages <= 7 ? (
-                // Show all pages if there are 7 or fewer
-                Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                  (pageNum) => (
-                    <Button
-                      key={pageNum}
-                      variant={page === pageNum ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setPage(pageNum)}
-                      className="w-8"
-                    >
-                      {pageNum}
-                    </Button>
-                  ),
-                )
-              ) : (
-                // Show abbreviated pagination for more than 7 pages
-                <>
-                  {page > 3 && (
-                    <>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(1)}
-                        className="w-8"
-                      >
-                        1
-                      </Button>
-                      {page > 4 && (
-                        <span className="text-muted-foreground">...</span>
-                      )}
-                    </>
-                  )}
-
-                  {Array.from(
-                    { length: Math.min(5, totalPages) },
-                    (_, i) => Math.max(1, Math.min(page - 2, totalPages - 4)) + i,
-                  )
-                    .filter((pageNum) => pageNum <= totalPages)
-                    .map((pageNum) => (
-                      <Button
-                        key={pageNum}
-                        variant={page === pageNum ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setPage(pageNum)}
-                        className="w-8"
-                      >
-                        {pageNum}
-                      </Button>
-                    ))}
-
-                  {page < totalPages - 2 && (
-                    <>
-                      {page < totalPages - 3 && (
-                        <span className="text-muted-foreground">...</span>
-                      )}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(totalPages)}
-                        className="w-8"
-                      >
-                        {totalPages}
-                      </Button>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNextPage}
-              disabled={page >= totalPages}
-            >
-              Next
-              <IconChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Server Modal for adding postgres server */}
       {isServerModalOpen && initialServerValues && (

@@ -92,6 +92,16 @@ export interface StackTemplateConfigFile {
 
 // API response types (string dates)
 
+export interface StackTemplateLinkedStack {
+  id: string;
+  name: string;
+  status: string;
+  version: number;
+  lastAppliedVersion: number | null;
+  lastAppliedAt: string | null;
+  environmentId: string | null;
+}
+
 export interface StackTemplateInfo {
   id: string;
   name: string;
@@ -109,6 +119,7 @@ export interface StackTemplateInfo {
   createdById: string | null;
   currentVersion?: StackTemplateVersionInfo | null;
   draftVersion?: StackTemplateVersionInfo | null;
+  linkedStacks?: StackTemplateLinkedStack[];
 }
 
 export interface StackTemplateVersionInfo {

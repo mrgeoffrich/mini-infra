@@ -44,11 +44,11 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
     return;
   }
 
-  // 1. Sync host-scoped templates (once globally)
+  // 1. Sync host-scoped templates (template rows only — stacks are created on user deploy)
   const hostTemplates = templates.filter((t) => t.scope === "host");
   for (const template of hostTemplates) {
     try {
-      const { templateId } = await templateService.upsertSystemTemplate({
+      await templateService.upsertSystemTemplate({
         name: template.name,
         displayName: template.displayName,
         scope: template.scope,
@@ -57,7 +57,6 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
         definition: template.definition as any,
         configFiles: template.configFiles,
       });
-      await syncStackFromTemplate(prisma, templateId, template, null, log);
     } catch (error) {
       log.error(
         { error, stackName: template.name },
@@ -174,7 +173,7 @@ async function syncStackFromTemplate(
   const parameterOverrides = networkTypeDefaults[networkType] ?? {};
 
   const existing = await prisma.stack.findFirst({
-    where: { name: template.name, environmentId, status: { not: 'removed' } },
+    where: { name: template.name, environmentId },
   });
 
   // No DB record → create
@@ -233,7 +232,7 @@ async function syncStackFromTemplate(
 
   // Apply environment-driven parameter overrides to existing non-running stacks
   // (e.g. expose-on-host=false for internet-facing HAProxy)
-  const canApplyOverrides = ["undeployed", "error", "pending"].includes(existing.status);
+  const canApplyOverrides = ["undeployed", "error", "pending", "removed"].includes(existing.status);
   if (Object.keys(parameterOverrides).length > 0 && canApplyOverrides) {
     const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
     const needsUpdate = Object.entries(parameterOverrides).some(

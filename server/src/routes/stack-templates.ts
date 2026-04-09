@@ -33,12 +33,13 @@ function handleTemplateError(error: unknown, res: any, fallbackMessage: string) 
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
     const service = getTemplateService();
-    const { source, scope, includeArchived } = req.query;
+    const { source, scope, includeArchived, includeLinkedStacks } = req.query;
 
     const templates = await service.listTemplates({
       source: source as any,
       scope: scope as any,
       includeArchived: includeArchived === 'true',
+      includeLinkedStacks: includeLinkedStacks === 'true',
     });
 
     res.json({ success: true, data: templates });

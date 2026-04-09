@@ -338,22 +338,39 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       logger.info({ dockerHostIp }, "Docker host IP saved during setup");
     }
 
-    // Apply the dataplane-network stack (fire-and-forget) so HAProxy can communicate
+    // Instantiate and apply the dataplane-network stack (fire-and-forget) so HAProxy can communicate
     try {
-      const dataplaneStack = await prisma.stack.findFirst({
-        where: { name: "dataplane-network" },
+      const { StackTemplateService: TemplateService } = await import("../services/stacks/stack-template-service");
+      const { DockerExecutorService } = await import("../services/docker-executor");
+      const { StackReconciler } = await import("../services/stacks/stack-reconciler");
+
+      const dataplaneTemplate = await prisma.stackTemplate.findFirst({
+        where: { name: "dataplane-network", source: "system" },
       });
-      if (dataplaneStack) {
-        const { DockerExecutorService } = await import("../services/docker-executor");
-        const { StackReconciler } = await import("../services/stacks/stack-reconciler");
+      if (dataplaneTemplate) {
+        const templateService = new TemplateService(prisma);
+
+        // Check if a stack already exists for this template (e.g. from a previous setup attempt)
+        const existingStack = await prisma.stack.findFirst({
+          where: { templateId: dataplaneTemplate.id, environmentId: null },
+          select: { id: true },
+        });
+        let stackId = existingStack?.id;
+        if (!stackId) {
+          const newStack = await templateService.createStackFromTemplate({
+            templateId: dataplaneTemplate.id,
+          }, "system");
+          stackId = newStack.id;
+          logger.info({ stackId }, "Instantiated dataplane-network stack from template during setup");
+        }
 
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
         const reconciler = new StackReconciler(dockerExecutor, prisma);
 
         // Run in background — don't block setup completion
-        reconciler.apply(dataplaneStack.id, { triggeredBy: "system" })
-          .then((result) => logger.info({ stackId: dataplaneStack.id, success: result.success }, "dataplane-network stack applied during setup"))
+        reconciler.apply(stackId, { triggeredBy: "system" })
+          .then((result) => logger.info({ stackId, success: result.success }, "dataplane-network stack applied during setup"))
           .catch((err) => logger.warn({ error: (err as Error).message }, "Failed to apply dataplane-network stack during setup (non-fatal)"));
       }
     } catch (err) {
