@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shlex
 import sys
 import subprocess
 from urllib.parse import urlparse
@@ -20,8 +21,8 @@ def prepare_postgres_variables():
     # Set PGPASSWORD environment variable
     os.environ["PGPASSWORD"] = postgres_password
     
-    # Prepare host options string
-    postgres_host_opts = f"-h {postgres_host} -p {postgres_port} -U {postgres_user} {postgres_extra_opts}".strip()
+    # Prepare host options string (quote values to prevent shell injection)
+    postgres_host_opts = f"-h {shlex.quote(postgres_host)} -p {shlex.quote(postgres_port)} -U {shlex.quote(postgres_user)} {postgres_extra_opts}".strip()
     os.environ["POSTGRES_HOST_OPTS"] = postgres_host_opts
     
     return postgres_host_opts

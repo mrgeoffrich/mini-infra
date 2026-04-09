@@ -1,2 +1,1 @@
-requests
-azure-storage-blob
+azure-storage-blob>=12.28.0,<13
