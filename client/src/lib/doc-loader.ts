@@ -1,6 +1,38 @@
-import fm from "front-matter";
 import docsStructure from "../user-docs/docs-structure.yaml";
 import docsQuestions from "../user-docs/docs-questions.yaml";
+
+/** Minimal front-matter parser — replaces the `front-matter` npm package. */
+function parseFrontMatter<T>(raw: string): { attributes: T; body: string } {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) return { attributes: {} as T, body: raw };
+
+  const attrs: Record<string, unknown> = {};
+  const lines = match[1].split("\n");
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const idx = line.indexOf(":");
+    if (idx === -1) { i++; continue; }
+    const key = line.slice(0, idx).trim();
+    const rest = line.slice(idx + 1).trim();
+
+    if (rest === "") {
+      // Could be a YAML block list — collect "  - value" lines
+      const items: string[] = [];
+      while (i + 1 < lines.length && lines[i + 1].match(/^\s+-\s/)) {
+        i++;
+        items.push(lines[i].replace(/^\s+-\s+/, ""));
+      }
+      attrs[key] = items.length > 0 ? items : "";
+    } else if (rest.startsWith("[") && rest.endsWith("]")) {
+      attrs[key] = rest.slice(1, -1).split(",").map((s) => s.trim());
+    } else {
+      attrs[key] = rest;
+    }
+    i++;
+  }
+  return { attributes: attrs as T, body: match[2] };
+}
 
 export interface DocFrontmatter {
   title: string;
@@ -73,7 +105,7 @@ function buildRawMap(): Map<string, DocEntry> {
     const slug = parts[parts.length - 1];
     const key = `${category}/${slug}`;
 
-    const { attributes, body } = fm<DocFrontmatter>(raw);
+    const { attributes, body } = parseFrontMatter<DocFrontmatter>(raw);
 
     map.set(key, {
       slug,
