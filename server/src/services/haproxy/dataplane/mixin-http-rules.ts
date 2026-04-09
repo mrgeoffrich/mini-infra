@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor } from './types';
 
@@ -19,12 +19,12 @@ export function HttpRulesMixin<TBase extends HAProxyBaseConstructor>(Base: TBase
      */
     async getHttpRequestRules(frontendName: string): Promise<HttpRequestRule[]> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/configuration/frontends/${frontendName}/http_request_rules`
         );
         return response.data || [];
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return [];
         }
         this.handleApiError(error, 'get http request rules', { frontendName });
@@ -60,7 +60,7 @@ export function HttpRulesMixin<TBase extends HAProxyBaseConstructor>(Base: TBase
       const newRule: HttpRequestRule = { ...rule, index: existing.length };
       const updated = [...existing, newRule];
 
-      await this.axiosInstance.put(
+      await this.httpClient.put(
         `/services/haproxy/configuration/frontends/${frontendName}/http_request_rules?version=${version}&force_reload=true`,
         updated
       );

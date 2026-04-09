@@ -17,11 +17,11 @@ export class TransactionManager {
     const transaction = await this.client.beginTransaction();
 
     try {
-      // Override the axios instance to include transaction_id in all requests
-      const originalGet = this.client.axiosInstance.get;
-      const originalPost = this.client.axiosInstance.post;
-      const originalPut = this.client.axiosInstance.put;
-      const originalDelete = this.client.axiosInstance.delete;
+      // Override the http client methods to include transaction_id in all requests
+      const originalGet = this.client.httpClient.get;
+      const originalPost = this.client.httpClient.post;
+      const originalPut = this.client.httpClient.put;
+      const originalDelete = this.client.httpClient.delete;
       const originalAddServer = this.client.addServer;
 
       // Override addServer to use non-transactional version
@@ -30,20 +30,20 @@ export class TransactionManager {
       };
 
       // Add transaction_id to all requests, but skip transaction-related endpoints
-      (this.client.axiosInstance.get as any) = (url: string, config?: any) => {
-        return originalGet.call(this.client.axiosInstance, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
+      (this.client.httpClient.get as any) = (url: string, config?: any) => {
+        return originalGet.call(this.client.httpClient, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 
-      (this.client.axiosInstance.post as any) = (url: string, data?: any, config?: any) => {
-        return originalPost.call(this.client.axiosInstance, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
+      (this.client.httpClient.post as any) = (url: string, data?: any, config?: any) => {
+        return originalPost.call(this.client.httpClient, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
-      (this.client.axiosInstance.put as any) = (url: string, data?: any, config?: any) => {
-        return originalPut.call(this.client.axiosInstance, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
+      (this.client.httpClient.put as any) = (url: string, data?: any, config?: any) => {
+        return originalPut.call(this.client.httpClient, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, data, config);
       };
 
-      (this.client.axiosInstance.delete as any) = (url: string, config?: any) => {
-        return originalDelete.call(this.client.axiosInstance, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
+      (this.client.httpClient.delete as any) = (url: string, config?: any) => {
+        return originalDelete.call(this.client.httpClient, this.shouldUseTransaction(url) ? this.withTransaction(transaction, url) : url, config);
       };
 
       try {
@@ -52,10 +52,10 @@ export class TransactionManager {
         return result;
       } finally {
         // Restore original methods
-        this.client.axiosInstance.get = originalGet;
-        this.client.axiosInstance.post = originalPost;
-        this.client.axiosInstance.put = originalPut;
-        this.client.axiosInstance.delete = originalDelete;
+        this.client.httpClient.get = originalGet;
+        this.client.httpClient.post = originalPost;
+        this.client.httpClient.put = originalPut;
+        this.client.httpClient.delete = originalDelete;
         this.client.addServer = originalAddServer;
       }
     } catch (error) {

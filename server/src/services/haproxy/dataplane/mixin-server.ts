@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, ServerConfig, Server } from './types';
 
@@ -36,7 +36,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
         const transaction = await this.beginTransaction();
 
         try {
-          await this.axiosInstance.post(
+          await this.httpClient.post(
             `/services/haproxy/configuration/backends/${backendName}/servers?transaction_id=${transaction}`,
             serverData
           );
@@ -69,7 +69,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
         // Use version-based approach (for use within external transactions)
         try {
           const version = await this.getVersion();
-          await this.axiosInstance.post(
+          await this.httpClient.post(
             `/services/haproxy/configuration/backends/${backendName}/servers?version=${version}`,
             serverData
           );
@@ -99,7 +99,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async enableServer(backendName: string, serverName: string): Promise<void> {
       try {
-        await this.axiosInstance.put(
+        await this.httpClient.put(
           `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
           { admin_state: 'ready' }
         );
@@ -118,7 +118,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async disableServer(backendName: string, serverName: string): Promise<void> {
       try {
-        await this.axiosInstance.put(
+        await this.httpClient.put(
           `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
           { admin_state: 'maint' }
         );
@@ -137,7 +137,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async setServerState(backendName: string, serverName: string, state: 'ready' | 'maint' | 'drain'): Promise<void> {
       try {
-        await this.axiosInstance.put(
+        await this.httpClient.put(
           `/services/haproxy/runtime/backends/${backendName}/servers/${serverName}`,
           { admin_state: state }
         );
@@ -156,12 +156,12 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
      */
     async listServers(backendName: string): Promise<Server[]> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/configuration/backends/${backendName}/servers`
         );
         return Array.isArray(response.data) ? response.data : [];
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return [];
         }
         this.handleApiError(error, 'list servers', { backendName });
@@ -175,7 +175,7 @@ export function ServerMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
     async deleteServer(backendName: string, serverName: string): Promise<void> {
       try {
         const version = await this.getVersion();
-        await this.axiosInstance.delete(
+        await this.httpClient.delete(
           `/services/haproxy/configuration/backends/${backendName}/servers/${serverName}?version=${version}`
         );
 

@@ -624,7 +624,7 @@ export class ManualFrontendManager {
           if (frontend.backendName) {
             logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
             try {
-              await haproxyClient["axiosInstance"].delete(
+              await haproxyClient["httpClient"].delete(
                 `/services/haproxy/configuration/backends/${frontend.backendName}`
               );
             } catch (error: any) {
@@ -644,7 +644,7 @@ export class ManualFrontendManager {
           logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
           try {
             const version = await haproxyClient.getVersion();
-            await haproxyClient["axiosInstance"].delete(
+            await haproxyClient["httpClient"].delete(
               `/services/haproxy/configuration/backends/${frontend.backendName}?version=${version}`
             );
           } catch (error: any) {

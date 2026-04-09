@@ -324,7 +324,7 @@ export class HAProxyFrontendManager {
     try {
       const version = await haproxyClient.getVersion();
 
-      await haproxyClient["axiosInstance"].delete(
+      await haproxyClient["httpClient"].delete(
         `/services/haproxy/configuration/frontends/${frontendName}?version=${version}`
       );
 
@@ -399,7 +399,7 @@ export class HAProxyFrontendManager {
         cond_test: aclName,
       };
 
-      await haproxyClient["axiosInstance"].put(
+      await haproxyClient["httpClient"].put(
         `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules/${ruleIndex}?version=${version}`,
         ruleData
       );
@@ -519,7 +519,7 @@ export class HAProxyFrontendManager {
     haproxyClient: HAProxyDataPlaneClient
   ): Promise<any | null> {
     try {
-      const response = await haproxyClient["axiosInstance"].get(
+      const response = await haproxyClient["httpClient"].get(
         `/services/haproxy/configuration/frontends/${frontendName}`
       );
 

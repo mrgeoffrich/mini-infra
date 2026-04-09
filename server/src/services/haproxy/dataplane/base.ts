@@ -1,4 +1,4 @@
-import axios, { AxiosInstance } from 'axios';
+import { HttpClient, HttpError, createHttpClient, isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
@@ -11,7 +11,7 @@ const logger = loadbalancerLogger();
 // ====================
 
 export class HAProxyDataPlaneClientBase {
-  axiosInstance: AxiosInstance;
+  httpClient: HttpClient;
   private dockerService: DockerService;
   private endpointInfo: HAProxyEndpointInfo | null = null;
   private username = 'admin';
@@ -20,8 +20,8 @@ export class HAProxyDataPlaneClientBase {
   constructor() {
     this.dockerService = DockerService.getInstance();
 
-    // Initialize axios instance with defaults
-    this.axiosInstance = axios.create({
+    // Initialize http client with defaults
+    this.httpClient = createHttpClient({
       timeout: 10000,
       headers: {
         'Content-Type': 'application/json',
@@ -47,9 +47,9 @@ export class HAProxyDataPlaneClientBase {
       // Discover HAProxy endpoint
       this.endpointInfo = await this.discoverHAProxyEndpoint(haproxyContainerId);
 
-      // Configure axios instance with discovered endpoint
-      this.axiosInstance.defaults.baseURL = this.endpointInfo.baseUrl;
-      this.axiosInstance.defaults.auth = {
+      // Configure http client with discovered endpoint
+      this.httpClient.defaults.baseURL = this.endpointInfo.baseUrl;
+      this.httpClient.defaults.auth = {
         username: this.username,
         password: this.password
       };
@@ -165,7 +165,7 @@ export class HAProxyDataPlaneClientBase {
    */
   private async testConnection(): Promise<void> {
     try {
-      const response = await this.axiosInstance.get('/info');
+      const response = await this.httpClient.get('/info');
 
       if (response.status !== 200) {
         throw new Error(`DataPlane API health check failed with status ${response.status}`);
@@ -180,7 +180,7 @@ export class HAProxyDataPlaneClientBase {
         'DataPlane API connection test successful'
       );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
+      if (isHttpError(error)) {
         const message = error.response?.data?.message || error.message;
         throw new Error(`DataPlane API connection failed: ${message}`);
       }
@@ -197,7 +197,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async getVersion(): Promise<number> {
     try {
-      const response = await this.axiosInstance.get('/services/haproxy/configuration/version');
+      const response = await this.httpClient.get('/services/haproxy/configuration/version');
       // API returns plain number, not an object
       return typeof response.data === 'number' ? response.data : parseInt(response.data, 10);
     } catch (error) {
@@ -216,7 +216,7 @@ export class HAProxyDataPlaneClientBase {
   async beginTransaction(): Promise<string> {
     try {
       const version = await this.getVersion();
-      const response = await this.axiosInstance.post(`/services/haproxy/transactions?version=${version}`, {
+      const response = await this.httpClient.post(`/services/haproxy/transactions?version=${version}`, {
         version
       });
 
@@ -239,7 +239,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async commitTransaction(transactionId: string): Promise<void> {
     try {
-      await this.axiosInstance.put(`/services/haproxy/transactions/${transactionId}`, {
+      await this.httpClient.put(`/services/haproxy/transactions/${transactionId}`, {
         force_reload: true
       });
 
@@ -257,7 +257,7 @@ export class HAProxyDataPlaneClientBase {
    */
   async rollbackTransaction(transactionId: string): Promise<void> {
     try {
-      await this.axiosInstance.delete(`/services/haproxy/transactions/${transactionId}`);
+      await this.httpClient.delete(`/services/haproxy/transactions/${transactionId}`);
 
       logger.info(
         { transactionId },
@@ -290,7 +290,7 @@ export class HAProxyDataPlaneClientBase {
    * Handle API errors consistently
    */
   handleApiError(error: unknown, operation: string, context?: Record<string, any>): void {
-    if (axios.isAxiosError(error)) {
+    if (isHttpError(error)) {
       const status = error.response?.status;
       const message = error.response?.data?.message || error.message;
       const errorDetails = {

@@ -338,7 +338,7 @@ router.patch(
 
           // Use DataPlane API to update backend
           const version = await haproxyClient.getVersion();
-          await (haproxyClient as any).axiosInstance.put(
+          await (haproxyClient as any).httpClient.put(
             `/services/haproxy/configuration/backends/${backendName}?version=${version}`,
             haproxyUpdate
           );
@@ -613,7 +613,7 @@ router.patch(
           runtimePayload.operational_state = effectiveEnabled ? "up" : "down";
           runtimePayload.admin_state = effectiveMaintenance ? "maint" : "ready";
 
-          await (haproxyClient as any).axiosInstance.put(
+          await (haproxyClient as any).httpClient.put(
             `/services/haproxy/runtime/servers/${backendName}/${serverName}`,
             runtimePayload
           );

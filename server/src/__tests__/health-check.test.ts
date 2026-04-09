@@ -1,21 +1,9 @@
-import axios, { AxiosResponse, AxiosError } from "axios";
+import { HttpError } from "../lib/http-client";
 import {
   HealthCheckService,
   HealthCheckConfig,
   HealthCheckResult,
 } from "../services/health-check";
-
-// Mock axios
-vi.mock("axios");
-const mockedAxios = axios as Mocked<typeof axios>;
-
-// Mock axios.isAxiosError
-Object.defineProperty(axios, 'isAxiosError', {
-  value: vi.fn((error: any) => {
-    return error && error.isAxiosError === true;
-  }),
-  writable: true,
-});
 
 // Mock logger factory
 vi.mock("../lib/logger-factory.ts", () => ({
@@ -36,15 +24,18 @@ vi.mock("../lib/logger-factory.ts", () => ({
 describe("HealthCheckService", () => {
   let healthCheckService: HealthCheckService;
   let mockStartTime: number;
+  let mockGet: ReturnType<typeof vi.fn>;
+  let mockPost: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     healthCheckService = new HealthCheckService();
     vi.clearAllMocks();
-    
-    // Setup axios defaults mock
-    mockedAxios.defaults = {
-      timeout: 10000,
-    } as any;
+
+    // Replace httpClient methods with mocks
+    mockGet = vi.fn();
+    mockPost = vi.fn();
+    (healthCheckService as any).httpClient.get = mockGet;
+    (healthCheckService as any).httpClient.post = mockPost;
 
     // Mock Date.now() for consistent response time testing - default 150ms response
     mockStartTime = 1000;
@@ -67,37 +58,28 @@ describe("HealthCheckService", () => {
     vi.restoreAllMocks();
   });
 
-  // Helper function to create a mock axios response
+  // Helper function to create a mock HTTP response
   const createMockResponse = (
     status: number,
     data: any = "OK",
-    headers: any = {}
-  ): AxiosResponse => ({
+  ) => ({
     data,
     status,
     statusText: `Status ${status}`,
-    headers,
-    config: {} as any,
-    request: {} as any,
   });
 
-  // Helper function to create a mock axios error
-  const createMockAxiosError = (
+  // Helper function to create a mock HttpError (network error, no response)
+  const createMockNetworkError = (
     code: string,
     message: string = "Network Error"
-  ): AxiosError => {
-    const error = new Error(message) as AxiosError;
-    error.code = code;
-    error.isAxiosError = true;
-    error.name = "AxiosError";
-    error.response = undefined; // Ensure no response object for connection errors
-    return error;
+  ): HttpError => {
+    return new HttpError(message, { code });
   };
 
   describe("Basic Health Checks", () => {
     it("should perform successful basic health check", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -110,14 +92,13 @@ describe("HealthCheckService", () => {
       expect(result.responseBody).toBe("OK");
       expect(result.errorMessage).toBeUndefined();
 
-      expect(mockedAxios).toHaveBeenCalledWith({
-        method: "GET",
-        url: "http://example.com/health",
-        headers: undefined,
-        timeout: 5000,
-        validateStatus: expect.any(Function),
-        maxRedirects: 5,
-      });
+      expect(mockGet).toHaveBeenCalledWith(
+        "http://example.com/health",
+        expect.objectContaining({
+          timeout: 5000,
+          validateStatus: expect.any(Function),
+        }),
+      );
     });
 
     it("should fail basic health check for non-200 status", async () => {
@@ -128,9 +109,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       const mockResponse = createMockResponse(500, "Internal Server Error");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -149,9 +130,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
-      const error = createMockAxiosError("ECONNREFUSED", "Connection refused");
-      mockedAxios.mockRejectedValueOnce(error);
+
+      const error = createMockNetworkError("ECONNREFUSED", "Connection refused");
+      mockGet.mockRejectedValueOnce(error);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -172,9 +153,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
-      const error = createMockAxiosError("ETIMEDOUT", "Request timeout");
-      mockedAxios.mockRejectedValueOnce(error);
+
+      const error = createMockNetworkError("ETIMEDOUT", "Request timeout");
+      mockGet.mockRejectedValueOnce(error);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -192,9 +173,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
-      const error = createMockAxiosError("ENOTFOUND", "DNS resolution failed");
-      mockedAxios.mockRejectedValueOnce(error);
+
+      const error = createMockNetworkError("ENOTFOUND", "DNS resolution failed");
+      mockGet.mockRejectedValueOnce(error);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -208,7 +189,7 @@ describe("HealthCheckService", () => {
   describe("Comprehensive Health Checks", () => {
     it("should perform successful comprehensive health check", async () => {
       const mockResponse = createMockResponse(200, { status: "healthy" });
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -231,7 +212,7 @@ describe("HealthCheckService", () => {
 
     it("should validate status codes correctly", async () => {
       const mockResponse = createMockResponse(201, "Created");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -252,9 +233,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       const mockResponse = createMockResponse(404, "Not Found");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -270,7 +251,7 @@ describe("HealthCheckService", () => {
 
     it("should validate response body patterns", async () => {
       const mockResponse = createMockResponse(200, '{"status":"healthy","uptime":123}');
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -291,9 +272,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       const mockResponse = createMockResponse(200, '{"status":"unhealthy"}');
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -308,14 +289,14 @@ describe("HealthCheckService", () => {
 
     it("should validate response time threshold", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      
+
       // Mock slow response time (200ms)
       vi.spyOn(Date, 'now').mockRestore();
       vi.spyOn(Date, 'now')
         .mockReturnValueOnce(1000) // Start time
         .mockReturnValueOnce(1200); // End time (200ms response)
-      
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -338,9 +319,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -357,11 +338,11 @@ describe("HealthCheckService", () => {
 
   describe("Retry Logic", () => {
     it("should retry failed requests", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
+      const error = createMockNetworkError("ECONNREFUSED");
       const mockResponse = createMockResponse(200, "OK");
 
       // First two calls fail, third succeeds
-      mockedAxios
+      mockGet
         .mockRejectedValueOnce(error)
         .mockRejectedValueOnce(error)
         .mockResolvedValueOnce(mockResponse);
@@ -375,12 +356,12 @@ describe("HealthCheckService", () => {
       const result = await healthCheckService.performHealthCheck(config);
 
       expect(result.success).toBe(true);
-      expect(mockedAxios).toHaveBeenCalledTimes(3);
+      expect(mockGet).toHaveBeenCalledTimes(3);
     });
 
     it("should fail after all retries exhausted", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -391,12 +372,12 @@ describe("HealthCheckService", () => {
       const result = await healthCheckService.performHealthCheck(config);
 
       expect(result.success).toBe(false);
-      expect(mockedAxios).toHaveBeenCalledTimes(3); // Initial + 2 retries
+      expect(mockGet).toHaveBeenCalledTimes(3); // Initial + 2 retries
     });
 
     it("should use exponential backoff for retries", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -409,16 +390,16 @@ describe("HealthCheckService", () => {
         .mockReturnValueOnce(1000).mockReturnValueOnce(1150) // First attempt (150ms)
         .mockReturnValueOnce(2000).mockReturnValueOnce(2150) // Second attempt (150ms)
         .mockReturnValueOnce(3000).mockReturnValueOnce(3150); // Third attempt (150ms)
-      
+
       const result = await healthCheckService.performHealthCheck(config);
-      
+
       expect(result.success).toBe(false);
-      expect(mockedAxios).toHaveBeenCalledTimes(3); // Initial + 2 retries
+      expect(mockGet).toHaveBeenCalledTimes(3); // Initial + 2 retries
     });
 
     it("should not retry on successful first attempt", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -428,7 +409,7 @@ describe("HealthCheckService", () => {
       const result = await healthCheckService.performHealthCheck(config);
 
       expect(result.success).toBe(true);
-      expect(mockedAxios).toHaveBeenCalledTimes(1);
+      expect(mockGet).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -436,9 +417,9 @@ describe("HealthCheckService", () => {
     it("should open circuit breaker after consecutive failures", async () => {
       // Reset Date.now() mock to allow circuit breaker timing to work properly
       vi.spyOn(Date, 'now').mockRestore();
-      
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -460,13 +441,13 @@ describe("HealthCheckService", () => {
       expect(result.success).toBe(false);
       expect(result.errorMessage).toContain("Circuit breaker open");
 
-      // Axios should not be called for the blocked request
-      expect(mockedAxios).toHaveBeenCalledTimes(5);
+      // mockGet should not be called for the blocked request
+      expect(mockGet).toHaveBeenCalledTimes(5);
     });
 
     it("should transition to half-open after cooldown period", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -485,16 +466,16 @@ describe("HealthCheckService", () => {
       breaker.nextRetryTime = new Date(Date.now() - 1000); // Past time
 
       // Next request should attempt the call (half-open)
-      mockedAxios.mockClear();
-      mockedAxios.mockRejectedValueOnce(error);
+      mockGet.mockClear();
+      mockGet.mockRejectedValueOnce(error);
 
       await healthCheckService.performHealthCheck(config);
 
-      expect(mockedAxios).toHaveBeenCalledTimes(1);
+      expect(mockGet).toHaveBeenCalledTimes(1);
     });
 
     it("should close circuit breaker on successful request", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
+      const error = createMockNetworkError("ECONNREFUSED");
       const mockResponse = createMockResponse(200, "OK");
 
       const config: HealthCheckConfig = {
@@ -503,13 +484,13 @@ describe("HealthCheckService", () => {
       };
 
       // Make some failures first
-      mockedAxios.mockRejectedValue(error);
+      mockGet.mockRejectedValue(error);
       for (let i = 0; i < 3; i++) {
         await healthCheckService.performHealthCheck(config);
       }
 
       // Now make successful request
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
       await healthCheckService.performHealthCheck(config);
 
       const status = healthCheckService.getCircuitBreakerStatus(config.endpoint);
@@ -518,8 +499,8 @@ describe("HealthCheckService", () => {
     });
 
     it("should handle different endpoints independently", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config1: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -544,8 +525,8 @@ describe("HealthCheckService", () => {
     });
 
     it("should reset circuit breaker manually", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -566,8 +547,8 @@ describe("HealthCheckService", () => {
     });
 
     it("should get all circuit breaker statuses", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const endpoints = [
         "http://example.com/health",
@@ -598,7 +579,7 @@ describe("HealthCheckService", () => {
   describe("Progressive Health Checks", () => {
     it("should perform basic check first, then comprehensive", async () => {
       const mockResponse = createMockResponse(200, { status: "healthy" });
-      mockedAxios.mockResolvedValue(mockResponse);
+      mockGet.mockResolvedValue(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -608,12 +589,12 @@ describe("HealthCheckService", () => {
       const result = await healthCheckService.performProgressiveHealthCheck(config);
 
       expect(result.success).toBe(true);
-      expect(mockedAxios).toHaveBeenCalledTimes(2); // Basic + comprehensive
+      expect(mockGet).toHaveBeenCalledTimes(2); // Basic + comprehensive
     });
 
     it("should stop at basic check if it fails", async () => {
-      const error = createMockAxiosError("ECONNREFUSED");
-      mockedAxios.mockRejectedValue(error);
+      const error = createMockNetworkError("ECONNREFUSED");
+      mockGet.mockRejectedValue(error);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -623,7 +604,7 @@ describe("HealthCheckService", () => {
       const result = await healthCheckService.performProgressiveHealthCheck(config);
 
       expect(result.success).toBe(false);
-      expect(mockedAxios).toHaveBeenCalledTimes(1); // Basic check with 0 retries
+      expect(mockGet).toHaveBeenCalledTimes(1); // Basic check with 0 retries
     });
   });
 
@@ -672,7 +653,7 @@ describe("HealthCheckService", () => {
   });
 
   describe("Error Handling", () => {
-    it("should handle different axios error types correctly", async () => {
+    it("should handle different http error types correctly", async () => {
       // Reset Date.now() mock for this specific test
       vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
@@ -680,10 +661,10 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       // Test ECONNRESET error
-      const resetError = createMockAxiosError("ECONNRESET", "Connection reset");
-      mockedAxios.mockRejectedValueOnce(resetError);
+      const resetError = createMockNetworkError("ECONNRESET", "Connection reset");
+      mockGet.mockRejectedValueOnce(resetError);
 
       const result1 = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -693,8 +674,8 @@ describe("HealthCheckService", () => {
       expect(result1.errorMessage).toContain("Connection reset by server");
 
       // Test unknown error type
-      const unknownError = createMockAxiosError("UNKNOWN_ERROR", "Network Error");
-      mockedAxios.mockRejectedValueOnce(unknownError);
+      const unknownError = createMockNetworkError("UNKNOWN_ERROR", "Network Error");
+      mockGet.mockRejectedValueOnce(unknownError);
 
       const result2 = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health2"
@@ -704,7 +685,7 @@ describe("HealthCheckService", () => {
       expect(result2.errorMessage).toBe("Network Error");
     });
 
-    it("should handle non-axios errors", async () => {
+    it("should handle non-http errors", async () => {
       // Reset Date.now() mock for this specific test
       vi.spyOn(Date, 'now').mockRestore();
       let callCount = 0;
@@ -712,11 +693,9 @@ describe("HealthCheckService", () => {
         callCount++;
         return callCount % 2 === 1 ? mockStartTime : mockStartTime + 150;
       });
-      
+
       const error = new Error("Generic error");
-      // Make sure it's not treated as axios error
-      (error as any).isAxiosError = false;
-      mockedAxios.mockRejectedValueOnce(error);
+      mockGet.mockRejectedValueOnce(error);
 
       const result = await healthCheckService.performBasicHealthCheck(
         "http://example.com/health"
@@ -730,7 +709,7 @@ describe("HealthCheckService", () => {
   describe("Configuration Defaults", () => {
     it("should use default values when not specified", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
@@ -738,9 +717,9 @@ describe("HealthCheckService", () => {
 
       await healthCheckService.performHealthCheck(config);
 
-      expect(mockedAxios).toHaveBeenCalledWith(
+      expect(mockGet).toHaveBeenCalledWith(
+        "http://example.com/health",
         expect.objectContaining({
-          method: "GET",
           timeout: 10000,
         })
       );
@@ -748,20 +727,20 @@ describe("HealthCheckService", () => {
 
     it("should override defaults with provided values", async () => {
       const mockResponse = createMockResponse(200, "OK");
-      mockedAxios.mockResolvedValueOnce(mockResponse);
+      mockGet.mockResolvedValueOnce(mockResponse);
 
       const config: HealthCheckConfig = {
         endpoint: "http://example.com/health",
-        method: "POST",
+        method: "GET",
         timeout: 5000,
         headers: { "Content-Type": "application/json" },
       };
 
       await healthCheckService.performHealthCheck(config);
 
-      expect(mockedAxios).toHaveBeenCalledWith(
+      expect(mockGet).toHaveBeenCalledWith(
+        "http://example.com/health",
         expect.objectContaining({
-          method: "POST",
           timeout: 5000,
           headers: { "Content-Type": "application/json" },
         })

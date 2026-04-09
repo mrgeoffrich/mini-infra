@@ -740,15 +740,15 @@ describe('HAProxyDataPlaneClient Integration Tests', () => {
       await timeoutClient.initialize(testContainerId);
 
       // Override the base URL to point to an unreachable endpoint to force timeout
-      const originalBaseURL = (timeoutClient as any).axiosInstance.defaults.baseURL;
-      (timeoutClient as any).axiosInstance.defaults.baseURL = 'http://10.255.255.1:9999/v3'; // non-routable IP
-      (timeoutClient as any).axiosInstance.defaults.timeout = 100; // 100ms timeout
+      const originalBaseURL = (timeoutClient as any).httpClient.defaults.baseURL;
+      (timeoutClient as any).httpClient.defaults.baseURL = 'http://10.255.255.1:9999/v3'; // non-routable IP
+      (timeoutClient as any).httpClient.defaults.timeout = 100; // 100ms timeout
 
       // Use getVersion() instead of listBackends() since listBackends() catches errors
       await expect(timeoutClient.getVersion()).rejects.toThrow();
 
       // Restore original URL for cleanup
-      (timeoutClient as any).axiosInstance.defaults.baseURL = originalBaseURL;
+      (timeoutClient as any).httpClient.defaults.baseURL = originalBaseURL;
     }, 10000);
 
     it('should handle invalid operations gracefully', async () => {

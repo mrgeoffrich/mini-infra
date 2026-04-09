@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor } from './types';
 
@@ -11,13 +11,13 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
      */
     async getBackendSwitchingRules(frontendName: string): Promise<any[]> {
       try {
-        const response = await this.axiosInstance.get(
+        const response = await this.httpClient.get(
           `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules`
         );
 
         return response.data || [];
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           return [];
         }
         this.handleApiError(error, 'get backend switching rules', { frontendName });
@@ -69,7 +69,7 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
         const updatedRules = [...existingRules, newRule];
 
         // Replace the entire rule list
-        await this.axiosInstance.put(
+        await this.httpClient.put(
           `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules?version=${version}&force_reload=true`,
           updatedRules
         );
@@ -89,7 +89,7 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
     async deleteBackendSwitchingRule(frontendName: string, index: number): Promise<void> {
       try {
         const version = await this.getVersion();
-        await this.axiosInstance.delete(
+        await this.httpClient.delete(
           `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules/${index}?version=${version}`
         );
 
@@ -98,7 +98,7 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
           'Deleted backend switching rule from frontend successfully'
         );
       } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 404) {
+        if (isHttpError(error) && error.response?.status === 404) {
           logger.warn({ frontendName, index }, 'Backend switching rule not found, already deleted');
           return;
         }

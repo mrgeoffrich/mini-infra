@@ -1,4 +1,4 @@
-import { AxiosInstance } from 'axios';
+import { HttpClient } from '../../../lib/http-client';
 
 // ====================
 // Mixin Type Helpers
@@ -8,7 +8,7 @@ import { AxiosInstance } from 'axios';
 export type Constructor<T = {}> = new (...args: any[]) => T;
 
 export interface IHAProxyClientBase {
-  axiosInstance: AxiosInstance;
+  httpClient: HttpClient;
   handleApiError(error: unknown, operation: string, context?: Record<string, any>): void;
   getVersion(): Promise<number>;
   beginTransaction(): Promise<string>;
