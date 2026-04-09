@@ -10,7 +10,6 @@ const configSchema = z.object({
   server: z.object({
     nodeEnv: z.enum(["development", "production", "test"]),
     port: z.number(),
-    publicUrl: z.string().optional(),
   }),
   database: z.object({
     url: z.string(),
@@ -86,7 +85,6 @@ const appConfig: Config = {
       | "production"
       | "test",
     port: getConfigValue("server.port", "PORT", 5005),
-    publicUrl: getConfigValue("server.publicUrl", "PUBLIC_URL", undefined),
   },
   database: {
     url: getConfigValue("database.url", "DATABASE_URL", "file:./dev.db"),
@@ -139,13 +137,7 @@ const appConfig: Config = {
   security: {
     allowInsecure: (() => {
       const value = getConfigValue<string | boolean>("security.allowInsecure", "ALLOW_INSECURE", false);
-      const explicitAllowInsecure = value === "true" || value === true;
-
-      // Auto-detect: if PUBLIC_URL is HTTP, automatically allow insecure connections
-      const publicUrl = getConfigValue<string | undefined>("server.publicUrl", "PUBLIC_URL", undefined);
-      const isHttpPublicUrl = publicUrl ? publicUrl.startsWith("http://") : false;
-
-      return explicitAllowInsecure || isHttpPublicUrl;
+      return value === "true" || value === true;
     })(),
   },
 };
@@ -158,12 +150,7 @@ try {
 
   // Log security configuration for transparency
   if (validatedConfig.security.allowInsecure) {
-    const publicUrl = validatedConfig.server.publicUrl;
-    if (publicUrl && publicUrl.startsWith("http://")) {
-      console.log("ℹ️  Security: Allowing insecure connections (auto-detected from HTTP PUBLIC_URL)");
-    } else {
-      console.log("⚠️  Security: Allowing insecure connections (explicitly configured via ALLOW_INSECURE)");
-    }
+    console.log("⚠️  Security: Allowing insecure connections (configured via ALLOW_INSECURE)");
   }
 } catch (error) {
   // Use console.error since logger isn't available yet
@@ -210,14 +197,3 @@ export const {
   agent: agentConfig,
 } = validatedConfig;
 
-/** Allowed CORS origins for development mode */
-const DEV_CORS_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:5005",
-  "http://localhost:3005",
-];
-
-/** Resolved CORS origin: publicUrl in production, explicit allowlist in dev */
-export const corsOrigin: string | string[] | boolean =
-  validatedConfig.server.publicUrl ||
-  (validatedConfig.server.nodeEnv === "development" ? DEV_CORS_ORIGINS : false);

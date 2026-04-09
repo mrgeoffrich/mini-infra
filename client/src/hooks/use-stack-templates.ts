@@ -19,6 +19,7 @@ export interface StackTemplateFilterParams {
   source?: StackTemplateSource;
   scope?: StackTemplateScope;
   includeArchived?: boolean;
+  includeLinkedStacks?: boolean;
 }
 
 // ─── Fetch functions ──────────────────────────────────────────────────────────
@@ -31,6 +32,8 @@ async function fetchStackTemplates(
   if (params?.scope) url.searchParams.set("scope", params.scope);
   if (params?.includeArchived)
     url.searchParams.set("includeArchived", String(params.includeArchived));
+  if (params?.includeLinkedStacks)
+    url.searchParams.set("includeLinkedStacks", String(params.includeLinkedStacks));
 
   const response = await fetch(url.toString(), {
     credentials: "include",
@@ -305,6 +308,34 @@ export function useDeleteTemplate() {
     mutationFn: deleteTemplate,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+    },
+  });
+}
+
+export function useInstantiateTemplate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (args: { templateId: string; name?: string; parameterValues?: Record<string, unknown> }) => {
+      const response = await fetch(`/api/stack-templates/${args.templateId}/instantiate`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: args.name,
+          parameterValues: args.parameterValues,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.message || `Failed to instantiate template: ${response.statusText}`);
+      }
+      const data = await response.json();
+      return data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
   });
 }

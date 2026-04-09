@@ -1,7 +1,7 @@
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma from "./prisma";
-import { authConfig, serverConfig } from "./config-new";
+import { authConfig } from "./config-new";
 import { appLogger } from "./logger-factory";
 import type {
   GoogleOAuthProfile,
@@ -17,6 +17,7 @@ const logger = appLogger();
 export function configureGoogleStrategy(
   clientId: string,
   clientSecret: string,
+  publicUrl?: string | null,
 ): void {
   passport.use(
     "google",
@@ -24,7 +25,7 @@ export function configureGoogleStrategy(
       {
         clientID: clientId,
         clientSecret: clientSecret,
-        callbackURL: `${serverConfig.publicUrl || ""}/auth/google/callback`,
+        callbackURL: `${publicUrl || ""}/auth/google/callback`,
         scope: ["profile", "email"],
       },
       async (

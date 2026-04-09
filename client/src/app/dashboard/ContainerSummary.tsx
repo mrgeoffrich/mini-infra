@@ -7,6 +7,12 @@ import { useContainers } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
+  useMonitoringStatus,
+  usePrometheusRangeQuery,
+} from "@/hooks/use-monitoring";
+import { formatCpu, formatBytes } from "@/lib/format-metrics";
+import { MetricsChart } from "@/app/monitoring/MetricsChart";
+import {
   IconAlertCircle,
   IconArrowRight,
   IconBrandDocker,
@@ -14,6 +20,8 @@ import {
   IconSquare,
   IconPlayerPause,
   IconSettings,
+  IconCpu,
+  IconServer,
 } from "@tabler/icons-react";
 
 export function ContainerSummary() {
@@ -33,6 +41,24 @@ export function ContainerSummary() {
   const hasDockerError =
     latestDockerStatus?.status === "failed" ||
     latestDockerStatus?.status === "error";
+
+  // Check if monitoring stack is running
+  const { data: monitoringStatus } = useMonitoringStatus();
+  const isMonitoringRunning = monitoringStatus?.running === true;
+
+  // Fetch CPU and memory metrics (1h range, 60s step) — only when monitoring is up
+  const { data: cpuData } = usePrometheusRangeQuery(
+    'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
+    3600,
+    "60s",
+    { enabled: isMonitoringRunning }
+  );
+  const { data: memoryData } = usePrometheusRangeQuery(
+    'docker_container_mem_usage{container_name!=""}',
+    3600,
+    "60s",
+    { enabled: isMonitoringRunning }
+  );
 
   // Only fetch containers if Docker is connected
   const {
@@ -272,6 +298,28 @@ export function ContainerSummary() {
             </div>
           </AlertDescription>
         </Alert>
+      )}
+
+      {/* CPU & Memory Charts — shown when monitoring stack is running */}
+      {isMonitoringRunning && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <MetricsChart
+            title="CPU Usage"
+            description="Last hour — CPU usage rate per container"
+            data={cpuData}
+            icon={<IconCpu className="h-4 w-4" />}
+            valueFormatter={formatCpu}
+            color="blue"
+          />
+          <MetricsChart
+            title="Memory Usage"
+            description="Last hour — working set memory per container"
+            data={memoryData}
+            icon={<IconServer className="h-4 w-4" />}
+            valueFormatter={formatBytes}
+            color="green"
+          />
+        </div>
       )}
     </div>
   );

@@ -14,127 +14,53 @@ import { servicesLogger } from "../../lib/logger-factory";
  * Manages Docker image settings for PostgreSQL backup and restore operations
  */
 export class PostgresSettingsConfigService extends ConfigurationService {
-  // Default Docker images for PostgreSQL operations
-  private static readonly DEFAULT_BACKUP_IMAGE = "postgres:15-alpine";
-  private static readonly DEFAULT_RESTORE_IMAGE = "postgres:15-alpine";
+  // Default Docker image for PostgreSQL backup/restore operations
+  private static readonly DEFAULT_BACKUP_IMAGE = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev";
 
   constructor(prisma: PrismaClient) {
     super(prisma, "system" as SettingsCategory);
   }
 
   /**
-   * Initialize default settings in the database if they don't exist
-   * This ensures that the default values are persisted and visible in the UI
+   * Get the effective Docker image for backup/restore operations.
+   * Priority: PG_BACKUP_IMAGE_TAG env var (baked in at Docker build time) -> hardcoded default
    */
-  async initializeDefaults(userId: string): Promise<void> {
-    try {
-      // Check if settings already exist
-      const existingBackupSetting = await this.get("backup_docker_image");
-      const existingRestoreSetting = await this.get("restore_docker_image");
-
-      // Create default settings if they don't exist
-      if (!existingBackupSetting) {
-        await this.set(
-          "backup_docker_image",
-          PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
-          userId,
-        );
-      }
-
-      if (!existingRestoreSetting) {
-        await this.set(
-          "restore_docker_image",
-          PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
-          userId,
-        );
-      }
-
-      servicesLogger().info(
-        {
-          userId,
-          backupImageSet: !existingBackupSetting,
-          restoreImageSet: !existingRestoreSetting,
-        },
-        "PostgreSQL Docker image defaults initialized",
-      );
-    } catch (error) {
-      servicesLogger().error(
-        {
-          userId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to initialize PostgreSQL Docker image defaults",
-      );
-      throw error;
-    }
+  private getEffectiveImage(): string {
+    return process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE;
   }
 
   /**
    * Validate PostgreSQL settings configuration
-   * Validates that the Docker images are in valid format and accessible
-   * @param settings - Optional settings to validate with (overrides stored settings)
+   * Validates that the Docker image is in valid format
    */
-  async validate(settings?: Record<string, string>): Promise<ValidationResult> {
+  async validate(): Promise<ValidationResult> {
     const startTime = Date.now();
 
     try {
-      // Get configured Docker images from settings (use provided settings or fallback to stored)
-      const backupImage = settings?.backup_docker_image || (await this.get("backup_docker_image"));
-      const restoreImage = settings?.restore_docker_image || (await this.get("restore_docker_image"));
-
-      // Use defaults if not configured
-      const effectiveBackupImage =
-        backupImage || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE;
-      const effectiveRestoreImage =
-        restoreImage || PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE;
+      const effectiveImage = this.getEffectiveImage();
 
       servicesLogger().info(
-        {
-          backupImage: effectiveBackupImage,
-          restoreImage: effectiveRestoreImage,
-        },
+        { image: effectiveImage },
         "Validating PostgreSQL settings configuration",
       );
 
       // Validate Docker image format
-      const backupImageValid =
-        this.validateDockerImageFormat(effectiveBackupImage);
-      const restoreImageValid = this.validateDockerImageFormat(
-        effectiveRestoreImage,
-      );
+      const imageValid = this.validateDockerImageFormat(effectiveImage);
 
-      if (!backupImageValid.isValid) {
-        const errorMessage = `Invalid backup Docker image format: ${backupImageValid.message}`;
+      if (!imageValid.isValid) {
+        const errorMessage = `Invalid Docker image format: ${imageValid.message}`;
 
         await this.recordConnectivityStatus(
           "failed",
           Date.now() - startTime,
           errorMessage,
-          "INVALID_BACKUP_IMAGE",
+          "INVALID_IMAGE",
         );
 
         return {
           isValid: false,
           message: errorMessage,
-          errorCode: "INVALID_BACKUP_IMAGE",
-          responseTimeMs: Date.now() - startTime,
-        };
-      }
-
-      if (!restoreImageValid.isValid) {
-        const errorMessage = `Invalid restore Docker image format: ${restoreImageValid.message}`;
-
-        await this.recordConnectivityStatus(
-          "failed",
-          Date.now() - startTime,
-          errorMessage,
-          "INVALID_RESTORE_IMAGE",
-        );
-
-        return {
-          isValid: false,
-          message: errorMessage,
-          errorCode: "INVALID_RESTORE_IMAGE",
+          errorCode: "INVALID_IMAGE",
           responseTimeMs: Date.now() - startTime,
         };
       }
@@ -142,12 +68,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       const responseTimeMs = Date.now() - startTime;
 
       const metadata = {
-        backupDockerImage: effectiveBackupImage,
-        restoreDockerImage: effectiveRestoreImage,
-        configSource: {
-          backup: backupImage ? "settings" : "default",
-          restore: restoreImage ? "settings" : "default",
-        },
+        dockerImage: effectiveImage,
       };
 
       // Record successful validation
@@ -160,11 +81,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
       );
 
       servicesLogger().info(
-        {
-          responseTimeMs,
-          backupImage: effectiveBackupImage,
-          restoreImage: effectiveRestoreImage,
-        },
+        { responseTimeMs, image: effectiveImage },
         "PostgreSQL settings validation successful",
       );
 
@@ -180,10 +97,7 @@ export class PostgresSettingsConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
 
       servicesLogger().error(
-        {
-          error: errorMessage,
-          responseTimeMs,
-        },
+        { error: errorMessage, responseTimeMs },
         "PostgreSQL settings validation failed",
       );
 
@@ -234,103 +148,17 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   }
 
   /**
-   * Get backup Docker image setting
+   * Get backup Docker image
    */
   async getBackupDockerImage(): Promise<string> {
-    const configuredImage = await this.get("backup_docker_image");
-    if (!configuredImage) {
-      throw new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system");
-    }
-    return configuredImage;
+    return this.getEffectiveImage();
   }
 
   /**
-   * Get restore Docker image setting
+   * Get restore Docker image
    */
   async getRestoreDockerImage(): Promise<string> {
-    const configuredImage = await this.get("restore_docker_image");
-    if (!configuredImage) {
-      throw new Error("Restore Docker image not configured in system settings. Please configure it at /settings/system");
-    }
-    return configuredImage;
-  }
-
-  /**
-   * Set backup Docker image setting
-   */
-  async setBackupDockerImage(image: string, userId: string): Promise<void> {
-    const validation = this.validateDockerImageFormat(image);
-    if (!validation.isValid) {
-      throw new Error(`Invalid Docker image format: ${validation.message}`);
-    }
-
-    await this.set("backup_docker_image", image, userId);
-
-    servicesLogger().info(
-      {
-        image,
-        userId,
-      },
-      "PostgreSQL backup Docker image updated",
-    );
-  }
-
-  /**
-   * Set restore Docker image setting
-   */
-  async setRestoreDockerImage(image: string, userId: string): Promise<void> {
-    const validation = this.validateDockerImageFormat(image);
-    if (!validation.isValid) {
-      throw new Error(`Invalid Docker image format: ${validation.message}`);
-    }
-
-    await this.set("restore_docker_image", image, userId);
-
-    servicesLogger().info(
-      {
-        image,
-        userId,
-      },
-      "PostgreSQL restore Docker image updated",
-    );
-  }
-
-  /**
-   * Get all PostgreSQL Docker image settings
-   */
-  async getAllDockerImages(): Promise<{
-    backup: string;
-    restore: string;
-  }> {
-    const [backup, restore] = await Promise.all([
-      this.getBackupDockerImage(),
-      this.getRestoreDockerImage(),
-    ]);
-
-    return {
-      backup,
-      restore,
-    };
-  }
-
-  /**
-   * Reset all Docker image settings to defaults
-   */
-  async resetToDefaults(userId: string): Promise<void> {
-    await Promise.all([
-      this.delete("backup_docker_image", userId),
-      this.delete("restore_docker_image", userId),
-    ]);
-
-    servicesLogger().info(
-      {
-        userId,
-        defaultBackupImage: PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
-        defaultRestoreImage:
-          PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
-      },
-      "PostgreSQL Docker image settings reset to defaults",
-    );
+    return this.getEffectiveImage();
   }
 
   /**
@@ -393,15 +221,9 @@ export class PostgresSettingsConfigService extends ConfigurationService {
   }
 
   /**
-   * Get default Docker image configurations
+   * Get the Docker image used for backup/restore operations
    */
-  static getDefaults(): {
-    backupDockerImage: string;
-    restoreDockerImage: string;
-  } {
-    return {
-      backupDockerImage: PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE,
-      restoreDockerImage: PostgresSettingsConfigService.DEFAULT_RESTORE_IMAGE,
-    };
+  static getDockerImage(): string {
+    return process.env.PG_BACKUP_IMAGE_TAG || PostgresSettingsConfigService.DEFAULT_BACKUP_IMAGE;
   }
 }

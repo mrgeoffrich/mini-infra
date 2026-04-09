@@ -9,7 +9,6 @@ const legacyConfig = {
   DATABASE_URL: appConfig.database.url,
   APP_SECRET: appConfig.auth.appSecret,
   LOG_LEVEL: appConfig.logging.level,
-  PUBLIC_URL: appConfig.server.publicUrl,
 };
 
 export type Config = typeof legacyConfig;

@@ -22,6 +22,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   SIDECAR_IMAGE_NAME: ${{ github.repository }}-sidecar
   AGENT_SIDECAR_IMAGE_NAME: ${{ github.repository }}-agent-sidecar
+  PG_BACKUP_IMAGE_NAME: ${{ github.repository }}-pg-backup
 
 jobs:
   build-and-push:
@@ -131,6 +132,45 @@ jobs:
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      # ---- PG backup image metadata & build ----
+
+      - name: Extract pg-backup metadata (tags, labels)
+        id: pg-backup-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.PG_BACKUP_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push pg-backup image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./pg-az-backup
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.pg-backup-meta.outputs.tags }}
+          labels: ${{ steps.pg-backup-meta.outputs.labels }}
+          cache-from: type=gha,scope=pg-backup
+          cache-to: type=gha,mode=max,scope=pg-backup
+          platforms: linux/amd64
+
+      - name: Determine pg-backup image tag
+        id: pg-backup-tag
+        run: |
+          TAGS="${{ steps.pg-backup-meta.outputs.tags }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          else
+            TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
+          fi
+          TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       # ---- Main image metadata & build ----
 
       - name: Extract metadata (tags, labels)
@@ -163,6 +203,7 @@ jobs:
           build-args: |
             SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
             AGENT_SIDECAR_IMAGE_TAG=${{ steps.agent-sidecar-tag.outputs.tag }}
+            PG_BACKUP_IMAGE_TAG=${{ steps.pg-backup-tag.outputs.tag }}
             BUILD_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -173,3 +214,5 @@ jobs:
         run: |
           echo "Main image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           echo "Sidecar image pushed to ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}"
+          echo "Agent sidecar image pushed to ${{ env.REGISTRY }}/${{ env.AGENT_SIDECAR_IMAGE_NAME }}"
+          echo "PG backup image pushed to ${{ env.REGISTRY }}/${{ env.PG_BACKUP_IMAGE_NAME }}"

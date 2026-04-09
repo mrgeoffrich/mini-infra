@@ -47,7 +47,7 @@ import {
   IconHelp,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { SystemSettingsInfo } from "@mini-infra/types";
+import { SystemSettingsInfo, SettingsCategory } from "@mini-infra/types";
 import { AzureContainerList } from "@/components/azure";
 import { AzureContainerSelector } from "@/components/AzureContainerSelector";
 
@@ -81,8 +81,9 @@ export default function AzureSettingsPage() {
     {},
   );
   const [defaultContainer, setDefaultContainer] = useState<string>("");
-  const [isSavingDefaultContainer, setIsSavingDefaultContainer] =
-    useState(false);
+  const [selfBackupContainer, setSelfBackupContainer] = useState<string>("");
+  const [tlsCertContainer, setTlsCertContainer] = useState<string>("");
+  const [isSavingContainer, setIsSavingContainer] = useState(false);
 
   // Fetch existing Azure settings
   const {
@@ -94,7 +95,7 @@ export default function AzureSettingsPage() {
     limit: 50,
   });
 
-  // Fetch default container setting (from system category)
+  // Fetch default backup container setting (from system category)
   const {
     data: systemSettingsData,
     isLoading: systemSettingsLoading,
@@ -102,6 +103,30 @@ export default function AzureSettingsPage() {
     filters: {
       category: "system",
       key: "default_postgres_backup_container",
+      isActive: true,
+    },
+    limit: 1,
+  });
+
+  // Fetch self-backup container setting
+  const {
+    data: selfBackupSettingsData,
+  } = useSystemSettings({
+    filters: {
+      category: "self-backup",
+      key: "azure_container_name",
+      isActive: true,
+    },
+    limit: 1,
+  });
+
+  // Fetch TLS certificate container setting
+  const {
+    data: tlsSettingsData,
+  } = useSystemSettings({
+    filters: {
+      category: "tls",
+      key: "certificate_blob_container",
       isActive: true,
     },
     limit: 1,
@@ -155,12 +180,24 @@ export default function AzureSettingsPage() {
     }
   }, [settingsData, form]);
 
-  // Update default container when system settings are loaded
+  // Update container values when settings are loaded
   useEffect(() => {
     if (systemSettingsData?.data?.[0]?.value) {
       setDefaultContainer(systemSettingsData.data[0].value);
     }
   }, [systemSettingsData]);
+
+  useEffect(() => {
+    if (selfBackupSettingsData?.data?.[0]?.value) {
+      setSelfBackupContainer(selfBackupSettingsData.data[0].value);
+    }
+  }, [selfBackupSettingsData]);
+
+  useEffect(() => {
+    if (tlsSettingsData?.data?.[0]?.value) {
+      setTlsCertContainer(tlsSettingsData.data[0].value);
+    }
+  }, [tlsSettingsData]);
 
   const handleValidateAndSave = async (data: AzureSettingsFormData) => {
     setValidationState({ isValidating: true, isSuccess: false, error: null });
@@ -203,13 +240,18 @@ export default function AzureSettingsPage() {
     }
   };
 
-  const handleDefaultContainerChange = async (containerName: string) => {
-    setDefaultContainer(containerName);
-    setIsSavingDefaultContainer(true);
+  const handleContainerChange = async (
+    containerName: string,
+    category: SettingsCategory,
+    key: string,
+    existingSetting: SystemSettingsInfo | undefined,
+    setter: (val: string) => void,
+    label: string,
+  ) => {
+    setter(containerName);
+    setIsSavingContainer(true);
 
     try {
-      const existingSetting = systemSettingsData?.data?.[0];
-
       if (existingSetting) {
         await updateSetting.mutateAsync({
           id: existingSetting.id,
@@ -217,19 +259,19 @@ export default function AzureSettingsPage() {
         });
       } else {
         await createSetting.mutateAsync({
-          category: "system",
-          key: "default_postgres_backup_container",
+          category,
+          key,
           value: containerName,
           isEncrypted: false,
         });
       }
 
-      toast.success("Default backup container updated successfully");
+      toast.success(`${label} updated successfully`);
     } catch (error) {
       const errorMessage = (error as Error).message;
-      toast.error(`Failed to save default container: ${errorMessage}`);
+      toast.error(`Failed to save ${label.toLowerCase()}: ${errorMessage}`);
     } finally {
-      setIsSavingDefaultContainer(false);
+      setIsSavingContainer(false);
     }
   };
 
@@ -438,29 +480,66 @@ export default function AzureSettingsPage() {
           </div>
         )}
 
-        {/* Default Backup Container Setting */}
+        {/* Storage Container Assignments */}
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>Default Postgres Backup Container</CardTitle>
+            <CardTitle>Storage Container Assignments</CardTitle>
             <CardDescription>
-              Select a default Azure Storage container for PostgreSQL database
-              backups. This container will be pre-selected when setting up new
-              backup configurations.
+              Assign Azure Storage containers for each system function. Containers must already exist in your storage account.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {systemSettingsLoading ? (
-              <Skeleton className="h-9 w-full" />
-            ) : (
-              <div data-tour="azure-default-container-selector">
+          <CardContent className="space-y-6">
+            {/* Default Postgres Backup Container */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Default Postgres Backup Container</label>
+              <p className="text-xs text-muted-foreground">
+                Pre-selected when setting up new database backup configurations
+              </p>
+              {systemSettingsLoading ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <div data-tour="azure-default-container-selector">
+                  <AzureContainerSelector
+                    value={defaultContainer}
+                    onChange={(val) => handleContainerChange(val, "system", "default_postgres_backup_container", systemSettingsData?.data?.[0], setDefaultContainer, "Default backup container")}
+                    disabled={!isAzureConnected || isSavingContainer}
+                    placeholder="Select default backup container..."
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Self-Backup Container */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Self-Backup Container</label>
+              <p className="text-xs text-muted-foreground">
+                Where Mini Infra stores its own database backups
+              </p>
+              <div data-tour="azure-self-backup-container-selector">
                 <AzureContainerSelector
-                  value={defaultContainer}
-                  onChange={handleDefaultContainerChange}
-                  disabled={!isAzureConnected || isSavingDefaultContainer}
-                  placeholder="Select default backup container..."
+                  value={selfBackupContainer}
+                  onChange={(val) => handleContainerChange(val, "self-backup", "azure_container_name", selfBackupSettingsData?.data?.[0], setSelfBackupContainer, "Self-backup container")}
+                  disabled={!isAzureConnected || isSavingContainer}
+                  placeholder="Select self-backup container..."
                 />
               </div>
-            )}
+            </div>
+
+            {/* TLS Certificate Container */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">TLS Certificate Container</label>
+              <p className="text-xs text-muted-foreground">
+                Where TLS certificates and private keys are stored
+              </p>
+              <div data-tour="azure-tls-container-selector">
+                <AzureContainerSelector
+                  value={tlsCertContainer}
+                  onChange={(val) => handleContainerChange(val, "tls", "certificate_blob_container", tlsSettingsData?.data?.[0], setTlsCertContainer, "TLS certificate container")}
+                  disabled={!isAzureConnected || isSavingContainer}
+                  placeholder="Select TLS certificate container..."
+                />
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

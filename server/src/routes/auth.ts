@@ -338,6 +338,45 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       logger.info({ dockerHostIp }, "Docker host IP saved during setup");
     }
 
+    // Instantiate and apply the dataplane-network stack (fire-and-forget) so HAProxy can communicate
+    try {
+      const { StackTemplateService: TemplateService } = await import("../services/stacks/stack-template-service");
+      const { DockerExecutorService } = await import("../services/docker-executor");
+      const { StackReconciler } = await import("../services/stacks/stack-reconciler");
+
+      const dataplaneTemplate = await prisma.stackTemplate.findFirst({
+        where: { name: "dataplane-network", source: "system" },
+      });
+      if (dataplaneTemplate) {
+        const templateService = new TemplateService(prisma);
+
+        // Check if a stack already exists for this template (e.g. from a previous setup attempt)
+        const existingStack = await prisma.stack.findFirst({
+          where: { templateId: dataplaneTemplate.id, environmentId: null },
+          select: { id: true },
+        });
+        let stackId = existingStack?.id;
+        if (!stackId) {
+          const newStack = await templateService.createStackFromTemplate({
+            templateId: dataplaneTemplate.id,
+          }, "system");
+          stackId = newStack.id;
+          logger.info({ stackId }, "Instantiated dataplane-network stack from template during setup");
+        }
+
+        const dockerExecutor = new DockerExecutorService();
+        await dockerExecutor.initialize();
+        const reconciler = new StackReconciler(dockerExecutor, prisma);
+
+        // Run in background — don't block setup completion
+        reconciler.apply(stackId, { triggeredBy: "system" })
+          .then((result) => logger.info({ stackId, success: result.success }, "dataplane-network stack applied during setup"))
+          .catch((err) => logger.warn({ error: (err as Error).message }, "Failed to apply dataplane-network stack during setup (non-fatal)"));
+      }
+    } catch (err) {
+      logger.warn({ error: (err as Error).message }, "Failed to initiate dataplane-network stack apply during setup (non-fatal)");
+    }
+
     await authSettingsService.markSetupComplete();
     logger.info("Setup wizard completed");
     res.json({ success: true });
@@ -630,9 +669,11 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
     return res.redirect("/login?auth=google-not-configured");
   }
 
-  // Dynamically configure Google strategy
+  // Dynamically configure Google strategy with current public URL
   const { configureGoogleStrategy } = await import("../lib/passport");
-  configureGoogleStrategy(credentials.clientId, credentials.clientSecret);
+  const { getPublicUrl } = await import("../lib/public-url-service");
+  const publicUrl = await getPublicUrl();
+  configureGoogleStrategy(credentials.clientId, credentials.clientSecret, publicUrl);
 
   const redirectParam = req.query.redirect as string;
   logger.debug({ redirect: redirectParam }, "Initiating Google OAuth flow");
@@ -667,7 +708,7 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
 }) as RequestHandler);
 
 router.get("/google/callback", ((req: Request, res: Response, next: NextFunction) => {
-  passport.authenticate("google", (err: any, user: any) => {
+  passport.authenticate("google", async (err: any, user: any) => {
     const storedNonce = req.cookies?.["oauth-state"];
     res.clearCookie("oauth-state", { path: "/auth/google/callback" });
 
@@ -726,8 +767,9 @@ router.get("/google/callback", ((req: Request, res: Response, next: NextFunction
         redirectPath = stateRedirect;
       }
 
+      const { getPublicUrl: getPublicUrlForRedirect } = await import("../lib/public-url-service");
       const frontendUrl =
-        serverConfig.publicUrl ||
+        (await getPublicUrlForRedirect()) ||
         (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
 
       setAuthCookie(res, token);
@@ -740,9 +782,10 @@ router.get("/google/callback", ((req: Request, res: Response, next: NextFunction
 }) as RequestHandler);
 
 // OAuth failure redirect
-router.get("/failure", ((req: Request, res: Response) => {
+router.get("/failure", (async (req: Request, res: Response) => {
+  const { getPublicUrl: getPublicUrlForFailure } = await import("../lib/public-url-service");
   const frontendUrl =
-    serverConfig.publicUrl ||
+    (await getPublicUrlForFailure()) ||
     (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
   res.redirect(`${frontendUrl}/login?auth=error`);
 }) as RequestHandler);

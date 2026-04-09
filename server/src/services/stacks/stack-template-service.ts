@@ -69,6 +69,7 @@ export class StackTemplateService {
     source?: StackTemplateSource;
     scope?: StackTemplateScope;
     includeArchived?: boolean;
+    includeLinkedStacks?: boolean;
   }): Promise<StackTemplateInfo[]> {
     const where: any = {};
     if (opts?.source) where.source = opts.source;
@@ -80,6 +81,19 @@ export class StackTemplateService {
       include: {
         currentVersion: { select: versionSummary },
         draftVersion: { select: versionSummary },
+        ...(opts?.includeLinkedStacks ? {
+          stacks: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              version: true,
+              lastAppliedVersion: true,
+              lastAppliedAt: true,
+              environmentId: true,
+            },
+          },
+        } : {}),
       },
       orderBy: { name: "asc" },
     });
@@ -875,6 +889,17 @@ export class StackTemplateService {
         : template.draftVersion === null
           ? null
           : undefined,
+      ...(template.stacks ? {
+        linkedStacks: template.stacks.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          status: s.status,
+          version: s.version,
+          lastAppliedVersion: s.lastAppliedVersion,
+          lastAppliedAt: s.lastAppliedAt?.toISOString() ?? null,
+          environmentId: s.environmentId,
+        })),
+      } : {}),
     };
   }
 

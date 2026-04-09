@@ -208,9 +208,29 @@ router.post("/enable", requirePermission('backups:write'), async (req, res) => {
       },
     });
 
-    // Enable scheduler
+    // Enable scheduler — register the schedule first if not already registered
     const scheduler = SelfBackupScheduler.getInstance();
     if (scheduler) {
+      const scheduleInfo = scheduler.getScheduleInfo();
+      if (!scheduleInfo?.isRegistered) {
+        // Load schedule config from DB and register before enabling
+        const settings = await prisma.systemSettings.findMany({
+          where: { category: "self-backup", isActive: true },
+        });
+        const settingsMap = new Map(settings.map(s => [s.key, s.value]));
+        const cronSchedule = settingsMap.get("cron_schedule");
+        const azureContainerName = settingsMap.get("azure_container_name");
+        const timezone = settingsMap.get("timezone") || "UTC";
+
+        if (!cronSchedule || !azureContainerName) {
+          return res.status(400).json({
+            success: false,
+            error: "Backup schedule not configured. Please set a schedule and Azure container first.",
+          });
+        }
+
+        await scheduler.registerSchedule(cronSchedule, timezone, azureContainerName);
+      }
       await scheduler.enableSchedule();
     }
 

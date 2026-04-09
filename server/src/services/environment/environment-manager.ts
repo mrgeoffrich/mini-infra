@@ -131,7 +131,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
               select: { id: true },
             },
         }
@@ -161,7 +161,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
               select: { id: true },
             },
         }
@@ -199,7 +199,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
               select: { id: true },
             },
           },
@@ -240,7 +240,7 @@ export class EnvironmentManager {
               },
             },
             stacks: {
-              where: { template: { source: 'system' }, status: { not: 'removed' } },
+              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
               select: { id: true },
             },
         }

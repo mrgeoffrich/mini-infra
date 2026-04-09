@@ -40,7 +40,7 @@ export interface SystemSettingsInfo {
 // Settings Categories
 // ====================
 
-export type SettingsCategory = "docker" | "cloudflare" | "azure" | "postgres" | "system" | "deployments" | "haproxy" | "tls" | "github" | "github-app" | "agent";
+export type SettingsCategory = "docker" | "cloudflare" | "azure" | "postgres" | "system" | "deployments" | "haproxy" | "tls" | "github" | "github-app" | "agent" | "self-backup";
 
 export type ValidationStatus = "valid" | "invalid" | "pending" | "error";
 

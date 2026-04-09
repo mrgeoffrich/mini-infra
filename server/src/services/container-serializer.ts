@@ -12,8 +12,29 @@ import type { ContainerInfo, DockerContainerInfo } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { appLogger } from "../lib/logger-factory";
 import type DockerService from "./docker";
+import { getOwnContainerId } from "./self-update";
 
 const logger = appLogger();
+
+/**
+ * Determine if a container is part of Mini Infra itself.
+ */
+function getSelfRole(container: DockerContainerInfo): ContainerInfo['selfRole'] {
+  // Update sidecar: labeled with mini-infra.sidecar=true
+  if (container.labels['mini-infra.sidecar'] === 'true') {
+    return 'update-sidecar';
+  }
+  // Agent sidecar: labeled with mini-infra.agent-sidecar
+  if (container.labels['mini-infra.agent-sidecar']) {
+    return 'agent-sidecar';
+  }
+  // Main container: matches our own container ID
+  const ownId = getOwnContainerId();
+  if (ownId && container.id.startsWith(ownId)) {
+    return 'main';
+  }
+  return undefined;
+}
 
 /**
  * Serialize a DockerContainerInfo to a ContainerInfo suitable for API responses.
@@ -27,6 +48,12 @@ export async function serializeContainer(
     createdAt: container.createdAt.toISOString(),
     startedAt: container.startedAt?.toISOString(),
   };
+
+  // Check if this container is part of Mini Infra itself
+  const selfRole = getSelfRole(container);
+  if (selfRole) {
+    serialized.selfRole = selfRole;
+  }
 
   // Check if container has environment label
   const environmentId = container.labels["mini-infra.environment"];
