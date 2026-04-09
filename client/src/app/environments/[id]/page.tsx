@@ -32,7 +32,12 @@ import {
   IconDots,
   IconAlertCircle,
   IconApps,
+  IconNetwork,
+  IconCloud,
+  IconWorldWww,
+  IconHome,
 } from "@tabler/icons-react";
+import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { cn } from "@/lib/utils";
 
 export function EnvironmentDetailPage() {
@@ -52,6 +57,8 @@ export function EnvironmentDetailPage() {
     refetchInterval: 10000, // Refetch every 10 seconds for real-time updates
     enabled: !!environmentId, // Only fetch if environmentId exists
   });
+
+  const { formatDateTime, formatRelativeTime } = useFormattedDate();
 
   // Fetch user-deployed application stacks
   const { data: userStacksData } = useUserStacks();
@@ -244,9 +251,61 @@ export function EnvironmentDetailPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">&nbsp;</CardTitle>
+              <CardTitle className="text-sm font-medium">Environment Details</CardTitle>
+              <IconNetwork className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
-            <CardContent />
+            <CardContent>
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Network</span>
+                  <div className="flex items-center gap-1.5">
+                    {environment.networkType === "internet" ? (
+                      <IconWorldWww className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <IconHome className="h-3.5 w-3.5 text-muted-foreground" />
+                    )}
+                    <span className="font-medium capitalize">{environment.networkType}</span>
+                  </div>
+                </div>
+
+                {environment.networkType === "internet" && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Tunnel</span>
+                    {environment.tunnelId ? (
+                      <div className="flex items-center gap-1.5">
+                        <IconCloud className="h-3.5 w-3.5 text-orange-500" />
+                        <span className="font-medium font-mono text-xs truncate max-w-[160px]" title={environment.tunnelId}>
+                          {environment.tunnelId}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground italic">Not configured</span>
+                    )}
+                  </div>
+                )}
+
+                {environment.networks.length > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Docker Networks</span>
+                    <span className="font-medium">{environment.networks.length}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Created</span>
+                  <span className="font-medium" title={formatDateTime(environment.createdAt)}>
+                    {formatRelativeTime(environment.createdAt)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Updated</span>
+                  <span className="font-medium" title={formatDateTime(environment.updatedAt)}>
+                    {formatRelativeTime(environment.updatedAt)}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
           </Card>
         </div>
       </div>

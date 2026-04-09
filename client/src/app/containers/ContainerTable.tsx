@@ -16,16 +16,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { ContainerInfo } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
-import { IconArrowsSort } from "@tabler/icons-react";
+import { IconArrowsSort, IconDatabasePlus, IconDatabase } from "@tabler/icons-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { ServerModal } from "@/components/postgres-server/server-modal";
 import { toast } from "sonner";
 
@@ -44,7 +43,17 @@ const SELF_ROLE_LABELS: Record<string, string> = {
 };
 
 const ContainerNameCell = React.memo(
-  ({ name, selfRole }: { name: string; selfRole?: string }) => (
+  ({
+    name,
+    selfRole,
+    postgresAction,
+    onPostgresAction,
+  }: {
+    name: string;
+    selfRole?: string;
+    postgresAction?: "add" | "manage";
+    onPostgresAction?: () => void;
+  }) => (
     <div className="flex items-center gap-2 min-h-[2rem]">
       <span className="font-medium truncate">{name}</span>
       {selfRole && SELF_ROLE_LABELS[selfRole] && (
@@ -52,10 +61,36 @@ const ContainerNameCell = React.memo(
           {SELF_ROLE_LABELS[selfRole]}
         </span>
       )}
+      {postgresAction && onPostgresAction && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onPostgresAction();
+              }}
+              className="shrink-0 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {postgresAction === "add" ? (
+                <IconDatabasePlus className="h-4 w-4" />
+              ) : (
+                <IconDatabase className="h-4 w-4" />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {postgresAction === "add"
+              ? "Register as PostgreSQL server"
+              : "Manage PostgreSQL server"}
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   ),
   (prevProps, nextProps) =>
-    prevProps.name === nextProps.name && prevProps.selfRole === nextProps.selfRole,
+    prevProps.name === nextProps.name &&
+    prevProps.selfRole === nextProps.selfRole &&
+    prevProps.postgresAction === nextProps.postgresAction,
 );
 
 ContainerNameCell.displayName = "ContainerNameCell";
@@ -82,101 +117,6 @@ const ContainerImageCell = React.memo(
 
 ContainerImageCell.displayName = "ContainerImageCell";
 
-const ContainerPortsCell = React.memo(
-  ({ ports }: { ports: ContainerInfo["ports"] }) => {
-    if (!ports.length) {
-      return (
-        <span className="text-muted-foreground min-h-[2rem] flex items-center">
-          No ports
-        </span>
-      );
-    }
-
-    const formatPort = (port: ContainerInfo["ports"][0]) =>
-      port.public ? `${port.public}:${port.private}/${port.type}` : `${port.private}/${port.type}`;
-
-    // If only one port, display it directly
-    if (ports.length === 1) {
-      const port = ports[0];
-      return (
-        <div className="flex items-center min-h-[2rem]">
-          <Badge
-            variant="outline"
-            className={`text-xs whitespace-nowrap ${!port.public ? "border-dashed text-muted-foreground" : ""}`}
-          >
-            {formatPort(port)}
-          </Badge>
-        </div>
-      );
-    }
-
-    // For multiple ports, show first port and a popover with all ports
-    const firstPort = ports[0];
-    return (
-      <div className="flex flex-wrap gap-1 min-h-[2rem] items-center">
-        <Badge
-          variant="outline"
-          className={`text-xs whitespace-nowrap ${!firstPort.public ? "border-dashed text-muted-foreground" : ""}`}
-        >
-          {formatPort(firstPort)}
-        </Badge>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Badge
-              variant="secondary"
-              className="text-xs whitespace-nowrap cursor-pointer hover:bg-secondary/80"
-            >
-              +{ports.length - 1} more
-            </Badge>
-          </PopoverTrigger>
-          <PopoverContent className="w-80" align="start">
-            <div className="space-y-2">
-              <h4 className="font-medium text-sm">All Ports</h4>
-              <div className="grid gap-2">
-                {ports.map((port, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between text-sm"
-                  >
-                    <span className={`font-mono ${!port.public ? "text-muted-foreground" : ""}`}>
-                      {port.public
-                        ? `${port.public}:${port.private}`
-                        : port.private}
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {!port.public && (
-                        <Badge variant="secondary" className="text-[10px]">
-                          internal
-                        </Badge>
-                      )}
-                      <Badge variant="outline" className="text-xs">
-                        {port.type}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
-      </div>
-    );
-  },
-  (prevProps, nextProps) => {
-    // Deep comparison for ports array
-    if (prevProps.ports.length !== nextProps.ports.length) return false;
-    return prevProps.ports.every((port, index) => {
-      const nextPort = nextProps.ports[index];
-      return (
-        port.public === nextPort.public &&
-        port.private === nextPort.private &&
-        port.type === nextPort.type
-      );
-    });
-  },
-);
-
-ContainerPortsCell.displayName = "ContainerPortsCell";
 
 const ContainerRow = React.memo(
   ({
@@ -234,8 +174,7 @@ const ContainerRow = React.memo(
       prev.name === next.name &&
       prev.status === next.status &&
       prev.image === next.image &&
-      prev.imageTag === next.imageTag &&
-      JSON.stringify(prev.ports) === JSON.stringify(next.ports)
+      prev.imageTag === next.imageTag
     );
   },
 );
@@ -267,12 +206,9 @@ export const ContainerTable = React.memo(function ContainerTable({
   const [isServerModalOpen, setIsServerModalOpen] = React.useState(false);
   const [_selectedContainer, setSelectedContainer] = React.useState<ContainerInfo | null>(null);
   const [initialServerValues, setInitialServerValues] = React.useState<any>(null);
-  const [isLoadingServerData, setIsLoadingServerData] = React.useState(false);
-
   // Function to fetch container environment variables and docker host
   const handleAddPostgresServer = React.useCallback(async (container: ContainerInfo) => {
     setSelectedContainer(container);
-    setIsLoadingServerData(true);
 
     try {
       // Fetch environment variables and docker host in parallel
@@ -306,8 +242,6 @@ export const ContainerTable = React.memo(function ContainerTable({
     } catch (error) {
       console.error('Failed to fetch container data:', error);
       toast.error('Failed to load container details. Please try again.');
-    } finally {
-      setIsLoadingServerData(false);
     }
   }, []);
 
@@ -354,7 +288,32 @@ export const ContainerTable = React.memo(function ContainerTable({
             <IconArrowsSort className="ml-2 h-4 w-4" />
           </Button>
         ),
-        cell: ({ row }) => <ContainerNameCell name={row.getValue("name")} selfRole={row.original.selfRole} />,
+        cell: ({ row }) => {
+          const container = row.original;
+          const isPostgres = postgresContainerIds?.has(container.id);
+          const isManaged = managedContainerIds?.has(container.id);
+          const serverId = managedContainerMap?.[container.id];
+
+          let postgresAction: "add" | "manage" | undefined;
+          let onPostgresAction: (() => void) | undefined;
+
+          if (isPostgres && !isManaged) {
+            postgresAction = "add";
+            onPostgresAction = () => handleAddPostgresServer(container);
+          } else if (isPostgres && isManaged && serverId) {
+            postgresAction = "manage";
+            onPostgresAction = () => navigate(`/postgres-server/${serverId}`);
+          }
+
+          return (
+            <ContainerNameCell
+              name={row.getValue("name")}
+              selfRole={container.selfRole}
+              postgresAction={postgresAction}
+              onPostgresAction={onPostgresAction}
+            />
+          );
+        },
       },
       {
         accessorKey: "status",
@@ -391,52 +350,8 @@ export const ContainerTable = React.memo(function ContainerTable({
           />
         ),
       },
-      {
-        accessorKey: "ports",
-        header: "Ports",
-        cell: ({ row }) => <ContainerPortsCell ports={row.getValue("ports")} />,
-      },
-      {
-        id: "actions",
-        header: "Actions",
-        cell: ({ row }) => {
-          const container = row.original;
-          const isPostgres = postgresContainerIds?.has(container.id);
-          const isManaged = managedContainerIds?.has(container.id);
-          const serverId = managedContainerMap?.[container.id];
-
-          // Show "Add" button for unmanaged postgres containers
-          if (isPostgres && !isManaged) {
-            return (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleAddPostgresServer(container)}
-                disabled={isLoadingServerData}
-              >
-                Add
-              </Button>
-            );
-          }
-
-          // Show "Manage" button for managed postgres containers
-          if (isPostgres && isManaged && serverId) {
-            return (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/postgres-server/${serverId}`)}
-              >
-                Manage
-              </Button>
-            );
-          }
-
-          return null;
-        },
-      },
     ],
-    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds, managedContainerMap, handleAddPostgresServer, isLoadingServerData, navigate],
+    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds, managedContainerMap, handleAddPostgresServer, navigate],
   );
 
   const sortingState = React.useMemo(
@@ -460,15 +375,11 @@ export const ContainerTable = React.memo(function ContainerTable({
   const getColumnWidth = React.useCallback((index: number) => {
     switch (index) {
       case 0:
-        return "w-[180px] min-w-[180px] max-w-[180px]"; // Container Name
+        return "w-[220px] min-w-[220px] max-w-[220px]"; // Container Name
       case 1:
         return "w-[100px] min-w-[100px] max-w-[100px]"; // Status
       case 2:
         return "w-[240px] min-w-[240px] max-w-[240px]"; // Image
-      case 3:
-        return "w-[160px] min-w-[160px] max-w-[160px]"; // Ports
-      case 4:
-        return "w-[120px] min-w-[120px] max-w-[120px]"; // Actions
       default:
         return "";
     }
