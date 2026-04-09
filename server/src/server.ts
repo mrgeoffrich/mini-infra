@@ -147,6 +147,29 @@ const initializeServices = async () => {
     // Initialize security secrets FIRST (other services depend on these)
     await initializeSecuritySecrets();
 
+    // Migrate PUBLIC_URL env var to database setting (one-time)
+    const envPublicUrl = process.env.PUBLIC_URL;
+    if (envPublicUrl) {
+      const existing = await prisma.systemSettings.findFirst({
+        where: { category: "system", key: "public_url", isActive: true },
+      });
+      if (!existing) {
+        await prisma.systemSettings.create({
+          data: {
+            category: "system",
+            key: "public_url",
+            value: envPublicUrl,
+            isEncrypted: false,
+            isActive: true,
+            createdBy: "system",
+            updatedBy: "system",
+          },
+        });
+        console.log(`[STARTUP] Migrated PUBLIC_URL env var to database setting: ${envPublicUrl}`);
+        console.log("[STARTUP] WARNING: PUBLIC_URL env var is deprecated. Remove it from your environment.");
+      }
+    }
+
     // Initialize Docker service
     console.log("[STARTUP] Initializing Docker service...");
     const dockerService = DockerService.getInstance();

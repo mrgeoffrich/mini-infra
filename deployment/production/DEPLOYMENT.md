@@ -146,11 +146,7 @@ server {
 }
 ```
 
-Update `.env` for HTTPS:
-```bash
-PUBLIC_URL=https://mini-infra.yourdomain.com
-GOOGLE_CALLBACK_URL=https://mini-infra.yourdomain.com/auth/google/callback
-```
+After first boot, configure the public URL and CORS origin via Settings in the UI. If `PUBLIC_URL` is set in `.env`, it will be auto-migrated to the database on startup.
 
 ### Data Persistence
 
@@ -280,7 +276,6 @@ See `.env.example` for a complete list of available configuration options.
 - `APP_SECRET` - Application secret for auth and encryption (auto-generated on first boot if not set)
 - `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `MINI_INFRA_PORT` - Port to expose (default: 5000)
-- `PUBLIC_URL` - Public URL for the application
 - `LOG_LEVEL` - Logging verbosity (trace|debug|info|warn|error|fatal)
 - `OPENOBSERVE_*` - OpenObserve log forwarding configuration
 - `OTEL_*` - OpenTelemetry tracing configuration

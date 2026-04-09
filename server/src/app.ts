@@ -10,7 +10,8 @@ import pinoHttp from "pino-http";
 import path from "path";
 
 // Import configuration and utilities
-import appConfig, { securityConfig, corsOrigin } from "./lib/config-new";
+import appConfig, { securityConfig } from "./lib/config-new";
+import { createDynamicCorsOrigin } from "./lib/public-url-service";
 import { httpLogger } from "./lib/logger-factory";
 import { requestIdMiddleware } from "./lib/request-id";
 import { createHelmetMiddleware } from "./lib/security";
@@ -69,10 +70,10 @@ app.use(
 // Security middleware - conditionally disable HTTPS enforcement based on ALLOW_INSECURE
 app.use(createHelmetMiddleware(securityConfig.allowInsecure));
 
-// CORS configuration
+// CORS configuration — resolved dynamically from the cors_origin system setting
 app.use(
   cors({
-    origin: corsOrigin,
+    origin: createDynamicCorsOrigin(appConfig.server.nodeEnv),
     credentials: true,
     optionsSuccessStatus: 200,
   }),

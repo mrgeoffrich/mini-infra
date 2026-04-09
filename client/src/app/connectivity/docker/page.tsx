@@ -42,15 +42,9 @@ import {
   IconLoader2,
   IconBolt,
   IconHelp,
-  IconActivity,
-  IconPlayerPlay,
-  IconPlayerStop,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SystemSettingsInfo } from "@mini-infra/types";
-import { useMonitoringStatus, useApplyMonitoring, useStopMonitoring } from "@/hooks/use-monitoring";
-import { Badge } from "@/components/ui/badge";
-import { useNavigate } from "react-router-dom";
 
 // Docker settings schema
 const dockerSettingsSchema = z.object({
@@ -582,114 +576,7 @@ export default function DockerSettingsPage() {
           </Alert>
         )}
 
-        {/* Monitoring Service Card - shown after successful Docker connection */}
-        {validationState.isSuccess && <MonitoringServiceCard />}
-        {!validationState.isSuccess && !validationState.error && !isLoading && settings.host?.value && (
-          <MonitoringServiceCard />
-        )}
       </div>
     </div>
-  );
-}
-
-function MonitoringServiceCard() {
-  const navigate = useNavigate();
-  const { data: monitoringStatus, isLoading } = useMonitoringStatus({});
-  const applyMonitoring = useApplyMonitoring();
-  const stopMonitoring = useStopMonitoring();
-
-  const isRunning = monitoringStatus?.running === true;
-  const stackStatus = monitoringStatus?.stack?.status || "unknown";
-  const isStopped = !isRunning;
-  const stackId = monitoringStatus?.stack?.id;
-
-  const handleDeploy = async () => {
-    if (!stackId) return;
-    try {
-      await applyMonitoring.mutateAsync(stackId);
-      toast.success("Monitoring service started successfully");
-    } catch (error) {
-      toast.error(`Failed to start monitoring: ${(error as Error).message}`);
-    }
-  };
-
-  const handleStop = async () => {
-    try {
-      await stopMonitoring.mutateAsync();
-      toast.success("Monitoring service stopped");
-    } catch (error) {
-      toast.error(`Failed to stop monitoring: ${(error as Error).message}`);
-    }
-  };
-
-  return (
-    <Card className="mt-6">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
-              <IconActivity className="h-5 w-5" />
-            </div>
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                Container Monitoring
-                {!isLoading && (
-                  <Badge
-                    variant={isRunning ? "default" : "secondary"}
-                    className={isRunning ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300" : ""}
-                  >
-                    {isRunning ? "running" : stackStatus}
-                  </Badge>
-                )}
-              </CardTitle>
-              <CardDescription>
-                Collect CPU, memory, and network metrics from all containers using Telegraf and Prometheus
-              </CardDescription>
-            </div>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex gap-2">
-          {isStopped && stackId && (
-            <Button
-              onClick={handleDeploy}
-              disabled={applyMonitoring.isPending}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              {applyMonitoring.isPending ? (
-                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <IconPlayerPlay className="mr-2 h-4 w-4" />
-              )}
-              {stackStatus === "undeployed" ? "Deploy Monitoring" : "Start Monitoring"}
-            </Button>
-          )}
-          {isRunning && (
-            <>
-              <Button
-                variant="outline"
-                onClick={() => navigate("/monitoring")}
-              >
-                <IconActivity className="mr-2 h-4 w-4" />
-                View Metrics
-              </Button>
-              <Button
-                onClick={handleStop}
-                disabled={stopMonitoring.isPending}
-                variant="destructive"
-              >
-                {stopMonitoring.isPending ? (
-                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <IconPlayerStop className="mr-2 h-4 w-4" />
-                )}
-                Stop
-              </Button>
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
   );
 }

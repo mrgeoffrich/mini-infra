@@ -112,7 +112,6 @@ No OAuth setup required. No external databases. No config files. Everything runs
 |---|---|---|
 | `APP_SECRET` | Auto-generated | Secret for auth tokens and encryption. Set this to persist across container recreations |
 | `ALLOWED_ADMIN_EMAILS` | — | Comma-separated emails allowed to create accounts |
-| `PUBLIC_URL` | `http://localhost:5000` | Public URL (set this when behind a reverse proxy) |
 | `LOG_LEVEL` | `info` | Logging verbosity: `trace`, `debug`, `info`, `warn`, `error` |
 
 ---

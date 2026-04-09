@@ -198,7 +198,7 @@ export default function SelfBackupSettingsPage() {
   // API hooks
   const { data: configData, isLoading: isLoadingConfig } =
     useSelfBackupConfig();
-  const { data: azureData, isLoading: isLoadingContainers } =
+  const { isLoading: isLoadingContainers } =
     useAzureContainers();
   const { data: azureConnectivity } = useConnectivityStatus({
     filters: { service: "azure" },
@@ -323,7 +323,6 @@ export default function SelfBackupSettingsPage() {
 
   const config = configData?.config;
   const scheduleInfo = configData?.scheduleInfo;
-  const containers = azureData?.data?.containers || [];
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -370,39 +369,6 @@ export default function SelfBackupSettingsPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Azure Container */}
-              <FormField
-                control={form.control}
-                name="azureContainerName"
-                render={({ field }) => (
-                  <FormItem data-tour="backup-container-selector">
-                    <FormLabel>Azure Storage Container</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value}
-                      disabled={!isAzureConnected || containers.length === 0}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a container" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {containers.map((container) => (
-                          <SelectItem key={container.name} value={container.name}>
-                            {container.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      The Azure container where backups will be stored
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
               {/* Cron Schedule */}
               <FormField
                 control={form.control}

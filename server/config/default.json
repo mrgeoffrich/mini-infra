@@ -1,8 +1,7 @@
 {
   "server": {
     "nodeEnv": "development",
-    "port": 5005,
-    "publicUrl": "http://localhost:5005"
+    "port": 5005
   },
   "database": {
     "url": "file:./dev.db"

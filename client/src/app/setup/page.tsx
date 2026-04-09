@@ -20,8 +20,24 @@ import {
   IconArrowRight,
   IconCircleCheck,
   IconCircleDashed,
+  IconSelector,
 } from "@tabler/icons-react";
 import { useSetupStatus } from "@/hooks/use-setup-status";
+import { useTimezones } from "@/hooks/use-user-preferences";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import type { DockerSocketDetectionResult } from "@mini-infra/types";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +51,9 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
+  const { data: timezones } = useTimezones();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +77,17 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
       if (!response.ok) {
         setError(data.error || "Setup failed");
         return;
+      }
+
+      // Save timezone preference (user is now auto-logged in)
+      try {
+        await fetch("/api/user/preferences", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timezone }),
+        });
+      } catch {
+        // Non-fatal — timezone can be set later in user settings
       }
 
       onComplete();
@@ -123,6 +153,59 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
         />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Timezone</Label>
+        <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              type="button"
+              className={cn(
+                "w-full justify-between",
+                !timezone && "text-muted-foreground",
+              )}
+            >
+              {timezone
+                ? timezones?.find((tz) => tz.value === timezone)?.label || timezone
+                : "Select a timezone"}
+              <IconSelector className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-[400px] max-w-[400px] p-0" align="start">
+            <Command>
+              <CommandInput placeholder="Search timezones..." />
+              <CommandList>
+                <CommandEmpty>No timezone found.</CommandEmpty>
+                <CommandGroup>
+                  {(timezones || []).map((tz) => (
+                    <CommandItem
+                      value={tz.label}
+                      key={tz.value}
+                      onSelect={() => {
+                        setTimezone(tz.value);
+                        setTimezonePopoverOpen(false);
+                      }}
+                    >
+                      <IconCheck
+                        className={cn(
+                          "mr-2 h-4 w-4",
+                          tz.value === timezone ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                      {tz.label}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <p className="text-xs text-muted-foreground">
+          Auto-detected from your browser. Change it if needed.
+        </p>
       </div>
 
       <Button type="submit" className="w-full" disabled={isSubmitting}>

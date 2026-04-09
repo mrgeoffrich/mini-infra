@@ -443,7 +443,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     title: "Security Settings",
     breadcrumbLabel: "Security Settings",
     icon: IconShield,
-    showInNav: true,
+    showInNav: false,
     navGroup: "main",
     navSection: "administration",
     description: "Security configuration and API keys",

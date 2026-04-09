@@ -30,7 +30,7 @@ services:
       # Log files
       - mini-infra-dev-logs:/app/server/logs
     environment:
-      - PUBLIC_URL=http://localhost:3005
+      # PUBLIC_URL is now a database setting configured via Settings UI
       - LOG_LEVEL=debug
       - ALLOW_INSECURE=true
 

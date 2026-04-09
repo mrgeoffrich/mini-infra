@@ -41,6 +41,7 @@ const settingsQuerySchema = z.object({
       "deployments",
       "haproxy",
       "tls",
+      "self-backup",
     ])
     .optional(),
   key: z.string().optional(),
@@ -94,6 +95,7 @@ const createSettingSchema = z.object({
     "deployments",
     "haproxy",
     "tls",
+    "self-backup",
   ]),
   key: z.string().min(1, "Key is required").max(255),
   value: z.string().min(1, "Value is required"),
@@ -319,6 +321,13 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
         updatedBy: userId,
       },
     });
+
+    // Invalidate caches for known dynamic settings
+    if (category === "system") {
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      if (key === "public_url") invalidatePublicUrlCache();
+      if (key === "cors_enabled") invalidateCorsEnabledCache();
+    }
 
     logger.debug(
       {
@@ -546,6 +555,13 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
       data: updateData,
     });
 
+    // Invalidate caches for known dynamic settings
+    if (existingSetting.category === "system") {
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      if (existingSetting.key === "public_url") invalidatePublicUrlCache();
+      if (existingSetting.key === "cors_enabled") invalidateCorsEnabledCache();
+    }
+
     logger.debug(
       {
         requestId,
@@ -649,6 +665,13 @@ router.delete("/:id", requirePermission('settings:write') as RequestHandler, (as
     await prisma.systemSettings.delete({
       where: { id: settingId },
     });
+
+    // Invalidate caches for known dynamic settings
+    if (existingSetting.category === "system") {
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      if (existingSetting.key === "public_url") invalidatePublicUrlCache();
+      if (existingSetting.key === "cors_enabled") invalidateCorsEnabledCache();
+    }
 
     logger.debug(
       {

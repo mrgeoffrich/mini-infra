@@ -61,7 +61,6 @@ vi.mock("../lib/config-new", () => ({
   serverConfig: {
     nodeEnv: "test",
     port: 5005,
-    publicUrl: "http://localhost:5005",
   },
   default: {},
 }));

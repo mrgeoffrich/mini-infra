@@ -18,7 +18,6 @@ import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
 import AzureSettingsPage from "@/app/connectivity/azure/page";
 import GitHubConnectivityPage from "@/app/connectivity/github/page";
 import SystemSettingsPage from "@/app/settings/system/page";
-import SecuritySettingsPage from "@/app/settings/security/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
 import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
 import GitHubSettingsPage from "@/app/settings/github/page";
@@ -296,10 +295,6 @@ export const router = createBrowserRouter([
       {
         path: "settings-system",
         element: <SystemSettingsPage />,
-      },
-      {
-        path: "settings-security",
-        element: <SecuritySettingsPage />,
       },
       {
         path: "settings-registry-credentials",

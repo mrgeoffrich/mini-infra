@@ -22,7 +22,8 @@ import { startLogStream, stopLogStream, cleanupSocketStreams } from "../services
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
 import { appLogger } from "./logger-factory";
-import appConfig, { corsOrigin } from "./config-new";
+import appConfig from "./config-new";
+import { createDynamicCorsOrigin } from "./public-url-service";
 
 const logger = appLogger();
 
@@ -77,7 +78,7 @@ export function initializeSocketIO(httpServer: HttpServer): TypedServer {
     SocketData
   >(httpServer, {
     cors: {
-      origin: corsOrigin,
+      origin: createDynamicCorsOrigin(appConfig.server.nodeEnv),
       credentials: true,
     },
     transports: [...SOCKET_TRANSPORTS],
