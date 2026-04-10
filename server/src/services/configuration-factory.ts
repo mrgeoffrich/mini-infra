@@ -9,7 +9,6 @@ import { servicesLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import { CloudflareService } from "./cloudflare";
 import { AzureStorageService } from "./azure-storage-service";
-import { PostgresSettingsConfigService } from "./postgres";
 import { TlsConfigService } from "./tls/tls-config";
 
 export class ConfigurationServiceFactory
@@ -20,7 +19,6 @@ export class ConfigurationServiceFactory
     "docker",
     "cloudflare",
     "azure",
-    "postgres",
     "tls",
   ];
 
@@ -50,9 +48,6 @@ export class ConfigurationServiceFactory
 
         case "azure":
           return new AzureStorageService(this.prisma);
-
-        case "postgres":
-          return new PostgresSettingsConfigService(this.prisma);
 
         case "tls":
           return new TlsConfigService(this.prisma);
