@@ -54,6 +54,10 @@ const templateServiceSchema = z.object({
   { message: "StatelessWeb/AdoptedWeb services must have routing; Stateful services must not have routing" }
 );
 
+const postInstallActionSchema = z.object({
+  type: z.string().min(1),
+});
+
 export const templateFileSchema = z.object({
   name: z.string().min(1).max(100).regex(nameRegex),
   displayName: z.string().min(1).max(200),
@@ -69,6 +73,7 @@ export const templateFileSchema = z.object({
   volumes: z.array(stackVolumeSchema),
   services: z.array(templateServiceSchema),
   configFiles: z.array(templateConfigFileSchema).optional(),
+  postInstallActions: z.array(postInstallActionSchema).optional(),
 });
 
 export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
@@ -77,6 +82,10 @@ export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
 // Loader
 // =====================
 
+export interface PostInstallAction {
+  type: string;
+}
+
 export interface LoadedTemplate {
   name: string;
   displayName: string;
@@ -84,6 +93,7 @@ export interface LoadedTemplate {
   scope: "host" | "environment";
   category?: string;
   description?: string;
+  postInstallActions?: PostInstallAction[];
   definition: {
     name: string;
     description?: string;
@@ -231,6 +241,7 @@ export function loadTemplateFromObject(
     scope: data.scope,
     category: data.category,
     description: data.description,
+    postInstallActions: data.postInstallActions,
     definition: {
       name: data.name,
       description: data.description,

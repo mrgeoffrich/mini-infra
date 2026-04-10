@@ -38,7 +38,10 @@
     }
   ],
   "resourceOutputs": [
-    { "type": "docker-network", "purpose": "database" }
+    { "type": "docker-network", "purpose": "database", "joinSelf": true }
+  ],
+  "postInstallActions": [
+    { "type": "register-postgres-server" }
   ],
   "networks": [],
   "volumes": [
