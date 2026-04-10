@@ -1,7 +1,7 @@
 {
   "name": "postgres",
   "displayName": "PostgreSQL Database",
-  "builtinVersion": 1,
+  "builtinVersion": 2,
   "scope": "environment",
   "category": "database",
   "description": "PostgreSQL database server with persistent storage",
@@ -37,7 +37,7 @@
       "description": "Bind PostgreSQL port to the Docker host"
     }
   ],
-  "resourceInputs": [
+  "resourceOutputs": [
     { "type": "docker-network", "purpose": "database" }
   ],
   "networks": [],
