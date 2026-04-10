@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   IconRefresh,
   IconCheck,
@@ -34,6 +34,7 @@ import { StackApplyProgress } from "./StackApplyProgress";
 interface StackPlanViewProps {
   stackId: string;
   className?: string;
+  onDestroyCompleted?: () => void;
 }
 
 const ACTION_PRIORITY: Record<string, number> = {
@@ -46,6 +47,7 @@ const ACTION_PRIORITY: Record<string, number> = {
 export const StackPlanView = React.memo(function StackPlanView({
   stackId,
   className,
+  onDestroyCompleted,
 }: StackPlanViewProps) {
   const {
     data: planResponse,
@@ -59,6 +61,12 @@ export const StackPlanView = React.memo(function StackPlanView({
   const destroyMutation = useStackDestroy();
   const destroyProgress = useStackDestroyProgress(stackId);
   const { registerTask } = useTaskTracker();
+
+  useEffect(() => {
+    if (destroyProgress.result?.success) {
+      onDestroyCompleted?.();
+    }
+  }, [destroyProgress.result?.success, onDestroyCompleted]);
   const { data: validation } = useStackValidation(stackId);
   const hasValidationErrors = validation && !validation.valid;
   const [selectedServices, setSelectedServices] = useState<Set<string>>(

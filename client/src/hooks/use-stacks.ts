@@ -558,7 +558,6 @@ export function useStackDestroyProgress(stackId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
       if (stackId) {
         queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-        queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
         queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
         queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
       }
