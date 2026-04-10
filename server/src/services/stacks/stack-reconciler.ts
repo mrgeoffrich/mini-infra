@@ -47,6 +47,7 @@ import {
   resolveServiceConfigs,
   prepareServiceContainer,
 } from './utils';
+import { runPostInstallActions } from './post-install-actions';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -531,7 +532,11 @@ export class StackReconciler {
     // 4. Load stack for DB updates and service definitions
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } }, environment: true },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        environment: true,
+        template: { select: { name: true } },
+      },
     });
 
     try {
@@ -714,6 +719,16 @@ export class StackReconciler {
 
       // 7b. Connect mini-infra container to resource output networks with joinSelf: true
       await this.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
+
+      // 7c. Run post-install actions declared by the template (failures are non-fatal)
+      await runPostInstallActions(stack.template?.name, {
+        stackName: stack.name,
+        projectName,
+        parameterValues: (stack.parameterValues as Record<string, string | number | boolean>) ?? {},
+        serviceResults,
+        triggeredBy: options?.triggeredBy,
+        prisma: this.prisma,
+      });
 
       // 8. Update stack in DB
       const allSucceeded = serviceResults.every((r) => r.success);

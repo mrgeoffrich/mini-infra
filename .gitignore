@@ -62,6 +62,9 @@ coverage/
 # Playwright CLI artifacts
 .playwright-cli/
 
+# Test screenshots
+screenshots/
+
 # Superpowers working files
 .superpowers/
 .worktrees/

@@ -10,7 +10,7 @@ When designing the solution make sure you pick a DRY and well though out solutio
 
 For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
 
-When opening the site in playwrite use `playwright-cli open --persistent --headed)` and browse to http://localhost:3005
+When opening the site in playwright use `playwright-cli open --persistent` and browse to http://localhost:3005
 
 ## Important Instructions
 

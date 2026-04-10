@@ -448,11 +448,17 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
 // GET /:stackId/plan — Compute plan
 router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) => {
   try {
+    const stackId = String(req.params.stackId);
+    const exists = await prisma.stack.findUnique({ where: { id: stackId }, select: { id: true } });
+    if (!exists) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const resourceReconciler = await createResourceReconciler();
     const reconciler = new StackReconciler(dockerExecutor, prisma, undefined, resourceReconciler);
-    const plan = await reconciler.plan(String(req.params.stackId));
+    const plan = await reconciler.plan(stackId);
 
     res.json({ success: true, data: plan });
   } catch (error: any) {

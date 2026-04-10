@@ -199,7 +199,10 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                     </button>
                     {isExpanded && (
                       <div className="border-t p-4">
-                        <StackPlanView stackId={stack.id} />
+                        <StackPlanView
+                          stackId={stack.id}
+                          onDestroyCompleted={() => setExpandedStackId(null)}
+                        />
                       </div>
                     )}
                   </div>

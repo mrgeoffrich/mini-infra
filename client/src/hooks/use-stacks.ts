@@ -273,6 +273,35 @@ async function destroyStack(
   return await response.json();
 }
 
+async function updateStackParameterValues(
+  stackId: string,
+  parameterValues: Record<string, string | number | boolean>,
+  correlationId?: string,
+): Promise<StackResponse> {
+  const response = await fetch(`/api/stacks/${stackId}`, {
+    method: "PUT",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
+    },
+    body: JSON.stringify({ parameterValues }),
+  });
+
+  if (!response.ok) {
+    let errorMessage = `Failed to update stack parameters: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // Use default error message
+    }
+    throw new Error(errorMessage);
+  }
+
+  return await response.json();
+}
+
 // ====================
 // Stack Types
 // ====================
@@ -558,7 +587,6 @@ export function useStackDestroyProgress(stackId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
       if (stackId) {
         queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-        queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
         queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
         queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
       }
@@ -580,6 +608,28 @@ export function useStackDestroyProgress(stackId: string | null) {
   }, []);
 
   return { destroying, result, reset };
+}
+
+export function useUpdateStackParameterValues() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      stackId,
+      parameterValues,
+    }: {
+      stackId: string;
+      parameterValues: Record<string, string | number | boolean>;
+    }) => updateStackParameterValues(stackId, parameterValues),
+    onSuccess: (_, { stackId }) => {
+      queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
+      queryClient.invalidateQueries({ queryKey: ["stackValidation", stackId] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to save parameters: ${error.message}`);
+    },
+  });
 }
 
 // ====================
