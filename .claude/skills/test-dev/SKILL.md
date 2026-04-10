@@ -51,8 +51,24 @@ playwright-cli click e18
 ### Step 4 — Execute test cases
 
 Work through each planned test case. After each significant interaction:
-- Take a snapshot (`playwright-cli snapshot`) to inspect DOM state
+- Take a snapshot (`playwright-cli snapshot`) to inspect DOM state and get element refs
 - Take a screenshot if you want to capture visual state
+
+**Async data caveat**: Pages that fetch data via React Query render empty first, then populate. After navigation or an action that triggers a data fetch, wait for a specific element that signals the content has loaded before snapshotting:
+
+```bash
+playwright-cli run-code "async page => { await page.waitForSelector('.card', { timeout: 5000 }); }"
+```
+
+To find the right selector, take a snapshot after the data loads (or take a screenshot), identify an element in the loaded content, then use its class or text. Example — waiting for a server card to appear:
+
+```bash
+playwright-cli run-code "async page => { await page.waitForSelector('text=healthy', { timeout: 5000 }); }"
+```
+
+> **Avoid `waitForLoadState('networkidle')`** in SPAs — React apps make ongoing background requests so the network never fully settles, which causes hangs and timeouts.
+
+**Clicking specificity**: Always re-snapshot before clicking to get fresh refs. Avoid clicking container refs that span multiple buttons (e.g., a footer containing both Cancel and Save) — target the specific button ref instead to avoid ambiguous clicks.
 
 For each issue found, immediately log it (see Issue Tracking below).
 
@@ -113,8 +129,8 @@ Track issues as you find them. Do not wait until the end to log — note each on
 # Open browser
 playwright-cli open http://localhost:3005
 
-# Navigate
-playwright-cli goto /some/path
+# Navigate (always use full URL — relative paths fail)
+playwright-cli goto http://localhost:3005/some/path
 
 # Inspect the page (always do this before clicking to find refs)
 playwright-cli snapshot
