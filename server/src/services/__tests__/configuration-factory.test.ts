@@ -4,7 +4,6 @@ import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
 import { CloudflareService } from "../cloudflare";
 import { AzureStorageService } from "../azure-storage-service";
-import { PostgresSettingsConfigService } from "../postgres";
 
 const { mockLogger } = vi.hoisted(() => ({
   mockLogger: {
@@ -28,7 +27,6 @@ vi.mock("../../lib/logger-factory", () => ({
 vi.mock("../docker-config");
 vi.mock("../cloudflare/cloudflare-service");
 vi.mock("../azure-storage-service");
-vi.mock("../postgres/postgres-settings-config");
 vi.mock("../tls/tls-config");
 
 // Mock Prisma client
@@ -73,7 +71,6 @@ describe("ConfigurationServiceFactory", () => {
         "docker",
         "cloudflare",
         "azure",
-        "postgres",
         "tls",
       ]);
     });
@@ -99,13 +96,6 @@ describe("ConfigurationServiceFactory", () => {
 
       expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
       expect(service).toBeInstanceOf(AzureStorageService);
-    });
-
-    it("should create Postgres configuration service", () => {
-      const service = factory.create({ category: "postgres" });
-
-      expect(PostgresSettingsConfigService).toHaveBeenCalledWith(mockPrisma);
-      expect(service).toBeInstanceOf(PostgresSettingsConfigService);
     });
 
     it("should throw error for unsupported category", () => {
@@ -187,14 +177,12 @@ describe("ConfigurationServiceFactory", () => {
         "docker",
         "cloudflare",
         "azure",
-        "postgres",
         "tls",
       ]);
       expect(categories2).toEqual([
         "docker",
         "cloudflare",
         "azure",
-        "postgres",
         "tls",
       ]);
 
@@ -203,7 +191,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Modifying one shouldn't affect the other
       categories1.push("test" as any);
-      expect(categories2).toHaveLength(5);
+      expect(categories2).toHaveLength(4);
     });
   });
 
@@ -212,7 +200,6 @@ describe("ConfigurationServiceFactory", () => {
       expect(factory.isSupported("docker")).toBe(true);
       expect(factory.isSupported("cloudflare")).toBe(true);
       expect(factory.isSupported("azure")).toBe(true);
-      expect(factory.isSupported("postgres")).toBe(true);
       expect(factory.isSupported("tls")).toBe(true);
     });
 
@@ -233,8 +220,6 @@ describe("ConfigurationServiceFactory", () => {
       expect(factory.isSupported("DOCKER")).toBe(false);
       expect(factory.isSupported("CloudFlare")).toBe(false);
       expect(factory.isSupported("Azure")).toBe(false);
-      expect(factory.isSupported("Postgres")).toBe(false);
-      expect(factory.isSupported("POSTGRES")).toBe(false);
     });
   });
 
@@ -248,7 +233,6 @@ describe("ConfigurationServiceFactory", () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
       const azureService = factory.create({ category: "azure" });
-      const postgresService = factory.create({ category: "postgres" });
 
       // Check if instances have expected methods from base class
       expect(typeof dockerService.validate).toBe("function");
@@ -262,9 +246,6 @@ describe("ConfigurationServiceFactory", () => {
 
       expect(typeof azureService.validate).toBe("function");
       expect(typeof azureService.getHealthStatus).toBe("function");
-
-      expect(typeof postgresService.validate).toBe("function");
-      expect(typeof postgresService.getHealthStatus).toBe("function");
     });
 
     it("should create different instances for each call", () => {
@@ -274,20 +255,12 @@ describe("ConfigurationServiceFactory", () => {
       expect(dockerService1).not.toBe(dockerService2);
       expect(dockerService1).toBeInstanceOf(DockerConfigService);
       expect(dockerService2).toBeInstanceOf(DockerConfigService);
-
-      const postgresService1 = factory.create({ category: "postgres" });
-      const postgresService2 = factory.create({ category: "postgres" });
-
-      expect(postgresService1).not.toBe(postgresService2);
-      expect(postgresService1).toBeInstanceOf(PostgresSettingsConfigService);
-      expect(postgresService2).toBeInstanceOf(PostgresSettingsConfigService);
     });
 
     it("should pass prisma client to all created services", async () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
       const azureService = factory.create({ category: "azure" });
-      const postgresService = factory.create({ category: "postgres" });
 
       // Test that services can use the prisma client by calling methods that interact with it
       // These calls should not throw errors if prisma client is properly injected
@@ -296,26 +269,22 @@ describe("ConfigurationServiceFactory", () => {
       expect(
         async () => await azureService.get("connectionString"),
       ).not.toThrow();
-      expect(async () => await postgresService.get("enabled")).not.toThrow();
     });
 
     it("should create services with correct constructors", () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
       const azureService = factory.create({ category: "azure" });
-      const postgresService = factory.create({ category: "postgres" });
 
       // Verify that each service was created with the correct constructor and prisma client
       expect(DockerConfigService).toHaveBeenCalledWith(mockPrisma);
       expect(CloudflareService).toHaveBeenCalledWith(mockPrisma);
       expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
-      expect(PostgresSettingsConfigService).toHaveBeenCalledWith(mockPrisma);
 
       // Verify that the services are instances of the correct classes
       expect(dockerService).toBeInstanceOf(DockerConfigService);
       expect(cloudflareService).toBeInstanceOf(CloudflareService);
       expect(azureService).toBeInstanceOf(AzureStorageService);
-      expect(postgresService).toBeInstanceOf(PostgresSettingsConfigService);
     });
   });
 
@@ -325,7 +294,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Should still create factory but services might fail at runtime
       expect(nullFactory).toBeInstanceOf(ConfigurationServiceFactory);
-      expect(nullFactory.getSupportedCategories()).toHaveLength(5);
+      expect(nullFactory.getSupportedCategories()).toHaveLength(4);
     });
 
     it("should handle factory with corrupted supported categories", () => {

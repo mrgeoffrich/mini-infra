@@ -1,6 +1,5 @@
 import { servicesLogger } from "../../lib/logger-factory";
-import { PostgresDatabaseManager } from "../postgres";
-import { PostgresSettingsConfigService } from "../postgres";
+import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
 import type { RestoreProgressData } from "./types";
 import type { RestoreOperation } from "@prisma/client";
 import {
@@ -17,16 +16,13 @@ import { emitToChannel } from "../../lib/socket";
  */
 export class DbOperations {
   private prisma: any;
-  private postgresSettingsConfigService: PostgresSettingsConfigService;
   private databaseConfigService: PostgresDatabaseManager;
 
   constructor(
     prisma: any,
-    postgresSettingsConfigService: PostgresSettingsConfigService,
     databaseConfigService: PostgresDatabaseManager,
   ) {
     this.prisma = prisma;
-    this.postgresSettingsConfigService = postgresSettingsConfigService;
     this.databaseConfigService = databaseConfigService;
   }
 
@@ -113,34 +109,12 @@ export class DbOperations {
   }
 
   /**
-   * Get restore Docker image from system settings
+   * Get restore Docker image (resolved from PG_BACKUP_IMAGE_TAG env var)
    */
-  async getRestoreDockerImage(): Promise<string> {
-    try {
-      const dockerImage =
-        await this.postgresSettingsConfigService.getRestoreDockerImage();
-
-      servicesLogger().info(
-        {
-          dockerImage,
-        },
-        "Retrieved restore Docker image from PostgreSQL settings",
-      );
-
-      return dockerImage;
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      servicesLogger().error(
-        {
-          error: errorMessage,
-        },
-        "Failed to get restore Docker image from PostgreSQL settings",
-      );
-      throw new Error(
-        `Restore Docker image not configured in system settings. Please configure PostgreSQL restore settings at /settings/system before running restore operations. Error: ${errorMessage}`,
-      );
-    }
+  getRestoreDockerImage(): string {
+    const dockerImage = getPgBackupImage();
+    servicesLogger().info({ dockerImage }, "Resolved restore Docker image");
+    return dockerImage;
   }
 
   /**

@@ -39,7 +39,6 @@ const connectivityQuerySchema = z.object({
       "docker",
       "cloudflare",
       "azure",
-      "postgres",
       "system",
       "deployments",
       "haproxy",
@@ -270,7 +269,6 @@ router.get("/summary", requirePermission('settings:read') as RequestHandler, (as
       "docker",
       "cloudflare",
       "azure",
-      "postgres",
       "github-app",
       "tls",
     ];

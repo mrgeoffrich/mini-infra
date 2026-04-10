@@ -97,7 +97,6 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
         "docker",
         "cloudflare",
         "azure",
-        "postgres",
         "system",
         "deployments",
         "haproxy",
@@ -107,7 +106,7 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
     ) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, postgres, system, deployments, haproxy, tls, github-app`,
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app`,
         timestamp: new Date().toISOString(),
         requestId,
       });

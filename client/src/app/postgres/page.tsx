@@ -15,8 +15,7 @@ import {
   usePostgresDatabaseFilters,
 } from "@/hooks/use-postgres-databases";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
-import { usePostgresSettings } from "@/hooks/use-postgres-settings";
-import { IconDatabase, IconAlertCircle, IconPlus, IconSettings } from "@tabler/icons-react";
+import { IconDatabase, IconAlertCircle, IconPlus } from "@tabler/icons-react";
 import { ProgressIndicators } from "@/components/postgres/progress-indicators";
 import { DatabaseModal } from "@/components/postgres/database-modal";
 import { BackupConfigurationModal } from "@/components/postgres/backup-configuration-modal";
@@ -63,8 +62,6 @@ export default function PostgresBackups() {
     sortBy: filters.sortBy,
     sortOrder: filters.sortOrder,
   });
-
-  const { data: postgresSettings } = usePostgresSettings();
 
   const databases = databasesResponse?.data || [];
 
@@ -157,26 +154,6 @@ export default function PostgresBackups() {
           </Button>
         </div>
 
-        {/* PostgreSQL Settings Warning */}
-        {postgresSettings && !postgresSettings.isConfigured && (
-          <Alert variant="destructive">
-            <IconAlertCircle className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <div>
-                <strong>PostgreSQL containers not configured:</strong> Backup and restore operations require Docker images to be configured in system settings. Configure backup and restore Docker images before using PostgreSQL features.
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate("/settings-system")}
-                className="ml-4 flex-shrink-0"
-              >
-                <IconSettings className="w-4 h-4 mr-2" />
-                Configure Settings
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
       </div>
 
       {/* Database Connections */}

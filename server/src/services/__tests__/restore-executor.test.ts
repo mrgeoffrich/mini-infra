@@ -634,65 +634,32 @@ describe("RestoreExecutorService", () => {
   });
 
   describe("getRestoreDockerImage", () => {
-    it("should return restore-specific Docker image from settings", async () => {
-      const mockSettingsConfig = {
-        getRestoreDockerImage: vi.fn().mockResolvedValue("custom-restore:latest"),
-      };
-      (restoreExecutorService as any).postgresSettingsConfigService = mockSettingsConfig;
+    const originalEnv = process.env.PG_BACKUP_IMAGE_TAG;
 
-      // Access through dbOps since getRestoreDockerImage is on DbOperations
-      const dbOps = (restoreExecutorService as any).dbOps;
-      dbOps.postgresSettingsConfigService = mockSettingsConfig;
-
-      const result = await dbOps.getRestoreDockerImage();
-
-      expect(result).toBe("custom-restore:latest");
-      expect(mockSettingsConfig.getRestoreDockerImage).toHaveBeenCalled();
+    afterEach(() => {
+      if (originalEnv !== undefined) {
+        process.env.PG_BACKUP_IMAGE_TAG = originalEnv;
+      } else {
+        delete process.env.PG_BACKUP_IMAGE_TAG;
+      }
     });
 
-    it("should fallback to backup Docker image", async () => {
-      const mockSettingsConfig = {
-        getRestoreDockerImage: vi.fn().mockResolvedValue("backup-image:latest"),
-      };
-      (restoreExecutorService as any).postgresSettingsConfigService = mockSettingsConfig;
+    it("should return image from PG_BACKUP_IMAGE_TAG env var when set", () => {
+      process.env.PG_BACKUP_IMAGE_TAG = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3";
+
       const dbOps = (restoreExecutorService as any).dbOps;
-      dbOps.postgresSettingsConfigService = mockSettingsConfig;
+      const result = dbOps.getRestoreDockerImage();
 
-      const result = await dbOps.getRestoreDockerImage();
-
-      expect(result).toBe("backup-image:latest");
+      expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3");
     });
 
-    it("should return default image when no settings found", async () => {
-      const mockSettingsConfig = {
-        getRestoreDockerImage: vi.fn().mockResolvedValue("postgres:15-alpine"),
-      };
-      (restoreExecutorService as any).postgresSettingsConfigService = mockSettingsConfig;
+    it("should return default image when env var is not set", () => {
+      delete process.env.PG_BACKUP_IMAGE_TAG;
+
       const dbOps = (restoreExecutorService as any).dbOps;
-      dbOps.postgresSettingsConfigService = mockSettingsConfig;
+      const result = dbOps.getRestoreDockerImage();
 
-      const result = await dbOps.getRestoreDockerImage();
-
-      expect(result).toBe("postgres:15-alpine");
-    });
-
-    it("should handle database query errors", async () => {
-      const mockSettingsConfig = {
-        getRestoreDockerImage: vi.fn().mockRejectedValue(new Error("Database error")),
-      };
-      (restoreExecutorService as any).postgresSettingsConfigService = mockSettingsConfig;
-      const dbOps = (restoreExecutorService as any).dbOps;
-      dbOps.postgresSettingsConfigService = mockSettingsConfig;
-
-      await expect(dbOps.getRestoreDockerImage()).rejects.toThrow(
-        "Restore Docker image not configured in system settings"
-      );
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          error: "Database error",
-        }),
-        expect.stringContaining("Failed to get restore Docker image"),
-      );
+      expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev");
     });
   });
 

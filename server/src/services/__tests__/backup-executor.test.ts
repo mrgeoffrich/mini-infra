@@ -112,6 +112,7 @@ const mockPostgresDatabaseManager = {
 
 const mockAzureStorageService = {
   get: vi.fn(),
+  getConnectionString: vi.fn(),
 } as unknown as AzureStorageService;
 
 describe("BackupExecutorService", () => {
@@ -588,7 +589,7 @@ describe("BackupExecutorService", () => {
 
   describe("verifyBackupInAzure", () => {
     beforeEach(() => {
-      mockAzureStorageService.get = vi
+      mockAzureStorageService.getConnectionString = vi
         .fn()
         .mockResolvedValue("azure-connection-string");
       mockBlobServiceClient.getContainerClient = vi
@@ -626,7 +627,7 @@ describe("BackupExecutorService", () => {
     });
 
     it("should handle Azure connection string not configured", async () => {
-      mockAzureStorageService.get = vi.fn().mockResolvedValue(null);
+      mockAzureStorageService.getConnectionString = vi.fn().mockResolvedValue(null);
 
       const result = await (backupExecutorService as any).verifyBackupInAzure(
         "test-container",
@@ -654,59 +655,30 @@ describe("BackupExecutorService", () => {
   });
 
   describe("getBackupDockerImage", () => {
-    it("should return Docker image from PostgreSQL settings when configured", async () => {
-      // Mock the PostgreSQL settings service to return a configured image
-      const mockPostgresSettingsService = {
-        getBackupDockerImage: vi.fn().mockResolvedValue("custom-postgres:latest"),
-      };
+    const originalEnv = process.env.PG_BACKUP_IMAGE_TAG;
 
-      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
-
-      const result = await (
-        backupExecutorService as any
-      ).getBackupDockerImage();
-
-      expect(result).toBe("custom-postgres:latest");
-      expect(mockPostgresSettingsService.getBackupDockerImage).toHaveBeenCalled();
+    afterEach(() => {
+      if (originalEnv !== undefined) {
+        process.env.PG_BACKUP_IMAGE_TAG = originalEnv;
+      } else {
+        delete process.env.PG_BACKUP_IMAGE_TAG;
+      }
     });
 
-    it("should throw error when setting not found", async () => {
-      // Mock the PostgreSQL settings service to throw an error when not configured
-      const mockPostgresSettingsService = {
-        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
-      };
+    it("should return image from PG_BACKUP_IMAGE_TAG env var when set", () => {
+      process.env.PG_BACKUP_IMAGE_TAG = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3";
 
-      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
+      const result = (backupExecutorService as any).getBackupDockerImage();
 
-      await expect(
-        (backupExecutorService as any).getBackupDockerImage()
-      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations");
+      expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3");
     });
 
-    it("should throw error when setting has no value", async () => {
-      // Mock the PostgreSQL settings service to throw an error when value is empty
-      const mockPostgresSettingsService = {
-        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Backup Docker image not configured in system settings. Please configure it at /settings/system")),
-      };
+    it("should return default image when env var is not set", () => {
+      delete process.env.PG_BACKUP_IMAGE_TAG;
 
-      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
+      const result = (backupExecutorService as any).getBackupDockerImage();
 
-      await expect(
-        (backupExecutorService as any).getBackupDockerImage()
-      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations");
-    });
-
-    it("should handle PostgreSQL settings service errors", async () => {
-      // Mock the PostgreSQL settings service to throw a database error
-      const mockPostgresSettingsService = {
-        getBackupDockerImage: vi.fn().mockRejectedValue(new Error("Database error")),
-      };
-
-      (backupExecutorService as any).postgresSettingsConfigService = mockPostgresSettingsService;
-
-      await expect(
-        (backupExecutorService as any).getBackupDockerImage()
-      ).rejects.toThrow("Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations. Error: Database error");
+      expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev");
     });
   });
 

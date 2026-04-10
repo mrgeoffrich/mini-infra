@@ -7,8 +7,7 @@ import {
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
-import { PostgresDatabaseManager } from "../postgres";
-import { PostgresSettingsConfigService } from "../postgres";
+import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { resolveDatabaseNetworkName } from "./database-network-resolver";
@@ -50,7 +49,6 @@ export class BackupExecutorService {
   private dockerExecutor: DockerExecutorService;
   private backupConfigService: BackupConfigurationManager;
   private databaseConfigService: PostgresDatabaseManager;
-  private postgresSettingsConfigService: PostgresSettingsConfigService;
   private azureConfigService: AzureStorageService;
   private backupQueue: InMemoryQueue;
   private isInitialized = false;
@@ -67,9 +65,6 @@ export class BackupExecutorService {
     this.dockerExecutor = new DockerExecutorService();
     this.backupConfigService = new BackupConfigurationManager(prisma);
     this.databaseConfigService = new PostgresDatabaseManager(prisma);
-    this.postgresSettingsConfigService = new PostgresSettingsConfigService(
-      prisma,
-    );
     this.azureConfigService = new AzureStorageService(prisma);
 
     // Initialize in-memory queue
@@ -901,30 +896,12 @@ export class BackupExecutorService {
   }
 
   /**
-   * Get backup Docker image from system settings
+   * Get backup Docker image (resolved from PG_BACKUP_IMAGE_TAG env var)
    */
-  private async getBackupDockerImage(): Promise<string> {
-    try {
-      const dockerImage = await this.postgresSettingsConfigService.getBackupDockerImage();
-
-      servicesLogger().info(
-        {
-          dockerImage,
-        },
-        "Retrieved backup Docker image from PostgreSQL settings",
-      );
-
-      return dockerImage;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      servicesLogger().error(
-        {
-          error: errorMessage,
-        },
-        "Failed to get backup Docker image from PostgreSQL settings",
-      );
-      throw new Error(`Backup Docker image not configured in system settings. Please configure PostgreSQL backup settings at /settings/system before running backup operations. Error: ${errorMessage}`);
-    }
+  private getBackupDockerImage(): string {
+    const dockerImage = getPgBackupImage();
+    servicesLogger().info({ dockerImage }, "Resolved backup Docker image");
+    return dockerImage;
   }
 
   /**

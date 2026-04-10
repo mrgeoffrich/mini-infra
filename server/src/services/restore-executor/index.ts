@@ -7,7 +7,6 @@ import {
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
-import { PostgresSettingsConfigService } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import {
   RestoreOperationInfo,
@@ -53,7 +52,6 @@ export { DbOperations } from "./db-operations";
  */
 export class RestoreExecutorService {
   private prisma: typeof prisma;
-  private postgresSettingsConfigService: PostgresSettingsConfigService;
   private isInitialized = false;
 
   // Backing fields for getter/setter pattern
@@ -76,9 +74,6 @@ export class RestoreExecutorService {
     this.prisma = prisma;
     this._dockerExecutor = new DockerExecutorService();
     this._databaseConfigService = new PostgresDatabaseManager(prisma);
-    this.postgresSettingsConfigService = new PostgresSettingsConfigService(
-      prisma,
-    );
     this._azureConfigService = new AzureStorageService(prisma);
 
     // Initialize in-memory queue
@@ -149,7 +144,6 @@ export class RestoreExecutorService {
     );
     this.dbOps = new DbOperations(
       this.prisma,
-      this.postgresSettingsConfigService,
       this._databaseConfigService,
     );
     this.restoreRunner = new RestoreRunner(
