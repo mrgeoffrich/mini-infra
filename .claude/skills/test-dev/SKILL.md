@@ -35,7 +35,7 @@ Before opening the browser, write out the test cases you intend to run:
 ### Step 3 — Open a browser and log in
 
 ```bash
-playwright-cli open http://localhost:3005
+playwright-cli open --persistent http://localhost:3005
 ```
 
 If redirected to `/login`, fill in credentials and submit:
@@ -126,8 +126,8 @@ Track issues as you find them. Do not wait until the end to log — note each on
 ## Playwright Tips
 
 ```bash
-# Open browser
-playwright-cli open http://localhost:3005
+# Open browser (headless by default — omit --headed unless you need to watch)
+playwright-cli open --persistent http://localhost:3005
 
 # Navigate (always use full URL — relative paths fail)
 playwright-cli goto http://localhost:3005/some/path
