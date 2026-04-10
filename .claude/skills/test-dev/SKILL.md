@@ -1,0 +1,158 @@
+---
+name: test-dev
+description: Using the playwright-cli for browser automation, test features that are requested for testing by the user. Tracks issues found during testing and reports them all at the end. Stops early if a show-stopper is encountered.
+---
+
+# UI Feature Testing
+
+You're running UI tests against a live instance of Mini Infra — a Docker host management web app. Use playwright-cli to drive the browser. The app is a test system so credentials can be shared freely.
+
+## Environment
+
+- **App URL**: http://localhost:3005
+- **Login**: geoff.rich@gmail.com / Juliette 2010
+- **Source code**: available in the current working directory
+
+---
+
+## Testing Workflow
+
+### Step 1 — Understand what to test
+
+If the user hasn't specified, ask:
+- What feature or area should be tested?
+- Are there specific scenarios, edge cases, or flows they want covered?
+- Any known issues to watch for?
+
+### Step 2 — Plan test cases
+
+Before opening the browser, write out the test cases you intend to run:
+- Happy path (normal expected flow)
+- Edge cases (empty states, boundary values, long inputs)
+- Error states (invalid inputs, missing data, failed actions)
+- Navigation and UI state (page loads, transitions, back/forward)
+
+### Step 3 — Open a browser and log in
+
+```bash
+playwright-cli open http://localhost:3005
+```
+
+If redirected to `/login`, fill in credentials and submit:
+
+```bash
+playwright-cli fill e14 "geoff.rich@gmail.com"
+playwright-cli fill e17 "Juliette 2010"
+playwright-cli click e18
+```
+
+> If login itself fails, this is a **BLOCKER** — log it and stop.
+
+### Step 4 — Execute test cases
+
+Work through each planned test case. After each significant interaction:
+- Take a snapshot (`playwright-cli snapshot`) to inspect DOM state
+- Take a screenshot if you want to capture visual state
+
+For each issue found, immediately log it (see Issue Tracking below).
+
+**When you hit a BLOCKER**: log it, then skip straight to Step 5 — do not attempt further test cases.
+
+### Step 5 — Report all issues
+
+At the end of testing (or when a BLOCKER forces an early stop), output a full test report:
+
+```
+## Test Report — <Feature/Area Name>
+
+### Summary
+- Test cases planned: N
+- Test cases completed: N
+- Issues found: N (X blockers, Y major, Z minor)
+- Status: PASSED / FAILED / BLOCKED
+
+### Issues
+
+#### [BLOCKER] Issue title
+- **Where**: Page or component
+- **Steps**: 1. Do X → 2. Do Y → 3. Observe Z
+- **Expected**: What should happen
+- **Actual**: What actually happened
+
+#### [MAJOR] Issue title
+...
+
+#### [MINOR] Issue title
+...
+
+### Test Cases Completed
+- [x] Happy path: <description> — PASS / FAIL
+- [x] Edge case: <description> — PASS / FAIL
+- [ ] <description> — SKIPPED (blocked by above)
+```
+
+---
+
+## Issue Tracking
+
+Track issues as you find them. Do not wait until the end to log — note each one inline as testing proceeds so nothing is missed.
+
+### Severity Levels
+
+| Severity | When to use | Effect on testing |
+|---|---|---|
+| **BLOCKER** | Feature completely broken, app crashes, can't navigate, auth failure | Stop testing immediately |
+| **MAJOR** | Feature produces wrong results, data not saved, action fails | Log and continue if possible |
+| **MINOR** | UI glitch, cosmetic issue, minor misbehaviour, confusing copy | Log and continue |
+
+---
+
+## Playwright Tips
+
+```bash
+# Open browser
+playwright-cli open http://localhost:3005
+
+# Navigate
+playwright-cli goto /some/path
+
+# Inspect the page (always do this before clicking to find refs)
+playwright-cli snapshot
+
+# Interact
+playwright-cli click e5
+playwright-cli fill e7 "some value"
+playwright-cli press Enter
+playwright-cli select e9 "option-value"
+
+# Verify
+playwright-cli eval "document.title"
+playwright-cli eval "el => el.textContent" e5
+
+# Capture state (always save screenshots to the screenshots/ folder in the project root)
+playwright-cli screenshot --filename=screenshots/issue-1.png
+
+# Close when done
+playwright-cli close
+```
+
+---
+
+## Scope — Testing Only
+
+**This skill is for testing and reporting only. Do not make any code or configuration changes.**
+
+- Log issues as findings — do not fix them during the test run
+- Do not edit source files, configuration, or database records to work around issues
+- Do not invoke API endpoints to patch or create data unless it is strictly necessary to complete a test case (e.g. seeding required data with no UI path)
+- If a workaround is needed to proceed past a missing UI, note it clearly in the report
+- All fixes should be left to the user to initiate after reviewing the report
+
+---
+
+## Notes
+
+- Keep the browser session open throughout the test run — reuse it for all test cases.
+- If the app is unresponsive or broken beyond recovery, `playwright-cli close` and report a BLOCKER.
+- Screenshots are useful evidence for BLOCKER and MAJOR issues — attach them to the report. Always save screenshots to `screenshots/` in the project root (e.g. `screenshots/issue-1.png`).
+- Source code is available if you need to check what behaviour is intended (`client/src/pages/`, `client/src/components/`).
