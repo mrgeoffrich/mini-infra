@@ -26,10 +26,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Channel } from "@mini-infra/types";
-import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation } from "@/hooks/use-stacks";
+import type { StackParameterValue } from "@mini-infra/types";
+import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues } from "@/hooks/use-stacks";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
+import { StackParametersDialog } from "./StackParametersDialog";
 
 interface StackPlanViewProps {
   stackId: string;
@@ -61,6 +63,10 @@ export const StackPlanView = React.memo(function StackPlanView({
   const destroyMutation = useStackDestroy();
   const destroyProgress = useStackDestroyProgress(stackId);
   const { registerTask } = useTaskTracker();
+  const { data: stackResponse } = useStack(stackId);
+  const stackInfo = stackResponse?.data;
+  const updateParamsMutation = useUpdateStackParameterValues();
+  const [showParamsDialog, setShowParamsDialog] = useState(false);
 
   useEffect(() => {
     if (destroyProgress.result?.success) {
@@ -117,7 +123,7 @@ export const StackPlanView = React.memo(function StackPlanView({
       .map((ra) => ({ serviceName: `${ra.resourceType}:${ra.resourceName}`, action: ra.action }));
   }, [plan?.resourceActions]);
 
-  const handleApplyAll = useCallback(() => {
+  const triggerApplyAll = useCallback(() => {
     applyMutation.mutate({ stackId, options: {} });
     const serviceSteps = plan?.actions.filter((a) => a.action !== "no-op").map((a) => `${a.action} ${a.serviceName}`) ?? [];
     const resourceSteps = activeResourceActions.map((a) => `${a.action} ${a.serviceName}`);
@@ -130,6 +136,25 @@ export const StackPlanView = React.memo(function StackPlanView({
       plannedStepNames: [...serviceSteps, ...resourceSteps],
     });
   }, [stackId, applyMutation, registerTask, stackName, plan, activeResourceActions]);
+
+  const handleApplyAll = useCallback(() => {
+    const isFirstDeploy = stackInfo?.lastAppliedVersion === null;
+    const hasParameters = (stackInfo?.parameters?.length ?? 0) > 0;
+    if (isFirstDeploy && hasParameters) {
+      setShowParamsDialog(true);
+      return;
+    }
+    triggerApplyAll();
+  }, [stackInfo, triggerApplyAll]);
+
+  const handleSaveAndDeploy = useCallback((parameterValues: Record<string, StackParameterValue>) => {
+    updateParamsMutation.mutate({ stackId, parameterValues }, {
+      onSuccess: () => {
+        setShowParamsDialog(false);
+        triggerApplyAll();
+      },
+    });
+  }, [stackId, updateParamsMutation, triggerApplyAll]);
 
   const handleRedeploy = useCallback(() => {
     applyMutation.mutate({ stackId, options: { forcePull: true } });
@@ -284,7 +309,17 @@ export const StackPlanView = React.memo(function StackPlanView({
   // No changes needed
   if (!plan.hasChanges) {
     return (
-      <Card className={className}>
+      <>
+        <StackParametersDialog
+          open={showParamsDialog}
+          onOpenChange={setShowParamsDialog}
+          stackName={stackName}
+          parameters={stackInfo?.parameters ?? []}
+          currentValues={stackInfo?.parameterValues ?? {}}
+          onConfirm={handleSaveAndDeploy}
+          isSaving={updateParamsMutation.isPending}
+        />
+        <Card className={className}>
         <CardContent className="flex items-center gap-3 py-8 justify-center">
           <IconCheck className="h-6 w-6 text-green-500" />
           <div>
@@ -382,11 +417,22 @@ export const StackPlanView = React.memo(function StackPlanView({
           </div>
         </CardContent>
       </Card>
+      </>
     );
   }
 
   return (
-    <div className={`space-y-4 ${className ?? ""}`}>
+    <>
+      <StackParametersDialog
+        open={showParamsDialog}
+        onOpenChange={setShowParamsDialog}
+        stackName={stackName}
+        parameters={stackInfo?.parameters ?? []}
+        currentValues={stackInfo?.parameterValues ?? {}}
+        onConfirm={handleSaveAndDeploy}
+        isSaving={updateParamsMutation.isPending}
+      />
+      <div className={`space-y-4 ${className ?? ""}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -519,5 +565,6 @@ export const StackPlanView = React.memo(function StackPlanView({
         </div>
       </div>
     </div>
+    </>
   );
 });
