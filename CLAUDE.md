@@ -1,5 +1,11 @@
 # Mini Infra - Claude Code Context
 
+## Planning Guidelines
+
+After the first round of exploration and planning try to do more exploration for flow on effects.
+
+When designing the solution make sure you pick a DRY and well though out solution to reduce duplication and keep the code base maintainable.
+
 ## Browser Automation & Testing
 
 For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
