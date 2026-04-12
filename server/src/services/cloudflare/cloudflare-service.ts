@@ -18,56 +18,56 @@ const CLOUDFLARE_ERROR_MAPPERS: ErrorMapper[] = [
   // HTTP status code matchers (checked via predicate)
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 401 ||
-      (error as any)?.status === 401,
+      (error as { response?: { status?: number } })?.response?.status === 401 ||
+      (error as { status?: number })?.status === 401,
     errorCode: "INVALID_API_TOKEN",
     connectivityStatus: "failed",
     isRetriable: false,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 403 ||
-      (error as any)?.status === 403,
+      (error as { response?: { status?: number } })?.response?.status === 403 ||
+      (error as { status?: number })?.status === 403,
     errorCode: "INSUFFICIENT_PERMISSIONS",
     connectivityStatus: "failed",
     isRetriable: false,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 429 ||
-      (error as any)?.status === 429,
+      (error as { response?: { status?: number } })?.response?.status === 429 ||
+      (error as { status?: number })?.status === 429,
     errorCode: "RATE_LIMITED",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 500 ||
-      (error as any)?.status === 500,
+      (error as { response?: { status?: number } })?.response?.status === 500 ||
+      (error as { status?: number })?.status === 500,
     errorCode: "SERVER_ERROR_500",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 502 ||
-      (error as any)?.status === 502,
+      (error as { response?: { status?: number } })?.response?.status === 502 ||
+      (error as { status?: number })?.status === 502,
     errorCode: "SERVER_ERROR_502",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 503 ||
-      (error as any)?.status === 503,
+      (error as { response?: { status?: number } })?.response?.status === 503 ||
+      (error as { status?: number })?.status === 503,
     errorCode: "SERVER_ERROR_503",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 504 ||
-      (error as any)?.status === 504,
+      (error as { response?: { status?: number } })?.response?.status === 504 ||
+      (error as { status?: number })?.status === 504,
     errorCode: "SERVER_ERROR_504",
     connectivityStatus: "failed",
     isRetriable: true,
@@ -158,7 +158,7 @@ export class CloudflareService extends ConfigurationService {
    */
   private isPermissionError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
-    const status = (error as any)?.response?.status ?? (error as any)?.status;
+    const status = (error as { response?: { status?: number } })?.response?.status ?? (error as { status?: number })?.status;
     if (status === 401 || status === 403) return true;
     const lower = msg.toLowerCase();
     return lower.includes("forbidden") || lower.includes("unauthorized") || lower.includes("authentication");
@@ -229,7 +229,7 @@ export class CloudflareService extends ConfigurationService {
         apiToken,
       });
 
-      const metadata: Record<string, any> = {};
+      const metadata: Record<string, unknown> = {};
       const missingPermissions: string[] = [];
 
       // Validate Zone:Read permission by listing zones
@@ -246,7 +246,7 @@ export class CloudflareService extends ConfigurationService {
 
         const zones = zonesResponse.result || [];
         metadata.zoneCount = zones.length;
-        metadata.zones = zones.slice(0, 10).map((z: any) => z.name);
+        metadata.zones = zones.slice(0, 10).map((z: { name?: string }) => z.name);
       } catch (zoneError) {
         if (this.isPermissionError(zoneError)) {
           missingPermissions.push("Zone:Read");
@@ -274,9 +274,9 @@ export class CloudflareService extends ConfigurationService {
         const tunnels = tunnelsResponse.result || [];
         metadata.tunnelCount = tunnels.length;
         metadata.tunnels = tunnels
-          .filter((t: any) => !t.deleted_at)
+          .filter((t: { name?: string; deleted_at?: string | null }) => !t.deleted_at)
           .slice(0, 10)
-          .map((t: any) => t.name);
+          .map((t: { name?: string; deleted_at?: string | null }) => t.name);
       } catch (tunnelError) {
         if (this.isPermissionError(tunnelError)) {
           missingPermissions.push("Tunnel:Read");
@@ -655,8 +655,8 @@ export class CloudflareService extends ConfigurationService {
       );
 
       return tunnels
-        .filter((tunnel: any) => !tunnel.deleted_at) // Filter out deleted tunnels
-        .map((tunnel: any) => ({
+        .filter((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => !tunnel.deleted_at) // Filter out deleted tunnels
+        .map((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => ({
           id: tunnel.id,
           name: tunnel.name,
           status: tunnel.status,

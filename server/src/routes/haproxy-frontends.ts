@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   HAProxyFrontendInfo,
   HAProxyFrontendListResponse,
@@ -21,12 +22,17 @@ const router = express.Router();
 // Helper Functions
 // ====================
 
+type FrontendRecord = Prisma.HAProxyFrontendGetPayload<true> & {
+  _count?: { routes: number };
+  routes?: { hostname: string }[];
+};
+
 function serializeFrontend(
-  frontend: any,
+  frontend: FrontendRecord,
   sharedFrontendNameLookup?: Map<string, string>
 ): HAProxyFrontendInfo {
   // Extract hostnames from routes if available
-  const routeHostnames = frontend.routes?.map((route: any) => route.hostname) ?? [];
+  const routeHostnames = frontend.routes?.map((route: { hostname: string }) => route.hostname) ?? [];
 
   // Resolve shared frontend name for manual frontends
   const sharedFrontendName = frontend.sharedFrontendId
@@ -35,7 +41,7 @@ function serializeFrontend(
 
   return {
     id: frontend.id,
-    frontendType: frontend.frontendType || 'shared',
+    frontendType: (frontend.frontendType || 'shared') as HAProxyFrontendInfo['frontendType'],
     containerName: frontend.containerName,
     containerId: frontend.containerId,
     containerPort: frontend.containerPort,
@@ -76,7 +82,7 @@ router.get(
       const { status, hostname } = req.query;
 
       // Build filter
-      const where: any = {};
+      const where: Prisma.HAProxyFrontendWhereInput = {};
 
       if (status && typeof status === "string") {
         where.status = status;
@@ -85,7 +91,6 @@ router.get(
       if (hostname && typeof hostname === "string") {
         where.hostname = {
           contains: hostname,
-          mode: "insensitive",
         };
       }
 
@@ -118,12 +123,12 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to fetch HAProxy frontends");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to fetch HAProxy frontends");
       res.status(500).json({
         success: false,
         error: "Failed to fetch HAProxy frontends",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -205,7 +210,7 @@ router.post(
       await dockerService.initialize();
       const containers = await dockerService.listContainers();
 
-      const haproxyContainer = containers.find((container: any) => {
+      const haproxyContainer = containers.find((container) => {
         const labels = container.labels || {};
         return (
           labels["mini-infra.service"] === "haproxy" &&
@@ -262,12 +267,12 @@ router.post(
           ? `Shared ${type.toUpperCase()} frontend created with SSL configured`
           : `Shared ${type.toUpperCase()} frontend created successfully`,
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to create shared frontend");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create shared frontend");
       res.status(500).json({
         success: false,
         error: "Failed to create shared frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -324,7 +329,7 @@ router.post(
       await dockerService.initialize();
       const containers = await dockerService.listContainers();
 
-      const haproxyContainer = containers.find((container: any) => {
+      const haproxyContainer = containers.find((container) => {
         const labels = container.labels || {};
         return (
           labels["mini-infra.service"] === "haproxy" &&
@@ -362,9 +367,9 @@ router.post(
       try {
         await haproxyClient.deleteFrontendBind(frontendName, "bind_443");
         logger.info({ frontendName }, "Deleted existing bind_443 to replace with SSL-enabled bind");
-      } catch (deleteError: any) {
+      } catch (deleteError) {
         // If bind doesn't exist, that's fine - we'll just create it
-        if (!deleteError.message?.includes("not found")) {
+        if (!(deleteError instanceof Error ? deleteError.message : String(deleteError))?.includes("not found")) {
           throw deleteError;
         }
         logger.debug({ frontendName }, "No existing bind_443 to delete");
@@ -405,12 +410,12 @@ router.post(
           certFileName,
         },
       });
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to configure SSL on frontend");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to configure SSL on frontend");
       res.status(500).json({
         success: false,
         error: "Failed to configure SSL",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -464,15 +469,15 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to fetch HAProxy frontend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch HAProxy frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -513,7 +518,7 @@ async function getHAProxyClientForFrontend(frontendName: string): Promise<HAProx
   await dockerService.initialize();
   const containers = await dockerService.listContainers();
 
-  const haproxyContainer = containers.find((container: any) => {
+  const haproxyContainer = containers.find((container) => {
     const labels = container.labels || {};
     return (
       labels["mini-infra.service"] === "haproxy" &&
@@ -599,15 +604,15 @@ router.get(
           })),
         },
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to fetch routes for frontend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch routes",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -664,7 +669,7 @@ router.post(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
+          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
         });
       }
 
@@ -691,23 +696,23 @@ router.post(
         data: route,
         message: "Route added successfully",
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to add route to frontend"
       );
 
       let statusCode = 500;
-      if (error.message.includes("already exists")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("already exists")) {
         statusCode = 409;
-      } else if (error.message.includes("not found")) {
+      } else if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
         statusCode = 404;
       }
 
       res.status(statusCode).json({
         success: false,
         error: "Failed to add route",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -819,7 +824,7 @@ router.patch(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
+          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
         });
       }
 
@@ -860,21 +865,21 @@ router.patch(
         } : null,
         message: "Route updated successfully",
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName, routeId: req.params.routeId },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName, routeId: req.params.routeId },
         "Failed to update route on frontend"
       );
 
       let statusCode = 500;
-      if (error.message.includes("not found")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
         statusCode = 404;
       }
 
       res.status(statusCode).json({
         success: false,
         error: "Failed to update route",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -946,7 +951,7 @@ router.delete(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
+          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
         });
       }
 
@@ -968,15 +973,15 @@ router.delete(
         success: true,
         message: "Route removed successfully",
       });
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName, routeId: req.params.routeId },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName, routeId: req.params.routeId },
         "Failed to remove route from frontend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to remove route",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -1020,9 +1025,9 @@ router.delete(
               haproxyClient,
               prisma
             );
-          } catch (routeError: any) {
+          } catch (routeError) {
             logger.warn(
-              { error: routeError.message, hostname: route.hostname, frontendName },
+              { error: (routeError instanceof Error ? routeError.message : String(routeError)), hostname: route.hostname, frontendName },
               "Failed to remove route from HAProxy during force-delete, continuing"
             );
           }
@@ -1031,17 +1036,17 @@ router.delete(
         // Remove the frontend itself from HAProxy
         try {
           await haproxyFrontendManager.removeFrontend(frontendName, haproxyClient);
-        } catch (frontendError: any) {
+        } catch (frontendError) {
           logger.warn(
-            { error: frontendError.message, frontendName },
+            { error: (frontendError instanceof Error ? frontendError.message : String(frontendError)), frontendName },
             "Failed to remove frontend from HAProxy during force-delete, continuing"
           );
         }
 
         haproxyCleanedUp = true;
-      } catch (haproxyError: any) {
+      } catch (haproxyError) {
         logger.warn(
-          { error: haproxyError.message, frontendName },
+          { error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)), frontendName },
           "HAProxy unavailable during force-delete, cleaning up database only"
         );
       }
@@ -1074,15 +1079,15 @@ router.delete(
         frontendName,
       };
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to force-delete frontend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to force-delete frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }

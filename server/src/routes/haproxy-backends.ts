@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   HAProxyBackendInfo,
   HAProxyBackendListResponse,
@@ -25,7 +26,16 @@ const router = express.Router();
 // Helper Functions
 // ====================
 
-function serializeBackend(backend: any): HAProxyBackendInfo {
+type BackendWithRelations = Prisma.HAProxyBackendGetPayload<true> & {
+  _count?: { servers: number };
+  servers?: ServerWithBackend[];
+};
+
+type ServerWithBackend = Prisma.HAProxyServerGetPayload<true> & {
+  backend?: { name: string };
+};
+
+function serializeBackend(backend: BackendWithRelations): HAProxyBackendInfo {
   return {
     id: backend.id,
     name: backend.name,
@@ -46,7 +56,7 @@ function serializeBackend(backend: any): HAProxyBackendInfo {
   };
 }
 
-function serializeServer(server: any): HAProxyServerInfo {
+function serializeServer(server: ServerWithBackend): HAProxyServerInfo {
   return {
     id: server.id,
     name: server.name,
@@ -92,7 +102,7 @@ async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlane
   await dockerService.initialize();
   const containers = await dockerService.listContainers();
 
-  const haproxyContainer = containers.find((container: any) => {
+  const haproxyContainer = containers.find((container) => {
     const labels = container.labels || {};
     return (
       labels["mini-infra.service"] === "haproxy" &&
@@ -153,7 +163,7 @@ router.get(
     try {
       const { environmentId, status, sourceType, name } = req.query;
 
-      const where: any = {};
+      const where: Prisma.HAProxyBackendWhereInput = {};
 
       if (environmentId && typeof environmentId === "string") {
         where.environmentId = environmentId;
@@ -184,12 +194,12 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to fetch HAProxy backends");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to fetch HAProxy backends");
       res.status(500).json({
         success: false,
         error: "Failed to fetch HAProxy backends",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -244,15 +254,15 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName },
         "Failed to fetch HAProxy backend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch HAProxy backend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -316,7 +326,7 @@ router.patch(
         const existingBackend = await haproxyClient.getBackend(backendName);
         if (existingBackend) {
           // Build update payload for HAProxy DataPlane API
-          const haproxyUpdate: any = {
+          const haproxyUpdate: Record<string, unknown> = {
             name: backendName,
             mode: backend.mode,
           };
@@ -344,15 +354,15 @@ router.patch(
             "Backend config propagated to HAProxy"
           );
         }
-      } catch (haproxyError: any) {
+      } catch (haproxyError) {
         logger.warn(
-          { backendName, error: haproxyError.message },
+          { backendName, error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)) },
           "Failed to propagate backend update to HAProxy (updating DB only)"
         );
       }
 
       // Update database
-      const dbUpdate: any = {};
+      const dbUpdate: Prisma.HAProxyBackendUpdateInput = {};
       if (updates.balanceAlgorithm) dbUpdate.balanceAlgorithm = updates.balanceAlgorithm;
       if (updates.checkTimeout !== undefined) dbUpdate.checkTimeout = updates.checkTimeout;
       if (updates.connectTimeout !== undefined) dbUpdate.connectTimeout = updates.connectTimeout;
@@ -375,15 +385,15 @@ router.patch(
 
       emitHAProxyUpdate();
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName },
         "Failed to update HAProxy backend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to update HAProxy backend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -431,19 +441,19 @@ router.get(
 
       const response: HAProxyServerListResponse = {
         success: true,
-        data: backend.servers.map((s: any) => serializeServer({ ...s, backend: { name: backendName } })),
+        data: backend.servers.map((s) => serializeServer({ ...s, backend: { name: backendName } })),
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName },
         "Failed to fetch servers for backend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch servers",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -506,15 +516,15 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName, serverName: req.params.serverName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName, serverName: req.params.serverName },
         "Failed to fetch server"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch server",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -615,16 +625,16 @@ router.patch(
             { backendName, serverName, updates },
             "Server runtime state propagated to HAProxy"
           );
-        } catch (haproxyError: any) {
+        } catch (haproxyError) {
           logger.warn(
-            { backendName, serverName, error: haproxyError.message },
+            { backendName, serverName, error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)) },
             "Failed to propagate server update to HAProxy (updating DB only)"
           );
         }
       }
 
       // Update database
-      const dbUpdate: any = {};
+      const dbUpdate: Prisma.HAProxyServerUpdateInput = {};
       if (updates.weight !== undefined) dbUpdate.weight = updates.weight;
       if (updates.enabled !== undefined) dbUpdate.enabled = updates.enabled;
       if (updates.maintenance !== undefined) dbUpdate.maintenance = updates.maintenance;
@@ -646,15 +656,15 @@ router.patch(
 
       emitHAProxyUpdate();
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName, serverName: req.params.serverName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName, serverName: req.params.serverName },
         "Failed to update server"
       );
       res.status(500).json({
         success: false,
         error: "Failed to update server",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -721,9 +731,9 @@ router.delete(
         const haproxyClient = await getHAProxyClient(environmentId);
         await haproxyClient.deleteServer(backendName, serverName);
         haproxyCleanedUp = true;
-      } catch (haproxyError: any) {
+      } catch (haproxyError) {
         logger.warn(
-          { error: haproxyError.message, backendName, serverName },
+          { error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)), backendName, serverName },
           "Failed to remove server from HAProxy during force-delete, cleaning up database only"
         );
       }
@@ -749,15 +759,15 @@ router.delete(
         serverName,
       };
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName, serverName: req.params.serverName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName, serverName: req.params.serverName },
         "Failed to force-delete server"
       );
       res.status(500).json({
         success: false,
         error: "Failed to force-delete server",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -810,9 +820,9 @@ router.delete(
         for (const server of backend.servers) {
           try {
             await haproxyClient.deleteServer(backendName, server.name);
-          } catch (serverError: any) {
+          } catch (serverError) {
             logger.warn(
-              { error: serverError.message, serverName: server.name, backendName },
+              { error: (serverError instanceof Error ? serverError.message : String(serverError)), serverName: server.name, backendName },
               "Failed to remove server from HAProxy during force-delete, continuing"
             );
           }
@@ -821,17 +831,17 @@ router.delete(
         // Remove the backend itself from HAProxy
         try {
           await haproxyClient.deleteBackend(backendName);
-        } catch (backendError: any) {
+        } catch (backendError) {
           logger.warn(
-            { error: backendError.message, backendName },
+            { error: (backendError instanceof Error ? backendError.message : String(backendError)), backendName },
             "Failed to remove backend from HAProxy during force-delete, continuing"
           );
         }
 
         haproxyCleanedUp = true;
-      } catch (haproxyError: any) {
+      } catch (haproxyError) {
         logger.warn(
-          { error: haproxyError.message, backendName },
+          { error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)), backendName },
           "HAProxy unavailable during force-delete, cleaning up database only"
         );
       }
@@ -864,15 +874,15 @@ router.delete(
         backendName,
       };
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, backendName: req.params.backendName },
+        { error: (error instanceof Error ? error.message : String(error)), backendName: req.params.backendName },
         "Failed to force-delete backend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to force-delete backend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
