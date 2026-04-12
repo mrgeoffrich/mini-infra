@@ -239,11 +239,11 @@ export class HAProxyFrontendManager {
         { frontendName, aclName },
         "Successfully added ACL to frontend"
       );
-    } catch (error: any) {
+    } catch (error) {
       // If ACL already exists, log warning but don't throw
       if (
-        error?.response?.status === 409 ||
-        error?.message?.includes("already exists")
+        (error as { response?: { status?: number } })?.response?.status === 409 ||
+        (error instanceof Error ? error.message : "").includes("already exists")
       ) {
         logger.warn(
           { frontendName, aclName },
@@ -288,11 +288,11 @@ export class HAProxyFrontendManager {
         { frontendName, backendName, aclName },
         "Successfully added backend switching rule"
       );
-    } catch (error: any) {
+    } catch (error) {
       // If rule already exists, log warning but don't throw
       if (
-        error?.response?.status === 409 ||
-        error?.message?.includes("already exists")
+        (error as { response?: { status?: number } })?.response?.status === 409 ||
+        (error instanceof Error ? error.message : "").includes("already exists")
       ) {
         logger.warn(
           { frontendName, backendName },
@@ -325,9 +325,9 @@ export class HAProxyFrontendManager {
       await haproxyClient.deleteFrontend(frontendName);
 
       logger.info({ frontendName }, "Successfully removed frontend");
-    } catch (error: any) {
+    } catch (error) {
       // If frontend doesn't exist, consider it already removed
-      if (error?.response?.status === 404) {
+      if ((error as { response?: { status?: number } })?.response?.status === 404) {
         logger.warn(
           { frontendName },
           "Frontend not found, considering it already removed"
@@ -369,7 +369,7 @@ export class HAProxyFrontendManager {
 
       // Find the rule that matches our ACL
       const ruleIndex = existingRules.findIndex(
-        (rule: any) => rule.cond_test === aclName
+        (rule: { cond_test?: string }) => rule.cond_test === aclName
       );
 
       if (ruleIndex === -1) {
@@ -976,7 +976,7 @@ export class HAProxyFrontendManager {
       const existingRules =
         await haproxyClient.getBackendSwitchingRules(frontendName);
       const ruleIndex = existingRules.findIndex(
-        (rule: any) => rule.cond_test === aclName
+        (rule: { cond_test?: string }) => rule.cond_test === aclName
       );
 
       if (ruleIndex !== -1) {
@@ -995,7 +995,7 @@ export class HAProxyFrontendManager {
       // Remove ACL from HAProxy
       const existingACLs = await haproxyClient.getACLs(frontendName);
       const aclIndex = existingACLs.findIndex(
-        (acl: any) => acl.acl_name === aclName
+        (acl: { acl_name?: string }) => acl.acl_name === aclName
       );
 
       if (aclIndex !== -1) {
@@ -1077,7 +1077,7 @@ export class HAProxyFrontendManager {
         const existingRules =
           await haproxyClient.getBackendSwitchingRules(frontendName);
         const ruleIndex = existingRules.findIndex(
-          (rule: any) => rule.cond_test === oldAclName
+          (rule: { cond_test?: string }) => rule.cond_test === oldAclName
         );
 
         if (ruleIndex !== -1) {
@@ -1089,7 +1089,7 @@ export class HAProxyFrontendManager {
 
         const existingACLs = await haproxyClient.getACLs(frontendName);
         const aclIndex = existingACLs.findIndex(
-          (acl: any) => acl.acl_name === oldAclName
+          (acl: { acl_name?: string }) => acl.acl_name === oldAclName
         );
 
         if (aclIndex !== -1) {
@@ -1205,7 +1205,7 @@ export class HAProxyFrontendManager {
                 "Removing orphaned ACL"
               );
               const aclIndex = haproxyACLs.findIndex(
-                (a: any) => a.acl_name === acl.acl_name
+                (a: { acl_name?: string }) => a.acl_name === acl.acl_name
               );
               if (aclIndex !== -1) {
                 await haproxyClient.deleteACL(frontendName, aclIndex);
@@ -1225,7 +1225,7 @@ export class HAProxyFrontendManager {
                 "Removing orphaned rule"
               );
               const ruleIndex = haproxyRules.findIndex(
-                (r: any) => r.cond_test === rule.cond_test
+                (r: { cond_test?: string }) => r.cond_test === rule.cond_test
               );
               if (ruleIndex !== -1) {
                 await haproxyClient.deleteBackendSwitchingRule(
@@ -1242,10 +1242,10 @@ export class HAProxyFrontendManager {
         // Ensure all database routes exist in HAProxy
         for (const route of frontend.routes) {
           const aclExists = haproxyACLs.some(
-            (a: any) => a.acl_name === route.aclName
+            (a: { acl_name?: string }) => a.acl_name === route.aclName
           );
           const ruleExists = haproxyRules.some(
-            (r: any) => r.cond_test === route.aclName
+            (r: { cond_test?: string }) => r.cond_test === route.aclName
           );
 
           if (!aclExists || !ruleExists) {

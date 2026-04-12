@@ -215,7 +215,7 @@ export class ContainerLifecycleManager {
       );
 
       // Create the container
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = await docker.createContainer(containerConfig);
 
       servicesLogger().info(
@@ -257,7 +257,7 @@ export class ContainerLifecycleManager {
 
       servicesLogger().info({ containerId }, "Starting container");
 
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
       await container.start();
 
@@ -288,15 +288,15 @@ export class ContainerLifecycleManager {
 
       servicesLogger().info({ containerId, timeout }, "Stopping container");
 
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
 
       // Try graceful stop first
       try {
         await container.stop({ t: timeout });
-      } catch (error: any) {
+      } catch (error) {
         // If container is already stopped, that's fine
-        if (error.statusCode !== 304) {
+        if ((error as { statusCode?: number }).statusCode !== 304) {
           throw error;
         }
       }
@@ -329,7 +329,7 @@ export class ContainerLifecycleManager {
 
       servicesLogger().info({ containerId, force }, "Removing container");
 
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
 
       await container.remove({
@@ -397,7 +397,7 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
 
       try {
@@ -418,8 +418,8 @@ export class ContainerLifecycleManager {
           exitCode: data.State.ExitCode,
           error: data.State.Error || undefined,
         };
-      } catch (error: any) {
-        if (error.statusCode === 404) {
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === 404) {
           return null; // Container doesn't exist
         }
         throw error;
@@ -563,7 +563,7 @@ export class ContainerLifecycleManager {
         "Searching for orphaned containers",
       );
 
-      const docker = (this.dockerService as any).docker as Docker;
+      const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const containers = await docker.listContainers({ all: true });
 
       const cutoffTime = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000);
@@ -748,8 +748,8 @@ export class ContainerLifecycleManager {
   /**
    * Build Docker port bindings from deployment port configuration
    */
-  private buildPortBindings(ports: DeploymentPort[]): Record<string, any[]> {
-    const bindings: Record<string, any[]> = {};
+  private buildPortBindings(ports: DeploymentPort[]): Record<string, Docker.PortBinding[]> {
+    const bindings: Record<string, Docker.PortBinding[]> = {};
 
     for (const port of ports) {
       const key = `${port.containerPort}/${port.protocol || "tcp"}`;

@@ -70,12 +70,12 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedServers,
     });
-  } catch (error: any) {
-    logger.error({ error: error.message }, "Failed to list servers");
+  } catch (error) {
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list servers");
     res.status(500).json({
       success: false,
       error: "Failed to list servers",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -117,7 +117,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
         syncResults,
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -126,11 +126,11 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create server");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create server");
     res.status(500).json({
       success: false,
       error: "Failed to create server",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -154,19 +154,19 @@ router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedServer,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to get server");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get server");
     res.status(500).json({
       success: false,
       error: "Failed to get server",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -191,7 +191,7 @@ router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
       success: true,
       data: sanitizedServer,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -200,18 +200,18 @@ router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to update server");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update server");
     res.status(500).json({
       success: false,
       error: "Failed to update server",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -231,19 +231,19 @@ router.delete("/:id", requirePermission('postgres:write'), async (req, res) => {
       success: true,
       message: "Server deleted successfully",
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to delete server");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to delete server");
     res.status(500).json({
       success: false,
       error: "Failed to delete server",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -271,7 +271,7 @@ router.post("/test-connection", requirePermission('postgres:write'), async (req,
         message: result.error,
       });
     }
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -280,11 +280,11 @@ router.post("/test-connection", requirePermission('postgres:write'), async (req,
       });
     }
 
-    logger.error({ error: error.message }, "Failed to test connection");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to test connection");
     res.status(500).json({
       success: false,
       error: "Failed to test connection",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -313,19 +313,19 @@ router.post("/:id/test", requirePermission('postgres:write'), async (req, res) =
         message: result.error,
       });
     }
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to test server connection");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to test server connection");
     res.status(500).json({
       success: false,
       error: "Failed to test server connection",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -345,19 +345,19 @@ router.get("/:id/info", requirePermission('postgres:read'), async (req, res) => 
       success: true,
       data: info,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to get server info");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get server info");
     res.status(500).json({
       success: false,
       error: "Failed to get server info",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

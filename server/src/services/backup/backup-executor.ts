@@ -367,7 +367,7 @@ export class BackupExecutorService {
         {
           jobId: job.id,
           operationId: job.data.backupOperationId,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         },
         "Backup job failed permanently",
       );

@@ -303,7 +303,7 @@ export class HealthCheckService {
             errorMessage = "Connection refused - service may be down";
           } else if (
             error.code === "ETIMEDOUT" ||
-            error.message.includes("timeout")
+            (error instanceof Error ? error.message : String(error)).includes("timeout")
           ) {
             errorMessage = `Request timeout after ${config.timeout || HealthCheckService.DEFAULT_TIMEOUT}ms`;
           } else if (error.code === "ENOTFOUND") {
@@ -311,11 +311,11 @@ export class HealthCheckService {
           } else if (error.code === "ECONNRESET") {
             errorMessage = "Connection reset by server";
           } else {
-            errorMessage = error.message || "Network error";
+            errorMessage = (error instanceof Error ? error.message : String(error)) || "Network error";
           }
         }
       } else if (error instanceof Error) {
-        errorMessage = error.message;
+        errorMessage = (error instanceof Error ? error.message : String(error));
       }
 
       servicesLogger().debug(
@@ -603,7 +603,15 @@ export class HealthCheckService {
       nextRetryTime?: Date;
     }
   > {
-    const statuses: Record<string, any> = {};
+    const statuses: Record<
+      string,
+      {
+        state: "closed" | "open" | "half-open";
+        consecutiveFailures: number;
+        lastFailureTime?: Date;
+        nextRetryTime?: Date;
+      }
+    > = {};
 
     for (const [key, breaker] of this.circuitBreakers) {
       statuses[key] = { ...breaker };

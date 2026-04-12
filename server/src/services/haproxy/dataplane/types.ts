@@ -8,7 +8,7 @@ import { HttpClient } from '../../../lib/http-client';
 export type Constructor<T = object> = new (...args: any[]) => T;
 
 export interface IHAProxyClientBase {
-  handleApiError(error: unknown, operation: string, context?: Record<string, any>): void;
+  handleApiError(error: unknown, operation: string, context?: Record<string, unknown>): void;
   getVersion(): Promise<number>;
   beginTransaction(): Promise<string>;
   commitTransaction(transactionId: string): Promise<void>;

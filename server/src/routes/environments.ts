@@ -94,7 +94,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
   } catch (error) {
     logger.error({ error, request: req.body }, 'Failed to create environment');
 
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Unique constraint')) {
       return res.status(409).json({
         error: 'Environment name already exists',
         message: 'An environment with this name already exists'
@@ -158,7 +158,7 @@ router.put('/:id', requirePermission('environments:write'), async (req, res) => 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id, request: req.body }, 'Failed to update environment');
 
-    if (error instanceof Error && error.message.includes('Unique constraint')) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Unique constraint')) {
       return res.status(409).json({
         error: 'Environment name already exists',
         message: 'An environment with this name already exists'
@@ -243,7 +243,7 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to delete environment');
 
-    if (error instanceof Error && error.message.includes('Cannot delete a running environment')) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Cannot delete a running environment')) {
       return res.status(400).json({
         error: 'Environment is running',
         message: 'Cannot delete a running environment. Stop it first.'
@@ -592,12 +592,12 @@ router.post('/:id/migrate-haproxy', requirePermission('environments:write'), asy
           environmentId: id,
         });
         emitHAProxyUpdate();
-      } catch (error: any) {
-        logger.error({ error: error.message, environmentId: id }, 'Background HAProxy migration failed');
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), environmentId: id }, 'Background HAProxy migration failed');
         emitToChannel(Channel.STACKS, ServerEvent.MIGRATION_COMPLETED, {
           success: false,
           steps: [],
-          errors: [error.message],
+          errors: [(error instanceof Error ? error.message : String(error))],
           environmentId: id,
         });
       } finally {

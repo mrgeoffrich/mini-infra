@@ -138,9 +138,9 @@ export class TlsConfigService extends ConfigurationService {
           containerName,
         },
       };
-    } catch (error: any) {
+    } catch (error) {
       const responseTime = Date.now() - startTime;
-      const errorMessage = error.message || "Unknown error";
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || "Unknown error";
       let errorCode = "UNKNOWN_ERROR";
       let connectivityStatus: ConnectivityStatusType = "failed";
 

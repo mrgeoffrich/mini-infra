@@ -141,7 +141,7 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
       // Re-throw the original error
       throw workflowError;
     }
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -150,18 +150,18 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create application database");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create application database");
     res.status(500).json({
       success: false,
       error: "Failed to create application database",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

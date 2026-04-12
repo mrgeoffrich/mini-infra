@@ -21,7 +21,7 @@ export class HAProxyService implements IApplicationService {
   private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
   private startedAt?: Date;
   private stoppedAt?: Date;
-  private lastError?: { message: string; timestamp: Date; details?: Record<string, any> };
+  private lastError?: { message: string; timestamp: Date; details?: Record<string, unknown> };
   private availableNetworks: NetworkRequirement[] = [];
   private availableVolumes: VolumeRequirement[] = [];
 

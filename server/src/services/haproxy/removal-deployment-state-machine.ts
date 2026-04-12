@@ -45,7 +45,7 @@ interface RemovalDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
 }
 
 type RemovalDeploymentEvent =
@@ -82,7 +82,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'LB_REMOVAL_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -98,7 +98,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'FRONTEND_REMOVAL_ERROR',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -114,7 +114,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'STOP_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -130,7 +130,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'REMOVAL_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }

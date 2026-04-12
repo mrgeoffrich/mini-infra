@@ -408,9 +408,9 @@ async function migrateEnvironmentNetworksToInfraResources(
         update: {}, // Don't overwrite if already exists
       });
       migrated++;
-    } catch (err: any) {
+    } catch (err) {
       log.warn(
-        { purpose: en.purpose, environmentId: en.environmentId, error: err.message },
+        { purpose: en.purpose, environmentId: en.environmentId, error: (err instanceof Error ? err.message : String(err)) },
         'Failed to migrate EnvironmentNetwork to InfraResource'
       );
     }

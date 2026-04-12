@@ -669,7 +669,7 @@ router.post(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
+          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
         });
       }
 
@@ -824,7 +824,7 @@ router.patch(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
+          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
         });
       }
 
@@ -951,7 +951,7 @@ router.delete(
         return res.status(503).json({
           success: false,
           error: "HAProxy unavailable",
-          message: error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to connect to HAProxy",
+          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
         });
       }
 

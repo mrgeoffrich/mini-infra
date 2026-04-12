@@ -66,7 +66,7 @@ interface InitialDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
 
     // Source-agnostic configuration (used by actions instead of DB lookups)
     // When set, actions read from these fields directly.
@@ -127,7 +127,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'DEPLOYMENT_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -138,7 +138,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'STARTUP_TIMEOUT',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -149,7 +149,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'LB_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -160,7 +160,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'HEALTH_CHECK_TIMEOUT',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -171,7 +171,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'FRONTEND_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -182,7 +182,7 @@ export const initialDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'TRAFFIC_ENABLE_FAILED',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -207,7 +207,7 @@ export const initialDeploymentMachine = setup({
                     self.send(event);
                 }
             }).catch((error) => {
-                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+                self.send({ type: 'ROLLBACK_ERROR', error: (error instanceof Error ? error.message : String(error)) || 'Unknown error' });
             });
         },
         rollbackRemoveHAProxyConfig: ({ context, self }) => {
@@ -220,7 +220,7 @@ export const initialDeploymentMachine = setup({
                     self.send(event);
                 }
             }).catch((error) => {
-                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+                self.send({ type: 'ROLLBACK_ERROR', error: (error instanceof Error ? error.message : String(error)) || 'Unknown error' });
             });
         },
         rollbackStopApplication: ({ context, self }) => {
@@ -233,7 +233,7 @@ export const initialDeploymentMachine = setup({
                     self.send(event);
                 }
             }).catch((error) => {
-                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+                self.send({ type: 'ROLLBACK_ERROR', error: (error instanceof Error ? error.message : String(error)) || 'Unknown error' });
             });
         },
         rollbackRemoveApplication: ({ context, self }) => {
@@ -246,7 +246,7 @@ export const initialDeploymentMachine = setup({
                     self.send(event);
                 }
             }).catch((error) => {
-                self.send({ type: 'ROLLBACK_ERROR', error: error.message || 'Unknown error' });
+                self.send({ type: 'ROLLBACK_ERROR', error: (error instanceof Error ? error.message : String(error)) || 'Unknown error' });
             });
         },
         preserveErrorContext: assign({

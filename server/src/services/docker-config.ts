@@ -399,7 +399,7 @@ export class DockerConfigService extends ConfigurationService {
    */
   private mapErrorToStatus(error: any): ConnectivityStatusType {
     if (error instanceof Error) {
-      const message = error.message.toLowerCase();
+      const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
       if (message.includes("timeout")) {
         return "timeout";
       } else if (
@@ -438,7 +438,7 @@ export class DockerConfigService extends ConfigurationService {
     responseTimeMs?: number,
     errorMessage?: string,
     errorCode?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void> {
     return super.recordConnectivityStatus(

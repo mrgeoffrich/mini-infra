@@ -9,7 +9,7 @@ import DockerService from './docker';
 export interface ServiceCreationOptions {
   serviceName: string;
   serviceType: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   projectName?: string;
   environmentId?: string;
 }
@@ -18,7 +18,7 @@ export interface ServiceCreationResult {
   success: boolean;
   service?: IApplicationService;
   message?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export class ApplicationServiceFactory {

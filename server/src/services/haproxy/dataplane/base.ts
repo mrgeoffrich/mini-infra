@@ -182,7 +182,7 @@ export class HAProxyDataPlaneClientBase {
       );
     } catch (error) {
       if (isHttpError(error)) {
-        const message = error.response?.data?.message || error.message;
+        const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
         throw new Error(`DataPlane API connection failed: ${message}`, { cause: error });
       }
       throw error;
@@ -359,10 +359,10 @@ export class HAProxyDataPlaneClientBase {
   /**
    * Handle API errors consistently
    */
-  handleApiError(error: unknown, operation: string, context?: Record<string, any>): void {
+  handleApiError(error: unknown, operation: string, context?: Record<string, unknown>): void {
     if (isHttpError(error)) {
       const status = error.response?.status;
-      const message = error.response?.data?.message || error.message;
+      const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
       const errorDetails = {
         operation,
         status,
@@ -413,19 +413,19 @@ export class HAProxyDataPlaneClientBase {
     maxRetries: number,
     baseDelay: number
   ): Promise<T> {
-    let lastError: Error;
+    let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
-      } catch (error: any) {
+      } catch (error) {
         lastError = error;
 
         // Only retry on version conflicts
-        if (error.message?.includes('Version conflict') && attempt < maxRetries) {
+        if ((error instanceof Error ? error.message : String(error))?.includes('Version conflict') && attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt);
           logger.debug(
-            { attempt, delay, error: error.message },
+            { attempt, delay, error: (error instanceof Error ? error.message : String(error)) },
             'Retrying after version conflict'
           );
           await new Promise(resolve => setTimeout(resolve, delay));

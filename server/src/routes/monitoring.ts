@@ -85,9 +85,9 @@ router.post('/stop', requirePermission('monitoring:write'), async (req, res) => 
     const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as any).user?.id });
 
     res.json({ message: 'Monitoring stack stopped', ...result });
-  } catch (error: any) {
+  } catch (error) {
     logger.error({ error }, 'Failed to stop monitoring stack');
-    res.status(500).json({ error: error?.message ?? 'Failed to stop monitoring stack' });
+    res.status(500).json({ error: (error instanceof Error ? error.message : null) ?? 'Failed to stop monitoring stack' });
   }
 });
 

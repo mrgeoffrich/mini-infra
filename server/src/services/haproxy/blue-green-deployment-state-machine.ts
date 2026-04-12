@@ -226,7 +226,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'FRONTEND_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -273,7 +273,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'LB_REMOVAL_FAILED',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -289,7 +289,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_STOP_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -305,7 +305,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_REMOVAL_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -356,7 +356,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -379,7 +379,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -402,7 +402,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },

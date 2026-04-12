@@ -171,14 +171,14 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
           steps,
           errors: [],
         });
-      } catch (error: any) {
-        logger.error({ error: error.message, operationId }, "Background certificate issuance failed");
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), operationId }, "Background certificate issuance failed");
         emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
           operationId,
           success: false,
           primaryDomain: validatedData.primaryDomain,
           steps,
-          errors: [error.message],
+          errors: [(error instanceof Error ? error.message : String(error))],
         });
       } finally {
         issuingCertificates.delete(validatedData.primaryDomain);

@@ -181,7 +181,7 @@ export class ConfigureFrontend {
     } catch (error) {
       const errorMessage =
         error instanceof Error
-          ? error.message
+          ? (error instanceof Error ? error.message : String(error))
           : "Unknown error during frontend configuration";
 
       logger.error(

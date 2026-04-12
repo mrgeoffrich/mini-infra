@@ -29,5 +29,5 @@ export interface BackupValidationResult {
   error?: string;
   sizeBytes?: number;
   lastModified?: Date;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

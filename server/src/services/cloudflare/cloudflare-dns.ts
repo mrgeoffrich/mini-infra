@@ -191,9 +191,9 @@ export class CloudflareDNSService {
       );
 
       return dnsRecord;
-    } catch (error: any) {
+    } catch (error) {
       // Check if the error is due to record already existing
-      if (error?.message?.includes("already exists")) {
+      if ((error instanceof Error ? error.message : "").includes("already exists")) {
         logger.warn(
           { zoneId, recordName: record.name },
           "DNS record already exists"
@@ -306,9 +306,9 @@ export class CloudflareDNSService {
       ]);
 
       logger.info({ zoneId, recordId }, "Successfully deleted DNS record");
-    } catch (error: any) {
+    } catch (error) {
       // If record not found, consider it already deleted (idempotent)
-      if (error?.message?.includes("not found") || error?.status === 404) {
+      if ((error instanceof Error ? error.message : "").includes("not found") || (error as { status?: number })?.status === 404) {
         logger.warn(
           { zoneId, recordId },
           "DNS record not found, considering it already deleted"
@@ -373,8 +373,8 @@ export class CloudflareDNSService {
       );
 
       return dnsRecord;
-    } catch (error: any) {
-      if (error?.message?.includes("not found") || error?.status === 404) {
+    } catch (error) {
+      if ((error instanceof Error ? error.message : "").includes("not found") || (error as { status?: number })?.status === 404) {
         logger.warn({ zoneId, recordId }, "DNS record not found");
         return null;
       }

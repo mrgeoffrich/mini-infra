@@ -63,7 +63,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       success: true,
       data: grant,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -72,32 +72,32 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create grant");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create grant");
     res.status(500).json({
       success: false,
       error: "Failed to create grant",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -117,19 +117,19 @@ router.get("/:grantId", requirePermission('postgres:read'), async (req, res) => 
       success: true,
       data: grant,
     });
-  } catch (error: any) {
-    if (error.message === "Grant not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
       return res.status(404).json({
         success: false,
         error: "Grant not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to get grant details");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get grant details");
     res.status(500).json({
       success: false,
       error: "Failed to get grant details",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -150,7 +150,7 @@ router.put("/:grantId", requirePermission('postgres:write'), async (req, res) =>
       success: true,
       data: grant,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -159,18 +159,18 @@ router.put("/:grantId", requirePermission('postgres:write'), async (req, res) =>
       });
     }
 
-    if (error.message === "Grant not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
       return res.status(404).json({
         success: false,
         error: "Grant not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to update grant");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update grant");
     res.status(500).json({
       success: false,
       error: "Failed to update grant",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -190,19 +190,19 @@ router.delete("/:grantId", requirePermission('postgres:write'), async (req, res)
       success: true,
       message: "Grant revoked successfully",
     });
-  } catch (error: any) {
-    if (error.message === "Grant not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
       return res.status(404).json({
         success: false,
         error: "Grant not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to delete grant");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to delete grant");
     res.status(500).json({
       success: false,
       error: "Failed to delete grant",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

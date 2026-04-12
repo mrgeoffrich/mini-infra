@@ -23,7 +23,7 @@ function getTemplateService() {
 
 function handleTemplateError(error: unknown, res: any, fallbackMessage: string) {
   if (error instanceof TemplateError) {
-    return res.status(error.statusCode).json({ success: false, message: error.message });
+    return res.status(error.statusCode).json({ success: false, message: (error instanceof Error ? error.message : String(error)) });
   }
   logger.error({ error }, fallbackMessage);
   return res.status(500).json({ success: false, message: fallbackMessage });

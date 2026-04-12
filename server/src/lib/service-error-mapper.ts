@@ -13,7 +13,7 @@ function getStatusCode(error: unknown): number | undefined {
 }
 
 function getMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return (error instanceof Error ? error.message : String(error));
   if (typeof error === "string") return error;
   return String(error);
 }

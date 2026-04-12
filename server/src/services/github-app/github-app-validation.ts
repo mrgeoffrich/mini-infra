@@ -121,7 +121,7 @@ export class GitHubAppValidation {
 
       const appSlug = await this.ctx.getSetting(SETTING_KEYS.APP_SLUG);
 
-      const metadata: Record<string, any> = {
+      const metadata: Record<string, unknown> = {
         appSlug,
         appId,
         installationId,

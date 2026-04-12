@@ -214,7 +214,7 @@ export class AzureStorageService extends ConfigurationService {
         );
       }
 
-      const metadata: Record<string, any> = {
+      const metadata: Record<string, unknown> = {
         accountName,
         skuName: accountInfo.skuName,
         accountKind: accountInfo.accountKind,

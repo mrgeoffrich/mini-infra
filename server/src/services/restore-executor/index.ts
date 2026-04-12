@@ -483,7 +483,7 @@ export class RestoreExecutorService {
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         },
         "Restore job failed permanently",
       );

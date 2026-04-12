@@ -198,7 +198,7 @@ export class GitHubService extends ConfigurationService {
       const responseTime = Date.now() - startTime;
 
       // Extract metadata
-      const metadata: Record<string, any> = {
+      const metadata: Record<string, unknown> = {
         username: userResponse.data.login,
         userId: userResponse.data.id,
         userType: userResponse.data.type,

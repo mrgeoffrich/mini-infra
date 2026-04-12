@@ -251,7 +251,7 @@ export class RemoveFrontend {
     } catch (error) {
       const errorMessage =
         error instanceof Error
-          ? error.message
+          ? (error instanceof Error ? error.message : String(error))
           : "Unknown error during frontend removal";
 
       logger.error(

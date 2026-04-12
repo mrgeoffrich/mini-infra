@@ -125,9 +125,9 @@ export class PostgresServerService {
       const dbSyncResult = await databaseManagerService.syncDatabases(server.id, params.userId);
       syncResults.databasesSync = { success: true, count: dbSyncResult.synced, error: undefined };
       logger.info({ serverId: server.id, count: dbSyncResult.synced }, "Initial database sync completed");
-    } catch (error: any) {
-      logger.error({ serverId: server.id, error: error.message }, "Initial database sync failed");
-      syncResults.databasesSync = { success: false, count: 0, error: error.message };
+    } catch (error) {
+      logger.error({ serverId: server.id, error: (error instanceof Error ? error.message : String(error)) }, "Initial database sync failed");
+      syncResults.databasesSync = { success: false, count: 0, error: (error instanceof Error ? error.message : String(error)) };
     }
 
     // Sync users
@@ -136,9 +136,9 @@ export class PostgresServerService {
       const userSyncResult = await userManagerService.syncUsers(server.id, params.userId);
       syncResults.usersSync = { success: true, count: userSyncResult.synced, error: undefined };
       logger.info({ serverId: server.id, count: userSyncResult.synced }, "Initial user sync completed");
-    } catch (error: any) {
-      logger.error({ serverId: server.id, error: error.message }, "Initial user sync failed");
-      syncResults.usersSync = { success: false, count: 0, error: error.message };
+    } catch (error) {
+      logger.error({ serverId: server.id, error: (error instanceof Error ? error.message : String(error)) }, "Initial user sync failed");
+      syncResults.usersSync = { success: false, count: 0, error: (error instanceof Error ? error.message : String(error)) };
     }
 
     return { server: this.transformServer(server), syncResults };
@@ -293,9 +293,9 @@ export class PostgresServerService {
 
       logger.info({ host: params.host, version }, "Connection test successful");
       return { success: true, version };
-    } catch (error: any) {
-      logger.error({ error: error.message, host: params.host }, "Connection test failed");
-      return { success: false, error: error.message };
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), host: params.host }, "Connection test failed");
+      return { success: false, error: (error instanceof Error ? error.message : String(error)) };
     }
   }
 
@@ -326,7 +326,7 @@ export class PostgresServerService {
 
       logger.info({ serverId, version }, "Server connection test successful");
       return { success: true, version };
-    } catch (error: any) {
+    } catch (error) {
       // Update health status
       await prisma.postgresServer.update({
         where: { id: serverId },
@@ -336,8 +336,8 @@ export class PostgresServerService {
         },
       });
 
-      logger.error({ error: error.message, serverId }, "Server connection test failed");
-      return { success: false, error: error.message };
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Server connection test failed");
+      return { success: false, error: (error instanceof Error ? error.message : String(error)) };
     }
   }
 
@@ -381,9 +381,9 @@ export class PostgresServerService {
         databaseCount,
         activeConnections,
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, serverId }, "Failed to get server info");
-      throw new Error(`Failed to get server info: ${error.message}`, { cause: error });
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to get server info");
+      throw new Error(`Failed to get server info: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 

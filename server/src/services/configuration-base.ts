@@ -160,7 +160,7 @@ export abstract class ConfigurationService implements IConfigurationService {
     responseTimeMs?: number,
     errorMessage?: string,
     errorCode?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void> {
     try {

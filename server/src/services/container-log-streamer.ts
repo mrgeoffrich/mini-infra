@@ -120,11 +120,11 @@ export async function startLogStream(
       activeStreams.delete(key);
       (socket as any).emit(ServerEvent.CONTAINER_LOG_ERROR, {
         containerId,
-        error: error.message,
+        error: (error instanceof Error ? error.message : String(error)),
       });
 
       logger.error(
-        { error: error.message, socketId: socket.id, containerId },
+        { error: (error instanceof Error ? error.message : String(error)), socketId: socket.id, containerId },
         "Container log stream error",
       );
     });

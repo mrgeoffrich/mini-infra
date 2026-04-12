@@ -68,7 +68,7 @@ export class ConfigureDNS {
     } catch (error) {
       const errorMessage =
         error instanceof Error
-          ? error.message
+          ? (error instanceof Error ? error.message : String(error))
           : "Unknown error during DNS configuration";
 
       logger.error(

@@ -254,9 +254,9 @@ export class HAProxyMigrationService {
       const container = docker.getContainer(preview.legacyContainer!.id);
       try {
         await container.stop({ t: 10 });
-      } catch (err: any) {
+      } catch (err) {
         // Container might already be stopped
-        if (!err.message?.includes('not running') && !err.message?.includes('304')) {
+        if (!(err instanceof Error ? err.message : String(err))?.includes('not running') && !(err instanceof Error ? err.message : String(err))?.includes('304')) {
           throw err;
         }
       }

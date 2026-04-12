@@ -110,7 +110,7 @@ export interface GitHubAppValidationContext extends GitHubAppContext {
     responseTimeMs?: number,
     errorMessage?: string,
     errorCode?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void>;
   getLatestConnectivityStatus(): Promise<any | null>;

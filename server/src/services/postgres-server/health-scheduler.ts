@@ -109,15 +109,15 @@ export class ServerHealthScheduler {
             failureCount++;
             logger.warn({ serverId: server.id, name: server.name, error: result.error }, "Health check failed");
           }
-        } catch (error: any) {
+        } catch (error) {
           failureCount++;
-          logger.error({ error: error.message, serverId: server.id, name: server.name }, "Health check error");
+          logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId: server.id, name: server.name }, "Health check error");
         }
       }
 
       logger.info({ successCount, failureCount }, "Completed health checks for all PostgreSQL servers");
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to perform health checks");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to perform health checks");
     }
   }
 
@@ -156,15 +156,15 @@ export class ServerHealthScheduler {
 
           successCount++;
           logger.debug({ serverId: server.id, name: server.name }, "Sync completed");
-        } catch (error: any) {
+        } catch (error) {
           failureCount++;
-          logger.error({ error: error.message, serverId: server.id, name: server.name }, "Sync error");
+          logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId: server.id, name: server.name }, "Sync error");
         }
       }
 
       logger.info({ successCount, failureCount }, "Completed sync for all PostgreSQL servers");
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to perform syncs");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to perform syncs");
     }
   }
 
@@ -178,8 +178,8 @@ export class ServerHealthScheduler {
       const result = await postgresServerService.performHealthCheck(serverId, userId);
       logger.info({ serverId, success: result.success }, "Health check completed");
       return result;
-    } catch (error: any) {
-      logger.error({ error: error.message, serverId }, "Health check failed");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Health check failed");
       throw error;
     }
   }
@@ -202,8 +202,8 @@ export class ServerHealthScheduler {
         databases: dbResult.synced,
         users: userResult.synced,
       };
-    } catch (error: any) {
-      logger.error({ error: error.message, serverId }, "Sync failed");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Sync failed");
       throw error;
     }
   }
