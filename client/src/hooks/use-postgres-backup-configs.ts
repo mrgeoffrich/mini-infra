@@ -252,15 +252,15 @@ export function usePostgresBackupConfig(
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
             if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
+              (error instanceof Error ? error.message : String(error)).includes("401") ||
+              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
             ) {
               return false;
             }
             // Don't retry on not found errors (404 is handled in the fetch function)
             if (
-              error.message.includes("404") ||
-              error.message.includes("Not found")
+              (error instanceof Error ? error.message : String(error)).includes("404") ||
+              (error instanceof Error ? error.message : String(error)).includes("Not found")
             ) {
               return false;
             }

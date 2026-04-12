@@ -60,7 +60,7 @@ export function EventsPage() {
       setEventToDelete(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete event",
+        error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to delete event",
       );
     }
   };
@@ -118,7 +118,7 @@ export function EventsPage() {
                   Failed to load events
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {error instanceof Error ? error.message : "Unknown error"}
+                  {error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Unknown error"}
                 </p>
               </div>
             )}

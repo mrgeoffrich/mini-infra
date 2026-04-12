@@ -137,8 +137,8 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
       await createMutation.mutateAsync(data);
       toast.success("User created successfully");
       setIsCreateModalOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create user");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to create user");
       throw error;
     }
   };
@@ -151,8 +151,8 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
       await updateMutation.mutateAsync({ userId, updates });
       toast.success("User updated successfully");
       setEditingUser(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to update user");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to update user");
       throw error;
     }
   };
@@ -162,8 +162,8 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
       await changePasswordMutation.mutateAsync({ userId, password });
       toast.success("Password changed successfully");
       setChangingPasswordUser(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to change password");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to change password");
       throw error;
     }
   };
@@ -185,8 +185,8 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
       toast.success(`User "${userToDelete.username}" deleted successfully`);
       setDeleteDialogOpen(false);
       setUserToDelete(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete user");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to delete user");
     }
   };
 
@@ -197,8 +197,8 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
         result.message ||
           `Synced successfully: ${result.data.created} created, ${result.data.updated} updated`,
       );
-    } catch (error: any) {
-      toast.error(error.message || "Failed to sync users");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to sync users");
     }
   };
 
@@ -265,7 +265,7 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
           <CardContent className="pt-6">
             <div className="text-center text-destructive py-6">
               <p className="text-sm">Failed to load users</p>
-              <p className="text-xs mt-1">{error.message}</p>
+              <p className="text-xs mt-1">{(error instanceof Error ? error.message : String(error))}</p>
             </div>
           </CardContent>
         </Card>

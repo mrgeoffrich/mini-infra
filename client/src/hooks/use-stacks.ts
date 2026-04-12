@@ -387,7 +387,7 @@ export function useStackApply() {
       // Final results come via Socket.IO events.
     },
     onError: (error: Error) => {
-      toast.error(`Failed to apply stack: ${error.message}`);
+      toast.error(`Failed to apply stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -539,7 +539,7 @@ export function useDeleteStack() {
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete stack: ${error.message}`);
+      toast.error(`Failed to delete stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -554,7 +554,7 @@ export function useStackDestroy() {
       // Final results come via Socket.IO events.
     },
     onError: (error: Error) => {
-      toast.error(`Failed to destroy stack: ${error.message}`);
+      toast.error(`Failed to destroy stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -627,7 +627,7 @@ export function useUpdateStackParameterValues() {
       queryClient.invalidateQueries({ queryKey: ["stackValidation", stackId] });
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save parameters: ${error.message}`);
+      toast.error(`Failed to save parameters: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }

@@ -506,7 +506,7 @@ function ContainerSelectionCard({
                       </div>
                       {container.ports?.length > 0 && (
                         <div className="mt-2 text-xs text-muted-foreground">
-                          Ports: {container.ports.map((p: any) => p.containerPort).join(", ")}
+                          Ports: {container.ports.map((p: { containerPort: number }) => p.containerPort).join(", ")}
                         </div>
                       )}
                     </div>
@@ -557,7 +557,7 @@ function ContainerSelectionCard({
 // ====================
 
 interface FrontendConfigurationCardProps {
-  form: any;
+  form: UseFormReturn<FormValues>;
   environmentId: string;
 }
 
@@ -675,9 +675,9 @@ function FrontendConfigurationCard({
 // ====================
 
 interface ValidationAndCreationCardProps {
-  form: any;
-  containersData: any;
-  environmentsData: any;
+  form: UseFormReturn<FormValues>;
+  containersData: EligibleContainersResponse | undefined;
+  environmentsData: ListEnvironmentsResponse | undefined;
 }
 
 function ValidationAndCreationCard({
@@ -687,10 +687,10 @@ function ValidationAndCreationCard({
 }: ValidationAndCreationCardProps) {
   const values = form.getValues();
   const environment = environmentsData?.environments?.find(
-    (e: any) => e.id === values.environmentId,
+    (e: { id: string }) => e.id === values.environmentId,
   );
   const container = containersData?.data?.containers?.find(
-    (c: any) => c.id === values.containerId,
+    (c: { id: string }) => c.id === values.containerId,
   );
 
   return (

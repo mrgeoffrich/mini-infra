@@ -229,8 +229,8 @@ export function useEvents(options: UseEventsOptions = {}) {
         ? retry
         : (failureCount: number, error: Error) => {
             if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
+              (error instanceof Error ? error.message : String(error)).includes("401") ||
+              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
             ) {
               return false;
             }
@@ -289,14 +289,14 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
         ? retry
         : (failureCount: number, error: Error) => {
             if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
+              (error instanceof Error ? error.message : String(error)).includes("401") ||
+              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
             ) {
               return false;
             }
             if (
-              error.message.includes("404") ||
-              error.message.includes("Not found")
+              (error instanceof Error ? error.message : String(error)).includes("404") ||
+              (error instanceof Error ? error.message : String(error)).includes("Not found")
             ) {
               return false;
             }

@@ -193,10 +193,10 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
         message: result.success ? result.message || "Connection successful!" : result.error || "Connection failed",
         version: result.version,
       });
-    } catch (error: any) {
+    } catch (error) {
       setTestResult({
         success: false,
-        message: error.message || "Failed to test connection",
+        message: (error instanceof Error ? error.message : String(error)) || "Failed to test connection",
       });
     }
   };
@@ -282,8 +282,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
       reset();
       setTestResult(null);
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save server");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to save server");
     }
   };
 

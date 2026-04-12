@@ -220,7 +220,7 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
     retry: (failureCount, error) => {
-      if (error.message.includes("401")) return false;
+      if ((error instanceof Error ? error.message : String(error)).includes("401")) return false;
       return failureCount < 2;
     },
   });

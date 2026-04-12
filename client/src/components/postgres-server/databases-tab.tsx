@@ -123,8 +123,8 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
     try {
       await createMutation.mutateAsync(data);
       toast.success("Database created successfully");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create database");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to create database");
       throw error;
     }
   };
@@ -142,8 +142,8 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
       toast.success(`Database "${databaseToDelete.name}" deleted successfully`);
       setDeleteDialogOpen(false);
       setDatabaseToDelete(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to delete database");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to delete database");
     }
   };
 
@@ -165,8 +165,8 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
       );
       setChangeOwnerDialogOpen(false);
       setDatabaseToChangeOwner(null);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to change database owner");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to change database owner");
       throw error;
     }
   };
@@ -178,8 +178,8 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
         result.message ||
           `Synced successfully: ${result.data.created} created, ${result.data.updated} updated`,
       );
-    } catch (error: any) {
-      toast.error(error.message || "Failed to sync databases");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to sync databases");
     }
   };
 
@@ -262,7 +262,7 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
           <CardContent className="pt-6">
             <div className="text-center text-destructive py-6">
               <p className="text-sm">Failed to load databases</p>
-              <p className="text-xs mt-1">{error.message}</p>
+              <p className="text-xs mt-1">{(error instanceof Error ? error.message : String(error))}</p>
             </div>
           </CardContent>
         </Card>
