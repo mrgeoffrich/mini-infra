@@ -47,7 +47,7 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
         const existingRules = await this.getBackendSwitchingRules(frontendName);
 
         // Check if rule already exists
-        const existingRule = existingRules.find((rule: any) =>
+        const existingRule = existingRules.find((rule: { cond?: string; cond_test?: string; name?: string; rule_index?: number }) =>
           rule.cond_test === aclName && rule.name === backendName
         );
         if (existingRule) {

@@ -942,7 +942,7 @@ export class TemplateError extends Error {
 // Helpers
 // =====================
 
-function serializeTemplateService(svc: any): StackTemplateServiceInfo {
+function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<true>): StackTemplateServiceInfo {
   return {
     id: svc.id,
     versionId: svc.versionId,
@@ -950,16 +950,16 @@ function serializeTemplateService(svc: any): StackTemplateServiceInfo {
     serviceType: svc.serviceType,
     dockerImage: svc.dockerImage,
     dockerTag: svc.dockerTag,
-    containerConfig: svc.containerConfig,
-    initCommands: svc.initCommands,
-    dependsOn: svc.dependsOn,
+    containerConfig: svc.containerConfig as unknown as StackTemplateServiceInfo['containerConfig'],
+    initCommands: svc.initCommands as unknown as StackTemplateServiceInfo['initCommands'],
+    dependsOn: svc.dependsOn as unknown as StackTemplateServiceInfo['dependsOn'],
     order: svc.order,
-    routing: svc.routing,
-    adoptedContainer: svc.adoptedContainer ?? undefined,
+    routing: svc.routing as unknown as StackTemplateServiceInfo['routing'],
+    adoptedContainer: (svc.adoptedContainer ?? undefined) as unknown as StackTemplateServiceInfo['adoptedContainer'],
   };
 }
 
-function serializeTemplateConfigFile(cf: any): StackTemplateConfigFileInfo {
+function serializeTemplateConfigFile(cf: Prisma.StackTemplateConfigFileGetPayload<true>): StackTemplateConfigFileInfo {
   return {
     id: cf.id,
     versionId: cf.versionId,
@@ -1075,30 +1075,30 @@ function buildConfigFilesFromDefinition(
  * Merges config files back into each service's configFiles array.
  */
 function buildServiceDefinitionsFromVersion(version: {
-  services?: any[];
-  configFiles?: any[];
+  services?: Prisma.StackTemplateServiceGetPayload<true>[];
+  configFiles?: Prisma.StackTemplateConfigFileGetPayload<true>[];
 }): StackServiceDefinition[] {
   const services = version.services ?? [];
   const configFiles = version.configFiles ?? [];
 
   // Group config files by serviceName
-  const cfByService = new Map<string, any[]>();
+  const cfByService = new Map<string, Prisma.StackTemplateConfigFileGetPayload<true>[]>();
   for (const cf of configFiles) {
     const list = cfByService.get(cf.serviceName) ?? [];
     list.push(cf);
     cfByService.set(cf.serviceName, list);
   }
 
-  return services.map((svc: any) => {
+  return services.map((svc): StackServiceDefinition => {
     const svcConfigFiles = cfByService.get(svc.serviceName) ?? [];
     return {
       serviceName: svc.serviceName,
       serviceType: svc.serviceType,
       dockerImage: svc.dockerImage,
       dockerTag: svc.dockerTag,
-      containerConfig: svc.containerConfig,
+      containerConfig: svc.containerConfig as unknown as StackServiceDefinition['containerConfig'],
       configFiles: svcConfigFiles.length > 0
-        ? svcConfigFiles.map((cf: any) => ({
+        ? svcConfigFiles.map((cf) => ({
             volumeName: cf.volumeName,
             path: cf.mountPath,
             content: cf.content,
@@ -1107,11 +1107,11 @@ function buildServiceDefinitionsFromVersion(version: {
             ownerGid: cf.owner ? parseOwnerGid(cf.owner) : undefined,
           }))
         : undefined,
-      initCommands: svc.initCommands ?? undefined,
-      dependsOn: svc.dependsOn ?? [],
+      initCommands: (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? undefined,
+      dependsOn: (svc.dependsOn as unknown as string[] | null) ?? [],
       order: svc.order,
-      routing: svc.routing ?? undefined,
-      adoptedContainer: svc.adoptedContainer ?? undefined,
+      routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
+      adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
     };
   });
 }

@@ -47,7 +47,7 @@ export function ACLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
         const existingACLs = await this.getACLs(frontendName);
 
         // Check if ACL already exists
-        const existingACL = existingACLs.find((acl: any) => acl.acl_name === aclName);
+        const existingACL = existingACLs.find((acl: { acl_name?: string; index?: number }) => acl.acl_name === aclName);
         if (existingACL) {
           logger.warn(
             { frontendName, aclName },

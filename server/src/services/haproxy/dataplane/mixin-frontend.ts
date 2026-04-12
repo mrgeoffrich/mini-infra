@@ -35,7 +35,7 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
     async addFrontendBind(frontendName: string, address: string, port: number, sslOptions?: { ssl?: boolean; ssl_certificate?: string }): Promise<void> {
       try {
         const version = await this.getVersion();
-        const bindData: any = {
+        const bindData: Record<string, unknown> = {
           name: `bind_${port}`,
           address,
           port
