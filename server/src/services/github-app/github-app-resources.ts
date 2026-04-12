@@ -8,6 +8,8 @@ import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppContext } from "./github-app-co
 import { GitHubAppAuth } from "./github-app-auth";
 import { GitHubAppOAuth } from "./github-app-oauth";
 
+type GitHubApiObject = Record<string, unknown>;
+
 /**
  * Handles listing GitHub resources: packages, package versions,
  * repositories, and GitHub Actions workflow runs.
@@ -98,8 +100,8 @@ export class GitHubAppResources {
     return this.mapPackages(packages, owner);
   }
 
-  private mapPackages(packages: any[], owner: string): GitHubAppPackage[] {
-    return packages.map((pkg: any) => ({
+  private mapPackages(packages: Array<GitHubApiObject & { id: number; name: string; package_type: string; visibility: string; html_url: string; created_at: string; updated_at: string; owner?: { login?: string }; repository?: { full_name?: string } }>, owner: string): GitHubAppPackage[] {
+    return packages.map((pkg: GitHubApiObject & { id: number; name: string; package_type: string; visibility: string; html_url: string; created_at: string; updated_at: string; owner?: { login?: string }; repository?: { full_name?: string } }) => ({
       id: pkg.id,
       name: pkg.name,
       packageType: pkg.package_type,
@@ -151,7 +153,7 @@ export class GitHubAppResources {
 
     const versions = await response.json();
 
-    return versions.map((v: any) => ({
+    return versions.map((v: GitHubApiObject & { id: number; name: string; metadata?: { container?: { tags?: string[] } }; created_at: string; updated_at: string; html_url: string }) => ({
       id: v.id,
       name: v.name,
       tags: v.metadata?.container?.tags || [],
@@ -190,7 +192,7 @@ export class GitHubAppResources {
 
     const data = await response.json();
 
-    return (data.repositories || []).map((repo: any) => ({
+    return (data.repositories || []).map((repo: GitHubApiObject & { id: number; name: string; full_name: string; description?: string | null; private: boolean; html_url: string; language?: string | null; default_branch: string; updated_at: string; pushed_at: string; has_actions?: boolean }) => ({
       id: repo.id,
       name: repo.name,
       fullName: repo.full_name,
@@ -238,7 +240,7 @@ export class GitHubAppResources {
 
     const data = await response.json();
 
-    return (data.workflow_runs || []).map((run: any) => ({
+    return (data.workflow_runs || []).map((run: GitHubApiObject & { id: number; name?: string; display_title?: string; status: string; conclusion?: string | null; html_url: string; created_at: string; updated_at: string; event: string; head_branch?: string | null; head_sha: string }) => ({
       id: run.id,
       name: run.name || run.display_title,
       status: run.status,
