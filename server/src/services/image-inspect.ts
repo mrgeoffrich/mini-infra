@@ -90,9 +90,9 @@ export class ImageInspectService {
     // Handle manifest list (multi-arch) — resolve to amd64/linux manifest
     if (manifest.manifests && !manifest.config) {
       const amd64 = manifest.manifests.find(
-        (m: any) => m.platform?.architecture === "amd64" && m.platform?.os === "linux",
+        (m: { platform?: { architecture?: string; os?: string } }) => m.platform?.architecture === "amd64" && m.platform?.os === "linux",
       ) ?? manifest.manifests.find(
-        (m: any) => m.platform?.os === "linux",
+        (m: { platform?: { architecture?: string; os?: string } }) => m.platform?.os === "linux",
       ) ?? manifest.manifests[0];
 
       if (!amd64?.digest) {
