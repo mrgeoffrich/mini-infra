@@ -82,7 +82,7 @@ router.post('/stop', requirePermission('monitoring:write'), async (req, res) => 
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
-    const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as any).user?.id });
+    const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as { user?: { id?: string } }).user?.id });
 
     res.json({ message: 'Monitoring stack stopped', ...result });
   } catch (error) {

@@ -27,8 +27,8 @@ const ACME_DIRECTORIES = {
  * DNS-01 Challenge Provider Interface
  */
 export interface DnsChallenge01Provider {
-  createChallenge(authz: any, challenge: any, keyAuthorization: string): Promise<void>;
-  removeChallenge(authz: any, challenge: any, keyAuthorization: string): Promise<void>;
+  createChallenge(authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string): Promise<void>;
+  removeChallenge(authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string): Promise<void>;
 }
 
 /**
@@ -99,7 +99,7 @@ export class AcmeClientManager {
    * @param email - Account email address
    * @returns ACME account details
    */
-  async createAccount(email: string): Promise<any> {
+  async createAccount(email: string): Promise<unknown> {
     this.logger.info({ email }, "Creating ACME account");
 
     try {
@@ -117,8 +117,8 @@ export class AcmeClientManager {
       const acmeConfig = await this.config.getAcmeAccountConfig();
 
       // Extract account URL and TOS URL from account object
-      const accountUrl = (account as any).url || "unknown";
-      const tosUrl = (account as any).termsOfService || null;
+      const accountUrl = (account as { url?: string }).url || "unknown";
+      const tosUrl = (account as { termsOfService?: string }).termsOfService || null;
 
       const containerName = await this.config.getCertificateContainerName();
       const blobName = `acme-account-${email.replace(/[^a-zA-Z0-9-]/g, "-")}.key`;
@@ -181,7 +181,7 @@ export class AcmeClientManager {
         termsOfServiceAgreed: true,
         challengePriority: ["dns-01"],
 
-        challengeCreateFn: async (authz: any, challenge: any, keyAuthorization: string) => {
+        challengeCreateFn: async (authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string) => {
           this.logger.info(
             {
               domain: authz.identifier.value,
@@ -193,7 +193,7 @@ export class AcmeClientManager {
           await challengeProvider.createChallenge(authz, challenge, keyAuthorization);
         },
 
-        challengeRemoveFn: async (authz: any, challenge: any, keyAuthorization: string) => {
+        challengeRemoveFn: async (authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string) => {
           this.logger.info(
             {
               domain: authz.identifier.value,

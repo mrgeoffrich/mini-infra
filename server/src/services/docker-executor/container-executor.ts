@@ -340,7 +340,7 @@ export class ContainerExecutor {
       }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the operation
-      if ((error as any).statusCode === 404) {
+      if ((error as { statusCode?: number }).statusCode === 404) {
         servicesLogger().debug(
           { containerId: container.id },
           "Container already removed",

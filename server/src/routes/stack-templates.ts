@@ -109,7 +109,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
     const service = getTemplateService();
     const template = await service.createUserTemplate(
       parsed.data as any,
-      (req as any).user?.id
+      (req as { user?: { id?: string } }).user?.id
     );
 
     logger.info({ templateId: template.id, templateName: template.name }, 'Template created');
@@ -148,7 +148,7 @@ router.post('/:templateId/draft', requirePermission('stacks:write'), async (req,
     const version = await service.createOrUpdateDraft(
       String(req.params.templateId),
       parsed.data as any,
-      (req as any).user?.id
+      (req as { user?: { id?: string } }).user?.id
     );
 
     res.json({ success: true, data: version });
@@ -216,7 +216,7 @@ router.post('/:templateId/instantiate', requirePermission('stacks:write'), async
         templateId: String(req.params.templateId),
         ...parsed.data,
       },
-      (req as any).user?.id
+      (req as { user?: { id?: string } }).user?.id
     );
 
     logger.info(
