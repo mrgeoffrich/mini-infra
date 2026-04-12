@@ -71,7 +71,7 @@ export class StackTemplateService {
     includeArchived?: boolean;
     includeLinkedStacks?: boolean;
   }): Promise<StackTemplateInfo[]> {
-    const where: any = {};
+    const where: Prisma.StackTemplateWhereInput = {};
     if (opts?.source) where.source = opts.source;
     if (opts?.scope) where.scope = opts.scope;
     if (!opts?.includeArchived) where.isArchived = false;
@@ -224,13 +224,13 @@ export class StackTemplateService {
           templateId: template.id,
           version: 0,
           status: "draft",
-          parameters: (input.parameters ?? []) as any,
-          defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
-          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
-          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
-          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
-          networks: input.networks as any,
-          volumes: input.volumes as any,
+          parameters: (input.parameters ?? []) as unknown as Prisma.InputJsonValue,
+          defaultParameterValues: (input.defaultParameterValues ?? {}) as unknown as Prisma.InputJsonValue,
+          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as unknown as Prisma.InputJsonValue,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+          networks: input.networks as unknown as Prisma.InputJsonValue,
+          volumes: input.volumes as unknown as Prisma.InputJsonValue,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -349,13 +349,13 @@ export class StackTemplateService {
           version: 0,
           status: "draft",
           notes: input.notes ?? null,
-          parameters: (input.parameters ?? []) as any,
-          defaultParameterValues: (input.defaultParameterValues ?? {}) as any,
-          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as any,
-          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as any) : undefined,
-          resourceInputs: input.resourceInputs ? (input.resourceInputs as any) : undefined,
-          networks: input.networks as any,
-          volumes: input.volumes as any,
+          parameters: (input.parameters ?? []) as unknown as Prisma.InputJsonValue,
+          defaultParameterValues: (input.defaultParameterValues ?? {}) as unknown as Prisma.InputJsonValue,
+          networkTypeDefaults: (input.networkTypeDefaults ?? {}) as unknown as Prisma.InputJsonValue,
+          resourceOutputs: input.resourceOutputs ? (input.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+          resourceInputs: input.resourceInputs ? (input.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+          networks: input.networks as unknown as Prisma.InputJsonValue,
+          volumes: input.volumes as unknown as Prisma.InputJsonValue,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -488,7 +488,7 @@ export class StackTemplateService {
       configFiles: externalConfigFiles,
     } = input;
 
-    const networkTypeDefaults = (definition as any).networkTypeDefaults ?? {};
+    const networkTypeDefaults = (definition as { networkTypeDefaults?: unknown }).networkTypeDefaults ?? {};
 
     // Check if template exists
     const existing = await this.prisma.stackTemplate.findUnique({
@@ -567,15 +567,15 @@ export class StackTemplateService {
         await tx.stackTemplateVersion.update({
           where: { id: versionId },
           data: {
-            parameters: (definition.parameters ?? []) as any,
+            parameters: (definition.parameters ?? []) as unknown as Prisma.InputJsonValue,
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
-            ) as any,
-            networkTypeDefaults: networkTypeDefaults as any,
-            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
-            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
-            networks: definition.networks as any,
-            volumes: definition.volumes as any,
+            ) as unknown as Prisma.InputJsonValue,
+            networkTypeDefaults: networkTypeDefaults as unknown as Prisma.InputJsonValue,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+            networks: definition.networks as unknown as Prisma.InputJsonValue,
+            volumes: definition.volumes as unknown as Prisma.InputJsonValue,
             publishedAt: new Date(),
           },
         });
@@ -586,15 +586,15 @@ export class StackTemplateService {
             templateId: template.id,
             version: builtinVersion,
             status: "published",
-            parameters: (definition.parameters ?? []) as any,
+            parameters: (definition.parameters ?? []) as unknown as Prisma.InputJsonValue,
             defaultParameterValues: buildDefaultParameterValues(
               definition.parameters ?? []
-            ) as any,
-            networkTypeDefaults: networkTypeDefaults as any,
-            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
-            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
-            networks: definition.networks as any,
-            volumes: definition.volumes as any,
+            ) as unknown as Prisma.InputJsonValue,
+            networkTypeDefaults: networkTypeDefaults as unknown as Prisma.InputJsonValue,
+            resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+            resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+            networks: definition.networks as unknown as Prisma.InputJsonValue,
+            volumes: definition.volumes as unknown as Prisma.InputJsonValue,
             publishedAt: new Date(),
           },
         });
@@ -719,7 +719,7 @@ export class StackTemplateService {
     if (input.environmentId) {
       // --- Tunnel Ingress (internet-facing environments) ---
       const hasTunnelServices = services.some((svc) => {
-        const routing = svc.routing as any;
+        const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
         return !!routing?.tunnelIngress;
       });
 
@@ -777,7 +777,7 @@ export class StackTemplateService {
         }
 
         for (const svc of services) {
-          const routing = svc.routing as any;
+          const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
           if (routing?.tunnelIngress && !tunnelIngressDefs.some((d) => d.name === routing.tunnelIngress)) {
             tunnelIngressDefs.push({
               name: routing.tunnelIngress,
@@ -790,7 +790,7 @@ export class StackTemplateService {
 
       // --- TLS Certificates (local environments) ---
       for (const svc of services) {
-        const routing = svc.routing as any;
+        const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
         if (routing?.tlsCertificate && !tlsCertDefs.some((d) => d.name === routing.tlsCertificate)) {
           tlsCertDefs.push({
             name: routing.tlsCertificate,
@@ -801,14 +801,14 @@ export class StackTemplateService {
 
       // --- DNS Records (local environments) ---
       const hasDnsServices = services.some((svc) => {
-        const routing = svc.routing as any;
+        const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
         return !!routing?.dnsRecord;
       });
 
       if (hasDnsServices) {
         const targetIp = await networkUtils.getAppropriateIPForEnvironment(input.environmentId);
         for (const svc of services) {
-          const routing = svc.routing as any;
+          const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
           if (routing?.dnsRecord && !dnsRecordDefs.some((d) => d.name === routing.dnsRecord)) {
             dnsRecordDefs.push({
               name: routing.dnsRecord,
@@ -833,15 +833,15 @@ export class StackTemplateService {
         builtinVersion:
           template.source === "system" ? version.version : null,
         parameters:
-          paramDefs.length > 0 ? (paramDefs as any) : undefined,
+          paramDefs.length > 0 ? (paramDefs as unknown as Prisma.InputJsonValue) : undefined,
         parameterValues:
           Object.keys(mergedValues).length > 0
-            ? (mergedValues as any)
+            ? (mergedValues as unknown as Prisma.InputJsonValue)
             : undefined,
-        resourceOutputs: version.resourceOutputs ? (version.resourceOutputs as any) : undefined,
-        resourceInputs: version.resourceInputs ? (version.resourceInputs as any) : undefined,
-        networks: version.networks as any,
-        volumes: version.volumes as any,
+        resourceOutputs: version.resourceOutputs ? (version.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+        resourceInputs: version.resourceInputs ? (version.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+        networks: version.networks as unknown as Prisma.InputJsonValue,
+        volumes: version.volumes as unknown as Prisma.InputJsonValue,
         tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
         tlsCertificates: tlsCertDefs.length > 0 ? tlsCertDefs : undefined,
         dnsRecords: dnsRecordDefs.length > 0 ? dnsRecordDefs : undefined,
@@ -985,12 +985,12 @@ function toTemplateServiceCreate(
     serviceType: s.serviceType,
     dockerImage: s.dockerImage,
     dockerTag: s.dockerTag,
-    containerConfig: s.containerConfig as any,
-    initCommands: (s.initCommands ?? null) as any,
-    dependsOn: s.dependsOn as any,
+    containerConfig: s.containerConfig as unknown as Prisma.InputJsonValue,
+    initCommands: (s.initCommands ?? null) as unknown as Prisma.InputJsonValue,
+    dependsOn: s.dependsOn as unknown as Prisma.InputJsonValue,
     order: s.order ?? fallbackOrder,
-    routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-    adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as any) : Prisma.DbNull,
+    routing: s.routing ? (s.routing as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 }
 

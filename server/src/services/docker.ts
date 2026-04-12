@@ -604,8 +604,8 @@ class DockerService {
       createdAt: new Date(container.Created * 1000),
       // Docker API exposes StartedAt on list responses (ISO string), but it's
       // not present in dockerode's ContainerInfo type. Read it via a narrow cast.
-      startedAt: typeof (container as { StartedAt?: string }).StartedAt === "string"
-        ? new Date((container as { StartedAt: string }).StartedAt)
+      startedAt: typeof (container as unknown as { StartedAt?: string }).StartedAt === "string"
+        ? new Date((container as unknown as { StartedAt: string }).StartedAt)
         : undefined,
       labels: this.sanitizeLabels(container.Labels || {}),
     };
