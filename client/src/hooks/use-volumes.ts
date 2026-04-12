@@ -18,6 +18,17 @@ import {
 import { toast } from "sonner";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
+function buildInspectionCorrelationId(volumeName: string): string {
+  return `get-inspection-${volumeName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
+function buildFileContentCorrelationId(
+  volumeName: string,
+  filePath: string | null,
+): string {
+  return `get-file-content-${volumeName}-${filePath}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
 // Generate correlation ID for debugging
@@ -295,7 +306,23 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
   } = options;
 
   const queryClient = useQueryClient();
-  const correlationId = `get-inspection-${volumeName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  // Generate a correlation ID that's stable per volume target. Use a lazy
+  // state initializer so Date.now()/Math.random() are only called outside of
+  // render, then reset the value when volumeName changes.
+  const [correlationIdState, setCorrelationIdState] = React.useState<{
+    key: string;
+    value: string;
+  }>(() => ({
+    key: volumeName,
+    value: buildInspectionCorrelationId(volumeName),
+  }));
+  if (correlationIdState.key !== volumeName) {
+    setCorrelationIdState({
+      key: volumeName,
+      value: buildInspectionCorrelationId(volumeName),
+    });
+  }
+  const correlationId = correlationIdState.value;
 
   // Subscribe to the volumes channel for inspection push updates
   useSocketChannel(Channel.VOLUMES, enabled);
@@ -485,7 +512,24 @@ export interface UseFileContentOptions {
 export function useFileContent(options: UseFileContentOptions) {
   const { volumeName, filePath, enabled = true } = options;
 
-  const correlationId = `get-file-content-${volumeName}-${filePath}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  // Generate a correlation ID that's stable per (volumeName, filePath). Uses
+  // a lazy state initializer plus a derived-state reset when the key changes
+  // so impure calls (Date.now/Math.random) never run during render.
+  const fileContentKey = `${volumeName}|${filePath}`;
+  const [correlationIdState, setCorrelationIdState] = React.useState<{
+    key: string;
+    value: string;
+  }>(() => ({
+    key: fileContentKey,
+    value: buildFileContentCorrelationId(volumeName, filePath),
+  }));
+  if (correlationIdState.key !== fileContentKey) {
+    setCorrelationIdState({
+      key: fileContentKey,
+      value: buildFileContentCorrelationId(volumeName, filePath),
+    });
+  }
+  const correlationId = correlationIdState.value;
 
   return useQuery({
     queryKey: ["volume-file-content", volumeName, filePath],

@@ -32,11 +32,6 @@ export function HelpSearchBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Reset selection when results change
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [query]);
-
   // Scroll selected item into view
   useEffect(() => {
     if (!listRef.current) return;
@@ -97,6 +92,7 @@ export function HelpSearchBar() {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
+            setSelectedIndex(0);
             setOpen(true);
           }}
           onFocus={() => {

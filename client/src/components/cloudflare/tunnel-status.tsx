@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useRef, useEffect, useEffectEvent } from "react";
 import {
   IconArrowsLeftRight,
   IconChevronDown,
@@ -335,14 +335,32 @@ export function TunnelStatus({ className, managedTunnelIds }: TunnelStatusProps)
     new Set(),
   );
 
-  // Auto-expand all tunnels when data loads
-  useEffect(() => {
-    const tunnelData = tunnels?.data?.tunnels as Tunnel[] | undefined;
-    if (tunnelData && tunnelData.length > 0) {
-      const allTunnelIds = new Set(tunnelData.map((tunnel) => tunnel.id));
-      setExpandedTunnels(allTunnelIds);
+  // Auto-expand newly-seen tunnels. We track which tunnel IDs we've already
+  // auto-expanded in a ref so a user who has manually collapsed a row is not
+  // re-expanded on the next refetch. The setState lives inside a
+  // useEffectEvent so it's not part of the reactive effect body.
+  const autoExpandedRef = useRef<Set<string>>(new Set());
+  const currentTunnels = tunnels?.data?.tunnels as Tunnel[] | undefined;
+  const autoExpandNewTunnels = useEffectEvent(() => {
+    if (!currentTunnels || currentTunnels.length === 0) return;
+    const newIds: string[] = [];
+    for (const t of currentTunnels) {
+      if (!autoExpandedRef.current.has(t.id)) {
+        newIds.push(t.id);
+        autoExpandedRef.current.add(t.id);
+      }
     }
-  }, [tunnels?.data?.tunnels]);
+    if (newIds.length > 0) {
+      setExpandedTunnels((prev) => {
+        const next = new Set(prev);
+        for (const id of newIds) next.add(id);
+        return next;
+      });
+    }
+  });
+  useEffect(() => {
+    autoExpandNewTunnels();
+  }, [currentTunnels]);
 
   const toggleExpanded = (tunnelId: string) => {
     setExpandedTunnels((prev) => {

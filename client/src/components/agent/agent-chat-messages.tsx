@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useEffectEvent, useRef, useCallback, useState, useMemo } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
@@ -252,28 +252,34 @@ function ThinkingBlock({
     ? msg.content || "Thinking content is redacted."
     : msg.content;
 
-  const [isOpen, setIsOpen] = useState(true);
-  const durationRef = useRef<number | null>(null);
-  const prevStatusRef = useRef(msg.status);
+  // Track whether the user has explicitly collapsed the block. While the
+  // message is still streaming we always show it (auto-open).
+  const [userCollapsed, setUserCollapsed] = useState(false);
+  const isOpen = msg.status === "streaming" ? true : !userCollapsed;
 
-  useEffect(() => {
-    if (prevStatusRef.current === "streaming" && msg.status === "complete") {
-      durationRef.current = Math.max(
-        1,
-        Math.round((Date.now() - msg.timestamp) / 1000),
+  // Capture the moment the message completes so we can show a duration.
+  // We use useEffectEvent so the setState is not inside the reactive body,
+  // and so Date.now() is called from an event callback rather than during
+  // render (which would violate react-hooks/purity).
+  const [duration, setDuration] = useState<number | null>(null);
+  const onStatusChange = useEffectEvent(() => {
+    if (msg.status === "streaming") {
+      // Reset duration if the message flips back to streaming.
+      if (duration !== null) setDuration(null);
+    } else if (duration === null) {
+      setDuration(
+        Math.max(1, Math.round((Date.now() - msg.timestamp) / 1000)),
       );
     }
-    prevStatusRef.current = msg.status;
-
-    if (msg.status === "streaming") {
-      setIsOpen(true);
-    }
-  }, [msg.status, msg.timestamp]);
+  });
+  useEffect(() => {
+    onStatusChange();
+  }, [msg.status]);
 
   return (
     <div>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => setUserCollapsed((v) => !v)}
         className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-[11px] hover:bg-muted/50 transition-colors text-left text-muted-foreground"
       >
         <IconChevronRight
@@ -291,7 +297,7 @@ function ThinkingBlock({
           <span className="italic">
             {msg.redacted
               ? "Thought (redacted)"
-              : `Thought${durationRef.current ? ` for ${durationRef.current}s` : ""}`}
+              : `Thought${duration ? ` for ${duration}s` : ""}`}
           </span>
         )}
       </button>

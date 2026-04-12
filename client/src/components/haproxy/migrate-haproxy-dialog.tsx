@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Channel } from "@mini-infra/types";
 import {
   useMigrationPreview,
@@ -60,7 +60,43 @@ export function MigrateHAProxyDialog({
   onOpenChange,
   onSuccess,
 }: MigrateHAProxyDialogProps) {
-  const [dialogState, setDialogState] = useState<DialogState>("preview");
+  // User-initiated state override. Normally the dialog state is derived from
+  // migrationProgress (isMigrating / finalResult), but the user can click
+  // "Start Migration" before the first socket event fires, which is why we
+  // still need a local override. Set to null once the socket state catches up.
+  const [userOverride, setUserOverride] = useState<DialogState | null>(null);
+
+  const migrateMutation = useMigrateHAProxy();
+  const migrationProgress = useMigrationProgress(environmentId);
+  const { registerTask } = useTaskTracker();
+
+  // Derive the current dialog state from migration progress plus the user
+  // override. This replaces two separate effects that were calling setState
+  // in response to socket events.
+  //
+  // Once socket state reports a non-preview phase, the override is dropped
+  // so subsequent transitions are driven purely by migrationProgress.
+  const socketState: DialogState = migrationProgress.finalResult
+    ? migrationProgress.finalResult.success
+      ? "success"
+      : "error"
+    : migrationProgress.isMigrating
+      ? "migrating"
+      : "preview";
+  const dialogState: DialogState =
+    socketState !== "preview" ? socketState : (userOverride ?? "preview");
+
+  // Fire onSuccess exactly once when migration completes successfully.
+  const onSuccessFiredRef = useRef(false);
+  useEffect(() => {
+    if (
+      migrationProgress.finalResult?.success &&
+      !onSuccessFiredRef.current
+    ) {
+      onSuccessFiredRef.current = true;
+      onSuccess?.();
+    }
+  }, [migrationProgress.finalResult?.success, onSuccess]);
 
   const {
     data: previewResponse,
@@ -72,38 +108,18 @@ export function MigrateHAProxyDialog({
     enabled: open && dialogState === "preview",
   });
 
-  const migrateMutation = useMigrateHAProxy();
-  const migrationProgress = useMigrationProgress(environmentId);
-  const { registerTask } = useTaskTracker();
-
   const preview = previewResponse?.data;
 
-  // Track migration progress from Socket.IO events
-  useEffect(() => {
-    if (migrationProgress.isMigrating && dialogState !== "migrating") {
-      setDialogState("migrating");
-    }
-  }, [migrationProgress.isMigrating, dialogState]);
-
-  // Handle migration completion from Socket.IO
-  useEffect(() => {
-    if (!migrationProgress.finalResult) return;
-
-    if (migrationProgress.finalResult.success) {
-      setDialogState("success");
-      onSuccess?.();
-    } else {
-      setDialogState("error");
-    }
-  }, [migrationProgress.finalResult, onSuccess]);
-
   const handleMigrate = async () => {
-    setDialogState("migrating");
+    // Force "migrating" state until the socket fires isMigrating.
+    setUserOverride("migrating");
     migrationProgress.reset();
+    onSuccessFiredRef.current = false;
 
     try {
       await migrateMutation.mutateAsync(environmentId);
-      // HTTP responded with { started: true } — real progress comes via Socket.IO
+      // HTTP responded with { started: true } — real progress comes via Socket.IO.
+      // The override stays "migrating" until socketState transitions us out of preview.
       registerTask({
         id: environmentId,
         type: "migration",
@@ -111,7 +127,7 @@ export function MigrateHAProxyDialog({
         channel: Channel.STACKS,
       });
     } catch {
-      setDialogState("error");
+      setUserOverride("error");
     }
   };
 
@@ -121,8 +137,9 @@ export function MigrateHAProxyDialog({
       // task tracker continues watching, and resetting here would cause
       // stale UI if the dialog is re-opened mid-migration.
       if (dialogState !== "migrating") {
-        setDialogState("preview");
+        setUserOverride(null);
         migrationProgress.reset();
+        onSuccessFiredRef.current = false;
       }
     }
     onOpenChange(isOpen);

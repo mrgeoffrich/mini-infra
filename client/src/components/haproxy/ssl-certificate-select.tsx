@@ -17,6 +17,14 @@ interface SSLCertificateSelectProps {
   disabled?: boolean;
 }
 
+function hasCertificateWarning(notAfter: Date): boolean {
+  const expiryDate = new Date(notAfter);
+  const daysUntilExpiry = Math.ceil(
+    (expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+  );
+  return daysUntilExpiry < 30;
+}
+
 /**
  * Certificate selection dropdown with status and expiry info
  *
@@ -59,13 +67,7 @@ export function SSLCertificateSelect({
     );
   }
 
-  const getCertificateWarning = (notAfter: Date): boolean => {
-    const expiryDate = new Date(notAfter);
-    const daysUntilExpiry = Math.ceil(
-      (expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24),
-    );
-    return daysUntilExpiry < 30;
-  };
+  const getCertificateWarning = hasCertificateWarning;
 
   return (
     <Select value={value} onValueChange={onChange} disabled={disabled}>

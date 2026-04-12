@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect, useEffectEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -88,22 +88,30 @@ export function CreateApiKeyPage() {
     },
   });
 
-  // Set default preset once DB presets load
-  useEffect(() => {
-    if (dbPresets && dbPresets.length > 0 && !selectedPreset) {
-      const fullAccess = dbPresets.find((p) => p.permissions.includes("*"));
-      setSelectedPreset(fullAccess?.id ?? dbPresets[0].id);
-    }
-  }, [dbPresets, selectedPreset]);
+  // Apply a preset: update both the selected preset id and the resulting permissions.
+  const applyPreset = useCallback(
+    (presetId: string) => {
+      setSelectedPreset(presetId);
+      if (presetId === "custom" || !dbPresets) return;
+      const preset = dbPresets.find((p) => p.id === presetId);
+      if (preset) {
+        setSelectedPermissions(new Set(preset.permissions));
+      }
+    },
+    [dbPresets],
+  );
 
-  // Apply selected preset's permissions
+  // Set default preset once DB presets load. `useEffectEvent` lets us react
+  // to the presets becoming available without making the setState calls
+  // part of the effect's reactive body (avoiding set-state-in-effect).
+  const initDefaultPreset = useEffectEvent(() => {
+    if (!dbPresets || dbPresets.length === 0 || selectedPreset) return;
+    const fullAccess = dbPresets.find((p) => p.permissions.includes("*"));
+    applyPreset(fullAccess?.id ?? dbPresets[0].id);
+  });
   useEffect(() => {
-    if (selectedPreset === "custom" || !dbPresets) return;
-    const preset = dbPresets.find((p) => p.id === selectedPreset);
-    if (preset) {
-      setSelectedPermissions(new Set(preset.permissions));
-    }
-  }, [selectedPreset, dbPresets]);
+    initDefaultPreset();
+  }, [dbPresets]);
 
   const handleSubmit = async (data: CreateApiKeyFormData) => {
     try {
@@ -264,7 +272,7 @@ export function CreateApiKeyPage() {
                     ) : (
                       <Select
                         value={selectedPreset}
-                        onValueChange={setSelectedPreset}
+                        onValueChange={applyPreset}
                         disabled={presetsLoading}
                       >
                         <SelectTrigger>

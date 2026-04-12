@@ -106,12 +106,10 @@ export function useFormattedDateTime(
   date: string | Date | number | null | undefined,
   options: DateFormatOptions = {},
 ) {
-  const { formatDateTime, timezone } = useFormattedDate();
+  const { formatDateTime } = useFormattedDate();
 
-  return useMemo(() => {
-    if (!date) return null;
-    return formatDateTime(date, options);
-  }, [date, formatDateTime, options.showSeconds, timezone]);
+  if (!date) return null;
+  return formatDateTime(date, options);
 }
 
 /**

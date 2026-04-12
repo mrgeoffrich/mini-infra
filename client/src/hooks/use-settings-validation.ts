@@ -525,7 +525,17 @@ export function useAdvancedSettingsValidation(
 
   const optimistic = useOptimisticValidation();
 
-  // Manual validation with retry logic
+  // Manual validation with retry logic. Uses a ref to break the recursive
+  // reference so the compiler doesn't see the callback reading itself before
+  // it's declared.
+  const validateWithRetryRef = useRef<
+    | ((
+        serviceToValidate: SettingsCategory,
+        settingsToValidate: Record<string, string>,
+      ) => Promise<void>)
+    | null
+  >(null);
+
   const validateWithRetry = useCallback(
     async (
       serviceToValidate: SettingsCategory,
@@ -551,7 +561,11 @@ export function useAdvancedSettingsValidation(
         const shouldRetry = recovery.retryValidation(
           serviceToValidate,
           settingsToValidate,
-          () => validateWithRetry(serviceToValidate, settingsToValidate),
+          () =>
+            validateWithRetryRef.current?.(
+              serviceToValidate,
+              settingsToValidate,
+            ) ?? Promise.resolve(),
           error as Error,
         );
 
@@ -565,6 +579,11 @@ export function useAdvancedSettingsValidation(
     },
     [validateService, optimistic, recovery],
   );
+
+  // Keep the ref pointing at the latest implementation for recursive calls.
+  useEffect(() => {
+    validateWithRetryRef.current = validateWithRetry;
+  }, [validateWithRetry]);
 
   return {
     // Validation state

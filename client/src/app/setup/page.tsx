@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useEffectEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -624,12 +624,17 @@ export function SetupPage() {
   const [dockerHost, setDockerHost] = useState<string | null>(null);
   const [dockerHostIp, setDockerHostIp] = useState<string>("");
 
-  // If setup already has users (e.g. page refresh mid-wizard), skip to step 2
-  useEffect(() => {
+  // If setup already has users (e.g. page refresh mid-wizard), skip to step 2.
+  // Wrapping the setState in `useEffectEvent` keeps it out of the reactive
+  // effect body (avoids set-state-in-effect).
+  const maybeAdvanceStep = useEffectEvent(() => {
     if (setupStatus?.hasUsers && step === 1) {
       setStep(2);
     }
-  }, [setupStatus?.hasUsers, step]);
+  });
+  useEffect(() => {
+    maybeAdvanceStep();
+  }, [setupStatus?.hasUsers]);
 
   const stepTitles = [
     { icon: <IconAlertCircle className="h-3.5 w-3.5" />, title: "Create Account" },

@@ -67,6 +67,20 @@ import type {
   CreateRestoreOperationRequest,
 } from "@mini-infra/types";
 
+function formatBackupAge(createdAt: string | Date): string {
+  const ageInMs = Date.now() - new Date(createdAt).getTime();
+  const ageInDays = Math.floor(ageInMs / (1000 * 60 * 60 * 24));
+  const ageInHours = Math.floor(ageInMs / (1000 * 60 * 60));
+
+  if (ageInDays > 0) {
+    return `Created ${ageInDays} day${ageInDays !== 1 ? "s" : ""} ago`;
+  } else if (ageInHours > 0) {
+    return `Created ${ageInHours} hour${ageInHours !== 1 ? "s" : ""} ago`;
+  } else {
+    return "Created recently";
+  }
+}
+
 export default function PostgresRestorePage() {
   const { databaseId } = useParams<{ databaseId: string }>();
   const navigate = useNavigate();
@@ -578,22 +592,7 @@ export default function PostgresRestorePage() {
               {/* Age and estimated restore time */}
               <div className="flex justify-between text-xs text-muted-foreground">
                 <div>
-                  {(() => {
-                    const ageInMs =
-                      Date.now() - new Date(selectedBackup.createdAt).getTime();
-                    const ageInDays = Math.floor(
-                      ageInMs / (1000 * 60 * 60 * 24),
-                    );
-                    const ageInHours = Math.floor(ageInMs / (1000 * 60 * 60));
-
-                    if (ageInDays > 0) {
-                      return `Created ${ageInDays} day${ageInDays !== 1 ? "s" : ""} ago`;
-                    } else if (ageInHours > 0) {
-                      return `Created ${ageInHours} hour${ageInHours !== 1 ? "s" : ""} ago`;
-                    } else {
-                      return "Created recently";
-                    }
-                  })()}
+                  {formatBackupAge(selectedBackup.createdAt)}
                 </div>
 
                 <div>

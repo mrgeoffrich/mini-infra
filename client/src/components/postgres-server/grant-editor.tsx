@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   IconBan,
   IconEye,
@@ -105,26 +105,58 @@ interface GrantEditorProps {
   existingGrant?: DatabaseGrantInfo;
 }
 
-export function GrantEditor({
-  open,
+function grantToPermissions(existingGrant: DatabaseGrantInfo): Permissions {
+  return {
+    canConnect: existingGrant.canConnect,
+    canCreate: existingGrant.canCreate,
+    canTemp: existingGrant.canTemp,
+    canCreateSchema: existingGrant.canCreateSchema,
+    canUsageSchema: existingGrant.canUsageSchema,
+    canSelect: existingGrant.canSelect,
+    canInsert: existingGrant.canInsert,
+    canUpdate: existingGrant.canUpdate,
+    canDelete: existingGrant.canDelete,
+  };
+}
+
+function detectPresetFor(perms: Permissions): PermissionPreset | null {
+  for (const [presetName, presetPerms] of Object.entries(PERMISSION_PRESETS)) {
+    if (JSON.stringify(perms) === JSON.stringify(presetPerms)) {
+      return presetName as PermissionPreset;
+    }
+  }
+  return null;
+}
+
+export function GrantEditor(props: GrantEditorProps) {
+  // Re-mount the inner editor each time the dialog is opened so form state
+  // is re-initialized from props instead of synced via useEffect.
+  const { open, onOpenChange } = props;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open && <GrantEditorInner {...props} />}
+    </Dialog>
+  );
+}
+
+function GrantEditorInner({
   onOpenChange,
   serverId,
   database,
   user,
   existingGrant,
 }: GrantEditorProps) {
-  const [permissions, setPermissions] = useState<Permissions>({
-    canConnect: false,
-    canCreate: false,
-    canTemp: false,
-    canCreateSchema: false,
-    canUsageSchema: false,
-    canSelect: false,
-    canInsert: false,
-    canUpdate: false,
-    canDelete: false,
-  });
-  const [currentPreset, setCurrentPreset] = useState<PermissionPreset | null>(null);
+  const [permissions, setPermissions] = useState<Permissions>(() =>
+    existingGrant
+      ? grantToPermissions(existingGrant)
+      : PERMISSION_PRESETS.readwrite,
+  );
+  const [currentPreset, setCurrentPreset] = useState<PermissionPreset | null>(
+    () =>
+      existingGrant
+        ? detectPresetFor(grantToPermissions(existingGrant))
+        : "readwrite",
+  );
 
   const createMutation = useCreateDatabaseGrant(serverId);
   const updateMutation = useUpdateDatabaseGrant();
@@ -133,47 +165,9 @@ export function GrantEditor({
   const isSubmitting =
     createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
-  // Initialize permissions from existing grant
-  useEffect(() => {
-    if (existingGrant) {
-      setPermissions({
-        canConnect: existingGrant.canConnect,
-        canCreate: existingGrant.canCreate,
-        canTemp: existingGrant.canTemp,
-        canCreateSchema: existingGrant.canCreateSchema,
-        canUsageSchema: existingGrant.canUsageSchema,
-        canSelect: existingGrant.canSelect,
-        canInsert: existingGrant.canInsert,
-        canUpdate: existingGrant.canUpdate,
-        canDelete: existingGrant.canDelete,
-      });
-      // Detect current preset
-      detectPreset({
-        canConnect: existingGrant.canConnect,
-        canCreate: existingGrant.canCreate,
-        canTemp: existingGrant.canTemp,
-        canCreateSchema: existingGrant.canCreateSchema,
-        canUsageSchema: existingGrant.canUsageSchema,
-        canSelect: existingGrant.canSelect,
-        canInsert: existingGrant.canInsert,
-        canUpdate: existingGrant.canUpdate,
-        canDelete: existingGrant.canDelete,
-      });
-    } else {
-      // Default to read-write for new grants
-      applyPreset("readwrite");
-    }
-  }, [existingGrant, open]);
-
   // Detect which preset matches current permissions
   const detectPreset = (perms: Permissions) => {
-    for (const [presetName, presetPerms] of Object.entries(PERMISSION_PRESETS)) {
-      if (JSON.stringify(perms) === JSON.stringify(presetPerms)) {
-        setCurrentPreset(presetName as PermissionPreset);
-        return;
-      }
-    }
-    setCurrentPreset(null); // Custom permissions
+    setCurrentPreset(detectPresetFor(perms));
   };
 
   // Apply a preset
@@ -231,10 +225,9 @@ export function GrantEditor({
   const isOwner = user.username === database.owner;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Manage Database Permissions</DialogTitle>
+    <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogHeader>
+        <DialogTitle>Manage Database Permissions</DialogTitle>
           <div className="space-y-3 pt-2">
             {/* User Info */}
             <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
@@ -528,7 +521,6 @@ export function GrantEditor({
             )}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }

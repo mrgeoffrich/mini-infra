@@ -7,7 +7,13 @@
  * - useSocketChannel() — auto-subscribe/unsubscribe to a room on mount/unmount
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import {
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { io, Socket } from "socket.io-client";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
@@ -43,6 +49,30 @@ function getSocket(): TypedSocket {
   return socket;
 }
 
+/**
+ * useSyncExternalStore-based subscription to the socket's connected flag.
+ * This is the idiomatic way to mirror external mutable state into React
+ * without set-state-in-effect.
+ */
+function useSocketConnected(socketInstance: TypedSocket): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      socketInstance.on("connect", onChange);
+      socketInstance.on("disconnect", onChange);
+      return () => {
+        socketInstance.off("connect", onChange);
+        socketInstance.off("disconnect", onChange);
+      };
+    },
+    [socketInstance],
+  );
+  const getSnapshot = useCallback(
+    () => socketInstance.connected,
+    [socketInstance],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
 // ====================
 // useSocket — connection lifecycle
 // ====================
@@ -65,25 +95,14 @@ export interface UseSocketReturn {
  */
 export function useSocket(): UseSocketReturn {
   const socketInstance = useMemo(() => getSocket(), []);
-  const [connected, setConnected] = useState(socketInstance.connected);
+  const connected = useSocketConnected(socketInstance);
 
   useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
-
-    socketInstance.on("connect", onConnect);
-    socketInstance.on("disconnect", onDisconnect);
-
-    // Auto-connect on first mount
+    // Auto-connect on first mount. Kept as a mount-only side effect.
     if (!connectionAttempted) {
       connectionAttempted = true;
       socketInstance.connect();
     }
-
-    return () => {
-      socketInstance.off("connect", onConnect);
-      socketInstance.off("disconnect", onDisconnect);
-    };
   }, [socketInstance]);
 
   const connect = useCallback(() => {
@@ -167,22 +186,8 @@ export function useSocketChannel(
   enabled: boolean = true,
 ): void {
   const socketInstance = useMemo(() => getSocket(), []);
-  const [connected, setConnected] = useState(socketInstance.connected);
-
-  // Track connection state independently to avoid stale state from useSocket()
-  useEffect(() => {
-    const onConnect = () => setConnected(true);
-    const onDisconnect = () => setConnected(false);
-    socketInstance.on("connect", onConnect);
-    socketInstance.on("disconnect", onDisconnect);
-
-    // Sync in case socket connected before this effect ran
-    setConnected(socketInstance.connected);
-    return () => {
-      socketInstance.off("connect", onConnect);
-      socketInstance.off("disconnect", onDisconnect);
-    };
-  }, [socketInstance]);
+  // Track connection state via useSyncExternalStore — avoids set-state-in-effect.
+  const connected = useSocketConnected(socketInstance);
 
   useEffect(() => {
     if (!channel || !enabled || !connected) return;

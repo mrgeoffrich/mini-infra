@@ -13,16 +13,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CertificateList } from "@/components/certificates/certificate-list";
 import { IssueCertificateDialog } from "@/components/certificates/issue-certificate-dialog";
 
+function isExpiringWithin(expiryDate: Date, days: number): boolean {
+  const daysUntilExpiry = Math.floor(
+    (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+  );
+  return daysUntilExpiry <= days;
+}
+
 export default function CertificatesPage() {
   const { data: certificates, isLoading, error, refetch } = useCertificates();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-
-  const isExpiringWithin = (expiryDate: Date, days: number): boolean => {
-    const daysUntilExpiry = Math.floor(
-      (new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-    );
-    return daysUntilExpiry <= days;
-  };
 
   // Loading state
   if (isLoading) {

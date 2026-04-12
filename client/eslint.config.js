@@ -40,13 +40,6 @@ export default tseslint.config([
         },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
-      // react-hooks v7 new rules — require component/effect restructuring.
-      // TODO: fix in a dedicated follow-up PR. See docs/upgrade-shortcuts.md §3.
-      "react-hooks/set-state-in-effect": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/preserve-manual-memoization": "off",
-      "react-hooks/immutability": "off",
-      "react-hooks/refs": "off",
     },
   },
   {

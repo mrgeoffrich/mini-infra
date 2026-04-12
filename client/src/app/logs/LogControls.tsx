@@ -41,20 +41,21 @@ export function LogControls({
   isLoading,
   extraActions,
 }: LogControlsProps) {
-  const [spinning, setSpinning] = useState(false);
+  // Keep the spin animation visible for at least 500ms after a manual
+  // refresh or after a loading cycle completes. `manualSpin` is toggled on
+  // by handleRefresh and auto-cleared by a timeout; while isLoading is true,
+  // we always spin regardless.
+  const [manualSpin, setManualSpin] = useState(false);
+  const spinning = isLoading || manualSpin;
 
   useEffect(() => {
-    if (isLoading) setSpinning(true);
-  }, [isLoading]);
-
-  useEffect(() => {
-    if (!spinning) return;
-    const timer = setTimeout(() => setSpinning(false), 500);
+    if (!manualSpin) return;
+    const timer = setTimeout(() => setManualSpin(false), 500);
     return () => clearTimeout(timer);
-  }, [spinning]);
+  }, [manualSpin]);
 
   const handleRefresh = useCallback(() => {
-    setSpinning(true);
+    setManualSpin(true);
     onRefresh();
   }, [onRefresh]);
 
