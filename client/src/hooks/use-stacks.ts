@@ -168,7 +168,7 @@ async function applyStack(
 async function fetchStackStatus(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: { stack: StackInfo; containerStatus: any[] } }> {
+): Promise<{ success: boolean; data: { stack: StackInfo; containerStatus: unknown[] } }> {
   const response = await fetch(`/api/stacks/${stackId}/status`, {
     credentials: "include",
     headers: {
@@ -192,7 +192,7 @@ async function fetchStackStatus(
 async function fetchStackHistory(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: any[]; total?: number }> {
+): Promise<{ success: boolean; data: unknown[]; total?: number }> {
   const response = await fetch(`/api/stacks/${stackId}/history`, {
     credentials: "include",
     headers: {

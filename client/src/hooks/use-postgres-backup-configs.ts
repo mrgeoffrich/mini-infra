@@ -77,7 +77,7 @@ async function createPostgresBackupConfig(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
@@ -122,7 +122,7 @@ async function updatePostgresBackupConfig(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
@@ -203,7 +203,7 @@ async function quickSetupPostgresBackup(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
