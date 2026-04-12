@@ -2,109 +2,99 @@
 
 Tracking the remaining `any` warnings after the bulk cleanup in `chore/no-explicit-any-cleanup`.
 
-**Status:** 385 warnings remain (300 server + 85 client) out of an original ~867.
+**Status:** ~234 warnings remain (159 server + 75 client) out of an original ~867 (~73% cleaned up).
 
-The mechanical patterns (catch-block narrowing, `as unknown as Prisma.InputJsonValue`, structural error casts, hook-event generic parameterisation) are done. What's left needs per-site reasoning.
+The mechanical patterns are all done. What's left needs per-site reasoning — mostly SDK-response shapes, discriminated-union registries, and cases where a serializer must accept several distinct Prisma include shapes.
 
 ---
 
 ## Remaining categories
 
-### 1. XState state-machine contexts (~10 warnings)
+### 1. Cloudflare SDK response shapes (~25 warnings)
 
-**Files:** `server/src/services/stacks/stack-reconciler.ts`
+**Files:** `server/src/services/cloudflare/cloudflare-service.ts`, `cloudflare-dns.ts`, `server/src/routes/cloudflare-settings.ts`
 
-Lines like `(finalState.context as any).containerId`, `.error`, `.newContainerId`. The state machines (`initialDeploymentMachine`, `blueGreenDeploymentMachine`, `blueGreenUpdateMachine`, `removalDeploymentMachine`) each have their own context type, and `finalState` is a generic `StateValue`. We need either:
-- A generic helper `extractContext<T>(finalState): T`
-- Explicit type parameter when invoking `createActor(machine)` so `finalState` is typed properly
-- Narrow inline with a local `{ containerId?: string; newContainerId?: string; error?: string }` cast
+- `Promise.race([apiCall, timeout])` result casts to `any` because the SDK method return types conflict with our narrow extraction shape.
+- `config: any`, `Promise<any>` on helpers that proxy to Cloudflare's Tunnel/Zones APIs.
+- DNS record type union mismatch: `type: params.type as any` because cloudflare SDK's `RecordCreateParams` union doesn't cleanly align with our `CloudflareDNSRecordType`.
 
-### 2. Cloudflare SDK response shapes (~25 warnings)
+**Fix direction:** build a thin, typed adapter layer over the cloudflare SDK (one file) that exposes `mini-infra`-shaped responses and swallows the type-union juggling. Or upgrade the cloudflare SDK when its types improve.
 
-**Files:** `server/src/services/cloudflare/cloudflare-service.ts`, `cloudflare-dns.ts`
+### 2. Task-tracker registry (~10 client warnings)
 
-- `async updateTunnelConfig(tunnelId: string, config: any): Promise<any>` — needs the tunnel config shape from Cloudflare API docs.
-- `async getTunnelConfig(...): Promise<any>`, `getTunnelInfo(): Promise<any[]>` — similar.
-- `Promise.race([apiCall, timeout])` results cast `as any` because the SDK method return type is sometimes too narrow (Zone[], Tunnel[]) for the generic bridging we do. Consider typing the helper properly.
-- DNS record type mismatch: `type: params.type as any` — cloudflare SDK has a union that differs from our `CloudflareDNSRecordType`. Map explicitly.
+**Files:** `client/src/lib/task-type-registry.ts`, `client/src/components/task-tracker/task-tracker-provider.tsx`
 
-### 3. Internal stack-reconciler method params (~6 warnings)
+Registry entries have `payload: any` because each task type reads different fields. Turning it into a generic `TaskTypeConfig<TStarted, TStep, TCompleted>` creates the right per-entry inference, but the `Record<TaskType, TaskTypeConfig>` map erases per-entry generics back to a union.
+
+**Fix direction:** either
+- a discriminated-union pattern (one entry per registered task type, with generics preserved),
+- a `defineTaskTypeConfig<T...>()` builder + `satisfies Record<TaskType, TaskTypeConfig>` at the map level,
+- or keep `any` with a focused comment (pragmatic — the registry only reads payload fields inside trusted normalizer callbacks).
+
+### 3. Internal stack-reconciler methods (~6 warnings, server)
 
 **File:** `server/src/services/stacks/stack-reconciler.ts`
 
-`applyStateful(svc: any, stack: any, ...)`, `applyStatelessWeb(svc: any, stack: any, ...)`, `applyBlueGreenUpdate(svc: any, stack: any, ...)`, `applyRemoval(svc: any, stack: any, ...)`.
+`applyStateful/applyStatelessWeb/applyAdoptedWeb/applyRemoval` private methods still accept `stack: any`. Callers pass stacks from several different Prisma queries (some with `template`, some without, some with `environment`, some not), which makes the param needs a **union** of the concrete include shapes or a loose base + optional relations. Multiple attempts to express this caused cascading errors across ~100 other lines.
 
-These need `Prisma.StackServiceGetPayload<...>` and `Prisma.StackGetPayload<{ include: {...} }>` types that match the actual queries at the call sites. The tricky bit is the various inclusion combinations across callers (some include template, some include services, etc.).
+**Fix direction:** define a `StackWithReconcilerContext` type alias with all optional relations, then narrow inside each method where specific relations are required.
 
-### 4. HAProxy Data Plane API typed mixin proxies (~11 warnings)
+### 4. Stack-template serializers (~3 warnings)
 
-**File:** `server/src/services/haproxy/dataplane/base.ts`
+**File:** `server/src/services/stacks/stack-template-service.ts`
 
-The `withTransaction()` helper monkey-patches `this.httpClient.get/post/put/delete` to prefix transaction IDs, and uses `as any` for the assignment because the generic signatures conflict with the override. Options:
-- Convert to a typed proxy pattern with `Parameters<typeof originalGet>`
-- Extract the wrapper into a `TransactionalHttpClient` subclass
+`serializeTemplate(template: any)` and `serializeVersion(version: any)` are called from >5 call sites with different Prisma include shapes (varying `stacks`, `currentVersion`, `draftVersion`, `versions`, `_count` presence). A precise union is achievable but fiddly.
 
-Also `const self = this as any` to duck-type mixin methods — refactor to define an interface the mixin + base both implement.
+**Fix direction:** define `SerializableTemplate` / `SerializableVersion` with all optional relations; have each `serialize*` take the widest shape and defensively default.
 
-### 5. Prisma JSON-field reads with bespoke shapes (~30 warnings)
+### 5. HAProxy state-machine action executors (~25 warnings)
 
-**Files:** `stack-template-service.ts`, `stacks.ts` routes, various templates
+**Files:** `server/src/services/haproxy/actions/*.ts` (remove-frontend, remove-dns, remove-container-from-lb, stop-application, remove-application, validate-traffic)
 
-Already converted writes to `as unknown as Prisma.InputJsonValue`. Reads still use `as any` in cases where we want to narrow to an application-level type without going through `StackServiceRouting` etc. Fix: define reader helpers like:
+All have `async execute(context: any, sendEvent: (event: any) => void)`. The `context` actually refers to an XState context defined in the calling state machine, and each action is used across several machines, so a common shape would need to be the intersection of all contexts.
 
-```ts
-function readRouting(value: Prisma.JsonValue): StackServiceRouting | null {
-  // runtime-validate or cast based on your trust level
-}
-```
+**Fix direction:** either
+- define a shared `ActionContext` base interface in `actions/` and have each state-machine context extend it,
+- genericise each action class by the context type it expects,
+- or use `Record<string, unknown>` + narrow at access sites (which is what I tried, but it cascaded into ~20 field-access errors).
 
-### 6. Logger contexts and middleware (~10 warnings)
+### 6. Misc. Prisma JSON-field reads + fetch responses (~50 warnings)
 
-**Files:** `middleware/validation.ts`, `lib/logger-factory.ts`, various
+**Files:** various small routes/services
 
-Patterns like `function log(ctx: any, msg: string)` — change `ctx` to `Record<string, unknown>` (pino's default) or use `pino.bindings` shape.
+Small counts per file. Most are `data.X` reads on a `response.json()` result (typed `unknown` by default) and Prisma JSON fields that need narrowing to an application type.
 
-### 7. Database/queue job data in restore/backup (~6 warnings)
+**Fix direction:** case-by-case. Usually a 1–2 line structural cast per file.
 
-**Files:** `services/backup/backup-executor.ts`, `services/restore-executor/*`
+### 7. Middleware + settings validation (~7 warnings)
 
-Mostly done, but a couple of `on("completed", (job, result: any)` — `result` needs to match the processor's TResult. Use proper generic result type.
+**Files:** `server/src/middleware/validation.ts`, `server/src/routes/settings-validation.ts`
 
-### 8. Task type registry (~10 warnings)
+- `validatedQuery?: any; validatedParams?: any;` on Express `Request` augmentation: narrowing requires sprinkling non-null assertions at downstream access sites (attempted, reverted).
+- `(timeoutPromise as any).cleanup` — mutating a Promise with a custom `.cleanup` property.
 
-**File:** `client/src/lib/task-type-registry.ts`, `components/task-tracker/task-tracker-provider.tsx`
+**Fix direction:** small, contained refactors once the downstream consumers are updated.
 
-The registry's callbacks are typed `(payload: any)` because the payload differs per task type. Options:
-- Genericise `TaskTypeConfig<TStartedPayload, TStepPayload, TCompletedPayload>`
-- Use a tagged-union approach
-- Keep as `any` with a comment explaining the multi-payload dispatch
+### 8. Client form resolvers (~4 warnings)
 
-Current attempt (reverted) to narrow them broke downstream use since each task type reads different fields. Solution is a proper generic, not a narrower shape.
+**Files:** `client/src/components/stack-templates/*`
 
-### 9. Client hook/component `(record: any).field` reads (~15 warnings)
-
-**Files:** various client components
-
-Some are reading from API responses before types are established (pre-typed fetch). Fix per call: infer from the shared `@mini-infra/types` response type.
-
-### 10. Docker port bindings shape (~3 warnings)
-
-**File:** `services/container/container-lifecycle-manager.ts`
-
-`Record<string, Docker.PortBinding[]>` was adjusted; a couple of internal helpers still take/return `any` for compatibility with dockerode's loose typing. Leave as-is or add custom `PortBindingMap` type.
+`resolver: zodResolver(schema) as any` — workaround for react-hook-form ↔ zod v4 type mismatch. Will resolve when upstream fixes land, or by downgrading one of them.
 
 ---
 
-## Suggested next pass
+## Suggested next-pass order
 
-Priority order if we want to close out to 0:
+1. **HAProxy action contexts** — biggest remaining chunk (25 warnings), one pattern, one shared interface.
+2. **Task-tracker registry** — 10 warnings, one file, clean solution via discriminated union.
+3. **Stack-reconciler stack param** — 6 warnings, define the union shape.
+4. **Stack-template serializers** — 3 warnings, define the union shape.
+5. **Cloudflare SDK adapter** — 25 warnings, one adapter file.
+6. **Long-tail misc** — ~50 warnings, slow grind across ~30 files.
+7. **Settings/middleware** — 7 warnings, needs downstream cleanup first.
+8. **Client zod resolver casts** — wait for upstream.
 
-1. **XState contexts** (self-contained, satisfying wins). Gives back ~10 and makes stack-reconciler cleaner.
-2. **Stack-reconciler `svc: any`/`stack: any` params** — 6 warnings but a big file; pair with (1).
-3. **Task type registry generics** — 10 client warnings; cleanest when done with proper generic signature.
-4. **Prisma JSON readers** — adds a few typed helpers; pay down tech debt in one place.
-5. **HAProxy base.ts transactional client** — restructure the `withTransaction` helper.
-6. **Cloudflare SDK wrappers** — biggest but lowest ROI without upstream SDK type improvements.
-7. **Long-tail 1-3-warning files** — ~80 warnings spread across ~30 files. Grind work.
-
-Each of 1–5 can be a single focused PR. Item 6 is worth splitting; item 7 is ideal for agents that aren't time-bounded.
+Cumulative history of this branch:
+- Pre-branch baseline: 742 server + 125 client = 867
+- After mechanical pass: 300 server + 85 client = 385 (−482, 56% done)
+- Current: 159 server + 75 client = 234 (−633, 73% done)
