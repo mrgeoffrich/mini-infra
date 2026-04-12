@@ -1,17 +1,10 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
-import {
-  InMemoryQueue,
-  Job as QueueJob,
-  QueueOptions,
-} from "../../lib/in-memory-queue";
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { PrismaClient } from "../../lib/prisma";
+import { InMemoryQueue, Job as QueueJob } from "../../lib/in-memory-queue";
+import { servicesLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
-import {
-  RestoreOperationInfo,
-  RestoreOperationStatus,
-} from "@mini-infra/types";
+import { RestoreOperationInfo } from "@mini-infra/types";
 import type { RestoreOperation } from "@prisma/client";
 
 import { BackupValidator } from "./backup-validator";
@@ -51,7 +44,7 @@ export { DbOperations } from "./db-operations";
  * whenever a dependency is replaced (including by tests that set it directly).
  */
 export class RestoreExecutorService {
-  private prisma: typeof prisma;
+  private prisma: PrismaClient;
   private isInitialized = false;
 
   // Backing fields for getter/setter pattern

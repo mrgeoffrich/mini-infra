@@ -158,7 +158,7 @@ export class CertificateDistributor {
             method: "volume-mount-reload",
           };
         } else {
-          throw new Error("No HAProxy container ID provided for graceful reload fallback");
+          throw new Error("No HAProxy container ID provided for graceful reload fallback", { cause: runtimeApiError });
         }
       }
     } catch (error) {
@@ -306,6 +306,7 @@ export class CertificateDistributor {
       stream.on("data", (chunk: Buffer) => {
         const data = chunk.toString();
         // Docker API may prefix with stream header, strip it
+        // eslint-disable-next-line no-control-regex -- Docker stream multiplex header bytes are literal control chars
         const cleanData = data.replace(/^\x01\x00\x00\x00.{4}/, "");
         output += cleanData;
       });

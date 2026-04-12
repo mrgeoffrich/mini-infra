@@ -56,7 +56,7 @@ export class RegistryManager {
           10 * 60 * 1000,
         ); // 10 minute timeout
 
-        this.docker.modem.followProgress(stream, (err, result) => {
+        this.docker.modem.followProgress(stream, (err, _result) => {
           clearTimeout(timeout);
           if (err) {
             reject(err);
@@ -99,16 +99,20 @@ export class RegistryManager {
       ) {
         throw new Error(
           `Authentication required for image '${image}' - please provide valid registry credentials`,
+          { cause: error },
         );
       } else if (
         errorMessage.includes("repository does not exist") ||
         errorMessage.includes("not found") ||
         errorMessage.includes("404")
       ) {
-        throw new Error(`Docker image '${image}' not found in registry`);
+        throw new Error(`Docker image '${image}' not found in registry`, {
+          cause: error,
+        });
       } else if (errorMessage.includes("timeout")) {
         throw new Error(
           `Timeout pulling image '${image}' - registry may be unreachable`,
+          { cause: error },
         );
       } else if (
         errorMessage.includes("network") ||
@@ -116,10 +120,13 @@ export class RegistryManager {
       ) {
         throw new Error(
           `Network error pulling image '${image}' - cannot reach Docker registry`,
+          { cause: error },
         );
       }
 
-      throw new Error(`Failed to pull image '${image}': ${errorMessage}`);
+      throw new Error(`Failed to pull image '${image}': ${errorMessage}`, {
+        cause: error,
+      });
     }
   }
 
@@ -202,7 +209,7 @@ export class RegistryManager {
           10 * 60 * 1000,
         ); // 10 minute timeout
 
-        this.docker.modem.followProgress(stream, (err, result) => {
+        this.docker.modem.followProgress(stream, (err, _result) => {
           clearTimeout(timeout);
           if (err) {
             reject(err);
@@ -524,8 +531,8 @@ export class RegistryManager {
     tag: string;
   } {
     // Default values
-    let registry = "registry-1.docker.io";
-    let repository = imageName;
+    let registry: string;
+    let repository: string;
     let tag = "latest";
 
     // Split by tag first

@@ -49,41 +49,40 @@ export function useContainerActions(options: UseContainerActionsOptions): UseCon
   const { containerId, onSuccess, onError } = options;
   const queryClient = useQueryClient();
 
-  const createMutation = (action: ContainerAction) =>
-    useMutation({
-      mutationFn: () => performContainerAction(containerId, action),
-      onSuccess: (data) => {
-        // Invalidate container queries to refresh the UI
-        queryClient.invalidateQueries({ queryKey: ["containers"] });
-        queryClient.invalidateQueries({ queryKey: ["container", containerId] });
+  const buildMutationOptions = (action: ContainerAction) => ({
+    mutationFn: () => performContainerAction(containerId, action),
+    onSuccess: (data: ContainerActionResponse) => {
+      // Invalidate container queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ["containers"] });
+      queryClient.invalidateQueries({ queryKey: ["container", containerId] });
 
-        // Show success toast
-        toast.success(`Container ${action} successful`, {
-          description: data.message,
-        });
+      // Show success toast
+      toast.success(`Container ${action} successful`, {
+        description: data.message,
+      });
 
-        // Call optional success callback
-        if (onSuccess) {
-          onSuccess(action);
-        }
-      },
-      onError: (error: Error) => {
-        // Show error toast
-        toast.error(`Failed to ${action} container`, {
-          description: error.message,
-        });
+      // Call optional success callback
+      if (onSuccess) {
+        onSuccess(action);
+      }
+    },
+    onError: (error: Error) => {
+      // Show error toast
+      toast.error(`Failed to ${action} container`, {
+        description: error.message,
+      });
 
-        // Call optional error callback
-        if (onError) {
-          onError(action, error);
-        }
-      },
-    });
+      // Call optional error callback
+      if (onError) {
+        onError(action, error);
+      }
+    },
+  });
 
-  const startMutation = createMutation("start");
-  const stopMutation = createMutation("stop");
-  const restartMutation = createMutation("restart");
-  const removeMutation = createMutation("remove");
+  const startMutation = useMutation(buildMutationOptions("start"));
+  const stopMutation = useMutation(buildMutationOptions("stop"));
+  const restartMutation = useMutation(buildMutationOptions("restart"));
+  const removeMutation = useMutation(buildMutationOptions("remove"));
 
   return {
     startContainer: () => startMutation.mutate(),

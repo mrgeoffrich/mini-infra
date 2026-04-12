@@ -89,6 +89,7 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
       );
 
       // Sanitize response
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { passwordHash, ...sanitizedUser } = createdUser;
       const sanitizedDatabase = {
         ...createdDatabase,

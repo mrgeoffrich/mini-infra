@@ -639,7 +639,7 @@ export class StackTemplateService {
 
   async createStackFromTemplate(
     input: CreateStackFromTemplateRequest,
-    createdById?: string
+    _createdById?: string
   ): Promise<StackInfo> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: input.templateId },
@@ -725,14 +725,12 @@ export class StackTemplateService {
 
       if (hasTunnelServices) {
         // Try to resolve tunnel config, auto-resolving if not set on environment
-        let tunnelServiceUrl: string | null = null;
-
         const envForTunnel = await this.prisma.environment.findUnique({
           where: { id: input.environmentId },
           select: { tunnelServiceUrl: true, tunnelId: true, name: true },
         });
 
-        tunnelServiceUrl = envForTunnel?.tunnelServiceUrl ?? null;
+        let tunnelServiceUrl: string | null = envForTunnel?.tunnelServiceUrl ?? null;
 
         // Auto-resolve tunnelServiceUrl from HAProxy stack if not configured
         if (!tunnelServiceUrl) {

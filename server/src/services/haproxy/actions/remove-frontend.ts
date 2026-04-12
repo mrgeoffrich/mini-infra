@@ -275,7 +275,7 @@ export class RemoveFrontend {
   /**
    * Update database records when HAProxy is not accessible
    */
-  private async updateDatabaseRecordsOnSkip(applicationName: string, environmentId?: string): Promise<void> {
+  private async updateDatabaseRecordsOnSkip(applicationName: string, _environmentId?: string): Promise<void> {
     // Update route status if exists
     const routeRecord = await prisma.hAProxyRoute.findFirst({
       where: {

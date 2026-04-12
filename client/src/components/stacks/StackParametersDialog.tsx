@@ -96,7 +96,7 @@ export function StackParametersDialog({
                       disabled={isSaving}
                     />
                     <span className="text-sm text-muted-foreground">
-                      {Boolean(localValues[param.name] ?? param.default) ? "Enabled" : "Disabled"}
+                      {(localValues[param.name] ?? param.default) ? "Enabled" : "Disabled"}
                     </span>
                   </div>
                 ) : param.type === "number" ? (

@@ -1,11 +1,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { IconBolt } from "@tabler/icons-react";
 
-interface QuickSetupTabProps {
+export interface QuickSetupTabProps {
   serverId: string;
 }
 
-export function QuickSetupTab({ serverId: _serverId }: QuickSetupTabProps) {
+export function QuickSetupTab({ serverId }: QuickSetupTabProps) {
+  void serverId;
   return (
     <div className="max-w-3xl mx-auto">
       <Card>

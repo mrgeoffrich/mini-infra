@@ -7,7 +7,7 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import prisma, { PrismaClient } from "../lib/prisma";
+import { PrismaClient } from "../lib/prisma";
 import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
 
 export class DockerConfigService extends ConfigurationService {
@@ -24,7 +24,7 @@ export class DockerConfigService extends ConfigurationService {
    */
   async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
-    let docker: Docker | null = null;
+    let docker: Docker | null;
 
     try {
       // Get Docker configuration from settings (use provided settings or fallback to stored)

@@ -4,7 +4,7 @@ const tseslint = require("typescript-eslint");
 
 module.exports = tseslint.config([
   {
-    files: ["**/*.ts"],
+    files: ["src/**/*.ts"],
     ignores: ["coverage/**", "dist/**", "node_modules/**", "src/generated/**"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
@@ -23,14 +23,6 @@ module.exports = tseslint.config([
       ],
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/no-explicit-any": "warn",
-      // ESLint 10 new rules — too many pre-existing violations to fix in the upgrade PR.
-      // TODO: fix these in a follow-up cleanup PR.
-      "preserve-caught-error": "off",
-      "no-useless-assignment": "off",
-      // typescript-eslint 8.58 changed these from warn/absent to error in recommended.
-      // Restore to pre-upgrade severity.
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
     },
   },
   {

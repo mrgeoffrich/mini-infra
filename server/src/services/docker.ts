@@ -152,7 +152,7 @@ class DockerService {
       }
 
       const startTime = Date.now();
-      const pingResult = await this.docker.ping();
+      await this.docker.ping();
       const responseTimeMs = Date.now() - startTime;
 
       this.connected = true;
@@ -1003,6 +1003,7 @@ class DockerService {
       if (error.statusCode === 409) {
         throw new Error(
           `Cannot remove volume ${name}: volume is in use by one or more containers`,
+          { cause: error },
         );
       }
       throw toServiceError(error, "docker");

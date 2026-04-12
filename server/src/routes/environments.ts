@@ -3,7 +3,6 @@ import { z } from 'zod';
 import {
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
-  EnvironmentType,
 } from '@mini-infra/types';
 import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
@@ -27,22 +26,6 @@ const migratingEnvironments = new Set<string>();
 const environmentManager = EnvironmentManager.getInstance(prisma);
 
 // Validation schemas
-const createEnvironmentSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, 'Name must contain only letters, numbers, underscores, and hyphens'),
-  description: z.string().optional(),
-  type: z.enum(['production', 'nonproduction']),
-  networkType: z.enum(['local', 'internet']).optional(),
-});
-
-const updateEnvironmentSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).optional(),
-  description: z.string().optional(),
-  type: z.enum(['production', 'nonproduction']).optional(),
-  networkType: z.enum(['local', 'internet']).optional(),
-  tunnelId: z.string().optional().nullable(),
-  tunnelServiceUrl: z.string().optional().nullable(),
-});
-
 const listEnvironmentsSchema = z.object({
   type: z.enum(['production', 'nonproduction']).optional(),
   page: z.coerce.number().min(1).optional(),

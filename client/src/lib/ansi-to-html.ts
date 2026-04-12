@@ -52,7 +52,9 @@ function escapeHtml(text: string): string {
     .replace(/'/g, "&#x27;");
 }
 
-// Matches an ANSI escape sequence: ESC[ followed by semicolon-separated numbers and a letter
+// Matches an ANSI escape sequence: ESC[ followed by semicolon-separated numbers and a letter.
+// The \x1b control character is intentional — it's the ANSI escape marker we need to parse.
+// eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[([0-9;]*)m/g;
 
 export function ansiToHtml(input: string): string {

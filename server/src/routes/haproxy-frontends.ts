@@ -7,7 +7,6 @@ import {
   HAProxyFrontendInfo,
   HAProxyFrontendListResponse,
   HAProxyFrontendResponse,
-  SyncFrontendResponse,
   ForceDeleteFrontendResponse,
 } from "@mini-infra/types";
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
@@ -1048,7 +1047,7 @@ router.delete(
       }
 
       // Delete remaining routes from database (some may have been deleted by removeRouteFromSharedFrontend)
-      const remainingRoutes = await prisma.hAProxyRoute.deleteMany({
+      await prisma.hAProxyRoute.deleteMany({
         where: { sharedFrontendId: frontend.id },
       });
 

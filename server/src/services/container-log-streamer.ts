@@ -10,7 +10,7 @@
 import { Readable } from "stream";
 import DockerService from "./docker";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
-import { ServerEvent, DEFAULT_LOG_TAIL_LINES, ParameterizedChannel } from "@mini-infra/types";
+import { ServerEvent, DEFAULT_LOG_TAIL_LINES } from "@mini-infra/types";
 import type { ContainerLogLine } from "@mini-infra/types/containers";
 import type { TypedSocket } from "../lib/socket";
 import { servicesLogger } from "../lib/logger-factory";
@@ -77,7 +77,6 @@ export async function startLogStream(
     activeStreams.set(key, logStream);
 
     const demuxer = new DockerStreamDemuxer();
-    const channel = ParameterizedChannel.container(containerId);
 
     logStream.on("data", (chunk: Buffer) => {
       for (const frame of demuxer.push(chunk)) {

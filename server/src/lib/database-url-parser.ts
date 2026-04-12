@@ -1,5 +1,4 @@
 import path from "path";
-import { URL } from "url";
 
 /**
  * Parse SQLite DATABASE_URL and extract the file path

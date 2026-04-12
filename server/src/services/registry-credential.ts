@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import { PrismaClient } from "../lib/prisma";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
 import { getApiKeySecret } from "../lib/security-config";
@@ -49,7 +49,7 @@ export class RegistryCredentialService {
         },
         "Failed to encrypt password",
       );
-      throw new Error("Encryption failed");
+      throw new Error("Encryption failed", { cause: error });
     }
   }
 
@@ -76,7 +76,7 @@ export class RegistryCredentialService {
         },
         "Failed to decrypt password",
       );
-      throw new Error("Decryption failed");
+      throw new Error("Decryption failed", { cause: error });
     }
   }
 

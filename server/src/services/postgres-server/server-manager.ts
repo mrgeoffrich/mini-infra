@@ -383,7 +383,7 @@ export class PostgresServerService {
       };
     } catch (error: any) {
       logger.error({ error: error.message, serverId }, "Failed to get server info");
-      throw new Error(`Failed to get server info: ${error.message}`);
+      throw new Error(`Failed to get server info: ${error.message}`, { cause: error });
     }
   }
 

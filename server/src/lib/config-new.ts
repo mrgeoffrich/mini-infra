@@ -1,6 +1,8 @@
 import config from "config";
 import { z } from "zod";
 import dotenv from "dotenv";
+import fs from "fs";
+import path from "path";
 
 // Load environment variables from .env file
 dotenv.config({ quiet: process.env.NODE_ENV === "test" });
@@ -160,8 +162,6 @@ try {
 
   // Also try to write to a basic log file if possible
   try {
-    const fs = require('fs');
-    const path = require('path');
     const logDir = path.join(process.cwd(), 'logs');
     if (!fs.existsSync(logDir)) {
       fs.mkdirSync(logDir, { recursive: true });

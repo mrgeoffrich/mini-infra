@@ -42,7 +42,7 @@ export async function parseCertificate(certificatePem: string): Promise<Certific
       fingerprint,
     };
   } catch (error) {
-    throw new Error(`Failed to parse certificate: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to parse certificate: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -92,7 +92,7 @@ export function verifyCertificateKeyPair(certificatePem: string, privateKeyPem: 
     const privateModulus = (privateKey as any).n.toString(16);
 
     return publicModulus === privateModulus;
-  } catch (error) {
+  } catch {
     return false;
   }
 }
@@ -131,7 +131,7 @@ export function extractDomainsFromCertificate(certificatePem: string): string[] 
 
     return domains;
   } catch (error) {
-    throw new Error(`Failed to extract domains from certificate: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to extract domains from certificate: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -147,7 +147,7 @@ export function isCertificateExpired(certificatePem: string): boolean {
     const now = new Date();
 
     return now > cert.validity.notAfter || now < cert.validity.notBefore;
-  } catch (error) {
+  } catch {
     return true; // Consider invalid certificates as expired
   }
 }
@@ -166,7 +166,7 @@ export function daysUntilExpiry(certificatePem: string): number {
     const daysRemaining = Math.floor((cert.validity.notAfter.getTime() - now.getTime()) / msPerDay);
 
     return daysRemaining;
-  } catch (error) {
+  } catch {
     return -1; // Return -1 for invalid certificates
   }
 }
@@ -196,6 +196,6 @@ Days Until Expiry: ${days}
 Fingerprint (SHA-256): ${certInfo.fingerprint}
     `.trim();
   } catch (error) {
-    throw new Error(`Failed to format certificate info: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to format certificate info: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }

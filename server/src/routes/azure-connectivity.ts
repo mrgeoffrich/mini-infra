@@ -14,8 +14,6 @@ import prisma from "../lib/prisma";
 import {
   ConnectivityStatusListResponse,
   ConnectivityStatusResponse,
-  ConnectivityStatusFilter,
-  ConnectivityStatusSortOptions,
 } from "@mini-infra/types";
 
 const router = express.Router();

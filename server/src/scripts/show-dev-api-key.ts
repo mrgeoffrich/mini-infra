@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import { getDevApiKeyInfo, recreateDevApiKey } from "../services/dev-api-key";
+import { recreateDevApiKey } from "../services/dev-api-key";
 import appConfig from "../lib/config-new";
 import prisma from "../lib/prisma";
 import { securityConfig } from "../lib/security-config";

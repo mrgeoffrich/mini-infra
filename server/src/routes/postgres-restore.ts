@@ -9,12 +9,10 @@ import { getRestoreExecutorService } from "../services/restore-executor/restore-
 import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
-  RestoreOperationResponse,
   RestoreOperationStatusResponse,
   CreateRestoreOperationResponse,
   BackupBrowserResponse,
   RestoreOperationFilter,
-  RestoreOperationSortOptions,
   BackupBrowserFilter,
   BackupBrowserSortOptions,
   BackupBrowserItem,
@@ -204,29 +202,6 @@ function mapRestoreOperationToInfo(operation: any) {
 }
 
 /**
- * Extract backup ID from blob name
- * Expected format: databaseId/backupId_timestamp.dump
- */
-function extractBackupIdFromBlobName(blobName: string): string {
-  try {
-    // Extract filename from path
-    const pathParts = blobName.split("/");
-    const filename = pathParts[pathParts.length - 1];
-
-    // Extract backup ID (everything before the first underscore, excluding .dump extension)
-    const match = filename.match(/^([^_]+)_/);
-    if (match) {
-      return match[1];
-    }
-
-    // Fallback - remove extension
-    return filename.replace(/\.dump$/, "");
-  } catch {
-    return "unknown";
-  }
-}
-
-/**
  * List available backups from Azure Storage for all databases in a container
  */
 async function listAvailableBackupsInContainer(
@@ -347,134 +322,6 @@ async function listAvailableBackupsInContainer(
       {
         error: error instanceof Error ? error.message : "Unknown error",
         containerName,
-      },
-      "Failed to list available backups",
-    );
-    throw error;
-  }
-}
-
-/**
- * List available backups from Azure Storage for a specific database
- */
-async function listAvailableBackups(
-  containerName: string,
-  databaseId: string,
-  filter: BackupBrowserFilter,
-  sort: BackupBrowserSortOptions,
-  pagination: { page: number; limit: number },
-): Promise<{ items: BackupBrowserItem[]; totalCount: number }> {
-  try {
-    const azureConnectionString =
-      await azureConfigService.get("connection_string");
-    if (!azureConnectionString) {
-      throw new Error("Azure connection string not configured");
-    }
-
-    const blobServiceClient = BlobServiceClient.fromConnectionString(
-      azureConnectionString,
-    );
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    const blobs: BackupBrowserItem[] = [];
-
-    // List blobs in container filtered by database ID prefix
-    for await (const blob of containerClient.listBlobsFlat({
-      prefix: `${databaseId}/`,
-      includeMetadata: true,
-    })) {
-      // Skip if not a backup file (should be .dump files based on our naming convention)
-      if (!blob.name.endsWith(".dump")) {
-        continue;
-      }
-
-      const blobClient = containerClient.getBlobClient(blob.name);
-      const blobUrl = blobClient.url;
-
-      const item: BackupBrowserItem = {
-        name: blob.name,
-        url: blobUrl,
-        sizeBytes: blob.properties.contentLength || 0,
-        createdAt:
-          blob.properties.createdOn?.toISOString() || new Date().toISOString(),
-        lastModified:
-          blob.properties.lastModified?.toISOString() ||
-          new Date().toISOString(),
-        metadata: {
-          databaseId: databaseId,
-          backupId: extractBackupIdFromBlobName(blob.name),
-          contentType: blob.properties.contentType,
-          etag: blob.properties.etag,
-          ...blob.metadata,
-        },
-      };
-
-      // Apply filters
-      if (
-        filter.createdAfter &&
-        new Date(item.createdAt) < new Date(filter.createdAfter)
-      ) {
-        continue;
-      }
-      if (
-        filter.createdBefore &&
-        new Date(item.createdAt) > new Date(filter.createdBefore)
-      ) {
-        continue;
-      }
-      if (filter.sizeMin && item.sizeBytes < filter.sizeMin) {
-        continue;
-      }
-      if (filter.sizeMax && item.sizeBytes > filter.sizeMax) {
-        continue;
-      }
-
-      blobs.push(item);
-    }
-
-    // Sort results
-    blobs.sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
-
-      switch (sort.field) {
-        case "createdAt":
-          aVal = new Date(a.createdAt).getTime();
-          bVal = new Date(b.createdAt).getTime();
-          break;
-        case "sizeBytes":
-          aVal = a.sizeBytes;
-          bVal = b.sizeBytes;
-          break;
-        case "name":
-          aVal = a.name.toLowerCase();
-          bVal = b.name.toLowerCase();
-          break;
-        default:
-          aVal = new Date(a.createdAt).getTime();
-          bVal = new Date(b.createdAt).getTime();
-      }
-
-      if (sort.order === "asc") {
-        return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-      } else {
-        return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
-      }
-    });
-
-    // Apply pagination
-    const totalCount = blobs.length;
-    const startIndex = (pagination.page - 1) * pagination.limit;
-    const endIndex = startIndex + pagination.limit;
-    const paginatedItems = blobs.slice(startIndex, endIndex);
-
-    return { items: paginatedItems, totalCount };
-  } catch (error) {
-    logger.error(
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
-        containerName,
-        databaseId,
       },
       "Failed to list available backups",
     );

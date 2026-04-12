@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { hasPermission, hasAnyPermission } from "@mini-infra/types";
+import { hasAnyPermission } from "@mini-infra/types";
 import type { PermissionScope } from "@mini-infra/types";
 import { requireSessionOrApiKey } from "./api-key-middleware";
 import { appLogger } from "./logger-factory";

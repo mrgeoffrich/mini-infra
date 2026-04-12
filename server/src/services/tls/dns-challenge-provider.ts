@@ -95,7 +95,7 @@ export class DnsChallenge01Provider {
    * @param challenge - ACME challenge object
    * @param keyAuthorization - Key authorization string from ACME
    */
-  async removeChallenge(authz: any, challenge: any, keyAuthorization: string): Promise<void> {
+  async removeChallenge(authz: any, _challenge: any, _keyAuthorization: string): Promise<void> {
     const domain = authz.identifier.value;
     const recordName = `_acme-challenge.${domain}`;
 
@@ -229,7 +229,7 @@ export class DnsChallenge01Provider {
           );
 
           return await this.cloudflareConfig.getZoneId(baseDomain);
-        } catch (baseError) {
+        } catch {
           // Continue trying
         }
       }

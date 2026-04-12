@@ -90,7 +90,7 @@ export async function createApiKey(
       { error, userId, name: request.name },
       "Failed to create API key",
     );
-    throw new Error("Failed to create API key");
+    throw new Error("Failed to create API key", { cause: error });
   }
 }
 
@@ -191,7 +191,7 @@ export async function getUserApiKeys(userId: string): Promise<ApiKeyInfo[]> {
     }));
   } catch (error) {
     logger.error({ error, userId }, "Failed to get user API keys");
-    throw new Error("Failed to retrieve API keys");
+    throw new Error("Failed to retrieve API keys", { cause: error });
   }
 }
 
@@ -352,6 +352,6 @@ export async function getApiKeyStats(userId: string): Promise<{
     };
   } catch (error) {
     logger.error({ error, userId }, "Failed to get API key statistics");
-    throw new Error("Failed to retrieve API key statistics");
+    throw new Error("Failed to retrieve API key statistics", { cause: error });
   }
 }

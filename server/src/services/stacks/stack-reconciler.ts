@@ -1065,7 +1065,7 @@ export class StackReconciler {
    * Destroy a stack: stop and remove all containers, networks, and volumes,
    * then delete the stack from the database.
    */
-  async destroyStack(stackId: string, options?: { triggeredBy?: string }): Promise<DestroyResult> {
+  async destroyStack(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
     const startTime = Date.now();
     const log = servicesLogger().child({ operation: 'stack-destroy', stackId });
 

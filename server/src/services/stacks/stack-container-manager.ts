@@ -34,7 +34,7 @@ export class StackContainerManager {
       const prefixedVolume = `${projectName}_${volumeName}`;
       const allCommands = commands.flatMap((c) => c.commands);
       const mountPath = commands[0].mountPath;
-      if (!/^\/[a-zA-Z0-9_.\/-]*$/.test(mountPath)) {
+      if (!/^\/[a-zA-Z0-9_./-]*$/.test(mountPath)) {
         throw new Error(`Invalid mountPath: ${mountPath}`);
       }
       const shellCmd = allCommands.join(' && ');

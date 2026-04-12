@@ -206,7 +206,7 @@ export class GitHubAppService extends ConfigurationService {
     const deletePromises = ALL_SETTING_KEYS.map(async (key) => {
       try {
         await this.delete(key, userId);
-      } catch (error) {
+      } catch {
         // Ignore errors for keys that don't exist
         servicesLogger().debug(
           { key },

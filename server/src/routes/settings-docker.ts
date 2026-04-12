@@ -56,9 +56,9 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
         try {
           const url = new URL(hostValue.replace("tcp://", "http://"));
           host = url.hostname;
-        } catch (error) {
+        } catch {
           // If URL parsing fails, try to extract manually
-          const match = hostValue.match(/^(?:tcp|https?):\/\/([^:\/]+)/);
+          const match = hostValue.match(/^(?:tcp|https?):\/\/([^:/]+)/);
           if (match && match[1]) {
             host = match[1];
           }

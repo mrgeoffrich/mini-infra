@@ -200,10 +200,10 @@ export class AlertOperationsTeam {
      * Analyze the failure to provide actionable insights
      */
     private analyzeFailure(failureDetails: DeploymentFailureDetails): FailureAnalysis {
-        let failurePhase = 'unknown';
-        let possibleCauses: string[] = [];
-        let recommendedActions: string[] = [];
-        let urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' = 'MEDIUM';
+        let failurePhase: string;
+        let possibleCauses: string[];
+        let recommendedActions: string[];
+        let urgencyLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
         let requiresImmediateAction = false;
 
         // Determine failure phase based on progress

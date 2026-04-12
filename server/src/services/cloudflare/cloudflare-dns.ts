@@ -79,7 +79,7 @@ export class CloudflareDNSService {
       return zones;
     } catch (error) {
       logger.error({ error }, "Failed to list Cloudflare DNS zones");
-      throw new Error(`Failed to list DNS zones: ${error}`);
+      throw new Error(`Failed to list DNS zones: ${error}`, { cause: error });
     }
   }
 
@@ -213,7 +213,7 @@ export class CloudflareDNSService {
         { error, zoneId, record },
         "Failed to create DNS record"
       );
-      throw new Error(`Failed to create DNS record: ${error}`);
+      throw new Error(`Failed to create DNS record: ${error}`, { cause: error });
     }
   }
 
@@ -279,7 +279,7 @@ export class CloudflareDNSService {
         { error, zoneId, recordId, updates },
         "Failed to update DNS record"
       );
-      throw new Error(`Failed to update DNS record: ${error}`);
+      throw new Error(`Failed to update DNS record: ${error}`, { cause: error });
     }
   }
 
@@ -320,7 +320,7 @@ export class CloudflareDNSService {
         { error, zoneId, recordId },
         "Failed to delete DNS record"
       );
-      throw new Error(`Failed to delete DNS record: ${error}`);
+      throw new Error(`Failed to delete DNS record: ${error}`, { cause: error });
     }
   }
 
@@ -380,7 +380,7 @@ export class CloudflareDNSService {
       }
 
       logger.error({ error, zoneId, recordId }, "Failed to get DNS record");
-      throw new Error(`Failed to get DNS record: ${error}`);
+      throw new Error(`Failed to get DNS record: ${error}`, { cause: error });
     }
   }
 
@@ -443,7 +443,7 @@ export class CloudflareDNSService {
         { error, zoneId, hostname },
         "Failed to list DNS records"
       );
-      throw new Error(`Failed to list DNS records: ${error}`);
+      throw new Error(`Failed to list DNS records: ${error}`, { cause: error });
     }
   }
 

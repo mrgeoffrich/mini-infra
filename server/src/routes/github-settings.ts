@@ -11,8 +11,6 @@ const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubService } from "../services/github-service";
 import {
-  CreateGitHubSettingRequest,
-  UpdateGitHubSettingRequest,
   GitHubSettingResponse,
   GitHubValidationResponse,
 } from "@mini-infra/types";

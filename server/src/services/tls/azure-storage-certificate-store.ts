@@ -5,7 +5,7 @@
  * Certificates are stored as blobs with metadata tags for searching and filtering.
  */
 
-import { BlobServiceClient, BlockBlobClient, BlobItem } from "@azure/storage-blob";
+import { BlobServiceClient } from "@azure/storage-blob";
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
 import {

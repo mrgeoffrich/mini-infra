@@ -114,7 +114,7 @@ export const stackContainerConfigSchema = z.object({
 
 export const stackConfigFileSchema = z.object({
   volumeName: z.string().min(1),
-  path: z.string().min(1).regex(/^[a-zA-Z0-9_.\/\-]+$/, "path must contain only safe characters"),
+  path: z.string().min(1).regex(/^[a-zA-Z0-9_./-]+$/, "path must contain only safe characters"),
   content: z.string(),
   permissions: z.string().regex(/^[0-7]{3,4}$/, "permissions must be a 3 or 4 digit octal value").optional(),
   ownerUid: z.number().int().min(0).optional(),
@@ -123,7 +123,7 @@ export const stackConfigFileSchema = z.object({
 
 export const stackInitCommandSchema = z.object({
   volumeName: z.string().min(1),
-  mountPath: z.string().min(1).regex(/^\/[a-zA-Z0-9_.\/-]*$/, "mountPath must be a safe absolute path"),
+  mountPath: z.string().min(1).regex(/^\/[a-zA-Z0-9_./-]*$/, "mountPath must be a safe absolute path"),
   commands: z.array(z.string().min(1)),
 });
 

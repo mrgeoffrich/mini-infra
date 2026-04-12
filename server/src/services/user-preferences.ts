@@ -89,7 +89,7 @@ export class UserPreferencesService {
       // Try to create a date formatter with the timezone
       new Intl.DateTimeFormat("en-US", { timeZone: timezone });
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

@@ -114,7 +114,7 @@ export default function PostgresServerDetailsPage() {
 
       toast.success("Server deleted successfully");
       navigate("/postgres-server");
-    } catch (error) {
+    } catch {
       toast.error("Failed to delete server");
     }
   };

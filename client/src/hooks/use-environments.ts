@@ -135,7 +135,7 @@ async function deleteEnvironment(
     try {
       const errorData = await response.json();
       errorMessage = errorData.message || errorData.error || errorMessage;
-    } catch (parseError) {
+    } catch {
       // If JSON parsing fails, use the default error message
     }
     throw new Error(errorMessage);

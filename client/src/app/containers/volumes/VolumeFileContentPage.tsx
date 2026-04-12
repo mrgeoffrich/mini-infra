@@ -50,7 +50,7 @@ export function VolumeFileContentPage() {
     try {
       await navigator.clipboard.writeText(fileContent.content);
       toast.success("Content copied to clipboard");
-    } catch (err) {
+    } catch {
       toast.error("Failed to copy to clipboard");
     }
   };

@@ -6,11 +6,7 @@ console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
 import { initializeSocketIO, shutdownSocketIO } from "./lib/socket";
 import { setupContainerSocketEmitter } from "./services/container-socket-emitter";
-import {
-  appLogger,
-  clearLoggerCache,
-  serializeError,
-} from "./lib/logger-factory";
+import { appLogger, clearLoggerCache } from "./lib/logger-factory";
 import {
   ensureAgentSidecar,
   removeAgentSidecar,

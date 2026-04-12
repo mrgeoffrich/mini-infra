@@ -262,7 +262,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
   private async parseAndStoreFetchOutput(
     volumeName: string,
     stdout: string,
-    stderr: string,
+    _stderr: string,
   ): Promise<FetchFileContentsResult> {
     const result: FetchFileContentsResult = {
       fetched: 0,

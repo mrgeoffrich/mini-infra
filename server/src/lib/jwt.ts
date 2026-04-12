@@ -46,7 +46,9 @@ export const generateToken = (
     return token;
   } catch (error) {
     logger.error({ error, userId: user.id }, "Error generating JWT token");
-    throw new Error("Failed to generate authentication token");
+    throw new Error("Failed to generate authentication token", {
+      cause: error,
+    });
   }
 };
 
@@ -64,19 +66,19 @@ export const verifyToken = (token: string): JwtPayload => {
   } catch (error) {
     if (error instanceof jwt.JsonWebTokenError) {
       logger.debug({ error: error.message }, "Invalid JWT token");
-      throw new Error("Invalid authentication token");
+      throw new Error("Invalid authentication token", { cause: error });
     }
     if (error instanceof jwt.TokenExpiredError) {
       logger.debug("JWT token expired");
-      throw new Error("Authentication token expired");
+      throw new Error("Authentication token expired", { cause: error });
     }
     if (error instanceof jwt.NotBeforeError) {
       logger.debug("JWT token not active");
-      throw new Error("Authentication token not yet valid");
+      throw new Error("Authentication token not yet valid", { cause: error });
     }
 
     logger.error({ error }, "Unexpected error verifying JWT token");
-    throw new Error("Token verification failed");
+    throw new Error("Token verification failed", { cause: error });
   }
 };
 

@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import { selfBackupLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
 import { emitBackupHealthStatus } from "./backup-health-socket-emitter";
@@ -240,7 +240,6 @@ export class SelfBackupExecutor {
         const zip = new AdmZip();
 
         // Add the backup file to the ZIP
-        const baseName = path.basename(backupPath);
         zip.addLocalFile(backupPath);
 
         // Write the ZIP file
@@ -331,7 +330,7 @@ export class SelfBackupExecutor {
     try {
       const stats = await fs.stat(filePath);
       return stats.size > 0;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

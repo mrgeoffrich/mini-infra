@@ -37,7 +37,7 @@ export function EventLogsViewer({ logs, eventName }: EventLogsViewerProps) {
     try {
       await navigator.clipboard.writeText(logs);
       toast.success("Logs copied to clipboard");
-    } catch (error) {
+    } catch {
       toast.error("Failed to copy logs");
     }
   };

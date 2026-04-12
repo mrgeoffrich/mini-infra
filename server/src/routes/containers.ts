@@ -16,8 +16,6 @@ import {
   ContainerQueryParams,
   ContainerListResponse,
   ContainerListApiResponse,
-  ContainerInfo,
-  DockerContainerInfo,
   ContainerLogOptions,
   ContainerLogEvent,
   ContainerAction,

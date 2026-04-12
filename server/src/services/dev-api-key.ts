@@ -104,7 +104,9 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
     }
   } catch (error) {
     logger.error({ error }, "Failed to initialize development API key");
-    throw new Error("Failed to initialize development API key");
+    throw new Error("Failed to initialize development API key", {
+      cause: error,
+    });
   }
 }
 

@@ -214,10 +214,9 @@ export class HAProxyMigrationService {
 
     logger.info({ environmentId }, 'Starting HAProxy migration to stack management');
 
-    const environment = await prisma.environment.findUniqueOrThrow({
+    await prisma.environment.findUniqueOrThrow({
       where: { id: environmentId },
     });
-    const envName = environment.name;
 
     // Verify migration is needed
     const preview = await this.getMigrationPreview(environmentId, prisma);

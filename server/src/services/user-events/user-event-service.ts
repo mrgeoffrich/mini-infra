@@ -6,7 +6,6 @@ import {
   UserEventSortOptions,
   CreateUserEventRequest,
   UpdateUserEventRequest,
-  UserEventMetadata,
   Channel,
   ServerEvent,
 } from '@mini-infra/types';

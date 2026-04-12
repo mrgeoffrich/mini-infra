@@ -34,7 +34,6 @@ const loggerCache = new Map<string, pino.Logger>();
 
 // Constants for stack trace parsing
 const STACKTRACE_OFFSET = 2;
-const LINE_OFFSET = 7;
 const {
   symbols: { asJsonSym },
 } = pino;
@@ -81,7 +80,7 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
       }
 
       return (pinoInstance as any)[asJsonSym].apply(this, args);
-    } catch (error) {
+    } catch {
       // If there's an error in caller tracking, fall back to original logging
       return (pinoInstance as any)[asJsonSym].apply(this, args);
     }

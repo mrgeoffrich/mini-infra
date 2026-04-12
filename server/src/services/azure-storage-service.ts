@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import { PrismaClient } from "../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -10,8 +10,6 @@ import { servicesLogger } from "../lib/logger-factory";
 import { azureConfig } from "../lib/config-new";
 import {
   BlobServiceClient,
-  BlobItem,
-  BlockBlobClient,
   generateBlobSASQueryParameters,
   BlobSASPermissions,
   StorageSharedKeyCredential,
@@ -1223,16 +1221,13 @@ export class AzureStorageService extends ConfigurationService {
   async removeConfiguration(userId: string): Promise<void> {
     try {
       await this.delete(AzureStorageService.CONNECTION_STRING_KEY, userId);
-    } catch (error) {
+    } catch {
       // Connection string might not exist, continue
     }
 
     try {
-      const oldAccountName = await this.get(
-        AzureStorageService.STORAGE_ACCOUNT_KEY,
-      );
       await this.delete(AzureStorageService.STORAGE_ACCOUNT_KEY, userId);
-    } catch (error) {
+    } catch {
       // Account name might not exist, continue
     }
 

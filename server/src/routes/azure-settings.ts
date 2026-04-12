@@ -10,9 +10,6 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { AzureStorageService } from "../services/azure-storage-service";
 import {
-  CreateAzureSettingRequest,
-  UpdateAzureSettingRequest,
-  ValidateAzureConnectionRequest,
   AzureSettingResponse,
   AzureValidationResponse,
   AzureContainerListResponse,
@@ -26,27 +23,6 @@ const logger = appLogger();
 const azureConfigService = new AzureStorageService(prisma);
 
 // Request validation schemas
-const createAzureSettingSchema = z.object({
-  connectionString: z
-    .string()
-    .min(1, "Connection string is required")
-    .refine(
-      (val) => {
-        const requiredKeys = [
-          "DefaultEndpointsProtocol",
-          "AccountName",
-          "AccountKey",
-        ];
-        return requiredKeys.every((key) => val.includes(`${key}=`));
-      },
-      {
-        message:
-          "Invalid connection string format. Must include DefaultEndpointsProtocol, AccountName, and AccountKey",
-      },
-    ),
-  accountName: z.string().optional(),
-});
-
 const updateAzureSettingSchema = z.object({
   connectionString: z
     .string()
@@ -346,7 +322,7 @@ router.post("/validate", requirePermission('settings:write') as RequestHandler, 
       });
     }
 
-    const { connectionString, testContainerAccess } = bodyValidation.data;
+    const { connectionString } = bodyValidation.data;
 
     // If a connection string is provided for testing, temporarily use it
     if (connectionString) {

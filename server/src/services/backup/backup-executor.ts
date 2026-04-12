@@ -1,9 +1,5 @@
 import prisma, { PrismaClient } from "../../lib/prisma";
-import {
-  InMemoryQueue,
-  Job as QueueJob,
-  QueueOptions,
-} from "../../lib/in-memory-queue";
+import { InMemoryQueue, Job as QueueJob } from "../../lib/in-memory-queue";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
@@ -529,7 +525,9 @@ export class BackupExecutorService {
           },
           "Failed to pull Docker image for backup",
         );
-        throw new Error(`Failed to pull Docker image: ${errorMessage}`);
+        throw new Error(`Failed to pull Docker image: ${errorMessage}`, {
+          cause: error,
+        });
       }
 
       // Verify Azure is configured (needed for SAS URL generation and post-backup verification)
@@ -955,7 +953,7 @@ export class BackupExecutorService {
           sizeBytes,
           blobUrl,
         };
-      } catch (blobError) {
+      } catch {
         return {
           success: false,
           error: `Backup file not found: ${blobName}`,

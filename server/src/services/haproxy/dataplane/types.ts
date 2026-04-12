@@ -5,7 +5,7 @@ import { HttpClient } from '../../../lib/http-client';
 // ====================
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type Constructor<T = {}> = new (...args: any[]) => T;
+export type Constructor<T = object> = new (...args: any[]) => T;
 
 export interface IHAProxyClientBase {
   handleApiError(error: unknown, operation: string, context?: Record<string, any>): void;

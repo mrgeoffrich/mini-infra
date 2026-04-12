@@ -61,6 +61,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
 
     // Remove encrypted connection strings from response
     const sanitizedServers = servers.map((server) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { connectionString, ...rest } = server;
       return rest;
     });
@@ -106,6 +107,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
     }
 
     // Remove encrypted connection string from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { connectionString, ...sanitizedServer } = server;
 
     res.status(201).json({
@@ -145,6 +147,7 @@ router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
     const server = await postgresServerService.getServer(serverId, userId);
 
     // Remove encrypted connection string from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { connectionString, ...sanitizedServer } = server;
 
     res.json({
@@ -181,6 +184,7 @@ router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
     const server = await postgresServerService.updateServer(serverId, userId, validatedData);
 
     // Remove encrypted connection string from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { connectionString, ...sanitizedServer } = server;
 
     res.json({

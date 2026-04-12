@@ -681,7 +681,7 @@ export class ContainerLifecycleManager {
           // Stop if running
           try {
             await this.stopContainer(container.id, 10);
-          } catch (error) {
+          } catch {
             // Ignore stop errors, container might already be stopped
           }
 
@@ -767,8 +767,10 @@ export class ContainerLifecycleManager {
   /**
    * Build Docker exposed ports from deployment port configuration
    */
-  private buildExposedPorts(ports: DeploymentPort[]): Record<string, {}> {
-    const exposed: Record<string, {}> = {};
+  private buildExposedPorts(
+    ports: DeploymentPort[],
+  ): Record<string, Record<string, never>> {
+    const exposed: Record<string, Record<string, never>> = {};
 
     for (const port of ports) {
       const key = `${port.containerPort}/${port.protocol || "tcp"}`;
