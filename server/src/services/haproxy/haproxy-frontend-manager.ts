@@ -142,7 +142,7 @@ export class HAProxyFrontendManager {
         { error, hostname, backendName },
         "Failed to create frontend for deployment"
       );
-      throw new Error(`Failed to create frontend: ${error}`);
+      throw new Error(`Failed to create frontend: ${error}`, { cause: error });
     }
   }
 
@@ -253,7 +253,7 @@ export class HAProxyFrontendManager {
       }
 
       logger.error({ error, frontendName, aclName }, "Failed to add ACL");
-      throw new Error(`Failed to add ACL: ${error}`);
+      throw new Error(`Failed to add ACL: ${error}`, { cause: error });
     }
   }
 
@@ -305,7 +305,7 @@ export class HAProxyFrontendManager {
         { error, frontendName, backendName },
         "Failed to add backend switching rule"
       );
-      throw new Error(`Failed to add backend switching rule: ${error}`);
+      throw new Error(`Failed to add backend switching rule: ${error}`, { cause: error });
     }
   }
 
@@ -336,7 +336,7 @@ export class HAProxyFrontendManager {
       }
 
       logger.error({ error, frontendName }, "Failed to remove frontend");
-      throw new Error(`Failed to remove frontend: ${error}`);
+      throw new Error(`Failed to remove frontend: ${error}`, { cause: error });
     }
   }
 
@@ -673,7 +673,7 @@ export class HAProxyFrontendManager {
         { error, environmentId, type },
         "Failed to get or create shared frontend"
       );
-      throw new Error(`Failed to get or create shared frontend: ${error}`);
+      throw new Error(`Failed to get or create shared frontend: ${error}`, { cause: error });
     }
   }
 
@@ -921,7 +921,7 @@ export class HAProxyFrontendManager {
         { error, sharedFrontendId, hostname, backendName },
         "Failed to add route to shared frontend"
       );
-      throw new Error(`Failed to add route to shared frontend: ${error}`);
+      throw new Error(`Failed to add route to shared frontend: ${error}`, { cause: error });
     }
   }
 
@@ -1021,7 +1021,7 @@ export class HAProxyFrontendManager {
         { error, sharedFrontendId, hostname },
         "Failed to remove route from shared frontend"
       );
-      throw new Error(`Failed to remove route from shared frontend: ${error}`);
+      throw new Error(`Failed to remove route from shared frontend: ${error}`, { cause: error });
     }
   }
 
@@ -1073,8 +1073,6 @@ export class HAProxyFrontendManager {
 
       // If hostname is being changed, we need to update ACL and rule
       if (updates.hostname && updates.hostname !== existingRoute.hostname) {
-        const newAclName = generateACLName(updates.hostname);
-
         // Remove old ACL and rule
         const existingRules =
           await haproxyClient.getBackendSwitchingRules(frontendName);
@@ -1150,7 +1148,7 @@ export class HAProxyFrontendManager {
       };
     } catch (error) {
       logger.error({ error, routeId, updates }, "Failed to update route");
-      throw new Error(`Failed to update route: ${error}`);
+      throw new Error(`Failed to update route: ${error}`, { cause: error });
     }
   }
 
@@ -1280,7 +1278,7 @@ export class HAProxyFrontendManager {
       return { synced, errors };
     } catch (error) {
       logger.error({ error, environmentId }, "Failed to sync environment routes");
-      throw new Error(`Failed to sync environment routes: ${error}`);
+      throw new Error(`Failed to sync environment routes: ${error}`, { cause: error });
     }
   }
 }

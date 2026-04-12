@@ -4,7 +4,7 @@ const tseslint = require("typescript-eslint");
 
 module.exports = tseslint.config([
   {
-    files: ["**/*.ts"],
+    files: ["src/**/*.ts"],
     ignores: ["coverage/**", "dist/**", "node_modules/**", "src/generated/**"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {

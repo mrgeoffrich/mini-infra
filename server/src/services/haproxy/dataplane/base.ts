@@ -1,4 +1,4 @@
-import { HttpClient, HttpError, createHttpClient, isHttpError } from '../../../lib/http-client';
+import { HttpClient, createHttpClient, isHttpError } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
@@ -183,7 +183,7 @@ export class HAProxyDataPlaneClientBase {
     } catch (error) {
       if (isHttpError(error)) {
         const message = error.response?.data?.message || error.message;
-        throw new Error(`DataPlane API connection failed: ${message}`);
+        throw new Error(`DataPlane API connection failed: ${message}`, { cause: error });
       }
       throw error;
     }

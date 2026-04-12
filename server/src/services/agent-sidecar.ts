@@ -316,6 +316,7 @@ async function createAgentSidecar(
       reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
       throw new Error(
         `Failed to pull agent sidecar image "${config.image}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+        { cause: pullErr },
       );
     }
 

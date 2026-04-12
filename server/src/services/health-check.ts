@@ -1,4 +1,4 @@
-import { HttpClient, HttpError, isHttpError } from "../lib/http-client";
+import { HttpClient, isHttpError } from "../lib/http-client";
 import { ValidationResult } from "@mini-infra/types";
 import { servicesLogger } from "../lib/logger-factory";
 

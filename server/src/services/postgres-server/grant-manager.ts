@@ -195,7 +195,7 @@ export class GrantManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, grantId }, "Failed to apply grant");
-      throw new Error(`Failed to apply grant: ${error.message}`);
+      throw new Error(`Failed to apply grant: ${error.message}`, { cause: error });
     }
   }
 
@@ -318,7 +318,7 @@ export class GrantManagementService {
       logger.info({ serverId, grantId, database: dbName, user: username }, "Grant revoked from server");
     } catch (error: any) {
       logger.error({ error: error.message, serverId, grantId }, "Failed to revoke grant");
-      throw new Error(`Failed to revoke grant: ${error.message}`);
+      throw new Error(`Failed to revoke grant: ${error.message}`, { cause: error });
     }
   }
 

@@ -12,7 +12,6 @@ import {
   BackupOperationDeleteResponse,
   ManualBackupResponse,
   BackupOperationFilter,
-  BackupOperationSortOptions,
   BackupOperationProgress,
 } from "@mini-infra/types";
 

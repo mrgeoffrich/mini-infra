@@ -197,7 +197,7 @@ export class CircuitBreaker {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     for (const mapper of this.errorMappers) {
-      let matches = false;
+      let matches: boolean;
 
       if (typeof mapper.pattern === "function") {
         matches = mapper.pattern(error);

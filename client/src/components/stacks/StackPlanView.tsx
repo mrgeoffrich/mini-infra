@@ -81,22 +81,26 @@ export const StackPlanView = React.memo(function StackPlanView({
 
   const plan = planResponse?.data;
 
-  const sortedActions = useMemo(() => {
-    if (!plan?.actions) return [];
-    return [...plan.actions].sort(
-      (a, b) =>
-        (ACTION_PRIORITY[a.action] ?? 99) - (ACTION_PRIORITY[b.action] ?? 99),
-    );
-  }, [plan?.actions]);
+  const sortedActions = !plan?.actions
+    ? []
+    : [...plan.actions].sort(
+        (a, b) =>
+          (ACTION_PRIORITY[a.action] ?? 99) -
+          (ACTION_PRIORITY[b.action] ?? 99),
+      );
 
-  const counts = useMemo(() => {
-    if (!plan?.actions) return { create: 0, recreate: 0, remove: 0, "no-op": 0 };
-    const c = { create: 0, recreate: 0, remove: 0, "no-op": 0 };
-    for (const action of plan.actions) {
-      c[action.action]++;
-    }
-    return c;
-  }, [plan?.actions]);
+  const counts = !plan?.actions
+    ? { create: 0, recreate: 0, remove: 0, "no-op": 0 }
+    : plan.actions.reduce(
+        (acc, action) => {
+          acc[action.action]++;
+          return acc;
+        },
+        { create: 0, recreate: 0, remove: 0, "no-op": 0 } as Record<
+          "create" | "recreate" | "remove" | "no-op",
+          number
+        >,
+      );
 
   const hasSelectableActions = counts.create + counts.recreate + counts.remove > 0;
 

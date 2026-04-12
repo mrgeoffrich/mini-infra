@@ -199,7 +199,7 @@ export class MonitorContainerStartup {
                 error: error instanceof Error ? error.message : 'Unknown error'
             }, 'Failed to get container network information');
 
-            throw new Error(`Failed to get container network info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            throw new Error(`Failed to get container network info: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
         }
     }
 }

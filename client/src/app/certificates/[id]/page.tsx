@@ -27,6 +27,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CertificateStatusBadge } from "@/components/certificates/certificate-status-badge";
 import { RenewalHistoryTable } from "@/components/certificates/renewal-history-table";
 
+function calculateDaysUntilExpiry(notAfter: string | Date): number {
+  return Math.floor(
+    (new Date(notAfter).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+  );
+}
+
 export default function CertificateDetailsPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -76,10 +82,7 @@ export default function CertificateDetailsPage() {
     );
   }
 
-  const daysUntilExpiry = Math.floor(
-    (new Date(certificate.notAfter).getTime() - Date.now()) /
-      (1000 * 60 * 60 * 24)
-  );
+  const daysUntilExpiry = calculateDaysUntilExpiry(certificate.notAfter);
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">

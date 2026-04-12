@@ -1,8 +1,6 @@
-import prisma, { PrismaClient } from "../lib/prisma";
+import { PrismaClient } from "../lib/prisma";
 import { servicesLogger } from "../lib/logger-factory";
 import {
-  BackupOperationInfo,
-  RestoreOperationInfo,
   BackupProgressUpdate,
   RestoreProgressUpdate,
   BackupOperationProgress,
@@ -687,7 +685,7 @@ export class ProgressTrackerService extends EventEmitter {
         if (metadata.completedSteps) {
           progress.completedSteps = metadata.completedSteps;
         }
-      } catch (error) {
+      } catch {
         servicesLogger().debug(
           { operationId: operation.id },
           "Failed to parse backup operation metadata",

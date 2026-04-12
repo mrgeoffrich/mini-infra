@@ -49,7 +49,9 @@ export class NetworkUtils {
         throw error;
       }
       logger.error({ error }, "Failed to retrieve Docker host IP");
-      throw new Error(`Failed to retrieve Docker host IP: ${error}`);
+      throw new Error(`Failed to retrieve Docker host IP: ${error}`, {
+        cause: error,
+      });
     }
   }
 

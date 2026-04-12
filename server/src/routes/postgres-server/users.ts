@@ -49,6 +49,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
 
     // Remove password hashes from response
     const sanitizedUsers = users.map((user) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { passwordHash, ...rest } = user;
       return rest;
     });
@@ -87,6 +88,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
     const user = await userManagementService.createUser(serverId, userId, validatedData);
 
     // Remove password hash from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, ...sanitizedUser } = user;
 
     res.status(201).json({
@@ -131,6 +133,7 @@ router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
     const user = await userManagementService.getUserDetails(serverId, authUserId, managedUserId);
 
     // Remove password hash from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, ...sanitizedUser } = user;
 
     res.json({
@@ -175,6 +178,7 @@ router.put("/:userId", requirePermission('postgres:write'), async (req, res) => 
     const user = await userManagementService.updateUser(serverId, authUserId, managedUserId, validatedData);
 
     // Remove password hash from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { passwordHash, ...sanitizedUser } = user;
 
     res.json({

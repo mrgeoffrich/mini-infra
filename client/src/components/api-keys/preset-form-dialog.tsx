@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,22 +42,40 @@ export function PresetFormDialog({
   onSubmit,
   isPending = false,
 }: PresetFormDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* Key by open+preset id so the form state resets when the dialog
+          re-opens or the target preset changes, instead of syncing in an effect. */}
+      <PresetFormDialogContent
+        key={open ? `${preset?.id ?? "new"}-open` : "closed"}
+        preset={preset}
+        onOpenChange={onOpenChange}
+        onSubmit={onSubmit}
+        isPending={isPending}
+      />
+    </Dialog>
+  );
+}
+
+function PresetFormDialogContent({
+  preset,
+  onOpenChange,
+  onSubmit,
+  isPending,
+}: {
+  preset?: PermissionPresetRecord;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: PresetFormDialogProps["onSubmit"];
+  isPending: boolean;
+}) {
   const isEdit = !!preset;
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [selectedPermissions, setSelectedPermissions] = useState<Set<PermissionScope>>(new Set());
+  const [name, setName] = useState(preset?.name ?? "");
+  const [description, setDescription] = useState(preset?.description ?? "");
+  const [selectedPermissions, setSelectedPermissions] = useState<Set<PermissionScope>>(
+    () => new Set(preset?.permissions ?? []),
+  );
   const [nameError, setNameError] = useState("");
-
-  // Populate fields when editing
-  useEffect(() => {
-    if (open) {
-      setName(preset?.name ?? "");
-      setDescription(preset?.description ?? "");
-      setSelectedPermissions(new Set(preset?.permissions ?? []));
-      setNameError("");
-    }
-  }, [open, preset]);
 
   const togglePermission = (scope: PermissionScope) => {
     setSelectedPermissions((prev) => {
@@ -114,9 +132,8 @@ export function PresetFormDialog({
     : selectedPermissions.size.toString();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+    <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Preset" : "New Preset"}</DialogTitle>
           <DialogDescription>
             {isEdit
@@ -263,7 +280,6 @@ export function PresetFormDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }

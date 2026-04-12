@@ -49,7 +49,7 @@ interface TestDockerRegistryResponse {
 router.post("/test-docker-registry", requirePermission('settings:write') as RequestHandler, (async (
   req: TestDockerRegistryRequest,
   res: Response<TestDockerRegistryResponse>,
-  next: NextFunction,
+  _next: NextFunction,
 ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);

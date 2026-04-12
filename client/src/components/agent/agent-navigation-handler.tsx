@@ -49,14 +49,28 @@ export function AgentNavigationHandler() {
     };
   }, []);
 
-  // Countdown interval
+  // Countdown interval. When the countdown ticks to 0 we perform the
+  // navigation directly from the interval callback rather than updating state
+  // and letting a separate effect react to it.
   useEffect(() => {
     if (!pending) return;
+    const path = pending.path;
 
     intervalRef.current = setInterval(() => {
       setPending((prev) => {
         if (!prev) return null;
         if (prev.countdown <= 1) {
+          // Final tick: show "0" briefly, then clear and navigate. We
+          // schedule the actual navigation outside the updater so the state
+          // transition completes cleanly.
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
+          queueMicrotask(() => {
+            navigate(path);
+            setPending(null);
+          });
           return { ...prev, countdown: 0 };
         }
         return { ...prev, countdown: prev.countdown - 1 };
@@ -69,19 +83,7 @@ export function AgentNavigationHandler() {
         intervalRef.current = null;
       }
     };
-  }, [pending?.path]);
-
-  // Navigate when countdown hits 0
-  useEffect(() => {
-    if (pending?.countdown === 0) {
-      navigate(pending.path);
-      setPending(null);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-  }, [pending?.countdown, pending?.path, navigate]);
+  }, [pending?.path, navigate]);
 
   // Escape key to cancel
   useEffect(() => {

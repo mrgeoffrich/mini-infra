@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { IconLoader2, IconRocket } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,17 +34,42 @@ export function StackParametersDialog({
   onConfirm,
   isSaving,
 }: StackParametersDialogProps) {
-  const [localValues, setLocalValues] = useState<Record<string, StackParameterValue>>({});
+  return (
+    <Dialog open={open} onOpenChange={isSaving ? undefined : onOpenChange}>
+      {/* Remount the inner form each time the dialog opens so local state is
+          re-initialized from currentValues + parameter defaults, rather than
+          syncing via a useEffect. */}
+      {open && (
+        <StackParametersDialogContent
+          stackName={stackName}
+          parameters={parameters}
+          currentValues={currentValues}
+          onConfirm={onConfirm}
+          onOpenChange={onOpenChange}
+          isSaving={isSaving}
+        />
+      )}
+    </Dialog>
+  );
+}
 
-  useEffect(() => {
-    if (open) {
+function StackParametersDialogContent({
+  stackName,
+  parameters,
+  currentValues,
+  onConfirm,
+  onOpenChange,
+  isSaving,
+}: Omit<StackParametersDialogProps, "open">) {
+  const [localValues, setLocalValues] = useState<Record<string, StackParameterValue>>(
+    () => {
       const initial: Record<string, StackParameterValue> = {};
       for (const param of parameters) {
         initial[param.name] = currentValues[param.name] ?? param.default;
       }
-      setLocalValues(initial);
-    }
-  }, [open, parameters, currentValues]);
+      return initial;
+    },
+  );
 
   function handleConfirm() {
     const coerced: Record<string, StackParameterValue> = {};
@@ -66,9 +91,8 @@ export function StackParametersDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={isSaving ? undefined : onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
+    <DialogContent className="sm:max-w-md">
+      <DialogHeader>
           <DialogTitle>Configure {stackName}</DialogTitle>
           <DialogDescription>
             Review and set configuration values before deploying. You can change
@@ -96,7 +120,7 @@ export function StackParametersDialog({
                       disabled={isSaving}
                     />
                     <span className="text-sm text-muted-foreground">
-                      {Boolean(localValues[param.name] ?? param.default) ? "Enabled" : "Disabled"}
+                      {(localValues[param.name] ?? param.default) ? "Enabled" : "Disabled"}
                     </span>
                   </div>
                 ) : param.type === "number" ? (
@@ -138,7 +162,6 @@ export function StackParametersDialog({
             {isSaving ? "Saving..." : "Save & Deploy"}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </DialogContent>
   );
 }

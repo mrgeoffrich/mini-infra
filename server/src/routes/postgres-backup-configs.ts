@@ -45,7 +45,7 @@ const createBackupConfigSchema = z.object({
     .min(3, "Azure container name must be at least 3 characters")
     .max(63, "Azure container name must be at most 63 characters")
     .regex(
-      /^[a-z0-9]([a-z0-9\-])*[a-z0-9]$/,
+      /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/,
       "Azure container name must contain only lowercase letters, numbers, and hyphens, and start/end with alphanumeric characters",
     ),
   azurePathPrefix: z.string().optional().default(""),
@@ -75,7 +75,7 @@ const updateBackupConfigSchema = z.object({
     .min(3, "Azure container name must be at least 3 characters")
     .max(63, "Azure container name must be at most 63 characters")
     .regex(
-      /^[a-z0-9]([a-z0-9\-])*[a-z0-9]$/,
+      /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/,
       "Azure container name must contain only lowercase letters, numbers, and hyphens, and start/end with alphanumeric characters",
     )
     .optional(),

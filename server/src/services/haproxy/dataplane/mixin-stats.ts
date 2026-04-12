@@ -1,8 +1,5 @@
 import { isHttpError } from '../../../lib/http-client';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, ServerStats, BackendStats } from './types';
-
-const logger = loadbalancerLogger();
 
 export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
   return class extends Base {
@@ -101,7 +98,7 @@ export function StatsMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
       try {
         const stats = await this.getServerStats(backendName, serverName);
         return stats !== null;
-      } catch (error) {
+      } catch {
         return false;
       }
     }

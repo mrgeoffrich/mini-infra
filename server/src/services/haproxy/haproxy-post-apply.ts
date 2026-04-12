@@ -376,7 +376,7 @@ export async function recreateBackendsAndServers(
  */
 async function getStackHAProxyClient(
   environmentId: string,
-  prisma: PrismaClient
+  _prisma: PrismaClient
 ): Promise<HAProxyDataPlaneClient> {
   const dockerService = DockerService.getInstance();
   await dockerService.initialize();

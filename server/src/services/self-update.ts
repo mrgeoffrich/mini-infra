@@ -250,7 +250,7 @@ export async function launchSidecar(
     } catch (pullErr) {
       logger.error({ err: pullErr, sidecarImage: options.sidecarImage, sidecarRunImage }, "Failed to pull sidecar image");
       reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(`Failed to pull sidecar image: ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+      throw new Error(`Failed to pull sidecar image: ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
     }
 
     // Step 2: Pull the target image (server has working registry credentials)
@@ -262,7 +262,7 @@ export async function launchSidecar(
     } catch (pullErr) {
       logger.error({ err: pullErr, targetImage: fullImageRef }, "Failed to pull target image");
       reportStep("Pull target image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(`Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+      throw new Error(`Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
     }
 
     // Step 3: Pull the agent sidecar image (pre-pull so it's available after update)
@@ -275,7 +275,7 @@ export async function launchSidecar(
       } catch (pullErr) {
         logger.error({ err: pullErr, agentSidecarImage: options.agentSidecarImage }, "Failed to pull agent sidecar image");
         reportStep("Pull agent sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-        throw new Error(`Failed to pull agent sidecar image "${options.agentSidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`);
+        throw new Error(`Failed to pull agent sidecar image "${options.agentSidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
       }
     } else {
       reportStep("Pull agent sidecar image", "skipped", "No agent sidecar image configured");

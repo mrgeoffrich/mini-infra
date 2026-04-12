@@ -263,7 +263,7 @@ export class StackResourceReconciler {
       }
 
       results.push(result);
-      try { onProgress?.(result); } catch {}
+      try { onProgress?.(result); } catch { /* progress callback failures must never break reconciliation */ }
     }
 
     return results;
@@ -361,7 +361,7 @@ export class StackResourceReconciler {
       }
 
       results.push(result);
-      try { onProgress?.(result); } catch {}
+      try { onProgress?.(result); } catch { /* progress callback failures must never break reconciliation */ }
     }
 
     return results;
@@ -519,7 +519,7 @@ export class StackResourceReconciler {
       }
 
       results.push(result);
-      try { onProgress?.(result); } catch {}
+      try { onProgress?.(result); } catch { /* progress callback failures must never break reconciliation */ }
     }
 
     return results;

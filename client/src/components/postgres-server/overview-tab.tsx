@@ -18,7 +18,7 @@ interface OverviewTabProps {
   onChangeTab: (tab: string) => void;
 }
 
-function calculateTotalGrants(_server: PostgresServerInfo): number {
+function calculateTotalGrants(): number {
   // TODO: Calculate from actual grant data when available
   return 0;
 }
@@ -189,7 +189,7 @@ export function OverviewTab({ server, onChangeTab }: OverviewTabProps) {
                 <span className="text-sm">Active Grants</span>
               </div>
               <div className="text-3xl font-bold text-green-600">
-                {calculateTotalGrants(server)}
+                {calculateTotalGrants()}
               </div>
               <div className="text-sm text-muted-foreground">
                 Permission assignments

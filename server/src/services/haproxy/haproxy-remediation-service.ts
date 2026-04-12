@@ -174,7 +174,7 @@ export class HAProxyRemediationService {
         { error, environmentId },
         "Failed to get remediation preview"
       );
-      throw new Error(`Failed to get remediation preview: ${error}`);
+      throw new Error(`Failed to get remediation preview: ${error}`, { cause: error });
     }
   }
 }

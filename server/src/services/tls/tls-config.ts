@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,

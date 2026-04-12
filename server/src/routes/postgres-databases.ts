@@ -8,7 +8,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
 const logger = appLogger();
-import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
+import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { PostgresDatabaseManager } from "../services/postgres";
 import {
@@ -24,7 +24,6 @@ import {
   PostgresDatabaseInfo,
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
-  PostgreSSLMode,
   DatabaseHealthStatus,
 } from "@mini-infra/types";
 

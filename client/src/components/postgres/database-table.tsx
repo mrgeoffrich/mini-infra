@@ -141,7 +141,7 @@ function ManualBackupButton({
     try {
       await manualBackupMutation.mutateAsync(database.id);
       toast.success("Manual backup started successfully");
-    } catch (error) {
+    } catch {
       toast.error("Failed to start manual backup");
     }
   };

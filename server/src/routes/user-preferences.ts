@@ -6,7 +6,6 @@ import { UserPreferencesService } from "../services/user-preferences";
 import type {
   JWTUser,
   UserPreferenceInfo,
-  UpdateUserPreferencesRequest,
 } from "@mini-infra/types";
 
 const logger = appLogger();

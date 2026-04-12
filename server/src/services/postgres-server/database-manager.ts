@@ -1,4 +1,3 @@
-import { Client } from "pg";
 import prisma from "../../lib/prisma";
 import { appLogger } from "../../lib/logger-factory";
 import postgresServerService from "./server-manager";
@@ -66,7 +65,7 @@ export class DatabaseManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId }, "Failed to list databases from server");
-      throw new Error(`Failed to list databases: ${error.message}`);
+      throw new Error(`Failed to list databases: ${error.message}`, { cause: error });
     }
   }
 
@@ -229,7 +228,7 @@ export class DatabaseManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, databaseName: params.databaseName }, "Failed to create database");
-      throw new Error(`Failed to create database: ${error.message}`);
+      throw new Error(`Failed to create database: ${error.message}`, { cause: error });
     }
   }
 
@@ -275,7 +274,7 @@ export class DatabaseManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, databaseId }, "Failed to drop database");
-      throw new Error(`Failed to drop database: ${error.message}`);
+      throw new Error(`Failed to drop database: ${error.message}`, { cause: error });
     }
   }
 
@@ -341,7 +340,7 @@ export class DatabaseManagementService {
         { error: error.message, serverId, databaseId, newOwner },
         "Failed to change database owner"
       );
-      throw new Error(`Failed to change database owner: ${error.message}`);
+      throw new Error(`Failed to change database owner: ${error.message}`, { cause: error });
     }
   }
 
@@ -392,7 +391,7 @@ export class DatabaseManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, databaseName }, "Failed to get database size");
-      throw new Error(`Failed to get database size: ${error.message}`);
+      throw new Error(`Failed to get database size: ${error.message}`, { cause: error });
     }
   }
 

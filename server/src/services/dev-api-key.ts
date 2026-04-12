@@ -69,7 +69,7 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
     }
 
     // Check if we have an active API key
-    let activeApiKey = devUser.apiKeys.find(
+    const activeApiKey = devUser.apiKeys.find(
       (key) => key.name === DEV_API_KEY_NAME && key.active,
     );
 
@@ -104,7 +104,9 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
     }
   } catch (error) {
     logger.error({ error }, "Failed to initialize development API key");
-    throw new Error("Failed to initialize development API key");
+    throw new Error("Failed to initialize development API key", {
+      cause: error,
+    });
   }
 }
 

@@ -1,15 +1,11 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
 import { UserPreferencesService } from "../user-preferences";
 import { BackupSchedulerService } from "./backup-scheduler";
-import {
-  BackupConfiguration,
-  BackupConfigurationInfo,
-  BackupFormat,
-} from "@mini-infra/types";
+import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
 
 export class BackupConfigurationManager {
   private prisma: PrismaClient;
@@ -54,7 +50,7 @@ export class BackupConfigurationManager {
       }
 
       // Determine timezone - use provided timezone or default to UTC
-      let timezone = config.timezone || "UTC";
+      const timezone = config.timezone || "UTC";
 
       // Validate timezone
       if (!UserPreferencesService.validateTimezone(timezone)) {
@@ -433,7 +429,7 @@ export class BackupConfigurationManager {
   isValidCronExpression(cronExpression: string): boolean {
     try {
       return cron.validate(cronExpression);
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -564,7 +560,7 @@ export class BackupConfigurationManager {
     // Azure path prefix can be empty (root of container)
 
     // Validate container name format
-    const containerNamePattern = /^[a-z0-9]([a-z0-9\-])*[a-z0-9]$/;
+    const containerNamePattern = /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/;
     if (
       config.azureContainerName.length < 3 ||
       config.azureContainerName.length > 63 ||

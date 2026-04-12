@@ -251,7 +251,7 @@ export class ManualFrontendManager {
         if (!info.State.Running) {
           errors.push("Container is not running");
         }
-      } catch (error) {
+      } catch {
         errors.push("Container not found or not accessible");
       }
 

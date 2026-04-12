@@ -337,7 +337,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       ) {
         toastWithCopy.error(errorMessage);
       }
-      throw new Error(errorMessage);
+      throw new Error(errorMessage, { cause: error });
     }
   };
 

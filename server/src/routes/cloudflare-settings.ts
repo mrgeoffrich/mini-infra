@@ -13,16 +13,12 @@ import prisma from "../lib/prisma";
 import { CloudflareService, cloudflareDNSService } from "../services/cloudflare";
 import { DnsCacheService } from "../services/dns";
 import {
-  CreateCloudflareSettingRequest,
-  UpdateCloudflareSettingRequest,
   CloudflareSettingResponse,
   CloudflareValidationResponse,
   CloudflareTunnelListResponse,
   CloudflareTunnelDetailsResponse,
   CloudflareTunnelConfigResponse,
   CloudflareTunnelInfo,
-  CloudflareAddHostnameRequest,
-  CloudflareHostnameResponse,
   ManagedTunnelListResponse,
   ManagedTunnelResponse,
   ManagedTunnelWithStack,
@@ -164,7 +160,6 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 
     // Check if configuration already exists
     const existingApiToken = await cloudflareConfigService.get("api_token");
-    const existingAccountId = await cloudflareConfigService.get("account_id");
 
     if (existingApiToken) {
       // Update existing configuration

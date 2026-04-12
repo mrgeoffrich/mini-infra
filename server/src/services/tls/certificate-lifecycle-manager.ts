@@ -73,7 +73,7 @@ export class CertificateLifecycleManager {
       // Step 1: Request certificate from ACME provider (includes DNS challenge + propagation)
       this.logger.info("Requesting certificate from ACME provider");
 
-      const { certificate, privateKey, chain } = await this.acmeClient.requestCertificate(
+      const { certificate, privateKey } = await this.acmeClient.requestCertificate(
         domains,
         this.dnsChallenge
       );
@@ -237,7 +237,7 @@ export class CertificateLifecycleManager {
       const domains = Array.isArray(existingCert.domains) ? existingCert.domains : JSON.parse(existingCert.domains as any);
       const blobName = existingCert.blobName || `cert_${certificateId}.pem`;
 
-      const { version, secretId } = await this.certificateStore.storeCertificate(
+      const { version } = await this.certificateStore.storeCertificate(
         blobName,
         certificate,
         privateKey,

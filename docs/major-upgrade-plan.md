@@ -11,18 +11,18 @@ This doc covers only **major version bumps** that need investigation before appl
 
 ## Summary Table
 
-| Package | Current | Latest | Effort | Risk |
-|---------|---------|--------|--------|------|
-| [TypeScript](#typescript-5--6) | ~5.8 | ~6.0 | Medium | Medium |
-| [ESLint](#eslint-9--10) | ^9.x | ^10.x | Low | Low |
-| [Prisma](#prisma-6--7) | ^6.x | ^7.x | High | High |
-| [Recharts](#recharts-2--3) | ^2.x | ^3.x | Medium | Medium |
-| [cloudflare SDK](#cloudflare-sdk-4--5) | ^4.x | ^5.x | Low | Medium |
-| [cuid2](#paralleldrivecuid2-2--3) | ^2.x | ^3.x | Low | Low |
-| [pino + pino-http + pino-roll](#pino-9--10-pino-http-10--11-pino-roll-3--4) | 9/10/3 | 10/11/4 | Low | Low |
-| [eslint-plugin-react-hooks](#eslint-plugin-react-hooks-5--7) | ^5.x | ^7.x | Low | Low |
-| [globals](#globals-16--17) | ^16.x | ^17.x | Low | Low |
-| [@types/dockerode](#typesdockeroode-3--4) | ^3.x | ^4.x | Low | Low |
+| Package | Current | Latest | Effort | Risk | Status |
+|---------|---------|--------|--------|------|--------|
+| [TypeScript](#typescript-5--6) | ~5.8 | ~6.0 | Medium | Medium | Deferred |
+| [ESLint](#eslint-9--10) | ^9.x | ^10.x | Low | Low | ✅ Done |
+| [Prisma](#prisma-6--7) | ^6.x | ^7.x | High | High | Deferred |
+| [Recharts](#recharts-2--3) | ^2.x | ^3.x | Medium | Medium | ✅ Done |
+| [cloudflare SDK](#cloudflare-sdk-4--5) | ^4.x | ^5.x | Low | Medium | ✅ Done |
+| [cuid2](#paralleldrivecuid2-2--3) | ^2.x | ^3.x | Low | Low | ✅ Done (prev PR) |
+| [pino + pino-http + pino-roll](#pino-9--10-pino-http-10--11-pino-roll-3--4) | 9/10/3 | 10/11/4 | Low | Low | ✅ Done (prev PR) |
+| [eslint-plugin-react-hooks](#eslint-plugin-react-hooks-5--7) | ^5.x | ^7.x | Low | Low | ✅ Done (prev PR) |
+| [globals](#globals-16--17) | ^16.x | ^17.x | Low | Low | ✅ Done |
+| [@types/dockerode](#typesdockeroode-3--4) | ^3.x | ^4.x | Low | Low | ✅ Done (prev PR) |
 
 ---
 

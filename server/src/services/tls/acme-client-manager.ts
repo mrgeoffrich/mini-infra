@@ -69,7 +69,7 @@ export class AcmeClientManager {
       try {
         accountKey = await this.certificateStore.getAccountKey(acmeConfig.email);
         this.logger.info({ email: acmeConfig.email }, "Using existing ACME account key");
-      } catch (error) {
+      } catch {
         // No existing account key, create new one
         this.logger.info({ email: acmeConfig.email }, "No existing ACME account key found, will create on first use");
         // Generate a new account key

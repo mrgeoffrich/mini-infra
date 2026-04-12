@@ -13,7 +13,7 @@ export function parseBackupUrl(backupUrl: string): {
 
     return { containerName, blobName };
   } catch (error) {
-    throw new Error(`Invalid backup URL format: ${backupUrl}`);
+    throw new Error(`Invalid backup URL format: ${backupUrl}`, { cause: error });
   }
 }
 
@@ -46,6 +46,8 @@ export function getStorageAccountFromConnectionString(
     }
     throw new Error("AccountName not found in connection string");
   } catch (error) {
-    throw new Error("Failed to parse Azure storage account name");
+    throw new Error("Failed to parse Azure storage account name", {
+      cause: error,
+    });
   }
 }

@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../../lib/logger-factory";
@@ -61,7 +61,7 @@ export class PostgresDatabaseManager {
         },
         "Failed to encrypt connection string",
       );
-      throw new Error("Encryption failed");
+      throw new Error("Encryption failed", { cause: error });
     }
   }
 
@@ -88,7 +88,7 @@ export class PostgresDatabaseManager {
         },
         "Failed to decrypt connection string",
       );
-      throw new Error("Decryption failed");
+      throw new Error("Decryption failed", { cause: error });
     }
   }
 
@@ -129,7 +129,7 @@ export class PostgresDatabaseManager {
         },
         "Failed to parse connection string",
       );
-      throw new Error("Invalid connection string format");
+      throw new Error("Invalid connection string format", { cause: error });
     }
   }
 

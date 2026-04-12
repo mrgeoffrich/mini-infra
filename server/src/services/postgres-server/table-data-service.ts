@@ -87,7 +87,7 @@ export class TableDataService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, databaseId }, "Failed to get table list");
-      throw new Error(`Failed to get table list: ${error.message}`);
+      throw new Error(`Failed to get table list: ${error.message}`, { cause: error });
     }
   }
 
@@ -288,7 +288,7 @@ export class TableDataService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, databaseId, tableName }, "Failed to get table data");
-      throw new Error(`Failed to get table data: ${error.message}`);
+      throw new Error(`Failed to get table data: ${error.message}`, { cause: error });
     }
   }
 

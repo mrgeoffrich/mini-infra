@@ -215,7 +215,7 @@ export class HttpClient {
   }
 
   private buildUrl(url: string, params?: Record<string, string>): string {
-    let base = this.defaults.baseURL;
+    const base = this.defaults.baseURL;
     // If url is already absolute, use it directly
     const absolute = url.startsWith('http://') || url.startsWith('https://');
     const full = absolute ? url : `${base}${url}`;

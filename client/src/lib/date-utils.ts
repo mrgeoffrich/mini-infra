@@ -67,7 +67,7 @@ export function formatDateTime(
     const timeFormat = showSeconds ? "HH:mm:ss" : "HH:mm";
     const dateFormat = `MMM d, yyyy ${timeFormat}`;
     return formatInTimezone(dateObj, timezone, dateFormat);
-  } catch (error) {
+  } catch {
     // Fallback to browser timezone if timezone is invalid
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     const timeFormat = showSeconds ? "HH:mm:ss" : "HH:mm";
@@ -94,7 +94,7 @@ export function formatDate(
 
   try {
     return formatInTimezone(dateObj, timezone, "MMM d, yyyy");
-  } catch (error) {
+  } catch {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, "MMM d, yyyy");
   }
@@ -120,7 +120,7 @@ export function formatTime(
 
   try {
     return formatInTimezone(dateObj, timezone, timeFormat);
-  } catch (error) {
+  } catch {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, timeFormat);
   }
@@ -162,7 +162,7 @@ export function formatContainerDate(
 
   try {
     return formatInTimezone(dateObj, timezone, "MMM d, HH:mm");
-  } catch (error) {
+  } catch {
     console.warn(`Invalid timezone "${timezone}", falling back to local time`);
     return format(dateObj, "MMM d, HH:mm");
   }

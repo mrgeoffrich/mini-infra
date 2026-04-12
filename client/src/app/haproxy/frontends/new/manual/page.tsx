@@ -167,7 +167,7 @@ export default function CreateManualFrontendPage() {
     navigate("/haproxy/frontends");
   };
 
-  const onSubmit = async (_data: FormValues) => {
+  const onSubmit = async () => {
     // Open the connect container dialog instead of submitting directly
     setShowConnectDialog(true);
   };

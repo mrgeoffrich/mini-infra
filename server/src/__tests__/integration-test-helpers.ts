@@ -106,7 +106,10 @@ async function withTemplateDatabaseLock<T>(
       }
 
       if (Date.now() - startTime > timeoutMs) {
-        throw new Error("Timed out waiting for integration test database lock");
+        throw new Error(
+          "Timed out waiting for integration test database lock",
+          { cause: error },
+        );
       }
 
       await sleep(pollMs);

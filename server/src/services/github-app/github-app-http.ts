@@ -28,7 +28,9 @@ export async function fetchGitHub(
     return response;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`GitHub API request timeout after ${TIMEOUT_MS}ms`);
+      throw new Error(`GitHub API request timeout after ${TIMEOUT_MS}ms`, {
+        cause: error,
+      });
     }
     throw error;
   } finally {

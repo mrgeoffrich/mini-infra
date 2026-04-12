@@ -204,7 +204,7 @@ export const ContainerTable = React.memo(function ContainerTable({
 
   // Modal state for adding postgres servers
   const [isServerModalOpen, setIsServerModalOpen] = React.useState(false);
-  const [_selectedContainer, setSelectedContainer] = React.useState<ContainerInfo | null>(null);
+  const [, setSelectedContainer] = React.useState<ContainerInfo | null>(null);
   const [initialServerValues, setInitialServerValues] = React.useState<any>(null);
   // Function to fetch container environment variables and docker host
   const handleAddPostgresServer = React.useCallback(async (container: ContainerInfo) => {

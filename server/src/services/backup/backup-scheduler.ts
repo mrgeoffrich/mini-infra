@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../../lib/logger-factory";

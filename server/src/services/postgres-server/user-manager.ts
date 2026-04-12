@@ -1,4 +1,3 @@
-import { Client } from "pg";
 import prisma from "../../lib/prisma";
 import CryptoJS from "crypto-js";
 import { appLogger } from "../../lib/logger-factory";
@@ -54,7 +53,7 @@ export class UserManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId }, "Failed to list users from server");
-      throw new Error(`Failed to list users: ${error.message}`);
+      throw new Error(`Failed to list users: ${error.message}`, { cause: error });
     }
   }
 
@@ -190,7 +189,7 @@ export class UserManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, username: params.username }, "Failed to create user");
-      throw new Error(`Failed to create user: ${error.message}`);
+      throw new Error(`Failed to create user: ${error.message}`, { cause: error });
     }
   }
 
@@ -235,7 +234,7 @@ export class UserManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, managedUserId }, "Failed to drop user");
-      throw new Error(`Failed to drop user: ${error.message}`);
+      throw new Error(`Failed to drop user: ${error.message}`, { cause: error });
     }
   }
 
@@ -279,7 +278,7 @@ export class UserManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, managedUserId }, "Failed to change user password");
-      throw new Error(`Failed to change password: ${error.message}`);
+      throw new Error(`Failed to change password: ${error.message}`, { cause: error });
     }
   }
 
@@ -349,7 +348,7 @@ export class UserManagementService {
     } catch (error: any) {
       await client.end();
       logger.error({ error: error.message, serverId, managedUserId }, "Failed to update user");
-      throw new Error(`Failed to update user: ${error.message}`);
+      throw new Error(`Failed to update user: ${error.message}`, { cause: error });
     }
   }
 

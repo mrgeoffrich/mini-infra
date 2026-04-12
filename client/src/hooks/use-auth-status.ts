@@ -34,6 +34,7 @@ async function fetchAuthStatus(): Promise<AuthStatus> {
     if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new Error(
         "NetworkError: Unable to connect to the authentication server. Please check your connection.",
+        { cause: error },
       );
     }
     // Re-throw other errors as-is

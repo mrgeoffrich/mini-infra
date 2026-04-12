@@ -1,4 +1,4 @@
-import prisma, { PrismaClient } from "../../lib/prisma";
+import { PrismaClient } from "../../lib/prisma";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -517,10 +517,6 @@ export class CloudflareService extends ConfigurationService {
         );
         return null;
       }
-
-      const cf = new Cloudflare({
-        apiToken,
-      });
 
       // Try to fetch tunnel configuration using the proper API endpoint
       const configResponse = (await Promise.race([
@@ -1199,16 +1195,13 @@ export class CloudflareService extends ConfigurationService {
   async removeConfiguration(userId: string): Promise<void> {
     try {
       await this.delete(CloudflareService.API_TOKEN_KEY, userId);
-    } catch (error) {
+    } catch {
       // Token might not exist, continue
     }
 
     try {
-      const oldAccountId = await this.get(
-        CloudflareService.ACCOUNT_ID_KEY,
-      );
       await this.delete(CloudflareService.ACCOUNT_ID_KEY, userId);
-    } catch (error) {
+    } catch {
       // Account ID might not exist, continue
     }
 
