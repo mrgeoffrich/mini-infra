@@ -234,7 +234,7 @@ export class CertificateLifecycleManager {
       const certInfo = await parseCertificate(certificate);
 
       // Store new version in Azure Blob Storage (overwrites existing blob)
-      const domains = Array.isArray(existingCert.domains) ? existingCert.domains : JSON.parse(existingCert.domains as any);
+      const domains = Array.isArray(existingCert.domains) ? existingCert.domains : JSON.parse(existingCert.domains as string);
       const blobName = existingCert.blobName || `cert_${certificateId}.pem`;
 
       const { version } = await this.certificateStore.storeCertificate(

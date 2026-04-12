@@ -109,11 +109,11 @@ export interface KeyVaultCertificateResult {
  * Dependencies for CertificateLifecycleManager
  */
 export interface LifecycleManagerDependencies {
-  acmeClient: any; // AcmeClientManager - will be defined in acme-client-manager.ts
-  keyVaultStore: any; // AzureKeyVaultCertificateStore - will be defined in azure-keyvault-certificate-store.ts
-  dnsChallenge: any; // DnsChallenge01Provider - will be defined in dns-challenge-provider.ts
-  distributor?: any; // CertificateDistributor - will be defined in certificate-distributor.ts
-  prisma: any; // PrismaClient
+  acmeClient: unknown; // AcmeClientManager - will be defined in acme-client-manager.ts
+  keyVaultStore: unknown; // AzureKeyVaultCertificateStore - will be defined in azure-keyvault-certificate-store.ts
+  dnsChallenge: unknown; // DnsChallenge01Provider - will be defined in dns-challenge-provider.ts
+  distributor?: unknown; // CertificateDistributor - will be defined in certificate-distributor.ts
+  prisma: unknown; // PrismaClient
 }
 
 /**

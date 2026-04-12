@@ -7,7 +7,7 @@ import { ConfigureFrontend } from './actions/configure-frontend';
 import { EnableTraffic } from './actions/enable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
-import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { CleanupTempResources, type CleanupContext } from './actions/cleanup-temp-resources';
 import { RemoveContainerFromLB } from './actions/remove-container-from-lb';
 import { RemoveFrontend } from './actions/remove-frontend';
 import { StopApplication } from './actions/stop-application';
@@ -29,7 +29,7 @@ const stopApplication = new StopApplication();
 const removeApplication = new RemoveApplication();
 
 // Types for context and events
-interface InitialDeploymentContext {
+export interface InitialDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -193,7 +193,7 @@ export const initialDeploymentMachine = setup({
             alertOperationsTeam.execute(context);
         },
         cleanupTempResources: ({ context }) => {
-            cleanupTempResources.execute(context);
+            cleanupTempResources.execute(context as unknown as CleanupContext);
         },
         rollbackRemoveFrontend: ({ context, self }) => {
             removeFrontend.execute(context, (event) => {

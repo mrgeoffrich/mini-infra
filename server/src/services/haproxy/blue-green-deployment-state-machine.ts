@@ -13,7 +13,7 @@ import { RemoveApplication } from './actions/remove-application';
 import { DisableTraffic } from './actions/disable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
-import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { CleanupTempResources, type CleanupContext } from './actions/cleanup-temp-resources';
 import { EnableTraffic } from './actions/enable-traffic';
 import { RemoveFrontend } from './actions/remove-frontend';
 import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
@@ -38,7 +38,7 @@ const removeFrontend = new RemoveFrontend();
 
 // Types for context and events
 // Note in a blue green deployment Blue is the old container set, Green is the new container set
-interface BlueGreenDeploymentContext {
+export interface BlueGreenDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -421,7 +421,7 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         cleanupTempResources: ({ context }) => {
-            cleanupTempResources.execute(context);
+            cleanupTempResources.execute(context as unknown as CleanupContext);
         },
 
         cleanupFailedDeployment: async ({ context }) => {

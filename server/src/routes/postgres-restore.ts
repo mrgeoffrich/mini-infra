@@ -5,6 +5,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
@@ -126,7 +127,7 @@ function validateAzureStorageUrl(url: string): boolean {
 /**
  * Parse query parameters for filtering and pagination
  */
-function parseRestoreOperationQuery(query: any) {
+function parseRestoreOperationQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = RestoreOperationFilterSchema.parse(query);
   const sort = query.sortBy
@@ -142,7 +143,7 @@ function parseRestoreOperationQuery(query: any) {
 /**
  * Parse backup browser query parameters
  */
-function parseBackupBrowserQuery(query: any) {
+function parseBackupBrowserQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupBrowserFilterSchema.parse(query);
   const sort = query.sortBy
@@ -162,7 +163,7 @@ function buildRestoreWhereClause(
   filter: RestoreOperationFilter,
   databaseId?: string,
 ) {
-  const where: any = {};
+  const where: Prisma.RestoreOperationWhereInput = {};
 
   if (databaseId) {
     where.databaseId = databaseId;
@@ -188,7 +189,7 @@ function buildRestoreWhereClause(
 /**
  * Map Prisma RestoreOperation to RestoreOperationInfo
  */
-function mapRestoreOperationToInfo(operation: any) {
+function mapRestoreOperationToInfo(operation: Prisma.RestoreOperationGetPayload<true>) {
   return {
     id: operation.id,
     databaseId: operation.databaseId,
@@ -490,7 +491,7 @@ router.post(
     } catch (error) {
       if (error instanceof z.ZodError) {
         const errorMessage = error.issues
-          .map((e: any) => `${e.path.join(".")}: ${e.message}`)
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
           .join(", ");
 
         logger.warn(

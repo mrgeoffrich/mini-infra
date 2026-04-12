@@ -36,7 +36,7 @@ export class DnsChallenge01Provider {
    * @param challenge - ACME challenge object
    * @param keyAuthorization - Key authorization string from ACME
    */
-  async createChallenge(authz: any, challenge: any, keyAuthorization: string): Promise<void> {
+  async createChallenge(authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string): Promise<void> {
     if (challenge.type !== "dns-01") {
       throw new Error(`Unsupported challenge type: ${challenge.type}`);
     }
@@ -95,7 +95,7 @@ export class DnsChallenge01Provider {
    * @param challenge - ACME challenge object
    * @param keyAuthorization - Key authorization string from ACME
    */
-  async removeChallenge(authz: any, _challenge: any, _keyAuthorization: string): Promise<void> {
+  async removeChallenge(authz: { identifier: { value: string } }, _challenge: { type: string; token: string }, _keyAuthorization: string): Promise<void> {
     const domain = authz.identifier.value;
     const recordName = `_acme-challenge.${domain}`;
 

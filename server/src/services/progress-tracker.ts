@@ -223,10 +223,10 @@ export class ProgressTrackerService extends EventEmitter {
       ]);
 
       return {
-        backupOperations: backupOperations.map((op: any) =>
+        backupOperations: backupOperations.map((op: BackupOperation) =>
           this.mapBackupOperationToProgress(op),
         ),
-        restoreOperations: restoreOperations.map((op: any) =>
+        restoreOperations: restoreOperations.map((op: RestoreOperation) =>
           this.mapRestoreOperationToProgress(op),
         ),
       };
@@ -263,12 +263,12 @@ export class ProgressTrackerService extends EventEmitter {
       } = filter;
 
       // Build where clauses for backup and restore operations
-      const baseWhere: any = {};
+      const baseWhere: Record<string, unknown> = {};
       if (databaseId) {
         baseWhere.databaseId = databaseId;
       }
 
-      const dateFilter: any = {};
+      const dateFilter: { gte?: Date; lte?: Date } = {};
       if (startedAfter) {
         dateFilter.gte = startedAfter;
       }
@@ -304,7 +304,7 @@ export class ProgressTrackerService extends EventEmitter {
         });
 
         operations.push(
-          ...backupOperations.map((op: any) =>
+          ...backupOperations.map((op: BackupOperation) =>
             this.mapBackupOperationToHistoryItem(op),
           ),
         );
@@ -327,7 +327,7 @@ export class ProgressTrackerService extends EventEmitter {
         });
 
         operations.push(
-          ...restoreOperations.map((op: any) =>
+          ...restoreOperations.map((op: RestoreOperation) =>
             this.mapRestoreOperationToHistoryItem(op),
           ),
         );

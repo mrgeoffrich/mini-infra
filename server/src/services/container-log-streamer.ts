@@ -44,7 +44,7 @@ export async function startLogStream(
     const dockerService = DockerService.getInstance();
 
     if (!dockerService.isConnected()) {
-      (socket as any).emit(ServerEvent.CONTAINER_LOG_ERROR, {
+      socket.emit(ServerEvent.CONTAINER_LOG_ERROR, {
         containerId,
         error: "Docker service is not available",
       });
@@ -53,7 +53,7 @@ export async function startLogStream(
 
     const container = await dockerService.getContainer(containerId);
     if (!container) {
-      (socket as any).emit(ServerEvent.CONTAINER_LOG_ERROR, {
+      socket.emit(ServerEvent.CONTAINER_LOG_ERROR, {
         containerId,
         error: `Container '${containerId}' not found`,
       });
@@ -99,7 +99,7 @@ export async function startLogStream(
           stream: frame.stream === "stderr" ? "stderr" : "stdout",
         };
 
-        (socket as any).emit(ServerEvent.CONTAINER_LOG, {
+        socket.emit(ServerEvent.CONTAINER_LOG, {
           containerId,
           line,
         });
@@ -108,7 +108,7 @@ export async function startLogStream(
 
     logStream.on("end", () => {
       activeStreams.delete(key);
-      (socket as any).emit(ServerEvent.CONTAINER_LOG_END, { containerId });
+      socket.emit(ServerEvent.CONTAINER_LOG_END, { containerId });
 
       logger.debug(
         { socketId: socket.id, containerId },
@@ -118,7 +118,7 @@ export async function startLogStream(
 
     logStream.on("error", (error: Error) => {
       activeStreams.delete(key);
-      (socket as any).emit(ServerEvent.CONTAINER_LOG_ERROR, {
+      socket.emit(ServerEvent.CONTAINER_LOG_ERROR, {
         containerId,
         error: (error instanceof Error ? error.message : String(error)),
       });
@@ -135,7 +135,7 @@ export async function startLogStream(
     );
   } catch (error) {
     activeStreams.delete(key);
-    (socket as any).emit(ServerEvent.CONTAINER_LOG_ERROR, {
+    socket.emit(ServerEvent.CONTAINER_LOG_ERROR, {
       containerId,
       error: error instanceof Error ? error.message : "Failed to start log stream",
     });

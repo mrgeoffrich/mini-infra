@@ -35,10 +35,10 @@ import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { servicesLogger } from '../../lib/logger-factory';
-import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
-import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
-import { blueGreenUpdateMachine } from '../haproxy/blue-green-update-state-machine';
-import { removalDeploymentMachine } from '../haproxy/removal-deployment-state-machine';
+import { initialDeploymentMachine, type InitialDeploymentContext } from '../haproxy/initial-deployment-state-machine';
+import { blueGreenDeploymentMachine, type BlueGreenDeploymentContext } from '../haproxy/blue-green-deployment-state-machine';
+import { blueGreenUpdateMachine, type BlueGreenUpdateContext } from '../haproxy/blue-green-update-state-machine';
+import { removalDeploymentMachine, type RemovalDeploymentContext } from '../haproxy/removal-deployment-state-machine';
 import { runStateMachineToCompletion } from './state-machine-runner';
 import type { HAProxyDataPlaneClient } from '../haproxy';
 import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
@@ -1660,7 +1660,7 @@ export class StackReconciler {
           frontendName: undefined,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<InitialDeploymentContext>(
           initialDeploymentMachine,
           initialContext,
           (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1672,8 +1672,8 @@ export class StackReconciler {
           action: 'create',
           success,
           duration: Date.now() - actionStart,
-          containerId: (finalState.context as any).containerId,
-          error: success ? undefined : (finalState.context as any).error ?? 'Deployment failed',
+          containerId: finalState.context.containerId,
+          error: success ? undefined : finalState.context.error ?? 'Deployment failed',
         };
       }
 
@@ -1711,7 +1711,7 @@ export class StackReconciler {
           frontendName: undefined,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<BlueGreenDeploymentContext>(
           blueGreenDeploymentMachine,
           blueGreenContext,
           (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1723,8 +1723,8 @@ export class StackReconciler {
           action: 'recreate',
           success,
           duration: Date.now() - actionStart,
-          containerId: (finalState.context as any).newContainerId,
-          error: success ? undefined : (finalState.context as any).error ?? 'Blue-green deployment failed',
+          containerId: finalState.context.newContainerId,
+          error: success ? undefined : finalState.context.error ?? 'Blue-green deployment failed',
         };
       }
 
@@ -1746,7 +1746,7 @@ export class StackReconciler {
           retryCount: 0,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<RemovalDeploymentContext>(
           removalDeploymentMachine,
           removalContext,
           (actor) => actor.send({ type: 'START_REMOVAL' })
@@ -1758,7 +1758,7 @@ export class StackReconciler {
           action: 'remove',
           success,
           duration: Date.now() - actionStart,
-          error: success ? undefined : (finalState.context as any).error ?? 'Removal failed',
+          error: success ? undefined : finalState.context.error ?? 'Removal failed',
         };
       }
 
@@ -1822,7 +1822,7 @@ export class StackReconciler {
       containerIpAddress: undefined,
     };
 
-    const finalState = await runStateMachineToCompletion(
+    const finalState = await runStateMachineToCompletion<BlueGreenUpdateContext>(
       blueGreenUpdateMachine,
       blueGreenContext,
       (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1834,8 +1834,8 @@ export class StackReconciler {
       action: 'update',
       success,
       duration: Date.now() - actionStart,
-      containerId: (finalState.context as any).newContainerId,
-      error: success ? undefined : (finalState.context as any).error ?? 'Blue-green update failed',
+      containerId: finalState.context.newContainerId,
+      error: success ? undefined : finalState.context.error ?? 'Blue-green update failed',
     };
   }
 
