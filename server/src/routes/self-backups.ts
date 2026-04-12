@@ -1,5 +1,6 @@
 import express from "express";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { AzureStorageService } from "../services/azure-storage-service";
@@ -36,14 +37,14 @@ router.get("/", requirePermission('backups:read'), async (req, res) => {
     const skip = (pageNum - 1) * limitNum;
 
     // Build where clause
-    const where: any = {};
+    const where: Prisma.SelfBackupWhereInput = {};
 
     if (status) {
-      where.status = status;
+      where.status = status as string;
     }
 
     if (triggeredBy) {
-      where.triggeredBy = triggeredBy;
+      where.triggeredBy = triggeredBy as string;
     }
 
     if (startDate || endDate) {

@@ -1,4 +1,5 @@
 import { PrismaClient } from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   ValidationResult,
   ServiceHealthStatus,
@@ -193,7 +194,7 @@ export abstract class ConfigurationService implements IConfigurationService {
    * Get the most recent connectivity status for this service
    * @returns Latest connectivity status or null if none exists
    */
-  protected async getLatestConnectivityStatus(): Promise<any | null> {
+  protected async getLatestConnectivityStatus(): Promise<Prisma.ConnectivityStatusGetPayload<true> | null> {
     try {
       return await this.prisma.connectivityStatus.findFirst({
         where: {

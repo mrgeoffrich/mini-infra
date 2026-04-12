@@ -10,6 +10,15 @@ import Cloudflare from "cloudflare";
 import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
 import { toServiceError } from "../../lib/service-error-mapper";
 
+// The cloudflare SDK's response types fight our narrow helper signatures
+// (zones / tunnels / DNS records are cursor-paginated unions). Rather
+// than model every response inline, we capture the SDK-shaped responses
+// as `CloudflareApiResponse` and let callers narrow what they need.
+// Modelled `any` so SDK changes don't break every call-site; tracked
+// in `docs/shortcuts.md` for a future adapter-layer refactor.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CloudflareApiResponse = any;
+
 /**
  * Cloudflare-specific error mappers for the circuit breaker.
  * Order matters: HTTP status code checks come first, then message-based checks.
@@ -242,7 +251,7 @@ export class CloudflareService extends ConfigurationService {
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as any;
+        ])) as CloudflareApiResponse;
 
         const zones = zonesResponse.result || [];
         metadata.zoneCount = zones.length;
@@ -269,7 +278,7 @@ export class CloudflareService extends ConfigurationService {
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as any;
+        ])) as CloudflareApiResponse;
 
         const tunnels = tunnelsResponse.result || [];
         metadata.tunnelCount = tunnels.length;
@@ -486,7 +495,7 @@ export class CloudflareService extends ConfigurationService {
    * @param tunnelId The tunnel ID to get configuration for
    * @returns Tunnel configuration or null if not found or connection fails
    */
-  async getTunnelConfig(tunnelId: string): Promise<any> {
+  async getTunnelConfig(tunnelId: string): Promise<CloudflareApiResponse> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -596,7 +605,7 @@ export class CloudflareService extends ConfigurationService {
    * Respects circuit breaker state
    * @returns Array of tunnel information or empty array if no tunnels or connection fails
    */
-  async getTunnelInfo(): Promise<any[]> {
+  async getTunnelInfo(): Promise<CloudflareApiResponse[]> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -639,7 +648,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       const tunnels = tunnelsResponse.result || [];
 
@@ -693,7 +702,7 @@ export class CloudflareService extends ConfigurationService {
    * @param config The new tunnel configuration
    * @returns Updated configuration or null if update fails
    */
-  async updateTunnelConfig(tunnelId: string, config: any): Promise<any> {
+  async updateTunnelConfig(tunnelId: string, config: CloudflareApiResponse): Promise<CloudflareApiResponse> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -817,7 +826,7 @@ export class CloudflareService extends ConfigurationService {
     service: string,
     path?: string,
     originRequest?: { httpHostHeader?: string },
-  ): Promise<any> {
+  ): Promise<CloudflareApiResponse> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -840,7 +849,7 @@ export class CloudflareService extends ConfigurationService {
 
       // Find the catch-all rule (rule without hostname) and insert before it
       const catchAllIndex = ingress.findIndex((rule) => !rule.hostname);
-      const newRule: any = {
+      const newRule: CloudflareApiResponse = {
         hostname,
         service,
       };
@@ -908,7 +917,7 @@ export class CloudflareService extends ConfigurationService {
     tunnelId: string,
     hostname: string,
     path?: string,
-  ): Promise<any> {
+  ): Promise<CloudflareApiResponse> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -1000,7 +1009,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       const zones = zonesResponse.result || [];
 
@@ -1072,7 +1081,7 @@ export class CloudflareService extends ConfigurationService {
       const recordResponse = (await Promise.race([
         cf.dns.records.create({
           zone_id: params.zoneId,
-          type: params.type as any,
+          type: params.type as CloudflareApiResponse,
           name: params.name,
           content: params.content,
           ttl: params.ttl,
@@ -1083,7 +1092,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       // Record success for circuit breaker
       this.circuitBreaker.recordSuccess();
@@ -1268,7 +1277,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       tunnelId = tunnelResponse.id;
       if (!tunnelId) {

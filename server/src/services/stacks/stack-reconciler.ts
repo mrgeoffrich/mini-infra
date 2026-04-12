@@ -31,6 +31,19 @@ import {
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
+
+/**
+ * Minimal shape of the loaded stack record that the private apply/update
+ * helpers operate on. Callers load different include sets (`apply()` adds
+ * `template`, `update()` doesn't) so we only require the common fields
+ * actually used by these helpers.
+ */
+interface StackWithReconcilerContext {
+  id: string;
+  environmentId: string | null;
+  name: string;
+  version: number;
+}
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
@@ -1208,7 +1221,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition | null,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
@@ -1358,7 +1371,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     serviceHashes: Map<string, string>,
     infraNetworkMap: Map<string, string>,
     networkNames: string[] = []
@@ -1367,7 +1380,7 @@ export class StackReconciler {
     const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
     const containerName = `${projectName}-${action.serviceName}-${suffix}`;
     const envValidation = new EnvironmentValidationService();
-    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
+    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId!);
 
     if (!haproxyCtx) {
       throw new Error(`HAProxy environment context not available for environment ${stack.environmentId}`);
@@ -1462,7 +1475,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     serviceHashes: Map<string, string>,
     actionStart: number,
     log: Logger,
@@ -1516,7 +1529,7 @@ export class StackReconciler {
         }
 
         // 2. Get HAProxy context
-        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
 
         // 3. Join container to HAProxy applications network
         const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
@@ -1537,7 +1550,7 @@ export class StackReconciler {
           containerId: target.Id,
           containerName: adopted.containerName,
           routing: { ...routing, listeningPort: adopted.listeningPort },
-          environmentId: stack.environmentId,
+          environmentId: stack.environmentId!,
           stackId,
           stackName: stack.name,
         };
@@ -1616,7 +1629,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
@@ -1773,7 +1786,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
@@ -1973,7 +1986,7 @@ export class StackReconciler {
         routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
         adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
       })),
-    } as any) as unknown as Prisma.InputJsonValue;
+    } as unknown as Parameters<typeof serializeStack>[0]) as unknown as Prisma.InputJsonValue;
   }
 
   /**
@@ -1999,25 +2012,25 @@ export class StackReconciler {
     adoptedContainerName: string,
     routing: StackServiceRouting,
     stackId: string,
-    stack: { environmentId: string; name: string },
+    stack: StackWithReconcilerContext,
     log: Logger,
     drainBeforeRemove: boolean
   ): Promise<void> {
-    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
 
     const routingCtx: StackRoutingContext = {
       serviceName,
       containerId: '',
       containerName: adoptedContainerName,
       routing,
-      environmentId: stack.environmentId,
+      environmentId: stack.environmentId!,
       stackId,
       stackName: stack.name,
     };
 
     const backendName = `stk-${stack.name}-${serviceName}`;
     const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-      where: { name: backendName, environmentId: stack.environmentId },
+      where: { name: backendName, environmentId: stack.environmentId! },
       include: { servers: true },
     });
     if (backendRecord) {

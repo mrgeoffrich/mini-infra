@@ -137,7 +137,7 @@ export class SelfBackupExecutor {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const errorCode = (error as any).code || 'UNKNOWN';
+      const errorCode = (error as { code?: string } | null)?.code || 'UNKNOWN';
       const durationMs = Date.now() - startTime;
 
       selfBackupLogger().error({

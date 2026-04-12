@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
 import prisma from '../../../lib/prisma';
@@ -11,7 +12,7 @@ export class AddContainerToLB {
         this.haproxyClient = new HAProxyDataPlaneClient();
     }
 
-    async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -38,6 +39,9 @@ export class AddContainerToLB {
             }
             if (!context.containerPort) {
                 throw new Error('Container port is required for server configuration');
+            }
+            if (!context.containerId) {
+                throw new Error('Container ID is required for server configuration');
             }
             if (!context.healthCheckEndpoint) {
                 logger.info({
@@ -94,7 +98,7 @@ export class AddContainerToLB {
 
             // Configure server with health check settings
             // Use container name for DNS resolution (preferred) or fall back to IP address
-            const serverAddress = context.containerName || context.containerIpAddress;
+            const serverAddress = (context.containerName || context.containerIpAddress) as string;
             const serverName = `${context.applicationName}-${context.containerId.slice(0, 8)}`;
             const serverConfig: ServerConfig = {
                 name: serverName,

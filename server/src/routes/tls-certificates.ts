@@ -41,7 +41,7 @@ const createCertificateSchema = z.object({
 /**
  * Helper to parse certificate JSON fields from database
  */
-function parseCertificateData(certificate: any) {
+function parseCertificateData(certificate: Record<string, unknown>) {
   return {
     ...certificate,
     domains: typeof certificate.domains === "string" ? JSON.parse(certificate.domains) : certificate.domains,

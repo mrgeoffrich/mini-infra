@@ -10,6 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   ConnectivityStatus,
   ConnectivityStatusInfo,
@@ -170,7 +171,7 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
     } = queryValidation.data;
 
     // Build filter conditions
-    const where: any = {};
+    const where: Prisma.ConnectivityStatusWhereInput = {};
     if (service) where.service = service;
     if (status) where.status = status;
     if (checkInitiatedBy) where.checkInitiatedBy = checkInitiatedBy;
@@ -181,8 +182,8 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
     }
 
     // Build sort conditions
-    const orderBy: any = {};
-    orderBy[sortBy] = sortOrder;
+    const orderBy: Prisma.ConnectivityStatusOrderByWithRelationInput = {};
+    (orderBy as Record<string, unknown>)[sortBy] = sortOrder;
 
     // Calculate pagination
     const skip = (page - 1) * limit;

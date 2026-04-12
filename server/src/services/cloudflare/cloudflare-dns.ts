@@ -2,6 +2,11 @@ import Cloudflare from "cloudflare";
 import { servicesLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "./cloudflare-service";
 import prisma from "../../lib/prisma";
+
+// SDK response shapes are opaque unions; see `cloudflare-service.ts`
+// for the same containment pattern.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CloudflareApiResponse = any;
 import {
   CloudflareDNSZone,
   CloudflareDNSRecord,
@@ -60,7 +65,7 @@ export class CloudflareDNSService {
         ),
       ]);
 
-      const zones = response.result.map((zone: any) => ({
+      const zones = response.result.map((zone: CloudflareApiResponse) => ({
         id: zone.id,
         name: zone.name,
         status: zone.status,
@@ -146,7 +151,7 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: any = await Promise.race([
+      const response: CloudflareApiResponse = await Promise.race([
         cf.dns.records.create({
           zone_id: zoneId,
           type: record.type,
@@ -238,11 +243,11 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: any = await Promise.race([
+      const response: CloudflareApiResponse = await Promise.race([
         cf.dns.records.update(recordId, {
           zone_id: zoneId,
           ...updates,
-        } as any),
+        } as CloudflareApiResponse),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Request timeout")),
@@ -340,7 +345,7 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: any = await Promise.race([
+      const response: CloudflareApiResponse = await Promise.race([
         cf.dns.records.get(recordId, { zone_id: zoneId }),
         new Promise<never>((_, reject) =>
           setTimeout(
@@ -400,7 +405,7 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const params: any = { zone_id: zoneId };
+      const params: CloudflareApiResponse = { zone_id: zoneId };
       if (hostname) {
         params.name = hostname;
       }
@@ -415,7 +420,7 @@ export class CloudflareDNSService {
         ),
       ]);
 
-      const records = response.result.map((record: any) => ({
+      const records = response.result.map((record: CloudflareApiResponse) => ({
         id: record.id,
         type: record.type,
         name: record.name,

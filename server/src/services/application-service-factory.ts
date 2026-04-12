@@ -231,7 +231,7 @@ export class ApplicationServiceFactory {
       const containers = await this.dockerService.listContainers();
 
       // Find container by service name or environment labels
-      const container = containers.find((c: any) => {
+      const container = containers.find((c) => {
         const labels = c.labels || {};
         const name = c.name || '';
 

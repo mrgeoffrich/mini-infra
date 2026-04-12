@@ -197,7 +197,7 @@ export class ContainerExecutor {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions: any = {
+      const containerOptions: Docker.ContainerCreateOptions = {
         Image: options.image,
         Env: env,
         AttachStdout: true,

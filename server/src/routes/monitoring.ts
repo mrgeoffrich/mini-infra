@@ -37,7 +37,7 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
       });
     }
 
-    let containerStatus: any[] = [];
+    let containerStatus: ReturnType<typeof mapContainerStatus>[] = [];
     let running = false;
     try {
       const dockerExecutor = new DockerExecutorService();

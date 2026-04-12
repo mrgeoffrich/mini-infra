@@ -4,6 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
 import { ManualFrontendSetupService } from "../services/haproxy/manual-frontend-setup-service";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
@@ -95,10 +96,15 @@ const updateManualFrontendSchema = z.object({
 // Helper Functions
 // ====================
 
-function serializeFrontend(frontend: any): HAProxyFrontendInfo {
+type SerializableFrontend = Prisma.HAProxyFrontendGetPayload<true> & {
+  _count?: { routes?: number };
+  routes?: unknown[];
+};
+
+function serializeFrontend(frontend: SerializableFrontend): HAProxyFrontendInfo {
   return {
     id: frontend.id,
-    frontendType: frontend.frontendType,
+    frontendType: frontend.frontendType as HAProxyFrontendInfo['frontendType'],
     containerName: frontend.containerName,
     containerId: frontend.containerId,
     containerPort: frontend.containerPort,
@@ -145,7 +151,7 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   const containers = await dockerService.listContainers();
 
   // Look for HAProxy container with environment label
-  const haproxyContainer = containers.find((container: any) => {
+  const haproxyContainer = containers.find((container) => {
     const labels = container.labels || {};
     return (
       labels["mini-infra.service"] === "haproxy" &&

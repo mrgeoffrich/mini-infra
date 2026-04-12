@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
+import { Prisma } from "@prisma/client";
 import type {
   JWTUser,
   UserPreferenceInfo,
@@ -23,7 +24,7 @@ const UpdateUserPreferencesSchema = z
   .strict();
 
 // Helper function to serialize UserPreference for API responses
-function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
+function serializeUserPreferenceInfo(preference: Prisma.UserPreferenceGetPayload<true>): UserPreferenceInfo {
   return {
     id: preference.id,
     containerSortField: preference.containerSortField,

@@ -362,7 +362,7 @@ router.get(
       await initializeProgressTracker();
 
       // Build filter
-      const filter: any = {
+      const filter: Record<string, unknown> = {
         databaseId,
         operationType,
         status: status === "all" ? undefined : status,

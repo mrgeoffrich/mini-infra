@@ -160,8 +160,8 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
       const field = queryParams.sortBy || "name";
       const order = queryParams.sortOrder || "asc";
 
-      let aValue: any = a[field as keyof typeof a];
-      let bValue: any = b[field as keyof typeof b];
+      let aValue: unknown = a[field as keyof typeof a];
+      let bValue: unknown = b[field as keyof typeof b];
 
       // Handle date sorting
       if (aValue instanceof Date && bValue instanceof Date) {
@@ -176,8 +176,8 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
         bValue = bValue.toLowerCase();
       }
 
-      if (aValue < bValue) return order === "asc" ? -1 : 1;
-      if (aValue > bValue) return order === "asc" ? 1 : -1;
+      if ((aValue as string | number) < (bValue as string | number)) return order === "asc" ? -1 : 1;
+      if ((aValue as string | number) > (bValue as string | number)) return order === "asc" ? 1 : -1;
       return 0;
     });
 

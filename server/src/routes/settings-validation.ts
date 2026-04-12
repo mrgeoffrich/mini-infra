@@ -20,6 +20,8 @@ const router = express.Router();
 // Create configuration service factory
 const configFactory = new ConfigurationServiceFactory(prisma);
 
+type TimeoutPromise<T> = Promise<T> & { cleanup: () => void };
+
 // Utility function to handle Promise race with proper timeout cleanup
 function createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promise<T> {
   let timeoutId: NodeJS.Timeout;
@@ -28,7 +30,7 @@ function createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promi
   });
 
   // Add cleanup method to the promise
-  (timeoutPromise as any).cleanup = () => {
+  (timeoutPromise as TimeoutPromise<T>).cleanup = () => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
@@ -46,10 +48,10 @@ async function raceWithTimeout<T>(
 
   try {
     const result = await Promise.race([promise, timeoutPromise]);
-    (timeoutPromise as any).cleanup();
+    (timeoutPromise as TimeoutPromise<T>).cleanup();
     return result;
   } catch (error) {
-    (timeoutPromise as any).cleanup();
+    (timeoutPromise as TimeoutPromise<T>).cleanup();
     throw error;
   }
 }
@@ -147,7 +149,12 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
       configService.validate(settings),
       30000,
       "Validation timeout",
-    )) as any;
+    )) as {
+      isValid: boolean;
+      message?: string;
+      errorCode?: string;
+      metadata?: Record<string, unknown>;
+    };
 
     const responseTime = Date.now() - startTime;
 

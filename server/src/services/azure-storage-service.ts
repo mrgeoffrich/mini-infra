@@ -16,6 +16,17 @@ import {
 } from "@azure/storage-blob";
 import NodeCache from "node-cache";
 
+interface ContainerInfo {
+  name: string;
+  lastModified?: Date;
+  etag?: string;
+  leaseStatus?: string;
+  leaseState?: string;
+  hasImmutabilityPolicy?: boolean;
+  hasLegalHold?: boolean;
+  metadata?: Record<string, string>;
+}
+
 /**
  * Backup file metadata interface
  */
@@ -400,7 +411,7 @@ export class AzureStorageService extends ConfigurationService {
    * Test blob container access and retrieve container information
    * @returns Array of container information or empty array if no containers or connection fails
    */
-  async getContainerInfo(): Promise<any[]> {
+  async getContainerInfo(): Promise<ContainerInfo[]> {
     try {
       const connectionString = await this.getConnectionString();
 
@@ -416,7 +427,7 @@ export class AzureStorageService extends ConfigurationService {
 
       // Fetch containers with timeout
       const containersPromise = (async () => {
-        const containers: any[] = [];
+        const containers: ContainerInfo[] = [];
         const containerIterator = blobServiceClient.listContainers({
           includeMetadata: true,
         });

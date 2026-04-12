@@ -98,10 +98,10 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
     try {
       await serverHealthScheduler.performHealthCheckForServer(server.id, userId);
       logger.info({ serverId: server.id }, "Immediate health check completed after server creation");
-    } catch (healthCheckError: any) {
+    } catch (healthCheckError: unknown) {
       // Log error but don't fail the request - health check will retry on next scheduled run
       logger.warn(
-        { serverId: server.id, error: healthCheckError.message },
+        { serverId: server.id, error: healthCheckError instanceof Error ? healthCheckError.message : String(healthCheckError) },
         "Immediate health check failed after server creation, will retry on next scheduled run"
       );
     }

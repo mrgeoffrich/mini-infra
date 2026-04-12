@@ -819,12 +819,12 @@ export class ContainerLifecycleManager {
   /**
    * Build network configuration for container creation
    */
-  private buildNetworkConfig(networks: string[]): any {
+  private buildNetworkConfig(networks: string[]): { EndpointsConfig?: Record<string, Record<string, unknown>> } {
     if (networks.length === 0) {
       return {};
     }
 
-    const config: any = {
+    const config: { EndpointsConfig: Record<string, Record<string, unknown>> } = {
       EndpointsConfig: {},
     };
 

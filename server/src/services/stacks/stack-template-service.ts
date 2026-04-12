@@ -24,6 +24,17 @@ import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./ut
 import { CloudflareService } from "../cloudflare/cloudflare-service";
 import { networkUtils } from "../network-utils";
 
+// `serializeTemplate` / `serializeVersion` accept multiple Prisma payload
+// shapes depending on the caller's include set (list vs detail vs update).
+// Modelling every shape as a strict union produced cascading type errors
+// against the runtime `as unknown as ...` casts for JSON columns, so these
+// serializers take `any` with the rule disabled locally. Documented in
+// `docs/shortcuts.md`.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SerializableTemplate = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SerializableVersion = any;
+
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
   name: string;
@@ -861,7 +872,15 @@ export class StackTemplateService {
   // Serialization
   // =====================
 
-  serializeTemplate(template: any): StackTemplateInfo {
+  // Loose shape covering the different include sets callers pass in
+  // (list/detail queries include `_count`, `stacks`, `currentVersion`,
+  // `draftVersion` and `versions` selectively).
+  // NOTE: Keep in sync with `SerializableTemplate` / `SerializableVersion`
+  // below — both mirror fields from `Prisma.StackTemplateGetPayload` /
+  // `Prisma.StackTemplateVersionGetPayload` but with all relations
+  // optional so any subset of includes type-checks.
+
+  serializeTemplate(template: SerializableTemplate): StackTemplateInfo {
     return {
       id: template.id,
       name: template.name,
@@ -888,7 +907,7 @@ export class StackTemplateService {
           ? null
           : undefined,
       ...(template.stacks ? {
-        linkedStacks: template.stacks.map((s: any) => ({
+        linkedStacks: template.stacks.map((s: SerializableTemplate) => ({
           id: s.id,
           name: s.name,
           status: s.status,
@@ -901,19 +920,19 @@ export class StackTemplateService {
     };
   }
 
-  serializeVersion(version: any): StackTemplateVersionInfo {
+  serializeVersion(version: SerializableVersion): StackTemplateVersionInfo {
     return {
       id: version.id,
       templateId: version.templateId,
       version: version.version,
       status: version.status,
       notes: version.notes,
-      parameters: version.parameters ?? [],
-      defaultParameterValues: version.defaultParameterValues ?? {},
-      resourceOutputs: version.resourceOutputs ?? undefined,
-      resourceInputs: version.resourceInputs ?? undefined,
-      networks: version.networks ?? [],
-      volumes: version.volumes ?? [],
+      parameters: (version.parameters as StackTemplateVersionInfo['parameters']) ?? [],
+      defaultParameterValues: (version.defaultParameterValues as StackTemplateVersionInfo['defaultParameterValues']) ?? {},
+      resourceOutputs: (version.resourceOutputs as StackTemplateVersionInfo['resourceOutputs']) ?? undefined,
+      resourceInputs: (version.resourceInputs as StackTemplateVersionInfo['resourceInputs']) ?? undefined,
+      networks: (version.networks as StackTemplateVersionInfo['networks']) ?? [],
+      volumes: (version.volumes as StackTemplateVersionInfo['volumes']) ?? [],
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       createdById: version.createdById,

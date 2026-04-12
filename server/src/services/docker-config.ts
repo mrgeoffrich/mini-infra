@@ -292,7 +292,7 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Get Docker system information
    */
-  async getDockerInfo(): Promise<any> {
+  async getDockerInfo(): Promise<Record<string, unknown>> {
     try {
       const docker = await this.getDockerClient();
       return await docker.info();
@@ -310,7 +310,7 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Get Docker version information
    */
-  async getDockerVersion(): Promise<any> {
+  async getDockerVersion(): Promise<Record<string, unknown>> {
     try {
       const docker = await this.getDockerClient();
       return await docker.version();

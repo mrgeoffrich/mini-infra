@@ -484,7 +484,7 @@ const startServer = async () => {
   });
 
   // Handle server errors (e.g., port already in use)
-  server.on('error', (error: any) => {
+  server.on('error', (error: NodeJS.ErrnoException) => {
     // Use console.error to avoid Pino flush timeout on exit
     console.error(`[STARTUP] FATAL: Failed to start server on port ${appConfig.server.port}`);
     console.error(error);

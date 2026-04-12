@@ -11,8 +11,8 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      validatedQuery?: any;
-      validatedParams?: any;
+      validatedQuery?: unknown;
+      validatedParams?: unknown;
     }
   }
 }
@@ -30,7 +30,7 @@ export function validateRequest(
       const result = schema.safeParse(data);
 
       if (!result.success) {
-        const errors = result.error.issues.map((err: any) => ({
+        const errors = result.error.issues.map((err) => ({
           code: err.code,
           path: err.path,
           message: err.message,

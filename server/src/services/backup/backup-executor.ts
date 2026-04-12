@@ -351,7 +351,7 @@ export class BackupExecutorService {
     });
 
     // Handle job events
-    this.backupQueue.on("completed", (job: QueueJob<BackupJobData>,result: any) => {
+    this.backupQueue.on("completed", (job: QueueJob<BackupJobData>, result: unknown) => {
       servicesLogger().info(
         {
           jobId: job.id,

@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyFrontendManager } from "../haproxy-frontend-manager";
@@ -16,7 +17,7 @@ export class ConfigureFrontend {
     this.haproxyClient = new HAProxyDataPlaneClient();
   }
 
-  async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+  async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
     logger.info(
       {
         deploymentId: context?.deploymentId,
@@ -50,7 +51,7 @@ export class ConfigureFrontend {
       const enableSsl: boolean = context.enableSsl ?? false;
       const tlsCertificateId: string | null | undefined = context.tlsCertificateId;
       const certificateStatus: string | null | undefined = context.certificateStatus;
-      const sourceType: 'stack' | 'manual' = context.sourceType ?? 'stack';
+      const sourceType: 'stack' | 'manual' = (context.sourceType as 'stack' | 'manual') ?? 'stack';
       const sourceId: string | undefined = context.deploymentId;
 
       if (!hostname) {

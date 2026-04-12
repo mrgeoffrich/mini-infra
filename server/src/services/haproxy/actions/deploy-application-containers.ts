@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
 import { ContainerConfig } from '@mini-infra/types';
@@ -15,7 +16,7 @@ export class DeployApplicationContainers {
         this.userEventService = new UserEventService(prisma);
     }
 
-    async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -38,7 +39,7 @@ export class DeployApplicationContainers {
 
             // Build container configuration - prefer source-agnostic context fields,
             // fall back to config.containerConfig for legacy callers
-            const containerConfig: ContainerConfig = context.config?.containerConfig ?? {
+            const containerConfig: ContainerConfig = (context.config?.containerConfig as ContainerConfig | undefined) ?? ({
                 ports: context.containerPorts ?? [],
                 volumes: context.containerVolumes ?? [],
                 environment: context.containerEnvironment
@@ -46,7 +47,7 @@ export class DeployApplicationContainers {
                     : [],
                 labels: context.containerLabels ?? {},
                 networks: context.containerNetworks ?? [context.haproxyNetworkName],
-            };
+            } as unknown as ContainerConfig);
 
             // Ensure the container is attached to the HAProxy network
             if (!containerConfig.networks.includes(context.haproxyNetworkName)) {

@@ -96,13 +96,13 @@ export function createDynamicCorsOrigin(
       if (corsEnabled) {
         const publicUrl = await getPublicUrl();
         if (publicUrl) {
-          callback(null, requestOrigin === publicUrl ? publicUrl : false as any);
+          callback(null, requestOrigin === publicUrl ? publicUrl : false);
         } else {
           // CORS enabled but no public URL set — allow all (can't restrict without a URL)
           callback(null, true);
         }
       } else if (nodeEnv === "development") {
-        callback(null, DEV_CORS_ORIGINS.includes(requestOrigin || "") ? true : false as any);
+        callback(null, DEV_CORS_ORIGINS.includes(requestOrigin || "") ? true : false);
       } else {
         // CORS disabled: permissive
         callback(null, true);

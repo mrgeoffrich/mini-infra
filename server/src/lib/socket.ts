@@ -256,7 +256,7 @@ export function emitToChannel<E extends keyof ServerToClientEvents>(
   // Cast needed: Socket.IO's BroadcastOperator wraps emit with acknowledgement
   // generics that are incompatible with our plain (data) => void signatures.
   // Type safety is enforced by this function's generic signature instead.
-  (io.to(channel) as any).emit(event, data);
+  (io.to(channel) as { emit: (e: string, d: unknown) => void }).emit(event, data);
 }
 
 /**
@@ -270,7 +270,7 @@ export function emitToAll<E extends keyof ServerToClientEvents>(
     return;
   }
 
-  (io as any).emit(event, data);
+  (io as { emit: (e: string, d: unknown) => void }).emit(event, data);
 }
 
 /**
