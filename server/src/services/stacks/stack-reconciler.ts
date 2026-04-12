@@ -698,7 +698,7 @@ export class StackReconciler {
             serviceResults.push(result);
           } else {
             const result = await this.applyStateful(
-              action, svc, serviceDef, projectName, stackId, stack,
+              action, svc!, serviceDef, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
               actionStart, log, infraNetworkMap
             );
@@ -882,13 +882,13 @@ export class StackReconciler {
         } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
           // No existing container (create/remove) — use the standard apply path
           result = await this.applyStatelessWeb(
-            action, svc, serviceDef, projectName, stackId, stack,
+            action, svc!, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
             containerByService, actionStart, log, infraNetworkMap
           );
         } else {
           result = await this.applyStateful(
-            action, svc, serviceDef, projectName, stackId, stack,
+            action, svc!, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
             containerByService, actionStart, log, infraNetworkMap
           );
@@ -1204,7 +1204,7 @@ export class StackReconciler {
 
   private async applyStateful(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition | null,
     projectName: string,
     stackId: string,
@@ -1458,7 +1458,7 @@ export class StackReconciler {
    */
   private async applyAdoptedWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
@@ -1612,7 +1612,7 @@ export class StackReconciler {
 
   private async applyStatelessWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
@@ -1769,7 +1769,7 @@ export class StackReconciler {
 
   private async updateStatelessWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
