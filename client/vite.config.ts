@@ -1,12 +1,29 @@
 import path from "path";
+import fs from "fs";
+import { createRequire } from "module";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import yaml from "@modyfi/vite-plugin-yaml";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin, type PluginOption } from "vite";
+
+const _require = createRequire(import.meta.url);
+const { load: loadYaml } = _require("js-yaml") as {
+  load: (str: string) => unknown;
+};
+
+function yamlPlugin(): Plugin {
+  return {
+    name: "yaml",
+    transform(_, id) {
+      if (!id.endsWith(".yaml") && !id.endsWith(".yml")) return null;
+      const data = loadYaml(fs.readFileSync(id, "utf-8"));
+      return { code: `export default ${JSON.stringify(data)}`, map: null };
+    },
+  };
+}
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), yaml()],
+  plugins: [react(), tailwindcss(), yamlPlugin()] as PluginOption[],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
