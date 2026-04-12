@@ -8,22 +8,26 @@ import {
 } from "./logging-config";
 
 // Helper function to properly serialize errors for logging
-export const serializeError = (error: any) => {
+export const serializeError = (error: unknown): unknown => {
   if (error instanceof Error) {
+    const errWithProps = error as Error & Record<string, unknown>;
     return {
       name: error.name,
       message: error.message,
       stack: error.stack,
-      code: (error as any).code || undefined,
-      errno: (error as any).errno || undefined,
-      syscall: (error as any).syscall || undefined,
+      code: errWithProps.code ?? undefined,
+      errno: errWithProps.errno ?? undefined,
+      syscall: errWithProps.syscall ?? undefined,
       // Include any additional enumerable properties
-      ...Object.getOwnPropertyNames(error).reduce((acc, key) => {
-        if (!["name", "message", "stack"].includes(key)) {
-          acc[key] = (error as any)[key];
-        }
-        return acc;
-      }, {} as any),
+      ...Object.getOwnPropertyNames(error).reduce(
+        (acc, key) => {
+          if (!["name", "message", "stack"].includes(key)) {
+            acc[key] = errWithProps[key];
+          }
+          return acc;
+        },
+        {} as Record<string, unknown>,
+      ),
     };
   }
   return error;
@@ -40,10 +44,10 @@ const {
 
 // Function to create a proxy wrapper for adding caller information
 function traceCaller(pinoInstance: pino.Logger): pino.Logger {
-  const get = (target: any, name: string | symbol) =>
-    name === asJsonSym ? asJson : target[name];
+  const get = (target: pino.Logger, name: string | symbol): unknown =>
+    name === asJsonSym ? asJson : (target as unknown as Record<string | symbol, unknown>)[name];
 
-  function asJson(this: any, ...args: any[]) {
+  function asJson(this: unknown, ...args: unknown[]): unknown {
     try {
       args[0] = args[0] || Object.create(null);
 
@@ -74,25 +78,27 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
             const relativePath = path
               .relative(projectRoot, fullPath)
               .replace(/\\/g, "/");
-            args[0].caller = `${relativePath}:${lineNumber}`;
+            (args[0] as Record<string, unknown>).caller = `${relativePath}:${lineNumber}`;
           }
         }
       }
 
-      return (pinoInstance as any)[asJsonSym].apply(this, args);
+      const pinoRecord = pinoInstance as unknown as Record<symbol, (...args: unknown[]) => unknown>;
+      return pinoRecord[asJsonSym].apply(this, args);
     } catch {
       // If there's an error in caller tracking, fall back to original logging
-      return (pinoInstance as any)[asJsonSym].apply(this, args);
+      const pinoRecord = pinoInstance as unknown as Record<symbol, (...args: unknown[]) => unknown>;
+      return pinoRecord[asJsonSym].apply(this, args);
     }
   }
 
-  return new Proxy(pinoInstance, { get });
+  return new Proxy(pinoInstance, { get: get as ProxyHandler<pino.Logger>['get'] });
 }
 
 // Transport target interface for Pino
 interface PinoTransportTarget {
   target: string;
-  options: Record<string, any>;
+  options: Record<string, unknown>;
   level: string;
 }
 
@@ -185,7 +191,7 @@ function createLogger(loggerType: string): pino.Logger {
     return loggerCache.get(loggerType)!;
   }
 
-  const config = getLoggerConfig(loggerType as any);
+  const config = getLoggerConfig(loggerType as Parameters<typeof getLoggerConfig>[0]);
   const options = createBaseLoggerOptions(config);
   let logger = pino(options);
 

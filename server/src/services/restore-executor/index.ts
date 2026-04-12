@@ -364,7 +364,7 @@ export class RestoreExecutorService {
       });
 
       // Try to cancel the job in the queue
-      const jobs = await this._restoreQueue.getJobs(["pending", "active"]);
+      const jobs = await this._restoreQueue.getJobs<RestoreJobData>(["pending", "active"]);
       const job = jobs.find(
         (j) => j.data.restoreOperationId === operationId,
       );
@@ -413,9 +413,9 @@ export class RestoreExecutorService {
 
   private setupQueueProcessors(): void {
     // Process restore jobs
-    this._restoreQueue.process(
+    this._restoreQueue.process<RestoreJobData>(
       "execute-restore",
-      async (job: QueueJob) => {
+      async (job) => {
         const {
           restoreOperationId,
           databaseId,
@@ -467,7 +467,7 @@ export class RestoreExecutorService {
     );
 
     // Handle job events
-    this._restoreQueue.on("completed", (job: QueueJob, result: any) => {
+    this._restoreQueue.on("completed", (job: QueueJob<RestoreJobData>,result: any) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -478,7 +478,7 @@ export class RestoreExecutorService {
       );
     });
 
-    this._restoreQueue.on("failed", (job: QueueJob, error: Error) => {
+    this._restoreQueue.on("failed", (job: QueueJob<RestoreJobData>,error: Error) => {
       servicesLogger().error(
         {
           jobId: job.id,

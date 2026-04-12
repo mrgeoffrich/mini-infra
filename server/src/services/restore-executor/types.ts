@@ -8,6 +8,7 @@ export interface RestoreJobData {
   databaseId: string;
   backupUrl: string;
   userId: string;
+  targetDatabaseName?: string;
 }
 
 /**

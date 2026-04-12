@@ -28,11 +28,20 @@ export interface HttpRequestConfig {
   timeout?: number;
 }
 
-export interface HttpResponse<T = any> {
+export interface HttpResponse<T = HttpResponseData> {
   data: T;
   status: number;
   statusText: string;
 }
+
+/**
+ * Default fallback for HttpResponse<T>.data — callers that don't specify a generic
+ * type receive a value they can index arbitrarily. Kept as `any` for backward
+ * compatibility with many existing haproxy/cloudflare callers; narrow via an
+ * explicit generic argument (e.g. `httpClient.get<MyShape>(...)`) for new code.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type HttpResponseData = any;
 
 // ---------------------------------------------------------------------------
 // HttpError — replaces AxiosError
@@ -40,14 +49,14 @@ export interface HttpResponse<T = any> {
 
 export class HttpError extends Error {
   readonly isHttpError = true as const;
-  response?: { status: number; data: any };
+  response?: { status: number; data: HttpResponseData };
   code?: string;
   config?: { url?: string };
 
   constructor(
     message: string,
     opts?: {
-      response?: { status: number; data: any };
+      response?: { status: number; data: HttpResponseData };
       code?: string;
       url?: string;
     },
@@ -65,7 +74,7 @@ export function isHttpError(error: unknown): error is HttpError {
     error instanceof HttpError ||
     (typeof error === 'object' &&
       error !== null &&
-      (error as any).isHttpError === true)
+      (error as { isHttpError?: unknown }).isHttpError === true)
   );
 }
 
@@ -94,23 +103,23 @@ export class HttpClient {
   // Public HTTP methods
   // -----------------------------------------------------------------------
 
-  async get<T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+  async get<T = HttpResponseData>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('GET', url, undefined, config);
   }
 
-  async post<T = any>(url: string, body?: any, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+  async post<T = HttpResponseData>(url: string, body?: unknown, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('POST', url, body, config);
   }
 
-  async put<T = any>(url: string, body?: any, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+  async put<T = HttpResponseData>(url: string, body?: unknown, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('PUT', url, body, config);
   }
 
-  async head<T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+  async head<T = HttpResponseData>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('HEAD', url, undefined, config);
   }
 
-  async delete<T = any>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
+  async delete<T = HttpResponseData>(url: string, config?: HttpRequestConfig): Promise<HttpResponse<T>> {
     return this.request<T>('DELETE', url, undefined, config);
   }
 
@@ -121,7 +130,7 @@ export class HttpClient {
   private async request<T>(
     method: string,
     url: string,
-    body?: any,
+    body?: unknown,
     config?: HttpRequestConfig,
   ): Promise<HttpResponse<T>> {
     const fullUrl = this.buildUrl(url, config?.params);
@@ -142,15 +151,23 @@ export class HttpClient {
     let fetchBody: BodyInit | undefined;
     if (body !== undefined) {
       if (typeof body === 'string' || Buffer.isBuffer(body)) {
-        fetchBody = body as any;
+        fetchBody = body as BodyInit;
         // Don't override Content-Type if already set (e.g. for multipart/form-data or text/plain)
         if (!headers['Content-Type'] && !headers['content-type']) {
           headers['Content-Type'] = 'application/json';
         }
-      } else if (typeof body === 'object' && body !== null && typeof body.getHeaders === 'function') {
+      } else if (
+        typeof body === 'object' &&
+        body !== null &&
+        typeof (body as { getHeaders?: unknown }).getHeaders === 'function'
+      ) {
         // FormData from 'form-data' package — let it set its own Content-Type with boundary
-        fetchBody = body.getBuffer();
-        const formHeaders = body.getHeaders();
+        const formBody = body as {
+          getBuffer: () => Buffer;
+          getHeaders: () => Record<string, string>;
+        };
+        fetchBody = new Uint8Array(formBody.getBuffer());
+        const formHeaders = formBody.getHeaders();
         // Remove any existing Content-Type (case-insensitive) before applying FormData headers
         delete headers['Content-Type'];
         delete headers['content-type'];
@@ -172,17 +189,18 @@ export class HttpClient {
         signal: AbortSignal.timeout(timeout),
         redirect: 'follow',
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Map network errors to HttpError with codes matching the old axios patterns
       const code = this.mapFetchErrorCode(err);
-      throw new HttpError(err.message ?? 'Network error', {
+      const message = err instanceof Error ? err.message : 'Network error';
+      throw new HttpError(message, {
         code,
         url: fullUrl,
       });
     }
 
     // Parse response body
-    let data: any;
+    let data: unknown;
     const contentType = response.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {
       data = await response.json();
@@ -202,16 +220,21 @@ export class HttpClient {
       : response.status < 200 || response.status >= 300;
 
     if (shouldThrow) {
-      const message = typeof data === 'object' && data?.message
-        ? data.message
-        : `Request failed with status code ${response.status}`;
+      const dataMessage =
+        typeof data === 'object' && data !== null && 'message' in data
+          ? (data as { message?: unknown }).message
+          : undefined;
+      const message =
+        typeof dataMessage === 'string'
+          ? dataMessage
+          : `Request failed with status code ${response.status}`;
       throw new HttpError(message, {
         response: { status: response.status, data },
         url: fullUrl,
       });
     }
 
-    return { data, status: response.status, statusText: response.statusText };
+    return { data: data as T, status: response.status, statusText: response.statusText };
   }
 
   private buildUrl(url: string, params?: Record<string, string>): string {
@@ -227,17 +250,19 @@ export class HttpClient {
     return `${full}${sep}${qs}`;
   }
 
-  private mapFetchErrorCode(err: any): string {
-    const msg = (err.message ?? '').toLowerCase();
-    const cause = err.cause;
-    const causeCode: string | undefined = cause?.code;
+  private mapFetchErrorCode(err: unknown): string {
+    const errRecord = (err ?? {}) as { message?: unknown; cause?: unknown; name?: unknown };
+    const msg = (typeof errRecord.message === 'string' ? errRecord.message : '').toLowerCase();
+    const cause = errRecord.cause as { code?: unknown } | undefined;
+    const causeCode = typeof cause?.code === 'string' ? cause.code : undefined;
+    const name = typeof errRecord.name === 'string' ? errRecord.name : '';
 
     if (causeCode === 'ECONNREFUSED' || msg.includes('econnrefused')) return 'ECONNREFUSED';
     if (causeCode === 'ENOTFOUND' || msg.includes('enotfound')) return 'ENOTFOUND';
     if (causeCode === 'ECONNRESET' || msg.includes('econnreset')) return 'ECONNRESET';
     if (causeCode === 'ETIMEDOUT' || msg.includes('etimedout')) return 'ETIMEDOUT';
-    if (err.name === 'TimeoutError' || msg.includes('timed out') || msg.includes('timeout')) return 'ETIMEDOUT';
-    if (err.name === 'AbortError') return 'ETIMEDOUT';
+    if (name === 'TimeoutError' || msg.includes('timed out') || msg.includes('timeout')) return 'ETIMEDOUT';
+    if (name === 'AbortError') return 'ETIMEDOUT';
     return causeCode ?? 'UNKNOWN';
   }
 }

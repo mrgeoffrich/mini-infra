@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import Database from "better-sqlite3";
 import { prismaLogger } from "./logger-factory";
 import { getDatabaseFilePath } from "./database-url-parser";
@@ -31,35 +31,32 @@ declare global {
 // Create Prisma logger instance
 const logger = !isTestEnvironment ? prismaLogger() : null;
 
-const prisma =
-  globalThis.prisma ??
-  new PrismaClient({
-    log:
-      process.env.NODE_ENV === "test"
-        ? []
-        : [
-          {
-            emit: "event",
-            level: "query",
-          },
-          {
-            emit: "event",
-            level: "info",
-          },
-          {
-            emit: "event",
-            level: "warn",
-          },
-          {
-            emit: "event",
-            level: "error",
-          },
-        ],
-  } as any);
+const prismaOptions: Prisma.PrismaClientOptions = {
+  log:
+    process.env.NODE_ENV === "test"
+      ? []
+      : [
+        { emit: "event", level: "query" },
+        { emit: "event", level: "info" },
+        { emit: "event", level: "warn" },
+        { emit: "event", level: "error" },
+      ],
+};
+
+const prisma = globalThis.prisma ?? new PrismaClient(prismaOptions);
+
+// Typed event listener helper. Prisma's `$on` signature is dynamic based on
+// log levels configured above, so we use a narrow cast at the boundary here.
+type PrismaEventListener = (
+  event: "query" | "info" | "warn" | "error",
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma's event payload shape depends on the level; using any at the boundary and narrowing below
+  callback: (e: any) => void,
+) => void;
 
 // Set up Prisma event listeners to route logs to dedicated logger
 if (!isTestEnvironment && logger) {
-  (prisma as any).$on("query", (e: any) => {
+  const onEvent = (prisma as unknown as { $on: PrismaEventListener }).$on;
+  onEvent("query", (e: { query: string; params: string; duration: number; target: string }) => {
     logger.debug(
       {
         query: e.query,
@@ -71,7 +68,7 @@ if (!isTestEnvironment && logger) {
     );
   });
 
-  (prisma as any).$on("info", (e: any) => {
+  onEvent("info", (e: { message: string; target: string }) => {
     logger.info(
       {
         message: e.message,
@@ -81,7 +78,7 @@ if (!isTestEnvironment && logger) {
     );
   });
 
-  (prisma as any).$on("warn", (e: any) => {
+  onEvent("warn", (e: { message: string; target: string }) => {
     logger.warn(
       {
         message: e.message,
@@ -91,7 +88,7 @@ if (!isTestEnvironment && logger) {
     );
   });
 
-  (prisma as any).$on("error", (e: any) => {
+  onEvent("error", (e: { message: string; target: string }) => {
     logger.error(
       {
         message: e.message,

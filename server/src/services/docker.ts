@@ -243,7 +243,7 @@ class DockerService {
    * This method is copied from DockerConfigService to maintain consistency
    */
   private createDockerClient(host: string, apiVersion?: string | null): Docker {
-    const dockerConfig: any = {};
+    const dockerConfig: Docker.DockerOptions = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {
@@ -261,11 +261,7 @@ class DockerService {
       const url = new URL(host);
       dockerConfig.host = url.hostname;
       dockerConfig.port = parseInt(url.port || "2375");
-      if (host.startsWith("https://")) {
-        dockerConfig.protocol = "https";
-      } else {
-        dockerConfig.protocol = "http";
-      }
+      dockerConfig.protocol = host.startsWith("https://") ? "https" : "http";
     } else if (
       host.startsWith("/") ||
       host.startsWith("\\") ||
@@ -294,16 +290,17 @@ class DockerService {
   /**
    * Extract Docker-specific error codes
    */
-  private getDockerErrorCode(error: any): string | undefined {
+  private getDockerErrorCode(error: unknown): string | undefined {
     if (error && typeof error === "object") {
-      if (error.statusCode) {
-        return `HTTP_${error.statusCode}`;
+      const e = error as { statusCode?: number; code?: string; errno?: number };
+      if (e.statusCode) {
+        return `HTTP_${e.statusCode}`;
       }
-      if (error.code) {
-        return error.code;
+      if (e.code) {
+        return e.code;
       }
-      if (error.errno) {
-        return `ERRNO_${error.errno}`;
+      if (e.errno) {
+        return `ERRNO_${e.errno}`;
       }
     }
     return undefined;
@@ -409,14 +406,14 @@ class DockerService {
     });
   }
 
-  private createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promise<T> {
+  private createTimeoutPromise<T>(timeoutMs: number, errorMessage: string): Promise<T> & { cleanup: () => void } {
     let timeoutId: NodeJS.Timeout;
     const timeoutPromise = new Promise<T>((_, reject) => {
       timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
-    });
+    }) as Promise<T> & { cleanup: () => void };
 
     // Add cleanup method to the promise
-    (timeoutPromise as any).cleanup = () => {
+    timeoutPromise.cleanup = () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
       }
@@ -434,10 +431,10 @@ class DockerService {
 
     try {
       const result = await Promise.race([promise, timeoutPromise]);
-      (timeoutPromise as any).cleanup();
+      timeoutPromise.cleanup();
       return result;
     } catch (error) {
-      (timeoutPromise as any).cleanup();
+      timeoutPromise.cleanup();
       throw error;
     }
   }
@@ -498,7 +495,7 @@ class DockerService {
 
       return containerInfo;
     })().catch((error) => {
-      if ((error as any).statusCode === 404) {
+      if ((error as { statusCode?: number }).statusCode === 404) {
         return null;
       }
       servicesLogger().error(
@@ -580,7 +577,7 @@ class DockerService {
 
       return envVars;
     })().catch((error) => {
-      if ((error as any).statusCode === 404) {
+      if ((error as { statusCode?: number }).statusCode === 404) {
         return null;
       }
       servicesLogger().error(
@@ -594,7 +591,7 @@ class DockerService {
     });
   }
 
-  private transformContainerData(container: any): DockerContainerInfo {
+  private transformContainerData(container: Docker.ContainerInfo): DockerContainerInfo {
     return {
       id: container.Id,
       name: container.Names[0]?.replace(/^\//, "") || "unknown",
@@ -605,14 +602,16 @@ class DockerService {
       volumes: this.transformVolumes(container.Mounts || []),
       ipAddress: this.extractIpAddress(container.NetworkSettings),
       createdAt: new Date(container.Created * 1000),
-      startedAt: container.StartedAt
-        ? new Date(container.StartedAt)
+      // Docker API exposes StartedAt on list responses (ISO string), but it's
+      // not present in dockerode's ContainerInfo type. Read it via a narrow cast.
+      startedAt: typeof (container as { StartedAt?: string }).StartedAt === "string"
+        ? new Date((container as { StartedAt: string }).StartedAt)
         : undefined,
       labels: this.sanitizeLabels(container.Labels || {}),
     };
   }
 
-  private transformDetailedContainerData(data: any): DockerContainerInfo {
+  private transformDetailedContainerData(data: Docker.ContainerInspectInfo): DockerContainerInfo {
     return {
       id: data.Id,
       name: data.Name?.replace(/^\//, "") || "unknown",
@@ -648,7 +647,7 @@ class DockerService {
     }
   }
 
-  private transformPorts(ports: any[]): DockerContainerInfo["ports"] {
+  private transformPorts(ports: Docker.Port[]): DockerContainerInfo["ports"] {
     // Docker API can return duplicate entries for ports bound to multiple IPs (IPv4 and IPv6)
     // We need to deduplicate based on private port, public port, and type
     const uniquePorts = new Map<string, DockerContainerInfo["ports"][0]>();
@@ -679,7 +678,9 @@ class DockerService {
     });
   }
 
-  private transformDetailedPorts(ports: any): DockerContainerInfo["ports"] {
+  private transformDetailedPorts(
+    ports: Docker.ContainerInspectInfo["NetworkSettings"]["Ports"],
+  ): DockerContainerInfo["ports"] {
     const result: DockerContainerInfo["ports"] = [];
 
     for (const [privatePort, bindings] of Object.entries(ports)) {
@@ -700,17 +701,21 @@ class DockerService {
     return result;
   }
 
-  private transformVolumes(mounts: any[]): DockerContainerInfo["volumes"] {
+  private transformVolumes(
+    mounts: Array<{ Source?: string; Name?: string; Destination: string; RW: boolean }>,
+  ): DockerContainerInfo["volumes"] {
     return mounts
       .map((mount) => ({
-        source: mount.Source || mount.Name,
+        source: mount.Source || mount.Name || "",
         destination: mount.Destination,
         mode: (mount.RW ? "rw" : "ro") as "rw" | "ro",
       }))
       .sort((a, b) => a.destination.localeCompare(b.destination));
   }
 
-  private extractIpAddress(networkSettings: any): string | undefined {
+  private extractIpAddress(
+    networkSettings: { IPAddress?: string; Networks?: { [key: string]: { IPAddress?: string } } } | undefined,
+  ): string | undefined {
     if (!networkSettings) return undefined;
 
     if (networkSettings.IPAddress) {
@@ -719,7 +724,7 @@ class DockerService {
 
     const networks = networkSettings.Networks;
     if (networks) {
-      for (const network of Object.values(networks) as any[]) {
+      for (const network of Object.values(networks)) {
         if (network.IPAddress) {
           return network.IPAddress;
         }
@@ -998,9 +1003,9 @@ class DockerService {
         { volumeName: name },
         "Volume removed successfully",
       );
-    } catch (error: any) {
+    } catch (error) {
       // Docker returns a 409 Conflict if volume is in use
-      if (error.statusCode === 409) {
+      if ((error as { statusCode?: number }).statusCode === 409) {
         throw new Error(
           `Cannot remove volume ${name}: volume is in use by one or more containers`,
           { cause: error },
@@ -1014,8 +1019,8 @@ class DockerService {
    * Transform Docker network data to our format
    */
   private transformNetworkData(
-    network: any,
-    containers: any[],
+    network: Docker.NetworkInspectInfo,
+    containers: Docker.ContainerInfo[],
   ): DockerNetwork {
     const networkContainers: DockerNetwork["containers"] = [];
 
@@ -1027,8 +1032,7 @@ class DockerService {
       if (!networkSettings) continue;
 
       // Check if this container is connected to the current network
-      for (const [networkName, networkInfo] of Object.entries(networkSettings)) {
-        const networkData = networkInfo as any;
+      for (const [networkName, networkData] of Object.entries(networkSettings)) {
         // Match by network ID or network name
         if (networkData.NetworkID === network.Id || networkName === network.Name) {
           networkContainers.push({
@@ -1052,7 +1056,7 @@ class DockerService {
       attachable: network.Attachable || false,
       ipam: {
         driver: network.IPAM?.Driver || "default",
-        config: (network.IPAM?.Config || []).map((cfg: any) => ({
+        config: (network.IPAM?.Config || []).map((cfg) => ({
           subnet: cfg.Subnet || "",
           gateway: cfg.Gateway,
         })),
@@ -1067,12 +1071,18 @@ class DockerService {
   /**
    * Transform Docker volume data to our format
    */
-  private transformVolumeData(volume: any, containers: any[]): DockerVolume {
+  private transformVolumeData(
+    volume: Docker.VolumeInspectInfo & {
+      CreatedAt?: string;
+      UsageData?: { Size: number; RefCount: number } | null;
+    },
+    containers: Docker.ContainerInfo[],
+  ): DockerVolume {
     // Determine which containers are using this volume
     const usingContainers = containers.filter((container) => {
       const mounts = container.Mounts || [];
       return mounts.some(
-        (mount: any) =>
+        (mount) =>
           mount.Type === "volume" &&
           (mount.Name === volume.Name || mount.Source === volume.Name),
       );

@@ -438,6 +438,11 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
       include: { services: { orderBy: { order: 'asc' } } },
     });
 
+    if (!stack) {
+      res.status(404).json({ success: false, message: 'Stack not found' });
+      return;
+    }
+
     res.json({ success: true, data: serializeStack(stack) });
   } catch (error) {
     logger.error({ error, stackId: req.params.stackId, serviceName: req.params.serviceName }, 'Failed to update stack service');

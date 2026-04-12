@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient } from "@prisma/client";
-import { StackParameterDefinition, StackParameterValue } from "@mini-infra/types";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { StackParameterDefinition, StackParameterValue, StackServiceDefinition } from "@mini-infra/types";
 import { servicesLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
@@ -182,6 +182,9 @@ async function syncStackFromTemplate(
     const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
     const defaultValues = mergeParameterValues(paramDefs, parameterOverrides);
 
+    const serviceCreates: Prisma.StackServiceCreateWithoutStackInput[] =
+      (definition.services as StackServiceDefinition[]).map(toServiceCreateInput) as unknown as Prisma.StackServiceCreateWithoutStackInput[];
+
     await prisma.stack.create({
       data: {
         name: definition.name,
@@ -199,7 +202,7 @@ async function syncStackFromTemplate(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map(toServiceCreateInput),
+          create: serviceCreates,
         },
       },
     });
@@ -279,6 +282,9 @@ async function syncStackFromTemplate(
       where: { stackId: existing.id },
     });
 
+    const serviceCreates: Prisma.StackServiceCreateWithoutStackInput[] =
+      (definition.services as StackServiceDefinition[]).map(toServiceCreateInput) as unknown as Prisma.StackServiceCreateWithoutStackInput[];
+
     await tx.stack.update({
       where: { id: existing.id },
       data: {
@@ -295,7 +301,7 @@ async function syncStackFromTemplate(
         networks: definition.networks as any,
         volumes: definition.volumes as any,
         services: {
-          create: definition.services.map(toServiceCreateInput),
+          create: serviceCreates,
         },
       },
     });

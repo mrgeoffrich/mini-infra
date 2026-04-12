@@ -332,8 +332,18 @@ export function useTLSCertificates(
 /**
  * Hook to validate hostname availability (client-side check)
  */
+interface ValidateHostnameFrontend {
+  frontendName: string;
+  hostname: string;
+  environmentId: string | null;
+}
+
+interface ValidateHostnameCache {
+  data?: { frontends?: ValidateHostnameFrontend[] };
+}
+
 export function useValidateHostname(hostname: string, environmentId: string) {
-  const { data: frontendsData } = useQuery<any>({
+  const { data: frontendsData } = useQuery<ValidateHostnameCache>({
     queryKey: ["haproxy-frontends"],
   });
 
@@ -342,7 +352,7 @@ export function useValidateHostname(hostname: string, environmentId: string) {
   }
 
   const conflictingFrontend = frontendsData?.data?.frontends?.find(
-    (f: any) =>
+    (f) =>
       f.hostname === hostname && f.environmentId === environmentId,
   );
 

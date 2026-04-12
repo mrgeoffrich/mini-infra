@@ -16,9 +16,37 @@ import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 
 /**
+ * Loose shape of a Prisma stack record extended with optional relations.
+ * Fields are `unknown` since they come from Prisma JSON columns.
+ */
+type SerializableStack = {
+  parameters?: unknown;
+  parameterValues?: unknown;
+  resourceOutputs?: unknown;
+  resourceInputs?: unknown;
+  templateId?: string | null;
+  templateVersion?: number | null;
+  template?: { currentVersion?: { version: number } | null } | null;
+  tlsCertificates?: unknown;
+  dnsRecords?: unknown;
+  tunnelIngress?: unknown;
+  lastAppliedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  services?: SerializableService[];
+  [key: string]: unknown;
+};
+
+type SerializableService = {
+  createdAt: Date;
+  updatedAt: Date;
+  [key: string]: unknown;
+};
+
+/**
  * Serialize a Prisma stack (with Date objects) to the API response shape (ISO strings).
  */
-export function serializeStack(stack: any): StackInfo {
+export function serializeStack(stack: SerializableStack): StackInfo {
   return {
     ...stack,
     parameters: stack.parameters ?? [],
@@ -35,20 +63,20 @@ export function serializeStack(stack: any): StackInfo {
     createdAt: stack.createdAt.toISOString(),
     updatedAt: stack.updatedAt.toISOString(),
     services: stack.services?.map(serializeService),
-  };
+  } as StackInfo;
 }
 
-function computeTemplateUpdateAvailable(stack: any): boolean {
+function computeTemplateUpdateAvailable(stack: SerializableStack): boolean {
   if (!stack.templateVersion || !stack.template?.currentVersion) return false;
   return stack.template.currentVersion.version > stack.templateVersion;
 }
 
-export function serializeService(svc: any): StackServiceInfo {
+export function serializeService(svc: SerializableService): StackServiceInfo {
   return {
     ...svc,
     createdAt: svc.createdAt.toISOString(),
     updatedAt: svc.updatedAt.toISOString(),
-  };
+  } as StackServiceInfo;
 }
 
 /**
@@ -61,13 +89,15 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     serviceType: s.serviceType,
     dockerImage: s.dockerImage,
     dockerTag: s.dockerTag,
-    containerConfig: s.containerConfig as any,
-    configFiles: (s.configFiles ?? []) as any,
-    initCommands: (s.initCommands ?? []) as any,
+    containerConfig: s.containerConfig as unknown as Prisma.InputJsonValue,
+    configFiles: (s.configFiles ?? []) as unknown as Prisma.InputJsonValue,
+    initCommands: (s.initCommands ?? []) as unknown as Prisma.InputJsonValue,
     dependsOn: s.dependsOn,
     order: s.order,
-    routing: s.routing ? (s.routing as any) : Prisma.DbNull,
-    adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as any) : Prisma.DbNull,
+    routing: s.routing ? (s.routing as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    adoptedContainer: s.adoptedContainer
+      ? (s.adoptedContainer as unknown as Prisma.InputJsonValue)
+      : Prisma.DbNull,
   };
 }
 
@@ -82,7 +112,7 @@ export function isDockerConnectionError(error: unknown): boolean {
     }
   }
   if (error instanceof TypeError && error.message === 'fetch failed') {
-    const cause = (error as any).cause;
+    const cause = (error as { cause?: { code?: string } }).cause;
     return cause?.code === 'ECONNREFUSED' || cause?.code === 'ECONNRESET' || cause?.code === 'ENOTFOUND';
   }
   return false;

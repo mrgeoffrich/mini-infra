@@ -45,16 +45,16 @@ export type JobStatus =
 /**
  * Job interface matching Bull's job structure
  */
-export interface Job {
+export interface Job<TData = unknown, TResult = unknown> {
   id: string;
   name: string;
-  data: any;
+  data: TData;
   opts: JobOptions;
   attempts: number;
   maxAttempts: number;
   status: JobStatus;
   progress: number;
-  returnValue?: any;
+  returnValue?: TResult;
   failedReason?: string;
   createdAt: Date;
   processedAt?: Date;
@@ -66,7 +66,9 @@ export interface Job {
 /**
  * Processor function type
  */
-export type ProcessorFunction = (job: Job) => Promise<any>;
+export type ProcessorFunction<TData = unknown, TResult = unknown> = (
+  job: Job<TData, TResult>,
+) => Promise<TResult>;
 
 /**
  * In-memory queue implementation compatible with Bull's API
@@ -104,7 +106,7 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Add a new job to the queue
    */
-  async add(name: string, data: any, opts: JobOptions = {}): Promise<Job> {
+  async add(name: string, data: unknown, opts: JobOptions = {}): Promise<Job> {
     if (this.isClosed) {
       throw new Error("Queue is closed");
     }
@@ -154,15 +156,15 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Register a processor for jobs
    */
-  process(
+  process<TData = unknown, TResult = unknown>(
     name: string,
-    concurrencyOrProcessor: number | ProcessorFunction,
-    processor?: ProcessorFunction,
+    concurrencyOrProcessor: number | ProcessorFunction<TData, TResult>,
+    processor?: ProcessorFunction<TData, TResult>,
   ): void {
     if (typeof concurrencyOrProcessor === "function") {
-      this.processors.set(name, concurrencyOrProcessor);
+      this.processors.set(name, concurrencyOrProcessor as ProcessorFunction);
     } else if (processor) {
-      this.processors.set(name, processor);
+      this.processors.set(name, processor as ProcessorFunction);
     } else {
       throw new Error("Processor function is required");
     }
@@ -173,7 +175,7 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Get jobs by status
    */
-  async getJobs(states: string[] = []): Promise<Job[]> {
+  async getJobs<TData = unknown>(states: string[] = []): Promise<Job<TData>[]> {
     const allJobs: Job[] = [];
 
     if (states.length === 0 || states.includes("pending")) {
@@ -189,7 +191,7 @@ export class InMemoryQueue extends EventEmitter {
       allJobs.push(...this.failed);
     }
 
-    return allJobs;
+    return allJobs as Job<TData>[];
   }
 
   /**
@@ -344,7 +346,7 @@ export class InMemoryQueue extends EventEmitter {
   /**
    * Move job to completed state
    */
-  private moveJobToCompleted(job: Job, result: any): void {
+  private moveJobToCompleted(job: Job, result: unknown): void {
     job.status = "completed";
     job.completedAt = new Date();
     job.returnValue = result;
