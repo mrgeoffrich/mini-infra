@@ -33,9 +33,9 @@ const createAppDatabaseSchema = z.object({
  * Returns connection string for application use
  */
 router.post("/create-app-database", requirePermission('postgres:write'), async (req, res) => {
-  let createdDatabase: any = null;
-  let createdUser: any = null;
-  let createdGrant: any = null;
+  let createdDatabase: Awaited<ReturnType<typeof databaseManagementService.createDatabase>> | null = null;
+  let createdUser: Awaited<ReturnType<typeof userManagementService.createUser>> | null = null;
+  let createdGrant: Awaited<ReturnType<typeof grantManagementService.createGrant>> | null = null;
 
   try {
     const userId = getUserId(req);
@@ -106,10 +106,10 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
           connectionString,
         },
       });
-    } catch (workflowError: any) {
+    } catch (workflowError) {
       // Rollback any created resources
       logger.error(
-        { error: workflowError.message, database: createdDatabase?.id, user: createdUser?.id, grant: createdGrant?.id },
+        { error: (workflowError instanceof Error ? workflowError.message : String(workflowError)), database: createdDatabase?.id, user: createdUser?.id, grant: createdGrant?.id },
         "Quick setup workflow failed, rolling back"
       );
 
@@ -131,9 +131,9 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
         }
 
         logger.info("Rollback completed successfully");
-      } catch (rollbackError: any) {
+      } catch (rollbackError) {
         logger.error(
-          { error: rollbackError.message },
+          { error: (rollbackError instanceof Error ? rollbackError.message : String(rollbackError)) },
           "Failed to rollback workflow - manual cleanup may be required"
         );
       }

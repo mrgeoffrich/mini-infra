@@ -8,7 +8,7 @@
 
 import * as cron from "node-cron";
 import { Logger } from "pino";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
@@ -168,7 +168,7 @@ export class CertificateRenewalScheduler {
    *
    * @param certificate - Certificate to renew
    */
-  private async processCertificateRenewal(certificate: any): Promise<void> {
+  private async processCertificateRenewal(certificate: Prisma.TlsCertificateGetPayload<true>): Promise<void> {
     this.logger.info(
       {
         certificateId: certificate.id,

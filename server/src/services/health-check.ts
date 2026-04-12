@@ -24,7 +24,7 @@ export interface HealthCheckResult {
   success: boolean;
   statusCode?: number;
   responseTime: number;
-  responseBody?: any;
+  responseBody?: unknown;
   errorMessage?: string;
   validationDetails?: {
     statusCode: boolean;
@@ -194,7 +194,7 @@ export class HealthCheckService {
   /**
    * Validate response body against pattern
    */
-  private validateResponseBody(body: any, pattern?: string): boolean {
+  private validateResponseBody(body: unknown, pattern?: string): boolean {
     if (!pattern) return true;
 
     try {
@@ -323,7 +323,7 @@ export class HealthCheckService {
           endpoint: config.endpoint,
           method: config.method || "GET",
           error: errorMessage,
-          errorCode: (error as any)?.code,
+          errorCode: (error as { code?: string })?.code,
           responseTime,
           statusCode,
         },

@@ -18,6 +18,7 @@ import {
   BackupBrowserSortOptions,
   BackupBrowserItem,
   RestoreOperationProgress,
+  RestoreOperationStatus,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -194,7 +195,7 @@ function mapRestoreOperationToInfo(operation: Prisma.RestoreOperationGetPayload<
     id: operation.id,
     databaseId: operation.databaseId,
     backupUrl: operation.backupUrl,
-    status: operation.status as any,
+    status: operation.status as RestoreOperationStatus,
     startedAt: operation.startedAt.toISOString(),
     completedAt: operation.completedAt?.toISOString() || null,
     errorMessage: operation.errorMessage,
@@ -584,7 +585,7 @@ router.get(
         success: true,
         data: {
           id: operation.id,
-          status: operation.status as any,
+          status: operation.status as RestoreOperationStatus,
           progress: operation.progress,
           startedAt: operation.startedAt.toISOString(),
           completedAt: operation.completedAt?.toISOString() || null,
@@ -873,7 +874,7 @@ router.get(
       const progressData: RestoreOperationProgress = {
         id: operation.id,
         databaseId: operation.databaseId,
-        status: operation.status as any,
+        status: operation.status as RestoreOperationStatus,
         progress: operation.progress,
         startedAt: operation.startedAt.toISOString(),
         estimatedCompletion,

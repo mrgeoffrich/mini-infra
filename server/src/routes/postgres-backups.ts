@@ -14,6 +14,8 @@ import {
   ManualBackupResponse,
   BackupOperationFilter,
   BackupOperationProgress,
+  BackupOperationType,
+  BackupOperationStatus,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -108,8 +110,8 @@ function mapBackupOperationToInfo(operation: Prisma.BackupOperationGetPayload<tr
   return {
     id: operation.id,
     databaseId: operation.databaseId,
-    operationType: operation.operationType as any,
-    status: operation.status as any,
+    operationType: operation.operationType as BackupOperationType,
+    status: operation.status as BackupOperationStatus,
     startedAt: operation.startedAt.toISOString(),
     completedAt: operation.completedAt?.toISOString() || null,
     sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
@@ -398,7 +400,7 @@ router.get(
         success: true,
         data: {
           id: operation.id,
-          status: operation.status as any,
+          status: operation.status as BackupOperationStatus,
           progress: operation.progress,
           startedAt: operation.startedAt.toISOString(),
           completedAt: operation.completedAt?.toISOString() || null,
@@ -592,7 +594,7 @@ router.get(
       const progressData: BackupOperationProgress = {
         id: operation.id,
         databaseId: operation.databaseId,
-        status: operation.status as any,
+        status: operation.status as BackupOperationStatus,
         progress: operation.progress,
         startedAt: operation.startedAt.toISOString(),
         estimatedCompletion,

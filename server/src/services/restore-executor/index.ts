@@ -4,7 +4,7 @@ import { servicesLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
-import { RestoreOperationInfo } from "@mini-infra/types";
+import { RestoreOperationInfo, DatabaseConnectionConfig } from "@mini-infra/types";
 import type { RestoreOperation } from "@prisma/client";
 
 import { BackupValidator } from "./backup-validator";
@@ -543,7 +543,7 @@ export class RestoreExecutorService {
   }
 
   private async createRollbackBackup(
-    connectionConfig: { host: string; port: number; database: string; user: string; password: string },
+    connectionConfig: DatabaseConnectionConfig,
     azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
@@ -561,7 +561,7 @@ export class RestoreExecutorService {
   }
 
   private async executeRollback(
-    connectionConfig: { host: string; port: number; database: string; user: string; password: string },
+    connectionConfig: DatabaseConnectionConfig,
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,
@@ -576,7 +576,7 @@ export class RestoreExecutorService {
     );
   }
 
-  private async verifyRestoredDatabase(connectionConfig: { host: string; port: number; database: string; user: string; password: string }): Promise<{
+  private async verifyRestoredDatabase(connectionConfig: DatabaseConnectionConfig): Promise<{
     isValid: boolean;
     error?: string;
   }> {
