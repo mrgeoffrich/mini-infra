@@ -79,7 +79,7 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
 router.post('/', requirePermission('environments:write'), async (req, res) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
-    const userId = (req.user as any)?.id;
+    const userId = (req as { user?: { id?: string } }).user?.id;
 
     const environment = await environmentManager.createEnvironment(request, userId);
 
@@ -215,7 +215,7 @@ router.delete('/:id', requirePermission('environments:write'), async (req, res) 
   try {
     const id = String(req.params.id);
     const { deleteNetworks = 'false' } = req.query;
-    const userId = (req.user as any)?.id;
+    const userId = (req as { user?: { id?: string } }).user?.id;
 
     // Parse boolean query parameters
     const shouldDeleteNetworks = deleteNetworks === 'true';
@@ -289,7 +289,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
   const containers = await dockerService.listContainers();
 
   // Look for HAProxy container with environment label
-  const haproxyContainer = containers.find((container: any) => {
+  const haproxyContainer = containers.find((container) => {
     const labels = container.labels || {};
     return (
       labels["mini-infra.service"] === "haproxy" &&

@@ -467,7 +467,7 @@ export class RestoreExecutorService {
     );
 
     // Handle job events
-    this._restoreQueue.on("completed", (job: QueueJob<RestoreJobData>,result: any) => {
+    this._restoreQueue.on("completed", (job: QueueJob<RestoreJobData>,result: unknown) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -543,7 +543,7 @@ export class RestoreExecutorService {
   }
 
   private async createRollbackBackup(
-    connectionConfig: any,
+    connectionConfig: { host: string; port: number; database: string; user: string; password: string },
     azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
@@ -561,7 +561,7 @@ export class RestoreExecutorService {
   }
 
   private async executeRollback(
-    connectionConfig: any,
+    connectionConfig: { host: string; port: number; database: string; user: string; password: string },
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,
@@ -576,7 +576,7 @@ export class RestoreExecutorService {
     );
   }
 
-  private async verifyRestoredDatabase(connectionConfig: any): Promise<{
+  private async verifyRestoredDatabase(connectionConfig: { host: string; port: number; database: string; user: string; password: string }): Promise<{
     isValid: boolean;
     error?: string;
   }> {

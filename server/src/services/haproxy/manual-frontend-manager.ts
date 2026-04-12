@@ -154,8 +154,8 @@ export class ManualFrontendManager {
           }
 
           // Extract exposed ports
-          const ports = (container.Ports || []).map((port: any) => ({
-            containerPort: port.PrivatePort,
+          const ports = (container.Ports || []).map((port: { PrivatePort?: number; PublicPort?: number; Type?: string }) => ({
+            containerPort: port.PrivatePort ?? 0,
             protocol: port.Type || "tcp",
           }));
 
