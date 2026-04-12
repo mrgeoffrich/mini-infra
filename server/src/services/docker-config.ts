@@ -329,7 +329,7 @@ export class DockerConfigService extends ConfigurationService {
    * Create Docker client with specified configuration
    */
   private createDockerClient(host: string, apiVersion?: string | null): Docker {
-    const dockerConfig: any = {};
+    const dockerConfig: Record<string, unknown> = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {
@@ -397,7 +397,7 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Map Docker errors to connectivity status
    */
-  private mapErrorToStatus(error: any): ConnectivityStatusType {
+  private mapErrorToStatus(error: unknown): ConnectivityStatusType {
     if (error instanceof Error) {
       const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
       if (message.includes("timeout")) {
@@ -415,16 +415,17 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Extract Docker-specific error codes
    */
-  private getDockerErrorCode(error: any): string | undefined {
+  private getDockerErrorCode(error: unknown): string | undefined {
     if (error && typeof error === "object") {
-      if (error.statusCode) {
-        return `HTTP_${error.statusCode}`;
+      const e = error as { statusCode?: number; code?: string; errno?: number };
+      if (e.statusCode) {
+        return `HTTP_${e.statusCode}`;
       }
-      if (error.code) {
-        return error.code;
+      if (e.code) {
+        return e.code;
       }
-      if (error.errno) {
-        return `ERRNO_${error.errno}`;
+      if (e.errno) {
+        return `ERRNO_${e.errno}`;
       }
     }
     return undefined;

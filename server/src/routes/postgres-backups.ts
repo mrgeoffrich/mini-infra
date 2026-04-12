@@ -1,5 +1,6 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
@@ -56,7 +57,7 @@ const PaginationSchema = z.object({
 /**
  * Parse query parameters for filtering and pagination
  */
-function parseBackupOperationQuery(query: any) {
+function parseBackupOperationQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupOperationFilterSchema.parse(query);
   const sort = query.sortBy
@@ -73,7 +74,7 @@ function parseBackupOperationQuery(query: any) {
  * Build Prisma where clause from filter
  */
 function buildWhereClause(filter: BackupOperationFilter, databaseId?: string) {
-  const where: any = {};
+  const where: Prisma.BackupOperationWhereInput = {};
 
   if (databaseId) {
     where.databaseId = databaseId;
@@ -103,7 +104,7 @@ function buildWhereClause(filter: BackupOperationFilter, databaseId?: string) {
 /**
  * Map Prisma BackupOperation to BackupOperationInfo
  */
-function mapBackupOperationToInfo(operation: any) {
+function mapBackupOperationToInfo(operation: Prisma.BackupOperationGetPayload<true>) {
   return {
     id: operation.id,
     databaseId: operation.databaseId,

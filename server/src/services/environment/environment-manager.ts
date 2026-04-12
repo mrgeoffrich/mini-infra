@@ -1,8 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
+import type { UserEventInfo } from '@mini-infra/types';
 import {
   Environment,
   EnvironmentType,
   EnvironmentNetworkType,
+  EnvironmentNetwork,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
 } from '@mini-infra/types';
@@ -31,7 +33,7 @@ export class EnvironmentManager {
 
   public async createEnvironment(request: CreateEnvironmentRequest, userId?: string): Promise<Environment> {
     const startTime = Date.now();
-    let userEvent: any = null;
+    let userEvent: UserEventInfo | null = null;
 
     this.logger.info({ request }, 'Creating new environment');
 
@@ -185,7 +187,7 @@ export class EnvironmentManager {
     limit: number = 20
   ): Promise<{ environments: Environment[]; total: number }> {
     try {
-      const where: any = {};
+      const where: Prisma.EnvironmentWhereInput = {};
       if (type) where.type = type;
 
       const [environments, total] = await Promise.all([
@@ -261,7 +263,7 @@ export class EnvironmentManager {
   ): Promise<boolean> {
     const { deleteNetworks = false, userId } = options;
     const startTime = Date.now();
-    let userEvent: any = null;
+    let userEvent: UserEventInfo | null = null;
 
     try {
       // Check if environment is running
@@ -434,20 +436,27 @@ export class EnvironmentManager {
     }
   }
 
-  private mapPrismaToEnvironment(prismaEnv: any): Environment {
+  private mapPrismaToEnvironment(prismaEnv: Prisma.EnvironmentGetPayload<{
+    include: {
+      networks: true;
+      _count: { select: { stacks: true } };
+      stacks: { select: { id: true } };
+    };
+  }>): Environment {
     return {
       id: prismaEnv.id,
       name: prismaEnv.name,
-      description: prismaEnv.description,
+      description: prismaEnv.description ?? undefined,
       type: prismaEnv.type as EnvironmentType,
       networkType: prismaEnv.networkType as EnvironmentNetworkType,
-      networks: prismaEnv.networks.map((n: any) => ({
+      networks: prismaEnv.networks.map((n): EnvironmentNetwork => ({
         id: n.id,
         environmentId: n.environmentId,
         name: n.name,
+        purpose: n.purpose as EnvironmentNetwork['purpose'],
         driver: n.driver,
-        options: n.options,
-        dockerId: n.dockerId,
+        options: (n.options ?? undefined) as EnvironmentNetwork['options'],
+        dockerId: n.dockerId ?? undefined,
         createdAt: n.createdAt
       })),
       stackCount: prismaEnv._count?.stacks ?? 0,
