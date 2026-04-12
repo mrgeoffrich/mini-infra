@@ -243,7 +243,7 @@ class DockerService {
    * This method is copied from DockerConfigService to maintain consistency
    */
   private createDockerClient(host: string, apiVersion?: string | null): Docker {
-    let dockerConfig: any = {};
+    const dockerConfig: any = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {

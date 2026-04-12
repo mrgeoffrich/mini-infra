@@ -1118,8 +1118,8 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         // Step 2: Get HAProxy context from stack's environment (optional)
         let haproxyContainerId = '';
         let haproxyNetworkName = '';
-        let environmentId = fullStack.environmentId ?? '';
-        let environmentName = fullStack.environment?.name ?? '';
+        const environmentId = fullStack.environmentId ?? '';
+        const environmentName = fullStack.environment?.name ?? '';
         if (fullStack.environmentId) {
           try {
             const envValidation = new EnvironmentValidationService();

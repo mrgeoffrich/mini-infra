@@ -48,7 +48,7 @@ export class DockerClientFactory {
    * Create Docker client with specified configuration
    */
   public createDockerClient(host: string, apiVersion?: string | null): Docker {
-    let dockerConfig: any = {};
+    const dockerConfig: any = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {

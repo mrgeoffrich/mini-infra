@@ -12,7 +12,7 @@ export default tseslint.config([
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
-      reactHooks.configs["recommended-latest"],
+      reactHooks.configs.flat["recommended-latest"],
       reactRefresh.configs.vite,
     ],
     languageOptions: {
@@ -39,6 +39,21 @@ export default tseslint.config([
           ],
         },
       ],
+      // typescript-eslint 8.58 changed these from warn/absent to error in recommended.
+      // Restore to pre-upgrade severity.
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-empty-object-type": "warn",
+      // ESLint 10 new rule — too many pre-existing violations to fix in the upgrade PR.
+      // TODO: fix in a follow-up cleanup PR.
+      "preserve-caught-error": "off",
+      // react-hooks v7 new rules (activated by switching to flat config format).
+      // These were not enforced before because the plugin used the legacy config format.
+      // TODO: fix in a follow-up cleanup PR.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/refs": "off",
     },
   },
   {

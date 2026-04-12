@@ -329,7 +329,7 @@ export class DockerConfigService extends ConfigurationService {
    * Create Docker client with specified configuration
    */
   private createDockerClient(host: string, apiVersion?: string | null): Docker {
-    let dockerConfig: any = {};
+    const dockerConfig: any = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {

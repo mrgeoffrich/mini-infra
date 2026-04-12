@@ -54,7 +54,7 @@ export class BackupConfigurationManager {
       }
 
       // Determine timezone - use provided timezone or default to UTC
-      let timezone = config.timezone || "UTC";
+      const timezone = config.timezone || "UTC";
 
       // Validate timezone
       if (!UserPreferencesService.validateTimezone(timezone)) {

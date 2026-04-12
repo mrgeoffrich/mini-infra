@@ -69,7 +69,7 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
     }
 
     // Check if we have an active API key
-    let activeApiKey = devUser.apiKeys.find(
+    const activeApiKey = devUser.apiKeys.find(
       (key) => key.name === DEV_API_KEY_NAME && key.active,
     );
 

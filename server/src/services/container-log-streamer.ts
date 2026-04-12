@@ -67,7 +67,7 @@ export async function startLogStream(
     const timestamps = options.timestamps ?? true;
 
     const logStream: Readable = (await dockerContainer.logs({
-      follow: true as true,
+      follow: true as const,
       stdout: true,
       stderr: true,
       tail,
