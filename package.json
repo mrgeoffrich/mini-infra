@@ -37,9 +37,6 @@
     "defu": "^6.1.5",
     "path-to-regexp": "^8.4.0",
     "js-yaml": "^4.1.1",
-    "brace-expansion": "^1.1.13",
-    "@modyfi/vite-plugin-yaml": {
-      "js-yaml": "^4.1.1"
-    }
+    "brace-expansion": "^1.1.13"
   }
 }
