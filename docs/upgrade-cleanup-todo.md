@@ -63,14 +63,12 @@ typed emit union (`ContainerStartupEmit`, `LBConfigEmit`, etc.). The two blue-gr
 machines had `CONTAINERS_RUNNING.containerPort` widened to `containerPort?: number`
 to match what the startup action actually emits.
 
-### 4. Client task-tracker registry
+### ~~4. Client task-tracker registry~~ ✅ Done
 
-**Files:** `client/src/lib/task-type-registry.ts`,
-`client/src/components/task-tracker/task-tracker-provider.tsx`
-
-`EventPayload = any`. A discriminated union (one entry per registered task type with
-generics preserved) or `defineTaskTypeConfig<...>()` builder + `satisfies` at the map
-level would make each registry entry type-safe.
+`EventPayload = any` and `EventData = any` removed. Generic `TaskTypeConfig<TStarted,
+TStep, TCompleted>` + `defineTaskTypeConfig()` builder validate each normalizer against
+the real event payload. `RuntimeTaskTypeConfig` is the documented variance boundary
+for polymorphic access in `TaskEventListener` (see `chore/task-tracker-registry-types`).
 
 ### 5. Middleware `validatedQuery` / `validatedParams`
 

@@ -1,9 +1,10 @@
 /**
  * Static registry mapping TaskType → Socket.IO event configuration and normalizers.
  *
- * Each entry defines how to subscribe to and normalize events for a specific
- * operation type. This avoids serializing functions into sessionStorage —
- * on restore, look up the type string in this registry.
+ * Each entry is built with defineTaskTypeConfig(), which infers the three event-key
+ * generics so TypeScript validates every normalizer against the actual event payload
+ * shape. The registry itself is typed as Record<TaskType, RuntimeTaskTypeConfig>,
+ * which erases those generics for polymorphic access in TaskEventListener.
  */
 
 import { Channel, ServerEvent } from "@mini-infra/types";
@@ -11,30 +12,52 @@ import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 import type { OperationStep } from "@/hooks/use-operation-progress";
 import type { TaskType } from "./task-tracker-types";
 
-// Registry entries each handle a distinct Socket.IO event whose payload
-// shape is specific to the event. Typing the union across all events
-// here would force every normalizer to discriminate on fields the
-// registry doesn't know about — so we accept `any` payloads and let
-// each normalizer read the fields it needs.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EventPayload = any;
+// ====================
+// Type Helpers
+// ====================
 
-export interface TaskTypeConfig {
+/** Extract the data payload type for a specific server-to-client event. */
+type EventPayload<K extends keyof ServerToClientEvents> =
+  Parameters<ServerToClientEvents[K]>[0];
+
+/** Maps a step-event key to its normalizer function, or null when there is no step event. */
+type NormalizeStepFn<TStep extends keyof ServerToClientEvents | null> =
+  TStep extends keyof ServerToClientEvents
+    ? (payload: EventPayload<TStep>) => OperationStep
+    : null;
+
+// ====================
+// Generic TaskTypeConfig
+// ====================
+
+/**
+ * Type-safe config for a single task type.
+ *
+ * The three event-key generics ensure that each normalizer is validated against
+ * the actual payload shape of its event at definition time. Entries are created
+ * via defineTaskTypeConfig() so TypeScript infers the generics automatically.
+ */
+export interface TaskTypeConfig<
+  TStarted extends keyof ServerToClientEvents,
+  TStep extends keyof ServerToClientEvents | null,
+  TCompleted extends keyof ServerToClientEvents,
+> {
   channel: SocketChannel;
-  startedEvent: keyof ServerToClientEvents;
-  stepEvent: keyof ServerToClientEvents | null;
-  completedEvent: keyof ServerToClientEvents;
-  /** Extract the task ID from any event payload */
-  getId: (payload: EventPayload) => string;
+  startedEvent: TStarted;
+  /** null for task types that emit no intermediate step events */
+  stepEvent: TStep;
+  completedEvent: TCompleted;
+  /** Extract the task ID from a started-event payload */
+  getId: (payload: EventPayload<TStarted>) => string;
   /** Normalize "started" payload */
-  normalizeStarted: (payload: EventPayload) => {
+  normalizeStarted: (payload: EventPayload<TStarted>) => {
     totalSteps: number;
     plannedStepNames: string[];
   };
-  /** Normalize "step" payload → OperationStep (null if no step event) */
-  normalizeStep: ((payload: EventPayload) => OperationStep) | null;
+  /** Normalize "step" payload → OperationStep (null when stepEvent is null) */
+  normalizeStep: NormalizeStepFn<TStep>;
   /** Normalize "completed" payload */
-  normalizeCompleted: (payload: EventPayload) => {
+  normalizeCompleted: (payload: EventPayload<TCompleted>) => {
     success: boolean;
     steps: OperationStep[];
     errors: string[];
@@ -43,8 +66,58 @@ export interface TaskTypeConfig {
   invalidateKeys?: (taskId: string) => unknown[][];
 }
 
-export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
-  "cert-issuance": {
+/**
+ * Builder that infers the three event-key generics from the config literal,
+ * so TypeScript validates each normalizer against the real event payload shape.
+ */
+function defineTaskTypeConfig<
+  TStarted extends keyof ServerToClientEvents,
+  TStep extends keyof ServerToClientEvents | null,
+  TCompleted extends keyof ServerToClientEvents,
+>(
+  config: TaskTypeConfig<TStarted, TStep, TCompleted>,
+): TaskTypeConfig<TStarted, TStep, TCompleted> {
+  return config;
+}
+
+// ====================
+// RuntimeTaskTypeConfig — erased type for polymorphic access
+// ====================
+
+/**
+ * Erased config type for runtime polymorphic access in TaskEventListener.
+ *
+ * TaskEventListener receives a config via TASK_TYPE_REGISTRY[task.type] where
+ * task.type is the TaskType union, losing the specific event-key generics.
+ * TypeScript's contravariant function-parameter rule prevents assigning
+ * `(p: SpecificPayload) => R` to `(p: WidenedPayload) => R`, so the normalizer
+ * payload parameters are `any` here.
+ *
+ * This is a deliberate, documented variance boundary — each entry is still
+ * validated at definition time via defineTaskTypeConfig().
+ */
+export interface RuntimeTaskTypeConfig {
+  channel: SocketChannel;
+  startedEvent: keyof ServerToClientEvents;
+  stepEvent: keyof ServerToClientEvents | null;
+  completedEvent: keyof ServerToClientEvents;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getId: (payload: any) => string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  normalizeStarted: (payload: any) => { totalSteps: number; plannedStepNames: string[] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  normalizeStep: ((payload: any) => OperationStep) | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  normalizeCompleted: (payload: any) => { success: boolean; steps: OperationStep[]; errors: string[] };
+  invalidateKeys?: (taskId: string) => unknown[][];
+}
+
+// ====================
+// Registry
+// ====================
+
+export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
+  "cert-issuance": defineTaskTypeConfig({
     channel: Channel.TLS,
     startedEvent: ServerEvent.CERT_ISSUANCE_STARTED,
     stepEvent: ServerEvent.CERT_ISSUANCE_STEP,
@@ -61,9 +134,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       errors: p.errors,
     }),
     invalidateKeys: () => [["certificates"]],
-  },
+  }),
 
-  "connect-container": {
+  "connect-container": defineTaskTypeConfig({
     channel: Channel.HAPROXY,
     startedEvent: ServerEvent.FRONTEND_SETUP_STARTED,
     stepEvent: ServerEvent.FRONTEND_SETUP_STEP,
@@ -84,9 +157,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["haproxy-backends"],
       ["containers"],
     ],
-  },
+  }),
 
-  "stack-apply": {
+  "stack-apply": defineTaskTypeConfig({
     channel: Channel.STACKS,
     startedEvent: ServerEvent.STACK_APPLY_STARTED,
     stepEvent: ServerEvent.STACK_APPLY_SERVICE_RESULT,
@@ -94,32 +167,36 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     getId: (p) => p.stackId,
     normalizeStarted: (p) => ({
       totalSteps: p.totalActions,
-      plannedStepNames: (p.actions as Array<{ serviceName: string; action: string }>).map(
-        (a) => `${a.action} ${a.serviceName}`,
-      ),
+      plannedStepNames: p.actions.map((a) => `${a.action} ${a.serviceName}`),
     }),
-    normalizeStep: (p) => ({
-      step: p.resourceType
-        ? `${p.action} ${p.resourceType}:${p.resourceName}`
-        : `${p.action} ${p.serviceName}`,
-      status: p.success ? "completed" : "failed",
-      detail: p.error ?? undefined,
-    }),
+    normalizeStep: (p) => {
+      // step:apply:service-result carries either a ServiceApplyResult or ResourceResult
+      if ('resourceType' in p) {
+        return {
+          step: `${p.action} ${p.resourceType}:${p.resourceName}`,
+          status: p.success ? "completed" : "failed",
+          detail: p.error ?? undefined,
+        };
+      }
+      return {
+        step: `${p.action} ${p.serviceName}`,
+        status: p.success ? "completed" : "failed",
+        detail: p.error ?? undefined,
+      };
+    },
     normalizeCompleted: (p) => ({
       success: p.success,
       steps: [
-        ...((p.serviceResults ?? []) as Array<{ serviceName: string; action: string; success: boolean; error?: string }>).map(
-          (r) => ({
-            step: `${r.action} ${r.serviceName}`,
-            status: (r.success ? "completed" : "failed") as OperationStep["status"],
-            detail: r.error ?? undefined,
-          }),
-        ),
-        ...((p.resourceResults ?? []) as Array<{ resourceType: string; resourceName: string; action: string; success: boolean; error?: string }>)
+        ...p.serviceResults.map((r) => ({
+          step: `${r.action} ${r.serviceName}`,
+          status: r.success ? "completed" as const : "failed" as const,
+          detail: r.error ?? undefined,
+        })),
+        ...p.resourceResults
           .filter((r) => r.action !== "no-op")
           .map((r) => ({
             step: `${r.action} ${r.resourceType}:${r.resourceName}`,
-            status: (r.success ? "completed" : "failed") as OperationStep["status"],
+            status: r.success ? "completed" as const : "failed" as const,
             detail: r.error ?? undefined,
           })),
       ],
@@ -137,9 +214,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["applications"],
       ["userStacks"],
     ],
-  },
+  }),
 
-  "stack-update": {
+  "stack-update": defineTaskTypeConfig({
     channel: Channel.STACKS,
     startedEvent: ServerEvent.STACK_APPLY_STARTED,
     stepEvent: ServerEvent.STACK_APPLY_SERVICE_RESULT,
@@ -147,24 +224,29 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     getId: (p) => p.stackId,
     normalizeStarted: (p) => ({
       totalSteps: p.totalActions,
-      plannedStepNames: (p.actions as Array<{ serviceName: string; action: string }>).map(
-        (a) => `update ${a.serviceName}`,
-      ),
+      plannedStepNames: p.actions.map((a) => `update ${a.serviceName}`),
     }),
-    normalizeStep: (p) => ({
-      step: `update ${p.serviceName}`,
-      status: p.success ? "completed" : "failed",
-      detail: p.error ?? undefined,
-    }),
+    normalizeStep: (p) => {
+      if ('resourceType' in p) {
+        return {
+          step: `update ${p.resourceType}:${p.resourceName}`,
+          status: p.success ? "completed" : "failed",
+          detail: p.error ?? undefined,
+        };
+      }
+      return {
+        step: `update ${p.serviceName}`,
+        status: p.success ? "completed" : "failed",
+        detail: p.error ?? undefined,
+      };
+    },
     normalizeCompleted: (p) => ({
       success: p.success,
-      steps: (p.serviceResults as Array<{ serviceName: string; action: string; success: boolean; error?: string }>).map(
-        (r) => ({
-          step: `update ${r.serviceName}`,
-          status: (r.success ? "completed" : "failed") as OperationStep["status"],
-          detail: r.error ?? undefined,
-        }),
-      ),
+      steps: p.serviceResults.map((r) => ({
+        step: `update ${r.serviceName}`,
+        status: r.success ? "completed" as const : "failed" as const,
+        detail: r.error ?? undefined,
+      })),
       errors: [
         ...(p.error ? [p.error] : []),
         ...(p.postApply?.errors ?? []),
@@ -179,9 +261,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["applications"],
       ["userStacks"],
     ],
-  },
+  }),
 
-  "stack-destroy": {
+  "stack-destroy": defineTaskTypeConfig({
     channel: Channel.STACKS,
     startedEvent: ServerEvent.STACK_DESTROY_STARTED,
     stepEvent: null,
@@ -197,7 +279,7 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       steps: [
         {
           step: "Destroy stack",
-          status: (p.success ? "completed" : "failed") as OperationStep["status"],
+          status: p.success ? "completed" : "failed",
           detail: p.success
             ? `Removed ${p.containersRemoved} container(s), ${p.networksRemoved?.length ?? 0} network(s), ${p.volumesRemoved?.length ?? 0} volume(s)`
             : p.error ?? undefined,
@@ -214,9 +296,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["applications"],
       ["userStacks"],
     ],
-  },
+  }),
 
-  migration: {
+  migration: defineTaskTypeConfig({
     channel: Channel.STACKS,
     startedEvent: ServerEvent.MIGRATION_STARTED,
     stepEvent: ServerEvent.MIGRATION_STEP,
@@ -229,9 +311,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     normalizeStep: (p) => p.step,
     normalizeCompleted: (p) => ({
       success: p.success,
-      steps: (p.steps as Array<{ step: string; status: string; detail?: string }>).map((s) => ({
+      steps: p.steps.map((s) => ({
         step: s.step,
-        status: s.status as OperationStep["status"],
+        status: s.status,
         detail: s.detail,
       })),
       errors: p.errors ?? [],
@@ -243,9 +325,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
       ["haproxy-frontends"],
       ["stacks"],
     ],
-  },
+  }),
 
-  "sidecar-startup": {
+  "sidecar-startup": defineTaskTypeConfig({
     channel: Channel.AGENT_SIDECAR,
     startedEvent: ServerEvent.SIDECAR_STARTUP_STARTED,
     stepEvent: ServerEvent.SIDECAR_STARTUP_STEP,
@@ -258,20 +340,20 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     normalizeStep: (p) => p.step,
     normalizeCompleted: (p) => ({
       success: p.success,
-      steps: (p.steps as Array<{ step: string; status: string; detail?: string }>).map((s) => ({
+      steps: p.steps.map((s) => ({
         step: s.step,
-        status: s.status as OperationStep["status"],
+        status: s.status,
         detail: s.detail,
       })),
-      errors: p.errors ?? [],
+      errors: p.errors,
     }),
     invalidateKeys: () => [
       ["agent-sidecar", "status"],
       ["agent", "status"],
     ],
-  },
+  }),
 
-  "self-update-launch": {
+  "self-update-launch": defineTaskTypeConfig({
     channel: Channel.SELF_UPDATE,
     startedEvent: ServerEvent.SELF_UPDATE_LAUNCH_STARTED,
     stepEvent: ServerEvent.SELF_UPDATE_LAUNCH_STEP,
@@ -284,13 +366,13 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, TaskTypeConfig> = {
     normalizeStep: (p) => p.step,
     normalizeCompleted: (p) => ({
       success: p.success,
-      steps: (p.steps as Array<{ step: string; status: string; detail?: string }>).map((s) => ({
+      steps: p.steps.map((s) => ({
         step: s.step,
-        status: s.status as OperationStep["status"],
+        status: s.status,
         detail: s.detail,
       })),
-      errors: p.errors ?? [],
+      errors: p.errors,
     }),
     invalidateKeys: () => [["self-update-status"]],
-  },
+  }),
 };

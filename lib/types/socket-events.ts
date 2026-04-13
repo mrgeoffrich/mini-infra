@@ -12,7 +12,7 @@ import type {
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
-import type { ServiceApplyResult, ApplyResult, DestroyResult } from "./stacks";
+import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult } from "./stacks";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 
 // ====================
@@ -259,8 +259,8 @@ export interface ServerToClientEvents {
     actions: Array<{ serviceName: string; action: string }>;
     forcePull?: boolean;
   }) => void;
-  /** Individual service within a stack apply completed */
-  "stack:apply:service-result": (data: ServiceApplyResult & {
+  /** Individual service or resource within a stack apply completed */
+  "stack:apply:service-result": (data: (ServiceApplyResult | ResourceResult) & {
     stackId: string;
     completedCount: number;
     totalActions: number;

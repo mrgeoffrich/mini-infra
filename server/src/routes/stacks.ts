@@ -674,7 +674,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
                 ...progressResult,
                 completedCount: emittedStepCount,
                 totalActions: totalEmitActions,
-              } as ServiceApplyResult & { stackId: string; completedCount: number; totalActions: number });
+              } as (ServiceApplyResult | ResourceResult) & { stackId: string; completedCount: number; totalActions: number });
             } catch { /* never break apply */ }
 
             // Append to user event log (skip resource results — they're batched post-apply)
