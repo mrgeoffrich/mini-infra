@@ -77,6 +77,9 @@ export * from "./socket-events";
 // Self-update types
 export * from "./self-update";
 
+// Shared operation step types
+export * from "./operations";
+
 // ====================
 // Type Utilities
 // ====================

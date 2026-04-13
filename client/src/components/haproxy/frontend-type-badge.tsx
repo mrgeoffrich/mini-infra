@@ -1,7 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { IconRocket, IconBrandDocker, IconRoute } from "@tabler/icons-react";
-
-type FrontendType = 'deployment' | 'manual' | 'shared';
+import type { FrontendType } from "@mini-infra/types";
 
 interface FrontendTypeBadgeProps {
   type: FrontendType | string;

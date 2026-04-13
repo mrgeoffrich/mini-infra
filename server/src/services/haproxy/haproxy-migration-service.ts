@@ -7,51 +7,11 @@ import {
   restoreHAProxyRuntimeState,
   getEnvironmentCertificateIds,
 } from './haproxy-post-apply';
+import type { MigrationPreview, MigrationResult, MigrationStep } from '@mini-infra/types';
 
 const logger = loadbalancerLogger();
 
-export interface MigrationPreview {
-  needsMigration: boolean;
-  /** Legacy HAProxy container found (not stack-managed) */
-  legacyContainer: {
-    name: string;
-    id: string;
-    status: string;
-  } | null;
-  /** Stack record for this environment */
-  stackStatus: {
-    id: string;
-    name: string;
-    status: string;
-  } | null;
-  /** Legacy volumes that will be removed */
-  legacyVolumes: string[];
-  /** Certificates that will be redeployed */
-  certificateCount: number;
-  /** Backends that will be recreated */
-  backendCount: number;
-  /** Servers that will be re-added to backends */
-  serverCount: number;
-  /** What happens after migration */
-  postMigration: {
-    newContainerName: string;
-    newVolumes: string[];
-    networkReused: string;
-    remediationNeeded: boolean;
-  };
-}
-
-export interface MigrationResult {
-  success: boolean;
-  steps: MigrationStep[];
-  errors: string[];
-}
-
-export interface MigrationStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
+export type { MigrationPreview, MigrationResult, MigrationStep };
 
 export class HAProxyMigrationService {
   /**

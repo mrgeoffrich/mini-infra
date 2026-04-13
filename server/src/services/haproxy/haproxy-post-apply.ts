@@ -4,6 +4,7 @@ import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
 import { haproxyCertificateDeployer } from './haproxy-certificate-deployer';
 import { HAProxyFrontendManager } from './haproxy-frontend-manager';
 import DockerService from '../docker';
+import type { OperationStep } from '@mini-infra/types';
 
 const logger = loadbalancerLogger();
 
@@ -18,15 +19,9 @@ const PROMETHEUS_HTTP_REQUEST_RULE = {
   cond_test: '{ path /metrics }',
 } as const;
 
-export interface PostApplyStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
-
 export interface PostApplyResult {
   success: boolean;
-  steps: PostApplyStep[];
+  steps: OperationStep[];
   errors: string[];
 }
 
@@ -46,7 +41,7 @@ export async function restoreHAProxyRuntimeState(
   environmentId: string,
   prisma: PrismaClient
 ): Promise<PostApplyResult> {
-  const steps: PostApplyStep[] = [];
+  const steps: OperationStep[] = [];
   const errors: string[] = [];
   const frontendManager = new HAProxyFrontendManager();
 

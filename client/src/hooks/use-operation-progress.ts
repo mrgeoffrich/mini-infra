@@ -8,16 +8,12 @@
 import { useState, useCallback, useEffect, useRef, useContext } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { ServerToClientEvents, SocketChannel } from "@mini-infra/types";
+import type { ServerToClientEvents, SocketChannel, OperationStep } from "@mini-infra/types";
 import { useSocketChannel, useSocketEvent } from "./use-socket";
 import { TaskTrackerContext } from "@/lib/task-tracker-context";
 import type { TaskType } from "@/lib/task-tracker-types";
 
-export interface OperationStep {
-  step: string;
-  status: "completed" | "failed" | "skipped";
-  detail?: string;
-}
+export type { OperationStep };
 
 export type OperationPhase = "idle" | "executing" | "success" | "error";
 

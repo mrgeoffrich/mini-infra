@@ -15,7 +15,7 @@ import {
   SIDECAR_STARTUP_STEPS,
 } from "../services/agent-sidecar";
 import { emitToChannel } from "../lib/socket";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
@@ -124,7 +124,7 @@ router.post(
 
       // Run in background
       (async () => {
-        const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
+        const steps: OperationStep[] = [];
 
         try {
           emitToChannel(Channel.AGENT_SIDECAR, ServerEvent.SIDECAR_STARTUP_STARTED, {
