@@ -14,6 +14,8 @@
  * all emit types and replaces the previous `any` shortcut.
  */
 
+import type { DeploymentVolume } from '@mini-infra/types';
+
 export interface ActionContext {
     // Deployment identifiers — always set by state machines at context init
     deploymentId: string;
@@ -74,7 +76,7 @@ export interface ActionContext {
     tlsCertificateId?: string;
     certificateStatus?: string;
     networkType?: string;
-    sourceType?: string;
+    sourceType?: 'stack' | 'manual';
 
     // Health check tuning
     healthCheckEndpoint?: string;
@@ -89,8 +91,8 @@ export interface ActionContext {
     currentState?: string;
 
     // Container spec (source-agnostic)
-    containerPorts?: { containerPort: number; hostPort: number; protocol: string }[];
-    containerVolumes?: string[];
+    containerPorts?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp' }[];
+    containerVolumes?: DeploymentVolume[];
     containerEnvironment?: Record<string, string>;
     containerLabels?: Record<string, string>;
     containerNetworks?: string[];

@@ -31,10 +31,10 @@ type aliases where a full refactor would have ballooned the diff:
   loads a different Prisma `include`/`select` subset.~~
   **Fixed**: Two Prisma `GetPayload` types replace `any`; `configFiles in v` type guard discriminates
   detail vs summary. `StackTemplateVersionInfo` gained `serviceTypes?` for list views (see `chore/stack-template-serializer-types`).
-- `client/src/lib/task-type-registry.ts`,
+- ~~`client/src/lib/task-type-registry.ts`,
   `client/src/components/task-tracker/task-tracker-provider.tsx` —
   `EventPayload = any` for heterogeneous Socket.IO payloads; normalizers narrow locally.
-  Proper fix is a discriminated union keyed by task type.
+  Proper fix is a discriminated union keyed by task type.~~ **Fixed** (see item 4 above).
 
 ## 🟡 Still Deferred → Future PRs
 

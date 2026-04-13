@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate';
+import type { DeploymentVolume } from '@mini-infra/types';
 import { DeployApplicationContainers} from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
 import { AddContainerToLB } from './actions/add-container-to-lb';
@@ -79,8 +80,8 @@ export interface InitialDeploymentContext {
     healthCheckEndpoint?: string;
     healthCheckInterval?: number;
     healthCheckRetries?: number;
-    containerPorts?: { containerPort: number; hostPort: number; protocol: string }[];
-    containerVolumes?: string[];
+    containerPorts?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp' }[];
+    containerVolumes?: DeploymentVolume[];
     containerEnvironment?: Record<string, string>;
     containerLabels?: Record<string, string>;
     containerNetworks?: string[];

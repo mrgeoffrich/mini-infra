@@ -51,7 +51,7 @@ export class ConfigureFrontend {
       const enableSsl: boolean = context.enableSsl ?? false;
       const tlsCertificateId: string | null | undefined = context.tlsCertificateId;
       const certificateStatus: string | null | undefined = context.certificateStatus;
-      const sourceType: 'stack' | 'manual' = (context.sourceType as 'stack' | 'manual') ?? 'stack';
+      const sourceType = context.sourceType ?? 'stack';
       const sourceId: string | undefined = context.deploymentId;
 
       if (!hostname) {

@@ -67,30 +67,37 @@ Also fixed: `stack:apply:service-result` event type corrected to
 `'resourceType' in p`. Removed the now-unnecessary `as Array<…>` and
 `as OperationStep["status"]` casts throughout.
 
-## 5. HAProxy action bodies
+## 5. HAProxy action bodies ✅ Resolved
+
+Resolved in `chore/haproxy-action-body-types`.
 
 ### `add-container-to-lb.ts`
 
-- `const serverAddress = (context.containerName || context.containerIpAddress) as string;`
-  — earlier validation throws if neither is set, but TS can't narrow that
-  for the composite expression. The cast is safe given the prior checks.
+- Replaced the `!containerName && !containerIpAddress` guard + `as string` cast with a
+  direct assignment `const serverAddress = context.containerName ?? context.containerIpAddress`
+  followed by a single `if (!serverAddress) throw` guard. TypeScript now narrows
+  `serverAddress` to `string` from the guard onward — no cast required.
 
 ### `configure-frontend.ts`
 
-- `const sourceType: 'stack' | 'manual' = (context.sourceType as 'stack' | 'manual') ?? 'stack';`
-  — `sourceType` is `string` in `ActionContext`. State machines don't
-  model the enum at the context level. Candidate for a typed enum.
+- `ActionContext.sourceType` narrowed from `string` to `'stack' | 'manual'`. The cast
+  `(context.sourceType as 'stack' | 'manual')` is now unnecessary; the line simplifies to
+  `context.sourceType ?? 'stack'` and TypeScript infers the correct union type.
 
 ### `deploy-application-containers.ts`
 
-- `containerConfig` fallback construction uses
-  `as unknown as ContainerConfig` because the legacy fallback produces a
-  shape with `environment: string[]` and `volumes: string[]`, while
-  `ContainerConfig` expects `ContainerEnvVar[]` and `DeploymentVolume[]`.
-
-  **Proper fix:** Update the fallback to build real `ContainerEnvVar[]` /
-  `DeploymentVolume[]` values, or drop the legacy fallback entirely once
-  all callers pass explicit fields.
+- `context.containerName as string` removed — the `??` fallback already handles `undefined`
+  and TypeScript correctly infers `string` from the nullish coalescing expression.
+- `ActionContext.containerVolumes` changed from `string[]` to `DeploymentVolume[]` (the
+  reconciler always passes `[]`; no runtime change). Same update applied to the three state
+  machine context interfaces (`InitialDeploymentContext`, `BlueGreenDeploymentContext`,
+  `BlueGreenUpdateContext`).
+- `ActionContext.containerPorts` protocol narrowed from `string` to `'tcp' | 'udp'`, matching
+  the actual values from `StackContainerConfig`. State machine context types updated to match.
+- Environment conversion fixed: `map(([k, v]) => \`${k}=${v}\`)` → `map(([name, value]) => ({ name, value }))`,
+  producing real `ContainerEnvVar[]` instead of `string[]`.
+- With the above three fixes the fallback object literal is directly assignable to `ContainerConfig`
+  — the `as unknown as ContainerConfig` cast is gone.
 
 ## 6. Connectivity status reads
 
