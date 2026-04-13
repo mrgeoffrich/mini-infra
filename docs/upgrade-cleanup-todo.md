@@ -26,10 +26,11 @@ type aliases where a full refactor would have ballooned the diff:
   `CloudflareApiResponse = any` alias for SDK pagination / response shapes.~~
   **Fixed**: SDK types used directly; `SdkRecord` intersection bridges the
   runtime fields the SDK omits (see `chore/type-cleanup`).
-- `server/src/services/stacks/stack-template-service.ts` —
+- ~~`server/src/services/stacks/stack-template-service.ts` —
   `SerializableTemplate` / `SerializableVersion` aliased to `any` because each caller
-  loads a different Prisma `include`/`select` subset. Proper fix is a discriminated
-  union per include shape.
+  loads a different Prisma `include`/`select` subset.~~
+  **Fixed**: Two Prisma `GetPayload` types replace `any`; `configFiles in v` type guard discriminates
+  detail vs summary. `StackTemplateVersionInfo` gained `serviceTypes?` for list views (see `chore/stack-template-serializer-types`).
 - `client/src/lib/task-type-registry.ts`,
   `client/src/components/task-tracker/task-tracker-provider.tsx` —
   `EventPayload = any` for heterogeneous Socket.IO payloads; normalizers narrow locally.
@@ -46,13 +47,14 @@ intersection bridges runtime fields the SDK omits (`zone_id`, `zone_name`, `lock
 `data`). `Promise.race` now uses `Promise<never>` for the timeout arm so the SDK
 return type flows through unchanged.
 
-### 2. Stack-template-service serializer shape
+### ~~2. Stack-template-service serializer shape~~ ✅ Done
 
-**File:** `server/src/services/stacks/stack-template-service.ts`
-
-`serializeTemplate` / `serializeVersion` currently take `any` because every caller passes
-a different Prisma include shape. A discriminated union (one variant per include set) or
-a single loose shape with runtime validation would let us drop the `any`.
+`SerializableTemplate` / `SerializableVersion` `any` aliases removed. Two `Prisma.GetPayload` types
+cover the detail (full services + configFiles) and summary (count + serviceType per service) query shapes.
+A `configFiles in v` type guard discriminates between them in `serializeVersion`. `versionSummary`
+gained `resourceOutputs` / `resourceInputs` so both shapes expose those fields. `StackTemplateVersionInfo`
+gained `serviceTypes?: StackServiceType[]` populated for both shapes; the applications page updated
+to use `serviceTypes?.[0]` (the previous `services?.[0]?.serviceType` was silently broken).
 
 ### ~~3. HAProxy state-machine event unions~~ ✅ Done
 

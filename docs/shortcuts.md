@@ -36,20 +36,21 @@ Zone/tunnel fields with type mismatches (optional vs required, `null` vs `undefi
 enum supersets) are bridged with `?? default` or narrow casts at the mapping boundary.
 Tunnel config raw fetch responses cast to `CloudflareTunnelConfig` at the parse site.
 
-## 3. Stack-template-service serializer shape
+## 3. Stack-template-service serializer shape ✅ Resolved
 
-**File:** `server/src/services/stacks/stack-template-service.ts`
+Resolved in `chore/stack-template-serializer-types`. Two Prisma payload types replace `any`:
 
-- `SerializableTemplate = any` and `SerializableVersion = any` with
-  `// eslint-disable-next-line`.
+- `VersionDetailPayload` — `GetPayload<{ include: typeof versionWithDetails }>` — full services + configFiles
+- `VersionSummaryPayload` — `GetPayload<{ select: typeof versionSummary }>` — service count + serviceType per service
 
-  **Why:** `serializeTemplate` / `serializeVersion` accept multiple
-  Prisma payload shapes depending on the caller's `include` set (list vs
-  detail vs update). Every strict union I tried cascaded into errors
-  against the runtime `as unknown as ...` casts for JSON columns.
+`SerializableVersion = VersionDetailPayload | VersionSummaryPayload` with a `configFiles in v` type guard. The
+`SerializableTemplate` interface covers all template query shapes structurally (optional relations, Prisma enum
+types are compatible string unions). JSON columns use `as unknown as` double-assertion. `versionSummary` was
+updated to include `resourceOutputs` and `resourceInputs` so both payload types expose those fields.
 
-  **Proper fix:** Discriminated union per caller shape, or a single
-  loose shape with runtime validation.
+`StackTemplateVersionInfo` gained `serviceTypes?: StackServiceType[]` — populated for both shapes. The
+applications page now reads `serviceTypes?.[0]` instead of the previously incorrect `services?.[0]?.serviceType`
+(which was silently returning partial service objects with only `serviceType` set).
 
 ## 4. Client task-tracker registry
 

@@ -67,9 +67,9 @@ function getAppServiceType(
     const svc = stacks[0].services?.[0];
     if (svc) return svc.serviceType;
   }
-  // Fall back to template version services
-  const templateSvc = app.currentVersion?.services?.[0];
-  if (templateSvc) return templateSvc.serviceType;
+  // Fall back to template version service types (summary list only carries types, not full service objects)
+  const templateServiceType = app.currentVersion?.serviceTypes?.[0];
+  if (templateServiceType) return templateServiceType;
   return null;
 }
 

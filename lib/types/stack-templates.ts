@@ -139,6 +139,7 @@ export interface StackTemplateVersionInfo {
   createdAt: string;
   createdById: string | null;
   serviceCount?: number;
+  serviceTypes?: StackServiceType[];
   services?: StackTemplateServiceInfo[];
   configFiles?: StackTemplateConfigFileInfo[];
 }
