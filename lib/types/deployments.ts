@@ -271,6 +271,15 @@ export interface ManualFrontendSetupResult {
   certificateId?: string;
 }
 
+export interface StartConnectContainerResponse {
+  success: boolean;
+  data: {
+    started: boolean;
+    operationId: string;
+    environmentId: string;
+  };
+}
+
 // ====================
 // HAProxy Route Types (Shared Frontend)
 // ====================

@@ -1,10 +1,5 @@
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
-
-interface AgentStatusResponse {
-  enabled: boolean;
-  sidecarAvailable: boolean;
-  reason?: string;
-}
+import type { AgentStatusResponse } from "@mini-infra/types";
 
 async function fetchAgentStatus(): Promise<AgentStatusResponse> {
   const response = await fetch("/api/agent/status", {

@@ -2,20 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   GitHubSettingResponse,
   GitHubValidationResponse,
+  CreateGitHubSettingRequest,
+  ValidateGitHubConnectionRequest,
 } from "@mini-infra/types";
-
-interface UpdateGitHubSettingsPayload {
-  personal_access_token: string;
-  repo_owner: string;
-  repo_name: string;
-  encrypt?: boolean;
-}
-
-interface TestConnectionPayload {
-  personal_access_token?: string;
-  repo_owner?: string;
-  repo_name?: string;
-}
 
 // Hook for retrieving current GitHub settings
 export function useGitHubSettings() {
@@ -56,7 +45,7 @@ export function useUpdateGitHubSettings() {
   return useMutation<
     GitHubSettingResponse,
     Error,
-    UpdateGitHubSettingsPayload
+    CreateGitHubSettingRequest
   >({
     mutationFn: async (payload) => {
       const response = await fetch("/api/settings/github", {
@@ -113,7 +102,7 @@ export function useDeleteGitHubSettings() {
 
 // Hook for testing GitHub connection
 export function useTestGitHubConnection() {
-  return useMutation<GitHubValidationResponse, Error, TestConnectionPayload>({
+  return useMutation<GitHubValidationResponse, Error, ValidateGitHubConnectionRequest>({
     mutationFn: async (payload) => {
       const response = await fetch("/api/settings/github/test", {
         method: "POST",

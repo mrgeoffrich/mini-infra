@@ -116,3 +116,11 @@ export interface CertIssuanceResult {
   certificateId?: string;
   primaryDomain?: string;
 }
+
+export interface StartCertIssuanceResponse {
+  success: boolean;
+  data: {
+    started: boolean;
+    operationId: string;
+  };
+}

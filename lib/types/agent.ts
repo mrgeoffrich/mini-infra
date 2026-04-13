@@ -123,3 +123,9 @@ export interface AgentSidecarConfig {
   timeoutMs: number;
   autoStart: boolean;
 }
+
+export interface AgentStatusResponse {
+  enabled: boolean;
+  sidecarAvailable: boolean;
+  reason?: string;
+}

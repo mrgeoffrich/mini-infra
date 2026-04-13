@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CloudflareSettingResponse,
-  ConnectivityStatusInfo,
-  CloudflareTunnelInfo,
-  CloudflareTunnelConfig,
+  CreateCloudflareSettingRequest,
+  ConnectivityStatusResponse,
+  CloudflareTunnelListResponse,
+  CloudflareTunnelConfigResponse,
   CloudflareAddHostnameRequest,
   CloudflareHostnameResponse,
   ManagedTunnelListResponse,
@@ -11,66 +12,6 @@ import type {
 } from "@mini-infra/types";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-interface UpdateCloudflareSettingsPayload {
-  api_token: string;
-  account_id?: string;
-  encrypt?: boolean;
-}
-
-interface TestConnectionResponse {
-  success: boolean;
-  message?: string;
-  details?: {
-    user?: {
-      email?: string;
-      id?: string;
-    };
-    account?: {
-      name?: string;
-      id?: string;
-    };
-  };
-}
-
-interface ConnectivityResponse {
-  success: boolean;
-  data?: ConnectivityStatusInfo;
-  message?: string;
-}
-
-interface ConnectivityHistoryResponse {
-  success: boolean;
-  data?: ConnectivityStatusInfo[];
-  pagination?: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
-  message?: string;
-}
-
-interface TunnelsResponse {
-  success: boolean;
-  data?: {
-    tunnels: CloudflareTunnelInfo[];
-    tunnelCount: number;
-  };
-  message?: string;
-}
-
-interface TunnelDetailsResponse {
-  success: boolean;
-  tunnel?: CloudflareTunnelInfo;
-  message?: string;
-}
-
-interface TunnelConfigResponse {
-  success: boolean;
-  data?: CloudflareTunnelConfig;
-  message?: string;
-}
 
 // Hook for retrieving current Cloudflare settings
 export function useCloudflareSettings() {
@@ -111,7 +52,7 @@ export function useUpdateCloudflareSettings() {
   return useMutation<
     CloudflareSettingResponse,
     Error,
-    UpdateCloudflareSettingsPayload
+    CreateCloudflareSettingRequest
   >({
     mutationFn: async (payload) => {
       const response = await fetch("/api/settings/cloudflare", {
@@ -170,33 +111,6 @@ export function useDeleteCloudflareSettings() {
   });
 }
 
-// Hook for testing Cloudflare connection
-export function useTestCloudflareConnection() {
-  const queryClient = useQueryClient();
-
-  return useMutation<TestConnectionResponse, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/cloudflare/test", {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to test Cloudflare connection",
-        }));
-        throw new Error(errorData.message || "Connection test failed");
-      }
-
-      return response.json();
-    },
-    onSuccess: () => {
-      // Invalidate connectivity status after successful test
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-connectivity"] });
-    },
-  });
-}
-
 // Hook for retrieving Cloudflare connectivity status
 export function useCloudflareConnectivity() {
   const queryClient = useQueryClient();
@@ -211,7 +125,7 @@ export function useCloudflareConnectivity() {
     },
   );
 
-  return useQuery<ConnectivityResponse>({
+  return useQuery<ConnectivityStatusResponse>({
     queryKey: ["cloudflare-connectivity"],
     queryFn: async () => {
       const response = await fetch("/api/connectivity/cloudflare", {
@@ -233,39 +147,6 @@ export function useCloudflareConnectivity() {
   });
 }
 
-// Hook for retrieving Cloudflare connectivity history
-export function useCloudflareConnectivityHistory(
-  page: number = 1,
-  pageSize: number = 20,
-) {
-  return useQuery<ConnectivityHistoryResponse>({
-    queryKey: ["cloudflare-connectivity-history", page, pageSize],
-    queryFn: async () => {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        pageSize: pageSize.toString(),
-      });
-
-      const response = await fetch(
-        `/api/connectivity/cloudflare/history?${params}`,
-        {
-          credentials: "include",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch connectivity history",
-        }));
-        throw new Error(errorData.message || "Failed to fetch history");
-      }
-
-      return response.json();
-    },
-    staleTime: 30000, // 30 seconds
-  });
-}
-
 // Hook for retrieving Cloudflare tunnels
 export function useCloudfareTunnels() {
   const queryClient = useQueryClient();
@@ -280,7 +161,7 @@ export function useCloudfareTunnels() {
     },
   );
 
-  return useQuery<TunnelsResponse>({
+  return useQuery<CloudflareTunnelListResponse>({
     queryKey: ["cloudflare-tunnels"],
     queryFn: async () => {
       const response = await fetch("/api/settings/cloudflare/tunnels", {
@@ -316,53 +197,9 @@ export function useCloudfareTunnels() {
   });
 }
 
-// Hook for retrieving specific tunnel details
-export function useCloudfareTunnelDetails(tunnelId: string | undefined) {
-  return useQuery<TunnelDetailsResponse>({
-    queryKey: ["cloudflare-tunnel", tunnelId],
-    queryFn: async () => {
-      if (!tunnelId) {
-        throw new Error("Tunnel ID is required");
-      }
-
-      const response = await fetch(
-        `/api/settings/cloudflare/tunnels/${tunnelId}`,
-        {
-          credentials: "include",
-        },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch tunnel details",
-        }));
-        throw new Error(errorData.message || "Failed to fetch tunnel");
-      }
-
-      return response.json();
-    },
-    enabled: !!tunnelId,
-    staleTime: 60000, // 1 minute - matches backend cache TTL
-    retry: (failureCount, error) => {
-      // Don't retry on 401/403/404 errors
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not found")
-        ) {
-          return false;
-        }
-      }
-      return failureCount < 2;
-    },
-  });
-}
-
 // Hook for retrieving tunnel configuration
 export function useCloudfareTunnelConfig(tunnelId: string | undefined) {
-  return useQuery<TunnelConfigResponse>({
+  return useQuery<CloudflareTunnelConfigResponse>({
     queryKey: ["cloudflare-tunnel-config", tunnelId],
     queryFn: async () => {
       if (!tunnelId) {

@@ -8,21 +8,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Channel, ServerEvent } from "@mini-infra/types";
-import type { CreateManualFrontendRequest } from "@mini-infra/types";
+import type { CreateManualFrontendRequest, StartConnectContainerResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
 
 // ====================
 // API Function
 // ====================
-
-interface StartConnectContainerResponse {
-  success: boolean;
-  data: {
-    started: boolean;
-    operationId: string;
-    environmentId: string;
-  };
-}
 
 async function startConnectContainer(
   request: CreateManualFrontendRequest,

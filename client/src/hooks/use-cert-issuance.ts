@@ -8,28 +8,15 @@
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Channel, ServerEvent } from "@mini-infra/types";
+import type { CreateCertificateRequest, StartCertIssuanceResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
 
 // ====================
 // API Function
 // ====================
 
-interface IssueCertificateRequest {
-  domains: string[];
-  primaryDomain: string;
-  autoRenew?: boolean;
-}
-
-interface StartCertIssuanceResponse {
-  success: boolean;
-  data: {
-    started: boolean;
-    operationId: string;
-  };
-}
-
 async function startCertIssuance(
-  request: IssueCertificateRequest,
+  request: CreateCertificateRequest,
 ): Promise<StartCertIssuanceResponse> {
   const response = await fetch("/api/tls/certificates", {
     method: "POST",
