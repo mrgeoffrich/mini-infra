@@ -52,20 +52,20 @@ updated to include `resourceOutputs` and `resourceInputs` so both payload types 
 applications page now reads `serviceTypes?.[0]` instead of the previously incorrect `services?.[0]?.serviceType`
 (which was silently returning partial service objects with only `serviceType` set).
 
-## 4. Client task-tracker registry
+## 4. Client task-tracker registry ✅ Resolved
 
-**Files:** `client/src/lib/task-type-registry.ts`,
-`client/src/components/task-tracker/task-tracker-provider.tsx`
+Resolved in `chore/task-tracker-registry-types`. `EventPayload = any` and
+`EventData = any` removed. Each registry entry uses `defineTaskTypeConfig<TStarted,
+TStep, TCompleted>()` so its normalizers are validated against the actual Socket.IO
+event payload shapes. A `RuntimeTaskTypeConfig` interface (documented variance
+boundary) is used for polymorphic access in `TaskEventListener` — the `any` payload
+params there are intentional and concentrated, not scattered across every normalizer.
 
-- `EventPayload = any` and `EventData = any` with `// eslint-disable-next-line`.
-
-  **Why:** Registry entries each handle a distinct Socket.IO event whose
-  payload shape is specific to the event. Typing the union across all
-  events would force every normalizer to discriminate on fields the
-  registry doesn't know about.
-
-  **Proper fix:** Discriminated union keyed by task type, or
-  `defineTaskTypeConfig<...>()` builder + `satisfies` at the map level.
+Also fixed: `stack:apply:service-result` event type corrected to
+`(ServiceApplyResult | ResourceResult) & { … }` — the server emits both types via
+`onProgress`; normalizers for `stack-apply`/`stack-update` discriminate via
+`'resourceType' in p`. Removed the now-unnecessary `as Array<…>` and
+`as OperationStep["status"]` casts throughout.
 
 ## 5. HAProxy action bodies
 
