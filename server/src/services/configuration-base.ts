@@ -193,9 +193,9 @@ export abstract class ConfigurationService implements IConfigurationService {
    * Get the most recent connectivity status for this service
    * @returns Latest connectivity status or null if none exists
    */
-  protected async getLatestConnectivityStatus(): Promise<Record<string, unknown> | null> {
+  protected async getLatestConnectivityStatus(): Promise<ConnectivityStatusRow | null> {
     try {
-      return await this.prisma.connectivityStatus.findFirst({
+      const record = await this.prisma.connectivityStatus.findFirst({
         where: {
           service: this.category as ConnectivityService,
         },
@@ -203,6 +203,19 @@ export abstract class ConfigurationService implements IConfigurationService {
           checkedAt: "desc",
         },
       });
+      if (!record) return null;
+      return {
+        status: record.status,
+        checkedAt: record.checkedAt,
+        lastSuccessfulAt: record.lastSuccessfulAt ?? undefined,
+        responseTimeMs:
+          record.responseTimeMs != null
+            ? Number(record.responseTimeMs)
+            : undefined,
+        errorMessage: record.errorMessage ?? undefined,
+        errorCode: record.errorCode ?? undefined,
+        metadata: record.metadata ?? undefined,
+      };
     } catch (error) {
       servicesLogger().error(
         {
@@ -214,4 +227,22 @@ export abstract class ConfigurationService implements IConfigurationService {
       return null;
     }
   }
+}
+
+/**
+ * Narrow DTO returned by {@link ConfigurationService.getLatestConnectivityStatus}.
+ *
+ * Prisma stores `responseTimeMs` as `BigInt` and optional fields as `null`.
+ * This type converts both to the JS-friendly forms callers expect:
+ *  - `BigInt | null` → `number | undefined`
+ *  - `T | null`     → `T | undefined`
+ */
+export interface ConnectivityStatusRow {
+  status: string;
+  checkedAt: Date;
+  lastSuccessfulAt: Date | undefined;
+  responseTimeMs: number | undefined;
+  errorMessage: string | undefined;
+  errorCode: string | undefined;
+  metadata: string | undefined;
 }

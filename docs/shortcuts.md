@@ -99,25 +99,19 @@ Resolved in `chore/haproxy-action-body-types`.
 - With the above three fixes the fallback object literal is directly assignable to `ContainerConfig`
   — the `as unknown as ContainerConfig` cast is gone.
 
-## 6. Connectivity status reads
+## 6. Connectivity status reads ✅ Resolved
 
-**Files:** `server/src/services/azure-storage-service.ts`,
-`server/src/services/cloudflare/cloudflare-service.ts`,
-`server/src/services/docker-config.ts`,
-`server/src/services/github-service.ts`,
-`server/src/services/github-app/github-app-validation.ts`,
-`server/src/services/tls/tls-config.ts`
+Resolved in `chore/connectivity-status-dto`. `getLatestConnectivityStatus()` now
+returns `Promise<ConnectivityStatusRow | null>` instead of `Promise<Record<string,
+unknown> | null>`. The `ConnectivityStatusRow` DTO (exported from
+`configuration-base.ts`) converts Prisma's mismatched types at the source:
 
-- Each `getHealthStatus()` reads the return of
-  `getLatestConnectivityStatus()` (which returns `Record<string, unknown>`)
-  via a local `const row = latestStatus as { ... }` cast.
+- `BigInt | null` → `number | undefined` for `responseTimeMs`
+- `T | null` → `T | undefined` for all other optional fields
 
-  **Why:** Typing `getLatestConnectivityStatus` to the full Prisma
-  `ConnectivityStatus` payload triggers `Date | null` vs `Date | undefined`
-  / `bigint` vs `number` mismatches at every caller.
-
-  **Proper fix:** Return a narrow DTO from `getLatestConnectivityStatus`
-  that already converts nullable fields.
+All six `getHealthStatus()` callers drop their identical `const row = latestStatus as
+{ ... }` cast blocks and use `latestStatus` directly. The `GitHubAppValidationContext`
+interface in `github-app-constants.ts` is updated to match.
 
 ## 7. Client zod-resolver casts
 

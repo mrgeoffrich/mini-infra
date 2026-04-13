@@ -2,6 +2,7 @@ import { ErrorMapper } from "../circuit-breaker";
 import type { Logger } from "pino";
 import type { ConnectivityStatusType } from "@mini-infra/types";
 import type { CircuitBreaker } from "../circuit-breaker";
+import type { ConnectivityStatusRow } from "../configuration-base";
 
 // ====================
 // API Configuration
@@ -113,5 +114,5 @@ export interface GitHubAppValidationContext extends GitHubAppContext {
     metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void>;
-  getLatestConnectivityStatus(): Promise<Record<string, unknown> | null>;
+  getLatestConnectivityStatus(): Promise<ConnectivityStatusRow | null>;
 }
