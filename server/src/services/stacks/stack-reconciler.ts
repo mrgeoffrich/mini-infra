@@ -1,23 +1,14 @@
-import { randomBytes } from 'crypto';
-import Docker from 'dockerode';
 import type { Logger } from 'pino';
 import { Prisma, PrismaClient } from '@prisma/client';
 import {
   StackPlan,
-  PlanWarning,
-  ServiceAction,
-  FieldDiff,
   StackServiceDefinition,
-  StackDefinition,
-  StackConfigFile,
-  StackContainerConfig,
   StackNetwork,
   StackParameterDefinition,
   StackParameterValue,
   StackVolume,
   StackResourceOutput,
   StackResourceInput,
-  StackServiceRouting,
   StackTlsCertificate,
   StackDnsRecord,
   StackTunnelIngress,
@@ -27,46 +18,30 @@ import {
   DestroyResult,
   ServiceApplyResult,
   ResourceResult,
-  serializeStack,
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
-import { computeDefinitionHash } from './definition-hash';
-
-/**
- * Minimal shape of the loaded stack record that the private apply/update
- * helpers operate on. Callers load different include sets (`apply()` adds
- * `template`, `update()` doesn't) so we only require the common fields
- * actually used by these helpers.
- */
-interface StackWithReconcilerContext {
-  id: string;
-  environmentId: string | null;
-  name: string;
-  version: number;
-}
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { servicesLogger } from '../../lib/logger-factory';
-import { initialDeploymentMachine, type InitialDeploymentContext } from '../haproxy/initial-deployment-state-machine';
-import { blueGreenDeploymentMachine, type BlueGreenDeploymentContext } from '../haproxy/blue-green-deployment-state-machine';
-import { blueGreenUpdateMachine, type BlueGreenUpdateContext } from '../haproxy/blue-green-update-state-machine';
-import { removalDeploymentMachine, type RemovalDeploymentContext } from '../haproxy/removal-deployment-state-machine';
-import { runStateMachineToCompletion } from './state-machine-runner';
-import type { HAProxyDataPlaneClient } from '../haproxy';
-import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
 import {
   buildStackTemplateContext,
   buildContainerMap,
   mergeParameterValues,
-  toServiceDefinition,
   resolveServiceConfigs,
-  prepareServiceContainer,
 } from './utils';
 import { runPostInstallActions } from './post-install-actions';
+import { buildAppliedSnapshot } from './stack-applied-snapshot';
+import { recordDeploymentFailure } from './stack-deployment-logger';
+import { StackInfraResourceManager } from './stack-infra-resource-manager';
+import { StackPlanComputer } from './stack-plan-computer';
+import { StackServiceHandlers, type ServiceHandlerContext } from './stack-service-handlers';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
+  private infraManager: StackInfraResourceManager;
+  private planComputer: StackPlanComputer;
+  private serviceHandlers: StackServiceHandlers;
 
   constructor(
     private dockerExecutor: DockerExecutorService,
@@ -75,440 +50,15 @@ export class StackReconciler {
     private resourceReconciler?: StackResourceReconciler
   ) {
     this.containerManager = new StackContainerManager(dockerExecutor);
-  }
-
-  /**
-   * Create Docker networks and InfraResource records for resource outputs.
-   * Returns a map of purpose → Docker network name for outputs.
-   */
-  private async reconcileInfraOutputs(
-    stack: { id: string; environmentId: string | null; environment?: { name: string } | null },
-    resourceOutputs: StackResourceOutput[],
-    log: Logger
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
-
-    for (const output of resourceOutputs) {
-      if (output.type !== 'docker-network') {
-        log.warn({ type: output.type }, 'Unsupported infra resource type, skipping');
-        continue;
-      }
-
-      const scope = stack.environmentId ? 'environment' : 'host';
-      const name = stack.environmentId
-        ? `${stack.environment!.name}-${output.purpose}`
-        : `mini-infra-${output.purpose}`;
-
-      // Ensure Docker network exists
-      const exists = await this.dockerExecutor.networkExists(name);
-      if (!exists) {
-        log.info({ network: name, purpose: output.purpose, scope }, 'Creating infra resource network');
-        const labels: Record<string, string> = {
-          'mini-infra.infra-resource': 'true',
-          'mini-infra.resource-purpose': output.purpose,
-          'mini-infra.stack-id': stack.id,
-        };
-        if (stack.environmentId) {
-          labels['mini-infra.environment'] = stack.environmentId;
-        }
-        await this.dockerExecutor.createNetwork(name, '', { driver: 'bridge', labels });
-      }
-
-      // Upsert InfraResource record
-      // Use findFirst + create/update instead of upsert because host-scoped resources
-      // have environmentId=null, and SQLite treats NULLs as distinct in unique constraints.
-      // The upsert approach used a '__host__' sentinel which violates the FK to Environment.
-      const existing = await this.prisma.infraResource.findFirst({
-        where: {
-          type: output.type,
-          purpose: output.purpose,
-          scope,
-          environmentId: stack.environmentId ?? null,
-        },
-      });
-      if (existing) {
-        await this.prisma.infraResource.update({
-          where: { id: existing.id },
-          data: { stackId: stack.id, name },
-        });
-      } else {
-        await this.prisma.infraResource.create({
-          data: {
-            type: output.type,
-            purpose: output.purpose,
-            scope,
-            environmentId: stack.environmentId ?? null,
-            stackId: stack.id,
-            name,
-          },
-        });
-      }
-
-      result.set(output.purpose, name);
-    }
-
-    return result;
-  }
-
-  /**
-   * Resolve resource inputs to Docker network names by querying InfraResource.
-   * Tries environment-scoped first, then falls back to host-scoped.
-   */
-  private async resolveInfraInputs(
-    environmentId: string | null,
-    resourceInputs: StackResourceInput[],
-    log: Logger
-  ): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
-
-    for (const input of resourceInputs) {
-      if (input.type !== 'docker-network') continue;
-
-      let resource = null;
-
-      // Try environment-scoped first
-      if (environmentId) {
-        resource = await this.prisma.infraResource.findUnique({
-          where: {
-            type_purpose_scope_environmentId: {
-              type: input.type,
-              purpose: input.purpose,
-              scope: 'environment',
-              environmentId,
-            },
-          },
-        });
-      }
-
-      // Fall back to host-scoped
-      if (!resource) {
-        resource = await this.prisma.infraResource.findFirst({
-          where: {
-            type: input.type,
-            purpose: input.purpose,
-            scope: 'host',
-            environmentId: null,
-          },
-        });
-      }
-
-      if (resource) {
-        result.set(input.purpose, resource.name);
-      } else if (!input.optional) {
-        log.warn({ type: input.type, purpose: input.purpose }, 'Required infra resource input not found');
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Connect a container to infra resource networks declared in joinResourceNetworks.
-   */
-  private async joinResourceNetworks(
-    containerId: string,
-    serviceDef: StackServiceDefinition,
-    infraNetworkMap: Map<string, string>,
-    log: Logger
-  ): Promise<void> {
-    for (const purpose of serviceDef.containerConfig.joinResourceNetworks ?? []) {
-      const netName = infraNetworkMap.get(purpose);
-      if (!netName) continue;
-      try {
-        await this.containerManager.connectToNetwork(containerId, netName);
-        log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined infra resource network');
-      } catch (err) {
-        // Ignore "already connected" errors
-        const e = err as { message?: string; statusCode?: number };
-        const msg = e?.message || '';
-        if (!msg.includes('already exists') && e?.statusCode !== 403) {
-          log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: msg }, 'Failed to join infra resource network');
-        }
-      }
-    }
-  }
-
-  /**
-   * Connect the mini-infra container itself to resource output networks with joinSelf: true.
-   */
-  private async joinSelfToOutputNetworks(
-    resourceOutputs: StackResourceOutput[],
-    outputNetworkMap: Map<string, string>,
-    log: Logger
-  ): Promise<void> {
-    const { getOwnContainerId } = await import('../self-update');
-    const selfId = getOwnContainerId();
-    if (!selfId) {
-      log.debug('Not running in Docker, skipping joinSelf');
-      return;
-    }
-
-    const docker = this.dockerExecutor.getDockerClient();
-
-    for (const output of resourceOutputs) {
-      if (!output.joinSelf || output.type !== 'docker-network') continue;
-
-      const netName = outputNetworkMap.get(output.purpose);
-      if (!netName) continue;
-
-      try {
-        const network = docker.getNetwork(netName);
-        await network.connect({ Container: selfId });
-        log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
-      } catch (err) {
-        const e = err as { message?: string; statusMessage?: string; statusCode?: number };
-        const msg = e?.message || e?.statusMessage || '';
-        if (!msg.includes('already exists') && e?.statusCode !== 403) {
-          log.warn({ network: netName, purpose: output.purpose, error: msg }, 'Failed to join self to infra resource network');
-        } else {
-          log.debug({ network: netName }, 'Already connected to infra resource network');
-        }
-      }
-    }
+    this.infraManager = new StackInfraResourceManager(dockerExecutor, prisma, this.containerManager);
+    this.planComputer = new StackPlanComputer(prisma, dockerExecutor, resourceReconciler);
+    this.serviceHandlers = new StackServiceHandlers(
+      prisma, dockerExecutor, this.containerManager, this.infraManager, routingManager
+    );
   }
 
   async plan(stackId: string): Promise<StackPlan> {
-    const log = servicesLogger().child({ operation: 'stack-plan', stackId });
-
-    // 1. Load stack with services, environment, and template version info
-    const stack = await this.prisma.stack.findUniqueOrThrow({
-      where: { id: stackId },
-      include: {
-        services: { orderBy: { order: 'asc' } },
-        environment: true,
-        template: { select: { currentVersion: { select: { version: true } } } },
-      },
-    });
-
-    log.info({ stackName: stack.name, serviceCount: stack.services.length }, 'Computing plan');
-
-    // 1b. Load current stack resources for resource reconciliation
-    const currentResources = this.resourceReconciler
-      ? await this.prisma.stackResource.findMany({ where: { stackId } })
-      : [];
-
-    // 2. Build template context with parameters and resolve service definitions
-    const params = mergeParameterValues(
-      (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
-      (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
-    );
-    const templateContext = buildStackTemplateContext(stack, params);
-
-    // 3. Resolve service definitions (templates + type coercion) and compute hashes
-    const { resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
-
-    // 4. Query running containers for this stack
-    const docker = this.dockerExecutor.getDockerClient();
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { label: [`mini-infra.stack-id=${stackId}`] },
-    });
-
-    // 4b. Detect port and name conflicts with containers outside this stack
-    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
-    const planWarnings = await this.detectConflicts(resolvedDefinitions, stackId, projectName, docker);
-
-    const containerMap = buildContainerMap(containers);
-
-    // 5. Compare desired services against running containers
-    const actions: ServiceAction[] = [];
-    const snapshot = stack.lastAppliedSnapshot as unknown as StackDefinition | null;
-
-    for (const svc of stack.services) {
-      const desiredHash = serviceHashes.get(svc.serviceName)!;
-
-      // AdoptedWeb services reference external containers — different lookup strategy
-      if (svc.serviceType === 'AdoptedWeb') {
-        const adopted = svc.adoptedContainer as unknown as { containerName: string; listeningPort: number } | null;
-        if (!adopted) {
-          planWarnings.push({
-            type: 'adopted-container' as const,
-            serviceName: svc.serviceName,
-            containerName: 'unknown',
-            issue: 'missing' as const,
-            message: `AdoptedWeb service "${svc.serviceName}" has no adoptedContainer configuration`,
-          });
-          actions.push({ serviceName: svc.serviceName, action: 'no-op' });
-          continue;
-        }
-
-        // Look up the adopted container by name
-        const adoptedContainers = await docker.listContainers({
-          all: true,
-          filters: { name: [adopted.containerName] },
-        });
-        const target = adoptedContainers.find((c) =>
-          c.Names.some((n) => n.replace(/^\//, '') === adopted.containerName)
-        );
-
-        if (!target) {
-          planWarnings.push({
-            type: 'adopted-container' as const,
-            serviceName: svc.serviceName,
-            containerName: adopted.containerName,
-            issue: 'missing' as const,
-            message: `Adopted container "${adopted.containerName}" not found`,
-          });
-        } else if (target.State !== 'running') {
-          planWarnings.push({
-            type: 'adopted-container' as const,
-            serviceName: svc.serviceName,
-            containerName: adopted.containerName,
-            issue: 'not-running' as const,
-            message: `Adopted container "${adopted.containerName}" is ${target.State}`,
-          });
-        }
-
-        // Check if routing has been applied before
-        const snapshotSvc = snapshot?.services?.find((s) => s.serviceName === svc.serviceName);
-        if (!snapshotSvc) {
-          // First deploy — need to set up routing
-          actions.push({
-            serviceName: svc.serviceName,
-            action: 'create',
-            reason: 'routing not configured',
-            desiredImage: `adopted:${adopted.containerName}`,
-          });
-        } else {
-          // Check if routing config changed by comparing hashes
-          const snapshotHash = computeDefinitionHash(snapshotSvc);
-          if (snapshotHash === desiredHash) {
-            actions.push({ serviceName: svc.serviceName, action: 'no-op' });
-          } else {
-            const diffs = this.generateDiffs(svc.serviceName, snapshot, toServiceDefinition(svc));
-            actions.push({
-              serviceName: svc.serviceName,
-              action: 'recreate',
-              reason: 'routing configuration changed',
-              diff: diffs.length > 0 ? diffs : undefined,
-              desiredImage: `adopted:${adopted.containerName}`,
-            });
-          }
-        }
-        continue;
-      }
-
-      const container = containerMap.get(svc.serviceName);
-      const desiredImage = `${svc.dockerImage}:${svc.dockerTag}`;
-
-      if (!container) {
-        actions.push({
-          serviceName: svc.serviceName,
-          action: 'create',
-          reason: 'service not deployed',
-          desiredImage,
-        });
-        continue;
-      }
-
-      const currentHash = container.Labels['mini-infra.definition-hash'];
-      const currentImage = container.Image;
-      const isRunning = container.State === 'running';
-
-      if (!isRunning) {
-        actions.push({
-          serviceName: svc.serviceName,
-          action: 'recreate',
-          reason: 'container not running',
-          currentImage,
-          desiredImage,
-        });
-        continue;
-      }
-
-      if (currentHash === desiredHash) {
-        actions.push({
-          serviceName: svc.serviceName,
-          action: 'no-op',
-          currentImage,
-          desiredImage,
-        });
-        continue;
-      }
-
-      // Hash mismatch — generate diffs
-      const diffs = this.generateDiffs(svc.serviceName, snapshot, toServiceDefinition(svc));
-      const reason = this.buildReason(currentImage, desiredImage, diffs);
-
-      actions.push({
-        serviceName: svc.serviceName,
-        action: 'recreate',
-        reason,
-        diff: diffs.length > 0 ? diffs : undefined,
-        currentImage,
-        desiredImage,
-      });
-    }
-
-    // 6. Detect orphaned containers
-    const definedServiceNames = new Set(stack.services.map((s) => s.serviceName));
-    for (const [serviceName, container] of containerMap) {
-      if (!definedServiceNames.has(serviceName)) {
-        actions.push({
-          serviceName,
-          action: 'remove',
-          reason: 'service removed from definition',
-          currentImage: container.Image,
-        });
-      }
-    }
-
-    const templateRef = stack as { template?: { currentVersion?: { version: number } | null } | null };
-    const templateUpdateAvailable =
-      stack.templateVersion != null &&
-      templateRef.template?.currentVersion?.version != null &&
-      templateRef.template.currentVersion.version > stack.templateVersion;
-
-    // Compute resource actions (TLS, DNS, Tunnel)
-    const resourceActions = this.resourceReconciler
-      ? this.resourceReconciler.planResources(
-          {
-            tlsCertificates: (stack.tlsCertificates as unknown as StackTlsCertificate[]) ?? [],
-            dnsRecords: (stack.dnsRecords as unknown as StackDnsRecord[]) ?? [],
-            tunnelIngress: (stack.tunnelIngress as unknown as StackTunnelIngress[]) ?? [],
-          },
-          currentResources
-        )
-      : [];
-
-    // Validate resource references (services referencing non-existent resources)
-    if (this.resourceReconciler) {
-      const serviceDefs = [...resolvedDefinitions.values()];
-      const refWarnings = this.resourceReconciler.validateResourceReferences(
-        serviceDefs,
-        {
-          tlsCertificates: (stack.tlsCertificates as unknown as StackTlsCertificate[]) ?? [],
-          dnsRecords: (stack.dnsRecords as unknown as StackDnsRecord[]) ?? [],
-          tunnelIngress: (stack.tunnelIngress as unknown as StackTunnelIngress[]) ?? [],
-        },
-      );
-      planWarnings.push(...refWarnings);
-    }
-
-    const plan: StackPlan = {
-      stackId,
-      stackName: stack.name,
-      stackVersion: stack.version,
-      planTime: new Date().toISOString(),
-      actions,
-      resourceActions,
-      hasChanges: actions.some((a) => a.action !== 'no-op') || resourceActions.some((a) => a.action !== 'no-op'),
-      templateUpdateAvailable,
-      warnings: planWarnings.length > 0 ? planWarnings : undefined,
-    };
-
-    log.info(
-      {
-        hasChanges: plan.hasChanges,
-        creates: actions.filter((a) => a.action === 'create').length,
-        recreates: actions.filter((a) => a.action === 'recreate').length,
-        removes: actions.filter((a) => a.action === 'remove').length,
-        noOps: actions.filter((a) => a.action === 'no-op').length,
-      },
-      'Plan computed'
-    );
-
-    return plan;
+    return this.planComputer.compute(stackId);
   }
 
   async apply(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
@@ -575,10 +125,10 @@ export class StackReconciler {
       // 5a-i. Reconcile infra resource outputs (creates Docker networks + InfraResource records)
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
       const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
-      const outputNetworkMap = await this.reconcileInfraOutputs(stack, resourceOutputs, log);
+      const outputNetworkMap = await this.infraManager.reconcileOutputs(stack, resourceOutputs, log);
 
       // 5a-ii. Resolve infra resource inputs from other stacks
-      const inputNetworkMap = await this.resolveInfraInputs(stack.environmentId, resourceInputs, log);
+      const inputNetworkMap = await this.infraManager.resolveInputs(stack.environmentId, resourceInputs, log);
 
       // 5a-iii. Merge output + input into a combined infra network map
       const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
@@ -695,28 +245,19 @@ export class StackReconciler {
           throw new Error(`StackRoutingManager is required for ${svc?.serviceType} service "${action.serviceName}"`);
         }
 
+        const handlerCtx: ServiceHandlerContext = {
+          action, svc: svc!, serviceDef, projectName, stackId, stack,
+          networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+          infraNetworkMap, actionStart, log,
+        };
+
         try {
-          if (isAdoptedWeb) {
-            const result = await this.applyAdoptedWeb(
-              action, svc!, serviceDef!, projectName, stackId, stack,
-              serviceHashes, actionStart, log, infraNetworkMap
-            );
-            serviceResults.push(result);
-          } else if (isStatelessWeb) {
-            const result = await this.applyStatelessWeb(
-              action, svc!, serviceDef!, projectName, stackId, stack,
-              networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log, infraNetworkMap
-            );
-            serviceResults.push(result);
-          } else {
-            const result = await this.applyStateful(
-              action, svc!, serviceDef, projectName, stackId, stack,
-              networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-              actionStart, log, infraNetworkMap
-            );
-            serviceResults.push(result);
-          }
+          const result = isAdoptedWeb
+            ? await this.serviceHandlers.applyAdoptedWeb(handlerCtx)
+            : isStatelessWeb
+              ? await this.serviceHandlers.applyStatelessWeb(handlerCtx)
+              : await this.serviceHandlers.applyStateful(handlerCtx);
+          serviceResults.push(result);
         } catch (err: unknown) {
           log.error({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Action failed');
           serviceResults.push({
@@ -737,7 +278,7 @@ export class StackReconciler {
       }
 
       // 7b. Connect mini-infra container to resource output networks with joinSelf: true
-      await this.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
+      await this.infraManager.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
 
       // 7c. Run post-install actions declared by the template (failures are non-fatal)
       await runPostInstallActions(stack.template?.name, {
@@ -757,7 +298,7 @@ export class StackReconciler {
         data: {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: this.buildAppliedSnapshot(stack),
+          lastAppliedSnapshot: buildAppliedSnapshot(stack),
           status: resultStatus,
           removedAt: null,
         },
@@ -789,7 +330,7 @@ export class StackReconciler {
     } catch (err: unknown) {
       const duration = Date.now() - startTime;
       log.error({ error: (err instanceof Error ? err.message : String(err)) }, 'Apply failed unexpectedly');
-      await this.recordDeploymentFailure(stackId, 'apply', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
+      await recordDeploymentFailure(this.prisma, stackId, 'apply', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
       throw err;
     }
   }
@@ -856,8 +397,8 @@ export class StackReconciler {
       // Reconcile infra resource outputs and inputs
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
       const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
-      const outputNetworkMap = await this.reconcileInfraOutputs(stack, resourceOutputs, log);
-      const inputNetworkMap = await this.resolveInfraInputs(stack.environmentId, resourceInputs, log);
+      const outputNetworkMap = await this.infraManager.reconcileOutputs(stack, resourceOutputs, log);
+      const inputNetworkMap = await this.infraManager.resolveInputs(stack.environmentId, resourceInputs, log);
       const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
 
       const docker = this.dockerExecutor.getDockerClient();
@@ -879,32 +420,22 @@ export class StackReconciler {
         const serviceDef = resolvedDefinitions.get(action.serviceName) ?? null;
         const actionStart = Date.now();
 
+        const handlerCtx: ServiceHandlerContext = {
+          action, svc: svc!, serviceDef, projectName, stackId, stack,
+          networkNames, serviceHashes, resolvedConfigsMap, containerByService,
+          infraNetworkMap, actionStart, log,
+        };
+
         let result: ServiceApplyResult;
 
         if (svc?.serviceType === 'AdoptedWeb' && serviceDef) {
-          result = await this.applyAdoptedWeb(
-            action, svc, serviceDef, projectName, stackId, stack,
-            serviceHashes, actionStart, log, infraNetworkMap
-          );
+          result = await this.serviceHandlers.applyAdoptedWeb(handlerCtx);
         } else if (svc?.serviceType === 'StatelessWeb' && serviceDef && action.action === 'recreate') {
-          result = await this.updateStatelessWeb(
-            action, svc, serviceDef, projectName, stackId, stack,
-            networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, infraNetworkMap
-          );
+          result = await this.serviceHandlers.updateStatelessWeb(handlerCtx);
         } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
-          // No existing container (create/remove) — use the standard apply path
-          result = await this.applyStatelessWeb(
-            action, svc!, serviceDef, projectName, stackId, stack,
-            networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, infraNetworkMap
-          );
+          result = await this.serviceHandlers.applyStatelessWeb(handlerCtx);
         } else {
-          result = await this.applyStateful(
-            action, svc!, serviceDef, projectName, stackId, stack,
-            networkNames, serviceHashes, resolvedConfigsMap,
-            containerByService, actionStart, log, infraNetworkMap
-          );
+          result = await this.serviceHandlers.applyStateful(handlerCtx);
         }
 
         result = { ...result, action: 'update' };
@@ -922,7 +453,7 @@ export class StackReconciler {
           status: resultStatus,
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: this.buildAppliedSnapshot(stack),
+          lastAppliedSnapshot: buildAppliedSnapshot(stack),
         },
       });
 
@@ -950,7 +481,7 @@ export class StackReconciler {
     } catch (err: unknown) {
       const duration = Date.now() - startTime;
       log.error({ error: (err instanceof Error ? err.message : String(err)) }, 'Update failed unexpectedly');
-      await this.recordDeploymentFailure(stackId, 'update', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
+      await recordDeploymentFailure(this.prisma, stackId, 'update', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
       throw err;
     }
   }
@@ -1213,938 +744,5 @@ export class StackReconciler {
       volumesRemoved,
       duration,
     };
-  }
-
-  private async applyStateful(
-    action: ServiceAction,
-    svc: Prisma.StackServiceGetPayload<true>,
-    serviceDef: StackServiceDefinition | null,
-    projectName: string,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    networkNames: string[],
-    serviceHashes: Map<string, string>,
-    resolvedConfigsMap: Map<string, StackConfigFile[]>,
-    containerByService: Map<string, Docker.ContainerInfo>,
-    actionStart: number,
-    log: Logger,
-    infraNetworkMap: Map<string, string> = new Map()
-  ): Promise<ServiceApplyResult> {
-    switch (action.action) {
-      case 'create': {
-        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
-        log.info({ service: action.serviceName }, 'Creating service');
-
-        // Remove any pre-existing container with the same name (e.g. from a failed apply or manual creation)
-        await this.removeConflictingContainer(`${projectName}-${action.serviceName}`, stackId, log);
-
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
-
-        const containerId = await this.containerManager.createAndStartContainer(
-          action.serviceName,
-          serviceDef,
-          {
-            projectName,
-            stackId,
-            stackName: stack.name,
-            stackVersion: stack.version,
-            environmentId: stack.environmentId,
-            definitionHash: serviceHashes.get(action.serviceName)!,
-            networkNames,
-          }
-        );
-
-        // Join external networks if specified (e.g., HAProxy network for cloudflared)
-        if (serviceDef.containerConfig.joinNetworks?.length) {
-          for (const netName of serviceDef.containerConfig.joinNetworks) {
-            if (!netName) continue;
-            try {
-              await this.containerManager.connectToNetwork(containerId, netName);
-              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
-            } catch (err: unknown) {
-              log.warn({ service: action.serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
-            }
-          }
-        }
-
-        // Join infra resource networks by purpose
-        await this.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
-
-        const healthy = await this.containerManager.waitForHealthy(containerId);
-
-        return {
-          serviceName: action.serviceName,
-          action: 'create',
-          success: healthy,
-          duration: Date.now() - actionStart,
-          containerId,
-          error: healthy ? undefined : 'Healthcheck timeout',
-        };
-      }
-
-      case 'recreate': {
-        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
-        log.info({ service: action.serviceName }, 'Recreating service');
-
-        const oldContainer = containerByService.get(action.serviceName);
-
-        if (oldContainer) {
-          await this.containerManager.stopAndRemoveContainer(oldContainer.Id).catch(() => {
-            log.warn({ service: action.serviceName }, 'Failed to stop old container, continuing');
-          });
-        }
-
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
-
-        const containerId = await this.containerManager.createAndStartContainer(
-          action.serviceName,
-          serviceDef,
-          {
-            projectName,
-            stackId,
-            stackName: stack.name,
-            stackVersion: stack.version,
-            environmentId: stack.environmentId,
-            definitionHash: serviceHashes.get(action.serviceName)!,
-            networkNames,
-          }
-        );
-
-        // Join external networks if specified (e.g., HAProxy network for cloudflared)
-        if (serviceDef.containerConfig.joinNetworks?.length) {
-          for (const netName of serviceDef.containerConfig.joinNetworks) {
-            if (!netName) continue;
-            try {
-              await this.containerManager.connectToNetwork(containerId, netName);
-              log.info({ service: action.serviceName, network: netName }, 'Joined external network');
-            } catch (err: unknown) {
-              log.warn({ service: action.serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
-            }
-          }
-        }
-
-        // Join infra resource networks by purpose
-        await this.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
-
-        const healthy = await this.containerManager.waitForHealthy(containerId);
-
-        if (!healthy) {
-          log.error({ service: action.serviceName, containerId }, 'Healthcheck failed after recreate');
-        }
-
-        return {
-          serviceName: action.serviceName,
-          action: 'recreate',
-          success: healthy,
-          duration: Date.now() - actionStart,
-          containerId,
-          error: healthy ? undefined : 'Healthcheck timeout',
-        };
-      }
-
-      case 'remove': {
-        log.info({ service: action.serviceName }, 'Removing service');
-        const container = containerByService.get(action.serviceName);
-        if (container) {
-          await this.containerManager.stopAndRemoveContainer(container.Id);
-        }
-
-        return {
-          serviceName: action.serviceName,
-          action: 'remove',
-          success: true,
-          duration: Date.now() - actionStart,
-        };
-      }
-
-      default:
-        throw new Error(`Unknown action: ${action.action}`);
-    }
-  }
-
-  /**
-   * Build state machine context from stack service definition and routing config.
-   * Maps stack fields to the flat context fields expected by the deployment state machine actions.
-   */
-  private async buildStateMachineContext(
-    action: ServiceAction,
-    serviceDef: StackServiceDefinition,
-    projectName: string,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    serviceHashes: Map<string, string>,
-    infraNetworkMap: Map<string, string>,
-    networkNames: string[] = []
-  ): Promise<Record<string, unknown>> {
-    const routing = serviceDef.routing!;
-    const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
-    const containerName = `${projectName}-${action.serviceName}-${suffix}`;
-    const envValidation = new EnvironmentValidationService();
-    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId!);
-
-    if (!haproxyCtx) {
-      throw new Error(`HAProxy environment context not available for environment ${stack.environmentId}`);
-    }
-
-    const dockerImage = `${serviceDef.dockerImage}:${serviceDef.dockerTag}`;
-    const envRecord = serviceDef.containerConfig.env ?? {};
-
-    // Resolve TLS from stack-level resource if referenced
-    let enableSsl = false;
-    let tlsCertificateId: string | undefined;
-    if (routing.tlsCertificate) {
-      const tlsResource = await this.prisma.stackResource.findFirst({
-        where: { stackId, resourceType: 'tls', resourceName: routing.tlsCertificate },
-      });
-      if (tlsResource?.externalId) {
-        enableSsl = true;
-        tlsCertificateId = tlsResource.externalId;
-      }
-    }
-
-    // Build networks list including environment networks, stack networks, and joinNetworks
-    const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
-    for (const dockerName of infraNetworkMap.values()) {
-      if (!containerNetworks.includes(dockerName)) {
-        containerNetworks.push(dockerName);
-      }
-    }
-    for (const netName of networkNames) {
-      if (!containerNetworks.includes(netName)) {
-        containerNetworks.push(netName);
-      }
-    }
-    if (serviceDef.containerConfig.joinNetworks?.length) {
-      for (const netName of serviceDef.containerConfig.joinNetworks) {
-        if (netName && !containerNetworks.includes(netName)) {
-          containerNetworks.push(netName);
-        }
-      }
-    }
-
-    return {
-      deploymentId: `stack-${stackId}-${action.serviceName}-${Date.now()}`,
-      configurationId: stackId,
-      sourceType: 'stack',
-      applicationName: `stk-${stack.name}-${action.serviceName}`,
-      dockerImage,
-
-      environmentId: haproxyCtx.environmentId,
-      environmentName: haproxyCtx.environmentName,
-      haproxyContainerId: haproxyCtx.haproxyContainerId,
-      haproxyNetworkName: haproxyCtx.haproxyNetworkName,
-
-      triggerType: 'manual',
-      startTime: Date.now(),
-
-      // Source-agnostic fields
-      hostname: routing.hostname,
-      enableSsl,
-      tlsCertificateId,
-      certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
-      healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
-      healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
-        ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
-        : 2000,
-      healthCheckRetries: serviceDef.containerConfig.healthcheck?.retries ?? 2,
-      containerPorts: serviceDef.containerConfig.ports ?? [],
-      containerVolumes: [],
-      containerEnvironment: envRecord,
-      containerLabels: {
-        'mini-infra.stack': stack.name,
-        'mini-infra.stack-id': stackId,
-        'mini-infra.service': action.serviceName,
-        'mini-infra.environment': stack.environmentId,
-        'mini-infra.definition-hash': serviceHashes.get(action.serviceName) ?? '',
-        'mini-infra.stack-version': String(stack.version),
-        ...(serviceDef.containerConfig.labels ?? {}),
-      },
-      containerNetworks,
-      containerPort: routing.listeningPort,
-      containerName,
-    };
-  }
-
-  /**
-   * Apply an AdoptedWeb service: find the external container, join it to the
-   * HAProxy network, and configure routing. Never creates or removes the container.
-   */
-  private async applyAdoptedWeb(
-    action: ServiceAction,
-    svc: Prisma.StackServiceGetPayload<true>,
-    serviceDef: StackServiceDefinition,
-    projectName: string,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    serviceHashes: Map<string, string>,
-    actionStart: number,
-    log: Logger,
-    infraNetworkMap: Map<string, string> = new Map()
-  ): Promise<ServiceApplyResult> {
-    const routing = serviceDef.routing;
-    if (!routing) {
-      throw new Error(`AdoptedWeb service "${action.serviceName}" requires routing configuration`);
-    }
-
-    const adopted = serviceDef.adoptedContainer;
-    if (!adopted) {
-      throw new Error(`AdoptedWeb service "${action.serviceName}" requires adoptedContainer configuration`);
-    }
-
-    switch (action.action) {
-      case 'create':
-      case 'recreate': {
-        log.info({ service: action.serviceName, containerName: adopted.containerName }, `${action.action === 'create' ? 'Creating' : 'Recreating'} AdoptedWeb routing`);
-
-        // For recreate, remove old routing first
-        if (action.action === 'recreate') {
-          try {
-            await this.cleanupAdoptedWebRouting(
-              action.serviceName, adopted.containerName, routing,
-              stackId, stack, log, false
-            );
-          } catch (err: unknown) {
-            log.warn({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to clean up old routing (continuing)');
-          }
-        }
-
-        // 1. Find the container by name
-        const docker = this.dockerExecutor.getDockerClient();
-        const containers = await docker.listContainers({
-          all: false,
-          filters: { name: [adopted.containerName] },
-        });
-        const target = containers.find((c) =>
-          c.Names.some((n) => n.replace(/^\//, '') === adopted.containerName)
-        );
-
-        if (!target) {
-          return {
-            serviceName: action.serviceName,
-            action: action.action,
-            success: false,
-            duration: Date.now() - actionStart,
-            error: `Adopted container "${adopted.containerName}" not found or not running`,
-          };
-        }
-
-        // 2. Get HAProxy context
-        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
-
-        // 3. Join container to HAProxy applications network
-        const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
-        const containerNetworks = Object.keys(target.NetworkSettings?.Networks || {});
-        if (!containerNetworks.includes(haproxyNetworkName)) {
-          log.info({ containerName: adopted.containerName, network: haproxyNetworkName }, 'Joining adopted container to HAProxy network');
-          await this.containerManager.connectToNetwork(target.Id, haproxyNetworkName);
-        }
-
-        // 4. Join to infra resource networks if specified
-        if (serviceDef.containerConfig.joinResourceNetworks?.length) {
-          await this.joinResourceNetworks(target.Id, serviceDef, infraNetworkMap, log);
-        }
-
-        // 5. Set up backend + server
-        const routingCtx: StackRoutingContext = {
-          serviceName: action.serviceName,
-          containerId: target.Id,
-          containerName: adopted.containerName,
-          routing: { ...routing, listeningPort: adopted.listeningPort },
-          environmentId: stack.environmentId!,
-          stackId,
-          stackName: stack.name,
-        };
-
-        const { backendName, serverName } = await this.routingManager!.setupBackendAndServer(
-          routingCtx, haproxyClient
-        );
-
-        // 6. Resolve TLS and configure route
-        let sslOptions: { enableSsl?: boolean; tlsCertificateId?: string } | undefined;
-        if (routing.tlsCertificate) {
-          const tlsResource = await this.prisma.stackResource.findFirst({
-            where: { stackId, resourceType: 'tls', resourceName: routing.tlsCertificate },
-          });
-          if (tlsResource?.externalId) {
-            sslOptions = { enableSsl: true, tlsCertificateId: tlsResource.externalId };
-          }
-        }
-
-        await this.routingManager!.configureRoute(routingCtx, backendName, haproxyClient, sslOptions);
-
-        // 7. Enable traffic
-        await this.routingManager!.enableTraffic(backendName, serverName, haproxyClient);
-
-        log.info({ service: action.serviceName, containerId: target.Id }, 'AdoptedWeb routing configured');
-
-        return {
-          serviceName: action.serviceName,
-          action: action.action,
-          success: true,
-          duration: Date.now() - actionStart,
-          containerId: target.Id,
-        };
-      }
-
-      case 'remove': {
-        log.info({ service: action.serviceName }, 'Removing AdoptedWeb routing (container will not be stopped)');
-
-        try {
-          await this.cleanupAdoptedWebRouting(
-            action.serviceName, adopted.containerName, routing,
-            stackId, stack, log, true
-          );
-        } catch (err: unknown) {
-          log.warn({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove routing');
-          return {
-            serviceName: action.serviceName,
-            action: 'remove',
-            success: false,
-            duration: Date.now() - actionStart,
-            error: (err instanceof Error ? err.message : String(err)),
-          };
-        }
-
-        return {
-          serviceName: action.serviceName,
-          action: 'remove',
-          success: true,
-          duration: Date.now() - actionStart,
-        };
-      }
-
-      default:
-        return {
-          serviceName: action.serviceName,
-          action: action.action,
-          success: true,
-          duration: Date.now() - actionStart,
-        };
-    }
-  }
-
-  private async applyStatelessWeb(
-    action: ServiceAction,
-    svc: Prisma.StackServiceGetPayload<true>,
-    serviceDef: StackServiceDefinition,
-    projectName: string,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    networkNames: string[],
-    serviceHashes: Map<string, string>,
-    resolvedConfigsMap: Map<string, StackConfigFile[]>,
-    containerByService: Map<string, Docker.ContainerInfo>,
-    actionStart: number,
-    log: Logger,
-    infraNetworkMap: Map<string, string> = new Map()
-  ): Promise<ServiceApplyResult> {
-    const routing = serviceDef.routing;
-    if (!routing) {
-      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
-    }
-
-    const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
-    );
-
-    switch (action.action) {
-      case 'create': {
-        log.info({ service: action.serviceName }, 'Creating StatelessWeb service via initial deployment state machine');
-
-        // Prepare config files and init commands before the state machine runs
-        await prepareServiceContainer(
-          this.containerManager,
-          svc,
-          resolvedConfigsMap.get(action.serviceName) ?? [],
-          projectName
-        );
-
-        const initialContext = {
-          ...baseContext,
-          containerId: undefined,
-          applicationReady: false,
-          haproxyConfigured: false,
-          healthChecksPassed: false,
-          frontendConfigured: false,
-          trafficEnabled: false,
-          validationErrors: 0,
-          error: undefined,
-          retryCount: 0,
-          frontendName: undefined,
-        };
-
-        const finalState = await runStateMachineToCompletion<InitialDeploymentContext>(
-          initialDeploymentMachine,
-          initialContext,
-          (actor) => actor.send({ type: 'START_DEPLOYMENT' })
-        );
-
-        const success = finalState.value === 'completed';
-        return {
-          serviceName: action.serviceName,
-          action: 'create',
-          success,
-          duration: Date.now() - actionStart,
-          containerId: finalState.context.containerId,
-          error: success ? undefined : finalState.context.error ?? 'Deployment failed',
-        };
-      }
-
-      case 'recreate': {
-        log.info({ service: action.serviceName }, 'Recreating StatelessWeb service via blue-green state machine');
-
-        const oldContainer = containerByService.get(action.serviceName);
-
-        await prepareServiceContainer(
-          this.containerManager,
-          svc,
-          resolvedConfigsMap.get(action.serviceName) ?? [],
-          projectName
-        );
-
-        const blueGreenContext = {
-          ...baseContext,
-          blueHealthy: false,
-          greenHealthy: false,
-          greenBackendConfigured: false,
-          frontendConfigured: false,
-          trafficOpenedToGreen: false,
-          trafficValidated: false,
-          blueDraining: false,
-          blueDrained: false,
-          validationErrors: 0,
-          drainStartTime: undefined,
-          monitoringStartTime: undefined,
-          error: undefined,
-          retryCount: 0,
-          activeConnections: 0,
-          oldContainerId: oldContainer?.Id,
-          newContainerId: undefined,
-          containerIpAddress: undefined,
-          frontendName: undefined,
-        };
-
-        const finalState = await runStateMachineToCompletion<BlueGreenDeploymentContext>(
-          blueGreenDeploymentMachine,
-          blueGreenContext,
-          (actor) => actor.send({ type: 'START_DEPLOYMENT' })
-        );
-
-        const success = finalState.value === 'completed';
-        return {
-          serviceName: action.serviceName,
-          action: 'recreate',
-          success,
-          duration: Date.now() - actionStart,
-          containerId: finalState.context.newContainerId,
-          error: success ? undefined : finalState.context.error ?? 'Blue-green deployment failed',
-        };
-      }
-
-      case 'remove': {
-        log.info({ service: action.serviceName }, 'Removing StatelessWeb service via removal state machine');
-
-        const container = containerByService.get(action.serviceName);
-
-        const removalContext = {
-          ...baseContext,
-          containerId: container?.Id,
-          containersToRemove: container ? [container.Id] : [],
-          lbRemovalComplete: false,
-          frontendRemoved: false,
-          dnsRemoved: false,
-          applicationStopped: false,
-          applicationRemoved: false,
-          error: undefined,
-          retryCount: 0,
-        };
-
-        const finalState = await runStateMachineToCompletion<RemovalDeploymentContext>(
-          removalDeploymentMachine,
-          removalContext,
-          (actor) => actor.send({ type: 'START_REMOVAL' })
-        );
-
-        const success = finalState.value === 'completed';
-        return {
-          serviceName: action.serviceName,
-          action: 'remove',
-          success,
-          duration: Date.now() - actionStart,
-          error: success ? undefined : finalState.context.error ?? 'Removal failed',
-        };
-      }
-
-      default:
-        throw new Error(`Unknown action: ${action.action}`);
-    }
-  }
-
-  private async updateStatelessWeb(
-    action: ServiceAction,
-    svc: Prisma.StackServiceGetPayload<true>,
-    serviceDef: StackServiceDefinition,
-    projectName: string,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    networkNames: string[],
-    serviceHashes: Map<string, string>,
-    resolvedConfigsMap: Map<string, StackConfigFile[]>,
-    containerByService: Map<string, Docker.ContainerInfo>,
-    actionStart: number,
-    log: Logger,
-    infraNetworkMap: Map<string, string> = new Map()
-  ): Promise<ServiceApplyResult> {
-    const routing = serviceDef.routing;
-    if (!routing) {
-      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
-    }
-
-    log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
-
-    const baseContext = await this.buildStateMachineContext(
-      action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
-    );
-
-    const oldContainer = containerByService.get(action.serviceName);
-
-    await prepareServiceContainer(
-      this.containerManager,
-      svc,
-      resolvedConfigsMap.get(action.serviceName) ?? [],
-      projectName
-    );
-
-    const blueGreenContext = {
-      ...baseContext,
-      blueHealthy: false,
-      greenHealthy: false,
-      greenBackendConfigured: false,
-      trafficOpenedToGreen: false,
-      trafficValidated: false,
-      blueDraining: false,
-      blueDrained: false,
-      validationErrors: 0,
-      drainStartTime: undefined,
-      monitoringStartTime: undefined,
-      error: undefined,
-      retryCount: 0,
-      activeConnections: 0,
-      oldContainerId: oldContainer?.Id,
-      newContainerId: undefined,
-      containerIpAddress: undefined,
-    };
-
-    const finalState = await runStateMachineToCompletion<BlueGreenUpdateContext>(
-      blueGreenUpdateMachine,
-      blueGreenContext,
-      (actor) => actor.send({ type: 'START_DEPLOYMENT' })
-    );
-
-    const success = finalState.value === 'completed';
-    return {
-      serviceName: action.serviceName,
-      action: 'update',
-      success,
-      duration: Date.now() - actionStart,
-      containerId: finalState.context.newContainerId,
-      error: success ? undefined : finalState.context.error ?? 'Blue-green update failed',
-    };
-  }
-
-  private async removeConflictingContainer(
-    containerName: string,
-    stackId: string,
-    log: Logger
-  ): Promise<void> {
-    const docker = this.dockerExecutor.getDockerClient();
-    const allContainers = await docker.listContainers({ all: true });
-    const conflict = allContainers.find(
-      (c) =>
-        c.Names?.some((n) => n.replace(/^\//, '') === containerName) &&
-        c.Labels['mini-infra.stack-id'] !== stackId
-    );
-    if (conflict) {
-      log.warn(
-        { containerName, conflictId: conflict.Id.slice(0, 12) },
-        'Removing conflicting container with same name before create'
-      );
-      await this.containerManager.stopAndRemoveContainer(conflict.Id);
-    }
-  }
-
-  private async detectConflicts(
-    resolvedDefinitions: Map<string, StackServiceDefinition>,
-    stackId: string,
-    projectName: string,
-    docker: Docker
-  ): Promise<PlanWarning[]> {
-    const warnings: PlanWarning[] = [];
-
-    // List all containers on the host (including stopped for name conflicts)
-    const allContainers = await docker.listContainers({ all: true });
-
-    // Partition into "other" containers (not belonging to this stack)
-    const otherContainers = allContainers.filter(
-      (c) => c.Labels['mini-infra.stack-id'] !== stackId
-    );
-
-    // --- Port conflicts (running containers only) ---
-    const usedPorts = new Map<string, Docker.ContainerInfo>();
-    for (const container of otherContainers) {
-      if (container.State !== 'running') continue;
-      for (const portInfo of container.Ports ?? []) {
-        if (portInfo.PublicPort) {
-          usedPorts.set(`${portInfo.PublicPort}/${portInfo.Type}`, container);
-        }
-      }
-    }
-
-    for (const [serviceName, def] of resolvedDefinitions) {
-      for (const port of def.containerConfig.ports ?? []) {
-        // Skip internal-only ports — they don't bind to host so can't conflict
-        if (port.exposeOnHost === false || port.hostPort === 0) continue;
-
-        const key = `${port.hostPort}/${port.protocol}`;
-        const conflict = usedPorts.get(key);
-        if (!conflict) continue;
-
-        const containerName = conflict.Names?.[0]?.replace(/^\//, '') ?? conflict.Id.slice(0, 12);
-        const conflictStackName = conflict.Labels['mini-infra.stack'] || undefined;
-
-        warnings.push({
-          type: 'port-conflict',
-          serviceName,
-          hostPort: port.hostPort,
-          protocol: port.protocol,
-          conflictingContainerName: containerName,
-          conflictingStackName: conflictStackName,
-          message: conflictStackName
-            ? `Port ${port.hostPort}/${port.protocol} is in use by "${containerName}" (stack: ${conflictStackName})`
-            : `Port ${port.hostPort}/${port.protocol} is in use by "${containerName}"`,
-        });
-      }
-    }
-
-    // --- Container name conflicts (all containers, including stopped) ---
-    const usedNames = new Map<string, Docker.ContainerInfo>();
-    for (const container of otherContainers) {
-      for (const name of container.Names ?? []) {
-        usedNames.set(name.replace(/^\//, ''), container);
-      }
-    }
-
-    for (const [serviceName] of resolvedDefinitions) {
-      const desiredName = `${projectName}-${serviceName}`;
-      const conflict = usedNames.get(desiredName);
-      if (!conflict) continue;
-
-      const conflictStackName = conflict.Labels['mini-infra.stack'] || undefined;
-
-      warnings.push({
-        type: 'name-conflict',
-        serviceName,
-        desiredContainerName: desiredName,
-        conflictingContainerId: conflict.Id.slice(0, 12),
-        conflictingStackName: conflictStackName,
-        message: conflictStackName
-          ? `Container name "${desiredName}" is taken by a container from stack "${conflictStackName}"`
-          : `Container name "${desiredName}" is taken by an existing container (${conflict.Id.slice(0, 12)})`,
-      });
-    }
-
-    return warnings;
-  }
-
-  /**
-   * Build the lastAppliedSnapshot value from a Prisma stack record.
-   * Handles the JSON field casting that Prisma requires — Prisma types JSON
-   * columns as `Prisma.JsonValue` but serializeStack expects the lib types.
-   */
-  private buildAppliedSnapshot(
-    stack: { name: string; description: string | null; networks: unknown; volumes: unknown;
-      parameters: unknown; resourceOutputs: unknown; resourceInputs: unknown;
-      tlsCertificates: unknown; dnsRecords: unknown; tunnelIngress: unknown;
-      services: Array<{
-        serviceName: string; serviceType: string; dockerImage: string; dockerTag: string;
-        order: number; containerConfig: unknown; configFiles: unknown; initCommands: unknown;
-        dependsOn: unknown; routing: unknown; adoptedContainer: unknown;
-      }>;
-    }
-  ): Prisma.InputJsonValue {
-    return serializeStack({
-      ...stack,
-      networks: stack.networks as unknown as StackNetwork[],
-      volumes: stack.volumes as unknown as StackVolume[],
-      services: stack.services.map((s) => ({
-        ...s,
-        serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-        containerConfig: s.containerConfig as unknown as StackContainerConfig,
-        configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
-        initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
-        dependsOn: s.dependsOn as unknown as string[],
-        routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
-        adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
-      })),
-    } as unknown as Parameters<typeof serializeStack>[0]) as unknown as Prisma.InputJsonValue;
-  }
-
-  /**
-   * Get an initialized HAProxy data plane client for an environment.
-   */
-  private async getInitializedHAProxyClient(environmentId: string): Promise<{
-    haproxyCtx: HAProxyEnvironmentContext;
-    haproxyClient: HAProxyDataPlaneClient;
-  }> {
-    const haproxyCtx = await this.routingManager!.getHAProxyContext(environmentId);
-    const { HAProxyDataPlaneClient: Client } = await import('../haproxy');
-    const haproxyClient = new Client();
-    await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-    return { haproxyCtx, haproxyClient };
-  }
-
-  /**
-   * Clean up HAProxy routing for an AdoptedWeb service.
-   * Used by both recreate and remove actions.
-   */
-  private async cleanupAdoptedWebRouting(
-    serviceName: string,
-    adoptedContainerName: string,
-    routing: StackServiceRouting,
-    stackId: string,
-    stack: StackWithReconcilerContext,
-    log: Logger,
-    drainBeforeRemove: boolean
-  ): Promise<void> {
-    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
-
-    const routingCtx: StackRoutingContext = {
-      serviceName,
-      containerId: '',
-      containerName: adoptedContainerName,
-      routing,
-      environmentId: stack.environmentId!,
-      stackId,
-      stackName: stack.name,
-    };
-
-    const backendName = `stk-${stack.name}-${serviceName}`;
-    const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-      where: { name: backendName, environmentId: stack.environmentId! },
-      include: { servers: true },
-    });
-    if (backendRecord) {
-      for (const server of backendRecord.servers) {
-        try {
-          if (drainBeforeRemove) {
-            await this.routingManager!.drainAndRemoveServer(backendName, server.name, haproxyClient);
-          } else {
-            await haproxyClient.deleteServer(backendName, server.name);
-          }
-        } catch (err: unknown) {
-          log.warn({ server: server.name, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove/drain server');
-        }
-      }
-      if (!drainBeforeRemove) {
-        await this.prisma.hAProxyServer.deleteMany({ where: { backendId: backendRecord.id } });
-      }
-    }
-
-    await this.routingManager!.removeRoute(routingCtx, haproxyClient);
-  }
-
-  /**
-   * Record a failed deployment and update stack status to error.
-   */
-  private async recordDeploymentFailure(
-    stackId: string,
-    actionType: 'apply' | 'update',
-    version: number,
-    duration: number,
-    error: string,
-    triggeredBy: string | null | undefined,
-    log: Logger
-  ): Promise<void> {
-    try {
-      await this.prisma.stackDeployment.create({
-        data: {
-          stackId,
-          action: actionType,
-          success: false,
-          version,
-          status: 'error',
-          duration,
-          error,
-          triggeredBy: triggeredBy ?? null,
-        },
-      });
-      await this.prisma.stack.update({
-        where: { id: stackId },
-        data: { status: 'error' },
-      });
-    } catch (dbErr) {
-      log.error({ error: dbErr }, `Failed to record ${actionType} failure`);
-    }
-  }
-
-  private generateDiffs(
-    serviceName: string,
-    snapshot: StackDefinition | null,
-    current: StackServiceDefinition
-  ): FieldDiff[] {
-    if (!snapshot) return [];
-
-    const oldService = snapshot.services.find((s) => s.serviceName === serviceName);
-    if (!oldService) return [];
-
-    const diffs: FieldDiff[] = [];
-
-    if (oldService.dockerImage !== current.dockerImage) {
-      diffs.push({ field: 'dockerImage', old: oldService.dockerImage, new: current.dockerImage });
-    }
-    if (oldService.dockerTag !== current.dockerTag) {
-      diffs.push({ field: 'dockerTag', old: oldService.dockerTag, new: current.dockerTag });
-    }
-
-    const oldConfig = JSON.stringify(oldService.containerConfig);
-    const newConfig = JSON.stringify(current.containerConfig);
-    if (oldConfig !== newConfig) {
-      diffs.push({ field: 'containerConfig', old: oldConfig, new: newConfig });
-    }
-
-    const oldFiles = JSON.stringify(oldService.configFiles ?? []);
-    const newFiles = JSON.stringify(current.configFiles ?? []);
-    if (oldFiles !== newFiles) {
-      diffs.push({ field: 'configFiles', old: oldFiles, new: newFiles });
-    }
-
-    const oldInit = JSON.stringify(oldService.initCommands ?? []);
-    const newInit = JSON.stringify(current.initCommands ?? []);
-    if (oldInit !== newInit) {
-      diffs.push({ field: 'initCommands', old: oldInit, new: newInit });
-    }
-
-    const oldRouting = JSON.stringify(oldService.routing ?? null);
-    const newRouting = JSON.stringify(current.routing ?? null);
-    if (oldRouting !== newRouting) {
-      diffs.push({ field: 'routing', old: oldRouting, new: newRouting });
-    }
-
-    return diffs;
-  }
-
-  private buildReason(
-    currentImage: string,
-    desiredImage: string,
-    diffs: FieldDiff[]
-  ): string {
-    if (currentImage !== desiredImage) {
-      return `image changed: ${currentImage} -> ${desiredImage}`;
-    }
-    if (diffs.length > 0) {
-      const fields = diffs.map((d) => d.field).join(', ');
-      return `configuration changed: ${fields}`;
-    }
-    return 'definition hash changed';
   }
 }
