@@ -262,7 +262,7 @@ export class ValidateTraffic {
     /**
      * Calculate error rate based on server statistics
      */
-    private calculateErrorRate(serverStats: any): number {
+    private calculateErrorRate(serverStats: { total_sessions?: number; errors_con?: number; errors_resp?: number }): number {
         const totalConnections = serverStats.total_sessions || 0;
         const connectionErrors = serverStats.errors_con || 0;
         const responseErrors = serverStats.errors_resp || 0;

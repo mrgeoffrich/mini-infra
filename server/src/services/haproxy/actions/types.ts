@@ -86,6 +86,7 @@ export interface ActionContext {
     triggeredBy?: string;
     startTime?: number;
     error?: string;
+    currentState?: string;
 
     // Container spec (source-agnostic)
     containerPorts?: { containerPort: number; hostPort: number; protocol: string }[];

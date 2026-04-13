@@ -31,7 +31,7 @@ export class GrantManagementService {
   /**
    * Get a PostgreSQL client for a specific database
    */
-  private async getDatabaseClient(server: any, databaseName: string): Promise<Client> {
+  private async getDatabaseClient(server: { connectionString: string }, databaseName: string): Promise<Client> {
     const baseConnectionString = this.decryptConnectionString(server.connectionString);
     // Replace the database name in the connection string
     const dbConnectionString = baseConnectionString.replace(/\/[^/?]+(\?|$)/, `/${databaseName}$1`);

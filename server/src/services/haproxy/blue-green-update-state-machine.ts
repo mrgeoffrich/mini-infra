@@ -73,7 +73,7 @@ export interface BlueGreenUpdateContext {
     startTime: number;
 
     // Configuration
-    config?: any;
+    config?: Record<string, unknown>;
 
     // Source-agnostic configuration (used by actions instead of DB lookups)
     // When set, actions read from these fields directly.

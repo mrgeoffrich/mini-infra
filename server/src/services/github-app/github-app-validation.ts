@@ -218,16 +218,25 @@ export class GitHubAppValidation {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "github-app",
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt,
-      responseTime: latestStatus.responseTimeMs || undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata
-        ? JSON.parse(latestStatus.metadata)
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt,
+      responseTime: row.responseTimeMs || undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata
+        ? JSON.parse(row.metadata)
         : undefined,
     };
   }

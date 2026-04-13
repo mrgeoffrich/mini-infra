@@ -43,14 +43,14 @@ export class StopApplication {
             } else {
                 // Find all containers for the application
                 const containers = await this.dockerService.listContainers(false);
-                const applicationContainers = containers.filter((container: any) =>
+                const applicationContainers = containers.filter((container) =>
                     container.labels?.[`mini-infra.application`] === context.applicationName ||
                     container.labels?.[`mini-infra.application-name`] === context.applicationName ||
                     container.labels?.[`application.name`] === context.applicationName ||
-                    (container.names && container.names.some((name: string) => name.includes(context.applicationName)))
+                    (container.name?.includes(context.applicationName) ?? false)
                 );
 
-                containersToStop = applicationContainers.map((container: any) => container.id);
+                containersToStop = applicationContainers.map((container) => container.id);
 
                 logger.info({
                     deploymentId: context.deploymentId,

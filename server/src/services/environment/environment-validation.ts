@@ -1,5 +1,6 @@
 import { servicesLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
+import type Docker from "dockerode";
 import prisma from "../../lib/prisma";
 import { getOwnContainerId } from "../self-update";
 
@@ -141,7 +142,7 @@ export class EnvironmentValidationService {
       const containers = await this.dockerService.listContainers();
 
       // Look for HAProxy container with environment label
-      const haproxyContainer = containers.find((container: any) => {
+      const haproxyContainer = containers.find((container) => {
         const labels = container.labels || {};
         return (
           labels["mini-infra.service"] === "haproxy" &&
@@ -247,7 +248,7 @@ export class EnvironmentValidationService {
       }
 
       // Check if mini-infra is actually connected to this network
-      const docker = (this.dockerService as any).docker;
+      const docker = (this.dockerService as unknown as { docker: Docker }).docker;
       const container = docker.getContainer(selfId);
       const info = await container.inspect();
       const myNetworks = Object.keys(info.NetworkSettings?.Networks || {});

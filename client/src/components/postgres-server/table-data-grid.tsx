@@ -66,13 +66,13 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
   const tableData = response?.data;
 
   // Create columns dynamically from table metadata
-  const columns = useMemo<ColumnDef<Record<string, any>>[]>(() => {
+  const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
     if (!tableData?.columns) return [];
 
     return tableData.columns.map((col: { name: string; isPrimaryKey: boolean; dataType: string; isNullable: boolean }) => ({
       id: col.name,
       accessorKey: col.name,
-      header: ({ column }: { column: any }) => {
+      header: ({ column }: { column: { getIsSorted: () => false | "asc" | "desc"; toggleSorting: (desc: boolean) => void } }) => {
         const isSorted = column.getIsSorted();
         return (
           <div
@@ -91,7 +91,7 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
           </div>
         );
       },
-      cell: ({ getValue }: { getValue: () => any }) => {
+      cell: ({ getValue }: { getValue: () => unknown }) => {
         const value = getValue();
         const displayValue = value === null ? <span className="text-muted-foreground italic">NULL</span> : String(value);
 

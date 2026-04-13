@@ -62,10 +62,10 @@ const CollapsibleTrigger = React.forwardRef<
     };
 
     if (asChild && React.isValidElement(children)) {
-      return React.cloneElement(children as React.ReactElement<any>, {
+      return React.cloneElement(children as React.ReactElement<{ className?: string; onClick?: (e: React.MouseEvent) => void }>, {
         ...props,
         onClick: handleClick,
-        className: cn(className, (children.props as any).className),
+        className: cn(className, (children.props as { className?: string }).className),
       });
     }
 

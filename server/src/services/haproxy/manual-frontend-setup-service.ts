@@ -102,7 +102,7 @@ export class ManualFrontendSetupService {
             const existingCert = await this.provisioningService.findCertificateForHostname(request.hostname);
 
             if (existingCert) {
-              resolvedCertId = existingCert.id;
+              resolvedCertId = existingCert.id as string;
               emitStep("Find or issue TLS certificate", "completed", `Existing certificate found for ${request.hostname}`);
             } else {
               // Issue new certificate
@@ -113,7 +113,7 @@ export class ManualFrontendSetupService {
                 userId,
                 deployToHaproxy: false, // We handle deployment in step 4
               });
-              resolvedCertId = newCert.id;
+              resolvedCertId = newCert.id as string;
               emitStep("Find or issue TLS certificate", "completed", `New certificate issued for ${request.hostname}`);
             }
           } catch (certError) {
@@ -149,7 +149,7 @@ export class ManualFrontendSetupService {
 
         // Now create the manual frontend (backend + shared frontend + route + DB records)
         // Build the request with the resolved cert ID
-        const requestWithCert: any = {
+        const requestWithCert = {
           ...request,
           tlsCertificateId: resolvedCertId,
           // If cert failed, disable SSL
@@ -168,7 +168,7 @@ export class ManualFrontendSetupService {
           success: true,
           steps,
           errors,
-          frontendId: frontend.id,
+          frontendId: frontend.id as string,
           certificateId: resolvedCertId,
         };
       } catch (createError) {

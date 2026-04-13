@@ -217,7 +217,7 @@ export class TableDataService {
 
       // Build WHERE clause from filters
       let whereClause = "";
-      const whereParams: any[] = [];
+      const whereParams: unknown[] = [];
       let paramCounter = 1;
 
       if (params.filters && params.filters.length > 0) {

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type {
@@ -68,7 +68,7 @@ export function ParameterEditDialog({
   const isEditing = parameter !== null;
 
   const form = useForm<ParameterFormValues>({
-    resolver: zodResolver(parameterSchema) as any,
+    resolver: zodResolver(parameterSchema) as Resolver<z.infer<typeof parameterSchema>>,
     defaultValues: {
       name: "",
       type: "string",

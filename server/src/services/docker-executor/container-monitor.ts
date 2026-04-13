@@ -94,7 +94,7 @@ export class ContainerMonitor {
         since: options?.since
       };
 
-      const stream = await container.logs(logOptions) as any;
+      const stream = await container.logs(logOptions) as NodeJS.ReadableStream & { destroy: () => void };
 
       return new Promise((resolve, reject) => {
         const stdoutChunks: Buffer[] = [];
@@ -125,7 +125,7 @@ export class ContainerMonitor {
           });
         });
 
-        stream.on("error", (error: any) => {
+        stream.on("error", (error: Error) => {
           clearTimeout(timeout);
           reject(error);
         });

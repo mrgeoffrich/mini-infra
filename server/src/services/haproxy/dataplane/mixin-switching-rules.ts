@@ -9,7 +9,7 @@ export function SwitchingRulesMixin<TBase extends HAProxyBaseConstructor>(Base: 
     /**
      * Get all backend switching rules for a frontend
      */
-    async getBackendSwitchingRules(frontendName: string): Promise<any[]> {
+    async getBackendSwitchingRules(frontendName: string): Promise<Record<string, unknown>[]> {
       try {
         const response = await this.httpClient.get(
           `/services/haproxy/configuration/frontends/${frontendName}/backend_switching_rules`

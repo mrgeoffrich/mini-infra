@@ -197,7 +197,7 @@ export class ContainerExecutor {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions: Docker.ContainerCreateOptions = {
+      const containerOptions: Docker.ContainerCreateOptions & { AutoRemove?: boolean } = {
         Image: options.image,
         Env: env,
         AttachStdout: true,
@@ -227,12 +227,12 @@ export class ContainerExecutor {
 
       // Add network mode if provided
       if (options.networkMode) {
-        containerOptions.HostConfig.NetworkMode = options.networkMode;
+        containerOptions.HostConfig!.NetworkMode = options.networkMode;
       }
 
       // Add volume binds if provided
       if (options.binds && options.binds.length > 0) {
-        containerOptions.HostConfig.Binds = options.binds;
+        containerOptions.HostConfig!.Binds = options.binds;
       }
 
       return await this.docker.createContainer(containerOptions);

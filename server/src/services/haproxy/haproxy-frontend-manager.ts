@@ -485,7 +485,7 @@ export class HAProxyFrontendManager {
   async getFrontendStatus(
     frontendName: string,
     haproxyClient: HAProxyDataPlaneClient
-  ): Promise<any | null> {
+  ): Promise<Record<string, unknown> | null> {
     logger.info({ frontendName }, "Getting frontend status");
 
     try {
@@ -506,7 +506,7 @@ export class HAProxyFrontendManager {
   private async getFrontend(
     frontendName: string,
     haproxyClient: HAProxyDataPlaneClient
-  ): Promise<any | null> {
+  ): Promise<Record<string, unknown> | null> {
     return haproxyClient.getFrontend(frontendName);
   }
 
@@ -1197,7 +1197,7 @@ export class HAProxyFrontendManager {
         const expectedACLs = new Set(frontend.routes.map((r) => r.aclName));
 
         // Find ACLs in HAProxy that are not in database (should be removed)
-        for (const acl of haproxyACLs) {
+        for (const acl of haproxyACLs as Array<{ acl_name: string }>) {
           if (!expectedACLs.has(acl.acl_name)) {
             try {
               logger.info(
@@ -1217,7 +1217,7 @@ export class HAProxyFrontendManager {
         }
 
         // Find rules in HAProxy that reference ACLs not in database
-        for (const rule of haproxyRules) {
+        for (const rule of haproxyRules as Array<{ cond_test: string }>) {
           if (!expectedACLs.has(rule.cond_test)) {
             try {
               logger.info(

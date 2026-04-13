@@ -354,9 +354,9 @@ export class GitHubService extends ConfigurationService {
         html_url: response.data.html_url,
         created_at: response.data.created_at,
         updated_at: response.data.updated_at,
-        labels: response.data.labels.map((label: any) => ({
-          name: typeof label === "string" ? label : label.name,
-          color: typeof label === "string" ? "" : label.color,
+        labels: response.data.labels.map((label) => ({
+          name: typeof label === "string" ? label : (label.name ?? ""),
+          color: typeof label === "string" ? "" : (label.color ?? ""),
         })),
       };
     } catch (error) {
@@ -461,16 +461,25 @@ export class GitHubService extends ConfigurationService {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "github",
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt,
-      responseTime: latestStatus.responseTimeMs || undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata
-        ? JSON.parse(latestStatus.metadata)
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt,
+      responseTime: row.responseTimeMs || undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata
+        ? JSON.parse(row.metadata)
         : undefined,
     };
   }

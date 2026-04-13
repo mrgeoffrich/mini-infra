@@ -6,7 +6,7 @@
  */
 
 import { Logger } from "pino";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { AcmeClientManager } from "./acme-client-manager";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
@@ -57,7 +57,7 @@ export class CertificateLifecycleManager {
    * @param onStep - Optional callback for step-by-step progress reporting
    * @returns Created certificate record
    */
-  async issueCertificate(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<any> {
+  async issueCertificate(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<Record<string, unknown>> {
     const { domains, primaryDomain, userId } = request;
     const totalSteps = request.deployToHaproxy ? 5 : 4;
     let stepCount = 0;
@@ -184,7 +184,7 @@ export class CertificateLifecycleManager {
    * @param certificateId - Database certificate ID
    * @returns Updated certificate record
    */
-  async renewCertificate(certificateId: string): Promise<any> {
+  async renewCertificate(certificateId: string): Promise<Record<string, unknown>> {
     // Get existing certificate
     const existingCert = await this.prisma.tlsCertificate.findUnique({
       where: { id: certificateId },
@@ -380,7 +380,7 @@ export class CertificateLifecycleManager {
    * @param daysThreshold - Number of days threshold (default: 30)
    * @returns Array of certificates needing renewal
    */
-  async getCertificatesNeedingRenewal(daysThreshold: number = 30): Promise<any[]> {
+  async getCertificatesNeedingRenewal(daysThreshold: number = 30): Promise<Record<string, unknown>[]> {
     const now = new Date();
     const thresholdDate = new Date(now);
     thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
@@ -407,12 +407,12 @@ export class CertificateLifecycleManager {
   private async updateRenewalStatus(
     renewalId: string,
     status: string,
-    additionalData?: any
+    additionalData?: Record<string, unknown>
   ): Promise<void> {
     await this.prisma.tlsCertificateRenewal.update({
       where: { id: renewalId },
       data: {
-        status,
+        status: status as Prisma.TlsCertificateRenewalUpdateInput['status'],
         ...additionalData,
       },
     });

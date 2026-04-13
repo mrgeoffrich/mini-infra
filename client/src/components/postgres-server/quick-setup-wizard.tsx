@@ -100,8 +100,8 @@ export function QuickSetupWizard({ serverId }: QuickSetupWizardProps) {
       setResult(response.data);
       setCurrentStep(3); // Move to success step
       toast.success("Application database created successfully!");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create application database");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Failed to create application database");
     }
   };
 

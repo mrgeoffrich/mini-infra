@@ -238,7 +238,7 @@ export class CircuitBreaker {
     }
 
     if (typeof data === "object" && data !== null) {
-      const redacted = { ...data };
+      const redacted: Record<string, unknown> = { ...(data as Record<string, unknown>) };
 
       for (const key of Object.keys(redacted)) {
         if (

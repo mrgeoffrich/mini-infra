@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useEffect } from "react";
@@ -40,7 +40,7 @@ export function TemplateMetadataCard({
   const updateMutation = useUpdateStackTemplate();
 
   const form = useForm<MetadataFormValues>({
-    resolver: zodResolver(metadataSchema) as any,
+    resolver: zodResolver(metadataSchema) as Resolver<z.infer<typeof metadataSchema>>,
     defaultValues: {
       displayName: template.displayName,
       description: template.description ?? "",

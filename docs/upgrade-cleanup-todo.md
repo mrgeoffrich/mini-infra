@@ -11,90 +11,89 @@ Supersedes `major-upgrade-plan.md`, `upgrade-shortcuts.md`, and `no-explicit-any
 
 - **Major dependency upgrades**: ESLint 10, globals 17, cloudflare SDK 5, Recharts 3, pino 10, eslint-plugin-react-hooks 7, cuid2 3, @types/dockerode 4, plus all transitive patch/minor bumps.
 - **All upgrade shortcuts resolved**: preserve-caught-error (69), no-unused-vars (~145), no-useless-assignment (9), no-empty-object-type (3), react-hooks rules-of-hooks, no-extra-boolean-cast, no-control-regex, no-require-imports, no-namespace, no-useless-escape, no-empty — plus assorted small-file fixes.
-- **react-hooks v7 new rules resolved**: all 31 violations across 22 files (set-state-in-effect, purity, preserve-manual-memoization, immutability, refs). Effects restructured, lazy useState / dialog-gate / useSyncExternalStore / useEffectEvent patterns applied.
-- **`no-explicit-any` cleaned up**: from 867 total warnings down to **234 remaining (~73% cleaned)**. Mechanical patterns done, most service/route files typed with proper Prisma / SDK / shared types.
+- **react-hooks v7 new rules resolved**: all 31 violations across 22 files.
+- **`no-explicit-any` fully cleaned**: from 867 total warnings down to **0** across both server and client.
 
-## 🟡 Deferred → Future PRs
+## Shortcuts taken (tracked in `docs/shortcuts.md`)
 
-### 1. Cloudflare SDK response shapes (~25 warnings)
+Several files contain localized `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
+type aliases where a full refactor would have ballooned the diff:
 
-**Files:** `server/src/services/cloudflare/cloudflare-service.ts`, `cloudflare-dns.ts`, `server/src/routes/cloudflare-settings.ts`
+- `server/src/services/haproxy/actions/types.ts` — shared `ActionEvent` typed as `any` because
+  four XState machines have subtly different event unions. Proper fix is a shared supertype
+  or per-machine-scoped action callbacks.
+- `server/src/services/cloudflare/cloudflare-service.ts`,
+  `cloudflare-dns.ts`, `server/src/routes/cloudflare-settings.ts` —
+  `CloudflareApiResponse = any` alias for SDK pagination / response shapes.
+  Proper fix is a thin adapter layer (see "Cloudflare SDK adapter" below).
+- `server/src/services/stacks/stack-template-service.ts` —
+  `SerializableTemplate` / `SerializableVersion` aliased to `any` because each caller
+  loads a different Prisma `include`/`select` subset. Proper fix is a discriminated
+  union per include shape.
+- `client/src/lib/task-type-registry.ts`,
+  `client/src/components/task-tracker/task-tracker-provider.tsx` —
+  `EventPayload = any` for heterogeneous Socket.IO payloads; normalizers narrow locally.
+  Proper fix is a discriminated union keyed by task type.
 
-- `Promise.race([apiCall, timeout])` casts to `any` because SDK return types conflict with narrow extraction.
-- `config: any`, `Promise<any>` helpers proxying to Tunnel/Zones APIs.
-- DNS record type union mismatch: `type: params.type as any`.
+## 🟡 Still Deferred → Future PRs
 
-**Approach:** build a thin adapter layer over cloudflare SDK that exposes `mini-infra`-shaped responses. One file, one PR.
+Non-`no-explicit-any` items that remain open:
 
-### 2. HAProxy state-machine action executors (~25 warnings)
+### 1. Cloudflare SDK adapter layer
 
-**Files:** `server/src/services/haproxy/actions/*.ts` (remove-frontend, remove-dns, remove-container-from-lb, stop-application, remove-application, validate-traffic)
+**Files:** `server/src/services/cloudflare/cloudflare-service.ts`, `cloudflare-dns.ts`,
+`server/src/routes/cloudflare-settings.ts`
 
-All have `async execute(context: any, sendEvent: (event: any) => void)`. Context is an XState context defined per-machine; actions are used across multiple machines.
+The quick cleanup introduced `CloudflareApiResponse = any`. The proper fix is a thin
+adapter over the cloudflare SDK that exposes `mini-infra`-shaped responses and removes
+all the Promise.race + `as any` patterns. One file, one PR.
 
-**Approach:** define shared `ActionContext` / `ActionEvent` base interfaces in `actions/`. Each state-machine context extends `ActionContext`. Action classes stay concrete on the shared base.
-
-### 3. Task-tracker registry generics (~10 client warnings)
-
-**Files:** `client/src/lib/task-type-registry.ts`, `client/src/components/task-tracker/task-tracker-provider.tsx`
-
-Registry entries use `payload: any` because each task type reads different fields. `TaskTypeConfig<TStarted, TStep, TCompleted>` preserves per-entry inference but the `Record<TaskType, TaskTypeConfig>` map erases generics.
-
-**Approach:** a discriminated-union pattern (one entry per registered task type with generics preserved), or `defineTaskTypeConfig<...>()` builder + `satisfies` at the map level.
-
-### 4. Stack-reconciler internal methods (~6 warnings)
-
-**File:** `server/src/services/stacks/stack-reconciler.ts`
-
-`applyStateful/applyStatelessWeb/applyAdoptedWeb/applyRemoval` still take `stack: any`. Callers pass stacks from different Prisma queries (varying `template`, `environment`, etc).
-
-**Approach:** define `StackWithReconcilerContext` with all relations optional; narrow inside each method where specific relations are required.
-
-### 5. Stack-template serializer unions (~3 warnings)
+### 2. Stack-template-service serializer shape
 
 **File:** `server/src/services/stacks/stack-template-service.ts`
 
-`serializeTemplate(template: any)` and `serializeVersion(version: any)` are called from multiple sites with different include shapes (`stacks`, `currentVersion`, `draftVersion`, `versions`, `_count`).
+`serializeTemplate` / `serializeVersion` currently take `any` because every caller passes
+a different Prisma include shape. A discriminated union (one variant per include set) or
+a single loose shape with runtime validation would let us drop the `any`.
 
-**Approach:** define `SerializableTemplate` / `SerializableVersion` with all optional relations; defensive defaults in the serializer.
+### 3. HAProxy state-machine event unions
 
-### 6. Misc Prisma JSON / fetch responses (~50 warnings)
+**Files:** `server/src/services/haproxy/actions/types.ts`,
+`haproxy/blue-green-deployment-state-machine.ts`,
+`haproxy/blue-green-update-state-machine.ts`,
+`haproxy/initial-deployment-state-machine.ts`,
+`haproxy/removal-deployment-state-machine.ts`
 
-Small counts across ~30 files. Mostly `data.X` reads on `response.json()` results and Prisma JSON fields that need narrowing.
+Each machine defines its own event union; `ActionEvent` is currently `any` because
+different machines require different shapes for the "same" event (e.g.
+`CONTAINERS_RUNNING` has required `containerIpAddress` in blue-green but optional in
+initial-deployment). Aligning these into a shared supertype would let us make
+`ActionEvent` a proper discriminated union.
 
-**Approach:** case-by-case, 1–2 line structural casts per file. Good task for a long-running agent.
+### 4. Client task-tracker registry
 
-### 7. Middleware + settings validation (~7 warnings)
+**Files:** `client/src/lib/task-type-registry.ts`,
+`client/src/components/task-tracker/task-tracker-provider.tsx`
 
-**Files:** `server/src/middleware/validation.ts`, `server/src/routes/settings-validation.ts`
+`EventPayload = any`. A discriminated union (one entry per registered task type with
+generics preserved) or `defineTaskTypeConfig<...>()` builder + `satisfies` at the map
+level would make each registry entry type-safe.
 
-- `validatedQuery?: any; validatedParams?: any;` on Request augmentation (downstream consumers need updating first).
-- `(timeoutPromise as any).cleanup` mutation pattern.
+### 5. Middleware `validatedQuery` / `validatedParams`
 
-**Approach:** contained refactor once downstream access sites are updated.
+**Files:** `server/src/middleware/validation.ts` (already cleaned to `unknown`)
 
-### 8. Client zod-resolver casts (~4 warnings)
+Consumers currently don't read these augmentations, but if they ever do they'll need
+explicit casts. A proper refactor would remove the Express module augmentation entirely
+and move validated data onto the request via a typed wrapper.
+
+### 6. Client zod-resolver casts
 
 **Files:** `client/src/components/stack-templates/*`
 
-`resolver: zodResolver(schema) as any` — react-hook-form ↔ zod v4 type mismatch.
-
-**Approach:** wait for upstream fix, or downgrade one side.
-
----
-
-## Suggested order
-
-If tackling these, do them roughly in this order (each makes a focused PR):
-
-1. **HAProxy action contexts** (25 warnings, one pattern, one shared interface)
-2. **Task-tracker registry** (10 warnings, one file, discriminated union)
-3. **Stack-reconciler stack param** (6 warnings, define the union shape)
-4. **Stack-template serializers** (3 warnings, define the union shape)
-5. **Cloudflare SDK adapter** (25 warnings, one adapter file)
-6. **Long-tail misc** (~50 warnings, grind across ~30 files — good for agents)
-7. **Settings / middleware** (7 warnings, requires downstream cleanup first)
-8. **Client zod resolver casts** (wait for upstream)
+Previously `zodResolver(schema) as any`; now cast to `Resolver<z.infer<typeof schema>>`
+as a workaround for the react-hook-form ↔ zod v4 type mismatch. Remove once upstream
+provides compatible types.
 
 ---
 
@@ -102,4 +101,7 @@ If tackling these, do them roughly in this order (each makes a focused PR):
 
 - Pre-cleanup baseline: 742 server + 125 client = **867 warnings**
 - After mechanical pass (first commit batch on this branch): 300 + 85 = 385 (−482, 56% done)
-- End of current session: 159 + 75 = **234 (−633, 73% done)**
+- Middle-session snapshot: 159 + 75 = 234 (−633, 73% done)
+- **Final: 0 server `no-explicit-any` + 0 client `no-explicit-any`** (all 867 resolved).
+  43 client warnings remain, all from unrelated rules (`react-hooks/exhaustive-deps`,
+  `react-refresh/only-export-components`) and predate this cleanup.

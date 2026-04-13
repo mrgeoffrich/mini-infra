@@ -104,7 +104,7 @@ async function fetchPrometheusRangeQuery(
 async function applyMonitoringStack(
   stackId: string,
   correlationId: string
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   const response = await fetch(`/api/stacks/${stackId}/apply`, {
     method: "POST",
     credentials: "include",
@@ -148,7 +148,7 @@ async function stopMonitoringStack(
 async function fetchMonitoringPlan(
   stackId: string,
   correlationId: string
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   const response = await fetch(`/api/stacks/${stackId}/plan`, {
     credentials: "include",
     headers: {

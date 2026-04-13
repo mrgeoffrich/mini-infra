@@ -463,7 +463,7 @@ router.put(
 
       const response: ManualFrontendResponse = {
         success: true,
-        data: serializeFrontend(frontend),
+        data: serializeFrontend(frontend as SerializableFrontend),
         message: "Manual frontend updated successfully",
       };
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IconHistory, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { useEvents, useEventFilters, useDeleteEvent } from "@/hooks/use-events";
+import type { UserEventType, UserEventCategory, UserEventStatus } from "@mini-infra/types";
 import { EventsTable } from "@/components/events/EventsTable";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -26,9 +27,9 @@ export function EventsPage() {
     error,
   } = useEvents({
     filters: {
-      eventType: filters.eventType as any,
-      eventCategory: filters.eventCategory as any,
-      status: filters.status as any,
+      eventType: filters.eventType as UserEventType[] | undefined,
+      eventCategory: filters.eventCategory as UserEventCategory[] | undefined,
+      status: filters.status as UserEventStatus[] | undefined,
       search: filters.search,
       startDate: filters.startDate,
       endDate: filters.endDate,

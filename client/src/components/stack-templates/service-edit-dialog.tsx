@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -109,7 +109,7 @@ export function ServiceEditDialog({
   const isEditing = service !== null;
 
   const form = useForm<ServiceFormValues>({
-    resolver: zodResolver(serviceSchema) as any,
+    resolver: zodResolver(serviceSchema) as Resolver<z.infer<typeof serviceSchema>>,
     defaultValues: {
       serviceName: "",
       serviceType: "StatelessWeb",

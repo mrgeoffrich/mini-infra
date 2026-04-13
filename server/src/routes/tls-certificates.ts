@@ -166,7 +166,7 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
         emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
           operationId,
           success: true,
-          certificateId: certificate.id,
+          certificateId: certificate.id as string,
           primaryDomain: validatedData.primaryDomain,
           steps,
           errors: [],

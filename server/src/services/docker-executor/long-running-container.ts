@@ -65,7 +65,7 @@ export class LongRunningContainerManager {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions: any = {
+      const containerOptions: Docker.ContainerCreateOptions = {
         Image: options.image,
         name: options.name,
         Env: env,
@@ -101,7 +101,7 @@ export class LongRunningContainerManager {
 
       // Add network mode if provided
       if (options.networkMode) {
-        containerOptions.HostConfig.NetworkMode = options.networkMode;
+        containerOptions.HostConfig!.NetworkMode = options.networkMode;
       }
 
       // Add port bindings - need both ExposedPorts and PortBindings
@@ -112,7 +112,7 @@ export class LongRunningContainerManager {
           containerOptions.ExposedPorts[port] = {};
         }
         // Then bind them to host ports
-        containerOptions.HostConfig.PortBindings = options.ports;
+        containerOptions.HostConfig!.PortBindings = options.ports;
       }
 
       // Add internal-only ports (exposed on container but not bound to host)
@@ -127,24 +127,24 @@ export class LongRunningContainerManager {
 
       // Add bind mounts
       if (options.volumes) {
-        containerOptions.HostConfig.Binds = options.volumes;
+        containerOptions.HostConfig!.Binds = options.volumes;
       }
 
       // Add volume mounts
       if (options.mounts) {
-        containerOptions.HostConfig.Mounts = options.mounts;
+        containerOptions.HostConfig!.Mounts = options.mounts;
       }
 
       // Add restart policy
       if (options.restartPolicy) {
-        containerOptions.HostConfig.RestartPolicy = {
+        containerOptions.HostConfig!.RestartPolicy = {
           Name: options.restartPolicy
         };
       }
 
       // Add logging configuration
       if (options.logConfig) {
-        containerOptions.HostConfig.LogConfig = options.logConfig;
+        containerOptions.HostConfig!.LogConfig = options.logConfig;
       }
 
       // Add health check
@@ -164,7 +164,7 @@ export class LongRunningContainerManager {
           EndpointsConfig: {}
         };
         for (const network of options.networks) {
-          containerOptions.NetworkingConfig.EndpointsConfig[network] = {};
+          containerOptions.NetworkingConfig.EndpointsConfig![network] = {};
         }
       }
 

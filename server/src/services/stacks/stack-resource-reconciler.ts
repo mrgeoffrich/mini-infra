@@ -219,7 +219,7 @@ export class StackResourceReconciler {
               userId,
               deployToHaproxy: false,
             });
-            certId = cert.id;
+            certId = cert.id as string;
           }
 
           // Upsert stack resource record

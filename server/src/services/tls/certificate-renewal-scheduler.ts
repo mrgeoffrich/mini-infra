@@ -190,7 +190,7 @@ export class CertificateRenewalScheduler {
    * @param daysThreshold - Number of days ahead to check (default: 30)
    * @returns List of certificates that will need renewal
    */
-  async getCertificatesNeedingRenewalSoon(daysThreshold: number = 30): Promise<any[]> {
+  async getCertificatesNeedingRenewalSoon(daysThreshold: number = 30): Promise<Record<string, unknown>[]> {
     const thresholdDate = new Date();
     thresholdDate.setDate(thresholdDate.getDate() + daysThreshold);
 

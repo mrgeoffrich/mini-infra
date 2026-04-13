@@ -6,7 +6,6 @@ const logger = servicesLogger();
 
 // Extend Express Request type to include validated data
 // Express 5 makes req.query read-only, so we store validated query data separately
-// eslint-disable-next-line @typescript-eslint/no-namespace -- module augmentation of Express requires namespace syntax
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {

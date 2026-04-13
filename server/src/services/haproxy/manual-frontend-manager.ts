@@ -292,7 +292,7 @@ export class ManualFrontendManager {
     request: InternalCreateRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     logger.info({ request }, "Creating manual frontend using shared frontend");
 
     try {
@@ -695,7 +695,7 @@ export class ManualFrontendManager {
     updates: UpdateManualFrontendRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     logger.info({ frontendName, updates }, "Updating manual frontend");
 
     try {

@@ -277,7 +277,7 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
     enabled: enabled && !!id,
     refetchInterval: connected
       ? false
-      : (query: any) => {
+      : (query: { state: { data?: { data?: { status?: string } } } }) => {
           const event = query.state.data?.data;
           if (event?.status === "running" || event?.status === "pending") {
             return refetchInterval || 5000;

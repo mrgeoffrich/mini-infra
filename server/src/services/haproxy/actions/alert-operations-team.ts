@@ -1,4 +1,5 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
+import type { ActionContext } from './types';
 
 const logger = loadbalancerLogger();
 
@@ -37,7 +38,7 @@ interface FailureAnalysis {
 }
 
 export class AlertOperationsTeam {
-    execute(context?: any): void {
+    execute(context?: ActionContext): void {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,

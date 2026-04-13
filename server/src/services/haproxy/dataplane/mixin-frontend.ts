@@ -83,7 +83,7 @@ export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase)
     /**
      * Get frontend configuration
      */
-    async getFrontend(name: string): Promise<any | null> {
+    async getFrontend(name: string): Promise<Record<string, unknown> | null> {
       try {
         const response = await this.httpClient.get(`/services/haproxy/configuration/frontends/${name}`);
         return response.data.data || response.data;
