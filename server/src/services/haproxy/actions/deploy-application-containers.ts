@@ -1,7 +1,7 @@
 import type { ActionContext, ContainerDeploymentEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
-import { ContainerConfig } from '@mini-infra/types';
+import { ContainerConfig, ContainerEnvVar } from '@mini-infra/types';
 import { UserEventService } from '../../user-events';
 import prisma from '../../../lib/prisma';
 
@@ -34,20 +34,20 @@ export class DeployApplicationContainers {
             }
 
             // Use context-provided name (stacks), fall back to generated name (deployments)
-            const containerName = context.containerName as string
+            const containerName = context.containerName
                 ?? `${context.applicationName}-deployment-${context.deploymentId.slice(0, 8)}`;
 
             // Build container configuration - prefer source-agnostic context fields,
             // fall back to config.containerConfig for legacy callers
-            const containerConfig: ContainerConfig = (context.config?.containerConfig as ContainerConfig | undefined) ?? ({
+            const containerConfig: ContainerConfig = (context.config?.containerConfig as ContainerConfig | undefined) ?? {
                 ports: context.containerPorts ?? [],
                 volumes: context.containerVolumes ?? [],
                 environment: context.containerEnvironment
-                    ? Object.entries(context.containerEnvironment as Record<string, string>).map(([k, v]) => `${k}=${v}`)
+                    ? Object.entries(context.containerEnvironment).map(([name, value]): ContainerEnvVar => ({ name, value }))
                     : [],
                 labels: context.containerLabels ?? {},
                 networks: context.containerNetworks ?? [context.haproxyNetworkName],
-            } as unknown as ContainerConfig);
+            };
 
             // Ensure the container is attached to the HAProxy network
             if (!containerConfig.networks.includes(context.haproxyNetworkName)) {

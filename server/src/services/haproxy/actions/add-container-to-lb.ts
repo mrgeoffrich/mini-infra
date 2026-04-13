@@ -34,7 +34,8 @@ export class AddContainerToLB {
             if (!context.applicationName) {
                 throw new Error('Application name is required for backend configuration');
             }
-            if (!context.containerName && !context.containerIpAddress) {
+            const serverAddress = context.containerName ?? context.containerIpAddress;
+            if (!serverAddress) {
                 throw new Error('Container name or IP address is required for server configuration');
             }
             if (!context.containerPort) {
@@ -98,7 +99,6 @@ export class AddContainerToLB {
 
             // Configure server with health check settings
             // Use container name for DNS resolution (preferred) or fall back to IP address
-            const serverAddress = (context.containerName || context.containerIpAddress) as string;
             const serverName = `${context.applicationName}-${context.containerId.slice(0, 8)}`;
             const serverConfig: ServerConfig = {
                 name: serverName,
