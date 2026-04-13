@@ -1,22 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import type { StackAdoptionCandidate, StackAdoptionCandidatesResponse } from "@mini-infra/types";
 
-export interface EligibleContainer {
-  id: string;
-  name: string;
-  image: string;
-  imageTag: string;
-  status: string;
-  ports: Array<{ containerPort: number; protocol: string }>;
-  isSelf: boolean;
-  isManagedByStack: boolean;
-  managedByStack?: string;
-}
-
-interface EligibleContainersResponse {
-  success: boolean;
-  data: EligibleContainer[];
-  message?: string;
-}
+export type { StackAdoptionCandidate as EligibleContainer };
 
 function generateCorrelationId(): string {
   return `eligible-containers-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -24,7 +9,7 @@ function generateCorrelationId(): string {
 
 async function fetchEligibleContainers(
   environmentId: string,
-): Promise<EligibleContainersResponse> {
+): Promise<StackAdoptionCandidatesResponse> {
   const correlationId = generateCorrelationId();
   const url = new URL("/api/stacks/eligible-containers", window.location.origin);
   url.searchParams.set("environmentId", environmentId);
@@ -44,7 +29,7 @@ async function fetchEligibleContainers(
     );
   }
 
-  const data: EligibleContainersResponse = await response.json();
+  const data: StackAdoptionCandidatesResponse = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch eligible containers");
   }

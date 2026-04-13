@@ -1,25 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  HAProxyPortConfig,
   HAProxyPortValidationResult,
   Channel,
   ServerEvent,
 } from "@mini-infra/types";
+import type { PortValidationResponse } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
-// ====================
-// Types
-// ====================
-
-export interface PortValidationResponse {
-  success: boolean;
-  data: {
-    config?: HAProxyPortConfig;
-    validation: HAProxyPortValidationResult;
-  };
-  error?: string;
-  message?: string;
-}
+export type { PortValidationResponse };
 
 // ====================
 // API Functions

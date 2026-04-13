@@ -558,3 +558,17 @@ export interface MigrationResultResponse {
   data: MigrationResult;
   message: string;
 }
+
+// ====================
+// HAProxy Port Validation Response
+// ====================
+
+export interface PortValidationResponse {
+  success: boolean;
+  data: {
+    config?: HAProxyPortConfig;
+    validation: HAProxyPortValidationResult;
+  };
+  error?: string;
+  message?: string;
+}

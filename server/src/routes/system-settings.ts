@@ -6,6 +6,10 @@ import express, {
 } from "express";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
+import type {
+  TestDockerRegistryRequest,
+  TestDockerRegistryResponse,
+} from "@mini-infra/types";
 
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
@@ -25,29 +29,8 @@ const testDockerRegistrySchema = z.object({
   registryPassword: z.string().optional(),
 });
 
-interface TestDockerRegistryRequest extends Request {
-  body: {
-    type: "backup" | "restore";
-    image: string;
-    registryUsername?: string;
-    registryPassword?: string;
-  };
-}
-
-interface TestDockerRegistryResponse {
-  success: boolean;
-  message: string;
-  details: {
-    image: string;
-    authenticated: boolean;
-    pullTimeMs?: number;
-    errorCode?: string;
-  };
-}
-
-
 router.post("/test-docker-registry", requirePermission('settings:write') as RequestHandler, (async (
-  req: TestDockerRegistryRequest,
+  req: Request<{}, TestDockerRegistryResponse, TestDockerRegistryRequest>,
   res: Response<TestDockerRegistryResponse>,
   _next: NextFunction,
 ) => {

@@ -36,7 +36,7 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult, StackServiceDefinition, DockerContainerInfo, StackServiceRouting } from '@mini-infra/types';
+import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult, StackServiceDefinition, DockerContainerInfo, StackServiceRouting, StackAdoptionCandidate, StackAdoptionCandidatesResponse } from '@mini-infra/types';
 import { UserEventService } from '../services/user-events';
 import {
   formatPlanStep,
@@ -170,7 +170,7 @@ router.get('/eligible-containers', requirePermission('stacks:read'), async (req,
     const { getOwnContainerId } = await import('../services/self-update');
     const ownContainerId = getOwnContainerId();
 
-    const eligible = allContainers.map((c) => {
+    const eligible: StackAdoptionCandidate[] = allContainers.map((c) => {
       const hasStackLabel = !!c.labels['mini-infra.stack-id'];
       const isSelf = ownContainerId && c.id.startsWith(ownContainerId);
       const ports = c.ports.map((p) => ({
@@ -191,7 +191,8 @@ router.get('/eligible-containers', requirePermission('stacks:read'), async (req,
       };
     }).filter((c) => !c.isManagedByStack || c.isSelf); // Exclude stack-managed unless it's Mini Infra itself
 
-    res.json({ success: true, data: eligible });
+    const response: StackAdoptionCandidatesResponse = { success: true, data: eligible };
+    res.json(response);
   } catch (error) {
     logger.error({ error }, 'Failed to list eligible containers');
     res.status(500).json({ success: false, message: 'Failed to list eligible containers' });

@@ -561,3 +561,28 @@ export interface StackApplyStartedResponse {
   data: { started: true; stackId: string };
   message?: string;
 }
+
+// ====================
+// Stack Adoption Types
+// ====================
+
+// Container eligible for adoption into an AdoptedWeb stack service.
+// NOTE: This is distinct from EligibleContainer in deployments.ts, which is
+// for the HAProxy manual-frontend context.
+export interface StackAdoptionCandidate {
+  id: string;
+  name: string;
+  image: string;
+  imageTag: string;
+  status: string;
+  ports: Array<{ containerPort: number; protocol: string }>;
+  isSelf: boolean;
+  isManagedByStack: boolean;
+  managedByStack?: string;
+}
+
+export interface StackAdoptionCandidatesResponse {
+  success: boolean;
+  data: StackAdoptionCandidate[];
+  message?: string;
+}
