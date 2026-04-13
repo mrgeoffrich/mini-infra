@@ -6,6 +6,7 @@ import prisma from "../lib/prisma";
 import appConfig, { agentConfig } from "../lib/config-new";
 import { getEffectiveModel, getEffectiveApiKey } from "./agent-settings-service";
 import { getAgentApiKey } from "./agent-api-key";
+import type { OperationStep } from "@mini-infra/types";
 
 const logger = servicesLogger();
 
@@ -141,7 +142,7 @@ export function stopHealthChecks(): void {
 // ---------------------------------------------------------------------------
 
 export type SidecarProgressCallback = (
-  step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string },
+  step: OperationStep,
   completedCount: number,
   totalSteps: number,
 ) => void;

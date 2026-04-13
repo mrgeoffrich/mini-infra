@@ -5,7 +5,7 @@ import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import { RegistryCredentialService } from "./registry-credential";
 import { RegistryManager } from "./docker-executor/registry-manager";
-import type { SelfUpdateState, SelfUpdateStatus } from "@mini-infra/types";
+import type { SelfUpdateState, SelfUpdateStatus, OperationStep } from "@mini-infra/types";
 
 const logger = servicesLogger();
 
@@ -45,7 +45,7 @@ export interface UpdateCheckResult {
 }
 
 export type UpdateProgressCallback = (
-  step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string },
+  step: OperationStep,
   completedCount: number,
   totalSteps: number,
 ) => void;

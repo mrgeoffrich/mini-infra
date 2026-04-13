@@ -14,9 +14,10 @@ import { DnsChallenge01Provider } from "./dns-challenge-provider";
 import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
 import { CertificateRequest } from "./types";
+import type { OperationStep, StepStatus } from '@mini-infra/types';
 
 export type IssuanceStepCallback = (
-  step: { step: string; status: 'completed' | 'failed' | 'skipped'; detail?: string },
+  step: OperationStep,
   completedCount: number,
   totalSteps: number,
 ) => void;
@@ -62,7 +63,7 @@ export class CertificateLifecycleManager {
     const totalSteps = request.deployToHaproxy ? 5 : 4;
     let stepCount = 0;
 
-    const emitStep = (step: string, status: 'completed' | 'failed' | 'skipped', detail?: string) => {
+    const emitStep = (step: string, status: StepStatus, detail?: string) => {
       stepCount++;
       try { onStep?.({ step, status, detail }, stepCount, totalSteps); } catch { /* never break issuance */ }
     };

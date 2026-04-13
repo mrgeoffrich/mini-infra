@@ -1,3 +1,5 @@
+import type { OperationStep } from './operations';
+
 export interface TlsCertificate {
   id: string;
 
@@ -103,11 +105,7 @@ export interface TlsSettings {
 // Async Certificate Issuance Types
 // ====================
 
-export interface CertIssuanceStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
+export type CertIssuanceStep = OperationStep;
 
 export interface CertIssuanceResult {
   success: boolean;

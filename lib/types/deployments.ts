@@ -1,3 +1,5 @@
+import type { OperationStep } from './operations';
+
 // ====================
 // Container Primitive Types (shared by stacks)
 // ====================
@@ -259,11 +261,7 @@ export interface ForceDeleteServerResponse {
 // Async Manual Frontend Setup Types
 // ====================
 
-export interface ManualFrontendSetupStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
+export type ManualFrontendSetupStep = OperationStep;
 
 export interface ManualFrontendSetupResult {
   success: boolean;
@@ -469,11 +467,7 @@ export interface RemediationPreview {
   };
 }
 
-export interface RemediateHAProxyStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
+export type RemediateHAProxyStep = OperationStep;
 
 export interface RemediateHAProxyResponse {
   success: boolean;
@@ -541,11 +535,7 @@ export interface MigrationPreviewResponse {
   data: MigrationPreview;
 }
 
-export interface MigrationStep {
-  step: string;
-  status: 'completed' | 'failed' | 'skipped';
-  detail?: string;
-}
+export type MigrationStep = OperationStep;
 
 export interface MigrationResult {
   success: boolean;

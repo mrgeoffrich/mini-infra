@@ -18,7 +18,7 @@ import {
   type SelfUpdateStatus,
 } from "../services/self-update";
 import { emitToChannel } from "../lib/socket";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
@@ -244,7 +244,7 @@ router.post(
         iifeSpawned = true;
         const launchStartTime = Date.now();
         (async () => {
-          const steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }> = [];
+          const steps: OperationStep[] = [];
 
           try {
             emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_STARTED, {
