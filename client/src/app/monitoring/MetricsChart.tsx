@@ -13,12 +13,12 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import type { PrometheusQueryResponse } from "@/hooks/use-monitoring";
+import type { PrometheusQueryResult } from "@mini-infra/types";
 
 interface MetricsChartProps {
   title: string;
   description: string;
-  data?: PrometheusQueryResponse;
+  data?: PrometheusQueryResult;
   icon: React.ReactNode;
   valueFormatter: (value: number) => string;
   color: "blue" | "green" | "purple" | "orange";

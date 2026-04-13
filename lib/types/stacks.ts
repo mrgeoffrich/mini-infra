@@ -567,6 +567,18 @@ export interface StackApplyStartedResponse {
   message?: string;
 }
 
+export interface StackValidationError {
+  name: string;
+  description?: string;
+  error: string;
+}
+
+export interface StackValidationResult {
+  success: boolean;
+  valid: boolean;
+  errors: StackValidationError[];
+}
+
 // ====================
 // Stack Adoption Types
 // ====================

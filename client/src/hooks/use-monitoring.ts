@@ -1,37 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { StackInfo } from "@mini-infra/types";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, MonitoringStatusResponse, PrometheusQueryResult } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+
+export type { MonitoringStatusResponse };
 
 function generateCorrelationId(): string {
   return `monitoring-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-// Types for monitoring API responses
-export interface MonitoringStatusResponse {
-  stack: StackInfo | null;
-  containerStatus: Array<{
-    serviceName: string;
-    containerId: string;
-    containerName: string;
-    image: string;
-    state: string;
-    status: string;
-  }>;
-  running: boolean;
-  message?: string;
-}
-
-export interface PrometheusQueryResponse {
-  status: string;
-  data: {
-    resultType: string;
-    result: Array<{
-      metric: Record<string, string>;
-      value?: [number, string];
-      values?: Array<[number, string]>;
-    }>;
-  };
 }
 
 // Fetch monitoring status (stack-based)
@@ -59,7 +33,7 @@ async function fetchMonitoringStatus(
 async function fetchPrometheusQuery(
   query: string,
   correlationId: string
-): Promise<PrometheusQueryResponse> {
+): Promise<PrometheusQueryResult> {
   const params = new URLSearchParams({ query });
   const response = await fetch(`/api/monitoring/query?${params}`, {
     credentials: "include",
@@ -83,7 +57,7 @@ async function fetchPrometheusRangeQuery(
   end: string,
   step: string,
   correlationId: string
-): Promise<PrometheusQueryResponse> {
+): Promise<PrometheusQueryResult> {
   const params = new URLSearchParams({ query, start, end, step });
   const response = await fetch(`/api/monitoring/query_range?${params}`, {
     credentials: "include",

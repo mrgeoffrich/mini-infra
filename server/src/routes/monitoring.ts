@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
+import { MonitoringStatusResponse } from '@mini-infra/types';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../services/stacks/utils';
@@ -37,7 +38,7 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
       });
     }
 
-    let containerStatus: ReturnType<typeof mapContainerStatus>[] = [];
+    let containerStatus: MonitoringStatusResponse['containerStatus'] = [];
     let running = false;
     try {
       const dockerExecutor = new DockerExecutorService();
@@ -60,11 +61,12 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
       // Docker unavailable
     }
 
-    res.json({
+    const response: MonitoringStatusResponse = {
       stack: serializeStack(stack),
       containerStatus,
       running,
-    });
+    };
+    res.json(response);
   } catch (error) {
     logger.error({ error }, 'Failed to get monitoring status');
     res.status(500).json({ error: 'Failed to get monitoring status' });

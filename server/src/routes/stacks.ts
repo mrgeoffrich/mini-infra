@@ -36,7 +36,7 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult, StackServiceDefinition, DockerContainerInfo, StackServiceRouting, StackAdoptionCandidate, StackAdoptionCandidatesResponse } from '@mini-infra/types';
+import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult, StackServiceDefinition, DockerContainerInfo, StackServiceRouting, StackAdoptionCandidate, StackAdoptionCandidatesResponse, StackValidationResult } from '@mini-infra/types';
 import { UserEventService } from '../services/user-events';
 import {
   formatPlanStep,
@@ -494,7 +494,7 @@ router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, r
       (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
     );
 
-    const errors: Array<{ name: string; description?: string; error: string }> = [];
+    const errors: StackValidationResult['errors'] = [];
     for (const def of paramDefs) {
       const value = paramValues[def.name];
       if (value === '' || value === undefined || value === null) {
@@ -502,11 +502,12 @@ router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, r
       }
     }
 
-    res.json({
+    const result: StackValidationResult = {
       success: true,
       valid: errors.length === 0,
       errors,
-    });
+    };
+    res.json(result);
   } catch (error) {
     res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Validation failed' });
   }
