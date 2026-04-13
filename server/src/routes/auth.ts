@@ -707,7 +707,8 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
 }) as RequestHandler);
 
 router.get("/google/callback", ((req: Request, res: Response, next: NextFunction) => {
-  passport.authenticate("google", async (err: any, user: any) => {
+  passport.authenticate("google", async (err: Error | null, authedUser: false | { id: string; email: string; name: string | null; image: string | null; createdAt: Date }) => {
+    const user = authedUser;
     const storedNonce = req.cookies?.["oauth-state"];
     res.clearCookie("oauth-state", { path: "/auth/google/callback" });
 

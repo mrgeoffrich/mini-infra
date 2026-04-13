@@ -1,4 +1,5 @@
 import { BlobServiceClient } from "@azure/storage-blob";
+import type { DatabaseConnectionConfig } from "@mini-infra/types";
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { AzureStorageService } from "../azure-storage-service";
@@ -28,7 +29,7 @@ export class RollbackManager {
    * Create a rollback backup before restore
    */
   async createRollbackBackup(
-    connectionConfig: any,
+    connectionConfig: DatabaseConnectionConfig,
     azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
@@ -178,7 +179,7 @@ export class RollbackManager {
    * Execute rollback using the pre-restore backup
    */
   async executeRollback(
-    connectionConfig: any,
+    connectionConfig: DatabaseConnectionConfig,
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,

@@ -170,7 +170,7 @@ export default function RegistryCredentialsPage() {
         toastWithCopy.success("Registry credential created successfully");
       } else if (dialogMode === "edit" && selectedCredential) {
         // Only include password if it was changed
-        const updateData: any = {
+        const updateData: Partial<CredentialFormData> = {
           name: data.name,
           username: data.username,
           isDefault: data.isDefault,

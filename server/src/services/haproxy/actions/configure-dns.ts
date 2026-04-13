@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from "../../../lib/logger-factory";
 import { cloudflareDNSService } from "../../cloudflare";
 import { networkUtils } from "../../network-utils";
@@ -11,7 +12,7 @@ const logger = loadbalancerLogger();
  * - 'internet': Skips DNS creation (assumes external DNS management)
  */
 export class ConfigureDNS {
-  async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+  async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
     logger.info(
       {
         deploymentId: context?.deploymentId,
@@ -68,7 +69,7 @@ export class ConfigureDNS {
     } catch (error) {
       const errorMessage =
         error instanceof Error
-          ? error.message
+          ? (error instanceof Error ? error.message : String(error))
           : "Unknown error during DNS configuration";
 
       logger.error(

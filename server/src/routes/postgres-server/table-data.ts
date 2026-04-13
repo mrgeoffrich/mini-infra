@@ -45,27 +45,27 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: tables,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    logger.error({ error: error.message, serverId: req.params.serverId, databaseId: req.params.dbId },
+    logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId: req.params.serverId, databaseId: req.params.dbId },
       "Failed to list tables");
     res.status(500).json({
       success: false,
       error: "Failed to list tables",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -102,7 +102,7 @@ router.get("/:tableName/data", requirePermission('postgres:read'), async (req, r
       success: true,
       data: tableData,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -111,21 +111,21 @@ router.get("/:tableName/data", requirePermission('postgres:read'), async (req, r
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    if (error.message === "Table not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Table not found") {
       return res.status(404).json({
         success: false,
         error: "Table not found",
@@ -134,7 +134,7 @@ router.get("/:tableName/data", requirePermission('postgres:read'), async (req, r
 
     logger.error(
       {
-        error: error.message,
+        error: (error instanceof Error ? error.message : String(error)),
         serverId: req.params.serverId,
         databaseId: req.params.dbId,
         tableName: req.params.tableName
@@ -144,7 +144,7 @@ router.get("/:tableName/data", requirePermission('postgres:read'), async (req, r
     res.status(500).json({
       success: false,
       error: "Failed to get table data",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

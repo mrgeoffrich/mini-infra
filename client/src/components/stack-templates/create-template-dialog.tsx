@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+import { useForm, Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
@@ -63,7 +63,7 @@ export function CreateTemplateDialog({
   const createMutation = useCreateStackTemplate();
 
   const form = useForm<CreateTemplateFormValues>({
-    resolver: zodResolver(createTemplateSchema) as any,
+    resolver: zodResolver(createTemplateSchema) as Resolver<z.infer<typeof createTemplateSchema>>,
     defaultValues: {
       name: "",
       displayName: "",

@@ -136,8 +136,8 @@ export function configureGoogleStrategy(
 }
 
 // Serialization functions (needed even with JWT)
-passport.serializeUser((user: any, done: PassportDoneCallback) => {
-  done(null, user.id);
+passport.serializeUser((user: Express.User, done: PassportDoneCallback) => {
+  done(null, (user as { id: string }).id);
 });
 
 passport.deserializeUser(async (id: string, done: PassportDoneCallback) => {

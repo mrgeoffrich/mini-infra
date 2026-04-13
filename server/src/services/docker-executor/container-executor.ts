@@ -197,7 +197,7 @@ export class ContainerExecutor {
         ([key, value]) => `${key}=${value}`,
       );
 
-      const containerOptions: any = {
+      const containerOptions: Docker.ContainerCreateOptions & { AutoRemove?: boolean } = {
         Image: options.image,
         Env: env,
         AttachStdout: true,
@@ -227,12 +227,12 @@ export class ContainerExecutor {
 
       // Add network mode if provided
       if (options.networkMode) {
-        containerOptions.HostConfig.NetworkMode = options.networkMode;
+        containerOptions.HostConfig!.NetworkMode = options.networkMode;
       }
 
       // Add volume binds if provided
       if (options.binds && options.binds.length > 0) {
-        containerOptions.HostConfig.Binds = options.binds;
+        containerOptions.HostConfig!.Binds = options.binds;
       }
 
       return await this.docker.createContainer(containerOptions);
@@ -340,7 +340,7 @@ export class ContainerExecutor {
       }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the operation
-      if ((error as any).statusCode === 404) {
+      if ((error as { statusCode?: number }).statusCode === 404) {
         servicesLogger().debug(
           { containerId: container.id },
           "Container already removed",

@@ -154,8 +154,8 @@ export class ManualFrontendManager {
           }
 
           // Extract exposed ports
-          const ports = (container.Ports || []).map((port: any) => ({
-            containerPort: port.PrivatePort,
+          const ports = (container.Ports || []).map((port: { PrivatePort?: number; PublicPort?: number; Type?: string }) => ({
+            containerPort: port.PrivatePort ?? 0,
             protocol: port.Type || "tcp",
           }));
 
@@ -292,7 +292,7 @@ export class ManualFrontendManager {
     request: InternalCreateRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     logger.info({ request }, "Creating manual frontend using shared frontend");
 
     try {
@@ -625,8 +625,8 @@ export class ManualFrontendManager {
             logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
             try {
               await haproxyClient.deleteBackend(frontend.backendName);
-            } catch (error: any) {
-              if (error?.response?.status !== 404) {
+            } catch (error) {
+              if ((error as { response?: { status?: number } }).response?.status !== 404) {
                 logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
               }
             }
@@ -642,9 +642,9 @@ export class ManualFrontendManager {
           logger.info({ backendName: frontend.backendName }, "Removing backend from HAProxy");
           try {
             await haproxyClient.deleteBackend(frontend.backendName);
-          } catch (error: any) {
+          } catch (error) {
             // If backend doesn't exist, log warning but continue
-            if (error?.response?.status !== 404) {
+            if ((error as { response?: { status?: number } }).response?.status !== 404) {
               logger.warn({ error, backendName: frontend.backendName }, "Failed to remove backend");
             }
           }
@@ -695,7 +695,7 @@ export class ManualFrontendManager {
     updates: UpdateManualFrontendRequest,
     haproxyClient: HAProxyDataPlaneClient,
     prisma: PrismaClient
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     logger.info({ frontendName, updates }, "Updating manual frontend");
 
     try {

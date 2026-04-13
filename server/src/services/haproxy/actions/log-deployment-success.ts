@@ -1,4 +1,5 @@
 import { loadbalancerLogger } from '../../../lib/logger-factory';
+import type { ActionContext } from './types';
 
 const logger = loadbalancerLogger();
 
@@ -24,7 +25,7 @@ interface DeploymentSummary {
 }
 
 export class LogDeploymentSuccess {
-    execute(context?: any): void {
+    execute(context?: ActionContext): void {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,

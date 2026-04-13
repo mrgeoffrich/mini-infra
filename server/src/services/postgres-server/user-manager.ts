@@ -50,10 +50,10 @@ export class UserManagementService {
 
       logger.info({ serverId, count: result.rows.length }, "Users listed from server");
       return result.rows;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId }, "Failed to list users from server");
-      throw new Error(`Failed to list users: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to list users from server");
+      throw new Error(`Failed to list users: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -186,10 +186,10 @@ export class UserManagementService {
 
       logger.info({ serverId, userId: managedUser.id, username: sanitizedUsername }, "User created");
       return managedUser;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, username: params.username }, "Failed to create user");
-      throw new Error(`Failed to create user: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, username: params.username }, "Failed to create user");
+      throw new Error(`Failed to create user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -231,10 +231,10 @@ export class UserManagementService {
       });
 
       logger.info({ serverId, managedUserId, username: managedUser.username }, "User dropped");
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, managedUserId }, "Failed to drop user");
-      throw new Error(`Failed to drop user: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to drop user");
+      throw new Error(`Failed to drop user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -275,10 +275,10 @@ export class UserManagementService {
       });
 
       logger.info({ serverId, managedUserId, username: managedUser.username }, "User password changed");
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, managedUserId }, "Failed to change user password");
-      throw new Error(`Failed to change password: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to change user password");
+      throw new Error(`Failed to change password: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -345,10 +345,10 @@ export class UserManagementService {
 
       logger.info({ serverId, managedUserId, username: managedUser.username }, "User updated");
       return updated;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, managedUserId }, "Failed to update user");
-      throw new Error(`Failed to update user: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to update user");
+      throw new Error(`Failed to update user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 

@@ -1,4 +1,5 @@
 import { PrismaClient } from "../../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../../lib/logger-factory";
@@ -270,7 +271,7 @@ export class PostgresDatabaseManager {
       }
 
       // Prepare update data
-      const updateData: any = {
+      const updateData: Prisma.PostgresDatabaseUpdateInput = {
         updatedAt: new Date(),
       };
 
@@ -457,7 +458,7 @@ export class PostgresDatabaseManager {
   ): Promise<PostgresDatabaseInfo[]> {
     try {
       // Build where clause
-      const where: any = {};
+      const where: Prisma.PostgresDatabaseWhereInput = {};
 
       if (filter) {
         if (filter.name) {
@@ -487,7 +488,7 @@ export class PostgresDatabaseManager {
       }
 
       // Build order by clause
-      let orderBy: any = { createdAt: "desc" }; // Default sort
+      let orderBy: Prisma.PostgresDatabaseOrderByWithRelationInput = { createdAt: "desc" }; // Default sort
 
       if (sort) {
         const sortField = sort.field === "tags" ? "name" : sort.field; // Can't sort by JSON field
@@ -502,7 +503,7 @@ export class PostgresDatabaseManager {
         skip: offset,
       });
 
-      return databases.map((db: any) => this.toDatabaseInfo(db));
+      return databases.map((db) => this.toDatabaseInfo(db));
     } catch (error) {
       servicesLogger().error(
         {

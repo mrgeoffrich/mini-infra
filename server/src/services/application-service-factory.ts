@@ -9,7 +9,7 @@ import DockerService from './docker';
 export interface ServiceCreationOptions {
   serviceName: string;
   serviceType: string;
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   projectName?: string;
   environmentId?: string;
 }
@@ -18,7 +18,7 @@ export interface ServiceCreationResult {
   success: boolean;
   service?: IApplicationService;
   message?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export class ApplicationServiceFactory {
@@ -231,7 +231,7 @@ export class ApplicationServiceFactory {
       const containers = await this.dockerService.listContainers();
 
       // Find container by service name or environment labels
-      const container = containers.find((c: any) => {
+      const container = containers.find((c) => {
         const labels = c.labels || {};
         const name = c.name || '';
 

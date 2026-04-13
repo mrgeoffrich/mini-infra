@@ -11,7 +11,7 @@ export interface HealthCheckResult {
   success: boolean;
   statusCode?: number;
   responseTime: number;
-  responseBody?: any;
+  responseBody?: unknown;
   errorMessage?: string;
   validationDetails?: {
     statusCode: boolean;

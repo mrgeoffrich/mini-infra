@@ -104,7 +104,7 @@ async function fetchPrometheusRangeQuery(
 async function applyMonitoringStack(
   stackId: string,
   correlationId: string
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   const response = await fetch(`/api/stacks/${stackId}/apply`, {
     method: "POST",
     credentials: "include",
@@ -148,7 +148,7 @@ async function stopMonitoringStack(
 async function fetchMonitoringPlan(
   stackId: string,
   correlationId: string
-): Promise<any> {
+): Promise<Record<string, unknown>> {
   const response = await fetch(`/api/stacks/${stackId}/plan`, {
     credentials: "include",
     headers: {
@@ -220,7 +220,7 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
     retry: (failureCount, error) => {
-      if (error.message.includes("401")) return false;
+      if ((error instanceof Error ? error.message : String(error)).includes("401")) return false;
       return failureCount < 2;
     },
   });

@@ -31,7 +31,7 @@ export class GrantManagementService {
   /**
    * Get a PostgreSQL client for a specific database
    */
-  private async getDatabaseClient(server: any, databaseName: string): Promise<Client> {
+  private async getDatabaseClient(server: { connectionString: string }, databaseName: string): Promise<Client> {
     const baseConnectionString = this.decryptConnectionString(server.connectionString);
     // Replace the database name in the connection string
     const dbConnectionString = baseConnectionString.replace(/\/[^/?]+(\?|$)/, `/${databaseName}$1`);
@@ -192,10 +192,10 @@ export class GrantManagementService {
       await client.end();
 
       logger.info({ serverId, grantId, database: dbName, user: username }, "Grant applied to server");
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, grantId }, "Failed to apply grant");
-      throw new Error(`Failed to apply grant: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, grantId }, "Failed to apply grant");
+      throw new Error(`Failed to apply grant: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -316,9 +316,9 @@ export class GrantManagementService {
       }
 
       logger.info({ serverId, grantId, database: dbName, user: username }, "Grant revoked from server");
-    } catch (error: any) {
-      logger.error({ error: error.message, serverId, grantId }, "Failed to revoke grant");
-      throw new Error(`Failed to revoke grant: ${error.message}`, { cause: error });
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, grantId }, "Failed to revoke grant");
+      throw new Error(`Failed to revoke grant: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 

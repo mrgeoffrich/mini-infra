@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
+import type { StackTemplateSource, StackTemplateScope, CreateStackTemplateRequest, DraftVersionInput } from '@mini-infra/types';
 import prisma from '../lib/prisma';
 import { appLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
@@ -21,9 +22,9 @@ function getTemplateService() {
   return new StackTemplateService(prisma);
 }
 
-function handleTemplateError(error: unknown, res: any, fallbackMessage: string) {
+function handleTemplateError(error: unknown, res: Response, fallbackMessage: string) {
   if (error instanceof TemplateError) {
-    return res.status(error.statusCode).json({ success: false, message: error.message });
+    return res.status(error.statusCode).json({ success: false, message: (error instanceof Error ? error.message : String(error)) });
   }
   logger.error({ error }, fallbackMessage);
   return res.status(500).json({ success: false, message: fallbackMessage });
@@ -36,8 +37,8 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
     const { source, scope, includeArchived, includeLinkedStacks } = req.query;
 
     const templates = await service.listTemplates({
-      source: source as any,
-      scope: scope as any,
+      source: source as StackTemplateSource,
+      scope: scope as StackTemplateScope,
       includeArchived: includeArchived === 'true',
       includeLinkedStacks: includeLinkedStacks === 'true',
     });
@@ -108,8 +109,8 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
 
     const service = getTemplateService();
     const template = await service.createUserTemplate(
-      parsed.data as any,
-      (req as any).user?.id
+      parsed.data as CreateStackTemplateRequest,
+      (req as { user?: { id?: string } }).user?.id
     );
 
     logger.info({ templateId: template.id, templateName: template.name }, 'Template created');
@@ -147,8 +148,8 @@ router.post('/:templateId/draft', requirePermission('stacks:write'), async (req,
     const service = getTemplateService();
     const version = await service.createOrUpdateDraft(
       String(req.params.templateId),
-      parsed.data as any,
-      (req as any).user?.id
+      parsed.data as DraftVersionInput,
+      (req as { user?: { id?: string } }).user?.id
     );
 
     res.json({ success: true, data: version });
@@ -216,7 +217,7 @@ router.post('/:templateId/instantiate', requirePermission('stacks:write'), async
         templateId: String(req.params.templateId),
         ...parsed.data,
       },
-      (req as any).user?.id
+      (req as { user?: { id?: string } }).user?.id
     );
 
     logger.info(

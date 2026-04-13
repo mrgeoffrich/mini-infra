@@ -33,9 +33,9 @@ const createAppDatabaseSchema = z.object({
  * Returns connection string for application use
  */
 router.post("/create-app-database", requirePermission('postgres:write'), async (req, res) => {
-  let createdDatabase: any = null;
-  let createdUser: any = null;
-  let createdGrant: any = null;
+  let createdDatabase: Awaited<ReturnType<typeof databaseManagementService.createDatabase>> | null = null;
+  let createdUser: Awaited<ReturnType<typeof userManagementService.createUser>> | null = null;
+  let createdGrant: Awaited<ReturnType<typeof grantManagementService.createGrant>> | null = null;
 
   try {
     const userId = getUserId(req);
@@ -106,10 +106,10 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
           connectionString,
         },
       });
-    } catch (workflowError: any) {
+    } catch (workflowError) {
       // Rollback any created resources
       logger.error(
-        { error: workflowError.message, database: createdDatabase?.id, user: createdUser?.id, grant: createdGrant?.id },
+        { error: (workflowError instanceof Error ? workflowError.message : String(workflowError)), database: createdDatabase?.id, user: createdUser?.id, grant: createdGrant?.id },
         "Quick setup workflow failed, rolling back"
       );
 
@@ -131,9 +131,9 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
         }
 
         logger.info("Rollback completed successfully");
-      } catch (rollbackError: any) {
+      } catch (rollbackError) {
         logger.error(
-          { error: rollbackError.message },
+          { error: (rollbackError instanceof Error ? rollbackError.message : String(rollbackError)) },
           "Failed to rollback workflow - manual cleanup may be required"
         );
       }
@@ -141,7 +141,7 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
       // Re-throw the original error
       throw workflowError;
     }
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -150,18 +150,18 @@ router.post("/create-app-database", requirePermission('postgres:write'), async (
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create application database");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create application database");
     res.status(500).json({
       success: false,
       error: "Failed to create application database",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

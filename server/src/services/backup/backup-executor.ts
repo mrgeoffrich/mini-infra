@@ -285,7 +285,7 @@ export class BackupExecutorService {
       });
 
       // Try to cancel the job in the queue
-      const jobs = await this.backupQueue.getJobs(["pending", "active"]);
+      const jobs = await this.backupQueue.getJobs<BackupJobData>(["pending", "active"]);
       const job = jobs.find((j) => j.data.backupOperationId === operationId);
 
       if (job) {
@@ -314,7 +314,7 @@ export class BackupExecutorService {
    */
   private setupQueueProcessors(): void {
     // Process backup jobs
-    this.backupQueue.process("execute-backup", async (job: QueueJob) => {
+    this.backupQueue.process<BackupJobData>("execute-backup", async (job) => {
       const { backupOperationId, databaseId, userId } = job.data;
 
       servicesLogger().info(
@@ -351,7 +351,7 @@ export class BackupExecutorService {
     });
 
     // Handle job events
-    this.backupQueue.on("completed", (job: QueueJob, result: any) => {
+    this.backupQueue.on("completed", (job: QueueJob<BackupJobData>, result: unknown) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -362,12 +362,12 @@ export class BackupExecutorService {
       );
     });
 
-    this.backupQueue.on("failed", (job: QueueJob, error: Error) => {
+    this.backupQueue.on("failed", (job: QueueJob<BackupJobData>,error: Error) => {
       servicesLogger().error(
         {
           jobId: job.id,
           operationId: job.data.backupOperationId,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         },
         "Backup job failed permanently",
       );

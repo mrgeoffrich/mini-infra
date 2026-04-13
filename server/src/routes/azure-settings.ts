@@ -14,6 +14,7 @@ import {
   AzureValidationResponse,
   AzureContainerListResponse,
   AzureContainerAccessResponse,
+  AzureContainerInfo,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -539,13 +540,13 @@ router.get("/containers", requirePermission('settings:read') as RequestHandler, 
       data: {
         accountName: accountName || "Unknown",
         containerCount: containerInfo.length,
-        containers: containerInfo.map((container) => ({
+        containers: containerInfo.map((container): AzureContainerInfo => ({
           name: container.name,
           lastModified: container.lastModified
             ? new Date(container.lastModified).toISOString()
             : new Date().toISOString(),
-          leaseStatus: container.leaseStatus || "unlocked",
-          leaseState: container.leaseState || "available",
+          leaseStatus: (container.leaseStatus || "unlocked") as AzureContainerInfo["leaseStatus"],
+          leaseState: (container.leaseState || "available") as AzureContainerInfo["leaseState"],
           hasImmutabilityPolicy: container.hasImmutabilityPolicy || false,
           hasLegalHold: container.hasLegalHold || false,
           metadata: container.metadata,

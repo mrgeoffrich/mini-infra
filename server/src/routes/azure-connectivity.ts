@@ -11,6 +11,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   ConnectivityStatusListResponse,
   ConnectivityStatusResponse,
@@ -218,7 +219,7 @@ router.get("/history", requirePermission('settings:read') as RequestHandler, (as
     }
 
     // Build filter conditions
-    const whereConditions: any = {
+    const whereConditions: Prisma.ConnectivityStatusWhereInput = {
       service: "azure",
     };
 

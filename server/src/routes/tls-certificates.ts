@@ -41,7 +41,7 @@ const createCertificateSchema = z.object({
 /**
  * Helper to parse certificate JSON fields from database
  */
-function parseCertificateData(certificate: any) {
+function parseCertificateData(certificate: Record<string, unknown>) {
   return {
     ...certificate,
     domains: typeof certificate.domains === "string" ? JSON.parse(certificate.domains) : certificate.domains,
@@ -166,19 +166,19 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
         emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
           operationId,
           success: true,
-          certificateId: certificate.id,
+          certificateId: certificate.id as string,
           primaryDomain: validatedData.primaryDomain,
           steps,
           errors: [],
         });
-      } catch (error: any) {
-        logger.error({ error: error.message, operationId }, "Background certificate issuance failed");
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), operationId }, "Background certificate issuance failed");
         emitToChannel(Channel.TLS, ServerEvent.CERT_ISSUANCE_COMPLETED, {
           operationId,
           success: false,
           primaryDomain: validatedData.primaryDomain,
           steps,
-          errors: [error.message],
+          errors: [(error instanceof Error ? error.message : String(error))],
         });
       } finally {
         issuingCertificates.delete(validatedData.primaryDomain);

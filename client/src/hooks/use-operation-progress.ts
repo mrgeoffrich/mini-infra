@@ -52,15 +52,15 @@ export interface UseOperationProgressOptions<
   /** Filter events by operationId — only handle events matching this ID */
   operationId: string | null;
   /** Extract operationId from event payload */
-  getOperationId: (payload: any) => string;
+  getOperationId: (payload: Parameters<ServerToClientEvents[TStarted]>[0]) => string;
   /** Extract totalSteps from started event */
-  getTotalSteps: (payload: any) => number;
+  getTotalSteps: (payload: Parameters<ServerToClientEvents[TStarted]>[0]) => number;
   /** Extract planned step names from started event (optional) */
-  getStepNames?: (payload: any) => string[];
+  getStepNames?: (payload: Parameters<ServerToClientEvents[TStarted]>[0]) => string[];
   /** Extract step from step event */
-  getStep: (payload: any) => OperationStep;
+  getStep: (payload: Parameters<ServerToClientEvents[TStep]>[0]) => OperationStep;
   /** Extract result from completed event */
-  getResult: (payload: any) => { success: boolean; steps: OperationStep[]; errors: string[] };
+  getResult: (payload: Parameters<ServerToClientEvents[TCompleted]>[0]) => { success: boolean; steps: OperationStep[]; errors: string[] };
   /** TanStack Query keys to invalidate on completion */
   invalidateKeys?: unknown[][];
   /** Toast messages */
@@ -139,7 +139,7 @@ export function useOperationProgress<
   // Started event
   useSocketEvent(
     startedEvent,
-    ((data: any) => {
+    ((data: Parameters<ServerToClientEvents[TStarted]>[0]) => {
       if (getOperationId(data) !== operationId) return;
       setState({
         phase: "executing",
@@ -155,8 +155,8 @@ export function useOperationProgress<
   // Step event
   useSocketEvent(
     stepEvent,
-    ((data: any) => {
-      if (getOperationId(data) !== operationId) return;
+    ((data: Parameters<ServerToClientEvents[TStep]>[0]) => {
+      if (getOperationId(data as Parameters<ServerToClientEvents[TStarted]>[0]) !== operationId) return;
       setState((prev) => ({
         ...prev,
         completedSteps: [...prev.completedSteps, getStep(data)],
@@ -168,8 +168,8 @@ export function useOperationProgress<
   // Completed event
   useSocketEvent(
     completedEvent,
-    ((data: any) => {
-      if (getOperationId(data) !== operationId) return;
+    ((data: Parameters<ServerToClientEvents[TCompleted]>[0]) => {
+      if (getOperationId(data as Parameters<ServerToClientEvents[TStarted]>[0]) !== operationId) return;
       const result = getResult(data);
       setState((prev) => ({
         phase: result.success ? "success" : "error",

@@ -36,7 +36,7 @@ export class RegistryManager {
       );
 
       // Prepare authentication if credentials are provided
-      let authconfig: any = {};
+      let authconfig: Docker.AuthConfig | Record<string, never> = {};
       if (registryUsername && registryPassword) {
         authconfig = {
           username: registryUsername,
@@ -188,7 +188,7 @@ export class RegistryManager {
       );
 
       // Prepare authentication if credentials are provided
-      let authconfig: any = {};
+      let authconfig: Docker.AuthConfig | Record<string, never> = {};
       if (options.registryUsername && options.registryPassword) {
         authenticated = true;
         authconfig = {

@@ -52,19 +52,19 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedDatabases,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to list databases");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list databases");
     res.status(500).json({
       success: false,
       error: "Failed to list databases",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -91,7 +91,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       success: true,
       data: sanitizedDatabase,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -100,18 +100,18 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create database");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create database");
     res.status(500).json({
       success: false,
       error: "Failed to create database",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -138,26 +138,26 @@ router.get("/:dbId", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedDatabase,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to get database details");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get database details");
     res.status(500).json({
       success: false,
       error: "Failed to get database details",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -178,26 +178,26 @@ router.delete("/:dbId", requirePermission('postgres:write'), async (req, res) =>
       success: true,
       message: "Database dropped successfully",
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to drop database");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to drop database");
     res.status(500).json({
       success: false,
       error: "Failed to drop database",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -231,7 +231,7 @@ router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res)
       data: sanitizedDatabase,
       message: "Database owner changed successfully",
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -240,25 +240,25 @@ router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res)
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to change database owner");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to change database owner");
     res.status(500).json({
       success: false,
       error: "Failed to change database owner",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -279,19 +279,19 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
       message: "Databases synced successfully",
       data: result,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to sync databases");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync databases");
     res.status(500).json({
       success: false,
       error: "Failed to sync databases",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -312,26 +312,26 @@ router.get("/:dbId/grants", requirePermission('postgres:read'), async (req, res)
       success: true,
       data: grants,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "Database not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
       return res.status(404).json({
         success: false,
         error: "Database not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to list grants for database");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list grants for database");
     res.status(500).json({
       success: false,
       error: "Failed to list grants for database",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

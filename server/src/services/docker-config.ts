@@ -203,16 +203,25 @@ export class DockerConfigService extends ConfigurationService {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "docker" as ConnectivityService,
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt || undefined,
-      responseTime: latestStatus.responseTimeMs || undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata
-        ? JSON.parse(latestStatus.metadata)
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt || undefined,
+      responseTime: row.responseTimeMs || undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata
+        ? JSON.parse(row.metadata)
         : undefined,
     };
   }
@@ -292,7 +301,7 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Get Docker system information
    */
-  async getDockerInfo(): Promise<any> {
+  async getDockerInfo(): Promise<Record<string, unknown>> {
     try {
       const docker = await this.getDockerClient();
       return await docker.info();
@@ -310,7 +319,7 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Get Docker version information
    */
-  async getDockerVersion(): Promise<any> {
+  async getDockerVersion(): Promise<Record<string, unknown> | Awaited<ReturnType<Docker['version']>>> {
     try {
       const docker = await this.getDockerClient();
       return await docker.version();
@@ -329,7 +338,7 @@ export class DockerConfigService extends ConfigurationService {
    * Create Docker client with specified configuration
    */
   private createDockerClient(host: string, apiVersion?: string | null): Docker {
-    const dockerConfig: any = {};
+    const dockerConfig: Record<string, unknown> = {};
 
     // Parse Docker host configuration
     if (host.startsWith("npipe://")) {
@@ -397,9 +406,9 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Map Docker errors to connectivity status
    */
-  private mapErrorToStatus(error: any): ConnectivityStatusType {
+  private mapErrorToStatus(error: unknown): ConnectivityStatusType {
     if (error instanceof Error) {
-      const message = error.message.toLowerCase();
+      const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
       if (message.includes("timeout")) {
         return "timeout";
       } else if (
@@ -415,16 +424,17 @@ export class DockerConfigService extends ConfigurationService {
   /**
    * Extract Docker-specific error codes
    */
-  private getDockerErrorCode(error: any): string | undefined {
+  private getDockerErrorCode(error: unknown): string | undefined {
     if (error && typeof error === "object") {
-      if (error.statusCode) {
-        return `HTTP_${error.statusCode}`;
+      const e = error as { statusCode?: number; code?: string; errno?: number };
+      if (e.statusCode) {
+        return `HTTP_${e.statusCode}`;
       }
-      if (error.code) {
-        return error.code;
+      if (e.code) {
+        return e.code;
       }
-      if (error.errno) {
-        return `ERRNO_${error.errno}`;
+      if (e.errno) {
+        return `ERRNO_${e.errno}`;
       }
     }
     return undefined;
@@ -438,7 +448,7 @@ export class DockerConfigService extends ConfigurationService {
     responseTimeMs?: number,
     errorMessage?: string,
     errorCode?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void> {
     return super.recordConnectivityStatus(

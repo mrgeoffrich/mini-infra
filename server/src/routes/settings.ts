@@ -10,6 +10,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   SettingResponse,
   SettingsListResponse,
@@ -162,15 +163,16 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
     } = queryValidation.data;
 
     // Build filter conditions
-    const where: any = { isActive: false }; // Default to inactive settings
+    const where: Prisma.SystemSettingsWhereInput = { isActive: false }; // Default to inactive settings
     if (category) where.category = category;
     if (key) where.key = key;
     if (typeof isActive === "boolean") where.isActive = isActive;
     if (validationStatus) where.validationStatus = validationStatus;
 
     // Build sort conditions
-    const orderBy: any = {};
-    orderBy[sortBy] = sortOrder;
+    const orderBy: Prisma.SystemSettingsOrderByWithRelationInput = {
+      [sortBy]: sortOrder,
+    };
 
     // Calculate pagination
     const skip = (page - 1) * limit;
@@ -540,7 +542,7 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData: Prisma.SystemSettingsUpdateInput = {
       value,
       updatedBy: userId,
     };

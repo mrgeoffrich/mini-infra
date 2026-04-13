@@ -27,19 +27,19 @@ export interface ServiceHealth {
   status: HealthStatus;
   message?: string;
   lastChecked: Date;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
 }
 
 export interface NetworkRequirement {
   name: string;
   driver?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 export interface VolumeRequirement {
   name: string;
   driver?: string;
-  options?: Record<string, any>;
+  options?: Record<string, unknown>;
 }
 
 export interface PortRequirement {
@@ -64,7 +64,7 @@ export interface ServiceMetadata {
 export interface StartupResult {
   success: boolean;
   message?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   duration?: number;
 }
 
@@ -77,7 +77,7 @@ export interface ServiceStatusInfo {
   lastError?: {
     message: string;
     timestamp: Date;
-    details?: Record<string, any>;
+    details?: Record<string, unknown>;
   };
 }
 

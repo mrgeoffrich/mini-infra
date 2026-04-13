@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
@@ -13,7 +14,7 @@ export class StopApplication {
         this.containerManager = new ContainerLifecycleManager();
     }
 
-    async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -42,14 +43,14 @@ export class StopApplication {
             } else {
                 // Find all containers for the application
                 const containers = await this.dockerService.listContainers(false);
-                const applicationContainers = containers.filter((container: any) =>
+                const applicationContainers = containers.filter((container) =>
                     container.labels?.[`mini-infra.application`] === context.applicationName ||
                     container.labels?.[`mini-infra.application-name`] === context.applicationName ||
                     container.labels?.[`application.name`] === context.applicationName ||
-                    (container.names && container.names.some((name: string) => name.includes(context.applicationName)))
+                    (container.name?.includes(context.applicationName) ?? false)
                 );
 
-                containersToStop = applicationContainers.map((container: any) => container.id);
+                containersToStop = applicationContainers.map((container) => container.id);
 
                 logger.info({
                     deploymentId: context.deploymentId,

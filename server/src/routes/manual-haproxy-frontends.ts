@@ -4,6 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
 import { ManualFrontendSetupService } from "../services/haproxy/manual-frontend-setup-service";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
@@ -95,10 +96,15 @@ const updateManualFrontendSchema = z.object({
 // Helper Functions
 // ====================
 
-function serializeFrontend(frontend: any): HAProxyFrontendInfo {
+type SerializableFrontend = Prisma.HAProxyFrontendGetPayload<true> & {
+  _count?: { routes?: number };
+  routes?: unknown[];
+};
+
+function serializeFrontend(frontend: SerializableFrontend): HAProxyFrontendInfo {
   return {
     id: frontend.id,
-    frontendType: frontend.frontendType,
+    frontendType: frontend.frontendType as HAProxyFrontendInfo['frontendType'],
     containerName: frontend.containerName,
     containerId: frontend.containerId,
     containerPort: frontend.containerPort,
@@ -145,7 +151,7 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   const containers = await dockerService.listContainers();
 
   // Look for HAProxy container with environment label
-  const haproxyContainer = containers.find((container: any) => {
+  const haproxyContainer = containers.find((container) => {
     const labels = container.labels || {};
     return (
       labels["mini-infra.service"] === "haproxy" &&
@@ -218,12 +224,12 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
-      logger.error({ error: error.message }, "Failed to get eligible containers");
+    } catch (error) {
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get eligible containers");
       res.status(500).json({
         success: false,
         error: "Failed to get eligible containers",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -315,30 +321,30 @@ router.post(
             operationId,
           });
           emitHAProxyUpdate();
-        } catch (error: any) {
-          logger.error({ error: error.message, operationId }, "Background manual frontend setup failed");
+        } catch (error) {
+          logger.error({ error: (error instanceof Error ? error.message : String(error)), operationId }, "Background manual frontend setup failed");
           emitToChannel(Channel.HAPROXY, ServerEvent.FRONTEND_SETUP_COMPLETED, {
             success: false,
             operationId,
             steps: [],
-            errors: [error.message],
+            errors: [(error instanceof Error ? error.message : String(error))],
           });
         } finally {
           settingUpFrontends.delete(request.environmentId);
         }
       })();
-    } catch (error: any) {
+    } catch (error) {
       if (guardedEnvironmentId) settingUpFrontends.delete(guardedEnvironmentId);
-      logger.error({ error: error.message }, "Failed to start manual frontend setup");
+      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to start manual frontend setup");
 
       let statusCode = 500;
-      if (error.message.includes("not found")) statusCode = 404;
-      else if (error.message.includes("Invalid")) statusCode = 400;
+      if ((error instanceof Error ? error.message : String(error)).includes("not found")) statusCode = 404;
+      else if ((error instanceof Error ? error.message : String(error)).includes("Invalid")) statusCode = 400;
 
       res.status(statusCode).json({
         success: false,
         error: "Failed to start manual frontend setup",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -380,15 +386,15 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to fetch manual frontend"
       );
       res.status(500).json({
         success: false,
         error: "Failed to fetch manual frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -457,28 +463,28 @@ router.put(
 
       const response: ManualFrontendResponse = {
         success: true,
-        data: serializeFrontend(frontend),
+        data: serializeFrontend(frontend as SerializableFrontend),
         message: "Manual frontend updated successfully",
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to update manual frontend"
       );
 
       let statusCode = 500;
-      if (error.message.includes("not found")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
         statusCode = 404;
-      } else if (error.message.includes("already in use")) {
+      } else if ((error instanceof Error ? error.message : String(error)).includes("already in use")) {
         statusCode = 409;
       }
 
       res.status(statusCode).json({
         success: false,
         error: "Failed to update manual frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }
@@ -537,23 +543,23 @@ router.delete(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
-        { error: error.message, frontendName: req.params.frontendName },
+        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
         "Failed to delete manual frontend"
       );
 
       let statusCode = 500;
-      if (error.message.includes("not found")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
         statusCode = 404;
-      } else if (error.message.includes("Cannot delete deployment frontend")) {
+      } else if ((error instanceof Error ? error.message : String(error)).includes("Cannot delete deployment frontend")) {
         statusCode = 403;
       }
 
       res.status(statusCode).json({
         success: false,
         error: "Failed to delete manual frontend",
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
   }

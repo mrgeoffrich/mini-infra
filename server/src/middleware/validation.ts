@@ -6,13 +6,12 @@ const logger = servicesLogger();
 
 // Extend Express Request type to include validated data
 // Express 5 makes req.query read-only, so we store validated query data separately
-// eslint-disable-next-line @typescript-eslint/no-namespace -- module augmentation of Express requires namespace syntax
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      validatedQuery?: any;
-      validatedParams?: any;
+      validatedQuery?: unknown;
+      validatedParams?: unknown;
     }
   }
 }
@@ -30,7 +29,7 @@ export function validateRequest(
       const result = schema.safeParse(data);
 
       if (!result.success) {
-        const errors = result.error.issues.map((err: any) => ({
+        const errors = result.error.issues.map((err) => ({
           code: err.code,
           path: err.path,
           message: err.message,

@@ -217,16 +217,18 @@ export class StackContainerManager {
 
     try {
       await container.stop();
-    } catch (err: any) {
-      if (err.statusCode !== 404 && err.statusCode !== 304) {
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number })?.statusCode;
+      if (statusCode !== 404 && statusCode !== 304) {
         throw err;
       }
     }
 
     try {
       await container.remove({ force: true });
-    } catch (err: any) {
-      if (err.statusCode !== 404) {
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number })?.statusCode;
+      if (statusCode !== 404) {
         throw err;
       }
     }

@@ -10,6 +10,7 @@ import express from "express";
 import { tlsLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 
 const logger = tlsLogger();
 const router = express.Router();
@@ -23,12 +24,12 @@ router.get("/", requirePermission('tls:read'), async (req, res) => {
     const { certificateId, status, limit } = req.query;
 
     // Build where clause based on filters
-    const where: any = {};
+    const where: Prisma.TlsCertificateRenewalWhereInput = {};
     if (certificateId) {
       where.certificateId = certificateId as string;
     }
     if (status) {
-      where.status = status as string;
+      where.status = status as Prisma.TlsCertificateRenewalWhereInput['status'];
     }
 
     // Parse limit (default to 100, max 500)

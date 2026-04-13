@@ -204,8 +204,8 @@ function GrantEditorInner({
         toast.success("Grant created successfully");
       }
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save permissions");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to save permissions");
     }
   };
 
@@ -217,8 +217,8 @@ function GrantEditorInner({
       await deleteMutation.mutateAsync(existingGrant.id);
       toast.success("All permissions revoked");
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to revoke permissions");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to revoke permissions");
     }
   };
 

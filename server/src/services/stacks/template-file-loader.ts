@@ -108,12 +108,12 @@ export interface LoadedTemplate {
       serviceType: "Stateful" | "StatelessWeb" | "AdoptedWeb";
       dockerImage: string;
       dockerTag: string;
-      containerConfig: any;
+      containerConfig: z.infer<typeof stackContainerConfigSchema>;
       configFiles?: Array<{ volumeName: string; path: string; content: string; permissions?: string; ownerUid?: number; ownerGid?: number }>;
-      initCommands?: any[];
+      initCommands?: z.infer<typeof stackInitCommandSchema>[];
       dependsOn: string[];
       order: number;
-      routing?: any;
+      routing?: z.infer<typeof stackServiceRoutingSchema>;
     }>;
   };
   configFiles: StackTemplateConfigFileInput[];

@@ -12,8 +12,18 @@ interface CleanupSummary {
     cleanupDuration: number;
 }
 
+export interface CleanupContext {
+    deploymentId?: string;
+    applicationName?: string;
+    containerId?: string;
+    environmentId?: string;
+    environmentName?: string;
+    retryCount?: number;
+    [key: string]: unknown;
+}
+
 export class CleanupTempResources {
-    execute(context?: any): void {
+    execute(context?: CleanupContext): void {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -29,19 +39,19 @@ export class CleanupTempResources {
 
         try {
             // Clean up deployment-specific temporary state
-            resourcesCleaned += this.cleanupDeploymentState(context, tasksPerformed, skippedTasks);
+            resourcesCleaned += this.cleanupDeploymentState(context ?? {}, tasksPerformed, skippedTasks);
 
             // Clean up temporary container metadata
-            resourcesCleaned += this.cleanupContainerMetadata(context, tasksPerformed, skippedTasks);
+            resourcesCleaned += this.cleanupContainerMetadata(context ?? {}, tasksPerformed, skippedTasks);
 
             // Clean up temporary configuration artifacts
-            resourcesCleaned += this.cleanupConfigurationArtifacts(context, tasksPerformed, skippedTasks);
+            resourcesCleaned += this.cleanupConfigurationArtifacts(context ?? {}, tasksPerformed, skippedTasks);
 
             // Reset any cached state
-            resourcesCleaned += this.resetCachedState(context, tasksPerformed, skippedTasks);
+            resourcesCleaned += this.resetCachedState(context ?? {}, tasksPerformed, skippedTasks);
 
             // Clean up monitoring/logging contexts
-            resourcesCleaned += this.cleanupMonitoringContexts(context, tasksPerformed, skippedTasks);
+            resourcesCleaned += this.cleanupMonitoringContexts(context ?? {}, tasksPerformed, skippedTasks);
 
             const cleanupDuration = Date.now() - startTime;
 
@@ -109,7 +119,7 @@ export class CleanupTempResources {
     /**
      * Clean up deployment-specific temporary state
      */
-    private cleanupDeploymentState(context: any, tasksPerformed: string[], skippedTasks: string[]): number {
+    private cleanupDeploymentState(context: CleanupContext, tasksPerformed: string[], skippedTasks: string[]): number {
         let resourcesCleaned = 0;
 
         try {
@@ -128,7 +138,7 @@ export class CleanupTempResources {
             }
 
             // Clear retry counters
-            if (context?.retryCount > 0) {
+            if (context?.retryCount != null && context.retryCount > 0) {
                 tasksPerformed.push(`Reset retry counter (was ${context.retryCount})`);
                 resourcesCleaned++;
             }
@@ -153,7 +163,7 @@ export class CleanupTempResources {
     /**
      * Clean up temporary container metadata
      */
-    private cleanupContainerMetadata(context: any, tasksPerformed: string[], skippedTasks: string[]): number {
+    private cleanupContainerMetadata(context: CleanupContext, tasksPerformed: string[], skippedTasks: string[]): number {
         let resourcesCleaned = 0;
 
         try {
@@ -191,7 +201,7 @@ export class CleanupTempResources {
     /**
      * Clean up temporary configuration artifacts
      */
-    private cleanupConfigurationArtifacts(context: any, tasksPerformed: string[], skippedTasks: string[]): number {
+    private cleanupConfigurationArtifacts(context: CleanupContext, tasksPerformed: string[], skippedTasks: string[]): number {
         let resourcesCleaned = 0;
 
         try {
@@ -230,7 +240,7 @@ export class CleanupTempResources {
     /**
      * Reset any cached state
      */
-    private resetCachedState(context: any, tasksPerformed: string[], skippedTasks: string[]): number {
+    private resetCachedState(context: CleanupContext, tasksPerformed: string[], skippedTasks: string[]): number {
         let resourcesCleaned = 0;
 
         try {
@@ -267,7 +277,7 @@ export class CleanupTempResources {
     /**
      * Clean up monitoring and logging contexts
      */
-    private cleanupMonitoringContexts(context: any, tasksPerformed: string[], skippedTasks: string[]): number {
+    private cleanupMonitoringContexts(context: CleanupContext, tasksPerformed: string[], skippedTasks: string[]): number {
         let resourcesCleaned = 0;
 
         try {

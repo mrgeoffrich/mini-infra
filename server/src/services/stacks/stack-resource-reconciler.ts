@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import type {
   StackTlsCertificate,
   StackDnsRecord,
@@ -30,7 +30,7 @@ interface StackResourceRow {
   resourceName: string;
   fqdn: string;
   externalId: string | null;
-  externalState: any;
+  externalState: Prisma.JsonValue;
   status: string;
   error: string | null;
 }
@@ -219,7 +219,7 @@ export class StackResourceReconciler {
               userId,
               deployToHaproxy: false,
             });
-            certId = cert.id;
+            certId = cert.id as string;
           }
 
           // Upsert stack resource record
@@ -257,9 +257,9 @@ export class StackResourceReconciler {
           });
           result.success = true;
         }
-      } catch (err: any) {
+      } catch (err) {
         log.error({ err, resourceName: action.resourceName }, 'TLS reconciliation failed');
-        result.error = err.message ?? String(err);
+        result.error = err instanceof Error ? err.message : String(err);
       }
 
       results.push(result);
@@ -355,9 +355,9 @@ export class StackResourceReconciler {
 
           result.success = true;
         }
-      } catch (err: any) {
+      } catch (err) {
         log.error({ err, resourceName: action.resourceName }, 'DNS reconciliation failed');
-        result.error = err.message ?? String(err);
+        result.error = err instanceof Error ? err.message : String(err);
       }
 
       results.push(result);
@@ -427,9 +427,10 @@ export class StackResourceReconciler {
                 undefined,
                 { httpHostHeader: def.fqdn },
               );
-            } catch (err: any) {
+            } catch (err) {
               // If hostname already exists, treat as success (idempotent)
-              if (err.message?.includes('already exists')) {
+              const message = err instanceof Error ? err.message : '';
+              if (message.includes('already exists')) {
                 log.info({ fqdn: def.fqdn }, 'Hostname already exists in tunnel, continuing');
               } else {
                 throw err;
@@ -488,9 +489,10 @@ export class StackResourceReconciler {
             log.info({ fqdn: removeFqdn, tunnelId: removeTunnelId }, 'Removing hostname from Cloudflare tunnel');
             try {
               await this.cloudflareService.removeHostname(removeTunnelId, removeFqdn);
-            } catch (err: any) {
+            } catch (err) {
               // If hostname not found, treat as success (already removed)
-              if (err.message?.includes('not found')) {
+              const message = err instanceof Error ? err.message : '';
+              if (message.includes('not found')) {
                 log.info({ fqdn: removeFqdn }, 'Hostname not found in tunnel, continuing');
               } else {
                 throw err;
@@ -513,9 +515,9 @@ export class StackResourceReconciler {
           });
           result.success = true;
         }
-      } catch (err: any) {
+      } catch (err) {
         log.error({ err, resourceName: action.resourceName }, 'Tunnel reconciliation failed');
-        result.error = err.message ?? String(err);
+        result.error = err instanceof Error ? err.message : String(err);
       }
 
       results.push(result);
@@ -601,7 +603,7 @@ export class StackResourceReconciler {
           try {
             await this.cloudflareDns.deleteDNSRecord(state.zoneId, resource.externalId);
             log.info({ resourceName: resource.resourceName, externalId: resource.externalId }, 'Deleted DNS record from Cloudflare');
-          } catch (err: any) {
+          } catch (err) {
             log.warn({ err, resourceName: resource.resourceName }, 'Failed to delete DNS record from Cloudflare (non-fatal)');
           }
         }

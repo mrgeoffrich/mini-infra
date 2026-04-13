@@ -40,8 +40,9 @@ export async function runPostInstallActions(
   for (const handler of handlers) {
     try {
       await handler(ctx);
-    } catch (err: any) {
-      log.error({ handler: handler.name, error: err?.message }, "Post-install action failed");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error({ handler: handler.name, error: message }, "Post-install action failed");
     }
   }
 }

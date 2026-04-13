@@ -8,6 +8,7 @@ export interface RestoreJobData {
   databaseId: string;
   backupUrl: string;
   userId: string;
+  targetDatabaseName?: string;
 }
 
 /**
@@ -28,5 +29,5 @@ export interface BackupValidationResult {
   error?: string;
   sizeBytes?: number;
   lastModified?: Date;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }

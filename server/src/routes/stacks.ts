@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { createActor } from 'xstate';
 import prisma from '../lib/prisma';
+import { Prisma } from '@prisma/client';
 import { appLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { StackResourceReconciler } from '../services/stacks/stack-resource-reconciler';
-import { StackRoutingManager } from '../services/stacks/stack-routing-manager';
+import { StackRoutingManager, type StackRoutingContext } from '../services/stacks/stack-routing-manager';
 import { HAProxyFrontendManager } from '../services/haproxy';
 import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
 import { MonitoringService } from '../services/monitoring';
@@ -35,7 +36,7 @@ import {
   isDockerConnectionError,
   mapContainerStatus,
 } from '../services/stacks/utils';
-import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult } from '@mini-infra/types';
+import { Channel, ServerEvent, StackNetwork, StackVolume, StackParameterDefinition, StackParameterValue, ResourceResult, ResourceType, ServiceApplyResult, StackServiceDefinition, DockerContainerInfo, StackServiceRouting } from '@mini-infra/types';
 import { UserEventService } from '../services/user-events';
 import {
   formatPlanStep,
@@ -112,7 +113,7 @@ async function createResourceReconciler(): Promise<StackResourceReconciler> {
 router.get('/', requirePermission('stacks:read'), async (req, res) => {
   try {
     const { environmentId, scope, source } = req.query;
-    const where: any = {};
+    const where: Prisma.StackWhereInput = {};
     if (scope === 'host') {
       where.environmentId = null;
     } else if (environmentId && typeof environmentId === 'string') {
@@ -254,17 +255,17 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         name,
         description: description ?? null,
         environmentId: environmentId ?? undefined,
-        parameters: parameters ? (parameters as any) : undefined,
-        parameterValues: parameterValues ? (parameterValues as any) : undefined,
-        resourceOutputs: resourceOutputs ? (resourceOutputs as any) : undefined,
-        resourceInputs: resourceInputs ? (resourceInputs as any) : undefined,
-        networks: networks as any,
-        volumes: volumes as any,
+        parameters: parameters ? (parameters as unknown as Prisma.InputJsonValue) : undefined,
+        parameterValues: parameterValues ? (parameterValues as unknown as Prisma.InputJsonValue) : undefined,
+        resourceOutputs: resourceOutputs ? (resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+        resourceInputs: resourceInputs ? (resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+        networks: networks as unknown as Prisma.InputJsonValue,
+        volumes: volumes as unknown as Prisma.InputJsonValue,
         tlsCertificates: tlsCertificates ?? [],
         dnsRecords: dnsRecords ?? [],
         tunnelIngress: tunnelIngress ?? [],
         services: {
-          create: (services as any[]).map(toServiceCreateInput),
+          create: (services as StackServiceDefinition[]).map(toServiceCreateInput),
         },
       },
       include: { services: true },
@@ -298,14 +299,14 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
 
     const { services, parameters, parameterValues, resourceOutputs, resourceInputs, tlsCertificates, dnsRecords, tunnelIngress, ...fields } = parsed.data;
 
-    const updateData: any = {
+    const updateData: Prisma.StackUpdateInput = {
       ...fields,
-      networks: fields.networks ? (fields.networks as any) : undefined,
-      volumes: fields.volumes ? (fields.volumes as any) : undefined,
-      parameters: parameters ? (parameters as any) : undefined,
-      parameterValues: parameterValues ? (parameterValues as any) : undefined,
-      ...(resourceOutputs !== undefined ? { resourceOutputs: resourceOutputs as any } : {}),
-      ...(resourceInputs !== undefined ? { resourceInputs: resourceInputs as any } : {}),
+      networks: fields.networks ? (fields.networks as unknown as Prisma.InputJsonValue) : undefined,
+      volumes: fields.volumes ? (fields.volumes as unknown as Prisma.InputJsonValue) : undefined,
+      parameters: parameters ? (parameters as unknown as Prisma.InputJsonValue) : undefined,
+      parameterValues: parameterValues ? (parameterValues as unknown as Prisma.InputJsonValue) : undefined,
+      ...(resourceOutputs !== undefined ? { resourceOutputs: resourceOutputs as unknown as Prisma.InputJsonValue } : {}),
+      ...(resourceInputs !== undefined ? { resourceInputs: resourceInputs as unknown as Prisma.InputJsonValue } : {}),
       ...(tlsCertificates !== undefined ? { tlsCertificates } : {}),
       ...(dnsRecords !== undefined ? { dnsRecords } : {}),
       ...(tunnelIngress !== undefined ? { tunnelIngress } : {}),
@@ -323,7 +324,7 @@ router.put('/:stackId', requirePermission('stacks:write'), async (req, res) => {
           data: {
             ...updateData,
             services: {
-              create: (services as any[]).map(toServiceCreateInput),
+              create: (services as StackServiceDefinition[]).map(toServiceCreateInput),
             },
           },
           include: { services: true },
@@ -407,17 +408,17 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
       return res.status(404).json({ success: false, message: 'Stack service not found' });
     }
 
-    const updateData: any = {};
+    const updateData: Prisma.StackServiceUpdateInput = {};
     const data = parsed.data;
     if (data.serviceType !== undefined) updateData.serviceType = data.serviceType;
     if (data.dockerImage !== undefined) updateData.dockerImage = data.dockerImage;
     if (data.dockerTag !== undefined) updateData.dockerTag = data.dockerTag;
-    if (data.containerConfig !== undefined) updateData.containerConfig = data.containerConfig as any;
-    if (data.configFiles !== undefined) updateData.configFiles = data.configFiles as any;
-    if (data.initCommands !== undefined) updateData.initCommands = data.initCommands as any;
+    if (data.containerConfig !== undefined) updateData.containerConfig = data.containerConfig as unknown as Prisma.InputJsonValue;
+    if (data.configFiles !== undefined) updateData.configFiles = data.configFiles as unknown as Prisma.InputJsonValue;
+    if (data.initCommands !== undefined) updateData.initCommands = data.initCommands as unknown as Prisma.InputJsonValue;
     if (data.dependsOn !== undefined) updateData.dependsOn = data.dependsOn;
     if (data.order !== undefined) updateData.order = data.order;
-    if (data.routing !== undefined) updateData.routing = data.routing as any;
+    if (data.routing !== undefined) updateData.routing = data.routing as unknown as Prisma.InputJsonValue;
 
     await prisma.$transaction([
       prisma.stackService.update({
@@ -437,6 +438,11 @@ router.put('/:stackId/services/:serviceName', requirePermission('stacks:write'),
       where: { id: stackId },
       include: { services: { orderBy: { order: 'asc' } } },
     });
+
+    if (!stack) {
+      res.status(404).json({ success: false, message: 'Stack not found' });
+      return;
+    }
 
     res.json({ success: true, data: serializeStack(stack) });
   } catch (error) {
@@ -461,12 +467,12 @@ router.get('/:stackId/plan', requirePermission('stacks:read'), async (req, res) 
     const plan = await reconciler.plan(stackId);
 
     res.json({ success: true, data: plan });
-  } catch (error: any) {
+  } catch (error) {
     if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId: req.params.stackId }, 'Failed to compute plan');
-    res.status(500).json({ success: false, message: error?.message ?? 'Failed to compute plan' });
+    res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Failed to compute plan' });
   }
 });
 
@@ -500,8 +506,8 @@ router.get('/:stackId/validate', requirePermission('stacks:read'), async (req, r
       valid: errors.length === 0,
       errors,
     });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error?.message ?? 'Validation failed' });
+  } catch (error) {
+    res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Validation failed' });
   }
 });
 
@@ -551,7 +557,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
     res.json({ success: true, data: { started: true, stackId } });
 
     // Run planning + apply in background
-    const triggeredBy = (req as any).user?.id;
+    const triggeredBy = (req as { user?: { id?: string } }).user?.id;
     const userEventService = new UserEventService(prisma);
     const isForcePull = !!parsed.data.forcePull;
 
@@ -668,7 +674,7 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
                 ...progressResult,
                 completedCount: emittedStepCount,
                 totalActions: totalEmitActions,
-              } as any);
+              } as ServiceApplyResult & { stackId: string; completedCount: number; totalActions: number });
             } catch { /* never break apply */ }
 
             // Append to user event log (skip resource results — they're batched post-apply)
@@ -778,15 +784,15 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           ...result,
           postApply,
         });
-      } catch (error: any) {
-        logger.error({ error: error.message, stackId }, 'Background stack apply failed');
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), stackId }, 'Background stack apply failed');
 
         if (userEventId) {
           try {
             await userEventService.updateEvent(userEventId, {
               status: 'failed',
-              errorMessage: error.message,
-              errorDetails: { type: error.constructor?.name, message: error.message },
+              errorMessage: (error instanceof Error ? error.message : String(error)),
+              errorDetails: { type: ((error as Error)?.constructor?.name), message: (error instanceof Error ? error.message : String(error)) },
             });
           } catch { /* never break error handling */ }
         }
@@ -798,19 +804,19 @@ router.post('/:stackId/apply', requirePermission('stacks:write'), async (req, re
           serviceResults: [],
           resourceResults: [],
           duration: 0,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         });
       } finally {
         applyingStacks.delete(stackId);
       }
     })();
-  } catch (error: any) {
+  } catch (error) {
     applyingStacks.delete(stackId);
     if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId }, 'Failed to start stack apply');
-    res.status(500).json({ success: false, message: error?.message ?? 'Failed to apply stack' });
+    res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Failed to apply stack' });
   }
 });
 
@@ -844,7 +850,7 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
     res.json({ success: true, data: { started: true, stackId } });
 
     // Run planning + update in background
-    const triggeredBy = (req as any).user?.id;
+    const triggeredBy = (req as { user?: { id?: string } }).user?.id;
     const userEventService = new UserEventService(prisma);
 
     (async () => {
@@ -924,7 +930,7 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
                 ...serviceResult,
                 completedCount,
                 totalActions,
-              } as any);
+              });
             } catch { /* never break update */ }
 
             if (userEventId) {
@@ -969,15 +975,15 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
         emitToChannel(Channel.STACKS, ServerEvent.STACK_APPLY_COMPLETED, {
           ...result,
         });
-      } catch (error: any) {
-        logger.error({ error: error.message, stackId }, 'Background stack update failed');
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), stackId }, 'Background stack update failed');
 
         if (userEventId) {
           try {
             await userEventService.updateEvent(userEventId, {
               status: 'failed',
-              errorMessage: error.message,
-              errorDetails: { type: error.constructor?.name, message: error.message },
+              errorMessage: (error instanceof Error ? error.message : String(error)),
+              errorDetails: { type: ((error as Error)?.constructor?.name), message: (error instanceof Error ? error.message : String(error)) },
             });
           } catch { /* never break error handling */ }
         }
@@ -989,19 +995,19 @@ router.post('/:stackId/update', requirePermission('stacks:write'), async (req, r
           serviceResults: [],
           resourceResults: [],
           duration: 0,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         });
       } finally {
         applyingStacks.delete(stackId);
       }
     })();
-  } catch (error: any) {
+  } catch (error) {
     applyingStacks.delete(stackId);
     if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId }, 'Failed to start stack update');
-    res.status(500).json({ success: false, message: error?.message ?? 'Failed to update stack' });
+    res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Failed to update stack' });
   }
 });
 
@@ -1024,7 +1030,7 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
     emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_STARTED, { stackId, stackName: stack.name });
     res.json({ success: true, data: { started: true, stackId } });
 
-    const triggeredBy = (req as any).user?.id;
+    const triggeredBy = (req as { user?: { id?: string } }).user?.id;
     const userEventService = new UserEventService(prisma);
 
     (async () => {
@@ -1064,8 +1070,8 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         try {
           await resourceReconciler.destroyAllResources(stackId);
           logger.info({ stackId }, 'Stack resources destroyed');
-        } catch (err: any) {
-          logger.warn({ error: err.message, stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
+        } catch (err) {
+          logger.warn({ error: (err instanceof Error ? err.message : String(err)), stackId }, 'Resource destruction failed (non-fatal), continuing with container removal');
         }
 
         // Step 1b: Clean up routing for AdoptedWeb services (container is NOT removed)
@@ -1073,8 +1079,8 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         if (adoptedServices.length > 0 && fullStack.environmentId) {
           const routingManager = new StackRoutingManager(prisma, new HAProxyFrontendManager());
           for (const svc of adoptedServices) {
-            const routing = svc.routing as any;
-            const adopted = svc.adoptedContainer as any;
+            const routing = svc.routing as { tunnelIngress?: string; tlsCertificate?: string; dnsRecord?: string } | null;
+            const adopted = svc.adoptedContainer as { containerId?: string; name?: string; containerName?: string } | null;
             if (!routing || !adopted) continue;
 
             try {
@@ -1083,11 +1089,11 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
               const haproxyClient = new HAProxyDataPlaneClient();
               await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
 
-              const routingCtx = {
+              const routingCtx: StackRoutingContext = {
                 serviceName: svc.serviceName,
                 containerId: '',
-                containerName: adopted.containerName,
-                routing,
+                containerName: adopted.containerName ?? '',
+                routing: routing as StackServiceRouting,
                 environmentId: fullStack.environmentId,
                 stackId,
                 stackName: fullStack.name,
@@ -1109,8 +1115,8 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
 
               await routingManager.removeRoute(routingCtx, haproxyClient);
               logger.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing during destroy');
-            } catch (err: any) {
-              logger.warn({ service: svc.serviceName, error: err.message }, 'Failed to remove AdoptedWeb routing during destroy');
+            } catch (err) {
+              logger.warn({ service: svc.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove AdoptedWeb routing during destroy');
             }
           }
         }
@@ -1135,7 +1141,7 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const dockerService = DockerService.getInstance();
         await dockerService.initialize();
         const allContainers = await dockerService.listContainers(true);
-        const stackContainers = allContainers.filter((c: any) =>
+        const stackContainers = allContainers.filter((c: DockerContainerInfo) =>
           c.labels?.['mini-infra.stack-id'] === stackId
         );
 
@@ -1147,10 +1153,10 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         let totalContainersRemoved = 0;
 
         for (const svc of nonAdoptedServices) {
-          const serviceContainers = stackContainers.filter((c: any) =>
+          const serviceContainers = stackContainers.filter((c: DockerContainerInfo) =>
             c.labels?.['mini-infra.service'] === svc.serviceName
           );
-          const containerIds = serviceContainers.map((c: any) => c.id);
+          const containerIds = serviceContainers.map((c: DockerContainerInfo) => c.id);
 
           // StatelessWeb backends use stk-{stackName}-{serviceName} naming
           const applicationName = svc.serviceType === 'StatelessWeb'
@@ -1274,15 +1280,15 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
         const result = { success: true, stackId, containersRemoved, networksRemoved, volumesRemoved, duration };
         logger.info(result, 'Stack destroyed via removal state machine');
         emitToChannel(Channel.STACKS, ServerEvent.STACK_DESTROY_COMPLETED, result);
-      } catch (error: any) {
-        logger.error({ error: error.message, stackId }, 'Background stack destroy failed');
+      } catch (error) {
+        logger.error({ error: (error instanceof Error ? error.message : String(error)), stackId }, 'Background stack destroy failed');
 
         if (userEventId) {
           try {
             await userEventService.updateEvent(userEventId, {
               status: 'failed',
-              errorMessage: error.message,
-              errorDetails: { type: error.constructor?.name, message: error.message },
+              errorMessage: (error instanceof Error ? error.message : String(error)),
+              errorDetails: { type: ((error as Error)?.constructor?.name), message: (error instanceof Error ? error.message : String(error)) },
             });
           } catch { /* never break error handling */ }
         }
@@ -1294,19 +1300,19 @@ router.post('/:stackId/destroy', requirePermission('stacks:write'), async (req, 
           networksRemoved: [],
           volumesRemoved: [],
           duration: Date.now() - startTime,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         });
       } finally {
         applyingStacks.delete(stackId);
       }
     })();
-  } catch (error: any) {
+  } catch (error) {
     applyingStacks.delete(stackId);
     if (isDockerConnectionError(error)) {
       return res.status(503).json({ success: false, message: 'Docker is unavailable' });
     }
     logger.error({ error, stackId }, 'Failed to start stack destroy');
-    res.status(500).json({ success: false, message: error?.message ?? 'Failed to destroy stack' });
+    res.status(500).json({ success: false, message: (error instanceof Error ? error.message : null) ?? 'Failed to destroy stack' });
   }
 });
 
@@ -1326,7 +1332,7 @@ router.get('/:stackId/status', requirePermission('stacks:read'), async (req, res
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    let containerStatus: any[] = [];
+    let containerStatus: Array<ReturnType<typeof mapContainerStatus> & { health: string }> = [];
     try {
       const dockerExecutor = new DockerExecutorService();
       await dockerExecutor.initialize();

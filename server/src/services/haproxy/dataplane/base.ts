@@ -1,4 +1,4 @@
-import { HttpClient, createHttpClient, isHttpError } from '../../../lib/http-client';
+import { HttpClient, createHttpClient, isHttpError, type HttpRequestConfig } from '../../../lib/http-client';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
@@ -182,7 +182,7 @@ export class HAProxyDataPlaneClientBase {
       );
     } catch (error) {
       if (isHttpError(error)) {
-        const message = error.response?.data?.message || error.message;
+        const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
         throw new Error(`DataPlane API connection failed: ${message}`, { cause: error });
       }
       throw error;
@@ -285,13 +285,17 @@ export class HAProxyDataPlaneClientBase {
 
       // addServer / addServerInternal are mixed in downstream — save them
       // using duck-typing so the base class doesn't depend on the mixin.
-      const self = this as any;
+      const self = this as unknown as {
+        addServer?: (backendName: string, config: ServerConfig) => Promise<unknown>;
+        addServerInternal?: (backendName: string, config: ServerConfig, useTransaction: boolean) => Promise<unknown>;
+      };
       const originalAddServer = self.addServer;
 
       // Override addServer to use non-transactional version inside the transaction
-      if (typeof self.addServerInternal === 'function') {
+      const addServerInternal = self.addServerInternal;
+      if (typeof addServerInternal === 'function') {
         self.addServer = (backendName: string, config: ServerConfig) =>
-          self.addServerInternal(backendName, config, false);
+          addServerInternal.call(self, backendName, config, false);
       }
 
       const shouldUse = (url: string) =>
@@ -309,17 +313,17 @@ export class HAProxyDataPlaneClientBase {
         return `${base}${queryParams}${sep}transaction_id=${transaction}`;
       };
 
-      (this.httpClient.get as any) = (url: string, config?: any) =>
-        originalGet.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config);
+      this.httpClient.get = ((url: string, config?: HttpRequestConfig) =>
+        originalGet.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config)) as HttpClient["get"];
 
-      (this.httpClient.post as any) = (url: string, data?: any, config?: any) =>
-        originalPost.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config);
+      this.httpClient.post = ((url: string, data?: unknown, config?: HttpRequestConfig) =>
+        originalPost.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config)) as HttpClient["post"];
 
-      (this.httpClient.put as any) = (url: string, data?: any, config?: any) =>
-        originalPut.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config);
+      this.httpClient.put = ((url: string, data?: unknown, config?: HttpRequestConfig) =>
+        originalPut.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, data, config)) as HttpClient["put"];
 
-      (this.httpClient.delete as any) = (url: string, config?: any) =>
-        originalDelete.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config);
+      this.httpClient.delete = ((url: string, config?: HttpRequestConfig) =>
+        originalDelete.call(this.httpClient, shouldUse(url) ? withTxn(url) : url, config)) as HttpClient["delete"];
 
       try {
         const result = await operations();
@@ -359,10 +363,10 @@ export class HAProxyDataPlaneClientBase {
   /**
    * Handle API errors consistently
    */
-  handleApiError(error: unknown, operation: string, context?: Record<string, any>): void {
+  handleApiError(error: unknown, operation: string, context?: Record<string, unknown>): void {
     if (isHttpError(error)) {
       const status = error.response?.status;
-      const message = error.response?.data?.message || error.message;
+      const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
       const errorDetails = {
         operation,
         status,
@@ -413,19 +417,19 @@ export class HAProxyDataPlaneClientBase {
     maxRetries: number,
     baseDelay: number
   ): Promise<T> {
-    let lastError: Error;
+    let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await operation();
-      } catch (error: any) {
+      } catch (error) {
         lastError = error;
 
         // Only retry on version conflicts
-        if (error.message?.includes('Version conflict') && attempt < maxRetries) {
+        if ((error instanceof Error ? error.message : String(error))?.includes('Version conflict') && attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt);
           logger.debug(
-            { attempt, delay, error: error.message },
+            { attempt, delay, error: (error instanceof Error ? error.message : String(error)) },
             'Retrying after version conflict'
           );
           await new Promise(resolve => setTimeout(resolve, delay));

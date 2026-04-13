@@ -23,6 +23,14 @@ import {
   IconActivity,
 } from "@tabler/icons-react";
 
+import type { UseFormReturn } from "react-hook-form";
+import type {
+  EligibleContainer,
+  EligibleContainersResponse,
+  Environment,
+  ListEnvironmentsResponse,
+} from "@mini-infra/types";
+
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -180,7 +188,7 @@ export default function CreateManualFrontendPage() {
   };
 
   const selectedEnvironment = environmentsData?.environments?.find(
-    (e: any) => e.id === selectedEnvironmentId,
+    (e) => e.id === selectedEnvironmentId,
   );
 
   return (
@@ -309,8 +317,8 @@ export default function CreateManualFrontendPage() {
 // ====================
 
 interface EnvironmentSelectionCardProps {
-  form: any;
-  environmentsData: any;
+  form: UseFormReturn<FormValues>;
+  environmentsData: ListEnvironmentsResponse | undefined;
   isLoading: boolean;
 }
 
@@ -333,9 +341,9 @@ function EnvironmentSelectionCard({
     );
   }
 
-  const environments = environmentsData?.environments || [];
+  const environments: Environment[] = environmentsData?.environments || [];
   const selectedEnvId = form.watch("environmentId");
-  const selectedEnv = environments.find((e: any) => e.id === selectedEnvId);
+  const selectedEnv = environments.find((e) => e.id === selectedEnvId);
 
   return (
     <Card>
@@ -359,7 +367,7 @@ function EnvironmentSelectionCard({
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {environments.map((env: any) => (
+                  {environments.map((env) => (
                     <SelectItem key={env.id} value={env.id}>
                       <div className="flex items-center gap-2">
                         <IconServer className="w-4 h-4" />
@@ -392,8 +400,8 @@ function EnvironmentSelectionCard({
 // ====================
 
 interface ContainerSelectionCardProps {
-  form: any;
-  containersData: any;
+  form: UseFormReturn<FormValues>;
+  containersData: EligibleContainersResponse | undefined;
   isLoading: boolean;
   haproxyNetwork: string;
 }
@@ -418,10 +426,10 @@ function ContainerSelectionCard({
     );
   }
 
-  const containers = containersData?.data?.containers || [];
+  const containers: EligibleContainer[] = containersData?.data?.containers || [];
   const selectedContainerId = form.watch("containerId");
   const selectedContainer = containers.find(
-    (c: any) => c.id === selectedContainerId,
+    (c) => c.id === selectedContainerId,
   );
 
   return (
@@ -444,7 +452,7 @@ function ContainerSelectionCard({
 
         <div className="max-h-[400px] overflow-y-auto w-full pr-4">
           <div className="space-y-3">
-            {containers.map((container: any) => (
+            {containers.map((container) => (
               <div
                 key={container.id}
                 className={`border rounded-lg p-4 cursor-pointer transition-colors ${
@@ -498,7 +506,7 @@ function ContainerSelectionCard({
                       </div>
                       {container.ports?.length > 0 && (
                         <div className="mt-2 text-xs text-muted-foreground">
-                          Ports: {container.ports.map((p: any) => p.containerPort).join(", ")}
+                          Ports: {container.ports.map((p: { containerPort: number }) => p.containerPort).join(", ")}
                         </div>
                       )}
                     </div>
@@ -549,7 +557,7 @@ function ContainerSelectionCard({
 // ====================
 
 interface FrontendConfigurationCardProps {
-  form: any;
+  form: UseFormReturn<FormValues>;
   environmentId: string;
 }
 
@@ -667,9 +675,9 @@ function FrontendConfigurationCard({
 // ====================
 
 interface ValidationAndCreationCardProps {
-  form: any;
-  containersData: any;
-  environmentsData: any;
+  form: UseFormReturn<FormValues>;
+  containersData: EligibleContainersResponse | undefined;
+  environmentsData: ListEnvironmentsResponse | undefined;
 }
 
 function ValidationAndCreationCard({
@@ -679,10 +687,10 @@ function ValidationAndCreationCard({
 }: ValidationAndCreationCardProps) {
   const values = form.getValues();
   const environment = environmentsData?.environments?.find(
-    (e: any) => e.id === values.environmentId,
+    (e: { id: string }) => e.id === values.environmentId,
   );
   const container = containersData?.data?.containers?.find(
-    (c: any) => c.id === values.containerId,
+    (c: { id: string }) => c.id === values.containerId,
   );
 
   return (

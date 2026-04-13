@@ -18,6 +18,9 @@ import {
   StackResourceOutput,
   StackResourceInput,
   StackServiceRouting,
+  StackTlsCertificate,
+  StackDnsRecord,
+  StackTunnelIngress,
   ApplyOptions,
   ApplyResult,
   UpdateOptions,
@@ -28,14 +31,27 @@ import {
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
+
+/**
+ * Minimal shape of the loaded stack record that the private apply/update
+ * helpers operate on. Callers load different include sets (`apply()` adds
+ * `template`, `update()` doesn't) so we only require the common fields
+ * actually used by these helpers.
+ */
+interface StackWithReconcilerContext {
+  id: string;
+  environmentId: string | null;
+  name: string;
+  version: number;
+}
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { servicesLogger } from '../../lib/logger-factory';
-import { initialDeploymentMachine } from '../haproxy/initial-deployment-state-machine';
-import { blueGreenDeploymentMachine } from '../haproxy/blue-green-deployment-state-machine';
-import { blueGreenUpdateMachine } from '../haproxy/blue-green-update-state-machine';
-import { removalDeploymentMachine } from '../haproxy/removal-deployment-state-machine';
+import { initialDeploymentMachine, type InitialDeploymentContext } from '../haproxy/initial-deployment-state-machine';
+import { blueGreenDeploymentMachine, type BlueGreenDeploymentContext } from '../haproxy/blue-green-deployment-state-machine';
+import { blueGreenUpdateMachine, type BlueGreenUpdateContext } from '../haproxy/blue-green-update-state-machine';
+import { removalDeploymentMachine, type RemovalDeploymentContext } from '../haproxy/removal-deployment-state-machine';
 import { runStateMachineToCompletion } from './state-machine-runner';
 import type { HAProxyDataPlaneClient } from '../haproxy';
 import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
@@ -68,7 +84,7 @@ export class StackReconciler {
   private async reconcileInfraOutputs(
     stack: { id: string; environmentId: string | null; environment?: { name: string } | null },
     resourceOutputs: StackResourceOutput[],
-    log: any
+    log: Logger
   ): Promise<Map<string, string>> {
     const result = new Map<string, string>();
 
@@ -141,7 +157,7 @@ export class StackReconciler {
   private async resolveInfraInputs(
     environmentId: string | null,
     resourceInputs: StackResourceInput[],
-    log: any
+    log: Logger
   ): Promise<Map<string, string>> {
     const result = new Map<string, string>();
 
@@ -193,7 +209,7 @@ export class StackReconciler {
     containerId: string,
     serviceDef: StackServiceDefinition,
     infraNetworkMap: Map<string, string>,
-    log: any
+    log: Logger
   ): Promise<void> {
     for (const purpose of serviceDef.containerConfig.joinResourceNetworks ?? []) {
       const netName = infraNetworkMap.get(purpose);
@@ -201,10 +217,11 @@ export class StackReconciler {
       try {
         await this.containerManager.connectToNetwork(containerId, netName);
         log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined infra resource network');
-      } catch (err: any) {
+      } catch (err) {
         // Ignore "already connected" errors
-        const msg = err?.message || '';
-        if (!msg.includes('already exists') && err?.statusCode !== 403) {
+        const e = err as { message?: string; statusCode?: number };
+        const msg = e?.message || '';
+        if (!msg.includes('already exists') && e?.statusCode !== 403) {
           log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: msg }, 'Failed to join infra resource network');
         }
       }
@@ -217,7 +234,7 @@ export class StackReconciler {
   private async joinSelfToOutputNetworks(
     resourceOutputs: StackResourceOutput[],
     outputNetworkMap: Map<string, string>,
-    log: any
+    log: Logger
   ): Promise<void> {
     const { getOwnContainerId } = await import('../self-update');
     const selfId = getOwnContainerId();
@@ -238,9 +255,10 @@ export class StackReconciler {
         const network = docker.getNetwork(netName);
         await network.connect({ Container: selfId });
         log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
-      } catch (err: any) {
-        const msg = err?.message || err?.statusMessage || '';
-        if (!msg.includes('already exists') && err?.statusCode !== 403) {
+      } catch (err) {
+        const e = err as { message?: string; statusMessage?: string; statusCode?: number };
+        const msg = e?.message || e?.statusMessage || '';
+        if (!msg.includes('already exists') && e?.statusCode !== 403) {
           log.warn({ network: netName, purpose: output.purpose, error: msg }, 'Failed to join self to infra resource network');
         } else {
           log.debug({ network: netName }, 'Already connected to infra resource network');
@@ -435,18 +453,19 @@ export class StackReconciler {
       }
     }
 
+    const templateRef = stack as { template?: { currentVersion?: { version: number } | null } | null };
     const templateUpdateAvailable =
       stack.templateVersion != null &&
-      (stack as any).template?.currentVersion?.version != null &&
-      (stack as any).template.currentVersion.version > stack.templateVersion;
+      templateRef.template?.currentVersion?.version != null &&
+      templateRef.template.currentVersion.version > stack.templateVersion;
 
     // Compute resource actions (TLS, DNS, Tunnel)
     const resourceActions = this.resourceReconciler
       ? this.resourceReconciler.planResources(
           {
-            tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
-            dnsRecords: (stack.dnsRecords as any[]) ?? [],
-            tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+            tlsCertificates: (stack.tlsCertificates as unknown as StackTlsCertificate[]) ?? [],
+            dnsRecords: (stack.dnsRecords as unknown as StackDnsRecord[]) ?? [],
+            tunnelIngress: (stack.tunnelIngress as unknown as StackTunnelIngress[]) ?? [],
           },
           currentResources
         )
@@ -458,9 +477,9 @@ export class StackReconciler {
       const refWarnings = this.resourceReconciler.validateResourceReferences(
         serviceDefs,
         {
-          tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
-          dnsRecords: (stack.dnsRecords as any[]) ?? [],
-          tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+          tlsCertificates: (stack.tlsCertificates as unknown as StackTlsCertificate[]) ?? [],
+          dnsRecords: (stack.dnsRecords as unknown as StackDnsRecord[]) ?? [],
+          tunnelIngress: (stack.tunnelIngress as unknown as StackTunnelIngress[]) ?? [],
         },
       );
       planWarnings.push(...refWarnings);
@@ -594,9 +613,9 @@ export class StackReconciler {
       const allResourceResults: ResourceResult[] = [];
       if (this.resourceReconciler && plan.resourceActions.some((a) => a.action !== 'no-op')) {
         const definitions = {
-          tlsCertificates: (stack.tlsCertificates as any[]) ?? [],
-          dnsRecords: (stack.dnsRecords as any[]) ?? [],
-          tunnelIngress: (stack.tunnelIngress as any[]) ?? [],
+          tlsCertificates: (stack.tlsCertificates as unknown as StackTlsCertificate[]) ?? [],
+          dnsRecords: (stack.dnsRecords as unknown as StackDnsRecord[]) ?? [],
+          tunnelIngress: (stack.tunnelIngress as unknown as StackTunnelIngress[]) ?? [],
         };
 
         const progressCallback = (result: ResourceResult) => {
@@ -692,20 +711,20 @@ export class StackReconciler {
             serviceResults.push(result);
           } else {
             const result = await this.applyStateful(
-              action, svc, serviceDef, projectName, stackId, stack,
+              action, svc!, serviceDef, projectName, stackId, stack,
               networkNames, serviceHashes, resolvedConfigsMap, containerByService,
               actionStart, log, infraNetworkMap
             );
             serviceResults.push(result);
           }
-        } catch (err: any) {
-          log.error({ service: action.serviceName, error: err.message }, 'Action failed');
+        } catch (err: unknown) {
+          log.error({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Action failed');
           serviceResults.push({
             serviceName: action.serviceName,
             action: action.action,
             success: false,
             duration: Date.now() - actionStart,
-            error: err.message,
+            error: (err instanceof Error ? err.message : String(err)),
           });
         }
 
@@ -753,8 +772,8 @@ export class StackReconciler {
           version: stack.version,
           status: resultStatus,
           duration: Date.now() - startTime,
-          serviceResults: serviceResults as any,
-          resourceResults: allResourceResults as any,
+          serviceResults: serviceResults as unknown as Prisma.InputJsonValue,
+          resourceResults: allResourceResults as unknown as Prisma.InputJsonValue,
           triggeredBy: options?.triggeredBy ?? null,
         },
       });
@@ -767,10 +786,10 @@ export class StackReconciler {
         resourceResults: allResourceResults,
         duration: Date.now() - startTime,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const duration = Date.now() - startTime;
-      log.error({ error: err.message }, 'Apply failed unexpectedly');
-      await this.recordDeploymentFailure(stackId, 'apply', stack.version, duration, err.message, options?.triggeredBy, log);
+      log.error({ error: (err instanceof Error ? err.message : String(err)) }, 'Apply failed unexpectedly');
+      await this.recordDeploymentFailure(stackId, 'apply', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
       throw err;
     }
   }
@@ -876,13 +895,13 @@ export class StackReconciler {
         } else if (svc?.serviceType === 'StatelessWeb' && serviceDef) {
           // No existing container (create/remove) — use the standard apply path
           result = await this.applyStatelessWeb(
-            action, svc, serviceDef, projectName, stackId, stack,
+            action, svc!, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
             containerByService, actionStart, log, infraNetworkMap
           );
         } else {
           result = await this.applyStateful(
-            action, svc, serviceDef, projectName, stackId, stack,
+            action, svc!, serviceDef, projectName, stackId, stack,
             networkNames, serviceHashes, resolvedConfigsMap,
             containerByService, actionStart, log, infraNetworkMap
           );
@@ -915,7 +934,7 @@ export class StackReconciler {
           version: stack.version,
           status: resultStatus,
           duration: Date.now() - startTime,
-          serviceResults: serviceResults as any,
+          serviceResults: serviceResults as unknown as Prisma.InputJsonValue,
           triggeredBy: options?.triggeredBy ?? null,
         },
       });
@@ -928,10 +947,10 @@ export class StackReconciler {
         resourceResults: [],
         duration: Date.now() - startTime,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
       const duration = Date.now() - startTime;
-      log.error({ error: err.message }, 'Update failed unexpectedly');
-      await this.recordDeploymentFailure(stackId, 'update', stack.version, duration, err.message, options?.triggeredBy, log);
+      log.error({ error: (err instanceof Error ? err.message : String(err)) }, 'Update failed unexpectedly');
+      await this.recordDeploymentFailure(stackId, 'update', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
       throw err;
     }
   }
@@ -944,7 +963,7 @@ export class StackReconciler {
   private async promoteStalePullActions(
     plan: StackPlan,
     stackId: string,
-    log: any
+    log: Logger
   ): Promise<void> {
     const docker = this.dockerExecutor.getDockerClient();
 
@@ -969,8 +988,8 @@ export class StackReconciler {
         const image = docker.getImage(imageRef);
         const inspectData = await image.inspect();
         pulledImageIds.set(svc.serviceName, inspectData.Id);
-      } catch (err: any) {
-        log.warn({ service: svc.serviceName, error: err.message }, 'Force-pull failed, skipping');
+      } catch (err: unknown) {
+        log.warn({ service: svc.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Force-pull failed, skipping');
       }
     }
 
@@ -1034,7 +1053,7 @@ export class StackReconciler {
       try {
         await this.containerManager.stopAndRemoveContainer(containerInfo.Id);
         stopped++;
-      } catch (err) {
+      } catch (err: unknown) {
         log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to stop container, continuing');
       }
     }
@@ -1084,8 +1103,8 @@ export class StackReconciler {
     if (this.resourceReconciler) {
       try {
         await this.resourceReconciler.destroyAllResources(stackId);
-      } catch (err: any) {
-        log.warn({ error: err.message }, 'Resource destruction failed (non-fatal), continuing with container removal');
+      } catch (err: unknown) {
+        log.warn({ error: (err instanceof Error ? err.message : String(err)) }, 'Resource destruction failed (non-fatal), continuing with container removal');
       }
     }
 
@@ -1128,8 +1147,8 @@ export class StackReconciler {
 
           await this.routingManager.removeRoute(routingCtx, haproxyClient);
           log.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing');
-        } catch (err: any) {
-          log.warn({ service: svc.serviceName, error: err.message }, 'Failed to remove AdoptedWeb routing');
+        } catch (err: unknown) {
+          log.warn({ service: svc.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove AdoptedWeb routing');
         }
       }
     }
@@ -1146,7 +1165,7 @@ export class StackReconciler {
       try {
         await this.containerManager.stopAndRemoveContainer(containerInfo.Id);
         containersRemoved++;
-      } catch (err) {
+      } catch (err: unknown) {
         log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to remove container, continuing');
       }
     }
@@ -1160,7 +1179,7 @@ export class StackReconciler {
           await this.dockerExecutor.removeNetwork(netName);
           networksRemoved.push(netName);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         log.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
       }
     }
@@ -1174,7 +1193,7 @@ export class StackReconciler {
           await this.dockerExecutor.removeVolume(volName);
           volumesRemoved.push(volName);
         }
-      } catch (err) {
+      } catch (err: unknown) {
         log.warn({ volume: volName, error: err }, 'Failed to remove volume, continuing');
       }
     }
@@ -1198,17 +1217,17 @@ export class StackReconciler {
 
   private async applyStateful(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition | null,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
-    log: any,
+    log: Logger,
     infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     switch (action.action) {
@@ -1242,8 +1261,8 @@ export class StackReconciler {
             try {
               await this.containerManager.connectToNetwork(containerId, netName);
               log.info({ service: action.serviceName, network: netName }, 'Joined external network');
-            } catch (err: any) {
-              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            } catch (err: unknown) {
+              log.warn({ service: action.serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
             }
           }
         }
@@ -1298,8 +1317,8 @@ export class StackReconciler {
             try {
               await this.containerManager.connectToNetwork(containerId, netName);
               log.info({ service: action.serviceName, network: netName }, 'Joined external network');
-            } catch (err: any) {
-              log.warn({ service: action.serviceName, network: netName, error: err.message }, 'Failed to join external network');
+            } catch (err: unknown) {
+              log.warn({ service: action.serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
             }
           }
         }
@@ -1352,7 +1371,7 @@ export class StackReconciler {
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     serviceHashes: Map<string, string>,
     infraNetworkMap: Map<string, string>,
     networkNames: string[] = []
@@ -1361,7 +1380,7 @@ export class StackReconciler {
     const suffix = Array.from(randomBytes(5), b => String.fromCharCode(97 + (b % 26))).join('');
     const containerName = `${projectName}-${action.serviceName}-${suffix}`;
     const envValidation = new EnvironmentValidationService();
-    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId);
+    const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId!);
 
     if (!haproxyCtx) {
       throw new Error(`HAProxy environment context not available for environment ${stack.environmentId}`);
@@ -1452,14 +1471,14 @@ export class StackReconciler {
    */
   private async applyAdoptedWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     serviceHashes: Map<string, string>,
     actionStart: number,
-    log: any,
+    log: Logger,
     infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
@@ -1484,8 +1503,8 @@ export class StackReconciler {
               action.serviceName, adopted.containerName, routing,
               stackId, stack, log, false
             );
-          } catch (err: any) {
-            log.warn({ service: action.serviceName, error: err.message }, 'Failed to clean up old routing (continuing)');
+          } catch (err: unknown) {
+            log.warn({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to clean up old routing (continuing)');
           }
         }
 
@@ -1510,7 +1529,7 @@ export class StackReconciler {
         }
 
         // 2. Get HAProxy context
-        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+        const { haproxyCtx, haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
 
         // 3. Join container to HAProxy applications network
         const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
@@ -1531,7 +1550,7 @@ export class StackReconciler {
           containerId: target.Id,
           containerName: adopted.containerName,
           routing: { ...routing, listeningPort: adopted.listeningPort },
-          environmentId: stack.environmentId,
+          environmentId: stack.environmentId!,
           stackId,
           stackName: stack.name,
         };
@@ -1575,14 +1594,14 @@ export class StackReconciler {
             action.serviceName, adopted.containerName, routing,
             stackId, stack, log, true
           );
-        } catch (err: any) {
-          log.warn({ service: action.serviceName, error: err.message }, 'Failed to remove routing');
+        } catch (err: unknown) {
+          log.warn({ service: action.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove routing');
           return {
             serviceName: action.serviceName,
             action: 'remove',
             success: false,
             duration: Date.now() - actionStart,
-            error: err.message,
+            error: (err instanceof Error ? err.message : String(err)),
           };
         }
 
@@ -1606,17 +1625,17 @@ export class StackReconciler {
 
   private async applyStatelessWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
-    log: any,
+    log: Logger,
     infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
@@ -1654,7 +1673,7 @@ export class StackReconciler {
           frontendName: undefined,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<InitialDeploymentContext>(
           initialDeploymentMachine,
           initialContext,
           (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1666,8 +1685,8 @@ export class StackReconciler {
           action: 'create',
           success,
           duration: Date.now() - actionStart,
-          containerId: (finalState.context as any).containerId,
-          error: success ? undefined : (finalState.context as any).error ?? 'Deployment failed',
+          containerId: finalState.context.containerId,
+          error: success ? undefined : finalState.context.error ?? 'Deployment failed',
         };
       }
 
@@ -1705,7 +1724,7 @@ export class StackReconciler {
           frontendName: undefined,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<BlueGreenDeploymentContext>(
           blueGreenDeploymentMachine,
           blueGreenContext,
           (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1717,8 +1736,8 @@ export class StackReconciler {
           action: 'recreate',
           success,
           duration: Date.now() - actionStart,
-          containerId: (finalState.context as any).newContainerId,
-          error: success ? undefined : (finalState.context as any).error ?? 'Blue-green deployment failed',
+          containerId: finalState.context.newContainerId,
+          error: success ? undefined : finalState.context.error ?? 'Blue-green deployment failed',
         };
       }
 
@@ -1740,7 +1759,7 @@ export class StackReconciler {
           retryCount: 0,
         };
 
-        const finalState = await runStateMachineToCompletion(
+        const finalState = await runStateMachineToCompletion<RemovalDeploymentContext>(
           removalDeploymentMachine,
           removalContext,
           (actor) => actor.send({ type: 'START_REMOVAL' })
@@ -1752,7 +1771,7 @@ export class StackReconciler {
           action: 'remove',
           success,
           duration: Date.now() - actionStart,
-          error: success ? undefined : (finalState.context as any).error ?? 'Removal failed',
+          error: success ? undefined : finalState.context.error ?? 'Removal failed',
         };
       }
 
@@ -1763,17 +1782,17 @@ export class StackReconciler {
 
   private async updateStatelessWeb(
     action: ServiceAction,
-    svc: any,
+    svc: Prisma.StackServiceGetPayload<true>,
     serviceDef: StackServiceDefinition,
     projectName: string,
     stackId: string,
-    stack: any,
+    stack: StackWithReconcilerContext,
     networkNames: string[],
     serviceHashes: Map<string, string>,
     resolvedConfigsMap: Map<string, StackConfigFile[]>,
     containerByService: Map<string, Docker.ContainerInfo>,
     actionStart: number,
-    log: any,
+    log: Logger,
     infraNetworkMap: Map<string, string> = new Map()
   ): Promise<ServiceApplyResult> {
     const routing = serviceDef.routing;
@@ -1816,7 +1835,7 @@ export class StackReconciler {
       containerIpAddress: undefined,
     };
 
-    const finalState = await runStateMachineToCompletion(
+    const finalState = await runStateMachineToCompletion<BlueGreenUpdateContext>(
       blueGreenUpdateMachine,
       blueGreenContext,
       (actor) => actor.send({ type: 'START_DEPLOYMENT' })
@@ -1828,15 +1847,15 @@ export class StackReconciler {
       action: 'update',
       success,
       duration: Date.now() - actionStart,
-      containerId: (finalState.context as any).newContainerId,
-      error: success ? undefined : (finalState.context as any).error ?? 'Blue-green update failed',
+      containerId: finalState.context.newContainerId,
+      error: success ? undefined : finalState.context.error ?? 'Blue-green update failed',
     };
   }
 
   private async removeConflictingContainer(
     containerName: string,
     stackId: string,
-    log: any
+    log: Logger
   ): Promise<void> {
     const docker = this.dockerExecutor.getDockerClient();
     const allContainers = await docker.listContainers({ all: true });
@@ -1967,7 +1986,7 @@ export class StackReconciler {
         routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
         adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
       })),
-    } as any) as unknown as Prisma.InputJsonValue;
+    } as unknown as Parameters<typeof serializeStack>[0]) as unknown as Prisma.InputJsonValue;
   }
 
   /**
@@ -1993,25 +2012,25 @@ export class StackReconciler {
     adoptedContainerName: string,
     routing: StackServiceRouting,
     stackId: string,
-    stack: { environmentId: string; name: string },
+    stack: StackWithReconcilerContext,
     log: Logger,
     drainBeforeRemove: boolean
   ): Promise<void> {
-    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId);
+    const { haproxyClient } = await this.getInitializedHAProxyClient(stack.environmentId!);
 
     const routingCtx: StackRoutingContext = {
       serviceName,
       containerId: '',
       containerName: adoptedContainerName,
       routing,
-      environmentId: stack.environmentId,
+      environmentId: stack.environmentId!,
       stackId,
       stackName: stack.name,
     };
 
     const backendName = `stk-${stack.name}-${serviceName}`;
     const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-      where: { name: backendName, environmentId: stack.environmentId },
+      where: { name: backendName, environmentId: stack.environmentId! },
       include: { servers: true },
     });
     if (backendRecord) {
@@ -2022,8 +2041,8 @@ export class StackReconciler {
           } else {
             await haproxyClient.deleteServer(backendName, server.name);
           }
-        } catch (err: any) {
-          log.warn({ server: server.name, error: err.message }, 'Failed to remove/drain server');
+        } catch (err: unknown) {
+          log.warn({ server: server.name, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove/drain server');
         }
       }
       if (!drainBeforeRemove) {

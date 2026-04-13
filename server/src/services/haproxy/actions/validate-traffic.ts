@@ -1,3 +1,4 @@
+import type { ActionContext, SendEvent } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 
@@ -20,7 +21,7 @@ export class ValidateTraffic {
         this.haproxyClient = new HAProxyDataPlaneClient();
     }
 
-    async execute(context: any, sendEvent: (event: any) => void): Promise<void> {
+    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -261,7 +262,7 @@ export class ValidateTraffic {
     /**
      * Calculate error rate based on server statistics
      */
-    private calculateErrorRate(serverStats: any): number {
+    private calculateErrorRate(serverStats: { total_sessions?: number; errors_con?: number; errors_resp?: number }): number {
         const totalConnections = serverStats.total_sessions || 0;
         const connectionErrors = serverStats.errors_con || 0;
         const responseErrors = serverStats.errors_resp || 0;

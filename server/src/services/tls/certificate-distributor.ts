@@ -198,9 +198,10 @@ export class CertificateDistributor {
       try {
         this.logger.debug({ certFileName }, "Attempting to update existing certificate");
         await dpClient.updateSSLCertificate(certFileName, combinedPem, true);
-      } catch (updateError: any) {
+      } catch (updateError: unknown) {
+        const errMsg = updateError instanceof Error ? updateError.message : String(updateError);
         // If update fails with 404 (cert doesn't exist yet), try uploading as new
-        if (updateError?.message?.includes("not found") || updateError?.message?.includes("404")) {
+        if (errMsg.includes("not found") || errMsg.includes("404")) {
           this.logger.debug({ certFileName }, "Certificate does not exist, uploading as new");
           await dpClient.uploadSSLCertificate(certFileName, combinedPem, true);
         } else {

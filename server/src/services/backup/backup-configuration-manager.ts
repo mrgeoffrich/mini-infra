@@ -1,4 +1,5 @@
 import { PrismaClient } from "../../lib/prisma";
+import { Prisma } from "@prisma/client";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { servicesLogger } from "../../lib/logger-factory";
@@ -214,7 +215,7 @@ export class BackupConfigurationManager {
       }
 
       // Prepare update data
-      const updateData: any = {
+      const updateData: Prisma.BackupConfigurationUpdateInput = {
         updatedAt: new Date(),
       };
 
@@ -593,7 +594,7 @@ export class BackupConfigurationManager {
   /**
    * Convert database record to info object for API responses
    */
-  private toBackupConfigInfo(config: any): BackupConfigurationInfo {
+  private toBackupConfigInfo(config: Prisma.BackupConfigurationGetPayload<true>): BackupConfigurationInfo {
     return {
       id: config.id,
       databaseId: config.databaseId,

@@ -61,7 +61,7 @@ export class HAProxyRemediationService {
       let currentBackends: string[] = [];
       try {
         const backends = await haproxyClient.listBackends();
-        currentBackends = backends.map((b: any) => b.name);
+        currentBackends = backends.map((b: { name: string }) => b.name);
       } catch {
         logger.warn("Could not fetch current backends from HAProxy");
       }

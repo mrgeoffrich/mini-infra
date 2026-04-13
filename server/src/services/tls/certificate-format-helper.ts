@@ -88,8 +88,8 @@ export function verifyCertificateKeyPair(certificatePem: string, privateKeyPem: 
     const publicKey = cert.publicKey as forge.pki.rsa.PublicKey;
 
     // Compare public key modulus with private key modulus
-    const publicModulus = (publicKey as any).n.toString(16);
-    const privateModulus = (privateKey as any).n.toString(16);
+    const publicModulus = (publicKey as { n: { toString: (radix?: number) => string } }).n.toString(16);
+    const privateModulus = (privateKey as { n: { toString: (radix?: number) => string } }).n.toString(16);
 
     return publicModulus === privateModulus;
   } catch {
@@ -116,8 +116,8 @@ export function extractDomainsFromCertificate(certificatePem: string): string[] 
 
     // Get SANs (Subject Alternative Names)
     const sanExtension = cert.getExtension("subjectAltName");
-    if (sanExtension && (sanExtension as any).altNames) {
-      const altNames = (sanExtension as any).altNames as Array<{ type: number; value: string }>;
+    if (sanExtension && (sanExtension as { altNames?: Array<{ type: number; value: string }> }).altNames) {
+      const altNames = (sanExtension as { altNames?: Array<{ type: number; value: string }> }).altNames as Array<{ type: number; value: string }>;
 
       // Type 2 is DNS name
       altNames

@@ -138,9 +138,9 @@ export class TlsConfigService extends ConfigurationService {
           containerName,
         },
       };
-    } catch (error: any) {
+    } catch (error) {
       const responseTime = Date.now() - startTime;
-      const errorMessage = error.message || "Unknown error";
+      const errorMessage = (error instanceof Error ? error.message : String(error)) || "Unknown error";
       let errorCode = "UNKNOWN_ERROR";
       let connectivityStatus: ConnectivityStatusType = "failed";
 
@@ -207,15 +207,24 @@ export class TlsConfigService extends ConfigurationService {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number | bigint;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "tls",
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt || undefined,
-      responseTime: latestStatus.responseTimeMs ? Number(latestStatus.responseTimeMs) : undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata ? JSON.parse(latestStatus.metadata) : undefined,
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt || undefined,
+      responseTime: row.responseTimeMs ? Number(row.responseTimeMs) : undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
     };
   }
 

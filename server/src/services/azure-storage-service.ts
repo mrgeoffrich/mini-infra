@@ -16,6 +16,18 @@ import {
 } from "@azure/storage-blob";
 import NodeCache from "node-cache";
 
+interface ContainerInfo {
+  name: string;
+  lastModified?: Date | null;
+  etag?: string;
+  leaseStatus?: string;
+  leaseState?: string;
+  hasImmutabilityPolicy?: boolean;
+  hasLegalHold?: boolean;
+  metadata?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 /**
  * Backup file metadata interface
  */
@@ -214,7 +226,7 @@ export class AzureStorageService extends ConfigurationService {
         );
       }
 
-      const metadata: Record<string, any> = {
+      const metadata: Record<string, unknown> = {
         accountName,
         skuName: accountInfo.skuName,
         accountKind: accountInfo.accountKind,
@@ -330,16 +342,25 @@ export class AzureStorageService extends ConfigurationService {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "azure",
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt,
-      responseTime: latestStatus.responseTimeMs || undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata
-        ? JSON.parse(latestStatus.metadata)
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt,
+      responseTime: row.responseTimeMs || undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata
+        ? JSON.parse(row.metadata)
         : undefined,
     };
   }
@@ -400,7 +421,7 @@ export class AzureStorageService extends ConfigurationService {
    * Test blob container access and retrieve container information
    * @returns Array of container information or empty array if no containers or connection fails
    */
-  async getContainerInfo(): Promise<any[]> {
+  async getContainerInfo(): Promise<ContainerInfo[]> {
     try {
       const connectionString = await this.getConnectionString();
 
@@ -416,7 +437,7 @@ export class AzureStorageService extends ConfigurationService {
 
       // Fetch containers with timeout
       const containersPromise = (async () => {
-        const containers: any[] = [];
+        const containers: ContainerInfo[] = [];
         const containerIterator = blobServiceClient.listContainers({
           includeMetadata: true,
         });

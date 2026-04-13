@@ -164,10 +164,11 @@ export class HaproxyCertificateDeployer {
         true
       );
       logger.info({ certFileName }, "Updated existing SSL certificate");
-    } catch (updateError: any) {
+    } catch (updateError: unknown) {
+      const errMsg = updateError instanceof Error ? updateError.message : String(updateError);
       if (
-        updateError.message?.includes("not found") ||
-        updateError.message?.includes("404")
+        errMsg.includes("not found") ||
+        errMsg.includes("404")
       ) {
         await haproxyClient.uploadSSLCertificate(
           certFileName,

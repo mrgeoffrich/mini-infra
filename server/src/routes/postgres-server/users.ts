@@ -58,19 +58,19 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedUsers,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to list users");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list users");
     res.status(500).json({
       success: false,
       error: "Failed to list users",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -95,7 +95,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       success: true,
       data: sanitizedUser,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -104,18 +104,18 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to create user");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create user");
     res.status(500).json({
       success: false,
       error: "Failed to create user",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -140,26 +140,26 @@ router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
       success: true,
       data: sanitizedUser,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to get user details");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get user details");
     res.status(500).json({
       success: false,
       error: "Failed to get user details",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -185,7 +185,7 @@ router.put("/:userId", requirePermission('postgres:write'), async (req, res) => 
       success: true,
       data: sanitizedUser,
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -194,25 +194,25 @@ router.put("/:userId", requirePermission('postgres:write'), async (req, res) => 
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to update user");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update user");
     res.status(500).json({
       success: false,
       error: "Failed to update user",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -233,26 +233,26 @@ router.delete("/:userId", requirePermission('postgres:write'), async (req, res) 
       success: true,
       message: "User dropped successfully",
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to drop user");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to drop user");
     res.status(500).json({
       success: false,
       error: "Failed to drop user",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -274,7 +274,7 @@ router.post("/:userId/password", requirePermission('postgres:write'), async (req
       success: true,
       message: "Password changed successfully",
     });
-  } catch (error: any) {
+  } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
@@ -283,25 +283,25 @@ router.post("/:userId/password", requirePermission('postgres:write'), async (req
       });
     }
 
-    if (error.message === "Server not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to change password");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to change password");
     res.status(500).json({
       success: false,
       error: "Failed to change password",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -322,19 +322,19 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
       message: "Users synced successfully",
       data: result,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to sync users");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync users");
     res.status(500).json({
       success: false,
       error: "Failed to sync users",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -355,26 +355,26 @@ router.get("/:userId/grants", requirePermission('postgres:read'), async (req, re
       success: true,
       data: grants,
     });
-  } catch (error: any) {
-    if (error.message === "Server not found") {
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
       return res.status(404).json({
         success: false,
         error: "Server not found",
       });
     }
 
-    if (error.message === "User not found") {
+    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
       return res.status(404).json({
         success: false,
         error: "User not found",
       });
     }
 
-    logger.error({ error: error.message }, "Failed to list grants for user");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list grants for user");
     res.status(500).json({
       success: false,
       error: "Failed to list grants for user",
-      message: error.message,
+      message: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

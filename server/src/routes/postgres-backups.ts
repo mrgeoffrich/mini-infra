@@ -1,5 +1,6 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 
@@ -13,6 +14,8 @@ import {
   ManualBackupResponse,
   BackupOperationFilter,
   BackupOperationProgress,
+  BackupOperationType,
+  BackupOperationStatus,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -56,7 +59,7 @@ const PaginationSchema = z.object({
 /**
  * Parse query parameters for filtering and pagination
  */
-function parseBackupOperationQuery(query: any) {
+function parseBackupOperationQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupOperationFilterSchema.parse(query);
   const sort = query.sortBy
@@ -73,7 +76,7 @@ function parseBackupOperationQuery(query: any) {
  * Build Prisma where clause from filter
  */
 function buildWhereClause(filter: BackupOperationFilter, databaseId?: string) {
-  const where: any = {};
+  const where: Prisma.BackupOperationWhereInput = {};
 
   if (databaseId) {
     where.databaseId = databaseId;
@@ -103,12 +106,12 @@ function buildWhereClause(filter: BackupOperationFilter, databaseId?: string) {
 /**
  * Map Prisma BackupOperation to BackupOperationInfo
  */
-function mapBackupOperationToInfo(operation: any) {
+function mapBackupOperationToInfo(operation: Prisma.BackupOperationGetPayload<true>) {
   return {
     id: operation.id,
     databaseId: operation.databaseId,
-    operationType: operation.operationType as any,
-    status: operation.status as any,
+    operationType: operation.operationType as BackupOperationType,
+    status: operation.status as BackupOperationStatus,
     startedAt: operation.startedAt.toISOString(),
     completedAt: operation.completedAt?.toISOString() || null,
     sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
@@ -397,7 +400,7 @@ router.get(
         success: true,
         data: {
           id: operation.id,
-          status: operation.status as any,
+          status: operation.status as BackupOperationStatus,
           progress: operation.progress,
           startedAt: operation.startedAt.toISOString(),
           completedAt: operation.completedAt?.toISOString() || null,
@@ -591,7 +594,7 @@ router.get(
       const progressData: BackupOperationProgress = {
         id: operation.id,
         databaseId: operation.databaseId,
-        status: operation.status as any,
+        status: operation.status as BackupOperationStatus,
         progress: operation.progress,
         startedAt: operation.startedAt.toISOString(),
         estimatedCompletion,

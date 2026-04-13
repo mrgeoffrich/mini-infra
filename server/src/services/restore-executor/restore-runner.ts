@@ -1,4 +1,5 @@
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import type { PrismaClient } from "@prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
@@ -22,7 +23,7 @@ export class RestoreRunner {
   private backupValidator: BackupValidator;
   private rollbackManager: RollbackManager;
   private dbOps: DbOperations;
-  private prisma: any;
+  private prisma: PrismaClient;
 
   constructor(
     dockerExecutor: DockerExecutorService,
@@ -31,7 +32,7 @@ export class RestoreRunner {
     backupValidator: BackupValidator,
     rollbackManager: RollbackManager,
     dbOps: DbOperations,
-    prisma: any,
+    prisma: PrismaClient,
   ) {
     this.dockerExecutor = dockerExecutor;
     this.databaseConfigService = databaseConfigService;

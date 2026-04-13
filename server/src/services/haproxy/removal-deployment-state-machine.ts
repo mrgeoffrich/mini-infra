@@ -5,7 +5,7 @@ import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
-import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { CleanupTempResources, type CleanupContext } from './actions/cleanup-temp-resources';
 
 // Create instances of action classes
 const removeContainerFromLB = new RemoveContainerFromLB();
@@ -17,7 +17,7 @@ const alertOperationsTeam = new AlertOperationsTeam();
 const cleanupTempResources = new CleanupTempResources();
 
 // Types for context and events
-interface RemovalDeploymentContext {
+export interface RemovalDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -45,7 +45,7 @@ interface RemovalDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
 }
 
 type RemovalDeploymentEvent =
@@ -82,7 +82,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'LB_REMOVAL_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -98,7 +98,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'FRONTEND_REMOVAL_ERROR',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -114,7 +114,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'STOP_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -130,7 +130,7 @@ export const removalDeploymentMachine = setup({
                 result.catch((error) => {
                     self.send({
                         type: 'REMOVAL_FAILED',
-                        error: error.message || 'Unknown error'
+                        error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                     });
                 });
             }
@@ -144,7 +144,7 @@ export const removalDeploymentMachine = setup({
         cleanupTempResources: ({ context }) => {
             // Just execute cleanup - the state will automatically transition
             // CleanupTempResources.execute() never throws, it handles all errors internally
-            cleanupTempResources.execute(context);
+            cleanupTempResources.execute(context as unknown as CleanupContext);
         },
         preserveErrorContext: assign({
             error: ({ event }) => {

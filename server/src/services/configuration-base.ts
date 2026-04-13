@@ -160,7 +160,7 @@ export abstract class ConfigurationService implements IConfigurationService {
     responseTimeMs?: number,
     errorMessage?: string,
     errorCode?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     userId?: string,
   ): Promise<void> {
     try {
@@ -193,7 +193,7 @@ export abstract class ConfigurationService implements IConfigurationService {
    * Get the most recent connectivity status for this service
    * @returns Latest connectivity status or null if none exists
    */
-  protected async getLatestConnectivityStatus(): Promise<any | null> {
+  protected async getLatestConnectivityStatus(): Promise<Record<string, unknown> | null> {
     try {
       return await this.prisma.connectivityStatus.findFirst({
         where: {

@@ -11,6 +11,7 @@ import {
 } from '@mini-infra/types';
 import { emitToChannel } from '../../lib/socket';
 import type { UserEvent } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 /**
  * UserEventService manages user events for tracking long-running operations
@@ -115,7 +116,7 @@ export class UserEventService {
         'Updating user event',
       );
 
-      const updateData: any = {};
+      const updateData: Prisma.UserEventUpdateInput = {};
 
       if (data.status !== undefined) updateData.status = data.status;
       if (data.progress !== undefined) updateData.progress = data.progress;
@@ -152,7 +153,12 @@ export class UserEventService {
             select: { startedAt: true },
           });
           if (event) {
-            const completedAt = updateData.completedAt || new Date();
+            const completedAtValue = updateData.completedAt;
+            const completedAt = completedAtValue instanceof Date
+              ? completedAtValue
+              : typeof completedAtValue === "string"
+                ? new Date(completedAtValue)
+                : new Date();
             updateData.durationMs =
               completedAt.getTime() - event.startedAt.getTime();
           }
@@ -284,7 +290,7 @@ export class UserEventService {
     offset: number = 0,
   ): Promise<{ events: UserEventInfo[]; totalCount: number }> {
     try {
-      const where: any = {};
+      const where: Prisma.UserEventWhereInput = {};
 
       // Apply filters
       if (filter) {
@@ -333,7 +339,7 @@ export class UserEventService {
       }
 
       // Apply sorting
-      const orderBy: any = {};
+      const orderBy: Prisma.UserEventOrderByWithRelationInput = {};
       if (sort) {
         orderBy[sort.field] = sort.order;
       } else {

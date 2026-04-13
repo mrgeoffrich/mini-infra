@@ -226,7 +226,7 @@ export class CircuitBreaker {
    * @param data The data to redact
    * @returns Redacted copy of the data
    */
-  redact(data: any): any {
+  redact(data: unknown): unknown {
     if (typeof data === "string") {
       let result = data;
       for (const pattern of this.tokenRedactPatterns) {
@@ -238,7 +238,7 @@ export class CircuitBreaker {
     }
 
     if (typeof data === "object" && data !== null) {
-      const redacted = { ...data };
+      const redacted: Record<string, unknown> = { ...(data as Record<string, unknown>) };
 
       for (const key of Object.keys(redacted)) {
         if (

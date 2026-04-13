@@ -145,12 +145,12 @@ router.delete(
       };
 
       res.json(response);
-    } catch (error: any) {
-      if (error.message?.includes("Cannot remove network")) {
+    } catch (error) {
+      if ((error instanceof Error ? error.message : String(error))?.includes("Cannot remove network")) {
         logger.warn({ error, networkId: req.params.id }, "Cannot remove network");
         return res.status(400).json({
           success: false,
-          message: error.message,
+          message: (error instanceof Error ? error.message : String(error)),
           networkId: req.params.id,
         });
       }
@@ -239,12 +239,12 @@ router.delete(
       };
 
       res.json(response);
-    } catch (error: any) {
-      if (error.message?.includes("Cannot remove volume")) {
+    } catch (error) {
+      if ((error instanceof Error ? error.message : String(error))?.includes("Cannot remove volume")) {
         logger.warn({ error, volumeName: req.params.name }, "Cannot remove volume");
         return res.status(400).json({
           success: false,
-          message: error.message,
+          message: (error instanceof Error ? error.message : String(error)),
           volumeName: req.params.name,
         });
       }
@@ -310,7 +310,7 @@ router.post(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
         { error, volumeName: req.params.name },
         "Failed to start volume inspection",
@@ -371,7 +371,7 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
         { error, volumeName: req.params.name },
         "Failed to get volume inspection",
@@ -445,7 +445,7 @@ router.post(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
         { error, volumeName: req.params.name },
         "Failed to fetch file contents",
@@ -499,7 +499,7 @@ router.get(
       };
 
       res.json(response);
-    } catch (error: any) {
+    } catch (error) {
       logger.error(
         { error, volumeName: req.params.name, filePath: req.query.path },
         "Failed to get file content",

@@ -80,7 +80,7 @@ export class HAProxyMigrationService {
     const containers = await dockerService.listContainers();
 
     // A legacy container has mini-infra.service=haproxy but NO mini-infra.stack-id label
-    const legacyContainer = containers.find((c: any) => {
+    const legacyContainer = containers.find((c) => {
       const labels = c.labels || {};
       return (
         labels['mini-infra.service'] === 'haproxy' &&
@@ -90,7 +90,7 @@ export class HAProxyMigrationService {
     });
 
     // Also check if there's already a stack-managed container
-    const stackContainer = containers.find((c: any) => {
+    const stackContainer = containers.find((c) => {
       const labels = c.labels || {};
       return (
         labels['mini-infra.service'] === 'haproxy' &&
@@ -165,7 +165,7 @@ export class HAProxyMigrationService {
     return {
       needsMigration: true,
       legacyContainer: {
-        name: (legacyContainer as any).name || `${envName}-haproxy`,
+        name: (legacyContainer as { name?: string }).name || `${envName}-haproxy`,
         id: legacyContainer.id,
         status: legacyContainer.status,
       },
@@ -254,9 +254,9 @@ export class HAProxyMigrationService {
       const container = docker.getContainer(preview.legacyContainer!.id);
       try {
         await container.stop({ t: 10 });
-      } catch (err: any) {
+      } catch (err) {
         // Container might already be stopped
-        if (!err.message?.includes('not running') && !err.message?.includes('304')) {
+        if (!(err instanceof Error ? err.message : String(err))?.includes('not running') && !(err instanceof Error ? err.message : String(err))?.includes('304')) {
           throw err;
         }
       }

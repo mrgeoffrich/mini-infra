@@ -96,7 +96,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
   const testConnectionMutation = useTestServerConnection();
 
   // Fetch PostgreSQL containers for linking
-  const { data: postgresContainers } = useQuery({
+  const { data: postgresContainers } = useQuery<Array<{ id: string; name: string; image: string; imageTag: string }>>({
     queryKey: ["postgres-containers"],
     queryFn: async () => {
       const response = await fetch("/api/containers/postgres", {
@@ -193,10 +193,10 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
         message: result.success ? result.message || "Connection successful!" : result.error || "Connection failed",
         version: result.version,
       });
-    } catch (error: any) {
+    } catch (error) {
       setTestResult({
         success: false,
-        message: error.message || "Failed to test connection",
+        message: (error instanceof Error ? error.message : String(error)) || "Failed to test connection",
       });
     }
   };
@@ -254,7 +254,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
         }
       } else if (mode === "edit" && serverId) {
         // Build update payload - only include fields that are provided
-        const updatePayload: any = {
+        const updatePayload: Record<string, unknown> = {
           name: data.name,
           host: data.host,
           port: data.port,
@@ -282,8 +282,8 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
       reset();
       setTestResult(null);
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save server");
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to save server");
     }
   };
 
@@ -439,7 +439,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
                         setValue("linkedContainerId", "");
                         setValue("linkedContainerName", "");
                       } else {
-                        const container = postgresContainers?.find((c: any) => c.id === value);
+                        const container = postgresContainers?.find((c) => c.id === value);
                         setValue("linkedContainerId", value);
                         setValue("linkedContainerName", container?.name || "");
                       }
@@ -450,7 +450,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
-                      {postgresContainers?.map((container: any) => (
+                      {postgresContainers?.map((container) => (
                         <SelectItem key={container.id} value={container.id}>
                           {container.name} ({container.image}:{container.imageTag})
                         </SelectItem>

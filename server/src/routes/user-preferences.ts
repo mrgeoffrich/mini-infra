@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
+import { Prisma } from "@prisma/client";
 import type {
   JWTUser,
   UserPreferenceInfo,
@@ -23,7 +24,7 @@ const UpdateUserPreferencesSchema = z
   .strict();
 
 // Helper function to serialize UserPreference for API responses
-function serializeUserPreferenceInfo(preference: any): UserPreferenceInfo {
+function serializeUserPreferenceInfo(preference: Prisma.UserPreferenceGetPayload<true>): UserPreferenceInfo {
   return {
     id: preference.id,
     containerSortField: preference.containerSortField,
@@ -56,13 +57,13 @@ router.get("/preferences", requirePermission('user:read'), async (req: Request, 
       data: preferenceInfo,
       message: "User preferences retrieved successfully",
     });
-  } catch (error: any) {
-    logger.error({ error: error.message }, "Failed to get user preferences");
+  } catch (error) {
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get user preferences");
 
     res.status(500).json({
       success: false,
       message: "Failed to get user preferences",
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -94,33 +95,34 @@ router.put("/preferences", requirePermission('user:write'), async (req: Request,
       data: preferenceInfo,
       message: "User preferences updated successfully",
     });
-  } catch (error: any) {
-    if (error.name === "ZodError") {
+  } catch (error) {
+    const e = error as { name?: string; errors?: unknown };
+    if (e.name === "ZodError") {
       logger.warn(
-        { error: error.errors },
+        { error: e.errors },
         "Invalid request data for user preferences update",
       );
       return res.status(400).json({
         success: false,
         message: "Invalid request data",
-        error: error.errors,
+        error: e.errors,
       });
     }
 
-    if (error.message.includes("Invalid timezone")) {
-      logger.warn({ error: error.message }, "Invalid timezone provided");
+    if ((error instanceof Error ? error.message : String(error)).includes("Invalid timezone")) {
+      logger.warn({ error: (error instanceof Error ? error.message : String(error)) }, "Invalid timezone provided");
       return res.status(400).json({
         success: false,
-        message: error.message,
+        message: (error instanceof Error ? error.message : String(error)),
       });
     }
 
-    logger.error({ error: error.message }, "Failed to update user preferences");
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update user preferences");
 
     res.status(500).json({
       success: false,
       message: "Failed to update user preferences",
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     });
   }
 });
@@ -140,13 +142,13 @@ router.get("/timezones", requirePermission('user:read'), async (req: Request, re
       data: timezones,
       message: "Timezones retrieved successfully",
     });
-  } catch (error: any) {
-    logger.error({ error: error.message }, "Failed to get timezones");
+  } catch (error) {
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get timezones");
 
     res.status(500).json({
       success: false,
       message: "Failed to get timezones",
-      error: error.message,
+      error: (error instanceof Error ? error.message : String(error)),
     });
   }
 });

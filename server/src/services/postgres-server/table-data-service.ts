@@ -84,10 +84,10 @@ export class TableDataService {
 
       logger.info({ serverId, databaseId, count: tables.length }, "Table list retrieved");
       return tables;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseId }, "Failed to get table list");
-      throw new Error(`Failed to get table list: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId }, "Failed to get table list");
+      throw new Error(`Failed to get table list: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -167,9 +167,9 @@ export class TableDataService {
 
       logger.info({ serverId, databaseId, tableName, count: columns.length }, "Table columns retrieved");
       return columns;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseId, tableName }, "Failed to get table columns");
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId, tableName }, "Failed to get table columns");
       throw error;
     }
   }
@@ -217,7 +217,7 @@ export class TableDataService {
 
       // Build WHERE clause from filters
       let whereClause = "";
-      const whereParams: any[] = [];
+      const whereParams: unknown[] = [];
       let paramCounter = 1;
 
       if (params.filters && params.filters.length > 0) {
@@ -285,10 +285,10 @@ export class TableDataService {
         pageSize,
         totalPages,
       };
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseId, tableName }, "Failed to get table data");
-      throw new Error(`Failed to get table data: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId, tableName }, "Failed to get table data");
+      throw new Error(`Failed to get table data: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 

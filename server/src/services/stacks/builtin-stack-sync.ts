@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient } from "@prisma/client";
-import { StackParameterDefinition, StackParameterValue } from "@mini-infra/types";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { StackParameterDefinition, StackParameterValue, StackServiceDefinition, StackDefinition } from "@mini-infra/types";
 import { servicesLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
@@ -54,7 +54,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
         scope: template.scope,
         category: template.category,
         builtinVersion: template.builtinVersion,
-        definition: template.definition as any,
+        definition: template.definition as unknown as StackDefinition,
         configFiles: template.configFiles,
       });
     } catch (error) {
@@ -86,7 +86,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
             scope: template.scope,
             category: template.category,
             builtinVersion: template.builtinVersion,
-            definition: template.definition as any,
+            definition: template.definition as unknown as StackDefinition,
             configFiles: template.configFiles,
           });
           await syncStackFromTemplate(prisma, templateId, template, env.id, log, env.networkType);
@@ -142,7 +142,7 @@ export async function syncBuiltinStacksForEnvironment(
         scope: template.scope,
         category: template.category,
         builtinVersion: template.builtinVersion,
-        definition: template.definition as any,
+        definition: template.definition as unknown as StackDefinition,
         configFiles: template.configFiles,
       });
       await syncStackFromTemplate(prisma, templateId, template, environmentId, log, networkType);
@@ -182,6 +182,9 @@ async function syncStackFromTemplate(
     const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
     const defaultValues = mergeParameterValues(paramDefs, parameterOverrides);
 
+    const serviceCreates: Prisma.StackServiceCreateWithoutStackInput[] =
+      (definition.services as StackServiceDefinition[]).map(toServiceCreateInput) as unknown as Prisma.StackServiceCreateWithoutStackInput[];
+
     await prisma.stack.create({
       data: {
         name: definition.name,
@@ -192,14 +195,14 @@ async function syncStackFromTemplate(
         builtinVersion: template.builtinVersion,
         templateId,
         templateVersion: template.builtinVersion,
-        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
-        parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as any) : undefined,
-        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
-        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
-        networks: definition.networks as any,
-        volumes: definition.volumes as any,
+        parameters: paramDefs.length > 0 ? (paramDefs as unknown as Prisma.InputJsonValue) : undefined,
+        parameterValues: Object.keys(defaultValues).length > 0 ? (defaultValues as unknown as Prisma.InputJsonValue) : undefined,
+        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+        networks: definition.networks as unknown as Prisma.InputJsonValue,
+        volumes: definition.volumes as unknown as Prisma.InputJsonValue,
         services: {
-          create: definition.services.map(toServiceCreateInput),
+          create: serviceCreates,
         },
       },
     });
@@ -242,7 +245,7 @@ async function syncStackFromTemplate(
       const updatedValues = { ...existingValues, ...parameterOverrides };
       await prisma.stack.update({
         where: { id: existing.id },
-        data: { parameterValues: updatedValues as any },
+        data: { parameterValues: updatedValues as unknown as Prisma.InputJsonValue },
       });
       log.info(
         { stackName: template.name, overrides: parameterOverrides },
@@ -279,6 +282,9 @@ async function syncStackFromTemplate(
       where: { stackId: existing.id },
     });
 
+    const serviceCreates: Prisma.StackServiceCreateWithoutStackInput[] =
+      (definition.services as StackServiceDefinition[]).map(toServiceCreateInput) as unknown as Prisma.StackServiceCreateWithoutStackInput[];
+
     await tx.stack.update({
       where: { id: existing.id },
       data: {
@@ -288,14 +294,14 @@ async function syncStackFromTemplate(
         builtinVersion: template.builtinVersion,
         templateId,
         templateVersion: template.builtinVersion,
-        parameters: paramDefs.length > 0 ? (paramDefs as any) : undefined,
-        parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as any) : undefined,
-        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as any) : undefined,
-        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as any) : undefined,
-        networks: definition.networks as any,
-        volumes: definition.volumes as any,
+        parameters: paramDefs.length > 0 ? (paramDefs as unknown as Prisma.InputJsonValue) : undefined,
+        parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as unknown as Prisma.InputJsonValue) : undefined,
+        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
+        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
+        networks: definition.networks as unknown as Prisma.InputJsonValue,
+        volumes: definition.volumes as unknown as Prisma.InputJsonValue,
         services: {
-          create: definition.services.map(toServiceCreateInput),
+          create: serviceCreates,
         },
       },
     });
@@ -402,9 +408,9 @@ async function migrateEnvironmentNetworksToInfraResources(
         update: {}, // Don't overwrite if already exists
       });
       migrated++;
-    } catch (err: any) {
+    } catch (err) {
       log.warn(
-        { purpose: en.purpose, environmentId: en.environmentId, error: err.message },
+        { purpose: en.purpose, environmentId: en.environmentId, error: (err instanceof Error ? err.message : String(err)) },
         'Failed to migrate EnvironmentNetwork to InfraResource'
       );
     }

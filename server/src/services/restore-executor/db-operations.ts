@@ -2,6 +2,8 @@ import { servicesLogger } from "../../lib/logger-factory";
 import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
 import type { RestoreProgressData } from "./types";
 import type { RestoreOperation } from "@prisma/client";
+import type { DatabaseConnectionConfig } from "@mini-infra/types";
+import type { PrismaClient } from "@prisma/client";
 import {
   RestoreOperationInfo,
   RestoreOperationStatus,
@@ -15,11 +17,11 @@ import { emitToChannel } from "../../lib/socket";
  * progress updates, operation mapping, Docker image retrieval, and verification.
  */
 export class DbOperations {
-  private prisma: any;
+  private prisma: PrismaClient;
   private databaseConfigService: PostgresDatabaseManager;
 
   constructor(
-    prisma: any,
+    prisma: PrismaClient,
     databaseConfigService: PostgresDatabaseManager,
   ) {
     this.prisma = prisma;
@@ -120,7 +122,7 @@ export class DbOperations {
   /**
    * Verify restored database integrity
    */
-  async verifyRestoredDatabase(connectionConfig: any): Promise<{
+  async verifyRestoredDatabase(connectionConfig: DatabaseConnectionConfig): Promise<{
     isValid: boolean;
     error?: string;
   }> {

@@ -4,7 +4,7 @@ import { servicesLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
-import { RestoreOperationInfo } from "@mini-infra/types";
+import { RestoreOperationInfo, DatabaseConnectionConfig } from "@mini-infra/types";
 import type { RestoreOperation } from "@prisma/client";
 
 import { BackupValidator } from "./backup-validator";
@@ -364,7 +364,7 @@ export class RestoreExecutorService {
       });
 
       // Try to cancel the job in the queue
-      const jobs = await this._restoreQueue.getJobs(["pending", "active"]);
+      const jobs = await this._restoreQueue.getJobs<RestoreJobData>(["pending", "active"]);
       const job = jobs.find(
         (j) => j.data.restoreOperationId === operationId,
       );
@@ -413,9 +413,9 @@ export class RestoreExecutorService {
 
   private setupQueueProcessors(): void {
     // Process restore jobs
-    this._restoreQueue.process(
+    this._restoreQueue.process<RestoreJobData>(
       "execute-restore",
-      async (job: QueueJob) => {
+      async (job) => {
         const {
           restoreOperationId,
           databaseId,
@@ -467,7 +467,7 @@ export class RestoreExecutorService {
     );
 
     // Handle job events
-    this._restoreQueue.on("completed", (job: QueueJob, result: any) => {
+    this._restoreQueue.on("completed", (job: QueueJob<RestoreJobData>,result: unknown) => {
       servicesLogger().info(
         {
           jobId: job.id,
@@ -478,12 +478,12 @@ export class RestoreExecutorService {
       );
     });
 
-    this._restoreQueue.on("failed", (job: QueueJob, error: Error) => {
+    this._restoreQueue.on("failed", (job: QueueJob<RestoreJobData>,error: Error) => {
       servicesLogger().error(
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,
-          error: error.message,
+          error: (error instanceof Error ? error.message : String(error)),
         },
         "Restore job failed permanently",
       );
@@ -543,7 +543,7 @@ export class RestoreExecutorService {
   }
 
   private async createRollbackBackup(
-    connectionConfig: any,
+    connectionConfig: DatabaseConnectionConfig,
     azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
@@ -561,7 +561,7 @@ export class RestoreExecutorService {
   }
 
   private async executeRollback(
-    connectionConfig: any,
+    connectionConfig: DatabaseConnectionConfig,
     rollbackBackupUrl: string,
     azureConnectionString: string,
     dockerImage: string,
@@ -576,7 +576,7 @@ export class RestoreExecutorService {
     );
   }
 
-  private async verifyRestoredDatabase(connectionConfig: any): Promise<{
+  private async verifyRestoredDatabase(connectionConfig: DatabaseConnectionConfig): Promise<{
     isValid: boolean;
     error?: string;
   }> {

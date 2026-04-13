@@ -10,14 +10,14 @@ const router = Router();
 
 // Response cache implementation
 interface CacheEntry {
-  data: any;
+  data: unknown;
   timestamp: number;
 }
 
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-function getCachedResponse(key: string): any | null {
+function getCachedResponse(key: string): unknown | null {
   const entry = cache.get(key);
   if (!entry) return null;
 
@@ -30,7 +30,7 @@ function getCachedResponse(key: string): any | null {
   return entry.data;
 }
 
-function setCachedResponse(key: string, data: any): void {
+function setCachedResponse(key: string, data: unknown): void {
   cache.set(key, {
     data,
     timestamp: Date.now(),
@@ -164,7 +164,7 @@ router.get(
       }
 
       // Build where clause
-      const where: any = {
+      const where: Record<string, unknown> = {
         service: "cloudflare",
       };
 
@@ -186,7 +186,7 @@ router.get(
       });
 
       // Transform the data
-      const transformedHistory = history.map((item: any) => {
+      const transformedHistory = history.map((item) => {
         const metadata =
           typeof item.metadata === "string"
             ? JSON.parse(item.metadata)

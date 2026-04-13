@@ -10,6 +10,15 @@ import Cloudflare from "cloudflare";
 import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
 import { toServiceError } from "../../lib/service-error-mapper";
 
+// The cloudflare SDK's response types fight our narrow helper signatures
+// (zones / tunnels / DNS records are cursor-paginated unions). Rather
+// than model every response inline, we capture the SDK-shaped responses
+// as `CloudflareApiResponse` and let callers narrow what they need.
+// Modelled `any` so SDK changes don't break every call-site; tracked
+// in `docs/shortcuts.md` for a future adapter-layer refactor.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CloudflareApiResponse = any;
+
 /**
  * Cloudflare-specific error mappers for the circuit breaker.
  * Order matters: HTTP status code checks come first, then message-based checks.
@@ -18,56 +27,56 @@ const CLOUDFLARE_ERROR_MAPPERS: ErrorMapper[] = [
   // HTTP status code matchers (checked via predicate)
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 401 ||
-      (error as any)?.status === 401,
+      (error as { response?: { status?: number } })?.response?.status === 401 ||
+      (error as { status?: number })?.status === 401,
     errorCode: "INVALID_API_TOKEN",
     connectivityStatus: "failed",
     isRetriable: false,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 403 ||
-      (error as any)?.status === 403,
+      (error as { response?: { status?: number } })?.response?.status === 403 ||
+      (error as { status?: number })?.status === 403,
     errorCode: "INSUFFICIENT_PERMISSIONS",
     connectivityStatus: "failed",
     isRetriable: false,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 429 ||
-      (error as any)?.status === 429,
+      (error as { response?: { status?: number } })?.response?.status === 429 ||
+      (error as { status?: number })?.status === 429,
     errorCode: "RATE_LIMITED",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 500 ||
-      (error as any)?.status === 500,
+      (error as { response?: { status?: number } })?.response?.status === 500 ||
+      (error as { status?: number })?.status === 500,
     errorCode: "SERVER_ERROR_500",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 502 ||
-      (error as any)?.status === 502,
+      (error as { response?: { status?: number } })?.response?.status === 502 ||
+      (error as { status?: number })?.status === 502,
     errorCode: "SERVER_ERROR_502",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 503 ||
-      (error as any)?.status === 503,
+      (error as { response?: { status?: number } })?.response?.status === 503 ||
+      (error as { status?: number })?.status === 503,
     errorCode: "SERVER_ERROR_503",
     connectivityStatus: "failed",
     isRetriable: true,
   },
   {
     pattern: (error: unknown) =>
-      (error as any)?.response?.status === 504 ||
-      (error as any)?.status === 504,
+      (error as { response?: { status?: number } })?.response?.status === 504 ||
+      (error as { status?: number })?.status === 504,
     errorCode: "SERVER_ERROR_504",
     connectivityStatus: "failed",
     isRetriable: true,
@@ -158,7 +167,7 @@ export class CloudflareService extends ConfigurationService {
    */
   private isPermissionError(error: unknown): boolean {
     const msg = error instanceof Error ? error.message : String(error);
-    const status = (error as any)?.response?.status ?? (error as any)?.status;
+    const status = (error as { response?: { status?: number } })?.response?.status ?? (error as { status?: number })?.status;
     if (status === 401 || status === 403) return true;
     const lower = msg.toLowerCase();
     return lower.includes("forbidden") || lower.includes("unauthorized") || lower.includes("authentication");
@@ -229,7 +238,7 @@ export class CloudflareService extends ConfigurationService {
         apiToken,
       });
 
-      const metadata: Record<string, any> = {};
+      const metadata: Record<string, unknown> = {};
       const missingPermissions: string[] = [];
 
       // Validate Zone:Read permission by listing zones
@@ -242,11 +251,11 @@ export class CloudflareService extends ConfigurationService {
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as any;
+        ])) as CloudflareApiResponse;
 
         const zones = zonesResponse.result || [];
         metadata.zoneCount = zones.length;
-        metadata.zones = zones.slice(0, 10).map((z: any) => z.name);
+        metadata.zones = zones.slice(0, 10).map((z: { name?: string }) => z.name);
       } catch (zoneError) {
         if (this.isPermissionError(zoneError)) {
           missingPermissions.push("Zone:Read");
@@ -269,14 +278,14 @@ export class CloudflareService extends ConfigurationService {
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as any;
+        ])) as CloudflareApiResponse;
 
         const tunnels = tunnelsResponse.result || [];
         metadata.tunnelCount = tunnels.length;
         metadata.tunnels = tunnels
-          .filter((t: any) => !t.deleted_at)
+          .filter((t: { name?: string; deleted_at?: string | null }) => !t.deleted_at)
           .slice(0, 10)
-          .map((t: any) => t.name);
+          .map((t: { name?: string; deleted_at?: string | null }) => t.name);
       } catch (tunnelError) {
         if (this.isPermissionError(tunnelError)) {
           missingPermissions.push("Tunnel:Read");
@@ -409,16 +418,25 @@ export class CloudflareService extends ConfigurationService {
       };
     }
 
+    const row = latestStatus as {
+      status: string;
+      checkedAt: Date;
+      lastSuccessfulAt?: Date;
+      responseTimeMs?: number;
+      errorMessage?: string;
+      errorCode?: string;
+      metadata?: string;
+    };
     return {
       service: "cloudflare",
-      status: latestStatus.status as ConnectivityStatusType,
-      lastChecked: latestStatus.checkedAt,
-      lastSuccessful: latestStatus.lastSuccessfulAt,
-      responseTime: latestStatus.responseTimeMs || undefined,
-      errorMessage: latestStatus.errorMessage || undefined,
-      errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata
-        ? JSON.parse(latestStatus.metadata)
+      status: row.status as ConnectivityStatusType,
+      lastChecked: row.checkedAt,
+      lastSuccessful: row.lastSuccessfulAt,
+      responseTime: row.responseTimeMs || undefined,
+      errorMessage: row.errorMessage || undefined,
+      errorCode: row.errorCode || undefined,
+      metadata: row.metadata
+        ? JSON.parse(row.metadata)
         : undefined,
     };
   }
@@ -486,7 +504,7 @@ export class CloudflareService extends ConfigurationService {
    * @param tunnelId The tunnel ID to get configuration for
    * @returns Tunnel configuration or null if not found or connection fails
    */
-  async getTunnelConfig(tunnelId: string): Promise<any> {
+  async getTunnelConfig(tunnelId: string): Promise<CloudflareApiResponse> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -596,7 +614,7 @@ export class CloudflareService extends ConfigurationService {
    * Respects circuit breaker state
    * @returns Array of tunnel information or empty array if no tunnels or connection fails
    */
-  async getTunnelInfo(): Promise<any[]> {
+  async getTunnelInfo(): Promise<CloudflareApiResponse[]> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -639,7 +657,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       const tunnels = tunnelsResponse.result || [];
 
@@ -655,8 +673,8 @@ export class CloudflareService extends ConfigurationService {
       );
 
       return tunnels
-        .filter((tunnel: any) => !tunnel.deleted_at) // Filter out deleted tunnels
-        .map((tunnel: any) => ({
+        .filter((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => !tunnel.deleted_at) // Filter out deleted tunnels
+        .map((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => ({
           id: tunnel.id,
           name: tunnel.name,
           status: tunnel.status,
@@ -693,7 +711,7 @@ export class CloudflareService extends ConfigurationService {
    * @param config The new tunnel configuration
    * @returns Updated configuration or null if update fails
    */
-  async updateTunnelConfig(tunnelId: string, config: any): Promise<any> {
+  async updateTunnelConfig(tunnelId: string, config: CloudflareApiResponse): Promise<CloudflareApiResponse> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -817,7 +835,7 @@ export class CloudflareService extends ConfigurationService {
     service: string,
     path?: string,
     originRequest?: { httpHostHeader?: string },
-  ): Promise<any> {
+  ): Promise<CloudflareApiResponse> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -840,7 +858,7 @@ export class CloudflareService extends ConfigurationService {
 
       // Find the catch-all rule (rule without hostname) and insert before it
       const catchAllIndex = ingress.findIndex((rule) => !rule.hostname);
-      const newRule: any = {
+      const newRule: CloudflareApiResponse = {
         hostname,
         service,
       };
@@ -908,7 +926,7 @@ export class CloudflareService extends ConfigurationService {
     tunnelId: string,
     hostname: string,
     path?: string,
-  ): Promise<any> {
+  ): Promise<CloudflareApiResponse> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -1000,7 +1018,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       const zones = zonesResponse.result || [];
 
@@ -1072,7 +1090,7 @@ export class CloudflareService extends ConfigurationService {
       const recordResponse = (await Promise.race([
         cf.dns.records.create({
           zone_id: params.zoneId,
-          type: params.type as any,
+          type: params.type as CloudflareApiResponse,
           name: params.name,
           content: params.content,
           ttl: params.ttl,
@@ -1083,7 +1101,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       // Record success for circuit breaker
       this.circuitBreaker.recordSuccess();
@@ -1268,7 +1286,7 @@ export class CloudflareService extends ConfigurationService {
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as any;
+      ])) as CloudflareApiResponse;
 
       tunnelId = tunnelResponse.id;
       if (!tunnelId) {

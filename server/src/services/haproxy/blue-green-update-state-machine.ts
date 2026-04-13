@@ -11,7 +11,7 @@ import { StopApplication } from './actions/stop-application';
 import { RemoveApplication } from './actions/remove-application';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
-import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { CleanupTempResources, type CleanupContext } from './actions/cleanup-temp-resources';
 import { EnableTraffic } from './actions/enable-traffic';
 
 // Create instances of action classes
@@ -31,7 +31,7 @@ const enableTraffic = new EnableTraffic();
 
 // Types for context and events
 // Note in a blue green update Blue is the old container set, Green is the new container set
-interface BlueGreenUpdateContext {
+export interface BlueGreenUpdateContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -73,7 +73,7 @@ interface BlueGreenUpdateContext {
     startTime: number;
 
     // Configuration
-    config?: any;
+    config?: Record<string, unknown>;
 
     // Source-agnostic configuration (used by actions instead of DB lookups)
     // When set, actions read from these fields directly.
@@ -246,7 +246,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'LB_REMOVAL_FAILED',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -262,7 +262,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_STOP_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -278,7 +278,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_REMOVAL_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -320,7 +320,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -343,7 +343,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -366,7 +366,7 @@ export const blueGreenUpdateMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -385,7 +385,7 @@ export const blueGreenUpdateMachine = setup({
         },
 
         cleanupTempResources: ({ context }) => {
-            cleanupTempResources.execute(context);
+            cleanupTempResources.execute(context as unknown as CleanupContext);
         },
 
         cleanupFailedDeployment: async ({ context }) => {

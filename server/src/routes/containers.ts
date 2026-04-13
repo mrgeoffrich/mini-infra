@@ -160,8 +160,8 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
       const field = queryParams.sortBy || "name";
       const order = queryParams.sortOrder || "asc";
 
-      let aValue: any = a[field as keyof typeof a];
-      let bValue: any = b[field as keyof typeof b];
+      let aValue: unknown = a[field as keyof typeof a];
+      let bValue: unknown = b[field as keyof typeof b];
 
       // Handle date sorting
       if (aValue instanceof Date && bValue instanceof Date) {
@@ -176,8 +176,8 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
         bValue = bValue.toLowerCase();
       }
 
-      if (aValue < bValue) return order === "asc" ? -1 : 1;
-      if (aValue > bValue) return order === "asc" ? 1 : -1;
+      if ((aValue as string | number) < (bValue as string | number)) return order === "asc" ? -1 : 1;
+      if ((aValue as string | number) > (bValue as string | number)) return order === "asc" ? 1 : -1;
       return 0;
     });
 
@@ -249,7 +249,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
     // Check if it's a Docker connectivity error
     if (
       error instanceof Error &&
-      error.message.includes("Docker service not connected")
+      (error instanceof Error ? error.message : String(error)).includes("Docker service not connected")
     ) {
       return res.status(503).json({
         error: "Service Unavailable",
@@ -261,7 +261,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
     }
 
     // Handle timeout errors
-    if (error instanceof Error && error.message.includes("timeout")) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
       return res.status(504).json({
         error: "Gateway Timeout",
         message: "Docker API request timed out. Please try again.",
@@ -508,7 +508,7 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
     );
 
     // Handle specific Docker API errors
-    if (error instanceof Error && error.message.includes("timeout")) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
       return res.status(504).json({
         error: "Gateway Timeout",
         message: "Docker API request timed out. Please try again.",
@@ -620,7 +620,7 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
     );
 
     // Handle specific Docker API errors
-    if (error instanceof Error && error.message.includes("timeout")) {
+    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
       return res.status(504).json({
         error: "Gateway Timeout",
         message: "Docker API request timed out. Please try again.",
@@ -931,7 +931,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
 
       const errorEvent: ContainerLogEvent = {
         type: "error",
-        error: error.message,
+        error: (error instanceof Error ? error.message : String(error)),
       };
       res.write(`data: ${JSON.stringify(errorEvent)}\n\n`);
       res.end();
@@ -963,7 +963,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
 
     // If headers haven't been sent yet, send error response
     if (!res.headersSent) {
-      if (error instanceof Error && error.message.includes("timeout")) {
+      if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
         return res.status(504).json({
           error: "Gateway Timeout",
           message: "Docker API request timed out. Please try again.",
@@ -1160,17 +1160,17 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
     // Handle specific Docker API errors
     if (error instanceof Error) {
       // Container already in requested state
-      if (error.message.includes("already")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("already")) {
         return res.status(409).json({
           error: "Conflict",
-          message: error.message,
+          message: (error instanceof Error ? error.message : String(error)),
           timestamp: new Date().toISOString(),
           requestId,
         });
       }
 
       // Timeout
-      if (error.message.includes("timeout")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("timeout")) {
         return res.status(504).json({
           error: "Gateway Timeout",
           message: "Docker API request timed out. Please try again.",
@@ -1180,7 +1180,7 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
       }
 
       // Not running (for stop/restart)
-      if (error.message.includes("not running")) {
+      if ((error instanceof Error ? error.message : String(error)).includes("not running")) {
         return res.status(400).json({
           error: "Bad Request",
           message: `Cannot ${action} container: container is not running`,

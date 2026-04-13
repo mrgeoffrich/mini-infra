@@ -96,9 +96,9 @@ export function SSLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
         );
 
         logger.info({ filename }, 'SSL certificate deleted successfully');
-      } catch (error: any) {
+      } catch (error) {
         // If certificate doesn't exist, log warning but don't throw
-        if (error.response?.status === 404) {
+        if ((error as { response?: { status?: number } }).response?.status === 404) {
           logger.warn(
             { filename },
             'SSL certificate not found during deletion, may have been already removed'

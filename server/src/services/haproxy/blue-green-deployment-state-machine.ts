@@ -13,7 +13,7 @@ import { RemoveApplication } from './actions/remove-application';
 import { DisableTraffic } from './actions/disable-traffic';
 import { LogDeploymentSuccess } from './actions/log-deployment-success';
 import { AlertOperationsTeam } from './actions/alert-operations-team';
-import { CleanupTempResources } from './actions/cleanup-temp-resources';
+import { CleanupTempResources, type CleanupContext } from './actions/cleanup-temp-resources';
 import { EnableTraffic } from './actions/enable-traffic';
 import { RemoveFrontend } from './actions/remove-frontend';
 import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
@@ -38,7 +38,7 @@ const removeFrontend = new RemoveFrontend();
 
 // Types for context and events
 // Note in a blue green deployment Blue is the old container set, Green is the new container set
-interface BlueGreenDeploymentContext {
+export interface BlueGreenDeploymentContext {
     // Deployment identifiers
     deploymentId: string;
     configurationId: string;
@@ -82,7 +82,7 @@ interface BlueGreenDeploymentContext {
     startTime: number;
 
     // Configuration
-    config?: any;
+    config?: Record<string, unknown>;
 
     // Source-agnostic configuration (used by actions instead of DB lookups)
     // When set, actions read from these fields directly.
@@ -226,7 +226,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'FRONTEND_CONFIG_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -273,7 +273,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'LB_REMOVAL_FAILED',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -289,7 +289,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_STOP_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -305,7 +305,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'BLUE_APP_REMOVAL_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -356,7 +356,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -379,7 +379,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -402,7 +402,7 @@ export const blueGreenDeploymentMachine = setup({
             }).catch((error) => {
                 self.send({
                     type: 'ROLLBACK_ERROR',
-                    error: error.message || 'Unknown error'
+                    error: (error instanceof Error ? error.message : String(error)) || 'Unknown error'
                 });
             });
         },
@@ -421,7 +421,7 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         cleanupTempResources: ({ context }) => {
-            cleanupTempResources.execute(context);
+            cleanupTempResources.execute(context as unknown as CleanupContext);
         },
 
         cleanupFailedDeployment: async ({ context }) => {

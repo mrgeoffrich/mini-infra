@@ -62,10 +62,10 @@ export class DatabaseManagementService {
 
       logger.info({ serverId, count: result.rows.length }, "Databases listed from server");
       return result.rows;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId }, "Failed to list databases from server");
-      throw new Error(`Failed to list databases: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to list databases from server");
+      throw new Error(`Failed to list databases: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -225,10 +225,10 @@ export class DatabaseManagementService {
 
       logger.info({ serverId, databaseId: managedDatabase.id, databaseName: sanitizedDbName }, "Database created");
       return managedDatabase;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseName: params.databaseName }, "Failed to create database");
-      throw new Error(`Failed to create database: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseName: params.databaseName }, "Failed to create database");
+      throw new Error(`Failed to create database: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -271,10 +271,10 @@ export class DatabaseManagementService {
       });
 
       logger.info({ serverId, databaseId, databaseName: managedDatabase.databaseName }, "Database dropped");
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseId }, "Failed to drop database");
-      throw new Error(`Failed to drop database: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId }, "Failed to drop database");
+      throw new Error(`Failed to drop database: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -334,13 +334,13 @@ export class DatabaseManagementService {
         "Database owner changed successfully"
       );
       return updatedDatabase;
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
       logger.error(
-        { error: error.message, serverId, databaseId, newOwner },
+        { error: (error instanceof Error ? error.message : String(error)), serverId, databaseId, newOwner },
         "Failed to change database owner"
       );
-      throw new Error(`Failed to change database owner: ${error.message}`, { cause: error });
+      throw new Error(`Failed to change database owner: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 
@@ -388,10 +388,10 @@ export class DatabaseManagementService {
       await client.end();
 
       return BigInt(result.rows[0].size_bytes);
-    } catch (error: any) {
+    } catch (error) {
       await client.end();
-      logger.error({ error: error.message, serverId, databaseName }, "Failed to get database size");
-      throw new Error(`Failed to get database size: ${error.message}`, { cause: error });
+      logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseName }, "Failed to get database size");
+      throw new Error(`Failed to get database size: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
     }
   }
 

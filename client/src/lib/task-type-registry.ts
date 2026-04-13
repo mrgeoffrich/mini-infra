@@ -11,22 +11,30 @@ import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 import type { OperationStep } from "@/hooks/use-operation-progress";
 import type { TaskType } from "./task-tracker-types";
 
+// Registry entries each handle a distinct Socket.IO event whose payload
+// shape is specific to the event. Typing the union across all events
+// here would force every normalizer to discriminate on fields the
+// registry doesn't know about — so we accept `any` payloads and let
+// each normalizer read the fields it needs.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EventPayload = any;
+
 export interface TaskTypeConfig {
   channel: SocketChannel;
   startedEvent: keyof ServerToClientEvents;
   stepEvent: keyof ServerToClientEvents | null;
   completedEvent: keyof ServerToClientEvents;
   /** Extract the task ID from any event payload */
-  getId: (payload: any) => string;
+  getId: (payload: EventPayload) => string;
   /** Normalize "started" payload */
-  normalizeStarted: (payload: any) => {
+  normalizeStarted: (payload: EventPayload) => {
     totalSteps: number;
     plannedStepNames: string[];
   };
   /** Normalize "step" payload → OperationStep (null if no step event) */
-  normalizeStep: ((payload: any) => OperationStep) | null;
+  normalizeStep: ((payload: EventPayload) => OperationStep) | null;
   /** Normalize "completed" payload */
-  normalizeCompleted: (payload: any) => {
+  normalizeCompleted: (payload: EventPayload) => {
     success: boolean;
     steps: OperationStep[];
     errors: string[];

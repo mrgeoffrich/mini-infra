@@ -13,6 +13,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers } from "@/hooks/useContainers";
+import type { ContainerInfo } from "@mini-infra/types";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useSocket } from "@/hooks/use-socket";
 import { ContainerTable } from "./ContainerTable";
@@ -26,7 +27,7 @@ interface ContainerGroup {
   environmentId: string | null;
   environmentName: string;
   environmentType?: string;
-  containers: any[];
+  containers: ContainerInfo[];
 }
 
 export function ContainerDashboard() {
@@ -89,7 +90,7 @@ export function ContainerDashboard() {
   });
 
   const postgresContainerIds = React.useMemo(
-    () => new Set<string>((postgresContainersData || []).map((c: any) => c.id)),
+    () => new Set<string>((postgresContainersData || []).map((c: { id: string }) => c.id)),
     [postgresContainersData]
   );
   // Extract container IDs from the mapping
@@ -108,9 +109,9 @@ export function ContainerDashboard() {
 
     const envGroups = new Map<string, ContainerGroup>();
     const hostStackGroups = new Map<string, ContainerGroup>();
-    const selfContainers: any[] = [];
-    const managedPostgresContainers: any[] = [];
-    const unmanagedContainers: any[] = [];
+    const selfContainers: ContainerInfo[] = [];
+    const managedPostgresContainers: ContainerInfo[] = [];
+    const unmanagedContainers: ContainerInfo[] = [];
 
     containerData.containers.forEach((container) => {
       const stackName = container.labels["mini-infra.stack"];

@@ -37,7 +37,7 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
       });
     }
 
-    let containerStatus: any[] = [];
+    let containerStatus: ReturnType<typeof mapContainerStatus>[] = [];
     let running = false;
     try {
       const dockerExecutor = new DockerExecutorService();
@@ -82,12 +82,12 @@ router.post('/stop', requirePermission('monitoring:write'), async (req, res) => 
     const dockerExecutor = new DockerExecutorService();
     await dockerExecutor.initialize();
     const reconciler = new StackReconciler(dockerExecutor, prisma);
-    const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as any).user?.id });
+    const result = await reconciler.stopStack(stack.id, { triggeredBy: (req as { user?: { id?: string } }).user?.id });
 
     res.json({ message: 'Monitoring stack stopped', ...result });
-  } catch (error: any) {
+  } catch (error) {
     logger.error({ error }, 'Failed to stop monitoring stack');
-    res.status(500).json({ error: error?.message ?? 'Failed to stop monitoring stack' });
+    res.status(500).json({ error: (error instanceof Error ? error.message : null) ?? 'Failed to stop monitoring stack' });
   }
 });
 

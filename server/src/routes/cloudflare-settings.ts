@@ -29,9 +29,14 @@ const router = express.Router();
 // Create Cloudflare configuration service instance
 const cloudflareConfigService = new CloudflareService(prisma);
 
-// Cache for tunnel data with 60-second TTL
+// Cache for tunnel data with 60-second TTL.
+// Payloads come from the cloudflare SDK (tunnel listings); see
+// `cloudflare-service.ts` for the same containment pattern.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CloudflareApiResponse = any;
+
 interface TunnelCacheEntry {
-  data: any;
+  data: CloudflareApiResponse;
   timestamp: number;
 }
 const tunnelCache: Map<string, TunnelCacheEntry> = new Map();
@@ -581,8 +586,8 @@ router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (as
 
     // Transform tunnel data for frontend consumption and filter out deleted tunnels
     const transformedTunnels = tunnels
-      .filter((tunnel: any) => !tunnel.deleted_at) // Filter out deleted tunnels
-      .map((tunnel: any) => ({
+      .filter((tunnel: CloudflareApiResponse) => !tunnel.deleted_at) // Filter out deleted tunnels
+      .map((tunnel: CloudflareApiResponse) => ({
         id: tunnel.id,
         name: tunnel.name,
         status: tunnel.status as "healthy" | "degraded" | "down" | "inactive",
@@ -706,11 +711,11 @@ router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler,
           10000, // 10 second timeout
         ),
       ),
-    ])) as any;
+    ])) as CloudflareApiResponse;
 
     // Find the specific tunnel from the list
     const tunnelResponse = tunnelsResponse.result?.find(
-      (t: any) => t.id === tunnelId,
+      (t: CloudflareApiResponse) => t.id === tunnelId,
     );
 
     if (!tunnelResponse) {

@@ -77,7 +77,7 @@ async function createPostgresBackupConfig(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
@@ -122,7 +122,7 @@ async function updatePostgresBackupConfig(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
@@ -203,7 +203,7 @@ async function quickSetupPostgresBackup(
       } else if (errorData.details && Array.isArray(errorData.details)) {
         // Handle Zod validation errors
         const validationErrors = errorData.details
-          .map((detail: any) => `${detail.path?.join(".")}: ${detail.message}`)
+          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
           .join(", ");
         errorMessage = `Validation failed: ${validationErrors}`;
       }
@@ -252,15 +252,15 @@ export function usePostgresBackupConfig(
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
             if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
+              (error instanceof Error ? error.message : String(error)).includes("401") ||
+              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
             ) {
               return false;
             }
             // Don't retry on not found errors (404 is handled in the fetch function)
             if (
-              error.message.includes("404") ||
-              error.message.includes("Not found")
+              (error instanceof Error ? error.message : String(error)).includes("404") ||
+              (error instanceof Error ? error.message : String(error)).includes("Not found")
             ) {
               return false;
             }

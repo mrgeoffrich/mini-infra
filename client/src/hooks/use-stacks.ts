@@ -168,7 +168,7 @@ async function applyStack(
 async function fetchStackStatus(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: { stack: StackInfo; containerStatus: any[] } }> {
+): Promise<{ success: boolean; data: { stack: StackInfo; containerStatus: unknown[] } }> {
   const response = await fetch(`/api/stacks/${stackId}/status`, {
     credentials: "include",
     headers: {
@@ -192,7 +192,7 @@ async function fetchStackStatus(
 async function fetchStackHistory(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: any[]; total?: number }> {
+): Promise<{ success: boolean; data: unknown[]; total?: number }> {
   const response = await fetch(`/api/stacks/${stackId}/history`, {
     credentials: "include",
     headers: {
@@ -387,7 +387,7 @@ export function useStackApply() {
       // Final results come via Socket.IO events.
     },
     onError: (error: Error) => {
-      toast.error(`Failed to apply stack: ${error.message}`);
+      toast.error(`Failed to apply stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -539,7 +539,7 @@ export function useDeleteStack() {
       queryClient.invalidateQueries({ queryKey: ["stacks"] });
     },
     onError: (error: Error) => {
-      toast.error(`Failed to delete stack: ${error.message}`);
+      toast.error(`Failed to delete stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -554,7 +554,7 @@ export function useStackDestroy() {
       // Final results come via Socket.IO events.
     },
     onError: (error: Error) => {
-      toast.error(`Failed to destroy stack: ${error.message}`);
+      toast.error(`Failed to destroy stack: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }
@@ -627,7 +627,7 @@ export function useUpdateStackParameterValues() {
       queryClient.invalidateQueries({ queryKey: ["stackValidation", stackId] });
     },
     onError: (error: Error) => {
-      toast.error(`Failed to save parameters: ${error.message}`);
+      toast.error(`Failed to save parameters: ${(error instanceof Error ? error.message : String(error))}`);
     },
   });
 }

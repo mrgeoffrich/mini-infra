@@ -74,7 +74,7 @@ export class CertificateProvisioningService {
 
         return {
           success: true,
-          certificateId: existingCert.id,
+          certificateId: existingCert.id as string,
           certificateStatus: existingCert.status === "ACTIVE" ? "ACTIVE" : "PENDING",
           existingCertificateUsed: true,
         };
@@ -104,7 +104,7 @@ export class CertificateProvisioningService {
 
         return {
           success: true,
-          certificateId: newCert.id,
+          certificateId: newCert.id as string,
           certificateStatus: "ACTIVE",
           existingCertificateUsed: false,
         };
@@ -157,7 +157,7 @@ export class CertificateProvisioningService {
    * @param hostname - Hostname to search for
    * @returns Certificate record or null
    */
-  async findCertificateForHostname(hostname: string): Promise<any | null> {
+  async findCertificateForHostname(hostname: string): Promise<Record<string, unknown> | null> {
     const statusFilter = { in: ["ACTIVE", "PENDING", "RENEWING"] as ("ACTIVE" | "PENDING" | "RENEWING")[] };
 
     // 1. Exact match on primaryDomain

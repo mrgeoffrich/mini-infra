@@ -8,12 +8,12 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 function getStatusCode(error: unknown): number | undefined {
-  const e = error as any;
+  const e = error as { status?: number; statusCode?: number; response?: { status?: number } } | null;
   return e?.status ?? e?.statusCode ?? e?.response?.status ?? undefined;
 }
 
 function getMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) return (error instanceof Error ? error.message : String(error));
   if (typeof error === "string") return error;
   return String(error);
 }
@@ -63,7 +63,7 @@ const CLOUDFLARE_MAPPINGS: ErrorMapping[] = [
 const AZURE_MAPPINGS: ErrorMapping[] = [
   {
     test: (_s, msg, err) =>
-      (err as any)?.code === "AuthenticationFailed" ||
+      (err as { code?: string } | null)?.code === "AuthenticationFailed" ||
       msg.includes("AuthenticationFailed"),
     statusCode: 403,
     toMessage: (svc) =>

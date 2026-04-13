@@ -92,51 +92,37 @@ function validate(schema: z.ZodSchema): RequestHandler {
 /**
  * Build filter object from query parameters
  */
-function buildFilterFromQuery(query: any): UserEventFilter {
+function buildFilterFromQuery(query: Record<string, unknown>): UserEventFilter {
   const filter: UserEventFilter = {};
+  const asArray = <T>(v: unknown): T[] =>
+    Array.isArray(v) ? (v as T[]) : [v as T];
 
   if (query.eventType) {
-    filter.eventType = Array.isArray(query.eventType)
-      ? query.eventType
-      : [query.eventType];
+    filter.eventType = asArray(query.eventType);
   }
-
   if (query.eventCategory) {
-    filter.eventCategory = Array.isArray(query.eventCategory)
-      ? query.eventCategory
-      : [query.eventCategory];
+    filter.eventCategory = asArray(query.eventCategory);
   }
-
   if (query.status) {
-    filter.status = Array.isArray(query.status)
-      ? query.status
-      : [query.status];
+    filter.status = asArray(query.status);
   }
-
   if (query.userId) {
-    filter.userId = query.userId;
+    filter.userId = query.userId as string;
   }
-
   if (query.resourceType) {
-    filter.resourceType = Array.isArray(query.resourceType)
-      ? query.resourceType
-      : [query.resourceType];
+    filter.resourceType = asArray(query.resourceType);
   }
-
   if (query.resourceId) {
-    filter.resourceId = query.resourceId;
+    filter.resourceId = query.resourceId as string;
   }
-
   if (query.startDate) {
-    filter.startDate = query.startDate;
+    filter.startDate = query.startDate as string;
   }
-
   if (query.endDate) {
-    filter.endDate = query.endDate;
+    filter.endDate = query.endDate as string;
   }
-
   if (query.search) {
-    filter.search = query.search;
+    filter.search = query.search as string;
   }
 
   return filter;

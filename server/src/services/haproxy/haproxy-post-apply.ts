@@ -382,7 +382,7 @@ async function getStackHAProxyClient(
   await dockerService.initialize();
   const containers = await dockerService.listContainers();
 
-  const stackContainer = containers.find((c: any) => {
+  const stackContainer = containers.find((c) => {
     const labels = c.labels || {};
     return (
       labels['mini-infra.service'] === 'haproxy' &&

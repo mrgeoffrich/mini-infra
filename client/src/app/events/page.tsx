@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IconHistory, IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { useEvents, useEventFilters, useDeleteEvent } from "@/hooks/use-events";
+import type { UserEventType, UserEventCategory, UserEventStatus } from "@mini-infra/types";
 import { EventsTable } from "@/components/events/EventsTable";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -26,9 +27,9 @@ export function EventsPage() {
     error,
   } = useEvents({
     filters: {
-      eventType: filters.eventType as any,
-      eventCategory: filters.eventCategory as any,
-      status: filters.status as any,
+      eventType: filters.eventType as UserEventType[] | undefined,
+      eventCategory: filters.eventCategory as UserEventCategory[] | undefined,
+      status: filters.status as UserEventStatus[] | undefined,
       search: filters.search,
       startDate: filters.startDate,
       endDate: filters.endDate,
@@ -60,7 +61,7 @@ export function EventsPage() {
       setEventToDelete(null);
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Failed to delete event",
+        error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Failed to delete event",
       );
     }
   };
@@ -118,7 +119,7 @@ export function EventsPage() {
                   Failed to load events
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {error instanceof Error ? error.message : "Unknown error"}
+                  {error instanceof Error ? (error instanceof Error ? error.message : String(error)) : "Unknown error"}
                 </p>
               </div>
             )}

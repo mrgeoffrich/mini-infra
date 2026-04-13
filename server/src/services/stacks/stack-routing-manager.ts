@@ -54,9 +54,11 @@ export class StackRoutingManager {
         connect_timeout: ctx.routing.backendOptions?.connectTimeout,
         server_timeout: ctx.routing.backendOptions?.serverTimeout,
       });
-    } catch (err: any) {
+    } catch (err) {
       // Backend may already exist (e.g., on recreate)
-      if (!err.message?.includes('already exists') && err.statusCode !== 409) {
+      const message = err instanceof Error ? err.message : '';
+      const statusCode = (err as { statusCode?: number })?.statusCode;
+      if (!message.includes('already exists') && statusCode !== 409) {
         throw err;
       }
       logger.info({ backendName }, 'Backend already exists, reusing');
@@ -238,8 +240,9 @@ export class StackRoutingManager {
     if (backendRecord && backendRecord._count.servers === 0) {
       try {
         await haproxyClient.deleteBackend(backendName);
-      } catch (err: any) {
-        logger.warn({ backendName, error: err.message }, 'Failed to delete empty backend');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn({ backendName, error: message }, 'Failed to delete empty backend');
       }
       await this.prisma.hAProxyBackend.delete({
         where: { id: backendRecord.id },
@@ -275,8 +278,9 @@ export class StackRoutingManager {
       if (!record) return;
 
       await cloudflareDNSService.deleteDNSRecord(zone.id, record.id);
-    } catch (err: any) {
-      logger.warn({ hostname, error: err.message }, 'DNS removal failed (non-fatal)');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn({ hostname, error: message }, 'DNS removal failed (non-fatal)');
     }
   }
 }

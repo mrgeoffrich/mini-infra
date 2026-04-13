@@ -99,7 +99,7 @@ export function LogViewer({ containerId, containerName }: LogViewerProps) {
   }, [isSearching]);
 
   // Render individual log line
-  const renderLogLine = useCallback((log: any, index: number) => {
+  const renderLogLine = useCallback((log: { stream?: string; message: string; timestamp?: string }, index: number) => {
     const isStderr = log.stream === "stderr";
 
     // Convert ANSI codes to HTML

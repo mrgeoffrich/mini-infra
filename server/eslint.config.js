@@ -4,8 +4,10 @@ const tseslint = require("typescript-eslint");
 
 module.exports = tseslint.config([
   {
-    files: ["src/**/*.ts"],
     ignores: ["coverage/**", "dist/**", "node_modules/**", "src/generated/**"],
+  },
+  {
+    files: ["src/**/*.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
       ecmaVersion: 2022,

@@ -5,6 +5,7 @@ import { appLogger } from "../lib/logger-factory";
 const logger = appLogger();
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";
@@ -17,6 +18,7 @@ import {
   BackupBrowserSortOptions,
   BackupBrowserItem,
   RestoreOperationProgress,
+  RestoreOperationStatus,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -126,7 +128,7 @@ function validateAzureStorageUrl(url: string): boolean {
 /**
  * Parse query parameters for filtering and pagination
  */
-function parseRestoreOperationQuery(query: any) {
+function parseRestoreOperationQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = RestoreOperationFilterSchema.parse(query);
   const sort = query.sortBy
@@ -142,7 +144,7 @@ function parseRestoreOperationQuery(query: any) {
 /**
  * Parse backup browser query parameters
  */
-function parseBackupBrowserQuery(query: any) {
+function parseBackupBrowserQuery(query: Record<string, unknown>) {
   const pagination = PaginationSchema.parse(query);
   const filter = BackupBrowserFilterSchema.parse(query);
   const sort = query.sortBy
@@ -162,7 +164,7 @@ function buildRestoreWhereClause(
   filter: RestoreOperationFilter,
   databaseId?: string,
 ) {
-  const where: any = {};
+  const where: Prisma.RestoreOperationWhereInput = {};
 
   if (databaseId) {
     where.databaseId = databaseId;
@@ -188,12 +190,12 @@ function buildRestoreWhereClause(
 /**
  * Map Prisma RestoreOperation to RestoreOperationInfo
  */
-function mapRestoreOperationToInfo(operation: any) {
+function mapRestoreOperationToInfo(operation: Prisma.RestoreOperationGetPayload<true>) {
   return {
     id: operation.id,
     databaseId: operation.databaseId,
     backupUrl: operation.backupUrl,
-    status: operation.status as any,
+    status: operation.status as RestoreOperationStatus,
     startedAt: operation.startedAt.toISOString(),
     completedAt: operation.completedAt?.toISOString() || null,
     errorMessage: operation.errorMessage,
@@ -282,8 +284,8 @@ async function listAvailableBackupsInContainer(
 
     // Sort results
     blobs.sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
+      let aVal: string | number | undefined;
+      let bVal: string | number | undefined;
 
       switch (sort.field) {
         case "createdAt":
@@ -490,7 +492,7 @@ router.post(
     } catch (error) {
       if (error instanceof z.ZodError) {
         const errorMessage = error.issues
-          .map((e: any) => `${e.path.join(".")}: ${e.message}`)
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
           .join(", ");
 
         logger.warn(
@@ -583,7 +585,7 @@ router.get(
         success: true,
         data: {
           id: operation.id,
-          status: operation.status as any,
+          status: operation.status as RestoreOperationStatus,
           progress: operation.progress,
           startedAt: operation.startedAt.toISOString(),
           completedAt: operation.completedAt?.toISOString() || null,
@@ -872,7 +874,7 @@ router.get(
       const progressData: RestoreOperationProgress = {
         id: operation.id,
         databaseId: operation.databaseId,
-        status: operation.status as any,
+        status: operation.status as RestoreOperationStatus,
         progress: operation.progress,
         startedAt: operation.startedAt.toISOString(),
         estimatedCompletion,
