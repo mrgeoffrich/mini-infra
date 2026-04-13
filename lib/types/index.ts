@@ -74,6 +74,9 @@ export * from "./stack-templates";
 // Socket.IO event types
 export * from "./socket-events";
 
+// Self-update types
+export * from "./self-update";
+
 // ====================
 // Type Utilities
 // ====================

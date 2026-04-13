@@ -2,39 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { Channel, ServerEvent } from "@mini-infra/types";
+import type { SelfUpdateStatus, SelfUpdateCheckResult } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface SelfUpdateStatus {
-  state:
-    | "idle"
-    | "pending"
-    | "checking"
-    | "pulling"
-    | "inspecting"
-    | "stopping"
-    | "creating"
-    | "health-checking"
-    | "complete"
-    | "rolling-back"
-    | "rollback-complete"
-    | "failed";
-  targetTag?: string;
-  progress?: number;
-  error?: string;
-  startedAt?: string;
-  updatedAt?: string;
-}
-
-export interface SelfUpdateCheckResult {
-  success: boolean;
-  available: boolean;
-  reason?: string;
-  containerId?: string;
-}
+export type { SelfUpdateStatus, SelfUpdateCheckResult };
 
 interface SelfUpdateLocalState {
   updateInProgress: boolean;

@@ -5,6 +5,7 @@ import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import { RegistryCredentialService } from "./registry-credential";
 import { RegistryManager } from "./docker-executor/registry-manager";
+import type { SelfUpdateState, SelfUpdateStatus } from "@mini-infra/types";
 
 const logger = servicesLogger();
 
@@ -35,28 +36,7 @@ export function releaseLaunchLock(): void {
   launchInProgress = false;
 }
 
-export type SelfUpdateState =
-  | "idle"
-  | "pending"
-  | "checking"
-  | "pulling"
-  | "inspecting"
-  | "stopping"
-  | "creating"
-  | "health-checking"
-  | "complete"
-  | "rolling-back"
-  | "rollback-complete"
-  | "failed";
-
-export interface SelfUpdateStatus {
-  state: SelfUpdateState;
-  targetTag?: string;
-  progress?: number;
-  error?: string;
-  startedAt?: string;
-  updatedAt?: string;
-}
+export type { SelfUpdateState, SelfUpdateStatus };
 
 export interface UpdateCheckResult {
   currentImage: string;

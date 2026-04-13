@@ -264,3 +264,25 @@ export interface ValidateServiceResponse {
   timestamp: string;
   requestId?: string;
 }
+
+// ====================
+// Docker Registry Test Types
+// ====================
+
+export interface TestDockerRegistryRequest {
+  type: "backup" | "restore";
+  image: string;
+  registryUsername?: string;
+  registryPassword?: string;
+}
+
+export interface TestDockerRegistryResponse {
+  success: boolean;
+  message: string;
+  details: {
+    image: string;
+    authenticated: boolean;
+    pullTimeMs?: number;
+    errorCode?: string;
+  };
+}

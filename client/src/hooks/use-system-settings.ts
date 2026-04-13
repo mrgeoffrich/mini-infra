@@ -1,30 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
+import type { TestDockerRegistryRequest, TestDockerRegistryResponse } from "@mini-infra/types";
+
+export type { TestDockerRegistryRequest, TestDockerRegistryResponse };
 
 // Generate correlation ID for debugging
 function generateCorrelationId(): string {
   return `system-settings-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-// ====================
-// System Settings API Types
-// ====================
-
-export interface TestDockerRegistryRequest {
-  type: "backup" | "restore";
-  image: string;
-  registryUsername?: string;
-  registryPassword?: string;
-}
-
-export interface TestDockerRegistryResponse {
-  success: boolean;
-  message: string;
-  details: {
-    image: string;
-    authenticated: boolean;
-    pullTimeMs?: number;
-    errorCode?: string;
-  };
 }
 
 // ====================
