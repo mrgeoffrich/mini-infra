@@ -14,6 +14,7 @@ import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
 import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult } from "./stacks";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
+import type { OperationStep } from "./operations";
 
 // ====================
 // Socket Channel Constants & Types
@@ -372,7 +373,7 @@ export interface ServerToClientEvents {
   /** Agent sidecar startup step completed */
   "sidecar:startup:step": (data: {
     operationId: string;
-    step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string };
+    step: OperationStep;
     completedCount: number;
     totalSteps: number;
   }) => void;
@@ -380,7 +381,7 @@ export interface ServerToClientEvents {
   "sidecar:startup:completed": (data: {
     operationId: string;
     success: boolean;
-    steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }>;
+    steps: OperationStep[];
     errors: string[];
   }) => void;
 
@@ -395,7 +396,7 @@ export interface ServerToClientEvents {
   /** Self-update sidecar launch step completed */
   "self-update:launch:step": (data: {
     operationId: string;
-    step: { step: string; status: "completed" | "failed" | "skipped"; detail?: string };
+    step: OperationStep;
     completedCount: number;
     totalSteps: number;
   }) => void;
@@ -403,7 +404,7 @@ export interface ServerToClientEvents {
   "self-update:launch:completed": (data: {
     operationId: string;
     success: boolean;
-    steps: Array<{ step: string; status: "completed" | "failed" | "skipped"; detail?: string }>;
+    steps: OperationStep[];
     errors: string[];
   }) => void;
 

@@ -16,6 +16,7 @@ import {
   UserEventFilter,
   UserEventSortOptions,
   UserEventStatisticsResponse,
+  USER_EVENT_STATUSES,
 } from '@mini-infra/types';
 
 const logger = appLogger();
@@ -34,7 +35,7 @@ const createEventSchema = z.object({
   eventName: z.string().min(1, 'Event name is required'),
   userId: z.string().optional(),
   triggeredBy: z.string().min(1, 'Triggered by is required'),
-  status: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']).optional(),
+  status: z.enum(USER_EVENT_STATUSES).optional(),
   progress: z.number().int().min(0).max(100).optional(),
   resourceId: z.string().optional(),
   resourceType: z.string().optional(),
@@ -45,7 +46,7 @@ const createEventSchema = z.object({
 });
 
 const updateEventSchema = z.object({
-  status: z.enum(['pending', 'running', 'completed', 'failed', 'cancelled']).optional(),
+  status: z.enum(USER_EVENT_STATUSES).optional(),
   progress: z.number().int().min(0).max(100).optional(),
   completedAt: z.string().datetime().optional(),
   durationMs: z.number().int().optional(),

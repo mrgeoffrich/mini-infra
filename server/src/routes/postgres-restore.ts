@@ -19,6 +19,8 @@ import {
   BackupBrowserItem,
   RestoreOperationProgress,
   RestoreOperationStatus,
+  BACKUP_OPERATION_STATUSES,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -62,7 +64,7 @@ const CreateRestoreOperationSchema = z
   );
 
 const RestoreOperationFilterSchema = z.object({
-  status: z.enum(["pending", "running", "completed", "failed"]).optional(),
+  status: z.enum(BACKUP_OPERATION_STATUSES).optional(),
   startedAfter: z.string().datetime().optional(),
   startedBefore: z.string().datetime().optional(),
 });
@@ -76,7 +78,7 @@ const RestoreOperationSortSchema = z.object({
     "progress",
     "backupUrl",
   ]),
-  order: z.enum(["asc", "desc"]),
+  order: z.enum(SORT_ORDERS),
 });
 
 const BackupBrowserFilterSchema = z.object({
@@ -88,7 +90,7 @@ const BackupBrowserFilterSchema = z.object({
 
 const BackupBrowserSortSchema = z.object({
   field: z.enum(["createdAt", "sizeBytes", "name"]),
-  order: z.enum(["asc", "desc"]),
+  order: z.enum(SORT_ORDERS),
 });
 
 const PaginationSchema = z.object({

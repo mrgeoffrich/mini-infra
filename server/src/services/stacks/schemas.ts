@@ -3,6 +3,8 @@ import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
   BALANCE_ALGORITHMS,
+  NETWORK_PROTOCOLS,
+  MOUNT_TYPES,
 } from '@mini-infra/types';
 
 // Template string pattern: allows {{params.key-name}} references
@@ -69,7 +71,7 @@ export const stackContainerConfigSchema = z.object({
       z.object({
         containerPort: numberOrTemplate,
         hostPort: numberOrTemplate,
-        protocol: z.enum(["tcp", "udp"]),
+        protocol: z.enum(NETWORK_PROTOCOLS),
         exposeOnHost: booleanOrTemplate.optional(),
       })
     )
@@ -79,7 +81,7 @@ export const stackContainerConfigSchema = z.object({
       z.object({
         source: z.string().min(1),
         target: z.string().min(1),
-        type: z.enum(["volume", "bind"]),
+        type: z.enum(MOUNT_TYPES),
         readOnly: z.boolean().optional(),
       }).refine(
         (m) => {

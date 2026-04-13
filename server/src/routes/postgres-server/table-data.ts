@@ -3,6 +3,7 @@ import { z } from "zod";
 import { appLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import tableDataService from "../../services/postgres-server/table-data-service";
+import { SORT_ORDERS } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId and :dbId
@@ -21,7 +22,7 @@ const tableDataRequestSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(1000).default(100),
   sortColumn: z.string().optional(),
-  sortDirection: z.enum(["asc", "desc"]).default("asc"),
+  sortDirection: z.enum(SORT_ORDERS).default("asc"),
   filters: z.array(z.object({
     column: z.string(),
     operator: z.enum(["=", "!=", ">", "<", ">=", "<=", "LIKE", "ILIKE", "IS NULL", "IS NOT NULL"]),

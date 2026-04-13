@@ -18,6 +18,7 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { AzureStorageService } from "../services/azure-storage-service";
+import { ACME_PROVIDERS } from "@mini-infra/types";
 import { BlobServiceClient } from "@azure/storage-blob";
 
 const logger = tlsLogger();
@@ -69,7 +70,7 @@ const updateTlsSettingsSchema = z.object({
   ),
   default_acme_provider: z.preprocess(
     (val) => val === null || val === "" ? undefined : val,
-    z.enum(["letsencrypt", "letsencrypt-staging", "buypass", "zerossl"]).optional()
+    z.enum(ACME_PROVIDERS).optional()
   ),
   default_acme_email: z.preprocess(
     (val) => val === null || val === "" ? undefined : val,

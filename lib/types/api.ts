@@ -55,7 +55,8 @@ export interface PaginatedResponse<T> {
 // Sorting and Filtering Types
 // ====================
 
-export type SortOrder = "asc" | "desc";
+export const SORT_ORDERS = ["asc", "desc"] as const;
+export type SortOrder = typeof SORT_ORDERS[number];
 
 export interface SortParams {
   sortBy?: string;
