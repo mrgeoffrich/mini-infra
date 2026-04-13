@@ -40,9 +40,11 @@ export interface SystemSettingsInfo {
 // Settings Categories
 // ====================
 
-export type SettingsCategory = "docker" | "cloudflare" | "azure" | "system" | "deployments" | "haproxy" | "tls" | "github" | "github-app" | "agent" | "self-backup";
+export const SETTINGS_CATEGORIES = ["docker", "cloudflare", "azure", "system", "deployments", "haproxy", "tls", "github", "github-app", "agent", "self-backup"] as const;
+export type SettingsCategory = typeof SETTINGS_CATEGORIES[number];
 
-export type ValidationStatus = "valid" | "invalid" | "pending" | "error";
+export const VALIDATION_STATUSES = ["valid", "invalid", "pending", "error"] as const;
+export type ValidationStatus = typeof VALIDATION_STATUSES[number];
 
 // ====================
 // API Request Types
@@ -151,11 +153,8 @@ export interface ConnectivityStatusInfo {
 
 export type ConnectivityService = "cloudflare" | "docker" | "azure" | "system" | "deployments" | "tls" | "github" | "github-app";
 
-export type ConnectivityStatusType =
-  | "connected"
-  | "failed"
-  | "timeout"
-  | "unreachable";
+export const CONNECTIVITY_STATUS_TYPES = ["connected", "failed", "timeout", "unreachable"] as const;
+export type ConnectivityStatusType = typeof CONNECTIVITY_STATUS_TYPES[number];
 
 // ====================
 // Connectivity API Response Types

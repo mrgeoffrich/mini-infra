@@ -21,6 +21,7 @@ import {
   BackupConfigurationDeleteResponse,
   BackupFormat,
   QuickBackupSetupRequest,
+  BACKUP_FORMATS,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -55,7 +56,7 @@ const createBackupConfigSchema = z.object({
     .min(1, "Retention days must be at least 1")
     .optional()
     .default(30),
-  backupFormat: z.enum(["custom", "plain", "tar"]).optional().default("custom"),
+  backupFormat: z.enum(BACKUP_FORMATS).optional().default("custom"),
   compressionLevel: z
     .number()
     .int()
@@ -85,7 +86,7 @@ const updateBackupConfigSchema = z.object({
     .int()
     .min(1, "Retention days must be at least 1")
     .optional(),
-  backupFormat: z.enum(["custom", "plain", "tar"]).optional(),
+  backupFormat: z.enum(BACKUP_FORMATS).optional(),
   compressionLevel: z
     .number()
     .int()

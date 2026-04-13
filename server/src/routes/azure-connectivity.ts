@@ -15,6 +15,8 @@ import { Prisma } from "@prisma/client";
 import {
   ConnectivityStatusListResponse,
   ConnectivityStatusResponse,
+  CONNECTIVITY_STATUS_TYPES,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -29,13 +31,13 @@ const historyCache = new NodeCache({ stdTTL: 120, checkperiod: 30 });
 const connectivityHistoryQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
-  status: z.enum(["connected", "failed", "timeout", "unreachable"]).optional(),
+  status: z.enum(CONNECTIVITY_STATUS_TYPES).optional(),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),
   sortBy: z
     .enum(["checkedAt", "status", "responseTimeMs"])
     .default("checkedAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+  sortOrder: z.enum(SORT_ORDERS).default("desc"),
 });
 
 

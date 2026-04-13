@@ -4,6 +4,7 @@ import { appLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import postgresServerService from "../../services/postgres-server/server-manager";
 import serverHealthScheduler from "../../services/postgres-server/health-scheduler";
+import { POSTGRES_SSL_MODES } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = express.Router();
@@ -24,7 +25,7 @@ const createServerSchema = z.object({
   port: z.number().int().min(1).max(65535).default(5432),
   adminUsername: z.string().min(1, "Admin username is required"),
   adminPassword: z.string().min(1, "Admin password is required"),
-  sslMode: z.enum(["prefer", "require", "disable"]).default("prefer"),
+  sslMode: z.enum(POSTGRES_SSL_MODES).default("prefer"),
   tags: z.array(z.string()).optional(),
   linkedContainerId: z.string().optional(),
   linkedContainerName: z.string().optional(),
@@ -36,7 +37,7 @@ const updateServerSchema = z.object({
   port: z.number().int().min(1).max(65535).optional(),
   adminUsername: z.string().min(1).optional(),
   adminPassword: z.string().min(1).optional(),
-  sslMode: z.enum(["prefer", "require", "disable"]).optional(),
+  sslMode: z.enum(POSTGRES_SSL_MODES).optional(),
   tags: z.array(z.string()).optional(),
   linkedContainerId: z.string().nullable().optional(),
   linkedContainerName: z.string().nullable().optional(),
@@ -47,7 +48,7 @@ const testConnectionSchema = z.object({
   port: z.number().int().min(1).max(65535).default(5432),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  sslMode: z.enum(["prefer", "require", "disable"]).default("prefer"),
+  sslMode: z.enum(POSTGRES_SSL_MODES).default("prefer"),
 });
 
 /**

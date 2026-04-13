@@ -8,6 +8,7 @@ import type {
   JWTUser,
   UserPreferenceInfo,
 } from "@mini-infra/types";
+import { SORT_ORDERS } from "@mini-infra/types";
 
 const logger = appLogger();
 const router = Router();
@@ -17,7 +18,7 @@ const UpdateUserPreferencesSchema = z
   .object({
     timezone: z.string().optional(),
     containerSortField: z.string().optional(),
-    containerSortOrder: z.enum(["asc", "desc"]).optional(),
+    containerSortOrder: z.enum(SORT_ORDERS).optional(),
     containerFilters: z.any().optional(),
     containerColumns: z.any().optional(),
   })

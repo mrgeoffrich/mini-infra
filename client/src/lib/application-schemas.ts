@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
+  NETWORK_PROTOCOLS,
 } from "@mini-infra/types";
 
 // ---- Shared sub-schemas for application forms ----
@@ -14,7 +15,7 @@ export const envVarSchema = z.object({
 export const portMappingSchema = z.object({
   containerPort: z.number().int().min(1).max(65535),
   hostPort: z.number().int().min(1).max(65535),
-  protocol: z.enum(["tcp", "udp"]),
+  protocol: z.enum(NETWORK_PROTOCOLS),
 });
 
 export const volumeMountSchema = z.object({

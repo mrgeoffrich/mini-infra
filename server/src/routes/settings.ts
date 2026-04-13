@@ -16,6 +16,8 @@ import {
   SettingsListResponse,
   SystemSettings,
   SystemSettingsInfo,
+  VALIDATION_STATUSES,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -50,9 +52,9 @@ const settingsQuerySchema = z.object({
     .string()
     .optional()
     .transform((val) => val === "true"),
-  validationStatus: z.enum(["valid", "invalid", "pending", "error"]).optional(),
+  validationStatus: z.enum(VALIDATION_STATUSES).optional(),
   sortBy: z.string().optional().default("category"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+  sortOrder: z.enum(SORT_ORDERS).optional().default("asc"),
   page: z
     .string()
     .optional()

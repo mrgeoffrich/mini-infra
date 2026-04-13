@@ -22,7 +22,7 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
-import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId } from "@mini-infra/types";
+import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId, SORT_ORDERS } from "@mini-infra/types";
 import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
@@ -62,7 +62,7 @@ const containerQuerySchema = z.object({
       return Math.min(parsed, 50); // Maximum 50 containers per page
     }),
   sortBy: z.string().optional().default("name"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+  sortOrder: z.enum(SORT_ORDERS).optional().default("asc"),
   status: z.string().optional(),
   name: z.string().optional(),
   image: z.string().optional(),

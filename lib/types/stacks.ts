@@ -32,6 +32,8 @@ export interface StackParameterDefinition {
 
 export const RESTART_POLICIES = ['no', 'always', 'unless-stopped', 'on-failure'] as const;
 export const BALANCE_ALGORITHMS = ['roundrobin', 'leastconn', 'source'] as const;
+export const NETWORK_PROTOCOLS = ['tcp', 'udp'] as const;
+export const MOUNT_TYPES = ['volume', 'bind'] as const;
 
 export interface StackContainerConfig {
   command?: string[];
@@ -39,7 +41,7 @@ export interface StackContainerConfig {
   user?: string;
   env?: Record<string, string>;
   ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean }[];
-  mounts?: { source: string; target: string; type: 'volume' | 'bind'; readOnly?: boolean }[];
+  mounts?: { source: string; target: string; type: typeof MOUNT_TYPES[number]; readOnly?: boolean }[];
   labels?: Record<string, string>;
   joinNetworks?: string[];
   joinResourceNetworks?: string[];

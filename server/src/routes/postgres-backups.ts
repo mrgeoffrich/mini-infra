@@ -16,6 +16,9 @@ import {
   BackupOperationProgress,
   BackupOperationType,
   BackupOperationStatus,
+  BACKUP_OPERATION_TYPES,
+  BACKUP_OPERATION_STATUSES,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = Router();
@@ -28,8 +31,8 @@ const backupExecutorService = new BackupExecutorService(prisma);
 // ====================
 
 const BackupOperationFilterSchema = z.object({
-  status: z.enum(["pending", "running", "completed", "failed"]).optional(),
-  operationType: z.enum(["manual", "scheduled"]).optional(),
+  status: z.enum(BACKUP_OPERATION_STATUSES).optional(),
+  operationType: z.enum(BACKUP_OPERATION_TYPES).optional(),
   startedAfter: z.string().datetime().optional(),
   startedBefore: z.string().datetime().optional(),
 });
@@ -44,7 +47,7 @@ const BackupOperationSortSchema = z.object({
     "progress",
     "sizeBytes",
   ]),
-  order: z.enum(["asc", "desc"]),
+  order: z.enum(SORT_ORDERS),
 });
 
 const PaginationSchema = z.object({

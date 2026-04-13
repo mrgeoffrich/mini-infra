@@ -25,6 +25,9 @@ import {
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
   DatabaseHealthStatus,
+  DATABASE_HEALTH_STATUSES,
+  POSTGRES_SSL_MODES,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -48,13 +51,13 @@ function serializeDatabaseInfo(
 const databaseQuerySchema = z.object({
   name: z.string().optional(),
   host: z.string().optional(),
-  healthStatus: z.enum(["healthy", "unhealthy", "unknown"]).optional(),
+  healthStatus: z.enum(DATABASE_HEALTH_STATUSES).optional(),
   tags: z
     .string()
     .optional()
     .transform((val) => (val ? val.split(",") : undefined)),
   sortBy: z.string().optional().default("name"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("asc"),
+  sortOrder: z.enum(SORT_ORDERS).optional().default("asc"),
   page: z
     .string()
     .optional()
@@ -102,7 +105,7 @@ const createDatabaseSchema = z.object({
   database: z.string().min(1, "Database name is required"),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  sslMode: z.enum(["require", "disable", "prefer"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
   tags: z.array(z.string()).optional().default([]),
 });
 
@@ -123,7 +126,7 @@ const updateDatabaseSchema = z.object({
   database: z.string().min(1, "Database name is required").optional(),
   username: z.string().min(1, "Username is required").optional(),
   password: z.string().min(1, "Password is required").optional(),
-  sslMode: z.enum(["require", "disable", "prefer"]).optional(),
+  sslMode: z.enum(POSTGRES_SSL_MODES).optional(),
   tags: z.array(z.string()).optional(),
 });
 
@@ -138,7 +141,7 @@ const testConnectionSchema = z.object({
   database: z.string().min(1, "Database name is required"),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  sslMode: z.enum(["require", "disable", "prefer"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
 });
 
 // Database discovery request validation schema
@@ -151,7 +154,7 @@ const discoverDatabasesSchema = z.object({
     .max(65535, "Port must be between 1 and 65535"),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
-  sslMode: z.enum(["require", "disable", "prefer"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
 });
 
 /**

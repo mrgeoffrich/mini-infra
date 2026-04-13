@@ -177,7 +177,8 @@ export interface PostgresDatabaseInfo {
 // Database Health Status
 // ====================
 
-export type DatabaseHealthStatus = "healthy" | "unhealthy" | "unknown";
+export const DATABASE_HEALTH_STATUSES = ["healthy", "unhealthy", "unknown"] as const;
+export type DatabaseHealthStatus = typeof DATABASE_HEALTH_STATUSES[number];
 
 export const POSTGRES_SSL_MODES = ['require', 'disable', 'prefer'] as const;
 export type PostgreSSLMode = typeof POSTGRES_SSL_MODES[number];
@@ -429,9 +430,11 @@ export interface BackupOperationInfo {
   metadata: Record<string, any> | null;
 }
 
-export type BackupOperationType = "manual" | "scheduled";
+export const BACKUP_OPERATION_TYPES = ["manual", "scheduled"] as const;
+export type BackupOperationType = typeof BACKUP_OPERATION_TYPES[number];
 
-export type BackupOperationStatus = "pending" | "running" | "completed" | "failed";
+export const BACKUP_OPERATION_STATUSES = ["pending", "running", "completed", "failed"] as const;
+export type BackupOperationStatus = typeof BACKUP_OPERATION_STATUSES[number];
 
 // ====================
 // Restore Operation Types

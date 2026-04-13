@@ -15,6 +15,7 @@ import {
   ConnectivityStatus,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
+  SORT_ORDERS,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -82,7 +83,7 @@ const connectivityQuerySchema = z.object({
       return parsed;
     }),
   sortBy: z.string().optional().default("checkedAt"),
-  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
+  sortOrder: z.enum(SORT_ORDERS).optional().default("desc"),
   page: z
     .string()
     .optional()
