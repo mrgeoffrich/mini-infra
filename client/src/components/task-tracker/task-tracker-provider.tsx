@@ -25,6 +25,14 @@ import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 // the call site; cast through this alias rather than scattering `as any`.
 type AnyServerHandler = ServerToClientEvents[keyof ServerToClientEvents];
 
+// The union of all server-to-client event payload types.
+// TaskEventListener receives config.startedEvent as keyof ServerToClientEvents (the full union),
+// so TypeScript can't statically narrow to a specific event — but data IS one of these
+// concrete types at runtime, so we express that rather than lying with `unknown`.
+type AnyEventPayload = {
+  [K in keyof ServerToClientEvents]: Parameters<ServerToClientEvents[K]>[0];
+}[keyof ServerToClientEvents];
+
 // ====================
 // Constants
 // ====================
@@ -106,7 +114,7 @@ function TaskEventListener({
   // Started event
   useSocketEvent(
     config.startedEvent,
-    ((data: unknown) => {
+    ((data: AnyEventPayload) => {
       if (config.getId(data) !== task.id) return;
       const { totalSteps, plannedStepNames } = config.normalizeStarted(data);
       onUpdate(task.id, (prev) => ({
@@ -126,7 +134,7 @@ function TaskEventListener({
   // Step event
   useSocketEvent(
     config.stepEvent ?? config.startedEvent, // fallback doesn't matter when disabled
-    ((data: unknown) => {
+    ((data: AnyEventPayload) => {
       if (!config.stepEvent || !config.normalizeStep) return;
       if (config.getId(data) !== task.id) return;
       const step = config.normalizeStep(data);
@@ -144,7 +152,7 @@ function TaskEventListener({
   // Completed event
   useSocketEvent(
     config.completedEvent,
-    ((data: unknown) => {
+    ((data: AnyEventPayload) => {
       if (config.getId(data) !== task.id) return;
       const result = config.normalizeCompleted(data);
       onUpdate(task.id, (prev) => {
