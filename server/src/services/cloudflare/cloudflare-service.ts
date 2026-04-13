@@ -3,21 +3,17 @@ import {
   ValidationResult,
   ServiceHealthStatus,
   ConnectivityStatusType,
+  CloudflareTunnelConfig,
+  CloudflareTunnelIngressRule,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
+import type { Zone } from "cloudflare/resources/zones/zones.js";
+import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels/tunnels.js";
+import type { RecordCreateParams, RecordResponse } from "cloudflare/resources/dns/records.js";
 import { CircuitBreaker, ErrorMapper } from "../circuit-breaker";
 import { toServiceError } from "../../lib/service-error-mapper";
-
-// The cloudflare SDK's response types fight our narrow helper signatures
-// (zones / tunnels / DNS records are cursor-paginated unions). Rather
-// than model every response inline, we capture the SDK-shaped responses
-// as `CloudflareApiResponse` and let callers narrow what they need.
-// Modelled `any` so SDK changes don't break every call-site; tracked
-// in `docs/shortcuts.md` for a future adapter-layer refactor.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CloudflareApiResponse = any;
 
 /**
  * Cloudflare-specific error mappers for the circuit breaker.
@@ -243,19 +239,19 @@ export class CloudflareService extends ConfigurationService {
 
       // Validate Zone:Read permission by listing zones
       try {
-        const zonesResponse = (await Promise.race([
+        const zonesResponse = await Promise.race([
           cf.zones.list({ account: { id: accountId } }),
-          new Promise((_, reject) =>
+          new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error("Zone API request timeout")),
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as CloudflareApiResponse;
+        ]);
 
         const zones = zonesResponse.result || [];
         metadata.zoneCount = zones.length;
-        metadata.zones = zones.slice(0, 10).map((z: { name?: string }) => z.name);
+        metadata.zones = zones.slice(0, 10).map((z: Zone) => z.name);
       } catch (zoneError) {
         if (this.isPermissionError(zoneError)) {
           missingPermissions.push("Zone:Read");
@@ -270,22 +266,22 @@ export class CloudflareService extends ConfigurationService {
 
       // Validate Tunnel:Read permission by listing tunnels
       try {
-        const tunnelsResponse = (await Promise.race([
+        const tunnelsResponse = await Promise.race([
           cf.zeroTrust.tunnels.list({ account_id: accountId }),
-          new Promise((_, reject) =>
+          new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error("Tunnel API request timeout")),
               CloudflareService.TIMEOUT_MS,
             ),
           ),
-        ])) as CloudflareApiResponse;
+        ]);
 
         const tunnels = tunnelsResponse.result || [];
         metadata.tunnelCount = tunnels.length;
         metadata.tunnels = tunnels
-          .filter((t: { name?: string; deleted_at?: string | null }) => !t.deleted_at)
+          .filter((t: TunnelListResponse) => !t.deleted_at)
           .slice(0, 10)
-          .map((t: { name?: string; deleted_at?: string | null }) => t.name);
+          .map((t: TunnelListResponse) => t.name);
       } catch (tunnelError) {
         if (this.isPermissionError(tunnelError)) {
           missingPermissions.push("Tunnel:Read");
@@ -504,7 +500,7 @@ export class CloudflareService extends ConfigurationService {
    * @param tunnelId The tunnel ID to get configuration for
    * @returns Tunnel configuration or null if not found or connection fails
    */
-  async getTunnelConfig(tunnelId: string): Promise<CloudflareApiResponse> {
+  async getTunnelConfig(tunnelId: string): Promise<CloudflareTunnelConfig | null> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -569,7 +565,7 @@ export class CloudflareService extends ConfigurationService {
         return null;
       }
 
-      const configData = await configResponse.json();
+      const configData = await configResponse.json() as { success: boolean; result: CloudflareTunnelConfig };
 
       // Record success for circuit breaker
       this.circuitBreaker.recordSuccess();
@@ -614,7 +610,7 @@ export class CloudflareService extends ConfigurationService {
    * Respects circuit breaker state
    * @returns Array of tunnel information or empty array if no tunnels or connection fails
    */
-  async getTunnelInfo(): Promise<CloudflareApiResponse[]> {
+  async getTunnelInfo(): Promise<TunnelListResponse[]> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -649,15 +645,15 @@ export class CloudflareService extends ConfigurationService {
       });
 
       // Fetch tunnels for the account
-      const tunnelsResponse = (await Promise.race([
+      const tunnelsResponse = await Promise.race([
         cf.zeroTrust.tunnels.list({ account_id: accountId }),
-        new Promise((_, reject) =>
+        new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel API request timeout")),
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as CloudflareApiResponse;
+      ]);
 
       const tunnels = tunnelsResponse.result || [];
 
@@ -672,16 +668,7 @@ export class CloudflareService extends ConfigurationService {
         "Successfully retrieved Cloudflare tunnel information",
       );
 
-      return tunnels
-        .filter((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => !tunnel.deleted_at) // Filter out deleted tunnels
-        .map((tunnel: { id: string; name?: string; status?: string; created_at?: string; connections?: unknown[]; deleted_at?: string | null }) => ({
-          id: tunnel.id,
-          name: tunnel.name,
-          status: tunnel.status,
-          created_at: tunnel.created_at,
-          deleted_at: tunnel.deleted_at,
-          connections: tunnel.connections || [],
-        }));
+      return tunnels.filter((tunnel: TunnelListResponse) => !tunnel.deleted_at);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
@@ -711,7 +698,7 @@ export class CloudflareService extends ConfigurationService {
    * @param config The new tunnel configuration
    * @returns Updated configuration or null if update fails
    */
-  async updateTunnelConfig(tunnelId: string, config: CloudflareApiResponse): Promise<CloudflareApiResponse> {
+  async updateTunnelConfig(tunnelId: string, config: CloudflareTunnelConfig["config"]): Promise<CloudflareTunnelConfig | null> {
     // Check circuit breaker before making API call
     if (this.circuitBreaker.isOpen()) {
       servicesLogger().warn(
@@ -781,7 +768,7 @@ export class CloudflareService extends ConfigurationService {
         throw new Error(`HTTP ${updateResponse.status}: ${errorText}`);
       }
 
-      const updateData = await updateResponse.json();
+      const updateData = await updateResponse.json() as { success: boolean; result: CloudflareTunnelConfig };
 
       // Record success for circuit breaker
       this.circuitBreaker.recordSuccess();
@@ -835,7 +822,7 @@ export class CloudflareService extends ConfigurationService {
     service: string,
     path?: string,
     originRequest?: { httpHostHeader?: string },
-  ): Promise<CloudflareApiResponse> {
+  ): Promise<CloudflareTunnelConfig | null> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -858,7 +845,7 @@ export class CloudflareService extends ConfigurationService {
 
       // Find the catch-all rule (rule without hostname) and insert before it
       const catchAllIndex = ingress.findIndex((rule) => !rule.hostname);
-      const newRule: CloudflareApiResponse = {
+      const newRule: CloudflareTunnelIngressRule = {
         hostname,
         service,
       };
@@ -926,7 +913,7 @@ export class CloudflareService extends ConfigurationService {
     tunnelId: string,
     hostname: string,
     path?: string,
-  ): Promise<CloudflareApiResponse> {
+  ): Promise<CloudflareTunnelConfig | null> {
     try {
       // First get the current configuration
       const currentConfig = await this.getTunnelConfig(tunnelId);
@@ -1010,15 +997,15 @@ export class CloudflareService extends ConfigurationService {
       });
 
       // List zones and find matching domain
-      const zonesResponse = (await Promise.race([
+      const zonesResponse = await Promise.race([
         cf.zones.list({ name: domain }),
-        new Promise((_, reject) =>
+        new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Get zone API request timeout")),
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as CloudflareApiResponse;
+      ]);
 
       const zones = zonesResponse.result || [];
 
@@ -1087,21 +1074,21 @@ export class CloudflareService extends ConfigurationService {
       });
 
       // Create DNS record
-      const recordResponse = (await Promise.race([
+      const recordResponse: RecordResponse = await Promise.race([
         cf.dns.records.create({
           zone_id: params.zoneId,
-          type: params.type as CloudflareApiResponse,
+          type: params.type,
           name: params.name,
           content: params.content,
           ttl: params.ttl,
-        }),
-        new Promise((_, reject) =>
+        } as RecordCreateParams),
+        new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Create DNS record API request timeout")),
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as CloudflareApiResponse;
+      ]);
 
       // Record success for circuit breaker
       this.circuitBreaker.recordSuccess();
@@ -1274,19 +1261,19 @@ export class CloudflareService extends ConfigurationService {
 
     try {
       // Create the tunnel
-      const tunnelResponse = (await Promise.race([
+      const tunnelResponse = await Promise.race([
         cf.zeroTrust.tunnels.cloudflared.create({
           account_id: accountId,
           name,
           config_src: "cloudflare",
         }),
-        new Promise((_, reject) =>
+        new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Tunnel creation timeout")),
             CloudflareService.TIMEOUT_MS,
           ),
         ),
-      ])) as CloudflareApiResponse;
+      ]);
 
       tunnelId = tunnelResponse.id;
       if (!tunnelId) {

@@ -5,27 +5,14 @@ for a future follow-up PR.
 
 ---
 
-## 1. HAProxy state-machine action types
+## 1. HAProxy state-machine action types ✅ Resolved
 
-**File:** `server/src/services/haproxy/actions/types.ts`
-
-- `ActionEvent` is aliased to `any` with
-  `// eslint-disable-next-line @typescript-eslint/no-explicit-any`.
-
-  **Why:** Each XState machine (initial-deployment, blue-green-deployment,
-  blue-green-update, removal-deployment) defines its own strictly-typed
-  event union. Actions emit events that differ subtly between machines
-  (e.g. `CONTAINERS_RUNNING` requires `containerIpAddress: string` in
-  blue-green but optional in initial-deployment). Trying to make a single
-  discriminated `ActionEvent` compatible with all four machines produced
-  dozens of forwarding errors (`self.send(event)` inside narrowed
-  branches). Keeping `ActionEvent = any` lets each state machine keep its
-  strict event union on the receiving side while actions remain free to
-  emit heterogeneous shapes.
-
-  **Proper fix:** Either widen each state-machine event union to a shared
-  supertype, OR declare per-machine-scoped action callbacks (so each
-  action's `sendEvent` is typed to the host machine's event union).
+Resolved in `chore/type-cleanup`. Each action class now has a per-action
+emit type (e.g. `ContainerStartupEmit`, `LBConfigEmit`) exported from
+`actions/types.ts`. `ActionEvent` is now a proper discriminated union of
+all emit types instead of `any`. The two blue-green machines had their
+`CONTAINERS_RUNNING.containerPort` widened from `number` to `number | undefined`
+to match what `MonitorContainerStartup` actually emits.
 
 - `ActionContext` identifier fields (`deploymentId`, `applicationName`,
   `environmentId`, `environmentName`, `haproxyContainerId`,
@@ -39,20 +26,15 @@ for a future follow-up PR.
   **Proper fix:** Validate at state-machine entry and make them
   non-nullable (remove the `|| ""` fallbacks at context init).
 
-## 2. Cloudflare SDK response shape
+## 2. Cloudflare SDK response shape ✅ Resolved
 
-**Files:** `server/src/services/cloudflare/cloudflare-service.ts`,
-`server/src/services/cloudflare/cloudflare-dns.ts`,
-`server/src/routes/cloudflare-settings.ts`
-
-- `CloudflareApiResponse = any` with `// eslint-disable-next-line`.
-
-  **Why:** The cloudflare SDK's response types fight the narrow helper
-  signatures (zones / tunnels / DNS records are cursor-paginated unions).
-  Modelling every response inline was too invasive for a cleanup PR.
-
-  **Proper fix:** Thin adapter layer over the cloudflare SDK that exposes
-  mini-infra-shaped responses.
+Resolved in `chore/type-cleanup`. `CloudflareApiResponse = any` removed from all
+three files. SDK types (`Zone`, `TunnelListResponse`, `RecordResponse`) used directly;
+`SdkRecord` intersection type bridges the gap where the SDK omits fields (`zone_id`,
+`zone_name`, `locked`, `data`) that the Cloudflare v4 API returns at runtime.
+Zone/tunnel fields with type mismatches (optional vs required, `null` vs `undefined`,
+enum supersets) are bridged with `?? default` or narrow casts at the mapping boundary.
+Tunnel config raw fetch responses cast to `CloudflareTunnelConfig` at the parse site.
 
 ## 3. Stack-template-service serializer shape
 
