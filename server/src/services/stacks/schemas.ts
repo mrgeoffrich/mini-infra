@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  STACK_SERVICE_TYPES,
+  RESTART_POLICIES,
+  BALANCE_ALGORITHMS,
+} from '@mini-infra/types';
 
 // Template string pattern: allows {{params.key-name}} references
 const templateStringPattern = /\{\{params\.[a-zA-Z0-9_-]+\}\}/;
@@ -92,7 +97,7 @@ export const stackContainerConfigSchema = z.object({
   joinNetworks: z.array(z.string().min(1)).optional(),
   joinResourceNetworks: z.array(z.string().min(1)).optional(),
   restartPolicy: z
-    .enum(["no", "always", "unless-stopped", "on-failure"])
+    .enum(RESTART_POLICIES)
     .optional(),
   healthcheck: z
     .object({
@@ -133,7 +138,7 @@ export const stackServiceRoutingSchema = z.object({
   healthCheckEndpoint: z.string().max(500).optional(),
   backendOptions: z
     .object({
-      balanceAlgorithm: z.enum(["roundrobin", "leastconn", "source"]).optional(),
+      balanceAlgorithm: z.enum(BALANCE_ALGORITHMS).optional(),
       checkTimeout: numberOrTemplateMin0.optional(),
       connectTimeout: numberOrTemplateMin0.optional(),
       serverTimeout: numberOrTemplateMin0.optional(),
@@ -211,7 +216,7 @@ export const stackServiceDefinitionSchema = z
         nameRegex,
         "Service name can only contain letters, numbers, hyphens, and underscores"
       ),
-    serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
+    serviceType: z.enum(STACK_SERVICE_TYPES),
     dockerImage: z.string().min(1),
     dockerTag: z.string().min(1),
     containerConfig: stackContainerConfigSchema,
@@ -305,7 +310,7 @@ export const updateStackSchema = z.object({
 });
 
 export const updateStackServiceSchema = z.object({
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]).optional(),
+  serviceType: z.enum(STACK_SERVICE_TYPES).optional(),
   dockerImage: z.string().min(1).optional(),
   dockerTag: z.string().min(1).optional(),
   containerConfig: stackContainerConfigSchema.optional(),

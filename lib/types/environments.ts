@@ -1,5 +1,7 @@
-export type EnvironmentType = 'production' | 'nonproduction';
-export type EnvironmentNetworkType = 'local' | 'internet';
+export const ENVIRONMENT_TYPES = ['production', 'nonproduction'] as const;
+export type EnvironmentType = typeof ENVIRONMENT_TYPES[number];
+export const ENVIRONMENT_NETWORK_TYPES = ['local', 'internet'] as const;
+export type EnvironmentNetworkType = typeof ENVIRONMENT_NETWORK_TYPES[number];
 export type EnvironmentNetworkPurpose = 'custom';
 
 export interface Environment {

@@ -29,11 +29,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUpdateBackend } from "@/hooks/use-haproxy-backends";
-import { HAProxyBackendInfo } from "@mini-infra/types";
+import { HAProxyBackendInfo, BALANCE_ALGORITHMS } from "@mini-infra/types";
 import { toast } from "sonner";
 
 const editBackendSchema = z.object({
-  balanceAlgorithm: z.enum(["roundrobin", "leastconn", "source"]),
+  balanceAlgorithm: z.enum(BALANCE_ALGORITHMS),
   checkTimeout: z.number().int().min(100).optional(),
   connectTimeout: z.number().int().min(100).optional(),
   serverTimeout: z.number().int().min(100).optional(),

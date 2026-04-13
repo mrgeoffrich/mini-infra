@@ -5,81 +5,35 @@
  * centrally with consistent lifecycle management and status reporting.
  */
 
-export enum ServiceStatus {
-  UNINITIALIZED = 'uninitialized',
-  INITIALIZING = 'initializing',
-  INITIALIZED = 'initialized',
-  STARTING = 'starting',
-  RUNNING = 'running',
-  STOPPING = 'stopping',
-  STOPPED = 'stopped',
-  FAILED = 'failed',
-  DEGRADED = 'degraded'
-}
+import {
+  ServiceStatus,
+  ServiceStatusValues,
+  ApplicationServiceHealthStatus as HealthStatus,
+  ApplicationServiceHealthStatusValues as HealthStatusValues,
+  ServiceHealth,
+  NetworkRequirement,
+  VolumeRequirement,
+  PortRequirement,
+  ServiceMetadata,
+  StartupResult,
+  ServiceStatusInfo,
+} from '@mini-infra/types';
 
-export enum HealthStatus {
-  HEALTHY = 'healthy',
-  UNHEALTHY = 'unhealthy',
-  UNKNOWN = 'unknown'
-}
+// Re-export values under canonical names used by this module's consumers
+export { ServiceStatusValues, HealthStatusValues };
 
-export interface ServiceHealth {
-  status: HealthStatus;
-  message?: string;
-  lastChecked: Date;
-  details?: Record<string, unknown>;
-}
-
-export interface NetworkRequirement {
-  name: string;
-  driver?: string;
-  options?: Record<string, unknown>;
-}
-
-export interface VolumeRequirement {
-  name: string;
-  driver?: string;
-  options?: Record<string, unknown>;
-}
-
-export interface PortRequirement {
-  name: string;
-  containerPort: number;
-  hostPort: number;
-  protocol?: 'tcp' | 'udp';
-  description?: string;
-}
-
-export interface ServiceMetadata {
-  name: string;
-  version: string;
-  description?: string;
-  dependencies: string[];
-  tags?: string[];
-  requiredNetworks: NetworkRequirement[];
-  requiredVolumes: VolumeRequirement[];
-  exposedPorts: PortRequirement[];
-}
-
-export interface StartupResult {
-  success: boolean;
-  message?: string;
-  details?: Record<string, unknown>;
-  duration?: number;
-}
-
-export interface ServiceStatusInfo {
-  status: ServiceStatus;
-  health: ServiceHealth;
-  startedAt?: Date;
-  stoppedAt?: Date;
-  metadata: ServiceMetadata;
-  lastError?: {
-    message: string;
-    timestamp: Date;
-    details?: Record<string, unknown>;
-  };
-}
+// Re-export types (interfaces and type aliases)
+export type {
+  ServiceStatus,
+  HealthStatus,
+  ServiceHealth,
+  NetworkRequirement,
+  VolumeRequirement,
+  PortRequirement,
+  ServiceMetadata,
+  StartupResult,
+  ServiceStatusInfo,
+};
 
 export interface IApplicationService {
   /**

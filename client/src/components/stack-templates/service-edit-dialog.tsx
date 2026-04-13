@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import type { StackServiceDefinition } from "@mini-infra/types";
+import { STACK_SERVICE_TYPES, RESTART_POLICIES } from "@mini-infra/types";
 
 const serviceSchema = z.object({
   serviceName: z
@@ -38,12 +39,12 @@ const serviceSchema = z.object({
       /^[a-z0-9][a-z0-9-]*$/,
       "Must start with a letter or digit and contain only lowercase letters, digits, or hyphens",
     ),
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
+  serviceType: z.enum(STACK_SERVICE_TYPES),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Docker tag is required"),
   order: z.coerce.number().int().min(1, "Order must be at least 1"),
   command: z.string().optional(),
-  restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
+  restartPolicy: z.enum(RESTART_POLICIES),
   ports: z.array(
     z.object({
       containerPort: z.coerce

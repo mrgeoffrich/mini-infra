@@ -4,12 +4,14 @@
 
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
-export type StackServiceType = 'Stateful' | 'StatelessWeb' | 'AdoptedWeb';
+export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb'] as const;
+export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
 // Stack parameter types
 
-export type StackParameterType = 'string' | 'number' | 'boolean';
+export const STACK_PARAMETER_TYPES = ['string', 'number', 'boolean'] as const;
+export type StackParameterType = typeof STACK_PARAMETER_TYPES[number];
 
 export type StackParameterValue = string | number | boolean;
 
@@ -28,6 +30,9 @@ export interface StackParameterDefinition {
 
 // JSON field shape interfaces
 
+export const RESTART_POLICIES = ['no', 'always', 'unless-stopped', 'on-failure'] as const;
+export const BALANCE_ALGORITHMS = ['roundrobin', 'leastconn', 'source'] as const;
+
 export interface StackContainerConfig {
   command?: string[];
   entrypoint?: string[];
@@ -38,7 +43,7 @@ export interface StackContainerConfig {
   labels?: Record<string, string>;
   joinNetworks?: string[];
   joinResourceNetworks?: string[];
-  restartPolicy?: 'no' | 'always' | 'unless-stopped' | 'on-failure';
+  restartPolicy?: typeof RESTART_POLICIES[number];
   healthcheck?: {
     test: string[];
     interval: number;
@@ -81,7 +86,7 @@ export interface StackServiceRouting {
   dnsRecord?: string;
   tunnelIngress?: string;
   backendOptions?: {
-    balanceAlgorithm?: 'roundrobin' | 'leastconn' | 'source';
+    balanceAlgorithm?: typeof BALANCE_ALGORITHMS[number];
     checkTimeout?: number;
     connectTimeout?: number;
     serverTimeout?: number;

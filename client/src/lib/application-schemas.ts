@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  STACK_SERVICE_TYPES,
+  RESTART_POLICIES,
+} from "@mini-infra/types";
 
 // ---- Shared sub-schemas for application forms ----
 
@@ -48,7 +52,7 @@ export const createApplicationFormSchema = z.object({
   displayName: z.string().min(1, "Application name is required").max(100),
   description: z.string().max(500).optional(),
   serviceName: serviceNameSchema,
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
+  serviceType: z.enum(STACK_SERVICE_TYPES),
   environmentId: z.string().min(1, "Environment is required"),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Tag is required"),
@@ -57,7 +61,7 @@ export const createApplicationFormSchema = z.object({
   volumeMounts: z.array(volumeMountSchema),
   enableRouting: z.boolean(),
   routing: routingSchema.optional(),
-  restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
+  restartPolicy: z.enum(RESTART_POLICIES),
   enableHealthCheck: z.boolean(),
   healthCheck: healthCheckSchema.optional(),
   deployImmediately: z.boolean(),
@@ -98,7 +102,7 @@ export const editApplicationFormSchema = z.object({
   displayName: z.string().min(1, "Application name is required").max(100),
   description: z.string().max(500).optional(),
   serviceName: serviceNameSchema,
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
+  serviceType: z.enum(STACK_SERVICE_TYPES),
   dockerImage: z.string().min(1, "Docker image is required"),
   dockerTag: z.string().min(1, "Tag is required"),
   ports: z.array(portMappingSchema),
@@ -106,7 +110,7 @@ export const editApplicationFormSchema = z.object({
   volumeMounts: z.array(volumeMountSchema),
   enableRouting: z.boolean(),
   routing: routingSchema.optional(),
-  restartPolicy: z.enum(["no", "always", "unless-stopped", "on-failure"]),
+  restartPolicy: z.enum(RESTART_POLICIES),
 });
 
 export type EditApplicationFormData = z.infer<

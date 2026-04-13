@@ -19,7 +19,8 @@ import type {
 
 // Enum mirrors
 export type StackTemplateSource = 'system' | 'user';
-export type StackTemplateScope = 'host' | 'environment';
+export const STACK_TEMPLATE_SCOPES = ['host', 'environment'] as const;
+export type StackTemplateScope = typeof STACK_TEMPLATE_SCOPES[number];
 export type StackTemplateVersionStatus = 'draft' | 'published' | 'archived';
 
 // DB model types (Date fields)

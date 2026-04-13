@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import type { PostgresServerInfo } from "@mini-infra/types";
+import { POSTGRES_SSL_MODES } from "@mini-infra/types";
 import { toast } from "sonner";
 import {
   useCreatePostgresServer,
@@ -51,7 +52,7 @@ const createServerSchema = z.object({
   port: z.number().min(1).max(65535),
   adminUsername: z.string().min(1, "Admin username is required"),
   adminPassword: z.string().min(1, "Admin password is required"),
-  sslMode: z.enum(["prefer", "require", "disable"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
   tags: z.string().optional(),
   linkedContainerId: z.string().optional(),
   linkedContainerName: z.string().optional(),
@@ -63,7 +64,7 @@ const updateServerSchema = z.object({
   port: z.number().min(1).max(65535),
   adminUsername: z.string().min(1, "Admin username is required"),
   adminPassword: z.string().optional(), // Optional for updates
-  sslMode: z.enum(["prefer", "require", "disable"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
   tags: z.string().optional(),
   linkedContainerId: z.string().optional(),
   linkedContainerName: z.string().optional(),
