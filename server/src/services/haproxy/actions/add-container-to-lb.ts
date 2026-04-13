@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, LBConfigEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
 import prisma from '../../../lib/prisma';
@@ -12,7 +12,7 @@ export class AddContainerToLB {
         this.haproxyClient = new HAProxyDataPlaneClient();
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: LBConfigEmit) => void): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,

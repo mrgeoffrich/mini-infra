@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, AppRemovalEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
@@ -14,7 +14,7 @@ export class RemoveApplication {
         this.containerManager = new ContainerLifecycleManager();
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: AppRemovalEmit) => void): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,

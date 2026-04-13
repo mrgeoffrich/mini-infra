@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, DnsRemovalEmit } from './types';
 import { loadbalancerLogger } from "../../../lib/logger-factory";
 import { cloudflareDNSService } from "../../cloudflare";
 
@@ -9,7 +9,7 @@ const logger = loadbalancerLogger();
  * Deletes CloudFlare DNS A records for the configured hostname
  */
 export class RemoveDNS {
-  async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+  async execute(context: ActionContext, sendEvent: (event: DnsRemovalEmit) => void): Promise<void> {
     logger.info(
       {
         deploymentId: context?.deploymentId,

@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, ContainerDeploymentEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
 import { ContainerConfig } from '@mini-infra/types';
@@ -16,7 +16,7 @@ export class DeployApplicationContainers {
         this.userEventService = new UserEventService(prisma);
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: ContainerDeploymentEmit) => void): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,

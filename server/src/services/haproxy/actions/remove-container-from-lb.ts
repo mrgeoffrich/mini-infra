@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, LBRemovalEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 import DockerService from '../../docker';
@@ -42,7 +42,7 @@ export class RemoveContainerFromLB {
         }
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: LBRemovalEmit) => void): Promise<void> {
         logger.info({
             operationId: context?.deploymentId,
             applicationName: context?.applicationName,

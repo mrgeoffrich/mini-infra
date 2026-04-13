@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, TrafficDisableEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 
@@ -11,7 +11,7 @@ export class DisableTraffic {
         this.haproxyClient = new HAProxyDataPlaneClient();
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: TrafficDisableEmit) => void): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
