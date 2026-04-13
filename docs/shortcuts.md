@@ -99,25 +99,32 @@ Resolved in `chore/haproxy-action-body-types`.
 - With the above three fixes the fallback object literal is directly assignable to `ContainerConfig`
   — the `as unknown as ContainerConfig` cast is gone.
 
-## 6. Connectivity status reads
+## 5. Middleware `validatedQuery` / `validatedParams` ✅ Resolved
 
-**Files:** `server/src/services/azure-storage-service.ts`,
-`server/src/services/cloudflare/cloudflare-service.ts`,
-`server/src/services/docker-config.ts`,
-`server/src/services/github-service.ts`,
-`server/src/services/github-app/github-app-validation.ts`,
-`server/src/services/tls/tls-config.ts`
+Resolved in `chore/validation-typed-accessor`. The `declare global { namespace Express
+{ interface Request { validatedQuery?: unknown; ... } } }` augmentation is removed.
 
-- Each `getHealthStatus()` reads the return of
-  `getLatestConnectivityStatus()` (which returns `Record<string, unknown>`)
-  via a local `const row = latestStatus as { ... }` cast.
+Validated query/params data is now stored on the request under private symbol keys
+(`_validatedQuery`, `_validatedParams`) that are not exported. Callers retrieve typed
+data via `getValidatedQuery(req, schema)` and `getValidatedParams(req, schema)` —
+passing the same schema used at middleware registration lets TypeScript infer
+`z.output<TSchema>` without any cast at the call site. The two `as unknown as
+SymbolKeyed` double-assertions are contained inside the module and are the only casts
+required.
 
-  **Why:** Typing `getLatestConnectivityStatus` to the full Prisma
-  `ConnectivityStatus` payload triggers `Date | null` vs `Date | undefined`
-  / `bigint` vs `number` mismatches at every caller.
+## 6. Connectivity status reads ✅ Resolved
 
-  **Proper fix:** Return a narrow DTO from `getLatestConnectivityStatus`
-  that already converts nullable fields.
+Resolved in `chore/connectivity-status-dto`. `getLatestConnectivityStatus()` now
+returns `Promise<ConnectivityStatusRow | null>` instead of `Promise<Record<string,
+unknown> | null>`. The `ConnectivityStatusRow` DTO (exported from
+`configuration-base.ts`) converts Prisma's mismatched types at the source:
+
+- `BigInt | null` → `number | undefined` for `responseTimeMs`
+- `T | null` → `T | undefined` for all other optional fields
+
+All six `getHealthStatus()` callers drop their identical `const row = latestStatus as
+{ ... }` cast blocks and use `latestStatus` directly. The `GitHubAppValidationContext`
+interface in `github-app-constants.ts` is updated to match.
 
 ## 7. Client zod-resolver casts
 
