@@ -1,6 +1,7 @@
 import type { OperationStep } from './operations';
 
-export type AcmeProvider = "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl";
+export const ACME_PROVIDERS = ["letsencrypt", "letsencrypt-staging", "buypass", "zerossl"] as const;
+export type AcmeProvider = typeof ACME_PROVIDERS[number];
 
 export interface TlsCertificate {
   id: string;
