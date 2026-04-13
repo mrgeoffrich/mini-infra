@@ -565,11 +565,8 @@ describe("CloudflareService", () => {
       });
 
       expect(mockLogger.info).toHaveBeenCalledWith(
-        {
-          accountId: "account-123",
-          tunnelCount: 2,
-        },
-        "Successfully retrieved Cloudflare tunnel information",
+        {},
+        "Cloudflare tunnel list succeeded",
       );
     });
 
@@ -582,7 +579,8 @@ describe("CloudflareService", () => {
 
       expect(result).toEqual([]);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        "Cannot retrieve tunnel info: API token not configured",
+        { reason: "Cloudflare API token not configured" },
+        "Cannot execute tunnel list",
       );
     });
 
@@ -598,7 +596,8 @@ describe("CloudflareService", () => {
 
       expect(result).toEqual([]);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        "Cannot retrieve tunnel info: Account ID not configured",
+        { reason: "Cloudflare account ID not configured" },
+        "Cannot execute tunnel list",
       );
     });
 
@@ -624,7 +623,7 @@ describe("CloudflareService", () => {
           errorCode: "TIMEOUT",
           isRetriable: true,
         },
-        "Failed to retrieve Cloudflare tunnel information",
+        "Cloudflare tunnel list failed",
       );
     });
 
@@ -648,7 +647,7 @@ describe("CloudflareService", () => {
           errorCode: "CLOUDFLARE_API_ERROR",
           isRetriable: true,
         },
-        "Failed to retrieve Cloudflare tunnel information",
+        "Cloudflare tunnel list failed",
       );
     });
   });
