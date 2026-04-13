@@ -1,12 +1,9 @@
 import Cloudflare from "cloudflare";
+import type { Zone } from "cloudflare/resources/zones/zones.js";
+import type { RecordResponse, RecordCreateParams, RecordListParams, RecordUpdateParams } from "cloudflare/resources/dns/records.js";
 import { servicesLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "./cloudflare-service";
 import prisma from "../../lib/prisma";
-
-// SDK response shapes are opaque unions; see `cloudflare-service.ts`
-// for the same containment pattern.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CloudflareApiResponse = any;
 import {
   CloudflareDNSZone,
   CloudflareDNSRecord,
@@ -15,6 +12,17 @@ import {
 } from "@mini-infra/types";
 
 const logger = servicesLogger();
+
+/**
+ * Extends the SDK RecordResponse with additional fields that the Cloudflare v4 API
+ * returns at runtime but the SDK TypeScript types omit (zone_id, zone_name, locked, data).
+ */
+type SdkRecord = RecordResponse & {
+  zone_id?: string;
+  zone_name?: string;
+  locked?: boolean;
+  data?: Record<string, unknown>;
+};
 
 /**
  * CloudflareDNSService manages DNS zones and records in Cloudflare
@@ -65,17 +73,20 @@ export class CloudflareDNSService {
         ),
       ]);
 
-      const zones = response.result.map((zone: CloudflareApiResponse) => ({
+      const zones = response.result.map((zone: Zone) => ({
         id: zone.id,
         name: zone.name,
-        status: zone.status,
-        paused: zone.paused,
-        type: zone.type,
+        // SDK omits "deleted" from the status union; cast to our broader type
+        status: (zone.status ?? "active") as CloudflareDNSZone["status"],
+        paused: zone.paused ?? false,
+        // SDK includes 'secondary'/'internal' in the union; cast to our narrower type
+        type: (zone.type ?? "full") as CloudflareDNSZone["type"],
         development_mode: zone.development_mode,
         name_servers: zone.name_servers || [],
-        original_name_servers: zone.original_name_servers,
-        original_registrar: zone.original_registrar,
-        original_dnshost: zone.original_dnshost,
+        // SDK uses null for absent arrays; coerce to undefined to match our type
+        original_name_servers: zone.original_name_servers ?? undefined,
+        original_registrar: zone.original_registrar ?? undefined,
+        original_dnshost: zone.original_dnshost ?? undefined,
         created_on: zone.created_on,
         modified_on: zone.modified_on,
       }));
@@ -151,7 +162,7 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: CloudflareApiResponse = await Promise.race([
+      const rawResponse: RecordResponse = await Promise.race([
         cf.dns.records.create({
           zone_id: zoneId,
           type: record.type,
@@ -159,7 +170,7 @@ export class CloudflareDNSService {
           content: record.content,
           ttl: record.ttl || 300, // Default to 5 minutes
           proxied: record.proxied ?? false,
-        }),
+        } as RecordCreateParams),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Request timeout")),
@@ -167,6 +178,9 @@ export class CloudflareDNSService {
           )
         ),
       ]);
+      // Cast to SdkRecord to access zone_id/zone_name/locked/data fields the API
+      // returns at runtime but the SDK TypeScript types omit.
+      const response = rawResponse as SdkRecord;
 
       const dnsRecord: CloudflareDNSRecord = {
         id: response.id,
@@ -182,7 +196,7 @@ export class CloudflareDNSService {
         created_on: response.created_on,
         modified_on: response.modified_on,
         data: response.data,
-        meta: response.meta,
+        meta: response.meta as CloudflareDNSRecord["meta"],
       };
 
       logger.info(
@@ -243,11 +257,11 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: CloudflareApiResponse = await Promise.race([
+      const rawResponse: RecordResponse = await Promise.race([
         cf.dns.records.update(recordId, {
           zone_id: zoneId,
           ...updates,
-        } as CloudflareApiResponse),
+        } as RecordUpdateParams),
         new Promise<never>((_, reject) =>
           setTimeout(
             () => reject(new Error("Request timeout")),
@@ -255,6 +269,7 @@ export class CloudflareDNSService {
           )
         ),
       ]);
+      const response = rawResponse as SdkRecord;
 
       const dnsRecord: CloudflareDNSRecord = {
         id: response.id,
@@ -270,7 +285,7 @@ export class CloudflareDNSService {
         created_on: response.created_on,
         modified_on: response.modified_on,
         data: response.data,
-        meta: response.meta,
+        meta: response.meta as CloudflareDNSRecord["meta"],
       };
 
       logger.info(
@@ -345,7 +360,7 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const response: CloudflareApiResponse = await Promise.race([
+      const rawResponse: RecordResponse = await Promise.race([
         cf.dns.records.get(recordId, { zone_id: zoneId }),
         new Promise<never>((_, reject) =>
           setTimeout(
@@ -354,6 +369,7 @@ export class CloudflareDNSService {
           )
         ),
       ]);
+      const response = rawResponse as SdkRecord;
 
       const dnsRecord: CloudflareDNSRecord = {
         id: response.id,
@@ -369,7 +385,7 @@ export class CloudflareDNSService {
         created_on: response.created_on,
         modified_on: response.modified_on,
         data: response.data,
-        meta: response.meta,
+        meta: response.meta as CloudflareDNSRecord["meta"],
       };
 
       logger.info(
@@ -405,9 +421,10 @@ export class CloudflareDNSService {
     try {
       const cf = await this.getCloudflareClient();
 
-      const params: CloudflareApiResponse = { zone_id: zoneId };
+      const params: RecordListParams = { zone_id: zoneId };
       if (hostname) {
-        params.name = hostname;
+        // SDK uses an object filter for name; { exact } performs exact-match search
+        params.name = { exact: hostname };
       }
 
       const response = await Promise.race([
@@ -420,22 +437,25 @@ export class CloudflareDNSService {
         ),
       ]);
 
-      const records = response.result.map((record: CloudflareApiResponse) => ({
-        id: record.id,
-        type: record.type,
-        name: record.name,
-        content: record.content,
-        proxiable: record.proxiable,
-        proxied: record.proxied,
-        ttl: record.ttl,
-        locked: record.locked,
-        zone_id: record.zone_id,
-        zone_name: record.zone_name,
-        created_on: record.created_on,
-        modified_on: record.modified_on,
-        data: record.data,
-        meta: record.meta,
-      }));
+      const records = response.result.map((rawRecord: RecordResponse) => {
+        const record = rawRecord as SdkRecord;
+        return {
+          id: record.id,
+          type: record.type,
+          name: record.name ?? "",
+          content: record.content ?? "",
+          proxiable: record.proxiable ?? true,
+          proxied: record.proxied ?? false,
+          ttl: record.ttl,
+          locked: record.locked ?? false,
+          zone_id: record.zone_id ?? zoneId,
+          zone_name: record.zone_name ?? "",
+          created_on: record.created_on,
+          modified_on: record.modified_on,
+          data: record.data,
+          meta: record.meta as CloudflareDNSRecord["meta"],
+        };
+      });
 
       logger.info(
         { zoneId, hostname, recordCount: records.length },

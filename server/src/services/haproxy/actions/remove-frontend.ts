@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, FrontendRemovalEmit } from './types';
 import { loadbalancerLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyFrontendManager } from "../haproxy-frontend-manager";
@@ -19,7 +19,7 @@ export class RemoveFrontend {
     this.haproxyClient = new HAProxyDataPlaneClient();
   }
 
-  async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+  async execute(context: ActionContext, sendEvent: (event: FrontendRemovalEmit) => void): Promise<void> {
     logger.info(
       {
         deploymentId: context?.deploymentId,

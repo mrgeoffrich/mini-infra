@@ -1,4 +1,4 @@
-import type { ActionContext, SendEvent } from './types';
+import type { ActionContext, ContainerStartupEmit } from './types';
 import { loadbalancerLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager } from '../../container';
 import DockerService from '../../docker';
@@ -14,7 +14,7 @@ export class MonitorContainerStartup {
         this.dockerService = DockerService.getInstance();
     }
 
-    async execute(context: ActionContext, sendEvent: SendEvent): Promise<void> {
+    async execute(context: ActionContext, sendEvent: (event: ContainerStartupEmit) => void): Promise<void> {
         logger.info({
             deploymentId: context?.deploymentId,
             applicationName: context?.applicationName,
@@ -96,8 +96,8 @@ export class MonitorContainerStartup {
             sendEvent({
                 type: 'CONTAINERS_RUNNING',
                 containerIpAddress: networkInfo.ipAddress,
-                containerPort: networkInfo.listeningPort,
-                containerName: networkInfo.containerName
+                containerPort: networkInfo.listeningPort ?? undefined,
+                containerName: networkInfo.containerName ?? undefined
             });
 
         } catch (error) {

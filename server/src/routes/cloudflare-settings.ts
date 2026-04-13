@@ -12,6 +12,7 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { CloudflareService, cloudflareDNSService } from "../services/cloudflare";
 import { DnsCacheService } from "../services/dns";
+import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels/tunnels.js";
 import {
   CloudflareSettingResponse,
   CloudflareValidationResponse,
@@ -19,6 +20,7 @@ import {
   CloudflareTunnelDetailsResponse,
   CloudflareTunnelConfigResponse,
   CloudflareTunnelInfo,
+  CloudflareTunnelConfig,
   ManagedTunnelListResponse,
   ManagedTunnelResponse,
   ManagedTunnelWithStack,
@@ -29,14 +31,10 @@ const router = express.Router();
 // Create Cloudflare configuration service instance
 const cloudflareConfigService = new CloudflareService(prisma);
 
-// Cache for tunnel data with 60-second TTL.
-// Payloads come from the cloudflare SDK (tunnel listings); see
-// `cloudflare-service.ts` for the same containment pattern.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type CloudflareApiResponse = any;
+type TunnelCacheData = CloudflareTunnelInfo[] | CloudflareTunnelInfo | CloudflareTunnelConfig;
 
 interface TunnelCacheEntry {
-  data: CloudflareApiResponse;
+  data: TunnelCacheData;
   timestamp: number;
 }
 const tunnelCache: Map<string, TunnelCacheEntry> = new Map();
@@ -512,11 +510,12 @@ router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (as
     const cached = tunnelCache.get(cacheKey);
 
     if (cached && Date.now() - cached.timestamp < TUNNEL_CACHE_TTL) {
+      const cachedTunnels = cached.data as CloudflareTunnelInfo[];
       logger.debug(
         {
           requestId,
           userId,
-          tunnelCount: cached.data.length,
+          tunnelCount: cachedTunnels.length,
         },
         "Returning cached tunnel list",
       );
@@ -524,8 +523,8 @@ router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (as
       const response: CloudflareTunnelListResponse = {
         success: true,
         data: {
-          tunnels: cached.data,
-          tunnelCount: cached.data.length,
+          tunnels: cachedTunnels,
+          tunnelCount: cachedTunnels.length,
         },
       };
 
@@ -586,14 +585,16 @@ router.get("/tunnels", requirePermission('settings:read') as RequestHandler, (as
 
     // Transform tunnel data for frontend consumption and filter out deleted tunnels
     const transformedTunnels = tunnels
-      .filter((tunnel: CloudflareApiResponse) => !tunnel.deleted_at) // Filter out deleted tunnels
-      .map((tunnel: CloudflareApiResponse) => ({
-        id: tunnel.id,
-        name: tunnel.name,
-        status: tunnel.status as "healthy" | "degraded" | "down" | "inactive",
-        createdAt: tunnel.created_at,
+      .filter((tunnel: TunnelListResponse) => !tunnel.deleted_at) // Filter out deleted tunnels
+      .map((tunnel: TunnelListResponse): CloudflareTunnelInfo => ({
+        id: tunnel.id ?? "",
+        name: tunnel.name ?? "",
+        status: (tunnel.status ?? "inactive") as CloudflareTunnelInfo["status"],
+        createdAt: tunnel.created_at ?? "",
         deletedAt: tunnel.deleted_at,
-        connections: tunnel.connections || [],
+        // SDK Connection type is a subset of CloudflareTunnelConnection; cast is safe
+        // as the frontend only uses this data for presence/count checks from list view
+        connections: (tunnel.connections ?? []) as CloudflareTunnelInfo["connections"],
       }));
 
     // Update cache
@@ -672,7 +673,7 @@ router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler,
 
       const response: CloudflareTunnelDetailsResponse = {
         success: true,
-        data: cached.data,
+        data: cached.data as CloudflareTunnelInfo,
       };
 
       return res.json(response);
@@ -703,19 +704,19 @@ router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler,
     const cf = new Cloudflare({ apiToken });
 
     // Fetch tunnels list and find the specific tunnel
-    const tunnelsResponse = (await Promise.race([
+    const tunnelsResponse = await Promise.race([
       cf.zeroTrust.tunnels.list({ account_id: accountId }),
-      new Promise((_, reject) =>
+      new Promise<never>((_, reject) =>
         setTimeout(
           () => reject(new Error("Tunnel API request timeout")),
           10000, // 10 second timeout
         ),
       ),
-    ])) as CloudflareApiResponse;
+    ]);
 
     // Find the specific tunnel from the list
     const tunnelResponse = tunnelsResponse.result?.find(
-      (t: CloudflareApiResponse) => t.id === tunnelId,
+      (t: TunnelListResponse) => t.id === tunnelId,
     );
 
     if (!tunnelResponse) {
@@ -726,23 +727,28 @@ router.get("/tunnels/:id", requirePermission('settings:read') as RequestHandler,
       });
     }
 
+    // The SDK's TunnelListResponse union omits some fields the API returns at
+    // runtime (connector_id, config_src, remote_config). Cast to an extended
+    // type to access them without resorting to `any`.
+    const tunnel = tunnelResponse as TunnelListResponse & {
+      connector_id?: string;
+      config_src?: string;
+      remote_config?: boolean;
+    };
+
     // Transform tunnel data to match CloudflareTunnelInfo type
     const transformedTunnel: CloudflareTunnelInfo = {
-      id: tunnelResponse.id,
-      name: tunnelResponse.name,
-      status: tunnelResponse.status as
-        | "healthy"
-        | "degraded"
-        | "down"
-        | "inactive",
-      createdAt: tunnelResponse.created_at,
-      deletedAt: tunnelResponse.deleted_at,
-      connections: tunnelResponse.connections || [],
-      connectorId: tunnelResponse.connector_id,
-      activeTunnelConnections: tunnelResponse.connections?.length || 0,
+      id: tunnel.id ?? "",
+      name: tunnel.name ?? "",
+      status: (tunnel.status ?? "inactive") as CloudflareTunnelInfo["status"],
+      createdAt: tunnel.created_at ?? "",
+      deletedAt: tunnel.deleted_at,
+      connections: (tunnel.connections ?? []) as CloudflareTunnelInfo["connections"],
+      connectorId: tunnel.connector_id,
+      activeTunnelConnections: tunnel.connections?.length ?? 0,
       metadata: {
-        config_src: tunnelResponse.config_src,
-        remote_config: tunnelResponse.remote_config,
+        config_src: tunnel.config_src,
+        remote_config: tunnel.remote_config,
       },
     };
 
@@ -821,7 +827,7 @@ router.get("/tunnels/:id/config", requirePermission('settings:read') as RequestH
 
       const response: CloudflareTunnelConfigResponse = {
         success: true,
-        data: cached.data,
+        data: cached.data as CloudflareTunnelConfig,
       };
 
       return res.json(response);

@@ -19,13 +19,13 @@ Supersedes `major-upgrade-plan.md`, `upgrade-shortcuts.md`, and `no-explicit-any
 Several files contain localized `// eslint-disable-next-line @typescript-eslint/no-explicit-any`
 type aliases where a full refactor would have ballooned the diff:
 
-- `server/src/services/haproxy/actions/types.ts` — shared `ActionEvent` typed as `any` because
-  four XState machines have subtly different event unions. Proper fix is a shared supertype
-  or per-machine-scoped action callbacks.
-- `server/src/services/cloudflare/cloudflare-service.ts`,
+- ~~`server/src/services/haproxy/actions/types.ts` — shared `ActionEvent` typed as `any`~~
+  **Fixed**: per-action emit types replace `any` (see `chore/type-cleanup`).
+- ~~`server/src/services/cloudflare/cloudflare-service.ts`,
   `cloudflare-dns.ts`, `server/src/routes/cloudflare-settings.ts` —
-  `CloudflareApiResponse = any` alias for SDK pagination / response shapes.
-  Proper fix is a thin adapter layer (see "Cloudflare SDK adapter" below).
+  `CloudflareApiResponse = any` alias for SDK pagination / response shapes.~~
+  **Fixed**: SDK types used directly; `SdkRecord` intersection bridges the
+  runtime fields the SDK omits (see `chore/type-cleanup`).
 - `server/src/services/stacks/stack-template-service.ts` —
   `SerializableTemplate` / `SerializableVersion` aliased to `any` because each caller
   loads a different Prisma `include`/`select` subset. Proper fix is a discriminated
@@ -39,14 +39,12 @@ type aliases where a full refactor would have ballooned the diff:
 
 Non-`no-explicit-any` items that remain open:
 
-### 1. Cloudflare SDK adapter layer
+### ~~1. Cloudflare SDK adapter layer~~ ✅ Done
 
-**Files:** `server/src/services/cloudflare/cloudflare-service.ts`, `cloudflare-dns.ts`,
-`server/src/routes/cloudflare-settings.ts`
-
-The quick cleanup introduced `CloudflareApiResponse = any`. The proper fix is a thin
-adapter over the cloudflare SDK that exposes `mini-infra`-shaped responses and removes
-all the Promise.race + `as any` patterns. One file, one PR.
+`CloudflareApiResponse = any` removed. SDK types used directly; `SdkRecord`
+intersection bridges runtime fields the SDK omits (`zone_id`, `zone_name`, `locked`,
+`data`). `Promise.race` now uses `Promise<never>` for the timeout arm so the SDK
+return type flows through unchanged.
 
 ### 2. Stack-template-service serializer shape
 
@@ -56,19 +54,12 @@ all the Promise.race + `as any` patterns. One file, one PR.
 a different Prisma include shape. A discriminated union (one variant per include set) or
 a single loose shape with runtime validation would let us drop the `any`.
 
-### 3. HAProxy state-machine event unions
+### ~~3. HAProxy state-machine event unions~~ ✅ Done
 
-**Files:** `server/src/services/haproxy/actions/types.ts`,
-`haproxy/blue-green-deployment-state-machine.ts`,
-`haproxy/blue-green-update-state-machine.ts`,
-`haproxy/initial-deployment-state-machine.ts`,
-`haproxy/removal-deployment-state-machine.ts`
-
-Each machine defines its own event union; `ActionEvent` is currently `any` because
-different machines require different shapes for the "same" event (e.g.
-`CONTAINERS_RUNNING` has required `containerIpAddress` in blue-green but optional in
-initial-deployment). Aligning these into a shared supertype would let us make
-`ActionEvent` a proper discriminated union.
+Per-action emit types now replace `ActionEvent = any`. Each action exports its own
+typed emit union (`ContainerStartupEmit`, `LBConfigEmit`, etc.). The two blue-green
+machines had `CONTAINERS_RUNNING.containerPort` widened to `containerPort?: number`
+to match what the startup action actually emits.
 
 ### 4. Client task-tracker registry
 

@@ -100,7 +100,7 @@ type BlueGreenUpdateEvent =
     // Green deployment events
     | { type: 'DEPLOYMENT_SUCCESS'; containerId: string; containerName?: string }
     | { type: 'DEPLOYMENT_ERROR'; error: string }
-    | { type: 'CONTAINERS_RUNNING'; containerIpAddress: string; containerPort: number; containerName?: string }
+    | { type: 'CONTAINERS_RUNNING'; containerIpAddress: string; containerPort?: number; containerName?: string }
     | { type: 'STARTUP_TIMEOUT' }
 
     // Load balancer configuration events
