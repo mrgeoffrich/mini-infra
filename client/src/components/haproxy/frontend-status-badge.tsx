@@ -6,8 +6,9 @@ import {
   IconAlertCircle,
   IconTrash,
 } from "@tabler/icons-react";
+import type { HAProxyFrontendInfo } from "@mini-infra/types";
 
-type FrontendStatus = "active" | "pending" | "failed" | "removed";
+type FrontendStatus = HAProxyFrontendInfo["status"];
 
 interface FrontendStatusBadgeProps {
   status: FrontendStatus;

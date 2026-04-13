@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { POSTGRES_SSL_MODES, BACKUP_FORMATS } from "@mini-infra/types";
 
 export const postgresDbSchema = z.object({
   name: z
@@ -26,7 +27,7 @@ export const postgresDbSchema = z.object({
     .string()
     .min(1, "Password is required")
     .max(255, "Password must be less than 255 characters"),
-  sslMode: z.enum(["require", "disable", "prefer"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
   tags: z.array(z.string()),
 });
 
@@ -48,7 +49,7 @@ export const postgresConnectionSchema = z.object({
     .string()
     .min(1, "Password is required")
     .max(255, "Password must be less than 255 characters"),
-  sslMode: z.enum(["require", "disable", "prefer"]),
+  sslMode: z.enum(POSTGRES_SSL_MODES),
 });
 
 export type PostgresDbFormData = z.infer<typeof postgresDbSchema>;
@@ -67,7 +68,7 @@ export const backupConfigSchema = z.object({
     .int()
     .min(1, "Retention must be at least 1 day")
     .max(365, "Retention cannot exceed 365 days"),
-  backupFormat: z.enum(["custom", "plain", "tar"]),
+  backupFormat: z.enum(BACKUP_FORMATS),
   compressionLevel: z
     .number()
     .int()

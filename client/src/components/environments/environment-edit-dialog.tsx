@@ -2,7 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Environment, UpdateEnvironmentRequest } from "@mini-infra/types";
+import { Environment, UpdateEnvironmentRequest, ENVIRONMENT_TYPES } from "@mini-infra/types";
 import { useUpdateEnvironment } from "@/hooks/use-environments";
 import {
   Dialog,
@@ -36,7 +36,7 @@ import { IconLoader2 } from "@tabler/icons-react";
 
 const updateEnvironmentSchema = z.object({
   description: z.string().optional(),
-  type: z.enum(["production", "nonproduction"] as const).optional(),
+  type: z.enum(ENVIRONMENT_TYPES).optional(),
   tunnelId: z.string().optional(),
   tunnelServiceUrl: z.string().optional(),
 });

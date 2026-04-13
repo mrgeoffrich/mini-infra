@@ -4,11 +4,13 @@ import Dockerode from 'dockerode';
 import {
   IApplicationService,
   ServiceStatus,
+  ServiceStatusValues,
   ServiceHealth,
   ServiceMetadata,
   ServiceStatusInfo,
   StartupResult,
   HealthStatus,
+  HealthStatusValues,
   NetworkRequirement,
   VolumeRequirement,
 } from '../interfaces/application-service';
@@ -18,7 +20,7 @@ export class HAProxyService implements IApplicationService {
   private readonly projectName: string;
   private readonly mainContainerName: string;
   private readonly logger = servicesLogger();
-  private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
+  private currentStatus: ServiceStatus = ServiceStatusValues.UNINITIALIZED;
   private startedAt?: Date;
   private stoppedAt?: Date;
   private lastError?: { message: string; timestamp: Date; details?: Record<string, unknown> };
@@ -109,20 +111,20 @@ export class HAProxyService implements IApplicationService {
    * Initialize the HAProxy service
    */
   async initialize(networks?: NetworkRequirement[], volumes?: VolumeRequirement[]): Promise<void> {
-    this.currentStatus = ServiceStatus.INITIALIZING;
+    this.currentStatus = ServiceStatusValues.INITIALIZING;
     try {
       // Store the provided networks and volumes
       this.availableNetworks = networks || [];
       this.availableVolumes = volumes || [];
 
       await this.dockerExecutor.initialize();
-      this.currentStatus = ServiceStatus.INITIALIZED;
+      this.currentStatus = ServiceStatusValues.INITIALIZED;
       this.logger.info({
         networksCount: this.availableNetworks.length,
         volumesCount: this.availableVolumes.length
       }, 'HAProxy service initialized with provided resources');
     } catch (error) {
-      this.currentStatus = ServiceStatus.FAILED;
+      this.currentStatus = ServiceStatusValues.FAILED;
       this.lastError = {
         message: error instanceof Error ? error.message : 'Failed to initialize',
         timestamp: new Date(),
@@ -137,7 +139,7 @@ export class HAProxyService implements IApplicationService {
    */
   async start(): Promise<StartupResult> {
     const startTime = Date.now();
-    this.currentStatus = ServiceStatus.RUNNING;
+    this.currentStatus = ServiceStatusValues.RUNNING;
     this.startedAt = new Date();
     this.stoppedAt = undefined;
     this.lastError = undefined;
@@ -153,14 +155,14 @@ export class HAProxyService implements IApplicationService {
    * Stop the HAProxy service (implements IApplicationService)
    */
   async stopAndCleanup(): Promise<void> {
-    this.currentStatus = ServiceStatus.STOPPING;
+    this.currentStatus = ServiceStatusValues.STOPPING;
     try {
       await this.removeHAProxy();
-      this.currentStatus = ServiceStatus.STOPPED;
+      this.currentStatus = ServiceStatusValues.STOPPED;
       this.stoppedAt = new Date();
       this.logger.info('HAProxy service stopped successfully');
     } catch (error) {
-      this.currentStatus = ServiceStatus.FAILED;
+      this.currentStatus = ServiceStatusValues.FAILED;
       this.lastError = {
         message: error instanceof Error ? error.message : 'Failed to stop',
         timestamp: new Date(),
@@ -241,7 +243,7 @@ export class HAProxyService implements IApplicationService {
 
       if (runningContainers.length === 0) {
         return {
-          status: HealthStatus.UNHEALTHY,
+          status: HealthStatusValues.UNHEALTHY,
           message: 'No HAProxy containers are running',
           lastChecked: new Date(),
           details: { totalContainers: containers.length, runningContainers: 0 }
@@ -255,7 +257,7 @@ export class HAProxyService implements IApplicationService {
 
       if (haproxyContainers.length === 0) {
         return {
-          status: HealthStatus.UNHEALTHY,
+          status: HealthStatusValues.UNHEALTHY,
           message: 'Main HAProxy container not found',
           lastChecked: new Date(),
           details: { containers: containers.map(c => c.Names) }
@@ -265,7 +267,7 @@ export class HAProxyService implements IApplicationService {
       const mainContainer = haproxyContainers[0];
       if (mainContainer.State !== 'running') {
         return {
-          status: HealthStatus.UNHEALTHY,
+          status: HealthStatusValues.UNHEALTHY,
           message: `Main HAProxy container is ${mainContainer.State}`,
           lastChecked: new Date(),
           details: { containerState: mainContainer.State }
@@ -273,7 +275,7 @@ export class HAProxyService implements IApplicationService {
       }
 
       return {
-        status: HealthStatus.HEALTHY,
+        status: HealthStatusValues.HEALTHY,
         message: 'HAProxy service is healthy',
         lastChecked: new Date(),
         details: {
@@ -284,7 +286,7 @@ export class HAProxyService implements IApplicationService {
       };
     } catch (error) {
       return {
-        status: HealthStatus.UNKNOWN,
+        status: HealthStatusValues.UNKNOWN,
         message: error instanceof Error ? error.message : 'Health check failed',
         lastChecked: new Date(),
         details: { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -301,9 +303,9 @@ export class HAProxyService implements IApplicationService {
       await this.dockerExecutor.initialize();
 
       // Check if we're in a state that allows starting
-      return this.currentStatus === ServiceStatus.INITIALIZED ||
-        this.currentStatus === ServiceStatus.STOPPED ||
-        this.currentStatus === ServiceStatus.FAILED;
+      return this.currentStatus === ServiceStatusValues.INITIALIZED ||
+        this.currentStatus === ServiceStatusValues.STOPPED ||
+        this.currentStatus === ServiceStatusValues.FAILED;
     } catch (error) {
       this.logger.warn({ error }, 'HAProxy service readiness check failed');
       return false;

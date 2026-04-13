@@ -21,6 +21,7 @@ import type {
   DockerRegistryTestOptions,
   DockerRegistryTestResult,
 } from "./types";
+import { RESTART_POLICIES } from "@mini-infra/types";
 
 // Re-export all types for consumers
 export type {
@@ -263,7 +264,7 @@ export class DockerExecutorService {
         ReadOnly?: boolean;
       }>;
       networks?: string[];
-      restartPolicy?: 'no' | 'on-failure' | 'unless-stopped' | 'always';
+      restartPolicy?: typeof RESTART_POLICIES[number];
       healthcheck?: {
         Test: string[];
         Interval?: number;

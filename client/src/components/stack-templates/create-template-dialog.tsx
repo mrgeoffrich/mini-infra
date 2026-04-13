@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useCreateStackTemplate } from "@/hooks/use-stack-templates";
+import { STACK_TEMPLATE_SCOPES } from "@mini-infra/types";
 import { toast } from "sonner";
 import { IconLoader2 } from "@tabler/icons-react";
 
@@ -42,7 +43,7 @@ const createTemplateSchema = z.object({
     ),
   displayName: z.string().min(1, "Display name is required"),
   description: z.string().optional(),
-  scope: z.enum(["host", "environment"], {
+  scope: z.enum(STACK_TEMPLATE_SCOPES, {
     message: "Scope is required",
   }),
   category: z.string().optional(),

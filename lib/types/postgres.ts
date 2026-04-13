@@ -179,7 +179,8 @@ export interface PostgresDatabaseInfo {
 
 export type DatabaseHealthStatus = "healthy" | "unhealthy" | "unknown";
 
-export type PostgreSSLMode = "require" | "disable" | "prefer";
+export const POSTGRES_SSL_MODES = ['require', 'disable', 'prefer'] as const;
+export type PostgreSSLMode = typeof POSTGRES_SSL_MODES[number];
 
 // ====================
 // API Request Types
@@ -393,7 +394,8 @@ export interface BackupConfigurationInfo {
   updatedAt: string;
 }
 
-export type BackupFormat = "custom" | "plain" | "tar";
+export const BACKUP_FORMATS = ['custom', 'plain', 'tar'] as const;
+export type BackupFormat = typeof BACKUP_FORMATS[number];
 
 // ====================
 // Backup Operation Types

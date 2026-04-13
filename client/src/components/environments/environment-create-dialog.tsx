@@ -3,6 +3,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
   CreateEnvironmentRequest,
+  ENVIRONMENT_TYPES,
+  ENVIRONMENT_NETWORK_TYPES,
 } from "@mini-infra/types";
 import { useCreateEnvironment } from "@/hooks/use-environments";
 import {
@@ -45,8 +47,8 @@ const createEnvironmentSchema = z.object({
       "Name must contain only letters, numbers, underscores, and hyphens",
     ),
   description: z.string().optional(),
-  type: z.enum(["production", "nonproduction"] as const),
-  networkType: z.enum(["local", "internet"] as const).optional(),
+  type: z.enum(ENVIRONMENT_TYPES),
+  networkType: z.enum(ENVIRONMENT_NETWORK_TYPES).optional(),
 });
 
 type CreateEnvironmentFormData = z.infer<typeof createEnvironmentSchema>;

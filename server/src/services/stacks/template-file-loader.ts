@@ -12,6 +12,7 @@ import {
   stackResourceInputSchema,
 } from "./schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
+import { STACK_SERVICE_TYPES } from "@mini-infra/types";
 
 // =====================
 // Template File Schema
@@ -36,7 +37,7 @@ const templateConfigFileSchema = z.object({
 
 const templateServiceSchema = z.object({
   serviceName: z.string().min(1).max(100).regex(nameRegex, "Service name can only contain letters, numbers, hyphens, and underscores"),
-  serviceType: z.enum(["Stateful", "StatelessWeb", "AdoptedWeb"]),
+  serviceType: z.enum(STACK_SERVICE_TYPES),
   dockerImage: z.string().min(1),
   dockerTag: z.string().min(1),
   containerConfig: stackContainerConfigSchema,
@@ -105,7 +106,7 @@ export interface LoadedTemplate {
     volumes: z.infer<typeof stackVolumeSchema>[];
     services: Array<{
       serviceName: string;
-      serviceType: "Stateful" | "StatelessWeb" | "AdoptedWeb";
+      serviceType: typeof STACK_SERVICE_TYPES[number];
       dockerImage: string;
       dockerTag: string;
       containerConfig: z.infer<typeof stackContainerConfigSchema>;

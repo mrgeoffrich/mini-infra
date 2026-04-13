@@ -6,6 +6,7 @@ import type {
   StackParameterDefinition,
   StackParameterValue,
 } from "@mini-infra/types";
+import { STACK_PARAMETER_TYPES } from "@mini-infra/types";
 import {
   Dialog,
   DialogContent,
@@ -40,7 +41,7 @@ const parameterSchema = z.object({
       /^[a-z_][a-z0-9_]*$/,
       "Name must start with a letter or underscore, and contain only lowercase letters, digits, or underscores",
     ),
-  type: z.enum(["string", "number", "boolean"]),
+  type: z.enum(STACK_PARAMETER_TYPES),
   defaultValue: z.string(),
   description: z.string().optional(),
 });

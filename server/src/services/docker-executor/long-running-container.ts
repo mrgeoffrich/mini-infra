@@ -2,6 +2,7 @@ import Docker, { Container } from "dockerode";
 import { servicesLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions } from "./types";
+import { RESTART_POLICIES } from "@mini-infra/types";
 import { generateTaskId } from "./utils";
 
 /**
@@ -33,7 +34,7 @@ export class LongRunningContainerManager {
         ReadOnly?: boolean;
       }>;
       networks?: string[];
-      restartPolicy?: 'no' | 'on-failure' | 'unless-stopped' | 'always';
+      restartPolicy?: typeof RESTART_POLICIES[number];
       healthcheck?: {
         Test: string[];
         Interval?: number;

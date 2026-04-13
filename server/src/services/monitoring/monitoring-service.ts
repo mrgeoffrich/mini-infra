@@ -6,11 +6,13 @@ import { servicesLogger } from '../../lib/logger-factory';
 import {
   IApplicationService,
   ServiceStatus,
+  ServiceStatusValues,
   ServiceHealth,
   ServiceMetadata,
   ServiceStatusInfo,
   StartupResult,
   HealthStatus,
+  HealthStatusValues,
   NetworkRequirement,
   VolumeRequirement,
 } from '../interfaces/application-service';
@@ -23,7 +25,7 @@ export class MonitoringService implements IApplicationService {
   private readonly lokiContainerName: string;
   private readonly alloyContainerName: string;
   private readonly logger = servicesLogger();
-  private currentStatus: ServiceStatus = ServiceStatus.UNINITIALIZED;
+  private currentStatus: ServiceStatus = ServiceStatusValues.UNINITIALIZED;
   private startedAt?: Date;
   private stoppedAt?: Date;
   private lastError?: { message: string; timestamp: Date; details?: Record<string, unknown> };
@@ -96,19 +98,19 @@ export class MonitoringService implements IApplicationService {
   }
 
   async initialize(networks?: NetworkRequirement[], volumes?: VolumeRequirement[]): Promise<void> {
-    this.currentStatus = ServiceStatus.INITIALIZING;
+    this.currentStatus = ServiceStatusValues.INITIALIZING;
     try {
       this.availableNetworks = networks || [];
       this.availableVolumes = volumes || [];
 
       await this.dockerExecutor.initialize();
-      this.currentStatus = ServiceStatus.INITIALIZED;
+      this.currentStatus = ServiceStatusValues.INITIALIZED;
       this.logger.info({
         networksCount: this.availableNetworks.length,
         volumesCount: this.availableVolumes.length
       }, 'Monitoring service initialized with provided resources');
     } catch (error) {
-      this.currentStatus = ServiceStatus.FAILED;
+      this.currentStatus = ServiceStatusValues.FAILED;
       this.lastError = {
         message: error instanceof Error ? error.message : 'Failed to initialize',
         timestamp: new Date(),
@@ -120,7 +122,7 @@ export class MonitoringService implements IApplicationService {
 
   async start(): Promise<StartupResult> {
     const startTime = Date.now();
-    this.currentStatus = ServiceStatus.RUNNING;
+    this.currentStatus = ServiceStatusValues.RUNNING;
     this.startedAt = new Date();
     this.stoppedAt = undefined;
     this.lastError = undefined;
@@ -133,7 +135,7 @@ export class MonitoringService implements IApplicationService {
   }
 
   async stopAndCleanup(): Promise<void> {
-    this.currentStatus = ServiceStatus.STOPPING;
+    this.currentStatus = ServiceStatusValues.STOPPING;
     try {
       // removeProject handles already-stopped containers gracefully
       await this.dockerExecutor.removeProject(this.projectName);
@@ -142,7 +144,7 @@ export class MonitoringService implements IApplicationService {
       // (e.g. orphans from a failed deploy)
       await this.removeStaleContainers();
 
-      this.currentStatus = ServiceStatus.STOPPED;
+      this.currentStatus = ServiceStatusValues.STOPPED;
       this.stoppedAt = new Date();
       this.logger.info('Monitoring service stopped successfully - network and volumes retained');
     } catch (error) {
@@ -151,13 +153,13 @@ export class MonitoringService implements IApplicationService {
       const staleContainers = await this.findMonitoringContainers().catch(() => []);
 
       if (containers.length === 0 && staleContainers.length === 0) {
-        this.currentStatus = ServiceStatus.STOPPED;
+        this.currentStatus = ServiceStatusValues.STOPPED;
         this.stoppedAt = new Date();
         this.logger.info('Monitoring containers already removed - treating as stopped');
         return;
       }
 
-      this.currentStatus = ServiceStatus.FAILED;
+      this.currentStatus = ServiceStatusValues.FAILED;
       this.lastError = {
         message: error instanceof Error ? error.message : 'Failed to stop',
         timestamp: new Date(),
@@ -234,7 +236,7 @@ export class MonitoringService implements IApplicationService {
 
       if (runningContainers.length === 0) {
         return {
-          status: HealthStatus.UNHEALTHY,
+          status: HealthStatusValues.UNHEALTHY,
           message: 'No monitoring containers are running',
           lastChecked: new Date(),
           details: { totalContainers: containers.length, runningContainers: 0 }
@@ -262,7 +264,7 @@ export class MonitoringService implements IApplicationService {
           `Alloy=${alloyRunning ? 'running' : 'stopped'}`
         ].join(', ');
         return {
-          status: HealthStatus.UNHEALTHY,
+          status: HealthStatusValues.UNHEALTHY,
           message: `Monitoring degraded: ${services}`,
           lastChecked: new Date(),
           details: { telegrafRunning, prometheusRunning, lokiRunning, alloyRunning }
@@ -270,7 +272,7 @@ export class MonitoringService implements IApplicationService {
       }
 
       return {
-        status: HealthStatus.HEALTHY,
+        status: HealthStatusValues.HEALTHY,
         message: 'Monitoring service is healthy',
         lastChecked: new Date(),
         details: {
@@ -284,7 +286,7 @@ export class MonitoringService implements IApplicationService {
       };
     } catch (error) {
       return {
-        status: HealthStatus.UNKNOWN,
+        status: HealthStatusValues.UNKNOWN,
         message: error instanceof Error ? error.message : 'Health check failed',
         lastChecked: new Date(),
         details: { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -296,9 +298,9 @@ export class MonitoringService implements IApplicationService {
     try {
       await this.dockerExecutor.initialize();
 
-      return this.currentStatus === ServiceStatus.INITIALIZED ||
-        this.currentStatus === ServiceStatus.STOPPED ||
-        this.currentStatus === ServiceStatus.FAILED;
+      return this.currentStatus === ServiceStatusValues.INITIALIZED ||
+        this.currentStatus === ServiceStatusValues.STOPPED ||
+        this.currentStatus === ServiceStatusValues.FAILED;
     } catch (error) {
       this.logger.warn({ error }, 'Monitoring service readiness check failed');
       return false;
@@ -358,7 +360,7 @@ export class MonitoringService implements IApplicationService {
       }
     }
 
-    this.currentStatus = ServiceStatus.STOPPED;
+    this.currentStatus = ServiceStatusValues.STOPPED;
     this.stoppedAt = new Date();
     this.logger.info({ removed, errors }, 'Force remove completed');
 
@@ -371,7 +373,7 @@ export class MonitoringService implements IApplicationService {
    * while containers are still running from a previous session.
    */
   markAsRunning(): void {
-    this.currentStatus = ServiceStatus.RUNNING;
+    this.currentStatus = ServiceStatusValues.RUNNING;
     this.startedAt = this.startedAt || new Date();
     this.lastError = undefined;
   }
