@@ -12,6 +12,8 @@ import type {
   CreateStackFromTemplateRequest,
   StackTemplateSource,
   StackTemplateScope,
+  StackTemplateVersionStatus,
+  StackServiceType,
 } from "@mini-infra/types";
 import type {
   StackServiceDefinition,
@@ -24,17 +26,6 @@ import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./ut
 import { CloudflareService } from "../cloudflare/cloudflare-service";
 import { networkUtils } from "../network-utils";
 
-// `serializeTemplate` / `serializeVersion` accept multiple Prisma payload
-// shapes depending on the caller's include set (list vs detail vs update).
-// Modelling every shape as a strict union produced cascading type errors
-// against the runtime `as unknown as ...` casts for JSON columns, so these
-// serializers take `any` with the rule disabled locally. Documented in
-// `docs/shortcuts.md`.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SerializableTemplate = any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SerializableVersion = any;
-
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
   name: string;
@@ -46,11 +37,13 @@ export interface UpsertSystemTemplateInput {
   configFiles?: StackTemplateConfigFileInput[];
 }
 
-// Include helpers for Prisma queries
+// Include helpers for Prisma queries.
+// `as const` gives Prisma's GetPayload precise literal types so the generated
+// payload shapes carry the right field sets at the TypeScript level.
 const versionWithDetails = {
   services: { orderBy: { order: "asc" as const } },
   configFiles: true,
-};
+} as const;
 
 const versionSummary = {
   id: true,
@@ -60,6 +53,8 @@ const versionSummary = {
   notes: true,
   parameters: true,
   defaultParameterValues: true,
+  resourceOutputs: true,
+  resourceInputs: true,
   networks: true,
   volumes: true,
   publishedAt: true,
@@ -67,7 +62,57 @@ const versionSummary = {
   createdById: true,
   _count: { select: { services: true } },
   services: { select: { serviceType: true }, orderBy: { order: 'asc' as const } },
-};
+} as const;
+
+// The two version payload shapes Prisma can return. The detail shape (from
+// `include: versionWithDetails`) carries full services and configFiles.
+// The summary shape (from `select: versionSummary`) carries only a service
+// count and per-service serviceType — enough for list views.
+type VersionDetailPayload = Prisma.StackTemplateVersionGetPayload<{
+  include: typeof versionWithDetails;
+}>;
+
+type VersionSummaryPayload = Prisma.StackTemplateVersionGetPayload<{
+  select: typeof versionSummary;
+}>;
+
+type SerializableVersion = VersionDetailPayload | VersionSummaryPayload;
+
+// Structural interface covering all the different template query shapes
+// (list, detail, create, update). Relations are optional because different
+// callers include different subsets.
+interface SerializableTemplate {
+  id: string;
+  name: string;
+  displayName: string;
+  description: string | null;
+  source: StackTemplateSource;
+  scope: StackTemplateScope;
+  category: string | null;
+  environmentId: string | null;
+  isArchived: boolean;
+  currentVersionId: string | null;
+  draftVersionId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  createdById: string | null;
+  currentVersion?: SerializableVersion | null;
+  draftVersion?: SerializableVersion | null;
+  stacks?: Array<{
+    id: string;
+    name: string;
+    status: string;
+    version: number;
+    lastAppliedVersion: number | null;
+    lastAppliedAt: Date | null;
+    environmentId: string | null;
+  }>;
+}
+
+// Type guard: detail payload always has `configFiles`; summary payload never does.
+function isVersionDetailPayload(v: SerializableVersion): v is VersionDetailPayload {
+  return 'configFiles' in v;
+}
 
 export class StackTemplateService {
   constructor(private prisma: PrismaClient) {}
@@ -872,14 +917,6 @@ export class StackTemplateService {
   // Serialization
   // =====================
 
-  // Loose shape covering the different include sets callers pass in
-  // (list/detail queries include `_count`, `stacks`, `currentVersion`,
-  // `draftVersion` and `versions` selectively).
-  // NOTE: Keep in sync with `SerializableTemplate` / `SerializableVersion`
-  // below — both mirror fields from `Prisma.StackTemplateGetPayload` /
-  // `Prisma.StackTemplateVersionGetPayload` but with all relations
-  // optional so any subset of includes type-checks.
-
   serializeTemplate(template: SerializableTemplate): StackTemplateInfo {
     return {
       id: template.id,
@@ -907,7 +944,7 @@ export class StackTemplateService {
           ? null
           : undefined,
       ...(template.stacks ? {
-        linkedStacks: template.stacks.map((s: SerializableTemplate) => ({
+        linkedStacks: template.stacks.map((s) => ({
           id: s.id,
           name: s.name,
           status: s.status,
@@ -921,24 +958,42 @@ export class StackTemplateService {
   }
 
   serializeVersion(version: SerializableVersion): StackTemplateVersionInfo {
-    return {
+    // Fields common to both detail and summary payload shapes.
+    // JSON columns (parameters, networks, etc.) come back from Prisma as
+    // JsonValue and need a double-assertion to reach the domain types.
+    const base: StackTemplateVersionInfo = {
       id: version.id,
       templateId: version.templateId,
       version: version.version,
-      status: version.status,
+      status: version.status as StackTemplateVersionStatus,
       notes: version.notes,
-      parameters: (version.parameters as StackTemplateVersionInfo['parameters']) ?? [],
-      defaultParameterValues: (version.defaultParameterValues as StackTemplateVersionInfo['defaultParameterValues']) ?? {},
-      resourceOutputs: (version.resourceOutputs as StackTemplateVersionInfo['resourceOutputs']) ?? undefined,
-      resourceInputs: (version.resourceInputs as StackTemplateVersionInfo['resourceInputs']) ?? undefined,
-      networks: (version.networks as StackTemplateVersionInfo['networks']) ?? [],
-      volumes: (version.volumes as StackTemplateVersionInfo['volumes']) ?? [],
+      parameters: (version.parameters as unknown as StackTemplateVersionInfo['parameters']) ?? [],
+      defaultParameterValues: (version.defaultParameterValues as unknown as StackTemplateVersionInfo['defaultParameterValues']) ?? {},
+      resourceOutputs: (version.resourceOutputs as unknown as StackTemplateVersionInfo['resourceOutputs']) ?? undefined,
+      resourceInputs: (version.resourceInputs as unknown as StackTemplateVersionInfo['resourceInputs']) ?? undefined,
+      networks: (version.networks as unknown as StackTemplateVersionInfo['networks']) ?? [],
+      volumes: (version.volumes as unknown as StackTemplateVersionInfo['volumes']) ?? [],
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       createdById: version.createdById,
-      serviceCount: version._count?.services ?? version.services?.length,
-      services: version.services?.map(serializeTemplateService),
-      configFiles: version.configFiles?.map(serializeTemplateConfigFile),
+    };
+
+    if (isVersionDetailPayload(version)) {
+      // Detail shape: full services array + config files.
+      return {
+        ...base,
+        serviceCount: version.services.length,
+        serviceTypes: version.services.map((svc) => svc.serviceType as StackServiceType),
+        services: version.services.map(serializeTemplateService),
+        configFiles: version.configFiles.map(serializeTemplateConfigFile),
+      };
+    }
+
+    // Summary shape: service count from _count, service types only (no full service objects).
+    return {
+      ...base,
+      serviceCount: version._count.services,
+      serviceTypes: version.services.map((svc) => svc.serviceType as StackServiceType),
     };
   }
 }
