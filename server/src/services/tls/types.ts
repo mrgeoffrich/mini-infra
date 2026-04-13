@@ -5,6 +5,9 @@
  * ACME protocol integration, Azure Key Vault storage, and certificate lifecycle operations.
  */
 
+import { AcmeProvider } from "@mini-infra/types";
+export type { AcmeProvider };
+
 /**
  * Certificate metadata parsed from X.509 certificate
  */
@@ -64,11 +67,6 @@ export interface RenewalCheckResult {
     error: string;
   }>;
 }
-
-/**
- * ACME provider configuration
- */
-export type AcmeProvider = 'letsencrypt' | 'letsencrypt-staging' | 'buypass' | 'zerossl';
 
 /**
  * ACME account configuration

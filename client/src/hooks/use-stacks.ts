@@ -19,6 +19,8 @@ import type {
   StackListResponse,
   StackResponse,
   StackPlanResponse,
+  StackValidationError,
+  StackValidationResult,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
@@ -302,21 +304,7 @@ async function updateStackParameterValues(
   return await response.json();
 }
 
-// ====================
-// Stack Types
-// ====================
-
-export interface StackValidationError {
-  name: string;
-  description?: string;
-  error: string;
-}
-
-export interface StackValidationResult {
-  success: boolean;
-  valid: boolean;
-  errors: StackValidationError[];
-}
+export type { StackValidationError, StackValidationResult };
 
 // ====================
 // Stack Hooks

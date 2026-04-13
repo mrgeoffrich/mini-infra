@@ -13,12 +13,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import type { PrometheusQueryResponse } from "@/hooks/use-monitoring";
+import type { PrometheusQueryResult } from "@mini-infra/types";
 import { formatCpu, formatBytes } from "@/lib/format-metrics";
 
 interface ContainerMetricsTableProps {
-  cpuData?: PrometheusQueryResponse;
-  memoryData?: PrometheusQueryResponse;
+  cpuData?: PrometheusQueryResult;
+  memoryData?: PrometheusQueryResult;
 }
 
 interface ContainerMetric {
@@ -86,8 +86,8 @@ export function ContainerMetricsTable({
 }
 
 function mergeMetrics(
-  cpuData?: PrometheusQueryResponse,
-  memoryData?: PrometheusQueryResponse
+  cpuData?: PrometheusQueryResult,
+  memoryData?: PrometheusQueryResult
 ): ContainerMetric[] {
   const metricsMap = new Map<string, ContainerMetric>();
 

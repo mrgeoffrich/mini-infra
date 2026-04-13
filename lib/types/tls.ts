@@ -1,5 +1,7 @@
 import type { OperationStep } from './operations';
 
+export type AcmeProvider = "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl";
+
 export interface TlsCertificate {
   id: string;
 
@@ -95,7 +97,7 @@ export interface CreateCertificateRequest {
 
 export interface TlsSettings {
   certificate_blob_container: string;
-  default_acme_provider: "letsencrypt" | "letsencrypt-staging";
+  default_acme_provider: AcmeProvider;
   default_acme_email: string;
   renewal_check_cron: string;
   renewal_days_before_expiry: string;

@@ -3,6 +3,7 @@ import {
   ValidationResult,
   ServiceHealthStatus,
   ConnectivityStatusType,
+  AcmeProvider,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { servicesLogger } from "../../lib/logger-factory";
@@ -19,11 +20,6 @@ const TLS_SETTINGS_KEYS = {
   RENEWAL_CHECK_CRON: "renewal_check_cron",
   RENEWAL_DAYS_BEFORE_EXPIRY: "renewal_days_before_expiry",
 } as const;
-
-/**
- * ACME Provider types
- */
-export type AcmeProvider = "letsencrypt" | "letsencrypt-staging" | "buypass" | "zerossl";
 
 /**
  * ACME Account Configuration

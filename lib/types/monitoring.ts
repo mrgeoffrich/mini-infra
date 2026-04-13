@@ -1,4 +1,5 @@
 import { ServiceStatus, ApplicationServiceHealthStatus, ServiceMetadata, ServiceHealth } from './services';
+import type { StackInfo } from './stacks';
 
 export interface HostService {
   id: string;
@@ -46,6 +47,22 @@ export interface PrometheusQueryResult {
       values?: Array<[number, string]>;
     }>;
   };
+}
+
+export interface MonitoringContainerStatus {
+  serviceName: string;
+  containerId: string;
+  containerName: string;
+  image: string;
+  state: string;
+  status: string;
+}
+
+export interface MonitoringStatusResponse {
+  stack: StackInfo | null;
+  containerStatus: MonitoringContainerStatus[];
+  running: boolean;
+  message?: string;
 }
 
 export interface MonitoringTargetsResponse {
