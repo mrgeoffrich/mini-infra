@@ -99,6 +99,19 @@ Resolved in `chore/haproxy-action-body-types`.
 - With the above three fixes the fallback object literal is directly assignable to `ContainerConfig`
   — the `as unknown as ContainerConfig` cast is gone.
 
+## 5. Middleware `validatedQuery` / `validatedParams` ✅ Resolved
+
+Resolved in `chore/validation-typed-accessor`. The `declare global { namespace Express
+{ interface Request { validatedQuery?: unknown; ... } } }` augmentation is removed.
+
+Validated query/params data is now stored on the request under private symbol keys
+(`_validatedQuery`, `_validatedParams`) that are not exported. Callers retrieve typed
+data via `getValidatedQuery(req, schema)` and `getValidatedParams(req, schema)` —
+passing the same schema used at middleware registration lets TypeScript infer
+`z.output<TSchema>` without any cast at the call site. The two `as unknown as
+SymbolKeyed` double-assertions are contained inside the module and are the only casts
+required.
+
 ## 6. Connectivity status reads ✅ Resolved
 
 Resolved in `chore/connectivity-status-dto`. `getLatestConnectivityStatus()` now

@@ -4,20 +4,16 @@ import { servicesLogger } from '../lib/logger-factory';
 
 const logger = servicesLogger();
 
-// Extend Express Request type to include validated data
-// Express 5 makes req.query read-only, so we store validated query data separately
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace Express {
-    interface Request {
-      validatedQuery?: unknown;
-      validatedParams?: unknown;
-    }
-  }
-}
+// Private symbol keys — not exported, so callers must use the typed accessors below
+// and cannot bypass the type guarantee by reading req.validatedQuery directly.
+const _validatedQuery = Symbol('validatedQuery');
+const _validatedParams = Symbol('validatedParams');
 
-export function validateRequest(
-  schema: z.ZodSchema,
+// TypeScript 4.4+ supports symbol index signatures
+type SymbolKeyed = { [key: symbol]: unknown };
+
+export function validateRequest<TSchema extends z.ZodSchema>(
+  schema: TSchema,
   source: 'body' | 'query' | 'params' = 'body'
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -51,15 +47,16 @@ export function validateRequest(
         });
       }
 
-      // Replace the original data with the parsed/transformed data
-      // Express 5 Note: req.query and req.params are read-only getters
-      // Store validated query/params in custom properties instead
+      // For body, write back to req.body (already typed as any in Express).
+      // For query/params, store under private symbol keys so the Express Request
+      // interface needs no augmentation — use getValidatedQuery/getValidatedParams
+      // to retrieve with the correct inferred type.
       if (source === 'body') {
         req.body = result.data;
       } else if (source === 'query') {
-        req.validatedQuery = result.data;
+        (req as unknown as SymbolKeyed)[_validatedQuery] = result.data;
       } else {
-        req.validatedParams = result.data;
+        (req as unknown as SymbolKeyed)[_validatedParams] = result.data;
       }
 
       next();
@@ -73,4 +70,24 @@ export function validateRequest(
       });
     }
   };
+}
+
+/**
+ * Retrieve the validated query string parsed by a preceding
+ * `validateRequest(schema, 'query')` middleware.  Pass the same schema to get
+ * a properly typed return value without any cast at the call site.
+ */
+export function getValidatedQuery<T extends z.ZodSchema>(req: Request, schema: T): z.output<T> {
+  void schema; // used only for type inference
+  return (req as unknown as SymbolKeyed)[_validatedQuery] as z.output<T>;
+}
+
+/**
+ * Retrieve the validated route params parsed by a preceding
+ * `validateRequest(schema, 'params')` middleware.  Pass the same schema to get
+ * a properly typed return value without any cast at the call site.
+ */
+export function getValidatedParams<T extends z.ZodSchema>(req: Request, schema: T): z.output<T> {
+  void schema; // used only for type inference
+  return (req as unknown as SymbolKeyed)[_validatedParams] as z.output<T>;
 }

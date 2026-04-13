@@ -70,13 +70,12 @@ TStep, TCompleted>` + `defineTaskTypeConfig()` builder validate each normalizer 
 the real event payload. `RuntimeTaskTypeConfig` is the documented variance boundary
 for polymorphic access in `TaskEventListener` (see `chore/task-tracker-registry-types`).
 
-### 5. Middleware `validatedQuery` / `validatedParams`
+### ~~5. Middleware `validatedQuery` / `validatedParams`~~ ✅ Done
 
-**Files:** `server/src/middleware/validation.ts` (already cleaned to `unknown`)
-
-Consumers currently don't read these augmentations, but if they ever do they'll need
-explicit casts. A proper refactor would remove the Express module augmentation entirely
-and move validated data onto the request via a typed wrapper.
+Express module augmentation removed. Validated query/params stored under private
+symbol keys; `getValidatedQuery(req, schema)` / `getValidatedParams(req, schema)`
+return `z.output<TSchema>` without any cast at the call site
+(see `chore/validation-typed-accessor`).
 
 ### 6. Client zod-resolver casts
 
