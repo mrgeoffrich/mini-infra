@@ -6,16 +6,18 @@ import { AcmeClientManager } from "../../../services/tls/acme-client-manager";
 import { TlsConfigService } from "../../../services/tls/tls-config";
 import { AzureStorageCertificateStore } from "../../../services/tls/azure-storage-certificate-store";
 import { DnsChallenge01Provider } from "../../../services/tls/dns-challenge-provider";
-import * as acme from "acme-client";
+import * as acme from "@mini-infra/acme";
 
-// Mock acme-client
-vi.mock("acme-client", () => {
+// Mock @mini-infra/acme
+vi.mock("@mini-infra/acme", () => {
   return {
-    Client: vi.fn().mockImplementation(function() { return {
-      auto: vi.fn(),
-      createOrder: vi.fn(),
-      finalizeOrder: vi.fn(),
-    }; }),
+    AcmeClient: vi.fn().mockImplementation(function () {
+      return {
+        auto: vi.fn(),
+        createAccount: vi.fn(),
+        revokeCertificate: vi.fn(),
+      };
+    }),
     directory: {
       letsencrypt: {
         production: "https://acme-v02.api.letsencrypt.org/directory",
@@ -28,11 +30,17 @@ vi.mock("acme-client", () => {
         production: "https://acme.zerossl.com/v2/DV90",
       },
     },
+    letsencrypt: {
+      production: "https://acme-v02.api.letsencrypt.org/directory",
+      staging: "https://acme-staging-v02.api.letsencrypt.org/directory",
+    },
+    buypass: { production: "https://api.buypass.com/acme/directory" },
+    zerossl: { production: "https://acme.zerossl.com/v2/DV90" },
     crypto: {
       createPrivateKey: vi.fn().mockResolvedValue({
         toString: vi.fn().mockReturnValue("MOCK_PRIVATE_KEY"),
       }),
-      createCsr: vi.fn().mockResolvedValue([
+      createCsrPair: vi.fn().mockResolvedValue([
         { toString: vi.fn().mockReturnValue("MOCK_PRIVATE_KEY") },
         "MOCK_CSR",
       ]),
@@ -61,15 +69,15 @@ vi.mock("../../../lib/logger-factory", () => {
     error: vi.fn(),
   };
   return {
-    createLogger: vi.fn(function() { return mockLoggerInstance; }),
-    appLogger: vi.fn(function() { return mockLoggerInstance; }),
-    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
-    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
-    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
-    dockerExecutorLogger: vi.fn(function() { return mockLoggerInstance; }),
-    deploymentLogger: vi.fn(function() { return mockLoggerInstance; }),
-    loadbalancerLogger: vi.fn(function() { return mockLoggerInstance; }),
-    tlsLogger: vi.fn(function() { return mockLoggerInstance; }),
+    createLogger: vi.fn(function () { return mockLoggerInstance; }),
+    appLogger: vi.fn(function () { return mockLoggerInstance; }),
+    httpLogger: vi.fn(function () { return mockLoggerInstance; }),
+    prismaLogger: vi.fn(function () { return mockLoggerInstance; }),
+    servicesLogger: vi.fn(function () { return mockLoggerInstance; }),
+    dockerExecutorLogger: vi.fn(function () { return mockLoggerInstance; }),
+    deploymentLogger: vi.fn(function () { return mockLoggerInstance; }),
+    loadbalancerLogger: vi.fn(function () { return mockLoggerInstance; }),
+    tlsLogger: vi.fn(function () { return mockLoggerInstance; }),
   };
 });
 
@@ -146,7 +154,7 @@ describe("AcmeClientManager", () => {
       const mockClient = {
         auto: vi.fn().mockResolvedValue(mockCertificate),
       };
-      acme.Client.mockImplementation(function() { return mockClient; });
+      acme.AcmeClient.mockImplementation(function () { return mockClient; });
 
       // Initialize first
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
@@ -155,13 +163,14 @@ describe("AcmeClientManager", () => {
       // Request certificate
       const result = await acmeClientManager.requestCertificate(domains, mockDnsChallenge);
 
-      expect(acme.crypto.createCsr).toHaveBeenCalledWith({
+      expect(acme.crypto.createCsrPair).toHaveBeenCalledWith({
         altNames: domains,
       });
 
       expect(mockClient.auto).toHaveBeenCalledWith(
         expect.objectContaining({
           csr: "MOCK_CSR",
+          domains,
           termsOfServiceAgreed: true,
           challengePriority: ["dns-01"],
         })
@@ -180,7 +189,7 @@ describe("AcmeClientManager", () => {
       const mockClient = {
         auto: vi.fn().mockRejectedValue(new Error("ACME rate limit exceeded")),
       };
-      acme.Client.mockImplementation(function() { return mockClient; });
+      acme.AcmeClient.mockImplementation(function () { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
@@ -203,7 +212,7 @@ describe("AcmeClientManager", () => {
           return "MOCK_CERT";
         }),
       };
-      acme.Client.mockImplementation(function() { return mockClient; });
+      acme.AcmeClient.mockImplementation(function () { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
@@ -243,7 +252,7 @@ describe("AcmeClientManager", () => {
       const mockClient = {
         auto: vi.fn().mockResolvedValue(mockCertificate),
       };
-      acme.Client.mockImplementation(function() { return mockClient; });
+      acme.AcmeClient.mockImplementation(function () { return mockClient; });
 
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
@@ -281,7 +290,7 @@ describe("AcmeClientManager", () => {
         createAccount: vi.fn().mockResolvedValue({ url: mockAccountUrl }),
         getAccountUrl: vi.fn().mockResolvedValue(mockAccountUrl),
       };
-      acme.Client.mockImplementation(function() { return mockClient; });
+      acme.AcmeClient.mockImplementation(function () { return mockClient; });
 
       const result = await acmeClientManager.createAccount(email);
 
@@ -313,7 +322,7 @@ describe("AcmeClientManager", () => {
       mockKeyVaultStore.getAccountKey.mockResolvedValue(Buffer.from("MOCK_KEY"));
       await acmeClientManager.initialize();
 
-      acme.crypto.createCsr.mockRejectedValue(new Error("Invalid domain"));
+      acme.crypto.createCsrPair.mockRejectedValue(new Error("Invalid domain"));
 
       await expect(
         acmeClientManager.requestCertificate(invalidDomains, mockDnsChallenge)

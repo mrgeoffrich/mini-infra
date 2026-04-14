@@ -5,7 +5,7 @@
  * It handles account creation, certificate requests, renewals, and revocations.
  */
 
-import * as acme from "acme-client";
+import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
 import { TlsConfigService } from "./tls-config";
@@ -35,7 +35,7 @@ export interface DnsChallenge01Provider {
  * Service for managing ACME client operations
  */
 export class AcmeClientManager {
-  private acmeClient: acme.Client | null = null;
+  private acmeClient: acme.AcmeClient | null = null;
   private certificateStore: AzureStorageCertificateStore;
   private config: TlsConfigService;
   private logger: Logger;
@@ -78,7 +78,7 @@ export class AcmeClientManager {
       }
 
       // Create ACME client
-      this.acmeClient = new acme.Client({
+      this.acmeClient = new acme.AcmeClient({
         directoryUrl,
         accountKey,
       });
@@ -169,7 +169,7 @@ export class AcmeClientManager {
       }
 
       // Create CSR (Certificate Signing Request)
-      const [certPrivateKey, certCsr] = await acme.crypto.createCsr({
+      const [certPrivateKey, certCsr] = await acme.crypto.createCsrPair({
         altNames: domains,
       });
 
@@ -178,6 +178,7 @@ export class AcmeClientManager {
       // Request certificate with DNS-01 challenge
       const certificate = await this.acmeClient!.auto({
         csr: certCsr,
+        domains,
         termsOfServiceAgreed: true,
         challengePriority: ["dns-01"],
 
@@ -313,7 +314,7 @@ export class AcmeClientManager {
    *
    * @returns ACME client instance
    */
-  async getClient(): Promise<acme.Client> {
+  async getClient(): Promise<acme.AcmeClient> {
     if (!this.acmeClient) {
       await this.initialize();
     }
