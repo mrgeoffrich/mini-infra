@@ -69,7 +69,7 @@ vi.mock('../services/monitoring', () => ({
   MonitoringService: vi.fn(),
 }));
 
-import stackRoutes from '../routes/stacks';
+import stackRoutes from '../routes/stacks/index';
 
 function makeStack(overrides: Record<string, any> = {}) {
   const now = new Date();

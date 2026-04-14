@@ -57,7 +57,7 @@ import githubAppResourcesRoutes from "./routes/github-app-resources";
 import agentRoutes from "./routes/agent";
 import monitoringRoutes from "./routes/monitoring";
 import permissionPresetsRoutes from "./routes/permission-presets";
-import stacksRoutes from "./routes/stacks";
+import stacksRoutes from "./routes/stacks/index";
 import stackTemplatesRoutes from "./routes/stack-templates";
 import selfUpdateRoutes from "./routes/self-update";
 import agentSidecarRoutes from "./routes/agent-sidecar";
