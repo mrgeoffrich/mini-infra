@@ -10,6 +10,8 @@ import {
   readProcStatus,
   readSmapsRollup,
   readSmapsByPathname,
+  readSmapsRegions,
+  peekMemoryRegion,
 } from "../lib/proc-memory";
 
 const router = Router();
@@ -76,6 +78,62 @@ router.get("/smaps-top", requirePermission("settings:read") as RequestHandler, (
     return;
   }
   res.json({ limit, groups });
+}) as RequestHandler);
+
+// GET /api/diagnostics/smaps-regions?pathname=[anon]&limit=N
+// Returns the top-N individual regions matching a pathname (or all pathnames if omitted),
+// sorted by RSS. Used by the UI to pick a specific anonymous region to inspect.
+router.get("/smaps-regions", requirePermission("settings:read") as RequestHandler, (async (req, res) => {
+  const pathname = typeof req.query.pathname === "string" ? req.query.pathname : undefined;
+  const limitParam = Number(req.query.limit);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 25;
+
+  const regions = await readSmapsRegions();
+  if (regions === null) {
+    res.status(501).json({ error: "smaps not available on this platform" });
+    return;
+  }
+  const filtered = pathname
+    ? regions.filter((r) => r.pathname === pathname)
+    : regions;
+  const top = filtered.sort((a, b) => b.rss - a.rss).slice(0, limit);
+  res.json({ pathname: pathname ?? null, limit, regions: top });
+}) as RequestHandler);
+
+// POST /api/diagnostics/region-peek - read a slice of /proc/self/mem and extract strings.
+// Inspects process memory contents, so treat as sensitive: gated by settings:write.
+router.post("/region-peek", requirePermission("settings:write") as RequestHandler, (async (req, res) => {
+  const body = (req.body ?? {}) as {
+    start?: string;
+    length?: number;
+    minLen?: number;
+    maxStrings?: number;
+  };
+  if (typeof body.start !== "string" || !/^[0-9a-f]+$/i.test(body.start)) {
+    res.status(400).json({ error: "start must be a hex address string (no 0x prefix)" });
+    return;
+  }
+  const length = Number(body.length);
+  if (!Number.isFinite(length) || length <= 0) {
+    res.status(400).json({ error: "length must be a positive integer" });
+    return;
+  }
+
+  const userId = (req as unknown as { user?: { id?: string } }).user?.id;
+  logger.info(
+    { userId, address: body.start, length, minLen: body.minLen },
+    "region-peek: reading /proc/self/mem",
+  );
+
+  const result = await peekMemoryRegion(body.start.toLowerCase(), length, {
+    minLen: body.minLen,
+    maxStrings: body.maxStrings,
+  });
+  if (result === null) {
+    res.status(501).json({ error: "/proc/self/mem not available on this platform" });
+    return;
+  }
+  res.json(result);
 }) as RequestHandler);
 
 // GET /api/diagnostics/report - Node.js diagnostic report (process.report)

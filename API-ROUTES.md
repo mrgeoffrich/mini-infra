@@ -551,5 +551,7 @@
 |--------|------|-------------|
 | GET | `/api/diagnostics/memory` | Current process memory, V8 heap, Linux /proc/self/status, and smaps_rollup (`settings:read`) |
 | GET | `/api/diagnostics/smaps-top` | Top contributors to RSS aggregated from /proc/self/smaps by pathname; supports `?limit=N` (`settings:read`) |
+| GET | `/api/diagnostics/smaps-regions` | Individual smaps regions filtered by `?pathname=` and sorted by RSS; supports `?limit=N` (`settings:read`) |
+| POST | `/api/diagnostics/region-peek` | Read a slice of /proc/self/mem and return printable ASCII strings + hex preview; body `{start, length, minLen?, maxStrings?}` (`settings:write`) |
 | GET | `/api/diagnostics/report` | Node.js diagnostic report (process.report) as a downloadable JSON; includes sharedObjects, libuv handles, native stack (`settings:read`) |
 | POST | `/api/diagnostics/heap-snapshot` | Capture a V8 heap snapshot and stream it to the caller; briefly pauses the event loop (`settings:write`) |

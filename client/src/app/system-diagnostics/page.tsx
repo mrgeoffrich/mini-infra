@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   IconAlertCircle,
   IconDownload,
+  IconEye,
   IconFileText,
   IconLoader2,
   IconRefresh,
@@ -231,6 +232,33 @@ interface SmapsTopResponse {
   groups: SmapsRegionGroup[];
 }
 
+interface SmapsRegion {
+  start: string;
+  end: string;
+  perms: string;
+  pathname: string;
+  size: number;
+  rss: number;
+  pss: number;
+  privateDirty: number;
+  sharedClean: number;
+}
+
+interface SmapsRegionsResponse {
+  pathname: string | null;
+  limit: number;
+  regions: SmapsRegion[];
+}
+
+interface PeekResult {
+  address: string;
+  bytesRead: number;
+  truncated: boolean;
+  strings: Array<{ offset: number; text: string }>;
+  hexPreview: string;
+  error?: string;
+}
+
 function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "—";
   if (bytes < 1024) return `${bytes} B`;
@@ -286,6 +314,9 @@ export default function SystemDiagnosticsPage() {
   const [downloadingReport, setDownloadingReport] = useState(false);
   const [showExplanations, setShowExplanations] = useState(false);
   const [smapsLoaded, setSmapsLoaded] = useState(false);
+  const [inspectPathname, setInspectPathname] = useState("[anon]");
+  const [inspectPeek, setInspectPeek] = useState<PeekResult | null>(null);
+  const [peekingStart, setPeekingStart] = useState<string | null>(null);
 
   const query = useQuery<MemoryDiagnostics>({
     queryKey: ["diagnostics", "memory"],
@@ -310,6 +341,54 @@ export default function SystemDiagnosticsPage() {
     enabled: smapsLoaded,
     refetchInterval: smapsLoaded ? 10000 : false,
   });
+
+  const regionsQuery = useQuery<SmapsRegionsResponse>({
+    queryKey: ["diagnostics", "smaps-regions", inspectPathname],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/diagnostics/smaps-regions?pathname=${encodeURIComponent(inspectPathname)}&limit=10`,
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Failed to load regions (${res.status})`);
+      }
+      return res.json();
+    },
+    enabled: false,
+  });
+
+  const handlePeek = async (region: SmapsRegion) => {
+    if (region.rss === 0) {
+      toast.error("Region has no resident pages — nothing to peek.");
+      return;
+    }
+    setPeekingStart(region.start);
+    setInspectPeek(null);
+    try {
+      const res = await fetch("/api/diagnostics/region-peek", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          start: region.start,
+          length: Math.min(region.rss, 2 * 1024 * 1024),
+          minLen: 8,
+          maxStrings: 200,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Peek failed (${res.status})`);
+      }
+      const data: PeekResult = await res.json();
+      setInspectPeek(data);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to peek region",
+      );
+    } finally {
+      setPeekingStart(null);
+    }
+  };
 
   const handleDownloadSnapshot = async () => {
     setDownloadingHeap(true);
@@ -1057,6 +1136,174 @@ export default function SystemDiagnosticsPage() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base">Inspect Memory Region</CardTitle>
+                  <CardDescription>
+                    Pick a pathname, load its top regions by RSS, then peek one to
+                    extract printable strings from /proc/self/mem. Helpful for
+                    guessing what&apos;s living in an anonymous region (SQL text, JSON
+                    payloads, identifier patterns, etc.).
+                  </CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <select
+                    className="h-9 rounded-md border bg-background px-2 text-sm"
+                    value={inspectPathname}
+                    onChange={(e) => {
+                      setInspectPathname(e.target.value);
+                      setInspectPeek(null);
+                    }}
+                  >
+                    <option value="[anon]">[anon]</option>
+                    <option value="[heap]">[heap]</option>
+                    <option value="[stack]">[stack]</option>
+                    {smapsQuery.data?.groups
+                      .filter(
+                        (g) =>
+                          !["[anon]", "[heap]", "[stack]"].includes(g.pathname),
+                      )
+                      .map((g) => (
+                        <option key={g.pathname} value={g.pathname}>
+                          {g.pathname}
+                        </option>
+                      ))}
+                  </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => regionsQuery.refetch()}
+                    disabled={regionsQuery.isFetching}
+                  >
+                    {regionsQuery.isFetching ? (
+                      <IconLoader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <IconSearch className="h-4 w-4" />
+                    )}
+                    Find regions
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {regionsQuery.isError && (
+                <Alert variant="destructive">
+                  <IconAlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {regionsQuery.error instanceof Error
+                      ? regionsQuery.error.message
+                      : "Failed to load regions"}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {!regionsQuery.data && !regionsQuery.isFetching && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Pick a pathname (defaults to [anon] — the bulk of your RSS) and
+                  click Find regions.
+                </p>
+              )}
+
+              {regionsQuery.data && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Address</TableHead>
+                      <TableHead>Perms</TableHead>
+                      <TableHead className="text-right">RSS</TableHead>
+                      <TableHead className="text-right">PSS</TableHead>
+                      <TableHead className="text-right">Size</TableHead>
+                      <TableHead className="text-right">Action</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {regionsQuery.data.regions.map((r) => (
+                      <TableRow key={`${r.start}-${r.end}`}>
+                        <TableCell className="font-mono text-xs">
+                          0x{r.start}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {r.perms}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(r.rss)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(r.pss)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(r.size)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handlePeek(r)}
+                            disabled={peekingStart === r.start || r.rss === 0}
+                          >
+                            {peekingStart === r.start ? (
+                              <IconLoader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <IconEye className="h-3.5 w-3.5" />
+                            )}
+                            Peek
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              {inspectPeek && (
+                <div className="space-y-2 rounded-md border p-3">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="text-sm font-semibold">
+                      {inspectPeek.address} · {formatBytes(inspectPeek.bytesRead)} read
+                      {inspectPeek.truncated && " (strings truncated)"}
+                    </div>
+                    {inspectPeek.error && (
+                      <span className="text-xs text-destructive">
+                        {inspectPeek.error}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {inspectPeek.strings.length} strings (min length 8). Hex
+                    preview of first 256 bytes:
+                  </div>
+                  <pre className="overflow-x-auto rounded bg-muted p-2 font-mono text-xs">
+                    {inspectPeek.hexPreview.match(/.{1,32}/g)?.join("\n") ?? ""}
+                  </pre>
+                  {inspectPeek.strings.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No printable ASCII strings of length ≥ 8 found. This region is
+                      likely binary data (V8 internal state, compressed pages,
+                      compiled code, etc.).
+                    </p>
+                  ) : (
+                    <div className="max-h-96 overflow-auto rounded bg-muted p-2">
+                      <table className="w-full text-xs">
+                        <tbody>
+                          {inspectPeek.strings.map((s, i) => (
+                            <tr key={i} className="align-top">
+                              <td className="pr-3 font-mono text-muted-foreground">
+                                +{s.offset.toString(16)}
+                              </td>
+                              <td className="break-all font-mono">{s.text}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {data.procStatus === null && (
             <Alert>
               <IconAlertCircle className="h-4 w-4" />
@@ -1074,7 +1321,9 @@ export default function SystemDiagnosticsPage() {
               while they&apos;re written. Load the downloaded{" "}
               <code className="font-mono">.heapsnapshot</code> file in Chrome DevTools → Memory
               tab to analyse retainers. The diagnostic report is a JSON file listing shared objects,
-              libuv handles, and native stack info.
+              libuv handles, and native stack info. The memory-region peek reads raw process memory
+              via /proc/self/mem — treat any returned strings as potentially sensitive (may include
+              query text, tokens, or PII held in caches).
             </AlertDescription>
           </Alert>
         </>
