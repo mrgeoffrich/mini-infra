@@ -549,5 +549,7 @@
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/diagnostics/memory` | Current process memory and V8 heap statistics (`settings:read`) |
-| POST | `/api/diagnostics/heap-snapshot` | Write a V8 heap snapshot to disk and return its path (`settings:write`) |
+| GET | `/api/diagnostics/memory` | Current process memory, V8 heap, Linux /proc/self/status, and smaps_rollup (`settings:read`) |
+| GET | `/api/diagnostics/smaps-top` | Top contributors to RSS aggregated from /proc/self/smaps by pathname; supports `?limit=N` (`settings:read`) |
+| GET | `/api/diagnostics/report` | Node.js diagnostic report (process.report) as a downloadable JSON; includes sharedObjects, libuv handles, native stack (`settings:read`) |
+| POST | `/api/diagnostics/heap-snapshot` | Capture a V8 heap snapshot and stream it to the caller; briefly pauses the event loop (`settings:write`) |

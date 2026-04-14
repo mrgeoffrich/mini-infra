@@ -23,8 +23,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   IconAlertCircle,
   IconDownload,
+  IconFileText,
   IconLoader2,
   IconRefresh,
+  IconSearch,
 } from "@tabler/icons-react";
 
 const PROCESS_EXPLANATIONS: Record<string, string> = {
@@ -69,11 +71,120 @@ const HEAP_SPACE_EXPLANATIONS: Record<string, string> = {
   trusted_large_object_space: "Large trusted objects.",
 };
 
+const PROC_STATUS_EXPLANATIONS: Record<string, string> = {
+  "VmRSS": "Resident set — RAM pages currently held by the process. Should match RSS above.",
+  "VmHWM": "High-water mark — peak RSS since the process started.",
+  "RssAnon": "Anonymous RSS — JS heap, native heap (Prisma, etc.), and thread stacks.",
+  "RssFile": "File-backed RSS — shared libraries and mmap'd files currently paged in.",
+  "RssShmem": "Shared-memory RSS (tmpfs / /dev/shm mappings).",
+  "VmData": "Data segment — writable heap + anonymous pages committed to the process.",
+  "VmStk": "Total stack space across all threads.",
+  "VmExe": "Text segment — the node executable's code mapped into memory.",
+  "VmLib": "Shared library code mapped in (libssl, libc, Prisma query engine, etc.).",
+  "VmSize": "Total virtual address space reserved (much larger than RSS; most is unresident).",
+  "VmPeak": "Largest VmSize ever reached by the process.",
+  "VmSwap": "Pages swapped out to disk.",
+  "VmPTE": "Kernel memory used to track this process's page tables.",
+  "Threads": "Number of OS threads the process currently has.",
+};
+
+const SMAPS_ROLLUP_EXPLANATIONS: Record<string, string> = {
+  "RSS": "Same as VmRSS — total resident pages.",
+  "PSS": "Proportional Set Size — your 'fair share' of RAM. Shared pages are divided by the number of processes sharing them.",
+  "PSS Anon": "PSS attributable to anonymous pages (heaps + stacks).",
+  "PSS File": "PSS attributable to file-backed pages (shared libraries, mmap'd files).",
+  "PSS Shmem": "PSS attributable to shared-memory pages.",
+  "Shared Clean":
+    "Pages shared with other processes and unchanged since mapped (e.g. libc code). Cheap — cost is shared.",
+  "Shared Dirty": "Shared writable pages that have been modified (rare outside shmem).",
+  "Private Clean":
+    "Pages private to this process and unchanged since mapped (e.g. your copy of a read-only lib).",
+  "Private Dirty":
+    "Pages private to this process and modified. This is unambiguously your own memory cost.",
+  "Anonymous": "Anonymous pages (not backed by any file) currently in RAM.",
+  "Referenced": "Pages marked as recently accessed by the kernel's page-replacement algorithm.",
+  "Swap": "Pages swapped out to disk.",
+};
+
+const RESOURCE_USAGE_EXPLANATIONS: Record<string, string> = {
+  "Max RSS": "Peak RSS ever reached by the process (from getrusage).",
+  "User CPU": "Total CPU time spent in user-space code.",
+  "System CPU": "Total CPU time spent in kernel-space (syscalls, I/O).",
+  "Minor page faults":
+    "Page faults resolved without disk I/O (page was already in memory or freshly allocated).",
+  "Major page faults":
+    "Page faults that required reading from disk — slow. High numbers suggest swapping or cold mmap'd files.",
+  "Voluntary ctx switches":
+    "Times the process yielded the CPU (waiting on I/O, locks, etc.).",
+  "Involuntary ctx switches":
+    "Times the kernel preempted the process (CPU contention, time slice expired).",
+  "FS reads": "Number of reads from the filesystem performed on behalf of this process.",
+  "FS writes": "Number of writes to the filesystem performed on behalf of this process.",
+  "IPC sent": "Messages sent over IPC channels (Unix signals, pipes).",
+  "IPC received": "Messages received over IPC channels.",
+  "Signals": "Signals received (SIGTERM, SIGUSR1, etc.).",
+  "Swapped out": "Times the process (or pages) were swapped to disk.",
+};
+
+interface ProcStatus {
+  vmPeak: number | null;
+  vmSize: number | null;
+  vmHWM: number | null;
+  vmRSS: number | null;
+  rssAnon: number | null;
+  rssFile: number | null;
+  rssShmem: number | null;
+  vmData: number | null;
+  vmStk: number | null;
+  vmExe: number | null;
+  vmLib: number | null;
+  vmPTE: number | null;
+  vmSwap: number | null;
+  threads: number | null;
+}
+
+interface SmapsRollup {
+  rss: number | null;
+  pss: number | null;
+  pssAnon: number | null;
+  pssFile: number | null;
+  pssShmem: number | null;
+  sharedClean: number | null;
+  sharedDirty: number | null;
+  privateClean: number | null;
+  privateDirty: number | null;
+  referenced: number | null;
+  anonymous: number | null;
+  swap: number | null;
+  swapPss: number | null;
+  locked: number | null;
+}
+
+interface ResourceUsage {
+  userCPUTime: number;
+  systemCPUTime: number;
+  maxRSS: number;
+  sharedMemorySize: number;
+  unsharedDataSize: number;
+  unsharedStackSize: number;
+  minorPageFault: number;
+  majorPageFault: number;
+  swappedOut: number;
+  fsRead: number;
+  fsWrite: number;
+  ipcSent: number;
+  ipcReceived: number;
+  signalsCount: number;
+  voluntaryContextSwitches: number;
+  involuntaryContextSwitches: number;
+}
+
 interface MemoryDiagnostics {
   timestamp: string;
   uptimeSeconds: number;
   pid: number;
   nodeVersion: string;
+  platform: string;
   process: {
     rss: number;
     heapTotal: number;
@@ -100,10 +211,28 @@ interface MemoryDiagnostics {
     available: number;
     physical: number;
   }>;
+  resourceUsage: ResourceUsage;
+  procStatus: ProcStatus | null;
+  smapsRollup: SmapsRollup | null;
 }
 
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes)) return "—";
+interface SmapsRegionGroup {
+  pathname: string;
+  regions: number;
+  rss: number;
+  pss: number;
+  size: number;
+  privateDirty: number;
+  sharedClean: number;
+}
+
+interface SmapsTopResponse {
+  limit: number;
+  groups: SmapsRegionGroup[];
+}
+
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) return "—";
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let value = bytes / 1024;
@@ -126,9 +255,37 @@ function formatUptime(seconds: number): string {
   return `${s}s`;
 }
 
+function formatMicroseconds(us: number): string {
+  const seconds = us / 1_000_000;
+  if (seconds >= 1) return `${seconds.toFixed(2)}s`;
+  return `${(us / 1000).toFixed(1)}ms`;
+}
+
+function formatCount(n: number): string {
+  return n.toLocaleString();
+}
+
+async function downloadFromResponse(res: Response, fallbackName: string) {
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = match?.[1] ?? fallbackName;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return blob.size;
+}
+
 export default function SystemDiagnosticsPage() {
-  const [downloading, setDownloading] = useState(false);
+  const [downloadingHeap, setDownloadingHeap] = useState(false);
+  const [downloadingReport, setDownloadingReport] = useState(false);
   const [showExplanations, setShowExplanations] = useState(false);
+  const [smapsLoaded, setSmapsLoaded] = useState(false);
 
   const query = useQuery<MemoryDiagnostics>({
     queryKey: ["diagnostics", "memory"],
@@ -140,48 +297,68 @@ export default function SystemDiagnosticsPage() {
     refetchInterval: 5000,
   });
 
+  const smapsQuery = useQuery<SmapsTopResponse>({
+    queryKey: ["diagnostics", "smaps-top"],
+    queryFn: async () => {
+      const res = await fetch("/api/diagnostics/smaps-top?limit=25");
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Failed to load smaps (${res.status})`);
+      }
+      return res.json();
+    },
+    enabled: smapsLoaded,
+    refetchInterval: smapsLoaded ? 10000 : false,
+  });
+
   const handleDownloadSnapshot = async () => {
-    setDownloading(true);
+    setDownloadingHeap(true);
     const toastId = toast.loading(
       "Capturing heap snapshot — this can take several seconds and temporarily pause the server...",
     );
     try {
-      const res = await fetch("/api/diagnostics/heap-snapshot", {
-        method: "POST",
-      });
+      const res = await fetch("/api/diagnostics/heap-snapshot", { method: "POST" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Snapshot failed (${res.status})`);
       }
-
-      const disposition = res.headers.get("Content-Disposition") ?? "";
-      const match = /filename="?([^";]+)"?/i.exec(disposition);
-      const filename = match?.[1] ?? `heap-${Date.now()}.heapsnapshot`;
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-
-      toast.success(`Heap snapshot downloaded (${formatBytes(blob.size)})`, {
-        id: toastId,
-      });
+      const size = await downloadFromResponse(res, `heap-${Date.now()}.heapsnapshot`);
+      toast.success(`Heap snapshot downloaded (${formatBytes(size)})`, { id: toastId });
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to capture heap snapshot",
         { id: toastId },
       );
     } finally {
-      setDownloading(false);
+      setDownloadingHeap(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    setDownloadingReport(true);
+    const toastId = toast.loading("Generating diagnostic report...");
+    try {
+      const res = await fetch("/api/diagnostics/report");
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Report failed (${res.status})`);
+      }
+      const size = await downloadFromResponse(res, `diagnostic-report-${Date.now()}.json`);
+      toast.success(`Diagnostic report downloaded (${formatBytes(size)})`, { id: toastId });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to generate diagnostic report",
+        { id: toastId },
+      );
+    } finally {
+      setDownloadingReport(false);
     }
   };
 
   const data = query.data;
+  const procStatus = data?.procStatus;
+  const smapsRollup = data?.smapsRollup;
+  const resourceUsage = data?.resourceUsage;
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 py-6">
@@ -189,7 +366,7 @@ export default function SystemDiagnosticsPage() {
         <div>
           <h1 className="text-2xl font-semibold">System Diagnostics</h1>
           <p className="text-sm text-muted-foreground">
-            Server process memory, V8 heap statistics, and heap snapshots.
+            Server process memory, V8 heap statistics, Linux memory maps, and downloadable diagnostic artifacts.
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -217,11 +394,24 @@ export default function SystemDiagnosticsPage() {
             Refresh
           </Button>
           <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadReport}
+            disabled={downloadingReport}
+          >
+            {downloadingReport ? (
+              <IconLoader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <IconFileText className="h-4 w-4" />
+            )}
+            Download report
+          </Button>
+          <Button
             size="sm"
             onClick={handleDownloadSnapshot}
-            disabled={downloading}
+            disabled={downloadingHeap}
           >
-            {downloading ? (
+            {downloadingHeap ? (
               <IconLoader2 className="h-4 w-4 animate-spin" />
             ) : (
               <IconDownload className="h-4 w-4" />
@@ -248,7 +438,7 @@ export default function SystemDiagnosticsPage() {
             <CardHeader>
               <CardTitle className="text-base">Process</CardTitle>
               <CardDescription>
-                PID {data.pid} · Node {data.nodeVersion} · Uptime{" "}
+                PID {data.pid} · Node {data.nodeVersion} · {data.platform} · Uptime{" "}
                 {formatUptime(data.uptimeSeconds)}
               </CardDescription>
             </CardHeader>
@@ -298,6 +488,239 @@ export default function SystemDiagnosticsPage() {
               </dl>
             </CardContent>
           </Card>
+
+          {procStatus && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Linux Process Memory</CardTitle>
+                <CardDescription>
+                  /proc/self/status — explains where RSS goes beyond the V8 heap.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl
+                  className={`grid gap-x-6 gap-y-3 ${
+                    showExplanations
+                      ? "grid-cols-1 md:grid-cols-2"
+                      : "grid-cols-2 md:grid-cols-4"
+                  }`}
+                >
+                  <Stat
+                    label="VmRSS"
+                    value={formatBytes(procStatus.vmRSS)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmRSS : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmHWM"
+                    value={formatBytes(procStatus.vmHWM)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmHWM : undefined
+                    }
+                  />
+                  <Stat
+                    label="RssAnon"
+                    value={formatBytes(procStatus.rssAnon)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.RssAnon : undefined
+                    }
+                  />
+                  <Stat
+                    label="RssFile"
+                    value={formatBytes(procStatus.rssFile)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.RssFile : undefined
+                    }
+                  />
+                  <Stat
+                    label="RssShmem"
+                    value={formatBytes(procStatus.rssShmem)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.RssShmem : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmData"
+                    value={formatBytes(procStatus.vmData)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmData : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmStk"
+                    value={formatBytes(procStatus.vmStk)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmStk : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmExe"
+                    value={formatBytes(procStatus.vmExe)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmExe : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmLib"
+                    value={formatBytes(procStatus.vmLib)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmLib : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmSize"
+                    value={formatBytes(procStatus.vmSize)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmSize : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmPeak"
+                    value={formatBytes(procStatus.vmPeak)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmPeak : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmSwap"
+                    value={formatBytes(procStatus.vmSwap)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmSwap : undefined
+                    }
+                  />
+                  <Stat
+                    label="VmPTE"
+                    value={formatBytes(procStatus.vmPTE)}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.VmPTE : undefined
+                    }
+                  />
+                  <Stat
+                    label="Threads"
+                    value={procStatus.threads?.toString() ?? "—"}
+                    description={
+                      showExplanations ? PROC_STATUS_EXPLANATIONS.Threads : undefined
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
+          )}
+
+          {smapsRollup && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Shared vs Private Memory</CardTitle>
+                <CardDescription>
+                  /proc/self/smaps_rollup — your fair share (PSS) vs raw RSS.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl
+                  className={`grid gap-x-6 gap-y-3 ${
+                    showExplanations
+                      ? "grid-cols-1 md:grid-cols-2"
+                      : "grid-cols-2 md:grid-cols-4"
+                  }`}
+                >
+                  <Stat
+                    label="RSS"
+                    value={formatBytes(smapsRollup.rss)}
+                    description={
+                      showExplanations ? SMAPS_ROLLUP_EXPLANATIONS.RSS : undefined
+                    }
+                  />
+                  <Stat
+                    label="PSS"
+                    value={formatBytes(smapsRollup.pss)}
+                    description={
+                      showExplanations ? SMAPS_ROLLUP_EXPLANATIONS.PSS : undefined
+                    }
+                  />
+                  <Stat
+                    label="PSS Anon"
+                    value={formatBytes(smapsRollup.pssAnon)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["PSS Anon"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="PSS File"
+                    value={formatBytes(smapsRollup.pssFile)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["PSS File"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Private Dirty"
+                    value={formatBytes(smapsRollup.privateDirty)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["Private Dirty"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Private Clean"
+                    value={formatBytes(smapsRollup.privateClean)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["Private Clean"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Shared Clean"
+                    value={formatBytes(smapsRollup.sharedClean)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["Shared Clean"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Shared Dirty"
+                    value={formatBytes(smapsRollup.sharedDirty)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS["Shared Dirty"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Anonymous"
+                    value={formatBytes(smapsRollup.anonymous)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS.Anonymous
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Referenced"
+                    value={formatBytes(smapsRollup.referenced)}
+                    description={
+                      showExplanations
+                        ? SMAPS_ROLLUP_EXPLANATIONS.Referenced
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Swap"
+                    value={formatBytes(smapsRollup.swap)}
+                    description={
+                      showExplanations ? SMAPS_ROLLUP_EXPLANATIONS.Swap : undefined
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>
@@ -420,13 +843,238 @@ export default function SystemDiagnosticsPage() {
             </CardContent>
           </Card>
 
+          {resourceUsage && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Resource Usage</CardTitle>
+                <CardDescription>
+                  getrusage() — cumulative CPU, I/O, faults, and context switches since start.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <dl
+                  className={`grid gap-x-6 gap-y-3 ${
+                    showExplanations
+                      ? "grid-cols-1 md:grid-cols-2"
+                      : "grid-cols-2 md:grid-cols-4"
+                  }`}
+                >
+                  <Stat
+                    label="Max RSS"
+                    value={formatBytes(resourceUsage.maxRSS * 1024)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["Max RSS"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="User CPU"
+                    value={formatMicroseconds(resourceUsage.userCPUTime)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["User CPU"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="System CPU"
+                    value={formatMicroseconds(resourceUsage.systemCPUTime)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["System CPU"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Minor page faults"
+                    value={formatCount(resourceUsage.minorPageFault)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["Minor page faults"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Major page faults"
+                    value={formatCount(resourceUsage.majorPageFault)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["Major page faults"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Voluntary ctx switches"
+                    value={formatCount(resourceUsage.voluntaryContextSwitches)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["Voluntary ctx switches"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Involuntary ctx switches"
+                    value={formatCount(resourceUsage.involuntaryContextSwitches)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["Involuntary ctx switches"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="FS reads"
+                    value={formatCount(resourceUsage.fsRead)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["FS reads"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="FS writes"
+                    value={formatCount(resourceUsage.fsWrite)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["FS writes"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="IPC sent"
+                    value={formatCount(resourceUsage.ipcSent)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["IPC sent"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="IPC received"
+                    value={formatCount(resourceUsage.ipcReceived)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS["IPC received"]
+                        : undefined
+                    }
+                  />
+                  <Stat
+                    label="Signals"
+                    value={formatCount(resourceUsage.signalsCount)}
+                    description={
+                      showExplanations
+                        ? RESOURCE_USAGE_EXPLANATIONS.Signals
+                        : undefined
+                    }
+                  />
+                </dl>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base">Top Contributors to RSS</CardTitle>
+                  <CardDescription>
+                    /proc/self/smaps aggregated by mapped pathname. Accounts for shared libraries and mmap'd files.
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (!smapsLoaded) setSmapsLoaded(true);
+                    else smapsQuery.refetch();
+                  }}
+                  disabled={smapsQuery.isFetching}
+                >
+                  {smapsQuery.isFetching ? (
+                    <IconLoader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <IconSearch className="h-4 w-4" />
+                  )}
+                  {smapsLoaded ? "Refresh" : "Load"}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {smapsQuery.isError && (
+                <Alert variant="destructive" className="mb-4">
+                  <IconAlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {smapsQuery.error instanceof Error
+                      ? smapsQuery.error.message
+                      : "Failed to load smaps"}
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!smapsLoaded && !smapsQuery.data && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Click Load to aggregate /proc/self/smaps by pathname.
+                </p>
+              )}
+              {smapsQuery.data && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Pathname</TableHead>
+                      <TableHead className="text-right">Regions</TableHead>
+                      <TableHead className="text-right">RSS</TableHead>
+                      <TableHead className="text-right">PSS</TableHead>
+                      <TableHead className="text-right">Private Dirty</TableHead>
+                      <TableHead className="text-right">Size</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {smapsQuery.data.groups.map((g) => (
+                      <TableRow key={g.pathname}>
+                        <TableCell
+                          className="max-w-md truncate font-mono text-xs"
+                          title={g.pathname}
+                        >
+                          {g.pathname}
+                        </TableCell>
+                        <TableCell className="text-right">{g.regions}</TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(g.rss)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(g.pss)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(g.privateDirty)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(g.size)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          {data.procStatus === null && (
+            <Alert>
+              <IconAlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                /proc/self is unavailable on this platform ({data.platform}) — Linux-only memory
+                maps are hidden. Container-hosted deployments should see the full breakdown.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Alert>
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Heap snapshots can be large (tens to hundreds of MB) and
-              briefly pause the event loop while they&apos;re written. Load the
-              downloaded <code className="font-mono">.heapsnapshot</code> file
-              in Chrome DevTools → Memory tab to analyse retainers.
+              Heap snapshots can be large (tens to hundreds of MB) and briefly pause the event loop
+              while they&apos;re written. Load the downloaded{" "}
+              <code className="font-mono">.heapsnapshot</code> file in Chrome DevTools → Memory
+              tab to analyse retainers. The diagnostic report is a JSON file listing shared objects,
+              libuv handles, and native stack info.
             </AlertDescription>
           </Alert>
         </>
