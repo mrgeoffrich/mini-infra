@@ -11,7 +11,7 @@
     "lint:fix": "eslint --fix"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.74",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.107",
     "@mrgeoffrich/claude-agent-sdk-tap": "^0.1.8",
     "express": "^5.2.1",
     "pino": "^10.3.1",

@@ -55,7 +55,7 @@
         "vitest": "^4.1.4"
     },
     "dependencies": {
-        "@anthropic-ai/claude-agent-sdk": "^0.2.104",
+        "@anthropic-ai/claude-agent-sdk": "^0.2.107",
         "@azure/identity": "^4.13.1",
         "@azure/keyvault-certificates": "^4.10.3",
         "@azure/keyvault-secrets": "^4.11.1",
