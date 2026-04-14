@@ -10,7 +10,7 @@ import express from "express";
 import { tlsLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 
 const logger = tlsLogger();
 const router = express.Router();

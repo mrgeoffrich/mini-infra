@@ -1,5 +1,5 @@
 import { createActor } from 'xstate';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from "../../generated/prisma/client";
 import prisma from '../../lib/prisma';
 import { appLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../docker-executor';

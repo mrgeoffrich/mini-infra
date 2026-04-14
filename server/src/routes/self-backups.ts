@@ -1,6 +1,6 @@
 import express from "express";
 import prisma from "../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { AzureStorageService } from "../services/azure-storage-service";

@@ -6,7 +6,7 @@
  */
 
 import { Logger } from "pino";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { AcmeClientManager } from "./acme-client-manager";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";

@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { servicesLogger } from "../../lib/logger-factory";
 
 const LEGACY_NETWORK_NAME = "mini-infra-postgres-backup";

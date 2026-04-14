@@ -1,9 +1,9 @@
 import { servicesLogger } from "../../lib/logger-factory";
 import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
 import type { RestoreProgressData } from "./types";
-import type { RestoreOperation } from "@prisma/client";
+import type { RestoreOperation } from "../../generated/prisma/client";
 import type { DatabaseConnectionConfig } from "@mini-infra/types";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../generated/prisma/client";
 import {
   RestoreOperationInfo,
   RestoreOperationStatus,

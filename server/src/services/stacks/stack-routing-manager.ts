@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "../../generated/prisma/client";
 import { StackServiceRouting } from '@mini-infra/types';
 import { HAProxyFrontendManager } from '../haproxy/haproxy-frontend-manager';
 import { HAProxyDataPlaneClient } from '../haproxy';

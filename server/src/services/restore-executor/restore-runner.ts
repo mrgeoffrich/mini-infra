@@ -1,5 +1,5 @@
 import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";

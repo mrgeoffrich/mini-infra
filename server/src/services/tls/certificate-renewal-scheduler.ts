@@ -8,7 +8,7 @@
 
 import * as cron from "node-cron";
 import { Logger } from "pino";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 

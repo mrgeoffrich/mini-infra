@@ -1,6 +1,6 @@
 import { Router } from "express";
 import prisma from "../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 

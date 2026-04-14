@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { BackupConfigurationManager } from "../backup";
 import { AzureStorageService } from "../azure-storage-service";
 import { BackupFormat } from "@mini-infra/types";

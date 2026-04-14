@@ -6,7 +6,7 @@
  */
 
 import { Logger } from "pino";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { tlsLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 

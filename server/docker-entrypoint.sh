@@ -20,7 +20,7 @@ fi
 
 # Run Prisma migrations with verbose output
 echo "Running Prisma migrations..."
-npx prisma migrate deploy --schema=./prisma/schema.prisma
+npx prisma migrate deploy
 
 # Check if migration was successful
 if [ $? -eq 0 ]; then

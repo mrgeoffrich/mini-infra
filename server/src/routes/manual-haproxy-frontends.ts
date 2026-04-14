@@ -4,7 +4,7 @@ import { z } from "zod";
 import { appLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import { manualFrontendManager } from "../services/haproxy/manual-frontend-manager";
 import { ManualFrontendSetupService } from "../services/haproxy/manual-frontend-setup-service";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";

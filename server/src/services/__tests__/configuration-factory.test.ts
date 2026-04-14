@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
 import { CloudflareService } from "../cloudflare";

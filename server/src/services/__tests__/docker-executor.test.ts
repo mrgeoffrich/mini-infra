@@ -1,6 +1,6 @@
 import Docker, { Container } from "dockerode";
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { DockerConfigService } from "../docker-config";
 import { Readable } from "stream";

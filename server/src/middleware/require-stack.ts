@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from "../generated/prisma/client";
 import prisma from '../lib/prisma';
 
 const STACK_KEY = Symbol('stack');

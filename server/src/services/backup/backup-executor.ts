@@ -15,7 +15,7 @@ import {
   ServerEvent,
 } from "@mini-infra/types";
 import { emitToChannel } from "../../lib/socket";
-import type { BackupOperation } from "@prisma/client";
+import type { BackupOperation } from "../../generated/prisma/client";
 
 /**
  * Job data structure for backup operations

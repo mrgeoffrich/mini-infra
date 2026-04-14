@@ -1,5 +1,5 @@
 import { PrismaClient } from "../../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../../generated/prisma/client";
 import { Client as PostgresClient } from "pg";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../../lib/logger-factory";

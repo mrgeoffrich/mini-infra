@@ -10,8 +10,8 @@ import {
   ServerEvent,
 } from '@mini-infra/types';
 import { emitToChannel } from '../../lib/socket';
-import type { UserEvent } from '@prisma/client';
-import { Prisma } from '@prisma/client';
+import type { UserEvent } from "../../generated/prisma/client";
+import { Prisma } from "../../generated/prisma/client";
 
 /**
  * UserEventService manages user events for tracking long-running operations

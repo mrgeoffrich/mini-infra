@@ -8,7 +8,7 @@ import {
   BackupOperationStatus,
   RestoreOperationStatus,
 } from "@mini-infra/types";
-import type { BackupOperation, RestoreOperation } from "@prisma/client";
+import type { BackupOperation, RestoreOperation } from "../generated/prisma/client";
 import { EventEmitter } from "events";
 
 /**

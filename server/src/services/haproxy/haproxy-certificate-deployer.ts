@@ -1,5 +1,5 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { AzureStorageCertificateStore } from "../tls/azure-storage-certificate-store";
 import { TlsConfigService } from "../tls/tls-config";
 import { AzureStorageService } from "../azure-storage-service";

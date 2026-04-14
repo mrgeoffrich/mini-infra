@@ -1,5 +1,5 @@
 import { PrismaClient } from "../lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "../generated/prisma/client";
 import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
 import { getApiKeySecret } from "../lib/security-config";
