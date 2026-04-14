@@ -150,7 +150,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   }, []);
 
   const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptedRef = useRef(false);
   const streamingTextRef = useRef("");
   const thinkingMessageKeyToIdRef = useRef<Map<string, string>>(new Map());

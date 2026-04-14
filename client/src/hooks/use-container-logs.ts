@@ -37,7 +37,7 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
   const [error, setError] = useState<string | null>(null);
   const { socket, connected: socketConnected } = useSocket();
   const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usingSocketRef = useRef(false);
 
   const clear = useCallback(() => {

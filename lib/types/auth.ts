@@ -307,16 +307,5 @@ export type OAuthCallbackHandler = (
   done: PassportDoneCallback,
 ) => Promise<void> | void;
 
-// Express Request augmentation (server-only)
-declare module "express-serve-static-core" {
-  interface Request {
-    user?: JWTUser & { mustResetPwd?: boolean };
-    apiKey?: {
-      id: string;
-      userId: string;
-      user: JWTUser;
-      permissions: PermissionScope[] | null; // null = full access
-    };
-    logout(done: (err: any) => void): void;
-  }
-}
+// Express Request augmentation lives in server/src/types/express.d.ts —
+// it must be declared where express-serve-static-core is installed.
