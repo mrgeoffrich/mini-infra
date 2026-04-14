@@ -6,21 +6,33 @@ import os from "os";
 import path from "path";
 import { requirePermission } from "../middleware/auth";
 import { appLogger } from "../lib/logger-factory";
+import {
+  readProcStatus,
+  readSmapsRollup,
+  readSmapsByPathname,
+  readSmapsRegions,
+  peekMemoryRegion,
+} from "../lib/proc-memory";
 
 const router = Router();
 const logger = appLogger();
 
 // GET /api/diagnostics/memory - current memory usage snapshot
-router.get("/memory", requirePermission("settings:read") as RequestHandler, ((_req, res) => {
+router.get("/memory", requirePermission("settings:read") as RequestHandler, (async (_req, res) => {
   const mem = process.memoryUsage();
   const heap = v8.getHeapStatistics();
   const heapSpaces = v8.getHeapSpaceStatistics();
+  const [procStatus, smapsRollup] = await Promise.all([
+    readProcStatus(),
+    readSmapsRollup(),
+  ]);
 
   res.json({
     timestamp: new Date().toISOString(),
     uptimeSeconds: process.uptime(),
     pid: process.pid,
     nodeVersion: process.version,
+    platform: process.platform,
     process: {
       rss: mem.rss,
       heapTotal: mem.heapTotal,
@@ -48,7 +60,98 @@ router.get("/memory", requirePermission("settings:read") as RequestHandler, ((_r
       physical: s.physical_space_size,
     })),
     resourceUsage: process.resourceUsage(),
+    procStatus,
+    smapsRollup,
   });
+}) as RequestHandler);
+
+// GET /api/diagnostics/smaps-top - aggregate /proc/self/smaps by pathname
+// Returns the top N contributors to RSS. More expensive than /memory because
+// smaps contains every mapped region — fetch on demand, not on every poll.
+router.get("/smaps-top", requirePermission("settings:read") as RequestHandler, (async (req, res) => {
+  const limitParam = Number(req.query.limit);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 25;
+
+  const groups = await readSmapsByPathname(limit);
+  if (groups === null) {
+    res.status(501).json({ error: "smaps not available on this platform" });
+    return;
+  }
+  res.json({ limit, groups });
+}) as RequestHandler);
+
+// GET /api/diagnostics/smaps-regions?pathname=[anon]&limit=N
+// Returns the top-N individual regions matching a pathname (or all pathnames if omitted),
+// sorted by RSS. Used by the UI to pick a specific anonymous region to inspect.
+router.get("/smaps-regions", requirePermission("settings:read") as RequestHandler, (async (req, res) => {
+  const pathname = typeof req.query.pathname === "string" ? req.query.pathname : undefined;
+  const limitParam = Number(req.query.limit);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 500) : 25;
+
+  const regions = await readSmapsRegions();
+  if (regions === null) {
+    res.status(501).json({ error: "smaps not available on this platform" });
+    return;
+  }
+  const filtered = pathname
+    ? regions.filter((r) => r.pathname === pathname)
+    : regions;
+  const top = filtered.sort((a, b) => b.rss - a.rss).slice(0, limit);
+  res.json({ pathname: pathname ?? null, limit, regions: top });
+}) as RequestHandler);
+
+// POST /api/diagnostics/region-peek - read a slice of /proc/self/mem and extract strings.
+// Inspects process memory contents, so treat as sensitive: gated by settings:write.
+router.post("/region-peek", requirePermission("settings:write") as RequestHandler, (async (req, res) => {
+  const body = (req.body ?? {}) as {
+    start?: string;
+    length?: number;
+    minLen?: number;
+    maxStrings?: number;
+  };
+  if (typeof body.start !== "string" || !/^[0-9a-f]+$/i.test(body.start)) {
+    res.status(400).json({ error: "start must be a hex address string (no 0x prefix)" });
+    return;
+  }
+  const length = Number(body.length);
+  if (!Number.isFinite(length) || length <= 0) {
+    res.status(400).json({ error: "length must be a positive integer" });
+    return;
+  }
+
+  const userId = (req as unknown as { user?: { id?: string } }).user?.id;
+  logger.info(
+    { userId, address: body.start, length, minLen: body.minLen },
+    "region-peek: reading /proc/self/mem",
+  );
+
+  const result = await peekMemoryRegion(body.start.toLowerCase(), length, {
+    minLen: body.minLen,
+    maxStrings: body.maxStrings,
+  });
+  if (result === null) {
+    res.status(501).json({ error: "/proc/self/mem not available on this platform" });
+    return;
+  }
+  res.json(result);
+}) as RequestHandler);
+
+// GET /api/diagnostics/report - Node.js diagnostic report (process.report)
+// Streams a JSON file that includes shared objects, libuv handles, native stack,
+// environment variables, and more — useful for deep post-mortem analysis.
+router.get("/report", requirePermission("settings:read") as RequestHandler, ((_req, res) => {
+  try {
+    const report = process.report.getReport();
+    const filename = `diagnostic-report-${Date.now()}-${process.pid}.json`;
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(report);
+  } catch (error) {
+    logger.error({ error }, "Failed to generate diagnostic report");
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to generate diagnostic report",
+    });
+  }
 }) as RequestHandler);
 
 // POST /api/diagnostics/heap-snapshot - write a heap snapshot and stream it to the client
