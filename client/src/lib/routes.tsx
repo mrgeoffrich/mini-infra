@@ -54,6 +54,7 @@ import BackendDetailsPage from "@/app/haproxy/backends/[backendName]/page";
 import HAProxyInstancesPage from "@/app/haproxy/instances/page";
 import HAProxyOverviewPage from "@/app/haproxy/page";
 import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
+import SystemDiagnosticsPage from "@/app/system-diagnostics/page";
 import { HostPage } from "@/app/host/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
@@ -315,6 +316,10 @@ export const router = createBrowserRouter([
       {
         path: "settings-self-update",
         element: <SelfUpdateSettingsPage />,
+      },
+      {
+        path: "system-diagnostics",
+        element: <SystemDiagnosticsPage />,
       },
       {
         path: "settings-users",

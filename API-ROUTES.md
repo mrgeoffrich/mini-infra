@@ -544,3 +544,10 @@
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/routes` | List all registered API routes |
+
+## Diagnostics (`/api/diagnostics`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/diagnostics/memory` | Current process memory and V8 heap statistics (`settings:read`) |
+| POST | `/api/diagnostics/heap-snapshot` | Write a V8 heap snapshot to disk and return its path (`settings:write`) |

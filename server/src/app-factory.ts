@@ -66,6 +66,7 @@ import createImagesRouter from "./routes/images";
 import apiRoutesRoutes from "./routes/api-routes";
 import usersRoutes from "./routes/users";
 import authSettingsRoutes from "./routes/auth-settings";
+import diagnosticsRoutes from "./routes/diagnostics";
 
 type RouteDefinition = {
   id: string;
@@ -132,6 +133,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "images", path: "/api/images", name: "imagesRoutes", getRouter: createImagesRouter },
     { id: "apiRoutes", path: "/api/routes", name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
     { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
+    { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
   ];
 }
 
