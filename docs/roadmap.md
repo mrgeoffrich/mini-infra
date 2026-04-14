@@ -27,6 +27,13 @@ The current approach to managing the application secret is not practical in real
 
 ## UI / UX
 
+### Onboarding flow
+A fresh Mini Infra instance has a lot of knobs that almost every operator ends up setting the same way. Build a guided onboarding that establishes sensible defaults up front so users aren't hunting through settings pages.
+
+- **Time & locale** — host timezone, date/time format, and any locale-driven defaults.
+- **TLS / ACME** — set the ACME account, default issuer, renewal window, and Cloudflare DNS provider so certificates "just work" from day one.
+- **Azure storage** — connect the storage account and let the user select (or create) containers for backups, certificates, and other artefacts in one place.
+
 ### Stacks & Applications UI refresh
 The Stacks and Applications surfaces have grown organically and would benefit from a design pass to improve clarity and reduce cognitive load.
 
