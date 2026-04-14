@@ -202,11 +202,14 @@ const initializeServices = async () => {
       setApiKeyConfigured(true);
       logger.info("Loaded Anthropic API key from database settings");
       console.log("[STARTUP] Loaded Anthropic API key from database settings");
-
-      // Initialize agent API key before provisioning the sidecar,
-      // so MINI_INFRA_API_KEY is available when the container is created.
-      await initializeAgentApiKey();
     }
+
+    // Initialize agent API key before provisioning the sidecar so
+    // MINI_INFRA_API_KEY is available when the container is created.
+    // Runs regardless of Anthropic key — the sidecar still launches and
+    // needs to authenticate against /api/routes even before the user
+    // configures their Anthropic key.
+    await initializeAgentApiKey();
 
     // Provision agent sidecar (if running in Docker and autoStart is enabled)
     console.log("[STARTUP] Checking agent sidecar...");
