@@ -63,7 +63,7 @@ type PrismaEventListener = (
 
 // Set up Prisma event listeners to route logs to dedicated logger
 if (!isTestEnvironment && logger) {
-  const onEvent = (prisma as unknown as { $on: PrismaEventListener }).$on;
+  const onEvent = (prisma as unknown as { $on: PrismaEventListener }).$on.bind(prisma);
   onEvent("query", (e: { query: string; params: string; duration: number; target: string }) => {
     logger.debug(
       {
