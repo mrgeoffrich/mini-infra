@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { ConnectivityScheduler } from "../connectivity-scheduler";
 import { ConfigurationServiceFactory } from "../../services/configuration-factory";
 import { ValidationResult } from "@mini-infra/types";

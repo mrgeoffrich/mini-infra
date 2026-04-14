@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "../generated/prisma/client";
 import { EnvironmentManager } from '../services/environment';
 import { DockerExecutorService } from '../services/docker-executor';
 

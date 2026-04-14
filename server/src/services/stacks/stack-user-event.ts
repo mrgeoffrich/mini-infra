@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from "../../generated/prisma/client";
 import { UserEventService } from '../user-events';
 import { appLogger } from '../../lib/logger-factory';
 

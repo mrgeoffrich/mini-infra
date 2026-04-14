@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import {
   ValidationResult,
   ServiceHealthStatus,

@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { BackupSchedulerService, BackupConfigurationManager, BackupExecutorService } from "../backup";
 import * as loggerFactory from "../../lib/logger-factory";
 import * as nodeCron from "node-cron";

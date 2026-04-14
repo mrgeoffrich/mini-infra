@@ -7,7 +7,7 @@ import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
 import fs from "fs/promises";
 import path from "path";
-import type { SelfBackup } from "@prisma/client";
+import type { SelfBackup } from "../../generated/prisma/client";
 import { getDatabaseFilePath } from "../../lib/database-url-parser";
 
 /**

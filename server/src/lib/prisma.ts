@@ -1,4 +1,5 @@
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "../generated/prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
 import { prismaLogger } from "./logger-factory";
 import { getDatabaseFilePath } from "./database-url-parser";
@@ -31,16 +32,23 @@ declare global {
 // Create Prisma logger instance
 const logger = !isTestEnvironment ? prismaLogger() : null;
 
+// Prisma 7 driver adapters resolve relative file: URLs against process.cwd(),
+// whereas the legacy query engine resolved them against the schema directory.
+// Normalize to an absolute path so behavior matches pre-7 regardless of cwd.
+const databaseUrl = `file:${getDatabaseFilePath()}`;
+
+const adapter = new PrismaBetterSqlite3({ url: databaseUrl });
+
 const prismaOptions: Prisma.PrismaClientOptions = {
-  log:
-    process.env.NODE_ENV === "test"
-      ? []
-      : [
-        { emit: "event", level: "query" },
-        { emit: "event", level: "info" },
-        { emit: "event", level: "warn" },
-        { emit: "event", level: "error" },
-      ],
+  adapter,
+  log: isTestEnvironment
+    ? []
+    : [
+      { emit: "event", level: "query" },
+      { emit: "event", level: "info" },
+      { emit: "event", level: "warn" },
+      { emit: "event", level: "error" },
+    ],
 };
 
 const prisma = globalThis.prisma ?? new PrismaClient(prismaOptions);

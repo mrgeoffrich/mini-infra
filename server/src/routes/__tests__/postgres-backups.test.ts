@@ -1,6 +1,6 @@
 import request from "supertest";
 import express from "express";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import router from "../postgres-backups";
 import { BackupExecutorService } from "../../services/backup";
 
@@ -30,7 +30,7 @@ vi.mock("../../lib/prisma", () => ({
 }));
 
 // Mock the PrismaClient for type exports
-vi.mock("@prisma/client", () => ({
+vi.mock("../../generated/prisma/client", () => ({
   PrismaClient: vi.fn(function() { return mockPrismaDefault; }),
 }));
 

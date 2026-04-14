@@ -38,7 +38,7 @@ const {
 });
 
 // Mock the PrismaClient BEFORE any imports
-vi.mock("@prisma/client", () => ({
+vi.mock("../../generated/prisma/client", () => ({
   PrismaClient: vi.fn(function() { return mockPrismaInstance; }),
 }));
 
@@ -158,7 +158,7 @@ vi.mock("../../lib/in-memory-queue", () => {
 
 import request from "supertest";
 import express from "express";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { RestoreExecutorService } from "../../services/restore-executor";
 import { AzureStorageService } from "../../services/azure-storage-service";
 import { BlobServiceClient } from "@azure/storage-blob";

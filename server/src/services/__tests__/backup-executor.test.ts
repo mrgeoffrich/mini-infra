@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { BackupExecutorService, BackupConfigurationManager } from "../backup";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";

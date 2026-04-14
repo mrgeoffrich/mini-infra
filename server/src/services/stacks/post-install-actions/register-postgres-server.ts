@@ -1,5 +1,5 @@
 import CryptoJS from "crypto-js";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../../generated/prisma/client";
 import type { ServiceApplyResult } from "@mini-infra/types";
 import { servicesLogger } from "../../../lib/logger-factory";
 import { getApiKeySecret } from "../../../lib/security-config";

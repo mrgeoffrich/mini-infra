@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { StackParameterDefinition, StackParameterValue, StackServiceDefinition, StackDefinition } from "@mini-infra/types";
 import { servicesLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";

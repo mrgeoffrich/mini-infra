@@ -5,7 +5,7 @@ import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
 import { RestoreOperationInfo, DatabaseConnectionConfig } from "@mini-infra/types";
-import type { RestoreOperation } from "@prisma/client";
+import type { RestoreOperation } from "../../generated/prisma/client";
 
 import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";

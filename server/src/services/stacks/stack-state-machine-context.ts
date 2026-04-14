@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient } from "../../generated/prisma/client";
 import type { Logger } from 'pino';
 import type {
   ServiceAction,

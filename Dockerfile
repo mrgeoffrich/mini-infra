@@ -83,8 +83,10 @@ COPY --chown=node:node package*.json ./
 COPY --chown=node:node lib/package*.json ./lib/
 COPY --chown=node:node server/package*.json ./server/
 
-# Copy Prisma schema for client generation (migrations copied later with code)
+# Copy Prisma schema + config for runtime `prisma migrate deploy`
+# (Prisma 7: connection URL lives in prisma.config.ts, not schema.prisma)
 COPY --chown=node:node server/prisma/schema.prisma ./server/prisma/schema.prisma
+COPY --chown=node:node server/prisma.config.ts ./server/prisma.config.ts
 
 # Create directories with proper ownership
 RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
@@ -92,12 +94,6 @@ RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 # Install production dependencies only
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
     npm install --workspace=lib --workspace=server --omit=dev
-
-# Generate Prisma client in production environment
-WORKDIR /app/server
-RUN npx prisma generate
-
-WORKDIR /app
 
 # --- Code layer (changes on every code change, but small ~20MB) ---
 

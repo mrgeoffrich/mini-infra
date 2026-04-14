@@ -1,7 +1,7 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient, TransactionManager } from "./haproxy-dataplane-client";
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import {
   EligibleContainer,

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma } from "../../generated/prisma/client";
 import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';

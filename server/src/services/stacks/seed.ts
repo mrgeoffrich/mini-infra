@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { syncBuiltinStacksForEnvironment } from "./builtin-stack-sync";
 
 export async function seedStacksForEnvironment(

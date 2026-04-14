@@ -1,6 +1,6 @@
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { generateSharedFrontendName } from "./haproxy-naming";
 
 const logger = loadbalancerLogger();

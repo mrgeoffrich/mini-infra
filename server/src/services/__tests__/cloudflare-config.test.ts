@@ -1,5 +1,5 @@
 import prisma from "../../lib/prisma";
-import { PrismaClient } from "../../generated/prisma";
+import { PrismaClient } from "../../generated/prisma/client";
 import { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
 import { CloudflareService } from "../cloudflare";
 import * as loggerFactory from "../../lib/logger-factory";

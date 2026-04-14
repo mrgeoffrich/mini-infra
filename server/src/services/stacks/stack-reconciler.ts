@@ -1,5 +1,5 @@
 import type { Logger } from 'pino';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from "../../generated/prisma/client";
 import {
   StackPlan,
   StackServiceDefinition,

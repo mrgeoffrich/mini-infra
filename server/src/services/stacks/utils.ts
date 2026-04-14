@@ -1,5 +1,5 @@
 import Docker from 'dockerode';
-import { Prisma } from '@prisma/client';
+import { Prisma } from "../../generated/prisma/client";
 import type {
   StackServiceDefinition,
   StackConfigFile,

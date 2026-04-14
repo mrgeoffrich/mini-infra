@@ -6,7 +6,7 @@
  * POST handler to provide real-time Socket.IO feedback.
  */
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../../generated/prisma/client";
 import { loadbalancerLogger } from "../../lib/logger-factory";
 import { ManualFrontendManager } from "./manual-frontend-manager";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";

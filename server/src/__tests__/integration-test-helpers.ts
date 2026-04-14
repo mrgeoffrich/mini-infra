@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from "../generated/prisma/client";
+import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { createId } from "@paralleldrive/cuid2";
 import { parseSqliteDatabaseUrl } from "../lib/database-url-parser";
 import {
@@ -183,13 +184,8 @@ export async function initializeIntegrationTestDatabase(): Promise<PrismaClient>
 
       await ensureIntegrationTestDatabase();
 
-      const prisma = new PrismaClient({
-        datasources: {
-          db: {
-            url: TEST_DB_URL,
-          },
-        },
-      });
+      const adapter = new PrismaBetterSqlite3({ url: `file:${TEST_DB_PATH}` });
+      const prisma = new PrismaClient({ adapter });
 
       await prisma.$connect();
       state.prisma = prisma;

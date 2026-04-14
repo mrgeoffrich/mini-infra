@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from "../../generated/prisma/client";
 import { loadbalancerLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../docker-executor';
 import { StackReconciler } from '../stacks/stack-reconciler';
