@@ -481,22 +481,36 @@ describe("ConfigurationService", () => {
 
   describe("getLatestConnectivityStatus", () => {
     it("should retrieve latest connectivity status", async () => {
-      const mockStatus = {
+      const storedRow = {
         id: "status-1",
         service: "docker",
         status: "connected",
         responseTimeMs: 150,
         checkedAt: new Date("2023-01-01T12:00:00Z"),
         lastSuccessfulAt: new Date("2023-01-01T12:00:00Z"),
+        errorMessage: null,
+        errorCode: null,
+        metadata: null,
       };
 
       mockPrisma.connectivityStatus.findFirst = vi
         .fn()
-        .mockResolvedValue(mockStatus);
+        .mockResolvedValue(storedRow);
 
       const result = await (configService as any).getLatestConnectivityStatus();
 
-      expect(result).toEqual(mockStatus);
+      // The method projects the raw Prisma row into a narrow DTO —
+      // `id`/`service` are dropped (service is always `this.category`)
+      // and nullable fields become `undefined` to match the public shape.
+      expect(result).toEqual({
+        status: "connected",
+        responseTimeMs: 150,
+        checkedAt: new Date("2023-01-01T12:00:00Z"),
+        lastSuccessfulAt: new Date("2023-01-01T12:00:00Z"),
+        errorMessage: undefined,
+        errorCode: undefined,
+        metadata: undefined,
+      });
       expect(mockPrisma.connectivityStatus.findFirst).toHaveBeenCalledWith({
         where: {
           service: "docker",

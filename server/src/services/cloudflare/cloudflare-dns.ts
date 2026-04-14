@@ -1,8 +1,16 @@
-import Cloudflare from "cloudflare";
 import type { Zone } from "cloudflare/resources/zones/zones.js";
-import type { RecordResponse, RecordCreateParams, RecordListParams, RecordUpdateParams } from "cloudflare/resources/dns/records.js";
+import type {
+  RecordResponse,
+  RecordCreateParams,
+  RecordListParams,
+  RecordUpdateParams,
+} from "cloudflare/resources/dns/records.js";
 import { servicesLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "./cloudflare-service";
+import {
+  CloudflareApiRunner,
+  CLOUDFLARE_TIMEOUT_MS,
+} from "./cloudflare-api-runner";
 import prisma from "../../lib/prisma";
 import {
   CloudflareDNSZone,
@@ -14,8 +22,8 @@ import {
 const logger = servicesLogger();
 
 /**
- * Extends the SDK RecordResponse with additional fields that the Cloudflare v4 API
- * returns at runtime but the SDK TypeScript types omit (zone_id, zone_name, locked, data).
+ * Extends the SDK RecordResponse with fields the API returns at runtime
+ * but the SDK's TypeScript types omit (zone_id, zone_name, locked, data).
  */
 type SdkRecord = RecordResponse & {
   zone_id?: string;
@@ -24,66 +32,74 @@ type SdkRecord = RecordResponse & {
   data?: Record<string, unknown>;
 };
 
+function toDnsRecord(
+  raw: RecordResponse,
+  fallbackZoneId: string,
+): CloudflareDNSRecord {
+  const record = raw as SdkRecord;
+  return {
+    id: record.id,
+    type: record.type,
+    name: record.name ?? "",
+    content: record.content ?? "",
+    proxiable: record.proxiable ?? true,
+    proxied: record.proxied ?? false,
+    ttl: record.ttl,
+    locked: record.locked ?? false,
+    zone_id: record.zone_id ?? fallbackZoneId,
+    zone_name: record.zone_name ?? "",
+    created_on: record.created_on,
+    modified_on: record.modified_on,
+    data: record.data,
+    meta: record.meta as CloudflareDNSRecord["meta"],
+  };
+}
+
+function isNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return (
+    message.includes("not found") ||
+    (error as { status?: number })?.status === 404
+  );
+}
+
 /**
- * CloudflareDNSService manages DNS zones and records in Cloudflare
- * Provides methods for DNS record lifecycle management
+ * Zone/record management for Cloudflare DNS. Shares the
+ * {@link CloudflareApiRunner} owned by {@link CloudflareService} so
+ * circuit-breaker state, auth, timeouts and logging stay unified across
+ * every outbound Cloudflare call.
  */
 export class CloudflareDNSService {
-  private cloudflareConfigService: CloudflareService;
-  private static readonly TIMEOUT_MS = 10000; // 10 second timeout
+  private readonly cloudflareConfigService: CloudflareService;
+  private readonly runner: CloudflareApiRunner;
 
-  constructor() {
-    this.cloudflareConfigService = new CloudflareService(prisma);
+  constructor(cloudflareConfigService?: CloudflareService) {
+    this.cloudflareConfigService =
+      cloudflareConfigService ?? new CloudflareService(prisma);
+    this.runner = this.cloudflareConfigService.runner;
   }
 
-  /**
-   * Get a Cloudflare API client instance
-   * @returns Configured Cloudflare client
-   * @throws Error if API token is not configured
-   */
-  private async getCloudflareClient(): Promise<Cloudflare> {
-    const apiToken = await this.cloudflareConfigService.get("api_token");
-
-    if (!apiToken) {
-      throw new Error(
-        "Cloudflare API token not configured. Please configure Cloudflare settings."
-      );
-    }
-
-    return new Cloudflare({ apiToken });
-  }
-
-  /**
-   * List all DNS zones in the Cloudflare account
-   * @returns Array of DNS zones
-   */
   async listZones(): Promise<CloudflareDNSZone[]> {
     logger.info("Listing Cloudflare DNS zones");
 
     try {
-      const cf = await this.getCloudflareClient();
-
-      const response = await Promise.race([
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
+      const response = await this.runner.withTimeout(
         cf.zones.list(),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
+        "zones list",
+        CLOUDFLARE_TIMEOUT_MS,
+      );
 
       const zones = response.result.map((zone: Zone) => ({
         id: zone.id,
         name: zone.name,
-        // SDK omits "deleted" from the status union; cast to our broader type
         status: (zone.status ?? "active") as CloudflareDNSZone["status"],
         paused: zone.paused ?? false,
-        // SDK includes 'secondary'/'internal' in the union; cast to our narrower type
         type: (zone.type ?? "full") as CloudflareDNSZone["type"],
         development_mode: zone.development_mode,
         name_servers: zone.name_servers || [],
-        // SDK uses null for absent arrays; coerce to undefined to match our type
         original_name_servers: zone.original_name_servers ?? undefined,
         original_registrar: zone.original_registrar ?? undefined,
         original_dnshost: zone.original_dnshost ?? undefined,
@@ -100,38 +116,30 @@ export class CloudflareDNSService {
   }
 
   /**
-   * Find the appropriate DNS zone for a given hostname
-   * For example: api.example.com -> example.com zone
-   *
-   * @param hostname The hostname to find a zone for
-   * @returns The zone that matches the hostname, or null if not found
+   * Find the zone that owns a given hostname. Example:
+   * `api.example.com` → the `example.com` zone.
    */
   async findZoneForHostname(
-    hostname: string
+    hostname: string,
   ): Promise<CloudflareDNSZone | null> {
     logger.info({ hostname }, "Finding zone for hostname");
 
     try {
       const zones = await this.listZones();
-
-      // Extract domain parts from hostname (e.g., api.example.com -> [api, example, com])
       const parts = hostname.toLowerCase().split(".");
 
-      // Try to match from most specific to least specific
-      // e.g., for api.example.com, try: api.example.com, example.com, com
+      // Most-specific to least-specific match (api.example.com → example.com → com).
       for (let i = 0; i < parts.length - 1; i++) {
         const candidateZone = parts.slice(i).join(".");
-
-        const matchingZone = zones.find(
-          (zone) => zone.name.toLowerCase() === candidateZone
+        const match = zones.find(
+          (zone) => zone.name.toLowerCase() === candidateZone,
         );
-
-        if (matchingZone) {
+        if (match) {
           logger.info(
-            { hostname, zoneName: matchingZone.name, zoneId: matchingZone.id },
-            "Found matching zone for hostname"
+            { hostname, zoneName: match.name, zoneId: match.id },
+            "Found matching zone for hostname",
           );
-          return matchingZone;
+          return match;
         }
       }
 
@@ -143,62 +151,32 @@ export class CloudflareDNSService {
     }
   }
 
-  /**
-   * Create a DNS record in a Cloudflare zone
-   *
-   * @param zoneId The zone ID to create the record in
-   * @param record The DNS record to create
-   * @returns The created DNS record
-   */
   async createDNSRecord(
     zoneId: string,
-    record: CreateCloudflareDNSRecordRequest
+    record: CreateCloudflareDNSRecordRequest,
   ): Promise<CloudflareDNSRecord> {
     logger.info(
       { zoneId, recordType: record.type, recordName: record.name },
-      "Creating DNS record"
+      "Creating DNS record",
     );
 
     try {
-      const cf = await this.getCloudflareClient();
-
-      const rawResponse: RecordResponse = await Promise.race([
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
+      const raw = await this.runner.withTimeout(
         cf.dns.records.create({
           zone_id: zoneId,
           type: record.type,
           name: record.name,
           content: record.content,
-          ttl: record.ttl || 300, // Default to 5 minutes
+          ttl: record.ttl || 300,
           proxied: record.proxied ?? false,
         } as RecordCreateParams),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
-      // Cast to SdkRecord to access zone_id/zone_name/locked/data fields the API
-      // returns at runtime but the SDK TypeScript types omit.
-      const response = rawResponse as SdkRecord;
+        "DNS record create",
+      );
 
-      const dnsRecord: CloudflareDNSRecord = {
-        id: response.id,
-        type: response.type,
-        name: response.name || record.name,
-        content: response.content || record.content,
-        proxiable: response.proxiable ?? true,
-        proxied: response.proxied ?? false,
-        ttl: response.ttl,
-        locked: response.locked ?? false,
-        zone_id: response.zone_id || zoneId,
-        zone_name: response.zone_name || "",
-        created_on: response.created_on,
-        modified_on: response.modified_on,
-        data: response.data,
-        meta: response.meta as CloudflareDNSRecord["meta"],
-      };
-
+      const dnsRecord = toDnsRecord(raw, zoneId);
       logger.info(
         {
           zoneId,
@@ -206,365 +184,214 @@ export class CloudflareDNSService {
           recordType: dnsRecord.type,
           recordName: dnsRecord.name,
         },
-        "Successfully created DNS record"
+        "Successfully created DNS record",
       );
-
       return dnsRecord;
     } catch (error) {
-      // Check if the error is due to record already existing
-      if ((error instanceof Error ? error.message : "").includes("already exists")) {
-        logger.warn(
-          { zoneId, recordName: record.name },
-          "DNS record already exists"
-        );
-        // Try to find the existing record
-        const existingRecord = await this.findDNSRecord(zoneId, record.name);
-        if (existingRecord) {
+      // Cloudflare returns "already exists" when a record with the same
+      // name+type+content is created twice — return the existing record
+      // so callers get idempotent-looking behaviour.
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("already exists")) {
+        logger.warn({ zoneId, recordName: record.name }, "DNS record already exists");
+        const existing = await this.findDNSRecord(zoneId, record.name);
+        if (existing) {
           logger.info(
-            { zoneId, recordId: existingRecord.id },
-            "Returning existing DNS record"
+            { zoneId, recordId: existing.id },
+            "Returning existing DNS record",
           );
-          return existingRecord;
+          return existing;
         }
       }
 
-      logger.error(
-        { error, zoneId, record },
-        "Failed to create DNS record"
-      );
+      logger.error({ error, zoneId, record }, "Failed to create DNS record");
       throw new Error(`Failed to create DNS record: ${error}`, { cause: error });
     }
   }
 
-  /**
-   * Update a DNS record in a Cloudflare zone
-   *
-   * @param zoneId The zone ID containing the record
-   * @param recordId The ID of the record to update
-   * @param updates The updates to apply to the record
-   * @returns The updated DNS record
-   */
   async updateDNSRecord(
     zoneId: string,
     recordId: string,
-    updates: UpdateCloudflareDNSRecordRequest
+    updates: UpdateCloudflareDNSRecordRequest,
   ): Promise<CloudflareDNSRecord> {
-    logger.info(
-      { zoneId, recordId, updates },
-      "Updating DNS record"
-    );
+    logger.info({ zoneId, recordId, updates }, "Updating DNS record");
 
     try {
-      const cf = await this.getCloudflareClient();
-
-      const rawResponse: RecordResponse = await Promise.race([
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
+      const raw = await this.runner.withTimeout(
         cf.dns.records.update(recordId, {
           zone_id: zoneId,
           ...updates,
         } as RecordUpdateParams),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
-      const response = rawResponse as SdkRecord;
-
-      const dnsRecord: CloudflareDNSRecord = {
-        id: response.id,
-        type: response.type,
-        name: response.name || "",
-        content: response.content || "",
-        proxiable: response.proxiable ?? true,
-        proxied: response.proxied ?? false,
-        ttl: response.ttl,
-        locked: response.locked ?? false,
-        zone_id: response.zone_id || zoneId,
-        zone_name: response.zone_name || "",
-        created_on: response.created_on,
-        modified_on: response.modified_on,
-        data: response.data,
-        meta: response.meta as CloudflareDNSRecord["meta"],
-      };
-
-      logger.info(
-        { zoneId, recordId, recordName: dnsRecord.name },
-        "Successfully updated DNS record"
+        "DNS record update",
       );
 
+      const dnsRecord = toDnsRecord(raw, zoneId);
+      logger.info(
+        { zoneId, recordId, recordName: dnsRecord.name },
+        "Successfully updated DNS record",
+      );
       return dnsRecord;
     } catch (error) {
       logger.error(
         { error, zoneId, recordId, updates },
-        "Failed to update DNS record"
+        "Failed to update DNS record",
       );
       throw new Error(`Failed to update DNS record: ${error}`, { cause: error });
     }
   }
 
-  /**
-   * Delete a DNS record from a Cloudflare zone
-   *
-   * @param zoneId The zone ID containing the record
-   * @param recordId The ID of the record to delete
-   */
   async deleteDNSRecord(zoneId: string, recordId: string): Promise<void> {
     logger.info({ zoneId, recordId }, "Deleting DNS record");
 
     try {
-      const cf = await this.getCloudflareClient();
-
-      await Promise.race([
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
+      await this.runner.withTimeout(
         cf.dns.records.delete(recordId, { zone_id: zoneId }),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
+        "DNS record delete",
+      );
 
       logger.info({ zoneId, recordId }, "Successfully deleted DNS record");
     } catch (error) {
-      // If record not found, consider it already deleted (idempotent)
-      if ((error instanceof Error ? error.message : "").includes("not found") || (error as { status?: number })?.status === 404) {
+      if (isNotFoundError(error)) {
         logger.warn(
           { zoneId, recordId },
-          "DNS record not found, considering it already deleted"
+          "DNS record not found, considering it already deleted",
         );
         return;
       }
 
       logger.error(
         { error, zoneId, recordId },
-        "Failed to delete DNS record"
+        "Failed to delete DNS record",
       );
       throw new Error(`Failed to delete DNS record: ${error}`, { cause: error });
     }
   }
 
-  /**
-   * Get a specific DNS record by ID
-   *
-   * @param zoneId The zone ID containing the record
-   * @param recordId The ID of the record to retrieve
-   * @returns The DNS record, or null if not found
-   */
   async getDNSRecord(
     zoneId: string,
-    recordId: string
+    recordId: string,
   ): Promise<CloudflareDNSRecord | null> {
     logger.info({ zoneId, recordId }, "Getting DNS record");
 
     try {
-      const cf = await this.getCloudflareClient();
-
-      const rawResponse: RecordResponse = await Promise.race([
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
+      const raw = await this.runner.withTimeout(
         cf.dns.records.get(recordId, { zone_id: zoneId }),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
-      const response = rawResponse as SdkRecord;
-
-      const dnsRecord: CloudflareDNSRecord = {
-        id: response.id,
-        type: response.type,
-        name: response.name || "",
-        content: response.content || "",
-        proxiable: response.proxiable ?? true,
-        proxied: response.proxied ?? false,
-        ttl: response.ttl,
-        locked: response.locked ?? false,
-        zone_id: response.zone_id || zoneId,
-        zone_name: response.zone_name || "",
-        created_on: response.created_on,
-        modified_on: response.modified_on,
-        data: response.data,
-        meta: response.meta as CloudflareDNSRecord["meta"],
-      };
-
-      logger.info(
-        { zoneId, recordId, recordName: dnsRecord.name },
-        "Retrieved DNS record"
+        "DNS record get",
       );
 
+      const dnsRecord = toDnsRecord(raw, zoneId);
+      logger.info(
+        { zoneId, recordId, recordName: dnsRecord.name },
+        "Retrieved DNS record",
+      );
       return dnsRecord;
     } catch (error) {
-      if ((error instanceof Error ? error.message : "").includes("not found") || (error as { status?: number })?.status === 404) {
+      if (isNotFoundError(error)) {
         logger.warn({ zoneId, recordId }, "DNS record not found");
         return null;
       }
-
       logger.error({ error, zoneId, recordId }, "Failed to get DNS record");
       throw new Error(`Failed to get DNS record: ${error}`, { cause: error });
     }
   }
 
-  /**
-   * List DNS records in a zone, optionally filtered by hostname
-   *
-   * @param zoneId The zone ID to list records from
-   * @param hostname Optional hostname to filter by
-   * @returns Array of DNS records
-   */
   async listDNSRecords(
     zoneId: string,
-    hostname?: string
+    hostname?: string,
   ): Promise<CloudflareDNSRecord[]> {
     logger.info({ zoneId, hostname }, "Listing DNS records");
 
     try {
-      const cf = await this.getCloudflareClient();
-
+      const { cf } = await this.runner.getAuthorizedClient({
+        requireAccountId: false,
+      });
       const params: RecordListParams = { zone_id: zoneId };
       if (hostname) {
-        // SDK uses an object filter for name; { exact } performs exact-match search
+        // SDK uses an object filter for name; { exact } performs exact-match.
         params.name = { exact: hostname };
       }
 
-      const response = await Promise.race([
+      const response = await this.runner.withTimeout(
         cf.dns.records.list(params),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error("Request timeout")),
-            CloudflareDNSService.TIMEOUT_MS
-          )
-        ),
-      ]);
-
-      const records = response.result.map((rawRecord: RecordResponse) => {
-        const record = rawRecord as SdkRecord;
-        return {
-          id: record.id,
-          type: record.type,
-          name: record.name ?? "",
-          content: record.content ?? "",
-          proxiable: record.proxiable ?? true,
-          proxied: record.proxied ?? false,
-          ttl: record.ttl,
-          locked: record.locked ?? false,
-          zone_id: record.zone_id ?? zoneId,
-          zone_name: record.zone_name ?? "",
-          created_on: record.created_on,
-          modified_on: record.modified_on,
-          data: record.data,
-          meta: record.meta as CloudflareDNSRecord["meta"],
-        };
-      });
-
-      logger.info(
-        { zoneId, hostname, recordCount: records.length },
-        "Retrieved DNS records"
+        "DNS records list",
       );
 
+      const records = response.result.map((raw: RecordResponse) =>
+        toDnsRecord(raw, zoneId),
+      );
+      logger.info(
+        { zoneId, hostname, recordCount: records.length },
+        "Retrieved DNS records",
+      );
       return records;
     } catch (error) {
       logger.error(
         { error, zoneId, hostname },
-        "Failed to list DNS records"
+        "Failed to list DNS records",
       );
       throw new Error(`Failed to list DNS records: ${error}`, { cause: error });
     }
   }
 
-  /**
-   * Find a DNS record by hostname
-   * This is a convenience method that searches for a record by name
-   *
-   * @param zoneId The zone ID to search in
-   * @param hostname The hostname to search for
-   * @returns The DNS record, or null if not found
-   */
   async findDNSRecord(
     zoneId: string,
-    hostname: string
+    hostname: string,
   ): Promise<CloudflareDNSRecord | null> {
     logger.info({ zoneId, hostname }, "Finding DNS record by hostname");
 
     try {
       const records = await this.listDNSRecords(zoneId, hostname);
-
       if (records.length === 0) {
         logger.warn({ zoneId, hostname }, "No DNS record found for hostname");
         return null;
       }
-
-      // Return the first matching record
-      // In most cases there should only be one A record per hostname
       const record = records[0];
       logger.info(
         { zoneId, hostname, recordId: record.id },
-        "Found DNS record for hostname"
+        "Found DNS record for hostname",
       );
-
       return record;
     } catch (error) {
-      logger.error(
-        { error, zoneId, hostname },
-        "Failed to find DNS record"
-      );
+      logger.error({ error, zoneId, hostname }, "Failed to find DNS record");
       throw error;
     }
   }
 
-  /**
-   * Create or update a DNS A record for a hostname
-   * If the record already exists, it will be updated with the new IP
-   * If it doesn't exist, it will be created
-   *
-   * @param hostname The hostname for the A record
-   * @param ipAddress The IP address to point to
-   * @param ttl Optional TTL (defaults to 300 seconds)
-   * @param proxied Optional proxied flag (defaults to false)
-   * @returns The created or updated DNS record
-   */
   async upsertARecord(
     hostname: string,
     ipAddress: string,
     ttl: number = 300,
-    proxied: boolean = false
+    proxied: boolean = false,
   ): Promise<CloudflareDNSRecord> {
     logger.info(
       { hostname, ipAddress, ttl, proxied },
-      "Upserting DNS A record"
+      "Upserting DNS A record",
     );
 
     try {
-      // Find the zone for this hostname
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
         throw new Error(
-          `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`
+          `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
         );
       }
 
-      // Check if a record already exists
-      const existingRecord = await this.findDNSRecord(zone.id, hostname);
-
-      if (existingRecord) {
-        // Update existing record
+      const existing = await this.findDNSRecord(zone.id, hostname);
+      if (existing) {
         logger.info(
-          { hostname, recordId: existingRecord.id },
-          "Updating existing A record"
+          { hostname, recordId: existing.id },
+          "Updating existing A record",
         );
-
-        return await this.updateDNSRecord(zone.id, existingRecord.id, {
-          type: "A",
-          name: hostname,
-          content: ipAddress,
-          ttl,
-          proxied,
-        });
-      } else {
-        // Create new record
-        logger.info({ hostname, zoneId: zone.id }, "Creating new A record");
-
-        return await this.createDNSRecord(zone.id, {
+        return this.updateDNSRecord(zone.id, existing.id, {
           type: "A",
           name: hostname,
           content: ipAddress,
@@ -572,23 +399,28 @@ export class CloudflareDNSService {
           proxied,
         });
       }
+
+      logger.info({ hostname, zoneId: zone.id }, "Creating new A record");
+      return this.createDNSRecord(zone.id, {
+        type: "A",
+        name: hostname,
+        content: ipAddress,
+        ttl,
+        proxied,
+      });
     } catch (error) {
       logger.error(
         { error, hostname, ipAddress },
-        "Failed to upsert DNS A record"
+        "Failed to upsert DNS A record",
       );
       throw error;
     }
   }
+
   /**
-   * Create or update a DNS CNAME record pointing a hostname to a Cloudflare tunnel.
-   * If the record already exists as a CNAME, it will be updated.
-   * If it doesn't exist, it will be created.
-   * Records are proxied (orange-clouded) by default, which is standard for tunnel CNAMEs.
-   *
-   * @param hostname The public hostname (e.g., app.example.com)
-   * @param tunnelId The Cloudflare tunnel ID
-   * @returns The created or updated DNS record
+   * Upsert a proxied CNAME pointing a hostname at a Cloudflare tunnel.
+   * Records are orange-clouded by default — the standard configuration
+   * for tunnel hostnames so Cloudflare handles TLS termination.
    */
   async upsertCNAMERecord(
     hostname: string,
@@ -597,44 +429,40 @@ export class CloudflareDNSService {
     const cnameTarget = `${tunnelId}.cfargotunnel.com`;
     logger.info(
       { hostname, tunnelId, cnameTarget },
-      "Upserting DNS CNAME record for tunnel"
+      "Upserting DNS CNAME record for tunnel",
     );
 
     try {
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
         throw new Error(
-          `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`
+          `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
         );
       }
 
-      const existingRecord = await this.findDNSRecord(zone.id, hostname);
-
-      if (existingRecord) {
-        if (existingRecord.type === "CNAME" && existingRecord.content === cnameTarget && existingRecord.proxied) {
+      const existing = await this.findDNSRecord(zone.id, hostname);
+      if (existing) {
+        if (
+          existing.type === "CNAME" &&
+          existing.content === cnameTarget &&
+          existing.proxied
+        ) {
           logger.info(
-            { hostname, recordId: existingRecord.id },
-            "CNAME record already correct, no update needed"
+            { hostname, recordId: existing.id },
+            "CNAME record already correct, no update needed",
           );
-          return existingRecord;
+          return existing;
         }
 
         logger.info(
-          { hostname, recordId: existingRecord.id, existingType: existingRecord.type },
-          "Updating existing record to CNAME for tunnel"
+          {
+            hostname,
+            recordId: existing.id,
+            existingType: existing.type,
+          },
+          "Updating existing record to CNAME for tunnel",
         );
-
-        return await this.updateDNSRecord(zone.id, existingRecord.id, {
-          type: "CNAME",
-          name: hostname,
-          content: cnameTarget,
-          ttl: 1, // Auto TTL when proxied
-          proxied: true,
-        });
-      } else {
-        logger.info({ hostname, zoneId: zone.id }, "Creating new CNAME record for tunnel");
-
-        return await this.createDNSRecord(zone.id, {
+        return this.updateDNSRecord(zone.id, existing.id, {
           type: "CNAME",
           name: hostname,
           content: cnameTarget,
@@ -642,22 +470,31 @@ export class CloudflareDNSService {
           proxied: true,
         });
       }
+
+      logger.info(
+        { hostname, zoneId: zone.id },
+        "Creating new CNAME record for tunnel",
+      );
+      return this.createDNSRecord(zone.id, {
+        type: "CNAME",
+        name: hostname,
+        content: cnameTarget,
+        ttl: 1,
+        proxied: true,
+      });
     } catch (error) {
       logger.error(
         { error, hostname, tunnelId },
-        "Failed to upsert DNS CNAME record for tunnel"
+        "Failed to upsert DNS CNAME record for tunnel",
       );
       throw error;
     }
   }
 
   /**
-   * Delete a DNS CNAME record for a hostname, if it exists and is a CNAME.
-   * Skips deletion if the record doesn't exist or is not a CNAME (e.g., an A record
-   * that was manually created), to avoid accidentally removing unrelated records.
-   *
-   * @param hostname The public hostname to remove the CNAME for
-   * @returns true if a record was deleted, false if skipped
+   * Remove a tunnel CNAME record for a hostname, leaving non-CNAME records
+   * (A records, manually created entries) alone so we never clobber
+   * unrelated zone data.
    */
   async deleteCNAMEByHostname(hostname: string): Promise<boolean> {
     logger.info({ hostname }, "Deleting DNS CNAME record for tunnel hostname");
@@ -667,41 +504,46 @@ export class CloudflareDNSService {
       if (!zone) {
         logger.warn(
           { hostname },
-          "No Cloudflare zone found for hostname, skipping CNAME deletion"
+          "No Cloudflare zone found for hostname, skipping CNAME deletion",
         );
         return false;
       }
 
-      const existingRecord = await this.findDNSRecord(zone.id, hostname);
-
-      if (!existingRecord) {
-        logger.info({ hostname }, "No DNS record found for hostname, nothing to delete");
+      const existing = await this.findDNSRecord(zone.id, hostname);
+      if (!existing) {
+        logger.info(
+          { hostname },
+          "No DNS record found for hostname, nothing to delete",
+        );
         return false;
       }
 
-      if (existingRecord.type !== "CNAME") {
+      if (existing.type !== "CNAME") {
         logger.warn(
-          { hostname, recordType: existingRecord.type, recordId: existingRecord.id },
-          "DNS record is not a CNAME, skipping deletion to avoid removing unrelated record"
+          {
+            hostname,
+            recordType: existing.type,
+            recordId: existing.id,
+          },
+          "DNS record is not a CNAME, skipping deletion to avoid removing unrelated record",
         );
         return false;
       }
 
-      await this.deleteDNSRecord(zone.id, existingRecord.id);
+      await this.deleteDNSRecord(zone.id, existing.id);
       logger.info(
-        { hostname, recordId: existingRecord.id },
-        "Successfully deleted DNS CNAME record for tunnel hostname"
+        { hostname, recordId: existing.id },
+        "Successfully deleted DNS CNAME record for tunnel hostname",
       );
       return true;
     } catch (error) {
       logger.error(
         { error, hostname },
-        "Failed to delete DNS CNAME record for tunnel hostname"
+        "Failed to delete DNS CNAME record for tunnel hostname",
       );
       throw error;
     }
   }
 }
 
-// Export singleton instance
 export const cloudflareDNSService = new CloudflareDNSService();
