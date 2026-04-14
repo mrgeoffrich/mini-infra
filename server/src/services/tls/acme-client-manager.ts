@@ -5,7 +5,7 @@
  * It handles account creation, certificate requests, renewals, and revocations.
  */
 
-import * as acme from "acme-client";
+import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
 import { tlsLogger } from "../../lib/logger-factory";
 import { TlsConfigService } from "./tls-config";
@@ -35,7 +35,7 @@ export interface DnsChallenge01Provider {
  * Service for managing ACME client operations
  */
 export class AcmeClientManager {
-  private acmeClient: acme.Client | null = null;
+  private acmeClient: acme.AcmeClient | null = null;
   private certificateStore: AzureStorageCertificateStore;
   private config: TlsConfigService;
   private logger: Logger;
@@ -77,13 +77,25 @@ export class AcmeClientManager {
         await this.certificateStore.storeAccountKey(acmeConfig.email, accountKey.toString());
       }
 
-      // Create ACME client
-      this.acmeClient = new acme.Client({
-        directoryUrl,
-        accountKey,
+      // Look up any persisted ACME account URL so signed operations (e.g. revoke)
+      // can run without creating a new account. Missing row is fine — auto() will
+      // register on first issuance.
+      const existingAccount = await prisma.acmeAccount.findFirst({
+        where: { email: acmeConfig.email, provider: acmeConfig.provider, status: "ACTIVE" },
+        select: { accountUrl: true },
       });
 
-      this.logger.info({ provider: acmeConfig.provider }, "ACME client initialized successfully");
+      // Create ACME client
+      this.acmeClient = new acme.AcmeClient({
+        directoryUrl,
+        accountKey,
+        accountUrl: existingAccount?.accountUrl ?? null,
+      });
+
+      this.logger.info(
+        { provider: acmeConfig.provider, hasAccountUrl: Boolean(existingAccount?.accountUrl) },
+        "ACME client initialized successfully"
+      );
     } catch (error) {
       this.logger.error(
         { error: error instanceof Error ? error.message : String(error) },
@@ -169,7 +181,7 @@ export class AcmeClientManager {
       }
 
       // Create CSR (Certificate Signing Request)
-      const [certPrivateKey, certCsr] = await acme.crypto.createCsr({
+      const [certPrivateKey, certCsr] = await acme.crypto.createCsrPair({
         altNames: domains,
       });
 
@@ -178,6 +190,7 @@ export class AcmeClientManager {
       // Request certificate with DNS-01 challenge
       const certificate = await this.acmeClient!.auto({
         csr: certCsr,
+        domains,
         termsOfServiceAgreed: true,
         challengePriority: ["dns-01"],
 
@@ -313,7 +326,7 @@ export class AcmeClientManager {
    *
    * @returns ACME client instance
    */
-  async getClient(): Promise<acme.Client> {
+  async getClient(): Promise<acme.AcmeClient> {
     if (!this.acmeClient) {
       await this.initialize();
     }

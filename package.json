@@ -4,21 +4,24 @@
   "workspaces": [
     "client",
     "server",
-    "lib"
+    "lib",
+    "acme"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:lib\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:lib\" \"npm run dev:acme\" \"npm run dev:server\" \"npm run dev:client\"",
     "dev:lib": "npm run dev -w lib",
+    "dev:acme": "npm run dev -w acme",
     "dev:client": "npm run dev -w client",
     "dev:server": "npm run dev -w server",
     "build": "npm run build:server && npm run build:client",
     "build:lib": "npm run build -w lib",
+    "build:acme": "npm run build -w acme",
     "build:client": "npm run build -w client",
-    "build:server": "npm run build:lib && npm run build -w server",
+    "build:server": "npm run build:lib && npm run build:acme && npm run build -w server",
     "build:sidecar": "npm --prefix update-sidecar install && npm --prefix update-sidecar run build",
     "build:agent-sidecar": "npm --prefix agent-sidecar install && npm --prefix agent-sidecar run build",
     "build:pg-backup": "docker build -t mini-infra-pg-backup:dev ./pg-az-backup",
-    "build:all": "npm run build:lib && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
+    "build:all": "npm run build:lib && npm run build:acme && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
     "start": "npm start -w server",
     "install:all": "npm install",
     "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
@@ -32,7 +35,6 @@
     "cross-env": "^10.1.0"
   },
   "overrides": {
-    "axios": "^1.15.0",
     "lodash": "^4.18.0",
     "defu": "^6.1.5",
     "path-to-regexp": "^8.4.0",

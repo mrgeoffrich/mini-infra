@@ -16,6 +16,7 @@ WORKDIR /app
 # Changes to source code won't bust this layer
 COPY package*.json ./
 COPY lib/package*.json ./lib/
+COPY acme/package*.json ./acme/
 COPY client/package*.json ./client/
 COPY server/package*.json ./server/
 
@@ -33,14 +34,27 @@ COPY lib ./lib
 RUN npm run build:lib
 
 # ============================================
-# Stage 2b: deps with built lib available
-# (needed because workspace symlinks resolve through lib/)
+# Stage 2a: Build in-house ACME library
+# ============================================
+FROM deps AS acme-builder
+
+COPY acme ./acme
+
+RUN npm run build:acme
+
+# ============================================
+# Stage 2b: deps with built lib + acme available
+# (needed because workspace symlinks resolve through lib/ and acme/)
 # ============================================
 FROM deps AS deps-with-lib
 
 COPY --from=lib-builder /app/lib/dist ./lib/dist
 COPY --from=lib-builder /app/lib/types ./lib/types
 COPY --from=lib-builder /app/lib/tsconfig.json ./lib/tsconfig.json
+
+COPY --from=acme-builder /app/acme/dist ./acme/dist
+COPY --from=acme-builder /app/acme/src ./acme/src
+COPY --from=acme-builder /app/acme/tsconfig.json ./acme/tsconfig.json
 
 # ============================================
 # Stage 3: Build frontend application
@@ -81,6 +95,7 @@ WORKDIR /app
 # Copy package files for workspace resolution and npm install
 COPY --chown=node:node package*.json ./
 COPY --chown=node:node lib/package*.json ./lib/
+COPY --chown=node:node acme/package*.json ./acme/
 COPY --chown=node:node server/package*.json ./server/
 
 # Copy Prisma schema + config for runtime `prisma migrate deploy`
@@ -93,12 +108,15 @@ RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 
 # Install production dependencies only
 RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
-    npm install --workspace=lib --workspace=server --omit=dev
+    npm install --workspace=lib --workspace=acme --workspace=server --omit=dev
 
 # --- Code layer (changes on every code change, but small ~20MB) ---
 
 # Copy built lib artifacts
 COPY --chown=node:node --from=lib-builder /app/lib/dist ./lib/dist
+
+# Copy built acme artifacts
+COPY --chown=node:node --from=acme-builder /app/acme/dist ./acme/dist
 
 # Copy built frontend assets (served by Express from server/public)
 COPY --chown=node:node --from=client-builder /app/server/public ./server/public

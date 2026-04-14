@@ -1,0 +1,23 @@
+{
+  "name": "@mini-infra/acme",
+  "version": "0.1.0",
+  "description": "In-house ACME (RFC 8555) client for Let's Encrypt, zero runtime dependencies",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
