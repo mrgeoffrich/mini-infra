@@ -498,6 +498,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     helpDoc: "settings/ai-assistant",
   },
 
+  "/system-diagnostics": {
+    path: "/system-diagnostics",
+    title: "System Diagnostics",
+    breadcrumbLabel: "System Diagnostics",
+    icon: IconActivity,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Server process memory and heap diagnostics",
+  },
+
   "/settings-self-update": {
     path: "/settings-self-update",
     title: "System Update",

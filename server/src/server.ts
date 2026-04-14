@@ -1,6 +1,9 @@
 console.log("[STARTUP] Starting Mini Infra server...");
 console.log("[STARTUP] Importing app module...");
 import { createServer } from "http";
+import v8 from "v8";
+import os from "os";
+import path from "path";
 import app from "./app";
 console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
@@ -589,6 +592,23 @@ startServer()
 
     process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+    // SIGUSR2 triggers a heap snapshot on disk — useful for diagnosing leaks
+    // in a running container without restart. Retrieve via `docker cp`.
+    process.on("SIGUSR2", () => {
+      const dir = process.env.HEAP_SNAPSHOT_DIR || os.tmpdir();
+      const filePath = path.join(dir, `heap-${Date.now()}-${process.pid}.heapsnapshot`);
+      try {
+        const startedAt = Date.now();
+        const written = v8.writeHeapSnapshot(filePath);
+        logger.info(
+          { path: written, durationMs: Date.now() - startedAt },
+          "Heap snapshot written (SIGUSR2)",
+        );
+      } catch (err) {
+        logger.error({ err }, "Failed to write heap snapshot on SIGUSR2");
+      }
+    });
   })
   .catch((error) => {
     // Use console.error to avoid Pino flush timeout on exit
