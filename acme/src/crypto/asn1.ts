@@ -39,6 +39,9 @@ export const integer = (value: number | bigint | Buffer): Buffer => {
 
 export const nullValue = (): Buffer => Buffer.from([0x05, 0x00]);
 
+export const boolean = (value: boolean): Buffer =>
+  Buffer.from([0x01, 0x01, value ? 0xff : 0x00]);
+
 export const oid = (value: string): Buffer => {
   const parts = value.split(".").map((p) => parseInt(p, 10));
   if (parts.length < 2) throw new Error(`Invalid OID: ${value}`);

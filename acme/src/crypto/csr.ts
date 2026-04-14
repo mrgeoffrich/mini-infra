@@ -14,7 +14,8 @@ const subjectAltNameExtension = (altNames: string[]): Buffer => {
   const sanValue = asn1.sequence(...generalNames);
 
   // Extension ::= SEQUENCE { extnID OID, critical BOOLEAN DEFAULT FALSE, extnValue OCTET STRING }
-  return asn1.sequence(asn1.oid(SAN_OID), asn1.octetString(sanValue));
+  // Subject DN is empty, so RFC 5280 §4.2.1.6 requires SAN to be critical.
+  return asn1.sequence(asn1.oid(SAN_OID), asn1.boolean(true), asn1.octetString(sanValue));
 };
 
 const extensionRequestAttribute = (altNames: string[]): Buffer => {
@@ -29,10 +30,17 @@ export interface CsrResult {
   csrDer: Buffer;
 }
 
+const ASCII_DNS = /^[\x21-\x7e]+$/;
+
 export const createCsr = (opts: { altNames: string[]; keySize?: number; privateKeyPem?: Buffer | string }): CsrResult => {
   const altNames = opts.altNames;
   if (!altNames || altNames.length === 0) {
     throw new Error("createCsr requires at least one altName");
+  }
+  for (const name of altNames) {
+    if (!ASCII_DNS.test(name)) {
+      throw new Error(`Non-ASCII domain name in CSR: ${name} (callers must punycode IDNs before passing altNames)`);
+    }
   }
 
   let privateKeyPem: string;

@@ -56,6 +56,7 @@ vi.mock("../../../lib/prisma", () => ({
     },
     acmeAccount: {
       create: vi.fn().mockResolvedValue({}),
+      findFirst: vi.fn().mockResolvedValue(null),
     },
   },
 }));

@@ -59,7 +59,10 @@ export class AcmeHttpClient {
 
   private directoryCache: Directory | null = null;
   private directoryFetchedAt = 0;
+  private directoryPromise: Promise<Directory> | null = null;
   private nonce: string | null = null;
+  // Serializes signed requests so the single-slot nonce cache is never raced.
+  private signedChain: Promise<unknown> = Promise.resolve();
 
   constructor(opts: AcmeHttpClientOptions) {
     this.directoryUrl = opts.directoryUrl;
@@ -75,19 +78,29 @@ export class AcmeHttpClient {
 
   async getDirectory(): Promise<Directory> {
     const age = Date.now() - this.directoryFetchedAt;
-    if (!this.directoryCache || age > this.directoryMaxAgeMs) {
-      const res = await this.fetchImpl(this.directoryUrl, { method: "GET" });
-      const headers = readHeaders(res);
-      const data = (await parseBody(res)) as Directory | AcmeProblem;
-      if (res.status >= 400 || !data) {
-        throw new AcmeProblemError(
-          isProblemJson(headers, data) ? data : { detail: `Failed to fetch ACME directory (status ${res.status})` }
-        );
-      }
-      this.directoryCache = data as Directory;
-      this.directoryFetchedAt = Date.now();
+    if (this.directoryCache && age <= this.directoryMaxAgeMs) {
+      return this.directoryCache;
     }
-    return this.directoryCache;
+    if (!this.directoryPromise) {
+      this.directoryPromise = (async () => {
+        try {
+          const res = await this.fetchImpl(this.directoryUrl, { method: "GET" });
+          const headers = readHeaders(res);
+          const data = (await parseBody(res)) as Directory | AcmeProblem;
+          if (res.status >= 400 || !data) {
+            throw new AcmeProblemError(
+              isProblemJson(headers, data) ? data : { detail: `Failed to fetch ACME directory (status ${res.status})` }
+            );
+          }
+          this.directoryCache = data as Directory;
+          this.directoryFetchedAt = Date.now();
+          return this.directoryCache;
+        } finally {
+          this.directoryPromise = null;
+        }
+      })();
+    }
+    return this.directoryPromise;
   }
 
   async getResourceUrl(name: keyof Directory | string): Promise<string> {
@@ -141,48 +154,56 @@ export class AcmeHttpClient {
     };
   }
 
-  async signedRequest<T = unknown>(
+  signedRequest<T = unknown>(
     url: string,
     payload: unknown,
     opts: { kid?: string | null } = {}
   ): Promise<AcmeResponse<T>> {
-    let attempts = 0;
-    for (;;) {
-      const nonce = await this.getNonce();
-      const body = this.signer.createSignedBody({
-        url,
-        nonce,
-        kid: opts.kid ?? null,
-        payload,
-      });
-      const res = await this.fetchImpl(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/jose+json" },
-        body: JSON.stringify(body),
-      });
-      const headers = readHeaders(res);
-      this.updateNonce(headers);
-      const data = (await parseBody(res)) as T;
+    const run = async (): Promise<AcmeResponse<T>> => {
+      let attempts = 0;
+      for (;;) {
+        const nonce = await this.getNonce();
+        const body = this.signer.createSignedBody({
+          url,
+          nonce,
+          kid: opts.kid ?? null,
+          payload,
+        });
+        const res = await this.fetchImpl(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/jose+json" },
+          body: JSON.stringify(body),
+        });
+        const headers = readHeaders(res);
+        this.updateNonce(headers);
+        const data = (await parseBody(res)) as T;
 
-      if (res.status === 400 && isProblemJson(headers, data)) {
-        if (data.type === "urn:ietf:params:acme:error:badNonce" && attempts < this.maxBadNonceRetries) {
-          attempts += 1;
-          continue;
+        if (res.status === 400 && isProblemJson(headers, data)) {
+          if (data.type === "urn:ietf:params:acme:error:badNonce" && attempts < this.maxBadNonceRetries) {
+            attempts += 1;
+            continue;
+          }
         }
-      }
 
-      if (res.status >= 400) {
-        const problem: AcmeProblem = isProblemJson(headers, data) ? (data as AcmeProblem) : { detail: `HTTP ${res.status}` };
-        throw new AcmeProblemError(problem);
-      }
+        if (res.status >= 400) {
+          const problem: AcmeProblem = isProblemJson(headers, data) ? (data as AcmeProblem) : { detail: `HTTP ${res.status}` };
+          throw new AcmeProblemError(problem);
+        }
 
-      return {
-        status: res.status,
-        headers,
-        data,
-        location: headers["location"],
-        retryAfterSeconds: parseRetryAfter(headers["retry-after"]),
-      };
-    }
+        return {
+          status: res.status,
+          headers,
+          data,
+          location: headers["location"],
+          retryAfterSeconds: parseRetryAfter(headers["retry-after"]),
+        };
+      }
+    };
+
+    // Chain onto the previous request so signed requests never run concurrently.
+    // The nonce cache is a single slot; parallel callers would race it.
+    const next = this.signedChain.then(run, run);
+    this.signedChain = next.catch(() => undefined);
+    return next;
   }
 }

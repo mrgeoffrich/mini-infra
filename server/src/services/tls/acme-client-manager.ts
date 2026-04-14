@@ -77,13 +77,25 @@ export class AcmeClientManager {
         await this.certificateStore.storeAccountKey(acmeConfig.email, accountKey.toString());
       }
 
+      // Look up any persisted ACME account URL so signed operations (e.g. revoke)
+      // can run without creating a new account. Missing row is fine — auto() will
+      // register on first issuance.
+      const existingAccount = await prisma.acmeAccount.findFirst({
+        where: { email: acmeConfig.email, provider: acmeConfig.provider, status: "ACTIVE" },
+        select: { accountUrl: true },
+      });
+
       // Create ACME client
       this.acmeClient = new acme.AcmeClient({
         directoryUrl,
         accountKey,
+        accountUrl: existingAccount?.accountUrl ?? null,
       });
 
-      this.logger.info({ provider: acmeConfig.provider }, "ACME client initialized successfully");
+      this.logger.info(
+        { provider: acmeConfig.provider, hasAccountUrl: Boolean(existingAccount?.accountUrl) },
+        "ACME client initialized successfully"
+      );
     } catch (error) {
       this.logger.error(
         { error: error instanceof Error ? error.message : String(error) },

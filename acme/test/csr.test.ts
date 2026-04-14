@@ -36,6 +36,18 @@ describe("createCsr", () => {
     expect(() => createCsr({ altNames: [] })).toThrow(/at least one altName/);
   });
 
+  it("throws on non-ASCII (unpunycoded) domain names", () => {
+    expect(() => createCsr({ altNames: ["münchen.example"] })).toThrow(/Non-ASCII/);
+    expect(() => createCsr({ altNames: ["例え.test"] })).toThrow(/Non-ASCII/);
+  });
+
+  it("marks SAN extension critical (subject DN is empty)", () => {
+    const { csrDer } = createCsr({ altNames: ["example.com"] });
+    // SAN OID DER: 06 03 55 1d 11, then critical BOOLEAN TRUE: 01 01 ff, then OCTET STRING
+    const sanExtensionPattern = Buffer.from([0x06, 0x03, 0x55, 0x1d, 0x11, 0x01, 0x01, 0xff]);
+    expect(csrDer.includes(sanExtensionPattern)).toBe(true);
+  });
+
   it("csr DER starts with SEQUENCE tag and encodes length correctly", () => {
     const { csrDer } = createCsr({ altNames: ["example.com"] });
     expect(csrDer[0]).toBe(0x30); // SEQUENCE
