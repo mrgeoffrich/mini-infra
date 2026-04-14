@@ -9,6 +9,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -24,6 +26,48 @@ import {
   IconLoader2,
   IconRefresh,
 } from "@tabler/icons-react";
+
+const PROCESS_EXPLANATIONS: Record<string, string> = {
+  RSS: "Resident Set Size — total RAM the process holds, including heap, code, stacks, and native allocations.",
+  "Heap used": "JavaScript objects currently alive in the V8 heap.",
+  "Heap total": "Size V8 has committed for the heap; grows as needed up to the limit.",
+  External:
+    "Memory held by C++ objects bound to JS (Buffers, native addons, etc.) — lives outside the V8 heap.",
+  "Array buffers":
+    "Bytes allocated for ArrayBuffers / SharedArrayBuffers. Counted within External.",
+};
+
+const HEAP_EXPLANATIONS: Record<string, string> = {
+  Used: "Live JS objects in the heap right now.",
+  Total: "Committed heap size — what V8 has reserved from the OS.",
+  Physical:
+    "Heap pages actually backed by RAM. Can be lower than Total if pages were released.",
+  Available: "Headroom before hitting the heap size limit.",
+  Limit:
+    "Maximum heap V8 will grow to (controlled by --max-old-space-size). OOM crashes happen past this.",
+  Malloced: "V8's current internal C++ allocations (metadata, parser state, etc.).",
+  "Peak malloced": "Highest malloced value since process start — useful for spotting transient spikes.",
+  "Native contexts":
+    "Top-level JS contexts. Normally 1. Growing numbers usually indicate leaked vm/iframe contexts.",
+};
+
+const HEAP_SPACE_EXPLANATIONS: Record<string, string> = {
+  read_only_space: "Immutable V8 internals (builtins, snapshots). Shared, never GC'd.",
+  new_space:
+    "Young generation — where new allocations land. Collected frequently (scavenge GC).",
+  old_space: "Objects that survived enough young GCs to be promoted. Collected by mark-sweep.",
+  code_space: "JIT-compiled machine code for hot JS functions.",
+  shared_space: "Objects shared across isolates (worker threads).",
+  trusted_space: "V8 internal objects treated as trusted (sandbox-related).",
+  shared_trusted_space: "Trusted objects shared across isolates.",
+  new_large_object_space:
+    "Large allocations (≥~500 KB) made in the young generation — too big for new_space.",
+  large_object_space: "Large allocations in the old generation.",
+  code_large_object_space: "Oversized compiled code objects.",
+  shared_large_object_space: "Large shared objects across isolates.",
+  shared_trusted_large_object_space: "Large trusted shared objects.",
+  trusted_large_object_space: "Large trusted objects.",
+};
 
 interface MemoryDiagnostics {
   timestamp: string;
@@ -84,6 +128,7 @@ function formatUptime(seconds: number): string {
 
 export default function SystemDiagnosticsPage() {
   const [downloading, setDownloading] = useState(false);
+  const [showExplanations, setShowExplanations] = useState(false);
 
   const query = useQuery<MemoryDiagnostics>({
     queryKey: ["diagnostics", "memory"],
@@ -147,7 +192,17 @@ export default function SystemDiagnosticsPage() {
             Server process memory, V8 heap statistics, and heap snapshots.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="show-explanations"
+              checked={showExplanations}
+              onCheckedChange={setShowExplanations}
+            />
+            <Label htmlFor="show-explanations" className="text-sm">
+              Show explanations
+            </Label>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -198,23 +253,47 @@ export default function SystemDiagnosticsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-5">
-                <Stat label="RSS" value={formatBytes(data.process.rss)} />
+              <dl
+                className={`grid gap-x-6 gap-y-3 ${
+                  showExplanations
+                    ? "grid-cols-1 md:grid-cols-2"
+                    : "grid-cols-2 md:grid-cols-5"
+                }`}
+              >
+                <Stat
+                  label="RSS"
+                  value={formatBytes(data.process.rss)}
+                  description={showExplanations ? PROCESS_EXPLANATIONS.RSS : undefined}
+                />
                 <Stat
                   label="Heap used"
                   value={formatBytes(data.process.heapUsed)}
+                  description={
+                    showExplanations ? PROCESS_EXPLANATIONS["Heap used"] : undefined
+                  }
                 />
                 <Stat
                   label="Heap total"
                   value={formatBytes(data.process.heapTotal)}
+                  description={
+                    showExplanations ? PROCESS_EXPLANATIONS["Heap total"] : undefined
+                  }
                 />
                 <Stat
                   label="External"
                   value={formatBytes(data.process.external)}
+                  description={
+                    showExplanations ? PROCESS_EXPLANATIONS.External : undefined
+                  }
                 />
                 <Stat
                   label="Array buffers"
                   value={formatBytes(data.process.arrayBuffers)}
+                  description={
+                    showExplanations
+                      ? PROCESS_EXPLANATIONS["Array buffers"]
+                      : undefined
+                  }
                 />
               </dl>
             </CardContent>
@@ -235,38 +314,60 @@ export default function SystemDiagnosticsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4">
+              <dl
+                className={`grid gap-x-6 gap-y-3 ${
+                  showExplanations
+                    ? "grid-cols-1 md:grid-cols-2"
+                    : "grid-cols-2 md:grid-cols-4"
+                }`}
+              >
                 <Stat
                   label="Used"
                   value={formatBytes(data.heap.usedHeapSize)}
+                  description={showExplanations ? HEAP_EXPLANATIONS.Used : undefined}
                 />
                 <Stat
                   label="Total"
                   value={formatBytes(data.heap.totalHeapSize)}
+                  description={showExplanations ? HEAP_EXPLANATIONS.Total : undefined}
                 />
                 <Stat
                   label="Physical"
                   value={formatBytes(data.heap.totalPhysicalSize)}
+                  description={showExplanations ? HEAP_EXPLANATIONS.Physical : undefined}
                 />
                 <Stat
                   label="Available"
                   value={formatBytes(data.heap.totalAvailableSize)}
+                  description={
+                    showExplanations ? HEAP_EXPLANATIONS.Available : undefined
+                  }
                 />
                 <Stat
                   label="Limit"
                   value={formatBytes(data.heap.heapSizeLimit)}
+                  description={showExplanations ? HEAP_EXPLANATIONS.Limit : undefined}
                 />
                 <Stat
                   label="Malloced"
                   value={formatBytes(data.heap.mallocedMemory)}
+                  description={showExplanations ? HEAP_EXPLANATIONS.Malloced : undefined}
                 />
                 <Stat
                   label="Peak malloced"
                   value={formatBytes(data.heap.peakMallocedMemory)}
+                  description={
+                    showExplanations ? HEAP_EXPLANATIONS["Peak malloced"] : undefined
+                  }
                 />
                 <Stat
                   label="Native contexts"
                   value={data.heap.numberOfNativeContexts.toString()}
+                  description={
+                    showExplanations
+                      ? HEAP_EXPLANATIONS["Native contexts"]
+                      : undefined
+                  }
                 />
               </dl>
             </CardContent>
@@ -286,6 +387,7 @@ export default function SystemDiagnosticsPage() {
                     <TableHead className="text-right">Size</TableHead>
                     <TableHead className="text-right">Available</TableHead>
                     <TableHead className="text-right">Physical</TableHead>
+                    {showExplanations && <TableHead>What it holds</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -306,6 +408,11 @@ export default function SystemDiagnosticsPage() {
                       <TableCell className="text-right">
                         {formatBytes(space.physical)}
                       </TableCell>
+                      {showExplanations && (
+                        <TableCell className="text-xs text-muted-foreground">
+                          {HEAP_SPACE_EXPLANATIONS[space.name] ?? "—"}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -336,11 +443,22 @@ export default function SystemDiagnosticsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description?: string;
+}) {
   return (
     <div>
       <dt className="text-xs uppercase text-muted-foreground">{label}</dt>
       <dd className="font-mono text-sm">{value}</dd>
+      {description && (
+        <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      )}
     </div>
   );
 }
