@@ -30,7 +30,7 @@ const testDockerRegistrySchema = z.object({
 });
 
 router.post("/test-docker-registry", requirePermission('settings:write') as RequestHandler, (async (
-  req: Request<{}, TestDockerRegistryResponse, TestDockerRegistryRequest>,
+  req: Request<Record<string, string>, TestDockerRegistryResponse, TestDockerRegistryRequest>,
   res: Response<TestDockerRegistryResponse>,
   _next: NextFunction,
 ) => {

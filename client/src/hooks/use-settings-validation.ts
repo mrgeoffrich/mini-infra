@@ -163,7 +163,7 @@ export function useSettingsValidator(
   const { enabled = true, debounceDelay = 500, retry = 1 } = options;
 
   const [debouncedSettings, setDebouncedSettings] = useState(settings);
-  const timeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const correlationId = generateCorrelationId();
 
   // Debounce settings changes
@@ -370,7 +370,7 @@ export function useValidationRecovery(
 
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [isRecovering, setIsRecovering] = useState<Record<string, boolean>>({});
-  const timeoutsRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const retryValidation = useCallback(
     (

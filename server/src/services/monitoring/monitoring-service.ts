@@ -11,7 +11,6 @@ import {
   ServiceMetadata,
   ServiceStatusInfo,
   StartupResult,
-  HealthStatus,
   HealthStatusValues,
   NetworkRequirement,
   VolumeRequirement,
