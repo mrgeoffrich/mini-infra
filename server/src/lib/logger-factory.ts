@@ -1,11 +1,15 @@
 import pino from "pino";
 import path from "path";
 import {
-  getLoggerConfig,
+  LOG_COMPONENTS,
+  type LogComponent,
+  getComponentLevel,
+  getDestinationConfig,
   getRedactionPaths,
   ensureLogDirectory,
-  type LoggerConfig,
+  legacyTypeToComponent,
 } from "./logging-config";
+import { getContext } from "./logging-context";
 
 // Helper function to properly serialize errors for logging
 export const serializeError = (error: unknown): unknown => {
@@ -18,7 +22,6 @@ export const serializeError = (error: unknown): unknown => {
       code: errWithProps.code ?? undefined,
       errno: errWithProps.errno ?? undefined,
       syscall: errWithProps.syscall ?? undefined,
-      // Include any additional enumerable properties
       ...Object.getOwnPropertyNames(error).reduce(
         (acc, key) => {
           if (!["name", "message", "stack"].includes(key)) {
@@ -33,25 +36,25 @@ export const serializeError = (error: unknown): unknown => {
   return error;
 };
 
-// Cache for logger instances
-const loggerCache = new Map<string, pino.Logger>();
+const componentRootCache = new Map<LogComponent, pino.Logger>();
+const subcomponentCache = new Map<string, pino.Logger>();
 
-// Constants for stack trace parsing
 const STACKTRACE_OFFSET = 2;
 const {
   symbols: { asJsonSym },
 } = pino;
 
-// Function to create a proxy wrapper for adding caller information
+// Inject `caller` (file:line) into every log line by walking the stack trace.
 function traceCaller(pinoInstance: pino.Logger): pino.Logger {
   const get = (target: pino.Logger, name: string | symbol): unknown =>
-    name === asJsonSym ? asJson : (target as unknown as Record<string | symbol, unknown>)[name];
+    name === asJsonSym
+      ? asJson
+      : (target as unknown as Record<string | symbol, unknown>)[name];
 
   function asJson(this: unknown, ...args: unknown[]): unknown {
     try {
       args[0] = args[0] || Object.create(null);
 
-      // Extract caller information from stack trace
       const stack = Error().stack;
       if (stack) {
         const stackLines = stack
@@ -73,7 +76,6 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
           if (match) {
             const fullPath = match[1];
             const lineNumber = match[2];
-            // Make path relative to project root
             const projectRoot = path.resolve(process.cwd());
             const relativePath = path
               .relative(projectRoot, fullPath)
@@ -83,179 +85,175 @@ function traceCaller(pinoInstance: pino.Logger): pino.Logger {
         }
       }
 
-      const pinoRecord = pinoInstance as unknown as Record<symbol, (...args: unknown[]) => unknown>;
+      const pinoRecord = pinoInstance as unknown as Record<
+        symbol,
+        (...args: unknown[]) => unknown
+      >;
       return pinoRecord[asJsonSym].apply(this, args);
     } catch {
-      // If there's an error in caller tracking, fall back to original logging
-      const pinoRecord = pinoInstance as unknown as Record<symbol, (...args: unknown[]) => unknown>;
+      const pinoRecord = pinoInstance as unknown as Record<
+        symbol,
+        (...args: unknown[]) => unknown
+      >;
       return pinoRecord[asJsonSym].apply(this, args);
     }
   }
 
-  return new Proxy(pinoInstance, { get: get as ProxyHandler<pino.Logger>['get'] });
+  return new Proxy(pinoInstance, {
+    get: get as ProxyHandler<pino.Logger>["get"],
+  });
 }
 
-// Transport target interface for Pino
+function contextMixin(): Record<string, unknown> {
+  const ctx = getContext();
+  if (!ctx) return {};
+  const out: Record<string, unknown> = {};
+  if (ctx.requestId) out.requestId = ctx.requestId;
+  if (ctx.userId) out.userId = ctx.userId;
+  if (ctx.operationId) out.operationId = ctx.operationId;
+  return out;
+}
+
 interface PinoTransportTarget {
   target: string;
   options: Record<string, unknown>;
   level: string;
 }
 
-// Base Pino options for all loggers
-function createBaseLoggerOptions(config: LoggerConfig): pino.LoggerOptions {
-  const redactionPaths = getRedactionPaths();
+function buildTransportTargets(level: string): PinoTransportTarget[] {
+  const { destination, rotation } = getDestinationConfig();
+  if (!destination) return [];
 
-  const baseOptions: pino.LoggerOptions = {
-    level: config.level,
-    redact: {
-      paths: redactionPaths,
-      censor: "[REDACTED]",
-    },
-    serializers: {
-      error: serializeError,
-    },
-  };
+  ensureLogDirectory(destination);
+  const resolved = path.resolve(destination);
 
-  // Configure transport targets (file and/or console)
-  const targets: PinoTransportTarget[] = [];
-
-  // Add file destination if specified
-  if (config.destination) {
-    ensureLogDirectory(config.destination);
-    const destination = path.resolve(config.destination);
-
-    if (config.rotation?.enabled) {
-      // Use pino-roll for log rotation in production
-      targets.push({
+  if (rotation?.enabled) {
+    return [
+      {
         target: "pino-roll",
         options: {
-          file: destination,
+          file: resolved,
           frequency: "daily",
           mkdir: true,
-          ...(config.rotation.maxSize && { size: config.rotation.maxSize }),
-          ...(config.rotation.maxFiles && { limit: { count: parseInt(config.rotation.maxFiles) } }),
+          ...(rotation.maxSize && { size: rotation.maxSize }),
+          ...(rotation.maxFiles && {
+            limit: { count: parseInt(rotation.maxFiles) },
+          }),
         },
-        level: config.level,
-      });
-    } else {
-      // Simple file destination without rotation
-      targets.push({
-        target: "pino/file",
-        options: {
-          destination,
-          mkdir: true,
-        },
-        level: config.level,
-      });
-    }
-
-  }
-
-  // Add console output with pretty print for development
-  if (config.prettyPrint) {
-    targets.push({
-      target: "pino-pretty",
-      options: {
-        colorize: true,
-        translateTime: "yyyy-mm-dd HH:MM:ss",
-        ignore: "pid,hostname",
+        level,
       },
-      level: config.level,
-    });
+    ];
   }
 
-  // Set up transport based on number of targets
+  return [
+    {
+      target: "pino/file",
+      options: { destination: resolved, mkdir: true },
+      level,
+    },
+  ];
+}
+
+function createComponentRoot(component: LogComponent): pino.Logger {
+  const level = getComponentLevel(component);
+  const redactionPaths = getRedactionPaths();
+
+  const options: pino.LoggerOptions = {
+    level,
+    redact: { paths: redactionPaths, censor: "[REDACTED]" },
+    serializers: { error: serializeError },
+    base: { component },
+    mixin: contextMixin,
+    timestamp: pino.stdTimeFunctions.isoTime,
+    formatters: { level: (label: string) => ({ level: label }) },
+  };
+
+  const targets = buildTransportTargets(level);
   if (targets.length === 1) {
-    baseOptions.transport = targets[0];
+    options.transport = targets[0];
   } else if (targets.length > 1) {
-    baseOptions.transport = {
-      targets: targets,
-    };
+    options.transport = { targets };
   }
 
-  // Production structured JSON with timestamp
-  if (!config.prettyPrint && !baseOptions.transport) {
-    baseOptions.formatters = {
-      level: (label: string) => ({ level: label }),
-    };
-    baseOptions.timestamp = pino.stdTimeFunctions.isoTime;
-  }
-
-  return baseOptions;
+  const root = pino(options);
+  return traceCaller(root);
 }
 
-// Create or get cached logger instance
-function createLogger(loggerType: string): pino.Logger {
-  if (loggerCache.has(loggerType)) {
-    return loggerCache.get(loggerType)!;
-  }
-
-  const config = getLoggerConfig(loggerType as Parameters<typeof getLoggerConfig>[0]);
-  const options = createBaseLoggerOptions(config);
-  let logger = pino(options);
-
-  // Apply caller information tracking if enabled
-  if (config.includeCaller) {
-    logger = traceCaller(logger);
-  }
-
-  loggerCache.set(loggerType, logger);
-  return logger;
+function getComponentRoot(component: LogComponent): pino.Logger {
+  const cached = componentRootCache.get(component);
+  if (cached) return cached;
+  const root = createComponentRoot(component);
+  componentRootCache.set(component, root);
+  return root;
 }
 
-// Exported logger instances for different domains
-export const appLogger = () => createLogger("app");
-export const httpLogger = () => createLogger("http");
-export const prismaLogger = () => createLogger("prisma");
-export const servicesLogger = () => createLogger("services");
-export const dockerExecutorLogger = () => createLogger("dockerexecutor");
-export const deploymentLogger = () => createLogger("deployments");
-export const loadbalancerLogger = () => createLogger("loadbalancer");
-export const selfBackupLogger = () => createLogger("self-backup");
-export const tlsLogger = () => createLogger("tls");
-export const agentLogger = () => createLogger("agent");
-
-// Generic logger factory function
+/**
+ * Primary logger factory.
+ *
+ * Two call shapes:
+ *  - `getLogger(component, subcomponent)` — new API. Returns a child of the
+ *    component root with the `subcomponent` field bound.
+ *  - `getLogger(legacyType)` — legacy API, kept alive during the migration
+ *    window. Maps the old category name to a component root.
+ */
 export function getLogger(
-  loggerType:
-    | "app"
-    | "http"
-    | "prisma"
-    | "services"
-    | "dockerexecutor"
-    | "deployments"
-    | "loadbalancer"
-    | "self-backup"
-    | "tls"
-    | "agent",
+  component: LogComponent,
+  subcomponent: string,
+): pino.Logger;
+export function getLogger(legacyType: string): pino.Logger;
+export function getLogger(
+  componentOrLegacy: string,
+  subcomponent?: string,
 ): pino.Logger {
-  return createLogger(loggerType);
+  if (subcomponent !== undefined) {
+    const component = componentOrLegacy as LogComponent;
+    if (!LOG_COMPONENTS.includes(component)) {
+      throw new Error(`Unknown log component: ${component}`);
+    }
+    const cacheKey = `${component}::${subcomponent}`;
+    const cached = subcomponentCache.get(cacheKey);
+    if (cached) return cached;
+    const child = getComponentRoot(component).child({ subcomponent });
+    subcomponentCache.set(cacheKey, child);
+    return child;
+  }
+
+  const component = legacyTypeToComponent(componentOrLegacy);
+  return getComponentRoot(component);
 }
 
-// Clear logger cache (useful for testing or config reloads)
+// Legacy single-component exports. Each routes to the equivalent new component
+// root. Removed in the final phase of the migration.
+export const appLogger = () => getComponentRoot(legacyTypeToComponent("app"));
+export const httpLogger = () => getComponentRoot(legacyTypeToComponent("http"));
+export const prismaLogger = () =>
+  getComponentRoot(legacyTypeToComponent("prisma"));
+export const servicesLogger = () =>
+  getComponentRoot(legacyTypeToComponent("services"));
+export const dockerExecutorLogger = () =>
+  getComponentRoot(legacyTypeToComponent("dockerexecutor"));
+export const deploymentLogger = () =>
+  getComponentRoot(legacyTypeToComponent("deployments"));
+export const loadbalancerLogger = () =>
+  getComponentRoot(legacyTypeToComponent("loadbalancer"));
+export const selfBackupLogger = () =>
+  getComponentRoot(legacyTypeToComponent("self-backup"));
+export const tlsLogger = () => getComponentRoot(legacyTypeToComponent("tls"));
+export const agentLogger = () =>
+  getComponentRoot(legacyTypeToComponent("agent"));
+
 export function clearLoggerCache(): void {
-  loggerCache.clear();
+  componentRootCache.clear();
+  subcomponentCache.clear();
 }
 
-// Create child logger with additional context
+// Legacy child-logger helper, kept for callers that bind extra context.
 export function createChildLogger(
-  loggerType:
-    | "app"
-    | "http"
-    | "prisma"
-    | "services"
-    | "dockerexecutor"
-    | "deployments"
-    | "loadbalancer"
-    | "self-backup"
-    | "tls"
-    | "agent",
+  legacyType: string,
   context: Record<string, unknown>,
 ): pino.Logger {
-  const parentLogger = getLogger(loggerType);
-  return parentLogger.child(context);
+  const component = legacyTypeToComponent(legacyType);
+  return getComponentRoot(component).child(context);
 }
 
-// Default export for backward compatibility
 export default appLogger;
