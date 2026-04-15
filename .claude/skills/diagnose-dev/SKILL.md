@@ -31,35 +31,50 @@ Based on what area is affected, pull the relevant information. Don't dump everyt
 
 #### Reading logs
 
-Logs are inside the Docker container at `/app/server/logs/`. They're structured JSON (Pino format). Each log domain has numbered files — the highest number is the most recent.
-
-To find the most recent log file for a domain and read it:
+All server logs go to a **single NDJSON file** inside the dev container at `/app/server/logs/app.<N>.log` (rotated daily + on size by `pino-roll`; highest `<N>` is the most recent). Every line carries `component`, `subcomponent`, and — when inside an HTTP request or long-running operation — `requestId` / `userId` / `operationId`. Filter by those structured fields rather than by filename.
 
 ```bash
-# List recent files for a domain, sorted by number (highest = newest)
-docker exec mini-infra-dev ls -t /app/server/logs/app-services.log.* | head -3
+# Find the most recent log file
+docker exec mini-infra-dev ls -t /app/server/logs/app.*.log | head -1
 
-# Read the most recent file (tail for recent entries)
-docker exec mini-infra-dev tail -100 /app/server/logs/app-services.log.<highest-number>
+# Tail it pretty-printed through jq
+docker exec mini-infra-dev sh -c 'tail -200 $(ls -t /app/server/logs/app.*.log | head -1)' \
+  | jq -c '{t:.time, lvl:.level, c:.component, s:.subcomponent, m:.msg, r:.requestId, op:.operationId}'
 
-# Search logs for errors
-docker exec mini-infra-dev grep -l "error\|err\|ERR" /app/server/logs/app.log.* | tail -3
+# All errors anywhere
+docker exec mini-infra-dev sh -c 'grep -h "\"level\":\"error\"" /app/server/logs/app.*.log' | jq -c .
+
+# Everything from one component
+docker exec mini-infra-dev sh -c 'grep -h "\"component\":\"tls\"" /app/server/logs/app.*.log' | jq -c .
+
+# One subcomponent (narrower)
+docker exec mini-infra-dev sh -c 'grep -h "\"subcomponent\":\"acme-client-manager\"" /app/server/logs/app.*.log' | jq -c .
+
+# One HTTP request end-to-end (access log + every service log it touched)
+docker exec mini-infra-dev sh -c 'grep -h "\"requestId\":\"<id>\"" /app/server/logs/app.*.log' | jq -c .
+
+# One long-running operation end-to-end (backup, restore, stack apply, cert issuance, scheduler tick)
+docker exec mini-infra-dev sh -c 'grep -h "\"operationId\":\"<prefix>-<uuid>\"" /app/server/logs/app.*.log' | jq -c .
 ```
 
-Pick the right log domain based on the issue:
+Pick the right `component` / `subcomponent` for the issue area:
 
-| Issue area | Log domain |
-|---|---|
-| General app errors, startup | `app.log.*` |
-| HTTP request/response issues | `app-http.log.*` |
-| Service-level logic (schedulers, configs) | `app-services.log.*` |
-| Container operations | `app-dockerexecutor.log.*` |
-| Deployments | `app-deployments.log.*` |
-| HAProxy / load balancer | `app-loadbalancer.log.*` |
-| TLS / certificates | `app-tls.log.*` |
-| Database / Prisma | `app-prisma.log.*` |
-| Backup operations | `app-self-backup.log.*` |
-| AI agent | `app-agent.log.*` |
+| Issue area | `component` | Typical subcomponents |
+|---|---|---|
+| HTTP requests / responses | `http` | `access` (pino-http access log), route file names |
+| Auth: JWT, API keys, permissions | `auth` | `jwt-middleware`, `api-key-middleware`, `auth-middleware`, `permission-middleware` |
+| Database / Prisma | `db` | `prisma`, postgres server/database managers |
+| Docker / image pulls / registry | `docker` | `docker-service`, `docker-executor`, `registry-manager`, `container-lifecycle-manager` |
+| Stack plan / apply / reconcile | `stacks` | `stack-reconciler`, `stack-plan-computer`, `builtin-stack-sync`, environment manager |
+| Blue/green deployments | `deploy` | `blue-green-*-state-machine`, deploy-oriented HAProxy action files |
+| HAProxy dataplane / frontends / backends | `haproxy` | `haproxy-service`, `haproxy-config-repair`, `mixin-*`, config action files |
+| TLS / certificates | `tls` | `acme-client-manager`, `certificate-lifecycle-manager`, `certificate-renewal-scheduler`, `certificate-distributor` |
+| Postgres / self backups / restores | `backup` | `backup-executor`, `backup-scheduler`, `self-backup-*`, `restore-runner`, `progress-tracker`, postgres backup routes |
+| Cloudflare / GitHub | `integrations` | `cloudflare-*`, `github-service`, `github-app-*` |
+| Agent sidecar / conversations | `agent` | `agent-service`, `agent-sidecar`, `agent-conversation-service`, `agent-api-key` |
+| Bootstrap, Socket.IO, schedulers, diagnostics, self-update | `platform` | `server`, `socket`, `connectivity-scheduler`, `dns-cache-scheduler`, `self-update`, `error-handler`, `monitoring-service` |
+
+The level for each `component` is set in `server/config/logging.json` per env (`development` / `production` / `test`). Change it there and restart the container — there is no runtime tuning.
 
 #### Agent sidecar logs
 

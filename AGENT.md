@@ -75,8 +75,19 @@ The dev key appears when `npm run dev` is running.
 - Cron-based jobs use `node-cron`; scheduling definitions live in `server/src/services/scheduler/`.
 
 ## Logging & Diagnostics
-- Pino logger is configured in `server/src/lib/logger.ts` with per-domain transports. Use context-rich log messages (`logger.child({ service: "xyz" })`).
-- HTTP logs go to `server/logs/app-http.log`, service logs to `server/logs/app-services.log`. Tail them when debugging long-running jobs.
+- Single entry point: `getLogger(component, subcomponent)` from `server/src/lib/logger-factory.ts`. Components: `http`, `auth`, `db`, `docker`, `stacks`, `deploy`, `haproxy`, `tls`, `backup`, `integrations`, `agent`, `platform`.
+- All server logs land in **one NDJSON file** at `server/logs/app.<N>.log` (rotated daily + size cap via `pino-roll`; highest `<N>` is newest). No per-domain files.
+- Every line carries `component`, `subcomponent`, and — inside a request scope — `requestId` (+ `userId` once auth resolves). Long-running operations (backups, restores, cert issuance/renewal, stack apply/update/stop/destroy, scheduler ticks) also carry `operationId` via `runWithContext` / `withOperation` from `server/src/lib/logging-context.ts`.
+- Grep by structured field, not by filename:
+  ```bash
+  tail -f server/logs/app.*.log | jq -c '{t:.time, lvl:.level, c:.component, s:.subcomponent, m:.msg, r:.requestId, op:.operationId}'
+  grep -h '"component":"tls"' server/logs/app.*.log | jq -c .
+  grep -h '"subcomponent":"acme-client-manager"' server/logs/app.*.log | jq -c .
+  grep -h '"requestId":"<id>"' server/logs/app.*.log | jq -c .         # one HTTP request end-to-end
+  grep -h '"operationId":"stack-apply-<id>"' server/logs/app.*.log | jq -c .  # one long-running op end-to-end
+  ```
+- Per-env levels (per component) in `server/config/logging.json` under `development` / `production` / `test`. Loaded once at boot — no runtime tuning, no UI, no hot reload. Change the JSON and restart the container to retune.
+- Console output is reserved for pre-logger boot code (`server.ts`, `app-factory.ts`, `prisma.ts`, `config-new.ts`, `logging-config.ts` fallback), scripts, and tests. Don't add new `console.*` calls elsewhere.
 
 ## Working Agreements for Codex
 - Stay within ASCII unless the file already uses Unicode characters.

@@ -228,28 +228,31 @@ Database-backed progress tracking for **backup and restore operations only**. Do
 
 ## Logging (`lib/logger-factory.ts`)
 
-One entry point per file. All log lines land in `logs/app.log` as NDJSON.
+One entry point per file. All log lines land in a **single NDJSON file**; `pino-roll` rotates it daily + on size cap to `logs/app.<N>.log` (highest `<N>` is newest — dev 10m/10 files, prod 50m/14 files).
 
 ```ts
 import { getLogger } from "@/lib/logger-factory";
-const log = getLogger("tls", "acme-client");
+const log = getLogger("tls", "acme-client-manager");
 log.info({ orderUrl }, "acme order created");
 ```
 
-Components (the `component` field): `http`, `auth`, `db`, `docker`, `stacks`, `deploy`, `haproxy`, `tls`, `backup`, `integrations`, `agent`, `platform`. The `subcomponent` is kebab-case, usually the filename without extension.
+Components (`component` field): `http`, `auth`, `db`, `docker`, `stacks`, `deploy`, `haproxy`, `tls`, `backup`, `integrations`, `agent`, `platform`. The `subcomponent` is kebab-case, usually the filename without extension.
 
-Every log line carries `component`, `subcomponent`, `caller` (file:line), and — when inside a request scope — `requestId` and `userId`. Long-running ops can opt in by wrapping work in `runWithContext({ operationId }, fn)` from `lib/logging-context.ts`; `operationId` then rides on every downstream line.
+Every log line carries `component`, `subcomponent`, and — when inside a request scope — `requestId` (+ `userId` once auth resolves). Long-running ops opt in by wrapping top-level work in `runWithContext({ operationId }, fn)` or `withOperation("<prefix>", fn)` from `lib/logging-context.ts`; `operationId` then rides on every downstream line emitted during that scope.
 
-Grep patterns:
+`pino-http` builds its own logger from `buildPinoHttpOptions("http", "access")` (exported from the factory) — **don't** pass a pre-built pino logger to pino-http, because pino-http ships its own nested pino copy whose internal Symbols don't match the server's. Hand it options, not an instance.
+
+Grep patterns (run against `logs/app.*.log` to cover rotation):
 
 ```sh
-grep '"component":"tls"' logs/app.log
-grep '"subcomponent":"acme-client"' logs/app.log
-grep '"requestId":"<id>"' logs/app.log
-tail -f logs/app.log | jq -c '{t:.time,c:.component,s:.subcomponent,m:.msg,r:.requestId}'
+grep -h '"component":"tls"' logs/app.*.log | jq -c .
+grep -h '"subcomponent":"acme-client-manager"' logs/app.*.log | jq -c .
+grep -h '"requestId":"<id>"' logs/app.*.log | jq -c .          # one HTTP request end-to-end
+grep -h '"operationId":"stack-apply-<id>"' logs/app.*.log | jq -c .  # one long-running op end-to-end
+tail -f $(ls -t logs/app.*.log | head -1) | jq -c '{t:.time, lvl:.level, c:.component, s:.subcomponent, m:.msg, r:.requestId, op:.operationId}'
 ```
 
-Per-component levels live in `config/logging.json` under `development` / `production` / `test`, loaded at boot. No runtime tuning, no UI, no hot reload. `pino-roll` rotates `logs/app.log` daily with a size cap (10m/10 dev, 50m/14 prod).
+Per-component levels live in `config/logging.json` under `development` / `production` / `test`, loaded at boot. No runtime tuning, no UI, no hot reload — change the JSON and restart the process.
 
 Console output is reserved for pre-logger boot (`server.ts`, `app-factory.ts`, `prisma.ts`, `config-new.ts`, `logging-config.ts` fallback) plus scripts and tests. Don't add new `console.*` calls outside those sites.
 

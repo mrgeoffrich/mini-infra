@@ -216,7 +216,7 @@ Follow the existing test conventions in the repo:
 - Tests live in `__tests__/` subdirs next to the code (`server/src/services/
   <domain>/__tests__/<name>.test.ts`).
 - Vitest is the runner. Global setup at `server/src/__tests__/setup-unit.ts`
-  already mocks the logger factory, so don't re-mock `servicesLogger`.
+  already mocks `getLogger` from the logger factory, so don't re-mock it.
 - Use `vi.mock` / `vi.spyOn` / `vi.hoisted` patterns already in the repo —
   grep existing test files for examples.
 - Construct real collaborators (e.g. a real `CircuitBreaker` with in-memory
