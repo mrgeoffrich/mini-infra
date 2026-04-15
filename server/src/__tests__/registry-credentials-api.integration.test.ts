@@ -27,6 +27,7 @@ vi.mock("../lib/logger-factory", () => {
 
   return {
     getLogger: vi.fn(function() { return mockLoggerInstance; }),
+    buildPinoHttpOptions: vi.fn(() => ({ level: "silent" })),
     createLogger: vi.fn(function() { return mockLoggerInstance; }),
     appLogger: vi.fn(function() { return mockLoggerInstance; }),
     servicesLogger: vi.fn(function() { return mockLoggerInstance; }),

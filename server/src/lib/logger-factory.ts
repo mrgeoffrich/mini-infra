@@ -10,6 +10,23 @@ import {
 } from "./logging-config";
 import { getContext } from "./logging-context";
 
+// Note on pino-http integration: pino-http ships its own nested copy of
+// pino, so symbols like `stringifySym` differ between pino instances loaded
+// from different paths. Passing a logger we built with the server's pino
+// crashes pino-http at res.finish ("TypeError: logger[stringifySym] is not
+// a function"). `buildPinoHttpOptions(component, subcomponent)` below
+// exposes the base pino options so callers can hand them to pino-http and
+// let it construct its own logger from its own pino copy — keeping the
+// `component` / `subcomponent` / mixin / redaction behaviour consistent
+// with the rest of the codebase.
+//
+// The previous implementation also wrapped every root logger in a Proxy
+// that intercepted `asJsonSym` to inject a `caller` file:line field. The
+// caller value was unreliable (stack offsets frequently resolved to
+// node:internal frames) and the Proxy broke pino-http's symbol-based
+// access — so the proxy was dropped. `subcomponent` is the single
+// identification field going forward.
+
 // Helper function to properly serialize errors for logging
 export const serializeError = (error: unknown): unknown => {
   if (error instanceof Error) {
@@ -37,71 +54,6 @@ export const serializeError = (error: unknown): unknown => {
 
 const componentRootCache = new Map<LogComponent, pino.Logger>();
 const subcomponentCache = new Map<string, pino.Logger>();
-
-const STACKTRACE_OFFSET = 2;
-const {
-  symbols: { asJsonSym },
-} = pino;
-
-// Inject `caller` (file:line) into every log line by walking the stack trace.
-function traceCaller(pinoInstance: pino.Logger): pino.Logger {
-  const get = (target: pino.Logger, name: string | symbol): unknown =>
-    name === asJsonSym
-      ? asJson
-      : (target as unknown as Record<string | symbol, unknown>)[name];
-
-  function asJson(this: unknown, ...args: unknown[]): unknown {
-    try {
-      args[0] = args[0] || Object.create(null);
-
-      const stack = Error().stack;
-      if (stack) {
-        const stackLines = stack
-          .split("\n")
-          .filter(
-            (s) =>
-              !s.includes("node_modules/pino") &&
-              !s.includes("node_modules\\pino") &&
-              !s.includes("logger-factory") &&
-              s.includes(" at "),
-          );
-
-        if (stackLines.length > STACKTRACE_OFFSET) {
-          const callerLine = stackLines[STACKTRACE_OFFSET];
-          const match =
-            callerLine.match(/at .* \((.+):(\d+):\d+\)/) ||
-            callerLine.match(/at (.+):(\d+):\d+/);
-
-          if (match) {
-            const fullPath = match[1];
-            const lineNumber = match[2];
-            const projectRoot = path.resolve(process.cwd());
-            const relativePath = path
-              .relative(projectRoot, fullPath)
-              .replace(/\\/g, "/");
-            (args[0] as Record<string, unknown>).caller = `${relativePath}:${lineNumber}`;
-          }
-        }
-      }
-
-      const pinoRecord = pinoInstance as unknown as Record<
-        symbol,
-        (...args: unknown[]) => unknown
-      >;
-      return pinoRecord[asJsonSym].apply(this, args);
-    } catch {
-      const pinoRecord = pinoInstance as unknown as Record<
-        symbol,
-        (...args: unknown[]) => unknown
-      >;
-      return pinoRecord[asJsonSym].apply(this, args);
-    }
-  }
-
-  return new Proxy(pinoInstance, {
-    get: get as ProxyHandler<pino.Logger>["get"],
-  });
-}
 
 function contextMixin(): Record<string, unknown> {
   const ctx = getContext();
@@ -153,15 +105,21 @@ function buildTransportTargets(level: string): PinoTransportTarget[] {
   ];
 }
 
-function createComponentRoot(component: LogComponent): pino.Logger {
+function buildBaseOptions(
+  component: LogComponent,
+  subcomponent?: string,
+): pino.LoggerOptions {
   const level = getComponentLevel(component);
   const redactionPaths = getRedactionPaths();
+
+  const base: Record<string, unknown> = { component };
+  if (subcomponent) base.subcomponent = subcomponent;
 
   const options: pino.LoggerOptions = {
     level,
     redact: { paths: redactionPaths, censor: "[REDACTED]" },
     serializers: { error: serializeError },
-    base: { component },
+    base,
     mixin: contextMixin,
     timestamp: pino.stdTimeFunctions.isoTime,
     formatters: { level: (label: string) => ({ level: label }) },
@@ -174,8 +132,25 @@ function createComponentRoot(component: LogComponent): pino.Logger {
     options.transport = { targets };
   }
 
-  const root = pino(options);
-  return traceCaller(root);
+  return options;
+}
+
+function createComponentRoot(component: LogComponent): pino.Logger {
+  return pino(buildBaseOptions(component));
+}
+
+/**
+ * Return the pino options that would produce a logger equivalent to
+ * `getLogger(component, subcomponent)` — but *without* constructing the
+ * logger here. Intended for pino-http, which needs to build its own pino
+ * instance from its own nested pino copy so its internal symbol lookups
+ * succeed (see the note at the top of this file).
+ */
+export function buildPinoHttpOptions(
+  component: LogComponent,
+  subcomponent: string,
+): pino.LoggerOptions {
+  return buildBaseOptions(component, subcomponent);
 }
 
 function getComponentRoot(component: LogComponent): pino.Logger {
@@ -189,8 +164,8 @@ function getComponentRoot(component: LogComponent): pino.Logger {
 /**
  * Primary logger factory. Returns a child of the component root with the
  * `subcomponent` field bound. Log lines automatically carry `component`,
- * `subcomponent`, `caller`, and — inside a request or operation scope —
- * `requestId` / `userId` / `operationId` via the pino mixin.
+ * `subcomponent`, and — inside a request or operation scope — `requestId`
+ * / `userId` / `operationId` via the pino mixin.
  */
 export function getLogger(
   component: LogComponent,

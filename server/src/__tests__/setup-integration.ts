@@ -46,6 +46,7 @@ vi.mock("../lib/logger-factory.ts", () => {
   };
   return {
     getLogger: vi.fn((_component: string, _subcomponent?: string) => createMockLogger()),
+    buildPinoHttpOptions: vi.fn(() => ({ level: "silent" })),
     createLogger: vi.fn(() => createMockLogger()),
     appLogger: vi.fn(() => createMockLogger()),
     httpLogger: vi.fn(() => createMockLogger()),
