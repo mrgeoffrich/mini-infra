@@ -6,6 +6,7 @@ import { DockerExecutorService } from '../../services/docker-executor';
 import { StackReconciler } from '../../services/stacks/stack-reconciler';
 import { createResourceReconciler } from '../../services/stacks/resource-reconciler-factory';
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
+import { checkStackConfigurationRequirements } from '../../services/stacks/stack-config-requirements';
 import type { StackValidationResult } from '@mini-infra/types';
 
 const router = Router();
@@ -22,6 +23,16 @@ router.get(
     });
     if (!exists) {
       return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+
+    const missingConfig = await checkStackConfigurationRequirements(prisma, stackId);
+    if (missingConfig) {
+      return res.status(422).json({
+        success: false,
+        code: missingConfig.code,
+        message: missingConfig.message,
+        missing: missingConfig.missing,
+      });
     }
 
     const dockerExecutor = new DockerExecutorService();

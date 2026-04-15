@@ -292,6 +292,35 @@ export const StackPlanView = React.memo(function StackPlanView({
   // Error state
   if (error) {
     const isDockerUnavailable = error.message.includes("Docker is unavailable");
+    const errWithMeta = error as Error & {
+      code?: string;
+      missing?: Array<{ resource: string; settings: string[]; settingsUrl: string; reason: string }>;
+    };
+    const isMissingConfig = errWithMeta.code === "MISSING_CONFIGURATION" && Array.isArray(errWithMeta.missing);
+
+    if (isMissingConfig) {
+      return (
+        <Alert variant="destructive" className={className}>
+          <IconAlertTriangle className="h-4 w-4" />
+          <AlertTitle>Configuration required</AlertTitle>
+          <AlertDescription className="space-y-2">
+            <p>This stack has external-resource requirements that aren&apos;t configured yet.</p>
+            <ul className="list-disc pl-5 space-y-1">
+              {errWithMeta.missing!.map((m) => (
+                <li key={m.resource}>
+                  <span className="font-medium">{m.reason}</span>{" "}
+                  <span>Configure: {m.settings.join(", ")}.</span>{" "}
+                  <a href={m.settingsUrl} className="underline">
+                    Open settings
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
     return (
       <Alert variant="destructive" className={className}>
         <IconAlertTriangle className="h-4 w-4" />

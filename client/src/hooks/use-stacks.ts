@@ -102,7 +102,17 @@ async function fetchStackPlan(
     if (response.status === 503) {
       throw new Error("Docker is unavailable");
     }
-    throw new Error(`Failed to fetch stack plan: ${response.statusText}`);
+    const body = await response.json().catch(() => null);
+    const message = body?.message || `Failed to fetch stack plan: ${response.statusText}`;
+    const err = new Error(message) as Error & {
+      status?: number;
+      code?: string;
+      missing?: unknown;
+    };
+    err.status = response.status;
+    err.code = body?.code;
+    err.missing = body?.missing;
+    throw err;
   }
 
   const data: StackPlanResponse = await response.json();
