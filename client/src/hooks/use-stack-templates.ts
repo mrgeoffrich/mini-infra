@@ -18,6 +18,7 @@ import type {
 export interface StackTemplateFilterParams {
   source?: StackTemplateSource;
   scope?: StackTemplateScope;
+  environmentId?: string;
   includeArchived?: boolean;
   includeLinkedStacks?: boolean;
 }
@@ -30,6 +31,7 @@ async function fetchStackTemplates(
   const url = new URL("/api/stack-templates", window.location.origin);
   if (params?.source) url.searchParams.set("source", params.source);
   if (params?.scope) url.searchParams.set("scope", params.scope);
+  if (params?.environmentId) url.searchParams.set("environmentId", params.environmentId);
   if (params?.includeArchived)
     url.searchParams.set("includeArchived", String(params.includeArchived));
   if (params?.includeLinkedStacks)

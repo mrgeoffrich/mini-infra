@@ -1040,6 +1040,7 @@ enum StackTemplateSource {
 enum StackTemplateScope {
   host
   environment
+  any
 }
 
 enum StackTemplateVersionStatus {
@@ -1187,7 +1188,8 @@ model StackTemplate {
   displayName      String
   description      String?
   source           StackTemplateSource  // system | user
-  scope            StackTemplateScope   // host | environment
+  scope            StackTemplateScope   // host | environment | any
+  networkType      String?              // 'local' | 'internet' | null (null = compatible with both)
   category         String?
   environmentId    String?
   environment      Environment?         @relation(fields: [environmentId], references: [id])

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Environment, EnvironmentType, EnvironmentNetworkType } from "@mini-infra/types";
+import { Environment, EnvironmentNetworkType } from "@mini-infra/types";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
   Card,
@@ -27,12 +27,6 @@ export function EnvironmentCard({
 }: EnvironmentCardProps) {
   const { formatDateTime } = useFormattedDate();
 
-  const getTypeColor = (type: EnvironmentType) => {
-    return type === "production"
-      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-      : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
-  };
-
   const getNetworkTypeColor = (networkType: EnvironmentNetworkType) => {
     return networkType === "internet"
       ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
@@ -53,12 +47,6 @@ export function EnvironmentCard({
             <CardTitle className="text-lg font-semibold">
               {environment.name}
             </CardTitle>
-            <Badge
-              variant="outline"
-              className={cn("text-xs", getTypeColor(environment.type))}
-            >
-              {environment.type}
-            </Badge>
             <Badge
               variant="outline"
               className={cn("text-xs", getNetworkTypeColor(environment.networkType))}

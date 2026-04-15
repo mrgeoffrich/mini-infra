@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Environment } from "@mini-infra/types";
-import { useEnvironments, useEnvironmentFilters } from "@/hooks/use-environments";
+import { Environment, EnvironmentNetworkType } from "@mini-infra/types";
+import { useEnvironments } from "@/hooks/use-environments";
 import { EnvironmentCard } from "./environment-card";
 import { EnvironmentCreateDialog } from "./environment-create-dialog";
 import { EnvironmentEditDialog } from "./environment-edit-dialog";
@@ -9,16 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-import { IconPlus, IconRefresh, IconServer, IconAlertCircle } from "@tabler/icons-react";
+import { IconPlus, IconAlertCircle } from "@tabler/icons-react";
 
 interface EnvironmentListProps {
   className?: string;
@@ -30,24 +21,22 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEnvironment, setSelectedEnvironment] = useState<Environment | null>(null);
 
-  const { filters, updateFilter } = useEnvironmentFilters();
-
   const {
     data: environmentsData,
     isLoading,
     isError,
     error,
     refetch,
-    isRefetching,
   } = useEnvironments({
-    filters,
-    refetchInterval: 10000, // Refetch every 10 seconds for real-time updates
+    // Always fetch both slots on a single page; there are at most two.
+    filters: { page: 1, limit: 100 },
+    refetchInterval: 10000,
   });
 
   const environments = environmentsData?.environments || [];
-  const totalPages = environmentsData?.totalPages || 0;
-  const hasNextPage = environmentsData?.hasNextPage || false;
-  const hasPreviousPage = environmentsData?.hasPreviousPage || false;
+  const localEnv = environments.find((e) => e.networkType === "local") ?? null;
+  const internetEnv = environments.find((e) => e.networkType === "internet") ?? null;
+  const canCreate = !localEnv || !internetEnv;
 
   const handleEdit = (environment: Environment) => {
     setSelectedEnvironment(environment);
@@ -57,82 +46,6 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
   const handleDelete = (environment: Environment) => {
     setSelectedEnvironment(environment);
     setDeleteDialogOpen(true);
-  };
-
-  const handleRefresh = () => {
-    refetch();
-  };
-
-  const renderPagination = () => {
-    if (totalPages <= 1) return null;
-
-    const generatePageNumbers = () => {
-      const pages = [];
-      const currentPage = filters.page;
-
-      // Always show first page
-      pages.push(1);
-
-      // Add ellipsis if there's a gap
-      if (currentPage > 3) {
-        pages.push('ellipsis-start');
-      }
-
-      // Add pages around current page
-      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) {
-        if (!pages.includes(i)) {
-          pages.push(i);
-        }
-      }
-
-      // Add ellipsis if there's a gap
-      if (currentPage < totalPages - 2) {
-        pages.push('ellipsis-end');
-      }
-
-      // Always show last page if there's more than one page
-      if (totalPages > 1 && !pages.includes(totalPages)) {
-        pages.push(totalPages);
-      }
-
-      return pages;
-    };
-
-    return (
-      <Pagination className="mt-6">
-        <PaginationContent>
-          <PaginationItem>
-            <PaginationPrevious
-              onClick={() => updateFilter("page", filters.page - 1)}
-              className={!hasPreviousPage ? "pointer-events-none opacity-50" : "cursor-pointer"}
-            />
-          </PaginationItem>
-
-          {generatePageNumbers().map((page, index) => (
-            <PaginationItem key={index}>
-              {page === 'ellipsis-start' || page === 'ellipsis-end' ? (
-                <PaginationEllipsis />
-              ) : (
-                <PaginationLink
-                  onClick={() => updateFilter("page", page as number)}
-                  isActive={page === filters.page}
-                  className="cursor-pointer"
-                >
-                  {page}
-                </PaginationLink>
-              )}
-            </PaginationItem>
-          ))}
-
-          <PaginationItem>
-            <PaginationNext
-              onClick={() => updateFilter("page", filters.page + 1)}
-              className={!hasNextPage ? "pointer-events-none opacity-50" : "cursor-pointer"}
-            />
-          </PaginationItem>
-        </PaginationContent>
-      </Pagination>
-    );
   };
 
   if (isError) {
@@ -148,11 +61,15 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
     );
   }
 
+  const existingNetworkTypes: EnvironmentNetworkType[] = [];
+  if (localEnv) existingNetworkTypes.push("local");
+  if (internetEnv) existingNetworkTypes.push("internet");
+
   return (
     <div className={className}>
       {/* Header Actions */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
+      {canCreate && (
+        <div className="flex items-center justify-between mb-6">
           <Button
             onClick={() => setCreateDialogOpen(true)}
             className="flex items-center gap-2"
@@ -160,22 +77,13 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
             <IconPlus className="h-4 w-4" />
             Create Environment
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={isRefetching}
-            className="flex items-center gap-2"
-          >
-            <IconRefresh className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
         </div>
-      </div>
+      )}
 
-      {/* Content */}
+      {/* Content — fixed two-slot layout: Local left, Internet right */}
       {isLoading ? (
         <div className="grid gap-6 md:grid-cols-2">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 2 }).map((_, i) => (
             <Card key={i}>
               <CardContent className="p-6">
                 <div className="space-y-4">
@@ -185,49 +93,39 @@ export function EnvironmentList({ className }: EnvironmentListProps) {
                   </div>
                   <Skeleton className="h-4 w-full" />
                   <Skeleton className="h-4 w-2/3" />
-                  <div className="flex gap-2">
-                    <Skeleton className="h-8 w-16" />
-                    <Skeleton className="h-8 w-16" />
-                  </div>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
-      ) : environments.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <IconServer className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold mb-2">No Environments Found</h3>
-            <p className="text-muted-foreground text-center mb-4">
-              Get started by creating your first environment.
-            </p>
-            <Button onClick={() => setCreateDialogOpen(true)}>
-              <IconPlus className="h-4 w-4 mr-2" />
-              Create Environment
-            </Button>
-          </CardContent>
-        </Card>
       ) : (
-        <>
-          <div className="grid gap-6 md:grid-cols-2">
-            {environments.map((environment) => (
+        <div className="grid gap-6 md:grid-cols-2">
+          {localEnv && (
+            <div className="md:col-start-1">
               <EnvironmentCard
-                key={environment.id}
-                environment={environment}
+                environment={localEnv}
                 onEdit={handleEdit}
                 onDelete={handleDelete}
               />
-            ))}
-          </div>
-          {renderPagination()}
-        </>
+            </div>
+          )}
+          {internetEnv && (
+            <div className="md:col-start-2">
+              <EnvironmentCard
+                environment={internetEnv}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {/* Dialogs */}
       <EnvironmentCreateDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+        existingNetworkTypes={existingNetworkTypes}
         onSuccess={() => refetch()}
       />
 

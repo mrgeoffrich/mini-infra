@@ -16,10 +16,11 @@ import type {
   StackResourceInput,
   AdoptedContainerRef,
 } from './stacks';
+import type { EnvironmentNetworkType } from './environments';
 
 // Enum mirrors
 export type StackTemplateSource = 'system' | 'user';
-export const STACK_TEMPLATE_SCOPES = ['host', 'environment'] as const;
+export const STACK_TEMPLATE_SCOPES = ['host', 'environment', 'any'] as const;
 export type StackTemplateScope = typeof STACK_TEMPLATE_SCOPES[number];
 export type StackTemplateVersionStatus = 'draft' | 'published' | 'archived';
 
@@ -32,6 +33,7 @@ export interface StackTemplate {
   description: string | null;
   source: StackTemplateSource;
   scope: StackTemplateScope;
+  networkType: EnvironmentNetworkType | null;
   category: string | null;
   environmentId: string | null;
   isArchived: boolean;
@@ -110,6 +112,7 @@ export interface StackTemplateInfo {
   description: string | null;
   source: StackTemplateSource;
   scope: StackTemplateScope;
+  networkType: EnvironmentNetworkType | null;
   category: string | null;
   environmentId: string | null;
   isArchived: boolean;
@@ -179,6 +182,7 @@ export interface CreateStackTemplateRequest {
   displayName: string;
   description?: string;
   scope: StackTemplateScope;
+  networkType?: EnvironmentNetworkType;
   environmentId?: string;
   deployImmediately?: boolean;
   category?: string;

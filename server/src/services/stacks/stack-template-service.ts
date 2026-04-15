@@ -14,6 +14,7 @@ import type {
   StackTemplateScope,
   StackTemplateVersionStatus,
   StackServiceType,
+  EnvironmentNetworkType,
 } from "@mini-infra/types";
 import type {
   StackServiceDefinition,
@@ -31,6 +32,7 @@ export interface UpsertSystemTemplateInput {
   name: string;
   displayName: string;
   scope: StackTemplateScope;
+  networkType?: EnvironmentNetworkType | null;
   category?: string;
   builtinVersion: number;
   definition: StackDefinition;
@@ -88,6 +90,7 @@ interface SerializableTemplate {
   description: string | null;
   source: StackTemplateSource;
   scope: StackTemplateScope;
+  networkType: string | null;
   category: string | null;
   environmentId: string | null;
   isArchived: boolean;
@@ -124,13 +127,31 @@ export class StackTemplateService {
   async listTemplates(opts?: {
     source?: StackTemplateSource;
     scope?: StackTemplateScope;
+    environmentId?: string;
     includeArchived?: boolean;
     includeLinkedStacks?: boolean;
   }): Promise<StackTemplateInfo[]> {
     const where: Prisma.StackTemplateWhereInput = {};
     if (opts?.source) where.source = opts.source;
-    if (opts?.scope) where.scope = opts.scope;
+    if (opts?.scope === "host") {
+      where.scope = { in: ["host", "any"] };
+    } else if (opts?.scope === "environment") {
+      where.scope = { in: ["environment", "any"] };
+    } else if (opts?.scope) {
+      where.scope = opts.scope;
+    }
     if (!opts?.includeArchived) where.isArchived = false;
+
+    // When filtering by environment, hide templates whose networkType doesn't match.
+    if (opts?.environmentId) {
+      const env = await this.prisma.environment.findUnique({
+        where: { id: opts.environmentId },
+        select: { networkType: true },
+      });
+      if (env) {
+        where.OR = [{ networkType: null }, { networkType: env.networkType }];
+      }
+    }
 
     const templates = await this.prisma.stackTemplate.findMany({
       where,
@@ -538,6 +559,7 @@ export class StackTemplateService {
       name,
       displayName,
       scope,
+      networkType,
       category,
       builtinVersion,
       definition,
@@ -581,6 +603,7 @@ export class StackTemplateService {
               displayName,
               description: definition.description ?? null,
               scope,
+              networkType: networkType ?? null,
               category: category ?? null,
             },
           })
@@ -591,6 +614,7 @@ export class StackTemplateService {
               description: definition.description ?? null,
               source: "system",
               scope,
+              networkType: networkType ?? null,
               category: category ?? null,
             },
           });
@@ -737,6 +761,13 @@ export class StackTemplateService {
         select: { networkType: true },
       });
       if (env) {
+        if (template.networkType && template.networkType !== env.networkType) {
+          const article = template.networkType === "internet" ? "an" : "a";
+          throw new TemplateError(
+            `Template "${template.name}" requires ${article} ${template.networkType} environment (target is ${env.networkType})`,
+            400
+          );
+        }
         const ntDefaults = version.networkTypeDefaults as unknown as Record<string, Record<string, StackParameterValue>> | null;
         networkDefaults = ntDefaults?.[env.networkType] ?? {};
       }
@@ -751,7 +782,8 @@ export class StackTemplateService {
     // Build service definitions from template services + config files
     const services = buildServiceDefinitionsFromVersion(version);
 
-    // Validate scope
+    // Validate scope. For `any`-scoped templates the presence of environmentId
+    // determines the effective scope — either direction is allowed.
     if (template.scope === "host" && input.environmentId) {
       throw new TemplateError(
         "Host-scoped template cannot be assigned to an environment",
@@ -925,6 +957,7 @@ export class StackTemplateService {
       description: template.description,
       source: template.source,
       scope: template.scope,
+      networkType: (template.networkType as EnvironmentNetworkType | null) ?? null,
       category: template.category,
       environmentId: template.environmentId ?? null,
       isArchived: template.isArchived,

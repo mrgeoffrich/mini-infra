@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -5,6 +6,7 @@ import {
   CreateEnvironmentRequest,
   ENVIRONMENT_TYPES,
   ENVIRONMENT_NETWORK_TYPES,
+  EnvironmentNetworkType,
 } from "@mini-infra/types";
 import { useCreateEnvironment } from "@/hooks/use-environments";
 import {
@@ -31,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -48,7 +51,7 @@ const createEnvironmentSchema = z.object({
     ),
   description: z.string().optional(),
   type: z.enum(ENVIRONMENT_TYPES),
-  networkType: z.enum(ENVIRONMENT_NETWORK_TYPES).optional(),
+  networkType: z.enum(ENVIRONMENT_NETWORK_TYPES),
 });
 
 type CreateEnvironmentFormData = z.infer<typeof createEnvironmentSchema>;
@@ -56,15 +59,22 @@ type CreateEnvironmentFormData = z.infer<typeof createEnvironmentSchema>;
 interface EnvironmentCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  existingNetworkTypes?: EnvironmentNetworkType[];
   onSuccess?: () => void;
 }
 
 export function EnvironmentCreateDialog({
   open,
   onOpenChange,
+  existingNetworkTypes = [],
   onSuccess,
 }: EnvironmentCreateDialogProps) {
   const createMutation = useCreateEnvironment();
+
+  const localTaken = existingNetworkTypes.includes("local");
+  const internetTaken = existingNetworkTypes.includes("internet");
+  const networkTypeLocked = localTaken || internetTaken;
+  const defaultNetworkType: EnvironmentNetworkType = localTaken ? "internet" : "local";
 
   const form = useForm<CreateEnvironmentFormData>({
     resolver: zodResolver(createEnvironmentSchema),
@@ -72,9 +82,21 @@ export function EnvironmentCreateDialog({
       name: "",
       description: "",
       type: "nonproduction",
-      networkType: "local",
+      networkType: defaultNetworkType,
     },
   });
+
+  // When the dialog opens, realign the networkType default with the latest slot availability.
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        name: "",
+        description: "",
+        type: "nonproduction",
+        networkType: defaultNetworkType,
+      });
+    }
+  }, [open, defaultNetworkType, form]);
 
   const onSubmit = async (data: CreateEnvironmentFormData) => {
     try {
@@ -122,6 +144,53 @@ export function EnvironmentCreateDialog({
                   </p>
                 </div>
               </div>
+
+              {/* Network Type (first) */}
+              <FormField
+                control={form.control}
+                name="networkType"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Network Type</FormLabel>
+                    <FormControl>
+                      <ToggleGroup
+                        type="single"
+                        variant="outline"
+                        value={field.value}
+                        onValueChange={(value) => {
+                          if (!value || networkTypeLocked) return;
+                          field.onChange(value as EnvironmentNetworkType);
+                        }}
+                        disabled={createMutation.isPending}
+                        className="w-full"
+                      >
+                        <ToggleGroupItem
+                          value="local"
+                          disabled={localTaken}
+                          className="flex-1"
+                        >
+                          Local
+                        </ToggleGroupItem>
+                        <ToggleGroupItem
+                          value="internet"
+                          disabled={internetTaken}
+                          className="flex-1"
+                        >
+                          Internet
+                        </ToggleGroupItem>
+                      </ToggleGroup>
+                    </FormControl>
+                    <FormDescription>
+                      {networkTypeLocked
+                        ? `A ${localTaken ? "local" : "internet"} environment already exists. Only one of each network type is allowed.`
+                        : field.value === "internet"
+                          ? "Internet networks use Cloudflare tunnels to route traffic."
+                          : "Local networks require a host IP address."}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
               {/* Basic Information */}
               <div className="space-y-4">
@@ -174,7 +243,7 @@ export function EnvironmentCreateDialog({
                       <FormLabel>Environment Type</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        defaultValue={field.value}
+                        value={field.value}
                         disabled={createMutation.isPending}
                       >
                         <FormControl>
@@ -188,36 +257,7 @@ export function EnvironmentCreateDialog({
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        Production environments have additional safety measures
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="networkType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Network Type</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        disabled={createMutation.isPending}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select network type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="local">Local</SelectItem>
-                          <SelectItem value="internet">Internet</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        Local networks require a host IP address. Internet networks use Cloudflare tunnels.
+                        Production is a visual indicator only — it has no functional effect.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
