@@ -11,7 +11,6 @@ import {
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
-import { seedStacksForEnvironment } from '../stacks/seed';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
@@ -66,11 +65,6 @@ export class EnvironmentManager {
         },
       });
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment record created (ID: ${environmentData.id})`);
-
-      // Seed stacks for the new environment (stacks create their own infra resources on apply)
-      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Seeding stacks for environment...`);
-      await seedStacksForEnvironment(this.prisma, environmentData.id);
-      await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Stack seeding complete`);
 
       // Fetch the complete environment with relations
       const environment = await this.getEnvironmentById(environmentData.id);

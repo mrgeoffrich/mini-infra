@@ -316,13 +316,19 @@ export function useInstantiateTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (args: { templateId: string; name?: string; parameterValues?: Record<string, unknown> }) => {
+    mutationFn: async (args: {
+      templateId: string;
+      name?: string;
+      environmentId?: string;
+      parameterValues?: Record<string, unknown>;
+    }) => {
       const response = await fetch(`/api/stack-templates/${args.templateId}/instantiate`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: args.name,
+          environmentId: args.environmentId,
           parameterValues: args.parameterValues,
         }),
       });
