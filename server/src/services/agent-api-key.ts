@@ -4,18 +4,25 @@ import { getLogger } from "../lib/logger-factory";
 
 const logger = getLogger("agent", "agent-api-key");
 
-const AGENT_USER_EMAIL = "agent@mini-infra.internal";
-const AGENT_USER_NAME = "Mini Infra Agent";
 const AGENT_API_KEY_NAME = "Agent Service Key";
 const SETTINGS_CATEGORY = "agent";
 const SETTINGS_KEY = "agent_api_key";
+
+// Legacy: prior versions attached the agent key to a fake service-account
+// user. New installs create a user-less (system) ApiKey row — see
+// api-key-service.createApiKey. Cleanup of the old service-account user is
+// handled by migration 20260415000000_agent_key_no_user.
+const LEGACY_AGENT_USER_EMAIL = "agent@mini-infra.internal";
 
 let cachedApiKey: string | null = null;
 
 /**
  * Initialize the agent's dedicated API key.
- * Creates a service account user and API key if they don't exist,
- * stores the raw key in SystemSettings so it survives restarts.
+ *
+ * The key is a **system credential** — the ApiKey row has `userId = null` so
+ * there is no synthetic "agent" user polluting the setup wizard / users list.
+ *
+ * Stores the raw key in SystemSettings so it survives restarts.
  */
 export async function initializeAgentApiKey(): Promise<string | null> {
   try {
@@ -31,58 +38,50 @@ export async function initializeAgentApiKey(): Promise<string | null> {
     });
 
     if (existingKeySetting?.value) {
-      // Verify the matching ApiKey record is still active
-      const agentUser = await prisma.user.findUnique({
-        where: { email: AGENT_USER_EMAIL },
-        include: {
-          apiKeys: {
-            where: {
-              name: AGENT_API_KEY_NAME,
-              active: true,
-            },
-          },
+      // Reuse the existing key only if the matching ApiKey row is a clean
+      // system credential (no user attached). Legacy keys tied to the old
+      // service-account user get regenerated so we can delete that user.
+      const existingApiKey = await prisma.apiKey.findFirst({
+        where: {
+          name: AGENT_API_KEY_NAME,
+          active: true,
         },
       });
 
-      if (agentUser && agentUser.apiKeys.length > 0) {
+      if (existingApiKey && existingApiKey.userId === null) {
         logger.info("Agent API key loaded from SystemSettings");
         cachedApiKey = existingKeySetting.value;
         return cachedApiKey;
       }
 
-      // Key record was revoked/deleted — regenerate
       logger.info(
-        "Agent API key record not found or inactive, regenerating",
+        "Agent API key record missing, inactive, or user-bound (legacy) — regenerating as system key",
       );
     }
 
-    // Find or create the agent service account user
-    let agentUser = await prisma.user.findUnique({
-      where: { email: AGENT_USER_EMAIL },
-    });
-
-    if (!agentUser) {
-      logger.info(`Creating agent service account: ${AGENT_USER_EMAIL}`);
-      agentUser = await prisma.user.create({
-        data: {
-          email: AGENT_USER_EMAIL,
-          name: AGENT_USER_NAME,
-        },
-      });
-      logger.info({ userId: agentUser.id }, "Agent service account created");
-    }
-
-    // Revoke any existing agent keys
+    // Revoke any previously-active agent keys (user-bound or system).
     await prisma.apiKey.updateMany({
-      where: {
-        userId: agentUser.id,
-        name: AGENT_API_KEY_NAME,
-      },
+      where: { name: AGENT_API_KEY_NAME },
       data: { active: false },
     });
 
-    // Create a new API key
-    const apiKeyResponse = await createApiKey(agentUser.id, {
+    // Remove the legacy service-account user if it still exists. Its
+    // cascade-deleted ApiKeys are fine — we just deactivated them above and
+    // are about to mint a fresh system key below. Without this cleanup the
+    // setup wizard's `hasUsers` check continues to report true on a fresh
+    // install that was upgraded from a pre-system-key build.
+    const legacyCleanup = await prisma.user.deleteMany({
+      where: { email: LEGACY_AGENT_USER_EMAIL },
+    });
+    if (legacyCleanup.count > 0) {
+      logger.info(
+        { removed: legacyCleanup.count },
+        "Removed legacy agent service-account user",
+      );
+    }
+
+    // Create a new system-scoped API key (no user attached).
+    const apiKeyResponse = await createApiKey(null, {
       name: AGENT_API_KEY_NAME,
     });
 

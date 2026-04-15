@@ -33,10 +33,12 @@ export function hashApiKey(key: string): string {
 }
 
 /**
- * Create a new API key for a user
+ * Create a new API key.
+ * Pass `userId: null` for a system credential not tied to any user (e.g. the
+ * built-in agent sidecar key).
  */
 export async function createApiKey(
-  userId: string,
+  userId: string | null,
   request: CreateApiKeyRequest,
 ): Promise<CreateApiKeyResponse> {
   logger.info({ userId, name: request.name }, "Creating new API key");
@@ -142,20 +144,23 @@ export async function validateApiKey(
       "API key validated successfully",
     );
 
-    const sessionUser: JWTUser = {
-      id: apiKey.user.id,
-      email: apiKey.user.email,
-      name: apiKey.user.name || undefined,
-      image: apiKey.user.image || undefined,
-      createdAt: apiKey.user.createdAt,
-    };
+    // System keys (agent sidecar etc.) have no associated user.
+    const sessionUser: JWTUser | undefined = apiKey.user
+      ? {
+          id: apiKey.user.id,
+          email: apiKey.user.email,
+          name: apiKey.user.name || undefined,
+          image: apiKey.user.image || undefined,
+          createdAt: apiKey.user.createdAt,
+        }
+      : undefined;
 
     // Parse permissions from JSON string
     const permissions = parsePermissions(apiKey.permissions);
 
     return {
       valid: true,
-      userId: apiKey.userId,
+      userId: apiKey.userId ?? undefined,
       keyId: apiKey.id,
       user: sessionUser,
       permissions,
