@@ -70,6 +70,7 @@ import apiRoutesRoutes from "./routes/api-routes";
 import usersRoutes from "./routes/users";
 import authSettingsRoutes from "./routes/auth-settings";
 import diagnosticsRoutes from "./routes/diagnostics";
+import onboardingRoutes from "./routes/onboarding";
 
 type RouteDefinition = {
   id: string;
@@ -136,6 +137,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "apiRoutes", path: "/api/routes", name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
     { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
     { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
+    { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
   ];
 }
 
