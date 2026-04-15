@@ -1,6 +1,7 @@
 import prisma, { PrismaClient } from '../../lib/prisma';
 import * as cron from 'node-cron';
 import { getLogger } from '../../lib/logger-factory';
+import { withOperation } from '../../lib/logging-context';
 import { UserEventService } from './user-event-service';
 
 /**
@@ -114,7 +115,7 @@ export class UserEventCleanupScheduler {
       this.cleanupTask = cron.schedule(
         schedule,
         async () => {
-          await this.executeCleanup();
+          await withOperation("user-event-cleanup-tick", () => this.executeCleanup());
         },
         {
           timezone: UserEventCleanupScheduler.DEFAULT_TIMEZONE,

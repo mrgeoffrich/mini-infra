@@ -24,6 +24,7 @@ import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { getLogger } from '../../lib/logger-factory';
+import { withOperation } from '../../lib/logging-context';
 import {
   buildStackTemplateContext,
   buildContainerMap,
@@ -62,6 +63,12 @@ export class StackReconciler {
   }
 
   async apply(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
+    return withOperation(`stack-apply-${stackId}`, () =>
+      this.applyInner(stackId, options),
+    ) as Promise<ApplyResult>;
+  }
+
+  private async applyInner(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
     const startTime = Date.now();
     const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-apply', stackId });
 
@@ -616,6 +623,12 @@ export class StackReconciler {
    * then delete the stack from the database.
    */
   async destroyStack(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
+    return withOperation(`stack-destroy-${stackId}`, () =>
+      this.destroyStackInner(stackId, _options),
+    ) as Promise<DestroyResult>;
+  }
+
+  private async destroyStackInner(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
     const startTime = Date.now();
     const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-destroy', stackId });
 

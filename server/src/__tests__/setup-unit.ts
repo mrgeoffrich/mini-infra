@@ -47,6 +47,7 @@ vi.mock("../lib/logger-factory.ts", () => {
 // Mock logging context so ALS calls are no-ops in tests
 vi.mock("../lib/logging-context.ts", () => ({
   runWithContext: <T>(_ctx: unknown, fn: () => T) => fn(),
+  withOperation: <T>(_prefix: string, fn: () => T | Promise<T>) => fn(),
   getContext: () => undefined,
   setUserId: vi.fn(),
   setOperationId: vi.fn(),

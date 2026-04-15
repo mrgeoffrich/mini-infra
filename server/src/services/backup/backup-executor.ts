@@ -1,6 +1,7 @@
 import prisma, { PrismaClient } from "../../lib/prisma";
 import { InMemoryQueue, Job as QueueJob } from "../../lib/in-memory-queue";
 import { getLogger } from "../../lib/logger-factory";
+import { runWithContext } from "../../lib/logging-context";
 import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
 import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
@@ -378,6 +379,16 @@ export class BackupExecutorService {
    * Execute backup operation
    */
   private async executeBackup(
+    operationId: string,
+    databaseId: string,
+    userId: string,
+  ): Promise<void> {
+    return runWithContext({ operationId, userId }, () =>
+      this.executeBackupInner(operationId, databaseId, userId),
+    );
+  }
+
+  private async executeBackupInner(
     operationId: string,
     databaseId: string,
     userId: string,

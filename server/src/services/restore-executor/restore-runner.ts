@@ -1,4 +1,5 @@
 import { getLogger } from "../../lib/logger-factory";
+import { runWithContext } from "../../lib/logging-context";
 import type { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
@@ -47,6 +48,24 @@ export class RestoreRunner {
    * Execute restore operation
    */
   async executeRestore(
+    operationId: string,
+    databaseId: string,
+    backupUrl: string,
+    userId: string,
+    targetDatabaseName?: string,
+  ): Promise<void> {
+    return runWithContext({ operationId, userId }, () =>
+      this.executeRestoreInner(
+        operationId,
+        databaseId,
+        backupUrl,
+        userId,
+        targetDatabaseName,
+      ),
+    );
+  }
+
+  private async executeRestoreInner(
     operationId: string,
     databaseId: string,
     backupUrl: string,

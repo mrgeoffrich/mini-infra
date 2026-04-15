@@ -1,6 +1,7 @@
 import * as cron from "node-cron";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import postgresServerService from "./server-manager";
 import databaseManagementService from "./database-manager";
 import userManagementService from "./user-manager";
@@ -29,7 +30,7 @@ export class ServerHealthScheduler {
 
     // Run every 5 minutes
     this.healthCheckTask = cron.schedule("*/5 * * * *", async () => {
-      await this.performAllHealthChecks();
+      await withOperation("pg-server-health-tick", () => this.performAllHealthChecks());
     });
 
     logger.info("PostgreSQL server health check scheduler started");
@@ -60,7 +61,7 @@ export class ServerHealthScheduler {
 
     // Run every 30 minutes
     this.syncTask = cron.schedule("*/30 * * * *", async () => {
-      await this.performAllSyncs();
+      await withOperation("pg-server-sync-tick", () => this.performAllSyncs());
     });
 
     logger.info("PostgreSQL server sync scheduler started");

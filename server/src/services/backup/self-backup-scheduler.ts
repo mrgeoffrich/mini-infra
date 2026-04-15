@@ -2,6 +2,7 @@ import { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import { SelfBackupExecutor } from "./self-backup-executor";
 
 /**
@@ -174,7 +175,9 @@ export class SelfBackupScheduler {
       const task = cron.schedule(
         schedule,
         async () => {
-          await this.executeScheduledBackup(containerName);
+          await withOperation("self-backup-tick", () =>
+            this.executeScheduledBackup(containerName),
+          );
         },
         {
           timezone: timezone,

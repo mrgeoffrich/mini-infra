@@ -1,5 +1,6 @@
 import * as cron from "node-cron";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import { DnsCacheService } from "./dns-cache-service";
 
 const logger = getLogger("platform", "dns-cache-scheduler");
@@ -29,16 +30,18 @@ export class DnsCacheScheduler {
     logger.info({ schedule: cronExpression }, "Starting DNS cache scheduler");
 
     this.cronJob = cron.schedule(cronExpression, async () => {
-      logger.info("Running scheduled DNS cache refresh");
-      try {
-        const result = await this.dnsCacheService.refreshCache();
-        logger.info(
-          { zonesUpdated: result.zonesUpdated, recordsUpdated: result.recordsUpdated },
-          "Scheduled DNS cache refresh completed"
-        );
-      } catch (error) {
-        logger.error({ error }, "Scheduled DNS cache refresh failed");
-      }
+      await withOperation("dns-cache-tick", async () => {
+        logger.info("Running scheduled DNS cache refresh");
+        try {
+          const result = await this.dnsCacheService.refreshCache();
+          logger.info(
+            { zonesUpdated: result.zonesUpdated, recordsUpdated: result.recordsUpdated },
+            "Scheduled DNS cache refresh completed"
+          );
+        } catch (error) {
+          logger.error({ error }, "Scheduled DNS cache refresh failed");
+        }
+      });
     });
 
     // Do an initial refresh

@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
+import { randomUUID } from "crypto";
 
 export interface LoggingContext {
   requestId?: string;
@@ -30,4 +31,18 @@ export function setOperationId(operationId: string): void {
   if (current) {
     current.operationId = operationId;
   }
+}
+
+/**
+ * Wrap work in a fresh operation scope using `<prefix>-<uuid>` as the
+ * operationId. Use at the top of scheduler ticks, scheduled job runs, and
+ * non-request-triggered work so downstream logs can be grouped via the
+ * operationId structured field.
+ */
+export function withOperation<T>(
+  prefix: string,
+  fn: () => T | Promise<T>,
+): T | Promise<T> {
+  const operationId = `${prefix}-${randomUUID()}`;
+  return runWithContext({ operationId }, fn);
 }

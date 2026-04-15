@@ -2,6 +2,7 @@ import { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
 import { BackupExecutorService } from "./backup-executor";
 import { BackupOperationType } from "@mini-infra/types";
@@ -107,7 +108,9 @@ export class BackupSchedulerService {
       const task = cron.schedule(
         schedule,
         async () => {
-          await this.executeScheduledBackup(databaseId, userId);
+          await withOperation("pg-backup-tick", () =>
+            this.executeScheduledBackup(databaseId, userId),
+          );
         },
         {
           timezone: timezone,

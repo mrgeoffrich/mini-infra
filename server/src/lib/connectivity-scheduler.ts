@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import { SettingsCategory, ConnectivityStatusType } from "@mini-infra/types";
 import { getLogger } from "./logger-factory";
+import { withOperation } from "./logging-context";
 import { emitConnectivityStatus } from "../services/connectivity-socket-emitter";
 
 // Use app logger for connectivity scheduler
@@ -290,11 +291,11 @@ export class ConnectivityScheduler {
     logger.info("Starting ConnectivityScheduler");
 
     // Perform initial health checks
-    this.performAllHealthChecks();
+    withOperation("connectivity-tick", () => this.performAllHealthChecks());
 
     // Schedule periodic health checks
     this.intervalId = setInterval(() => {
-      this.performAllHealthChecks();
+      withOperation("connectivity-tick", () => this.performAllHealthChecks());
     }, this.checkInterval);
 
     this.isRunning = true;

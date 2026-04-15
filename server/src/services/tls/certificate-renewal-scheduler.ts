@@ -10,6 +10,7 @@ import * as cron from "node-cron";
 import { Logger } from "pino";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
 interface RenewalCheckResult {
@@ -60,10 +61,11 @@ export class CertificateRenewalScheduler {
     this.logger.info({ schedule }, "Starting TLS renewal scheduler");
 
     this.cronJob = cron.schedule(schedule, async () => {
-      this.logger.info("Running scheduled certificate renewal check");
+      await withOperation("tls-renewal-tick", async () => {
+        this.logger.info("Running scheduled certificate renewal check");
 
-      try {
-        const result = await this.checkRenewals();
+        try {
+          const result = await this.checkRenewals();
 
         this.logger.info(
           {
@@ -81,9 +83,10 @@ export class CertificateRenewalScheduler {
             `Certificate renewal check completed with ${result.failed} failures`
           );
         }
-      } catch (error) {
-        this.logger.error({ error }, "Certificate renewal check failed");
-      }
+        } catch (error) {
+          this.logger.error({ error }, "Certificate renewal check failed");
+        }
+      });
     });
 
     this.isRunning = true;

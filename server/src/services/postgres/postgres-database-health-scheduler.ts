@@ -1,6 +1,7 @@
 import prisma from "../../lib/prisma";
 import { PostgresDatabaseManager } from "./postgres-database-manager";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 
 /**
  * PostgresDatabaseHealthScheduler manages periodic health checks for PostgreSQL database configurations
@@ -30,11 +31,11 @@ export class PostgresDatabaseHealthScheduler {
     this.logger.info("Starting PostgreSQL database health scheduler");
 
     // Perform initial health checks
-    this.performAllHealthChecks();
+    withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
 
     // Schedule periodic health checks
     this.intervalId = setInterval(() => {
-      this.performAllHealthChecks();
+      withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
     }, this.checkInterval);
 
     this.isRunning = true;

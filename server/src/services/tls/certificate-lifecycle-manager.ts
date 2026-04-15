@@ -8,6 +8,7 @@
 import { Logger } from "pino";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 import { AcmeClientManager } from "./acme-client-manager";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
@@ -59,6 +60,12 @@ export class CertificateLifecycleManager {
    * @returns Created certificate record
    */
   async issueCertificate(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<Record<string, unknown>> {
+    return withOperation(`cert-issue-${request.primaryDomain}`, () =>
+      this.issueCertificateInner(request, onStep),
+    ) as Promise<Record<string, unknown>>;
+  }
+
+  private async issueCertificateInner(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<Record<string, unknown>> {
     const { domains, primaryDomain, userId } = request;
     const totalSteps = request.deployToHaproxy ? 5 : 4;
     let stepCount = 0;
@@ -186,6 +193,12 @@ export class CertificateLifecycleManager {
    * @returns Updated certificate record
    */
   async renewCertificate(certificateId: string): Promise<Record<string, unknown>> {
+    return withOperation(`cert-renew-${certificateId}`, () =>
+      this.renewCertificateInner(certificateId),
+    ) as Promise<Record<string, unknown>>;
+  }
+
+  private async renewCertificateInner(certificateId: string): Promise<Record<string, unknown>> {
     // Get existing certificate
     const existingCert = await this.prisma.tlsCertificate.findUnique({
       where: { id: certificateId },
