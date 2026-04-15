@@ -29,9 +29,6 @@ vi.mock('../services/stacks/stack-routing-manager', () => ({
 vi.mock('../services/haproxy', () => ({
   HAProxyFrontendManager: vi.fn(),
 }));
-vi.mock('../services/stacks/seed', () => ({
-  seedStacksForEnvironment: vi.fn().mockResolvedValue(undefined),
-}));
 
 const MockDockerExecutorService = DockerExecutorService as MockedClass<typeof DockerExecutorService>;
 

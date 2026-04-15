@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { useStacks } from "@/hooks/use-stacks";
-import type { StackInfo, StackStatus } from "@mini-infra/types";
+import { useStackTemplates, useInstantiateTemplate } from "@/hooks/use-stack-templates";
+import type { StackInfo, StackStatus, StackTemplateInfo } from "@mini-infra/types";
 import { StackPlanView } from "@/components/stacks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +15,7 @@ import {
   IconChevronDown,
   IconChevronUp,
   IconAlertCircle,
+  IconPlus,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 
@@ -68,6 +71,40 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
   const stacks: StackInfo[] = (stacksData?.data ?? []).filter((s) =>
     scope === "host" ? s.environmentId === null : s.environmentId !== null
   );
+
+  // For environment-scoped views, list system templates that haven't been
+  // instantiated in this environment yet. Host-scope view doesn't need this.
+  const enableAvailableTemplates = scope !== "host" && !!environmentId;
+  const { data: envTemplates } = useStackTemplates(
+    enableAvailableTemplates
+      ? { source: "system", scope: "environment" }
+      : undefined,
+  );
+  const instantiatedNames = new Set(stacks.map((s) => s.name));
+  const availableTemplates: StackTemplateInfo[] = enableAvailableTemplates
+    ? (envTemplates ?? []).filter(
+        (t) => !t.isArchived && !instantiatedNames.has(t.name),
+      )
+    : [];
+
+  const instantiate = useInstantiateTemplate();
+  const handleInstantiate = (template: StackTemplateInfo) => {
+    if (!environmentId) return;
+    instantiate.mutate(
+      { templateId: template.id, environmentId },
+      {
+        onSuccess: () => {
+          toast.success(`Added ${template.displayName} to environment`);
+          refetch();
+        },
+        onError: (err) => {
+          toast.error(
+            `Failed to add template: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        },
+      },
+    );
+  };
 
   const toggleExpanded = (stackId: string) => {
     setExpandedStackId((prev) => (prev === stackId ? null : stackId));
@@ -128,7 +165,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                 </div>
               ))}
             </div>
-          ) : stacks.length === 0 ? (
+          ) : stacks.length === 0 && availableTemplates.length === 0 ? (
             <div className="text-center py-8">
               <IconStack2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold mb-2">No Stacks</h3>
@@ -208,6 +245,40 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                   </div>
                 );
               })}
+
+              {availableTemplates.length > 0 && (
+                <div className="mt-2 pt-4 border-t">
+                  <p className="text-sm font-medium text-muted-foreground mb-3">
+                    Available templates for this environment
+                  </p>
+                  <div className="grid gap-2">
+                    {availableTemplates.map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center justify-between rounded-md border p-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{t.displayName}</div>
+                          {t.description && (
+                            <div className="text-sm text-muted-foreground truncate">
+                              {t.description}
+                            </div>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleInstantiate(t)}
+                          disabled={instantiate.isPending}
+                        >
+                          <IconPlus className="h-4 w-4" />
+                          Add
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
