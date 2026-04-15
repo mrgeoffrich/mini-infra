@@ -71,30 +71,6 @@ const loggingConfigSchema = z.object({
 export type EnvironmentLogConfig = z.infer<typeof environmentLogConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 
-// Legacy shape returned by getLoggerConfig for the pre-migration logger exports.
-export interface LegacyLoggerConfig {
-  level: LogLevel;
-  destination?: string;
-  prettyPrint: boolean;
-  includeCaller: boolean;
-  rotation?: RotationConfig;
-}
-
-// Map from legacy category name → new component name (used by the legacy shim
-// that keeps old factory exports alive during the migration window).
-const LEGACY_TO_COMPONENT: Record<string, LogComponent> = {
-  app: "platform",
-  http: "http",
-  prisma: "db",
-  services: "platform",
-  dockerexecutor: "docker",
-  deployments: "deploy",
-  loadbalancer: "haproxy",
-  "self-backup": "backup",
-  tls: "tls",
-  agent: "agent",
-};
-
 let loggingConfig: LoggingConfig | undefined;
 
 function buildDefaultConfig(): LoggingConfig {
@@ -193,27 +169,6 @@ export function ensureLogDirectory(destination?: string | null): void {
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
-}
-
-/**
- * Legacy shim: synthesize a LegacyLoggerConfig for an old category name by
- * looking up the equivalent new component's level plus the single-file
- * destination. Used only by the legacy logger exports during migration.
- */
-export function getLoggerConfig(legacyType: string): LegacyLoggerConfig {
-  const component = LEGACY_TO_COMPONENT[legacyType] ?? "platform";
-  const env = getEnvironmentLogConfig();
-  return {
-    level: env.levels[component],
-    destination: env.destination ?? undefined,
-    rotation: env.rotation,
-    prettyPrint: false,
-    includeCaller: true,
-  };
-}
-
-export function legacyTypeToComponent(legacyType: string): LogComponent {
-  return LEGACY_TO_COMPONENT[legacyType] ?? "platform";
 }
 
 // Reset for tests

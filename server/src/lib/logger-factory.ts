@@ -7,7 +7,6 @@ import {
   getDestinationConfig,
   getRedactionPaths,
   ensureLogDirectory,
-  legacyTypeToComponent,
 } from "./logging-config";
 import { getContext } from "./logging-context";
 
@@ -188,72 +187,27 @@ function getComponentRoot(component: LogComponent): pino.Logger {
 }
 
 /**
- * Primary logger factory.
- *
- * Two call shapes:
- *  - `getLogger(component, subcomponent)` — new API. Returns a child of the
- *    component root with the `subcomponent` field bound.
- *  - `getLogger(legacyType)` — legacy API, kept alive during the migration
- *    window. Maps the old category name to a component root.
+ * Primary logger factory. Returns a child of the component root with the
+ * `subcomponent` field bound. Log lines automatically carry `component`,
+ * `subcomponent`, `caller`, and — inside a request or operation scope —
+ * `requestId` / `userId` / `operationId` via the pino mixin.
  */
 export function getLogger(
   component: LogComponent,
   subcomponent: string,
-): pino.Logger;
-export function getLogger(legacyType: string): pino.Logger;
-export function getLogger(
-  componentOrLegacy: string,
-  subcomponent?: string,
 ): pino.Logger {
-  if (subcomponent !== undefined) {
-    const component = componentOrLegacy as LogComponent;
-    if (!LOG_COMPONENTS.includes(component)) {
-      throw new Error(`Unknown log component: ${component}`);
-    }
-    const cacheKey = `${component}::${subcomponent}`;
-    const cached = subcomponentCache.get(cacheKey);
-    if (cached) return cached;
-    const child = getComponentRoot(component).child({ subcomponent });
-    subcomponentCache.set(cacheKey, child);
-    return child;
+  if (!LOG_COMPONENTS.includes(component)) {
+    throw new Error(`Unknown log component: ${component}`);
   }
-
-  const component = legacyTypeToComponent(componentOrLegacy);
-  return getComponentRoot(component);
+  const cacheKey = `${component}::${subcomponent}`;
+  const cached = subcomponentCache.get(cacheKey);
+  if (cached) return cached;
+  const child = getComponentRoot(component).child({ subcomponent });
+  subcomponentCache.set(cacheKey, child);
+  return child;
 }
-
-// Legacy single-component exports. Each routes to the equivalent new component
-// root. Removed in the final phase of the migration.
-export const appLogger = () => getComponentRoot(legacyTypeToComponent("app"));
-export const httpLogger = () => getComponentRoot(legacyTypeToComponent("http"));
-export const prismaLogger = () =>
-  getComponentRoot(legacyTypeToComponent("prisma"));
-export const servicesLogger = () =>
-  getComponentRoot(legacyTypeToComponent("services"));
-export const dockerExecutorLogger = () =>
-  getComponentRoot(legacyTypeToComponent("dockerexecutor"));
-export const deploymentLogger = () =>
-  getComponentRoot(legacyTypeToComponent("deployments"));
-export const loadbalancerLogger = () =>
-  getComponentRoot(legacyTypeToComponent("loadbalancer"));
-export const selfBackupLogger = () =>
-  getComponentRoot(legacyTypeToComponent("self-backup"));
-export const tlsLogger = () => getComponentRoot(legacyTypeToComponent("tls"));
-export const agentLogger = () =>
-  getComponentRoot(legacyTypeToComponent("agent"));
 
 export function clearLoggerCache(): void {
   componentRootCache.clear();
   subcomponentCache.clear();
 }
-
-// Legacy child-logger helper, kept for callers that bind extra context.
-export function createChildLogger(
-  legacyType: string,
-  context: Record<string, unknown>,
-): pino.Logger {
-  const component = legacyTypeToComponent(legacyType);
-  return getComponentRoot(component).child(context);
-}
-
-export default appLogger;

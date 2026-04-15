@@ -266,7 +266,7 @@ export class NetworkHealthCheckService {
 
       const responseTime = Date.now() - startTime;
       
-      // Log container output to dockerExecutorLogger
+      // Log container output via the docker component logger
       if (executionResult.stdout) {
         getLogger("docker", "network-health-check").debug(
           {

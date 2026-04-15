@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { getLogger } from "./logger-factory";
-import { getRequestId } from "./request-id";
+import { getContext } from "./logging-context";
 
 // Types imported for future use
 
@@ -20,7 +20,7 @@ export interface TimingContext extends ApiContext {
 
 export const createApiLogger = (req: Request) => {
   const context: ApiContext = {
-    requestId: getRequestId(req),
+    requestId: getContext()?.requestId ?? "unknown",
     method: req.method,
     path: req.path,
     ip: req.ip || req.socket.remoteAddress || "unknown",

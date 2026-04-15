@@ -46,17 +46,6 @@ describe("requestContextMiddleware", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
-  it("also populates req.requestId for back-compat with lib/request-id.getRequestId", () => {
-    const req = makeReq({ "x-request-id": "legacy-compat" });
-    const res = makeRes();
-    const next: NextFunction = vi.fn();
-
-    requestContextMiddleware(req, res, next);
-    expect((req as unknown as { requestId?: string }).requestId).toBe(
-      "legacy-compat",
-    );
-  });
-
   it("falls through to a fresh id when the incoming header is an empty string", () => {
     const req = makeReq({ "x-request-id": "" });
     const res = makeRes();

@@ -4,8 +4,10 @@ import { getLogger } from "./logger-factory";
 
 // Use app logger for error handling
 const logger = getLogger("platform", "error-handler");
-import { getRequestId } from "./request-id";
+import { getContext } from "./logging-context";
 import { serverConfig } from "./config-new";
+
+const getRequestId = () => getContext()?.requestId ?? "unknown";
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -54,7 +56,7 @@ export const errorHandler: ErrorRequestHandler = (
   res: Response,
   _next: NextFunction,
 ) => {
-  const requestId = getRequestId(req);
+  const requestId = getRequestId();
 
   // Handle Zod validation errors
   if (error instanceof ZodError) {
@@ -134,7 +136,7 @@ export const errorHandler: ErrorRequestHandler = (
 
 // 404 handler
 export const notFoundHandler = (req: Request, res: Response) => {
-  const requestId = getRequestId(req);
+  const requestId = getRequestId();
 
   logger.warn(
     {
