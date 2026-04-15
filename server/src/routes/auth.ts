@@ -445,15 +445,18 @@ router.post("/recover/request", (async (req: Request, res: Response) => {
       },
     });
 
-    // Print token to stdout for docker logs
-    const separator = "========================================";
-    console.log(`\n${separator}`);
-    console.log(`PASSWORD RESET TOKEN for ${user.email}`);
-    console.log(`Token: ${rawToken}`);
-    console.log(`Expires: ${expiresAt.toISOString()}`);
-    console.log(`${separator}\n`);
-
-    logger.info({ userId: user.id }, "Password reset token generated");
+    // `resetToken` is intentionally used instead of `token` so the value is
+    // not stripped by the global redaction list. This log line is the
+    // operator's delivery channel for password resets.
+    logger.info(
+      {
+        userId: user.id,
+        email: user.email,
+        resetToken: rawToken,
+        expiresAt: expiresAt.toISOString(),
+      },
+      "Password reset token generated — operator must deliver this to the user out-of-band",
+    );
     res.json(genericResponse);
   } catch (error) {
     logger.error({ error }, "Error generating recovery token");

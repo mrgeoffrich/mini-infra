@@ -4,6 +4,10 @@ import { runWithContext } from "../lib/logging-context";
 
 const REQUEST_ID_HEADER = "x-request-id";
 
+interface RequestWithId extends Request {
+  requestId?: string;
+}
+
 export function requestContextMiddleware(
   req: Request,
   res: Response,
@@ -14,6 +18,7 @@ export function requestContextMiddleware(
     (typeof incoming === "string" && incoming.length > 0 ? incoming : undefined) ??
     randomUUID();
 
+  (req as RequestWithId).requestId = requestId;
   res.setHeader(REQUEST_ID_HEADER, requestId);
 
   runWithContext({ requestId }, () => {
