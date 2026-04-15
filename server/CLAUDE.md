@@ -226,6 +226,33 @@ Database-backed progress tracking for **backup and restore operations only**. Do
 4. Register the task type in the frontend task type registry (see `client/CLAUDE.md`)
 5. Optionally create a `UserEvent` record for audit trail
 
+## Logging (`lib/logger-factory.ts`)
+
+One entry point per file. All log lines land in `logs/app.log` as NDJSON.
+
+```ts
+import { getLogger } from "@/lib/logger-factory";
+const log = getLogger("tls", "acme-client");
+log.info({ orderUrl }, "acme order created");
+```
+
+Components (the `component` field): `http`, `auth`, `db`, `docker`, `stacks`, `deploy`, `haproxy`, `tls`, `backup`, `integrations`, `agent`, `platform`. The `subcomponent` is kebab-case, usually the filename without extension.
+
+Every log line carries `component`, `subcomponent`, `caller` (file:line), and — when inside a request scope — `requestId` and `userId`. Long-running ops can opt in by wrapping work in `runWithContext({ operationId }, fn)` from `lib/logging-context.ts`; `operationId` then rides on every downstream line.
+
+Grep patterns:
+
+```sh
+grep '"component":"tls"' logs/app.log
+grep '"subcomponent":"acme-client"' logs/app.log
+grep '"requestId":"<id>"' logs/app.log
+tail -f logs/app.log | jq -c '{t:.time,c:.component,s:.subcomponent,m:.msg,r:.requestId}'
+```
+
+Per-component levels live in `config/logging.json` under `development` / `production` / `test`, loaded at boot. No runtime tuning, no UI, no hot reload. `pino-roll` rotates `logs/app.log` daily with a size cap (10m/10 dev, 50m/14 prod).
+
+Console output is reserved for pre-logger boot (`server.ts`, `app-factory.ts`, `prisma.ts`, `config-new.ts`, `logging-config.ts` fallback) plus scripts and tests. Don't add new `console.*` calls outside those sites.
+
 ## General Rules
 
 1. **Always use service wrappers over raw SDK calls** — they add caching, auth, retries, circuit breakers, error mapping, and audit logging
@@ -236,3 +263,4 @@ Database-backed progress tracking for **backup and restore operations only**. Do
 6. **Handle `null` from config** — `ConfigurationService.get()` returns `null` for missing keys
 7. **Let orchestrators build image references** — pass registry, image, and tag as separate values
 8. **Wrap socket emissions in try/catch** — emission failures must never break the caller
+9. **Use `getLogger(component, subcomponent)`** — not the legacy category-specific factories; see the Logging section above

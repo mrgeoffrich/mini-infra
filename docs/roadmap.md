@@ -7,12 +7,15 @@ A living document tracking upcoming features, enhancements, and chores for Mini 
 ### Logging consolidation
 The logging story across server, sidecars, and client is currently fragmented — a mix of `console.*` calls, ad-hoc loggers, and inconsistent log levels / structured fields. This makes it hard to filter, ship, or correlate logs across components.
 
-- Audit existing log call sites across `server/`, `update-sidecar/`, `agent-sidecar/`, and `client/`.
-- Settle on a single structured logger (level, component, correlation id, user id where relevant).
-- Define log level conventions (what belongs at `debug` / `info` / `warn` / `error`).
-- Replace raw `console.*` usage with the shared logger.
-- Ensure Socket.IO event emissions and task tracker steps have matching log lines at a consistent level.
+Server pass landed: new 12-component taxonomy with subcomponent, single `logs/app.log` NDJSON destination, `AsyncLocalStorage`-based correlation (`requestId` + `userId` + optional `operationId`) riding on every line via a pino mixin, per-env level presets in `config/logging.json`. Design & implementation plan: `docs/superpowers/specs/2026-04-15-server-logging-consolidation-design.md`, `docs/superpowers/plans/2026-04-15-server-logging-consolidation-plan.md`.
+
+Remaining work:
+
+- Wrap long-running-op surfaces (cert issuance, blue/green deploy, backup, restore, schedulers, stack reconcile) in `runWithContext({ operationId }, fn)` so their logs carry the operation id end-to-end.
+- Retire the legacy `appLogger()` / `servicesLogger()` / etc. shims from `lib/logger-factory.ts`; remove `lib/request-id.ts` once no production callers remain.
+- Apply the same taxonomy and NDJSON destination to `update-sidecar/`, `agent-sidecar/`, and `client/`.
 - Expose log level configuration via settings so noisy areas can be turned down at runtime without a redeploy.
+- Define log level conventions (what belongs at `debug` / `info` / `warn` / `error`) and ensure Socket.IO emissions / task tracker steps have matching log lines at the right level.
 
 ## UI / UX
 
