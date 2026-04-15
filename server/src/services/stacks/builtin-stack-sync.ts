@@ -53,6 +53,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
         name: template.name,
         displayName: template.displayName,
         scope: template.scope,
+        networkType: template.networkType ?? null,
         category: template.category,
         builtinVersion: template.builtinVersion,
         definition: template.definition as unknown as StackDefinition,

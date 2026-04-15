@@ -77,7 +77,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
   const enableAvailableTemplates = scope !== "host" && !!environmentId;
   const { data: envTemplates } = useStackTemplates(
     enableAvailableTemplates
-      ? { source: "system", scope: "environment" }
+      ? { source: "system", scope: "environment", environmentId }
       : undefined,
   );
   const instantiatedNames = new Set(stacks.map((s) => s.name));

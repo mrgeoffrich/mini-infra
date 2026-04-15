@@ -81,6 +81,18 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
     const request: CreateEnvironmentRequest = req.body;
     const userId = (req as { user?: { id?: string } }).user?.id;
 
+    const networkType = request.networkType || 'local';
+    const existingWithNetworkType = await prisma.environment.findFirst({
+      where: { networkType },
+      select: { id: true, name: true },
+    });
+    if (existingWithNetworkType) {
+      return res.status(409).json({
+        error: 'Network type already in use',
+        message: `A ${networkType} environment ("${existingWithNetworkType.name}") already exists. Only one ${networkType} environment is allowed.`,
+      });
+    }
+
     const environment = await environmentManager.createEnvironment(request, userId);
 
     logger.debug({

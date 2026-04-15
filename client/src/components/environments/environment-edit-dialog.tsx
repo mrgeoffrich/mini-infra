@@ -190,7 +190,7 @@ export function EnvironmentEditDialog({
                     </SelectContent>
                   </Select>
                   <FormDescription>
-                    Production environments have additional safety measures
+                    Production is a visual indicator only — it has no functional effect.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

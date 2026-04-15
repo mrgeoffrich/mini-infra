@@ -63,7 +63,8 @@ export const templateFileSchema = z.object({
   name: z.string().min(1).max(100).regex(nameRegex),
   displayName: z.string().min(1).max(200),
   builtinVersion: z.number().int().min(1),
-  scope: z.enum(["host", "environment"]),
+  scope: z.enum(["host", "environment", "any"]),
+  networkType: z.enum(["local", "internet"]).optional(),
   category: z.string().max(100).optional(),
   description: z.string().max(500).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
@@ -91,7 +92,8 @@ export interface LoadedTemplate {
   name: string;
   displayName: string;
   builtinVersion: number;
-  scope: "host" | "environment";
+  scope: "host" | "environment" | "any";
+  networkType?: "local" | "internet";
   category?: string;
   description?: string;
   postInstallActions?: PostInstallAction[];
@@ -240,6 +242,7 @@ export function loadTemplateFromObject(
     displayName: data.displayName,
     builtinVersion: data.builtinVersion,
     scope: data.scope,
+    networkType: data.networkType,
     category: data.category,
     description: data.description,
     postInstallActions: data.postInstallActions,

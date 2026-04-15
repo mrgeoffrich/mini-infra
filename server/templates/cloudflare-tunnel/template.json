@@ -1,8 +1,9 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 4,
+  "builtinVersion": 5,
   "scope": "environment",
+  "networkType": "internet",
   "category": "infrastructure",
   "description": "Cloudflare tunnel connector for exposing services to the internet via HAProxy",
   "resourceOutputs": [
