@@ -1,6 +1,6 @@
 import Cloudflare from "cloudflare";
 import { CircuitBreaker } from "../circuit-breaker";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
 
 export const CLOUDFLARE_TIMEOUT_MS = 10_000;
@@ -138,7 +138,7 @@ export class CloudflareApiRunner {
       const client = await this.getAuthorizedClient({ requireAccountId });
       const result = await this.withTimeout(fn(client), label, timeoutMs);
       this.circuitBreaker.recordSuccess();
-      servicesLogger().info(
+      getLogger("integrations", "cloudflare-api-runner").info(
         this.circuitBreaker.redact({ ...logContext }),
         `Cloudflare ${label} succeeded`,
       );
@@ -164,7 +164,7 @@ export class CloudflareApiRunner {
     const { label, logContext = {}, requireAccountId, timeoutMs } = ctx;
 
     if (this.circuitBreaker.isOpen()) {
-      servicesLogger().warn(
+      getLogger("integrations", "cloudflare-api-runner").warn(
         {
           ...logContext,
           circuitState: "open",
@@ -179,14 +179,14 @@ export class CloudflareApiRunner {
       const client = await this.getAuthorizedClient({ requireAccountId });
       const result = await this.withTimeout(fn(client), label, timeoutMs);
       this.circuitBreaker.recordSuccess();
-      servicesLogger().info(
+      getLogger("integrations", "cloudflare-api-runner").info(
         this.circuitBreaker.redact({ ...logContext }),
         `Cloudflare ${label} succeeded`,
       );
       return result;
     } catch (error) {
       if (error instanceof MissingCredentialsError) {
-        servicesLogger().warn(
+        getLogger("integrations", "cloudflare-api-runner").warn(
           { ...logContext, reason: error.message },
           `Cannot execute ${label}`,
         );
@@ -206,7 +206,7 @@ export class CloudflareApiRunner {
     if (isRetriable) {
       this.circuitBreaker.recordFailure(errorCode);
     }
-    servicesLogger().error(
+    getLogger("integrations", "cloudflare-api-runner").error(
       this.circuitBreaker.redact({
         ...logContext,
         error: error instanceof Error ? error.message : "Unknown error",

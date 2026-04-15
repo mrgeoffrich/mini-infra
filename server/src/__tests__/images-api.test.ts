@@ -16,6 +16,8 @@ vi.mock("../lib/logger-factory", () => {
     trace: vi.fn(),
   };
   return {
+    getLogger: vi.fn(() => mockLoggerInstance),
+    buildPinoHttpOptions: vi.fn(() => ({ level: "silent" })),
     createLogger: vi.fn(() => mockLoggerInstance),
     appLogger: vi.fn(() => mockLoggerInstance),
     servicesLogger: vi.fn(() => mockLoggerInstance),
@@ -24,8 +26,12 @@ vi.mock("../lib/logger-factory", () => {
     loadbalancerLogger: vi.fn(() => mockLoggerInstance),
     deploymentLogger: vi.fn(() => mockLoggerInstance),
     dockerExecutorLogger: vi.fn(() => mockLoggerInstance),
+    selfBackupLogger: vi.fn(() => mockLoggerInstance),
     tlsLogger: vi.fn(() => mockLoggerInstance),
     agentLogger: vi.fn(() => mockLoggerInstance),
+    clearLoggerCache: vi.fn(),
+    createChildLogger: vi.fn(() => mockLoggerInstance),
+    serializeError: (e: unknown) => e,
     default: vi.fn(() => mockLoggerInstance),
   };
 });

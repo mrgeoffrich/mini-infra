@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { asyncHandler } from '../../lib/async-handler';
 import { getUserId } from '../../lib/get-user-id';
 import { requirePermission } from '../../middleware/auth';
@@ -18,7 +18,7 @@ import {
   formatServiceStep,
 } from '../../services/stacks/stack-event-log-formatter';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stacks-update-route");
 const router = Router();
 
 // POST /:stackId/update — Pull latest images and redeploy changed containers

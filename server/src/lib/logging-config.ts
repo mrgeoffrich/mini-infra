@@ -3,32 +3,62 @@ import fs from "fs";
 import path from "path";
 import { serverConfig } from "./config-new";
 
-// Zod schemas for logging configuration validation
+export const LOG_COMPONENTS = [
+  "http",
+  "auth",
+  "db",
+  "docker",
+  "stacks",
+  "deploy",
+  "haproxy",
+  "tls",
+  "backup",
+  "integrations",
+  "agent",
+  "platform",
+] as const;
+
+export type LogComponent = (typeof LOG_COMPONENTS)[number];
+
+const levelEnum = z.enum([
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+  "silent",
+]);
+
+export type LogLevel = z.infer<typeof levelEnum>;
+
 const rotationConfigSchema = z.object({
   enabled: z.boolean(),
   maxFiles: z.string().optional(),
   maxSize: z.string().optional(),
 });
 
-const loggerConfigSchema = z.object({
-  level: z.enum(["trace", "debug", "info", "warn", "error", "fatal", "silent"]),
-  destination: z.string().optional(),
-  prettyPrint: z.boolean().optional(),
-  rotation: rotationConfigSchema.optional(),
-  includeCaller: z.boolean().optional(),
+export type RotationConfig = z.infer<typeof rotationConfigSchema>;
+
+const levelsSchema = z.object({
+  http: levelEnum,
+  auth: levelEnum,
+  db: levelEnum,
+  docker: levelEnum,
+  stacks: levelEnum,
+  deploy: levelEnum,
+  haproxy: levelEnum,
+  tls: levelEnum,
+  backup: levelEnum,
+  integrations: levelEnum,
+  agent: levelEnum,
+  platform: levelEnum,
 });
 
 const environmentLogConfigSchema = z.object({
-  app: loggerConfigSchema,
-  http: loggerConfigSchema,
-  prisma: loggerConfigSchema,
-  services: loggerConfigSchema,
-  dockerexecutor: loggerConfigSchema,
-  deployments: loggerConfigSchema,
-  loadbalancer: loggerConfigSchema,
-  "self-backup": loggerConfigSchema,
-  tls: loggerConfigSchema,
-  agent: loggerConfigSchema,
+  destination: z.string().nullable(),
+  rotation: rotationConfigSchema.optional(),
+  levels: levelsSchema,
 });
 
 const loggingConfigSchema = z.object({
@@ -38,13 +68,60 @@ const loggingConfigSchema = z.object({
   redactionPaths: z.array(z.string()),
 });
 
-export type LoggerConfig = z.infer<typeof loggerConfigSchema>;
 export type EnvironmentLogConfig = z.infer<typeof environmentLogConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 
-let loggingConfig: LoggingConfig;
+let loggingConfig: LoggingConfig | undefined;
 
-// Load and validate logging configuration
+function buildDefaultConfig(): LoggingConfig {
+  const silentLevels: Record<LogComponent, LogLevel> = Object.fromEntries(
+    LOG_COMPONENTS.map((c) => [c, "silent"]),
+  ) as Record<LogComponent, LogLevel>;
+
+  const infoLevels: Record<LogComponent, LogLevel> = Object.fromEntries(
+    LOG_COMPONENTS.map((c) => [c, "info"]),
+  ) as Record<LogComponent, LogLevel>;
+
+  return {
+    development: {
+      destination: "logs/app.log",
+      rotation: { enabled: true, maxSize: "10m", maxFiles: "10" },
+      levels: { ...infoLevels, docker: "debug", stacks: "debug", deploy: "debug", haproxy: "debug", tls: "debug", agent: "debug" },
+    },
+    production: {
+      destination: "logs/app.log",
+      rotation: { enabled: true, maxSize: "50m", maxFiles: "14" },
+      levels: { ...infoLevels, db: "warn" },
+    },
+    test: {
+      destination: null,
+      levels: silentLevels,
+    },
+    redactionPaths: [
+      "password",
+      "token",
+      "accessToken",
+      "refreshToken",
+      "authorization",
+      "cookie",
+      "sessionToken",
+      "connectionString",
+      "apiKey",
+      "secret",
+      "*.password",
+      "*.token",
+      "*.connectionString",
+      "*.apiKey",
+      "*.secret",
+      'req.headers.authorization',
+      'req.headers.cookie',
+      'req.headers["x-api-key"]',
+      "req.body.password",
+      'res.headers["set-cookie"]',
+    ],
+  };
+}
+
 export function loadLoggingConfig(): LoggingConfig {
   if (loggingConfig) {
     return loggingConfig;
@@ -59,97 +136,42 @@ export function loadLoggingConfig(): LoggingConfig {
     return loggingConfig;
   } catch (error) {
     console.error("❌ Failed to load logging configuration:", error);
-
-    // Fallback to default configuration
-    loggingConfig = {
-      development: {
-        app: { level: "debug" },
-        http: { level: "info" },
-        prisma: { level: "info" },
-        services: { level: "debug" },
-        dockerexecutor: { level: "debug" },
-        deployments: { level: "debug" },
-        loadbalancer: { level: "debug" },
-        "self-backup": { level: "info" },
-        tls: { level: "debug" },
-        agent: { level: "debug" },
-      },
-      production: {
-        app: { level: "info" },
-        http: { level: "info" },
-        prisma: { level: "warn" },
-        services: { level: "info" },
-        dockerexecutor: { level: "info" },
-        deployments: { level: "info" },
-        loadbalancer: { level: "info" },
-        "self-backup": { level: "info" },
-        tls: { level: "info" },
-        agent: { level: "info" },
-      },
-      test: {
-        app: { level: "silent" },
-        http: { level: "silent" },
-        prisma: { level: "silent" },
-        services: { level: "silent" },
-        dockerexecutor: { level: "silent" },
-        deployments: { level: "silent" },
-        loadbalancer: { level: "silent" },
-        "self-backup": { level: "silent" },
-        tls: { level: "silent" },
-        agent: { level: "silent" },
-      },
-      redactionPaths: [
-        "password",
-        "token",
-        "accessToken",
-        "refreshToken",
-        "authorization",
-        "cookie",
-        "sessionToken",
-        "connectionString",
-        "apiKey",
-        "secret",
-        "*.password",
-        "*.token",
-        "req.headers.authorization",
-        "req.headers.cookie",
-        "req.body.password",
-        'res.headers["set-cookie"]',
-      ],
-    };
-
+    loggingConfig = buildDefaultConfig();
     return loggingConfig;
   }
 }
 
-// Get logging configuration for current environment
 export function getEnvironmentLogConfig(): EnvironmentLogConfig {
   const fullConfig = loadLoggingConfig();
   const environment = serverConfig.nodeEnv;
-
   return fullConfig[environment];
 }
 
-// Get specific logger configuration
-export function getLoggerConfig(
-  loggerType: keyof EnvironmentLogConfig,
-): LoggerConfig {
+export function getComponentLevel(component: LogComponent): LogLevel {
+  return getEnvironmentLogConfig().levels[component];
+}
+
+export function getDestinationConfig(): {
+  destination: string | null;
+  rotation?: RotationConfig;
+} {
   const envConfig = getEnvironmentLogConfig();
-  return envConfig[loggerType];
+  return { destination: envConfig.destination, rotation: envConfig.rotation };
 }
 
-// Get redaction paths
 export function getRedactionPaths(): string[] {
-  const fullConfig = loadLoggingConfig();
-  return fullConfig.redactionPaths;
+  return loadLoggingConfig().redactionPaths;
 }
 
-// Ensure log directory exists
-export function ensureLogDirectory(destination?: string): void {
+export function ensureLogDirectory(destination?: string | null): void {
   if (!destination) return;
-
   const logDir = path.dirname(path.resolve(destination));
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
+}
+
+// Reset for tests
+export function resetLoggingConfigForTests(): void {
+  loggingConfig = undefined;
 }

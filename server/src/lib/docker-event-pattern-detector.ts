@@ -1,4 +1,4 @@
-import { servicesLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
 export interface DockerContainerEvent {
   action: string;
@@ -27,7 +27,7 @@ export class DockerEventPatternDetector {
   private buffer: DockerContainerEvent[] = [];
   private lastTriggeredAt = 0;
   private isHandling = false;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("docker", "docker-event-pattern-detector");
 
   constructor(private readonly options: PatternDetectorOptions) {}
 

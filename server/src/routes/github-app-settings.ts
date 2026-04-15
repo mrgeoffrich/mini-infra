@@ -5,9 +5,9 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "github-app-settings");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubAppService } from "../services/github-app";
 import { RegistryCredentialService } from "../services/registry-credential";

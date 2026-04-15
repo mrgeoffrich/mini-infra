@@ -1,5 +1,5 @@
 import { assign, setup } from 'xstate';
-import { deploymentLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import type { DeploymentVolume } from '@mini-infra/types';
 import { DeployApplicationContainers } from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
@@ -184,7 +184,7 @@ export const blueGreenDeploymentMachine = setup({
 
         // Load balancer configuration actions
         initializeGreenLB: ({ context, self }) => {
-            const logger = deploymentLogger();
+            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
             logger.info({
                 deploymentId: context.deploymentId,
                 applicationName: context.applicationName,
@@ -426,7 +426,7 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         cleanupFailedDeployment: async ({ context }) => {
-            const logger = deploymentLogger();
+            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
             logger.warn({
                 deploymentId: context.deploymentId,
                 applicationName: context.applicationName,
@@ -675,7 +675,7 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Deploying green application containers',
             entry: [
                 ({ context }) => {
-                    const logger = deploymentLogger();
+                    const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                     logger.info({
                         deploymentId: context.deploymentId,
                         applicationName: context.applicationName,
@@ -706,7 +706,7 @@ export const blueGreenDeploymentMachine = setup({
                             }
                         }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.info({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -721,7 +721,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         'preserveErrorContext',
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.error({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -737,7 +737,7 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Waiting for green application containers to be ready',
             entry: [
                 ({ context }) => {
-                    const logger = deploymentLogger();
+                    const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                     logger.info({
                         deploymentId: context.deploymentId,
                         applicationName: context.applicationName,
@@ -772,7 +772,7 @@ export const blueGreenDeploymentMachine = setup({
                             }
                         }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.info({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -788,7 +788,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Green container startup timeout' }),
                         ({ context }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.error({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName
@@ -803,7 +803,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Green application startup timeout' }),
                         ({ context }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.error({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName
@@ -818,7 +818,7 @@ export const blueGreenDeploymentMachine = setup({
             description: 'Preparing HAProxy configuration for green backend and registering servers',
             entry: [
                 ({ context }) => {
-                    const logger = deploymentLogger();
+                    const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                     logger.info({
                         deploymentId: context.deploymentId,
                         applicationName: context.applicationName,
@@ -838,7 +838,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ greenBackendConfigured: true }),
                         ({ context }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.info({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -852,7 +852,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         'preserveErrorContext',
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.error({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -984,7 +984,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Unable to remove blue backend (Non-Critical)' }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.warn({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -1008,7 +1008,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Blue app stop failed (Non-Critical)' }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.warn({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -1023,7 +1023,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Blue app stop failed (Non-Critical)' }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.warn({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -1048,7 +1048,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Blue app removal failed (Non-Critical)' }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.warn({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,
@@ -1063,7 +1063,7 @@ export const blueGreenDeploymentMachine = setup({
                     actions: [
                         assign({ error: 'Blue app removal failed (Non-Critical)' }),
                         ({ context, event }) => {
-                            const logger = deploymentLogger();
+                            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
                             logger.warn({
                                 deploymentId: context.deploymentId,
                                 applicationName: context.applicationName,

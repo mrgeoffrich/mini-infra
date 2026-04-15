@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { httpLogger } from "./logger-factory";
-import { getRequestId } from "./request-id";
+import { getLogger } from "./logger-factory";
+import { getContext } from "./logging-context";
 
 // Types imported for future use
 
@@ -20,7 +20,7 @@ export interface TimingContext extends ApiContext {
 
 export const createApiLogger = (req: Request) => {
   const context: ApiContext = {
-    requestId: getRequestId(req),
+    requestId: getContext()?.requestId ?? "unknown",
     method: req.method,
     path: req.path,
     ip: req.ip || req.socket.remoteAddress || "unknown",
@@ -29,7 +29,7 @@ export const createApiLogger = (req: Request) => {
     startTime: Date.now(),
   };
 
-  const requestLogger = httpLogger().child({
+  const requestLogger = getLogger("platform", "api-logger").child({
     requestId: context.requestId,
     userId: context.userId,
     method: context.method,
@@ -49,7 +49,7 @@ export const startApiTiming = (context: ApiContext): TimingContext => {
 export const logApiCompletion = (
   timingContext: TimingContext,
   res: Response,
-  requestLogger: ReturnType<typeof httpLogger>,
+  requestLogger: ReturnType<typeof getLogger>,
 ) => {
   const duration = Date.now() - timingContext.startTime;
 
@@ -65,7 +65,7 @@ export const logApiCompletion = (
 };
 
 export const logApiBusinessEvent = (
-  requestLogger: ReturnType<typeof httpLogger>,
+  requestLogger: ReturnType<typeof getLogger>,
   event: string,
   data: Record<string, unknown> = {},
 ) => {
@@ -79,7 +79,7 @@ export const logApiBusinessEvent = (
 };
 
 export const logError = (
-  requestLogger: ReturnType<typeof httpLogger>,
+  requestLogger: ReturnType<typeof getLogger>,
   error: Error,
   message: string,
   context: Record<string, unknown> = {},

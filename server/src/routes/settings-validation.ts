@@ -5,9 +5,9 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("http", "settings-validation");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";

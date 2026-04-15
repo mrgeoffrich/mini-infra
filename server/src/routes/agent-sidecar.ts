@@ -1,7 +1,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getOwnContainerId } from "../services/self-update";
@@ -17,7 +17,7 @@ import {
 import { emitToChannel } from "../lib/socket";
 import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("agent", "agent-sidecar");
 const router = express.Router();
 
 const SETTINGS_CATEGORY = "agent-sidecar";

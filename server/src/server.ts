@@ -1,4 +1,9 @@
 console.log("[STARTUP] Starting Mini Infra server...");
+// Load logging configuration before any service module is imported, so any
+// component logger constructed during transitive imports uses the configured
+// level instead of the in-code fallback.
+import { loadLoggingConfig } from "./lib/logging-config";
+loadLoggingConfig();
 console.log("[STARTUP] Importing app module...");
 import { createServer } from "http";
 import v8 from "v8";
@@ -9,7 +14,7 @@ console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
 import { initializeSocketIO, shutdownSocketIO } from "./lib/socket";
 import { setupContainerSocketEmitter } from "./services/container-socket-emitter";
-import { appLogger, clearLoggerCache } from "./lib/logger-factory";
+import { getLogger, clearLoggerCache } from "./lib/logger-factory";
 import {
   ensureAgentSidecar,
   removeAgentSidecar,
@@ -19,7 +24,7 @@ import {
 clearLoggerCache();
 
 // Use app logger for server startup
-const logger = appLogger();
+const logger = getLogger("platform", "server");
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
 import { BackupSchedulerService } from "./services/backup";

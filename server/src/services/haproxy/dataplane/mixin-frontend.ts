@@ -1,8 +1,8 @@
 import { isHttpError } from '../../../lib/http-client';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor, FrontendConfig } from './types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "mixin-frontend");
 
 export function FrontendMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
   return class extends Base {

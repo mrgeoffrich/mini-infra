@@ -7,6 +7,26 @@ import {
 
 // Mock logger factory
 vi.mock("../lib/logger-factory.ts", () => ({
+  getLogger: vi.fn(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  })),
+  clearLoggerCache: vi.fn(),
+  createChildLogger: vi.fn(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  })),
+  selfBackupLogger: vi.fn(() => ({
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  })),
+  serializeError: (e: unknown) => e,
   servicesLogger: vi.fn(() => ({
     info: vi.fn(),
     error: vi.fn(),

@@ -1,6 +1,6 @@
 import { HttpClient, isHttpError } from "../lib/http-client";
 import { ValidationResult } from "@mini-infra/types";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
 /**
  * Health check configuration interface
@@ -97,7 +97,7 @@ export class HealthCheckService {
       if (breaker.nextRetryTime && new Date() >= breaker.nextRetryTime) {
         // Transition to half-open
         breaker.state = "half-open";
-        servicesLogger().info(
+        getLogger("platform", "health-check").info(
           {
             endpoint: key,
             previousFailures: breaker.consecutiveFailures,
@@ -124,7 +124,7 @@ export class HealthCheckService {
       breaker &&
       (breaker.state === "half-open" || breaker.consecutiveFailures > 0)
     ) {
-      servicesLogger().info(
+      getLogger("platform", "health-check").info(
         {
           endpoint: key,
           previousState: breaker.state,
@@ -162,7 +162,7 @@ export class HealthCheckService {
         Date.now() + HealthCheckService.CIRCUIT_BREAKER_COOLDOWN_MS,
       );
 
-      servicesLogger().warn(
+      getLogger("platform", "health-check").warn(
         {
           endpoint: key,
           consecutiveFailures: breaker.consecutiveFailures,
@@ -171,7 +171,7 @@ export class HealthCheckService {
         "Health check circuit breaker opened due to consecutive failures",
       );
     } else {
-      servicesLogger().debug(
+      getLogger("platform", "health-check").debug(
         {
           endpoint: key,
           consecutiveFailures: breaker.consecutiveFailures,
@@ -202,7 +202,7 @@ export class HealthCheckService {
       const bodyString = typeof body === "string" ? body : JSON.stringify(body);
       return regex.test(bodyString);
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("platform", "health-check").warn(
         {
           pattern,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -273,7 +273,7 @@ export class HealthCheckService {
       }
 
 
-      servicesLogger().debug(
+      getLogger("platform", "health-check").debug(
         {
           endpoint: config.endpoint,
           method: config.method || "GET",
@@ -318,7 +318,7 @@ export class HealthCheckService {
         errorMessage = (error instanceof Error ? error.message : String(error));
       }
 
-      servicesLogger().debug(
+      getLogger("platform", "health-check").debug(
         {
           endpoint: config.endpoint,
           method: config.method || "GET",
@@ -355,7 +355,7 @@ export class HealthCheckService {
         ? breaker.nextRetryTime.getTime() - Date.now()
         : 0;
 
-      servicesLogger().info(
+      getLogger("platform", "health-check").info(
         {
           endpoint,
           circuitState: "open",
@@ -381,7 +381,7 @@ export class HealthCheckService {
       if (attempt > 0) {
         // Exponential backoff: baseDelay * 2^(attempt-1)
         const delay = baseDelay * Math.pow(2, attempt - 1);
-        servicesLogger().debug(
+        getLogger("platform", "health-check").debug(
           {
             endpoint,
             attempt,
@@ -399,7 +399,7 @@ export class HealthCheckService {
 
       if (result.success) {
         this.recordCircuitBreakerSuccess(endpoint);
-        servicesLogger().info(
+        getLogger("platform", "health-check").info(
           {
             endpoint,
             attempt: attempt + 1,
@@ -416,7 +416,7 @@ export class HealthCheckService {
       // Don't retry for validation failures, only retry for network errors
       if (result.statusCode !== undefined) {
         this.recordCircuitBreakerFailure(endpoint);
-        servicesLogger().info(
+        getLogger("platform", "health-check").info(
           {
             endpoint,
             attempt: attempt + 1,
@@ -428,7 +428,7 @@ export class HealthCheckService {
         return result;
       }
 
-      servicesLogger().debug(
+      getLogger("platform", "health-check").debug(
         {
           endpoint,
           attempt: attempt + 1,
@@ -444,7 +444,7 @@ export class HealthCheckService {
     this.recordCircuitBreakerFailure(endpoint);
 
 
-    servicesLogger().warn(
+    getLogger("platform", "health-check").warn(
       {
         endpoint,
         totalAttempts: retries + 1,
@@ -493,7 +493,7 @@ export class HealthCheckService {
   async performProgressiveHealthCheck(
     config: HealthCheckConfig,
   ): Promise<HealthCheckResult> {
-    servicesLogger().info(
+    getLogger("platform", "health-check").info(
       { endpoint: config.endpoint },
       "Starting progressive health check",
     );
@@ -502,7 +502,7 @@ export class HealthCheckService {
     const basicResult = await this.performBasicHealthCheck(config.endpoint);
 
     if (!basicResult.success) {
-      servicesLogger().info(
+      getLogger("platform", "health-check").info(
         {
           endpoint: config.endpoint,
           basicCheckError: basicResult.errorMessage,
@@ -512,7 +512,7 @@ export class HealthCheckService {
       return basicResult;
     }
 
-    servicesLogger().debug(
+    getLogger("platform", "health-check").debug(
       {
         endpoint: config.endpoint,
         basicResponseTime: basicResult.responseTime,
@@ -524,7 +524,7 @@ export class HealthCheckService {
     const comprehensiveResult =
       await this.performComprehensiveHealthCheck(config);
 
-    servicesLogger().info(
+    getLogger("platform", "health-check").info(
       {
         endpoint: config.endpoint,
         basicResponseTime: basicResult.responseTime,
@@ -588,7 +588,7 @@ export class HealthCheckService {
     const key = this.getCircuitBreakerKey(endpoint);
     this.circuitBreakers.delete(key);
 
-    servicesLogger().info({ endpoint: key }, "Circuit breaker manually reset");
+    getLogger("platform", "health-check").info({ endpoint: key }, "Circuit breaker manually reset");
   }
 
   /**

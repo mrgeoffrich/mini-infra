@@ -1,6 +1,6 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
@@ -19,7 +19,7 @@ import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-cl
 import DockerService from "../services/docker";
 import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
 
-const logger = appLogger();
+const logger = getLogger("haproxy", "haproxy-backends");
 const router = express.Router();
 
 // ====================

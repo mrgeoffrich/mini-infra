@@ -2,13 +2,13 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import prisma, { PrismaClient } from "./prisma";
 import { authConfig } from "./config-new";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import type {
   GoogleOAuthProfile,
   PassportDoneCallback,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "passport");
 let passportPrisma: Pick<PrismaClient, "user"> = prisma;
 
 export function setPassportPrismaClientForTesting(

@@ -28,6 +28,11 @@ vi.mock("../../lib/prisma", () => ({
 }));
 vi.mock("../../lib/logger-factory", () => ({
   createLogger: vi.fn(function() { return mockLoggerInstance; }),
+  getLogger: vi.fn(function() { return mockLoggerInstance; }),
+  clearLoggerCache: vi.fn(),
+  createChildLogger: vi.fn(function() { return mockLoggerInstance; }),
+  selfBackupLogger: vi.fn(function() { return mockLoggerInstance; }),
+  serializeError: (e: unknown) => e,
   appLogger: vi.fn(function() { return mockLoggerInstance; }),
   httpLogger: vi.fn(function() { return mockLoggerInstance; }),
   prismaLogger: vi.fn(function() { return mockLoggerInstance; }),

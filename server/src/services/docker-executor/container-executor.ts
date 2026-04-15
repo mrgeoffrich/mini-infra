@@ -1,6 +1,6 @@
 import Docker, { Container } from "dockerode";
 import { Readable } from "stream";
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions, ContainerExecutionResult, ContainerProgress } from "./types";
 import { inferTaskType, generateTaskId } from "./utils";
@@ -31,7 +31,7 @@ export class ContainerExecutor {
     let stderr = "";
 
     try {
-      servicesLogger().info(
+      getLogger("docker", "container-executor").info(
         {
           image: options.image,
           envKeys: Object.keys(options.env),
@@ -44,7 +44,7 @@ export class ContainerExecutor {
       container = await this.createContainer(options);
       const containerId = container.id;
 
-      servicesLogger().info({ containerId }, "Container created successfully");
+      getLogger("docker", "container-executor").info({ containerId }, "Container created successfully");
 
       // Set up output capture
       const outputCapture = await this.attachToContainer(container);
@@ -54,7 +54,7 @@ export class ContainerExecutor {
         const chunk = data.toString();
         stdout += chunk;
         // Log container stdout to dedicated dockerexecutor logger with full container context
-        dockerExecutorLogger().debug(
+        getLogger("docker", "container-executor").debug(
           {
             containerId,
             image: options.image,
@@ -73,7 +73,7 @@ export class ContainerExecutor {
         const chunk = data.toString();
         stderr += chunk;
         // Log container stderr to dedicated dockerexecutor logger with full container context
-        dockerExecutorLogger().debug(
+        getLogger("docker", "container-executor").debug(
           {
             containerId,
             image: options.image,
@@ -87,7 +87,7 @@ export class ContainerExecutor {
 
       // Start container
       await container.start();
-      servicesLogger().info({ containerId }, "Container started");
+      getLogger("docker", "container-executor").info({ containerId }, "Container started");
 
       // Wait for container completion with timeout
       const result = await this.waitForContainer(
@@ -97,7 +97,7 @@ export class ContainerExecutor {
 
       const executionTimeMs = Date.now() - startTime;
 
-      servicesLogger().info(
+      getLogger("docker", "container-executor").info(
         {
           containerId,
           exitCode: result.exitCode,
@@ -118,7 +118,7 @@ export class ContainerExecutor {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      servicesLogger().error(
+      getLogger("docker", "container-executor").error(
         {
           error: errorMessage,
           containerId: container?.id,
@@ -237,7 +237,7 @@ export class ContainerExecutor {
 
       return await this.docker.createContainer(containerOptions);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           image: options.image,
@@ -286,7 +286,7 @@ export class ContainerExecutor {
 
       return { stdout, stderr };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId: container.id,
@@ -333,7 +333,7 @@ export class ContainerExecutor {
       // Remove container if it exists and is not already being removed
       if (data.State.Status !== "removing") {
         await container.remove({ force: true });
-        servicesLogger().debug(
+        getLogger("docker", "container-executor").debug(
           { containerId: container.id },
           "Container cleaned up",
         );
@@ -341,12 +341,12 @@ export class ContainerExecutor {
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the operation
       if ((error as { statusCode?: number }).statusCode === 404) {
-        servicesLogger().debug(
+        getLogger("docker", "container-executor").debug(
           { containerId: container.id },
           "Container already removed",
         );
       } else {
-        servicesLogger().warn(
+        getLogger("docker", "container-executor").warn(
           {
             error: error instanceof Error ? error.message : "Unknown error",
             containerId: container.id,

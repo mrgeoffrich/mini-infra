@@ -1,4 +1,5 @@
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
+import { runWithContext } from "../../lib/logging-context";
 import type { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
@@ -53,11 +54,29 @@ export class RestoreRunner {
     userId: string,
     targetDatabaseName?: string,
   ): Promise<void> {
+    return runWithContext({ operationId, userId }, () =>
+      this.executeRestoreInner(
+        operationId,
+        databaseId,
+        backupUrl,
+        userId,
+        targetDatabaseName,
+      ),
+    );
+  }
+
+  private async executeRestoreInner(
+    operationId: string,
+    databaseId: string,
+    backupUrl: string,
+    userId: string,
+    targetDatabaseName?: string,
+  ): Promise<void> {
     let rollbackInitiated = false;
     const executionStartTime = Date.now();
 
     try {
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseId,
@@ -75,7 +94,7 @@ export class RestoreRunner {
       });
 
       // Get database configuration
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
           databaseId,
@@ -93,7 +112,7 @@ export class RestoreRunner {
         );
       }
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseId: database.id,
@@ -111,7 +130,7 @@ export class RestoreRunner {
       });
 
       // Validate backup file before restore
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           backupUrl,
@@ -124,7 +143,7 @@ export class RestoreRunner {
         databaseId,
       );
       if (!validationResult.isValid) {
-        servicesLogger().error(
+        getLogger("backup", "restore-runner").error(
           {
             operationId,
             backupUrl,
@@ -137,7 +156,7 @@ export class RestoreRunner {
         );
       }
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           backupUrl,
@@ -154,7 +173,7 @@ export class RestoreRunner {
       });
 
       // Get system settings for Docker image
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
         },
@@ -163,7 +182,7 @@ export class RestoreRunner {
 
       const dockerImage = await this.dbOps.getRestoreDockerImage();
 
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
         },
@@ -177,7 +196,7 @@ export class RestoreRunner {
       });
 
       // Pull Docker image with automatic authentication
-      dockerExecutorLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           dockerImage,
@@ -188,7 +207,7 @@ export class RestoreRunner {
       const pullStartTime = Date.now();
       await this.dockerExecutor.pullImageWithAutoAuth(dockerImage);
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           dockerImage,
@@ -198,7 +217,7 @@ export class RestoreRunner {
       );
 
       // Verify Azure is configured
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
         },
@@ -208,7 +227,7 @@ export class RestoreRunner {
       const azureConnectionString =
         await this.azureConfigService.getConnectionString();
       if (!azureConnectionString) {
-        servicesLogger().error(
+        getLogger("backup", "restore-runner").error(
           {
             operationId,
           },
@@ -219,7 +238,7 @@ export class RestoreRunner {
         );
       }
 
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
         },
@@ -227,7 +246,7 @@ export class RestoreRunner {
       );
 
       // Get database connection details
-      servicesLogger().debug(
+      getLogger("backup", "restore-runner").debug(
         {
           operationId,
           databaseId,
@@ -244,7 +263,7 @@ export class RestoreRunner {
         database: targetDatabaseName || baseConnectionConfig.database,
       };
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseHost: connectionConfig.host,
@@ -267,7 +286,7 @@ export class RestoreRunner {
       });
 
       // Create a pre-restore backup for rollback purposes
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseName: database.database,
@@ -286,7 +305,7 @@ export class RestoreRunner {
           databaseNetworkName,
         );
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           rollbackBackupUrl,
@@ -312,7 +331,7 @@ export class RestoreRunner {
         "read",
       );
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           backupUrl,
@@ -335,7 +354,7 @@ export class RestoreRunner {
         DROP_PUBLIC: "yes",
       };
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           dockerImage,
@@ -346,6 +365,11 @@ export class RestoreRunner {
       );
 
       const containerStartTime = Date.now();
+      // Track the latest pending progress update from the callback to avoid
+      // fire-and-forget race conditions where an unawaited DB write completes
+      // after subsequent awaited writes, overwriting the final status.
+      let pendingProgressUpdate: Promise<void> | undefined;
+
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
           {
@@ -368,7 +392,7 @@ export class RestoreRunner {
             let progressValue = 50;
             let message = "Executing restore";
 
-            servicesLogger().debug(
+            getLogger("backup", "restore-runner").debug(
               {
                 operationId,
                 containerStatus: progress.status,
@@ -381,7 +405,7 @@ export class RestoreRunner {
               case "starting":
                 progressValue = 50;
                 message = "Starting restore container";
-                servicesLogger().info(
+                getLogger("backup", "restore-runner").info(
                   {
                     operationId,
                   },
@@ -391,7 +415,7 @@ export class RestoreRunner {
               case "running":
                 progressValue = 70;
                 message = "Restoring database";
-                servicesLogger().info(
+                getLogger("backup", "restore-runner").info(
                   {
                     operationId,
                   },
@@ -401,7 +425,7 @@ export class RestoreRunner {
               case "completed":
                 progressValue = 85;
                 message = "Restore completed, verifying database";
-                servicesLogger().info(
+                getLogger("backup", "restore-runner").info(
                   {
                     operationId,
                   },
@@ -409,7 +433,7 @@ export class RestoreRunner {
                 );
                 break;
               case "failed":
-                servicesLogger().error(
+                getLogger("backup", "restore-runner").error(
                   {
                     operationId,
                     errorMessage: progress.errorMessage,
@@ -421,7 +445,7 @@ export class RestoreRunner {
                 );
             }
 
-            this.dbOps.updateRestoreProgress(operationId, {
+            pendingProgressUpdate = this.dbOps.updateRestoreProgress(operationId, {
               status: "running",
               progress: progressValue,
               message,
@@ -429,7 +453,13 @@ export class RestoreRunner {
           },
         );
 
-      dockerExecutorLogger().info(
+      // Ensure callback's DB write completes before we continue to avoid
+      // it racing with subsequent writes and overwriting the final status.
+      if (pendingProgressUpdate) {
+        await pendingProgressUpdate;
+      }
+
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           exitCode: containerResult.exitCode,
@@ -441,7 +471,7 @@ export class RestoreRunner {
       );
 
       if (containerResult.stdout) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "restore-runner").debug(
           {
             operationId,
             stdout: containerResult.stdout.substring(0, 1000), // First 1000 chars
@@ -451,7 +481,7 @@ export class RestoreRunner {
       }
 
       if (containerResult.stderr) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "restore-runner").debug(
           {
             operationId,
             stderr: containerResult.stderr.substring(0, 1000), // First 1000 chars
@@ -463,7 +493,7 @@ export class RestoreRunner {
       if (containerResult.exitCode !== 0) {
         rollbackInitiated = true;
 
-        servicesLogger().error(
+        getLogger("backup", "restore-runner").error(
           {
             operationId,
             exitCode: containerResult.exitCode,
@@ -489,7 +519,7 @@ export class RestoreRunner {
           databaseNetworkName,
         );
 
-        servicesLogger().info(
+        getLogger("backup", "restore-runner").info(
           {
             operationId,
             rollbackExecutionTimeMs: Date.now() - rollbackExecutionStartTime,
@@ -509,7 +539,7 @@ export class RestoreRunner {
       });
 
       // Verify the restored database
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseHost: connectionConfig.host,
@@ -522,7 +552,7 @@ export class RestoreRunner {
       const verificationResult =
         await this.dbOps.verifyRestoredDatabase(connectionConfig);
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           isValid: verificationResult.isValid,
@@ -535,7 +565,7 @@ export class RestoreRunner {
       if (!verificationResult.isValid) {
         rollbackInitiated = true;
 
-        servicesLogger().error(
+        getLogger("backup", "restore-runner").error(
           {
             operationId,
             verificationError: verificationResult.error,
@@ -559,7 +589,7 @@ export class RestoreRunner {
           databaseNetworkName,
         );
 
-        servicesLogger().info(
+        getLogger("backup", "restore-runner").info(
           {
             operationId,
             rollbackExecutionTimeMs: Date.now() - rollbackExecutionStartTime,
@@ -573,7 +603,7 @@ export class RestoreRunner {
       }
 
       // Keep rollback backup for future reference - do not delete
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           rollbackBackupUrl,
@@ -598,7 +628,7 @@ export class RestoreRunner {
         },
       });
 
-      servicesLogger().info(
+      getLogger("backup", "restore-runner").info(
         {
           operationId,
           databaseId,
@@ -613,7 +643,7 @@ export class RestoreRunner {
         error instanceof Error ? error.message : "Unknown error";
       const stack = error instanceof Error ? error.stack : undefined;
 
-      servicesLogger().error(
+      getLogger("backup", "restore-runner").error(
         {
           operationId,
           databaseId,

@@ -4,16 +4,6 @@ A living document tracking upcoming features, enhancements, and chores for Mini 
 
 ## Chores
 
-### Logging consolidation
-The logging story across server, sidecars, and client is currently fragmented — a mix of `console.*` calls, ad-hoc loggers, and inconsistent log levels / structured fields. This makes it hard to filter, ship, or correlate logs across components.
-
-- Audit existing log call sites across `server/`, `update-sidecar/`, `agent-sidecar/`, and `client/`.
-- Settle on a single structured logger (level, component, correlation id, user id where relevant).
-- Define log level conventions (what belongs at `debug` / `info` / `warn` / `error`).
-- Replace raw `console.*` usage with the shared logger.
-- Ensure Socket.IO event emissions and task tracker steps have matching log lines at a consistent level.
-- Expose log level configuration via settings so noisy areas can be turned down at runtime without a redeploy.
-
 ## UI / UX
 
 ### Onboarding flow
@@ -21,7 +11,6 @@ A fresh Mini Infra instance has a lot of knobs that almost every operator ends u
 
 - **Time & locale** — host timezone, date/time format, and any locale-driven defaults.
 - **TLS / ACME** — set the ACME account, default issuer, renewal window, and Cloudflare DNS provider so certificates "just work" from day one.
-- **Azure storage** — connect the storage account and let the user select (or create) containers for backups, certificates, and other artefacts in one place.
 
 ### Stacks & Applications UI refresh
 The Stacks and Applications surfaces have grown organically and would benefit from a design pass to improve clarity and reduce cognitive load.

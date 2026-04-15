@@ -6,7 +6,7 @@
  */
 
 import { Logger } from "pino";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { HAProxyService } from "../haproxy/haproxy-service";
 import { HAProxyDataPlaneClient } from "../haproxy/haproxy-dataplane-client";
@@ -46,7 +46,7 @@ export class CertificateDistributor {
     this.haproxyService = haproxyService;
     this.dockerExecutor = dockerExecutor;
     this.dataPlaneClient = dataPlaneClient;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "certificate-distributor");
 
     // Local staging directory for certificates (used as fallback when API methods fail)
     this.certDir = path.join(process.cwd(), "data", "certs");

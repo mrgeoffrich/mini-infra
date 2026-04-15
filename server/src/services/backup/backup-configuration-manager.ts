@@ -2,7 +2,7 @@ import { PrismaClient } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
 import { UserPreferencesService } from "../user-preferences";
 import { BackupSchedulerService } from "./backup-scheduler";
@@ -114,7 +114,7 @@ export class BackupConfigurationManager {
               await scheduler.enableSchedule(databaseId);
             }
           } catch (scheduleError) {
-            servicesLogger().warn(
+            getLogger("backup", "backup-configuration-manager").warn(
               {
                 configId: createdConfig.id,
                 databaseId: databaseId,
@@ -129,7 +129,7 @@ export class BackupConfigurationManager {
         }
       }
 
-      servicesLogger().info(
+      getLogger("backup", "backup-configuration-manager").info(
         {
           configId: createdConfig.id,
           databaseId: databaseId,
@@ -142,7 +142,7 @@ export class BackupConfigurationManager {
 
       return this.toBackupConfigInfo(createdConfig);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -300,7 +300,7 @@ export class BackupConfigurationManager {
             await scheduler.unregisterSchedule(existingConfig.databaseId);
           }
         } catch (scheduleError) {
-          servicesLogger().warn(
+          getLogger("backup", "backup-configuration-manager").warn(
             {
               configId: configId,
               databaseId: existingConfig.databaseId,
@@ -314,7 +314,7 @@ export class BackupConfigurationManager {
         }
       }
 
-      servicesLogger().info(
+      getLogger("backup", "backup-configuration-manager").info(
         {
           configId: configId,
           databaseId: existingConfig.databaseId,
@@ -324,7 +324,7 @@ export class BackupConfigurationManager {
 
       return this.toBackupConfigInfo(updatedConfig);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           configId: configId,
                     error: error instanceof Error ? error.message : "Unknown error",
@@ -354,7 +354,7 @@ export class BackupConfigurationManager {
 
       return this.toBackupConfigInfo(config);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -386,7 +386,7 @@ export class BackupConfigurationManager {
         try {
           await scheduler.unregisterSchedule(config.databaseId);
         } catch (scheduleError) {
-          servicesLogger().warn(
+          getLogger("backup", "backup-configuration-manager").warn(
             {
               configId: configId,
               databaseId: config.databaseId,
@@ -405,7 +405,7 @@ export class BackupConfigurationManager {
         where: { id: configId },
       });
 
-      servicesLogger().info(
+      getLogger("backup", "backup-configuration-manager").info(
         {
           configId: configId,
           databaseId: config.databaseId,
@@ -413,7 +413,7 @@ export class BackupConfigurationManager {
         "Backup configuration deleted",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           configId: configId,
                     error: error instanceof Error ? error.message : "Unknown error",
@@ -455,7 +455,7 @@ export class BackupConfigurationManager {
 
       return interval.next().toDate();
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           cronExpression,
           timezone,
@@ -481,7 +481,7 @@ export class BackupConfigurationManager {
         );
       }
 
-      servicesLogger().debug(
+      getLogger("backup", "backup-configuration-manager").debug(
         {
           containerName,
           responseTime: accessResult.responseTimeMs,
@@ -490,7 +490,7 @@ export class BackupConfigurationManager {
         "Azure container validation successful",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           containerName,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -516,7 +516,7 @@ export class BackupConfigurationManager {
         },
       });
 
-      servicesLogger().debug(
+      getLogger("backup", "backup-configuration-manager").debug(
         {
           configId,
           lastBackupAt: now.toISOString(),
@@ -524,7 +524,7 @@ export class BackupConfigurationManager {
         "Updated last backup time for configuration",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-configuration-manager").error(
         {
           configId,
           error: error instanceof Error ? error.message : "Unknown error",

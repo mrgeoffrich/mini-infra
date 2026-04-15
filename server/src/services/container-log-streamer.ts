@@ -13,9 +13,9 @@ import { DockerStreamDemuxer } from "../lib/docker-stream";
 import { ServerEvent, DEFAULT_LOG_TAIL_LINES } from "@mini-infra/types";
 import type { ContainerLogLine } from "@mini-infra/types/containers";
 import type { TypedSocket } from "../lib/socket";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("docker", "container-log-streamer");
 
 /** Key for active stream map: socketId:containerId */
 type StreamKey = string;

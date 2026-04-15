@@ -1,9 +1,9 @@
 import prisma from "../lib/prisma";
 import { createApiKey } from "../lib/api-key-service";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
 
-const logger = appLogger();
+const logger = getLogger("auth", "dev-api-key");
 
 /**
  * Development API Key Service

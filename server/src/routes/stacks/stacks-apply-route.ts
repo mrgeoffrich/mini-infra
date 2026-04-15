@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { asyncHandler } from '../../lib/async-handler';
 import { getUserId } from '../../lib/get-user-id';
 import { requirePermission } from '../../middleware/auth';
@@ -28,7 +28,7 @@ import type {
   ServiceApplyResult,
 } from '@mini-infra/types';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stacks-apply-route");
 const router = Router();
 
 // POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)

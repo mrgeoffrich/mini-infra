@@ -8,7 +8,7 @@ import {
   ConnectivityStatusType,
 } from "@mini-infra/types";
 import { PrismaClient } from "../lib/prisma";
-import { servicesLogger, dockerExecutorLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
 export class DockerConfigService extends ConfigurationService {
   private docker: Docker | null = null;
@@ -50,7 +50,7 @@ export class DockerConfigService extends ConfigurationService {
 
       const host = dockerHost;
 
-      dockerExecutorLogger().info(
+      getLogger("platform", "docker-config").info(
         {
           host: host,
           apiVersion: apiVersion,
@@ -85,7 +85,7 @@ export class DockerConfigService extends ConfigurationService {
         pingString = String(pingResult).trim();
       }
 
-      dockerExecutorLogger().debug(
+      getLogger("platform", "docker-config").debug(
         {
           pingResult,
           pingResultType: typeof pingResult,
@@ -99,7 +99,7 @@ export class DockerConfigService extends ConfigurationService {
       // Check for successful ping - Docker API can return "OK" (string/Buffer) or boolean true
       if (!(pingString.toLowerCase() === "ok" || pingResult === true)) {
         const errorMessage = `Docker ping failed: ${pingString}`;
-        dockerExecutorLogger().warn(
+        getLogger("platform", "docker-config").warn(
           { pingResult, pingString, originalResult: pingResult },
           errorMessage,
         );
@@ -142,7 +142,7 @@ export class DockerConfigService extends ConfigurationService {
         metadata,
       );
 
-      dockerExecutorLogger().info(
+      getLogger("platform", "docker-config").info(
         {
           responseTimeMs,
           serverVersion: dockerVersion.Version,
@@ -162,7 +162,7 @@ export class DockerConfigService extends ConfigurationService {
         error instanceof Error ? error.message : "Unknown error";
       const errorCode = this.getDockerErrorCode(error);
 
-      dockerExecutorLogger().error(
+      getLogger("platform", "docker-config").error(
         {
           error: errorMessage,
           errorCode,
@@ -297,7 +297,7 @@ export class DockerConfigService extends ConfigurationService {
       const docker = await this.getDockerClient();
       return await docker.info();
     } catch (error) {
-      dockerExecutorLogger().error(
+      getLogger("platform", "docker-config").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -315,7 +315,7 @@ export class DockerConfigService extends ConfigurationService {
       const docker = await this.getDockerClient();
       return await docker.version();
     } catch (error) {
-      dockerExecutorLogger().error(
+      getLogger("platform", "docker-config").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -461,7 +461,7 @@ export class DockerConfigService extends ConfigurationService {
     // Invalidate cached Docker client when configuration changes
     this.docker = null;
 
-    servicesLogger().info(
+    getLogger("platform", "docker-config").info(
       {
         key,
         userId,
@@ -474,11 +474,11 @@ export class DockerConfigService extends ConfigurationService {
       const DockerService = (await import("./docker")).default;
       const dockerService = DockerService.getInstance();
       await dockerService.refreshConnection();
-      servicesLogger().info(
+      getLogger("platform", "docker-config").info(
         "Main Docker service connection refreshed after settings update",
       );
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("platform", "docker-config").warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

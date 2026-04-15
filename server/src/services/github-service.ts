@@ -8,7 +8,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
 import { toServiceError } from "../lib/service-error-mapper";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { Octokit } from "@octokit/rest";
 import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
 
@@ -115,7 +115,7 @@ export class GitHubService extends ConfigurationService {
       const repoName = settings?.repoName ||
         (await this.get(GitHubService.REPO_NAME_KEY));
 
-      servicesLogger().debug(
+      getLogger("integrations", "github-service").debug(
         this.circuitBreaker.redact({
           hasToken: !!personalAccessToken,
           tokenLength: personalAccessToken?.length,
@@ -224,7 +224,7 @@ export class GitHubService extends ConfigurationService {
         result.message,
       );
 
-      servicesLogger().info(
+      getLogger("integrations", "github-service").info(
         this.circuitBreaker.redact({
           responseTime,
           username: userResponse.data.login,
@@ -260,7 +260,7 @@ export class GitHubService extends ConfigurationService {
         errorCode,
       );
 
-      servicesLogger().error(
+      getLogger("integrations", "github-service").error(
         this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,
@@ -293,7 +293,7 @@ export class GitHubService extends ConfigurationService {
       const repoOwner = await this.get(GitHubService.REPO_OWNER_KEY);
       const repoName = await this.get(GitHubService.REPO_NAME_KEY);
 
-      servicesLogger().debug(
+      getLogger("integrations", "github-service").debug(
         this.circuitBreaker.redact({
           hasToken: !!personalAccessToken,
           repoOwner,
@@ -336,7 +336,7 @@ export class GitHubService extends ConfigurationService {
 
       const responseTime = Date.now() - startTime;
 
-      servicesLogger().info(
+      getLogger("integrations", "github-service").info(
         {
           issueNumber: response.data.number,
           issueUrl: response.data.html_url,
@@ -364,7 +364,7 @@ export class GitHubService extends ConfigurationService {
         error instanceof Error ? error.message : String(error);
       const responseTime = Date.now() - startTime;
 
-      servicesLogger().error(
+      getLogger("integrations", "github-service").error(
         this.circuitBreaker.redact({
           error: errorMessage,
           responseTime,

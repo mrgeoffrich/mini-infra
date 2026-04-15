@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { PERMISSION_PRESETS } from "@mini-infra/types";
 import type {
   PermissionPresetRecord,
@@ -8,7 +8,7 @@ import type {
   UpdatePermissionPresetRequest,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "permission-preset-service");
 
 function toRecord(preset: {
   id: string;

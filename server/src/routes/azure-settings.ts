@@ -5,7 +5,7 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { AzureStorageService } from "../services/azure-storage-service";
@@ -18,7 +18,7 @@ import {
 } from "@mini-infra/types";
 
 const router = express.Router();
-const logger = appLogger();
+const logger = getLogger("integrations", "azure-settings");
 
 // Create Azure configuration service instance
 const azureConfigService = new AzureStorageService(prisma);

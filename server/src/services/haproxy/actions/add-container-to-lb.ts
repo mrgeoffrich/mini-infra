@@ -1,9 +1,9 @@
 import type { ActionContext, LBConfigEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
 import prisma from '../../../lib/prisma';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "add-container-to-lb");
 
 export class AddContainerToLB {
     private haproxyClient: HAProxyDataPlaneClient;

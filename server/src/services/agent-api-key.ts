@@ -1,8 +1,8 @@
 import prisma from "../lib/prisma";
 import { createApiKey } from "../lib/api-key-service";
-import { agentLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = agentLogger();
+const logger = getLogger("agent", "agent-api-key");
 
 const AGENT_USER_EMAIL = "agent@mini-infra.internal";
 const AGENT_USER_NAME = "Mini Infra Agent";

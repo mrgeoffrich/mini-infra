@@ -1,10 +1,10 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
 import type Docker from "dockerode";
 import prisma from "../../lib/prisma";
 import { getOwnContainerId } from "../self-update";
 
-const logger = servicesLogger();
+const logger = getLogger("stacks", "environment-validation");
 
 export interface EnvironmentValidationResult {
   isValid: boolean;

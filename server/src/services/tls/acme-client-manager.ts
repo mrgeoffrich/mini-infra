@@ -7,7 +7,7 @@
 
 import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { TlsConfigService } from "./tls-config";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { AcmeCertificateResult } from "./types";
@@ -43,7 +43,7 @@ export class AcmeClientManager {
   constructor(config: TlsConfigService, certificateStore: AzureStorageCertificateStore) {
     this.config = config;
     this.certificateStore = certificateStore;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "acme-client-manager");
   }
 
   /**

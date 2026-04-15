@@ -1,5 +1,5 @@
 import Docker, { Container } from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions } from "./types";
 import { RESTART_POLICIES } from "@mini-infra/types";
@@ -51,7 +51,7 @@ export class LongRunningContainerManager {
     }
   ): Promise<Container> {
     try {
-      servicesLogger().info(
+      getLogger("docker", "long-running-container").info(
         {
           image: options.image,
           name: options.name,
@@ -171,7 +171,7 @@ export class LongRunningContainerManager {
 
       const container = await this.docker.createContainer(containerOptions);
 
-      servicesLogger().info(
+      getLogger("docker", "long-running-container").info(
         {
           containerId: container.id,
           name: options.name,
@@ -183,7 +183,7 @@ export class LongRunningContainerManager {
 
       return container;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "long-running-container").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           image: options.image,

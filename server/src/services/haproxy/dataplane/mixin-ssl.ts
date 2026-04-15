@@ -1,8 +1,8 @@
 import FormData from 'form-data';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyBaseConstructor } from './types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "mixin-ssl");
 
 export function SSLMixin<TBase extends HAProxyBaseConstructor>(Base: TBase) {
   return class extends Base {

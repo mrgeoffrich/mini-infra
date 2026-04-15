@@ -1,10 +1,10 @@
 import { HttpClient, createHttpClient, isHttpError, type HttpRequestConfig } from '../../../lib/http-client';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
 import { HAProxyEndpointInfo, ServerConfig } from './types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "base");
 
 // ====================
 // HAProxy DataPlane API Client — Base

@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import {
   DockerNetworkListResponse,
@@ -17,7 +17,7 @@ import {
   VolumeFileContentResponse,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("docker", "docker");
 const router = express.Router();
 
 /**

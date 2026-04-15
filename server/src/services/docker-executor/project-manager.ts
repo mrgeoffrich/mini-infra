@@ -1,5 +1,5 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 
 /**
  * ProjectManager - Manages Docker Compose-style project containers
@@ -23,7 +23,7 @@ export class ProjectManager {
         container.Labels['com.docker.compose.project'] === projectName
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "project-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           projectName,
@@ -47,7 +47,7 @@ export class ProjectManager {
         container.Labels['com.docker.compose.service'] === serviceName
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "project-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           projectName,
@@ -71,7 +71,7 @@ export class ProjectManager {
         container.Labels['mini-infra.managed'] === 'true'
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "project-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -85,7 +85,7 @@ export class ProjectManager {
    * Stop all containers in a compose project
    */
   public async stopProject(projectName: string): Promise<void> {
-    const log = servicesLogger().child({ operation: 'stop-project', project: projectName });
+    const log = getLogger("docker", "project-manager").child({ operation: 'stop-project', project: projectName });
 
     try {
       const containers = await this.getProjectContainers(projectName);
@@ -113,7 +113,7 @@ export class ProjectManager {
    * Remove all containers in a compose project
    */
   public async removeProject(projectName: string): Promise<void> {
-    const log = servicesLogger().child({ operation: 'remove-project', project: projectName });
+    const log = getLogger("docker", "project-manager").child({ operation: 'remove-project', project: projectName });
 
     try {
       const containers = await this.getProjectContainers(projectName);

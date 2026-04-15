@@ -1,7 +1,7 @@
 import express, { Request, Response, RequestHandler } from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
@@ -33,7 +33,7 @@ import {
   ServerEvent,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("haproxy", "manual-haproxy-frontends");
 const router = express.Router();
 
 // ====================

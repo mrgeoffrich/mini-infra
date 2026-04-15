@@ -45,6 +45,8 @@ vi.mock("../lib/logger-factory.ts", () => {
     return logger;
   };
   return {
+    getLogger: vi.fn((_component: string, _subcomponent?: string) => createMockLogger()),
+    buildPinoHttpOptions: vi.fn(() => ({ level: "silent" })),
     createLogger: vi.fn(() => createMockLogger()),
     appLogger: vi.fn(() => createMockLogger()),
     httpLogger: vi.fn(() => createMockLogger()),
@@ -53,10 +55,24 @@ vi.mock("../lib/logger-factory.ts", () => {
     dockerExecutorLogger: vi.fn(() => createMockLogger()),
     deploymentLogger: vi.fn(() => createMockLogger()),
     loadbalancerLogger: vi.fn(() => createMockLogger()),
+    selfBackupLogger: vi.fn(() => createMockLogger()),
     tlsLogger: vi.fn(() => createMockLogger()),
     agentLogger: vi.fn(() => createMockLogger()),
+    clearLoggerCache: vi.fn(),
+    createChildLogger: vi.fn(() => createMockLogger()),
+    serializeError: (e: unknown) => e,
+    default: vi.fn(() => createMockLogger()),
   };
 });
+
+// Mock logging context so ALS calls are no-ops in tests
+vi.mock("../lib/logging-context.ts", () => ({
+  runWithContext: <T>(_ctx: unknown, fn: () => T) => fn(),
+  withOperation: <T>(_prefix: string, fn: () => T | Promise<T>) => fn(),
+  getContext: () => undefined,
+  setUserId: vi.fn(),
+  setOperationId: vi.fn(),
+}));
 
 // Mock Passport for authentication tests
 vi.mock("passport", () => ({

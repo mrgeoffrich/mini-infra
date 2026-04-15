@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import {
   requirePermission,
   getAuthenticatedUser,
@@ -15,7 +15,7 @@ import { agentConversationService } from "../services/agent-conversation-service
 import { isAgentSidecarHealthy } from "../services/agent-sidecar";
 import agentSettingsRouter from "./agent-settings";
 
-const logger = appLogger();
+const logger = getLogger("agent", "agent");
 const router = express.Router();
 
 // Mount settings sub-router

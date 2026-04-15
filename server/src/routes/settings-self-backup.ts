@@ -1,6 +1,6 @@
 import express from "express";
 import prisma from "../lib/prisma";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import { z } from "zod";
 import { SelfBackupScheduler, SelfBackupExecutor } from "../services/backup";
@@ -11,7 +11,7 @@ import type {
   TriggerBackupResponse,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("http", "settings-self-backup");
 const router = express.Router();
 
 // Validation schema for configuration update

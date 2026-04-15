@@ -5,7 +5,7 @@ import {
   ServiceFactoryOptions,
   SettingsCategory,
 } from "@mini-infra/types";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import { CloudflareService } from "./cloudflare";
 import { AzureStorageService } from "./azure-storage-service";
@@ -56,7 +56,7 @@ export class ConfigurationServiceFactory
           throw new Error(`Unknown configuration category: ${category}`);
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-factory").error(
         {
           category: category,
           error: error instanceof Error ? error.message : "Unknown error",

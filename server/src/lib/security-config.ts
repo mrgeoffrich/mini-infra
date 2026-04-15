@@ -8,9 +8,9 @@
 
 import { randomBytes } from "crypto";
 import type { PrismaClient } from "../generated/prisma/client";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("platform", "security-config");
 
 const CATEGORY = "system";
 const AUTH_SECRET_KEY = "internal_auth_secret";

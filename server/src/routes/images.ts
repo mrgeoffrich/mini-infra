@@ -3,13 +3,13 @@ import type { RequestHandler } from "express";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ImageInspectService } from "../services/image-inspect";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import {
   RegistryCredentialService,
 } from "../services/registry-credential";
 
 type ImagesRouterOptions = {
-  logger?: ReturnType<typeof appLogger>;
+  logger?: ReturnType<typeof getLogger>;
   registryCredentialService?: Pick<
     RegistryCredentialService,
     "getCredentialsForImage"
@@ -19,7 +19,7 @@ type ImagesRouterOptions = {
 export default function createImagesRouter(
   options: ImagesRouterOptions = {},
 ) {
-  const logger = options.logger ?? appLogger();
+  const logger = options.logger ?? getLogger("docker", "images");
   const registryCredentialService =
     options.registryCredentialService ??
     new RegistryCredentialService(prisma);

@@ -1,11 +1,11 @@
 import type { ActionContext, ContainerDeploymentEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager, ContainerCreateOptions } from '../../container';
 import { ContainerConfig, ContainerEnvVar } from '@mini-infra/types';
 import { UserEventService } from '../../user-events';
 import prisma from '../../../lib/prisma';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "deploy-application-containers");
 
 export class DeployApplicationContainers {
     private containerManager: ContainerLifecycleManager;

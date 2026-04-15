@@ -9,7 +9,7 @@ import { Logger } from "pino";
 import NodeCache from "node-cache";
 import dns from "dns";
 import { promisify } from "util";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "../cloudflare";
 
 const resolveTxt = promisify(dns.resolveTxt);
@@ -24,7 +24,7 @@ export class DnsChallenge01Provider {
 
   constructor(cloudflareConfig: CloudflareService) {
     this.cloudflareConfig = cloudflareConfig;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "dns-challenge-provider");
     // Cache DNS record IDs for 1 hour
     this.cache = new NodeCache({ stdTTL: 3600 });
   }

@@ -1,8 +1,8 @@
 import type { ActionContext, DnsRemovalEmit } from './types';
-import { loadbalancerLogger } from "../../../lib/logger-factory";
+import { getLogger } from "../../../lib/logger-factory";
 import { cloudflareDNSService } from "../../cloudflare";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "remove-dns");
 
 /**
  * RemoveDNS action removes DNS records

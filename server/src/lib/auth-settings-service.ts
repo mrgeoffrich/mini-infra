@@ -1,8 +1,8 @@
 import prisma from "./prisma";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import type { AuthSettingsInfo, UpdateAuthSettingsRequest } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "auth-settings-service");
 
 async function getOrCreateRow() {
   let settings = await prisma.authSettings.findFirst();

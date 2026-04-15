@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import { z } from 'zod';
-import { appLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 import {
   requirePermission,
   getAuthenticatedUser,
@@ -19,7 +19,7 @@ import {
   USER_EVENT_STATUSES,
 } from '@mini-infra/types';
 
-const logger = appLogger();
+const logger = getLogger("platform", "events");
 const router = express.Router();
 
 // Initialize service

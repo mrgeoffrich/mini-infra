@@ -7,10 +7,10 @@ import express, {
 import { z } from "zod";
 import { Readable } from "stream";
 import DockerService from "../services/docker";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import prisma from "../lib/prisma";
 
-const logger = appLogger();
+const logger = getLogger("docker", "containers");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import {
   ContainerQueryParams,

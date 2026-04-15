@@ -1,7 +1,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
@@ -20,7 +20,7 @@ import {
 import { emitToChannel } from "../lib/socket";
 import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("platform", "self-update");
 const router = express.Router();
 
 // ---------------------------------------------------------------------------

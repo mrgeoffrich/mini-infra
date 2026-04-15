@@ -1,7 +1,7 @@
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Database from "better-sqlite3";
-import { prismaLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import { getDatabaseFilePath } from "./database-url-parser";
 
 // Re-export PrismaClient type for use by other modules
@@ -30,7 +30,7 @@ declare global {
 }
 
 // Create Prisma logger instance
-const logger = !isTestEnvironment ? prismaLogger() : null;
+const logger = !isTestEnvironment ? getLogger("db", "prisma") : null;
 
 // Prisma 7 driver adapters resolve relative file: URLs against process.cwd(),
 // whereas the legacy query engine resolved them against the schema directory.

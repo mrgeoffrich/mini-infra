@@ -1,8 +1,8 @@
 import type { ActionContext, DrainMonitorEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "monitor-drain");
 
 export class MonitorDrain {
     private haproxyClient: HAProxyDataPlaneClient;

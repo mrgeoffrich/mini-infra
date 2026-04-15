@@ -1,6 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { UserPreferencesService } from "../services/user-preferences";
 import { Prisma } from "../generated/prisma/client";
@@ -10,7 +10,7 @@ import type {
 } from "@mini-infra/types";
 import { SORT_ORDERS } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("http", "user-preferences");
 const router = Router();
 
 // Validation schemas

@@ -3,7 +3,7 @@ import {
   NetworkRequirement,
   VolumeRequirement
 } from './interfaces/application-service';
-import { servicesLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 import DockerService from './docker';
 
 export interface ServiceCreationOptions {
@@ -23,7 +23,7 @@ export interface ServiceCreationResult {
 
 export class ApplicationServiceFactory {
   private static instance: ApplicationServiceFactory;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("platform", "application-service-factory");
   private readonly activeServices = new Map<string, IApplicationService>();
   private dockerService?: DockerService;
 

@@ -1,7 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import { Client as PostgresClient } from "pg";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -56,7 +56,7 @@ export class PostgresDatabaseManager {
         sslMode: sslMode as PostgreSSLMode,
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -122,7 +122,7 @@ export class PostgresDatabaseManager {
         },
       });
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           databaseId: createdDb.id,
           name: createdDb.name,
@@ -133,7 +133,7 @@ export class PostgresDatabaseManager {
 
       // Perform immediate health check after creation
       try {
-        servicesLogger().info(
+        getLogger("db", "postgres-database-manager").info(
           {
             databaseId: createdDb.id,
             name: createdDb.name,
@@ -143,7 +143,7 @@ export class PostgresDatabaseManager {
 
         await this.performHealthCheck(createdDb.id);
 
-        servicesLogger().info(
+        getLogger("db", "postgres-database-manager").info(
           {
             databaseId: createdDb.id,
             name: createdDb.name,
@@ -151,7 +151,7 @@ export class PostgresDatabaseManager {
           "Initial health check completed for newly created database",
         );
       } catch (healthCheckError) {
-        servicesLogger().warn(
+        getLogger("db", "postgres-database-manager").warn(
           {
             databaseId: createdDb.id,
             name: createdDb.name,
@@ -168,7 +168,7 @@ export class PostgresDatabaseManager {
 
       return this.toDatabaseInfo(updatedDb || createdDb);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           name: request.name,
           host: request.host,
@@ -272,7 +272,7 @@ export class PostgresDatabaseManager {
         data: updateData,
       });
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           databaseId: updatedDb.id,
           name: updatedDb.name,
@@ -284,7 +284,7 @@ export class PostgresDatabaseManager {
       // Perform immediate health check if connection details changed
       if (needsConnectionStringUpdate) {
         try {
-          servicesLogger().info(
+          getLogger("db", "postgres-database-manager").info(
             {
               databaseId: updatedDb.id,
               name: updatedDb.name,
@@ -294,7 +294,7 @@ export class PostgresDatabaseManager {
 
           await this.performHealthCheck(updatedDb.id);
 
-          servicesLogger().info(
+          getLogger("db", "postgres-database-manager").info(
             {
               databaseId: updatedDb.id,
               name: updatedDb.name,
@@ -302,7 +302,7 @@ export class PostgresDatabaseManager {
             "Health check completed after connection details update",
           );
         } catch (healthCheckError) {
-          servicesLogger().warn(
+          getLogger("db", "postgres-database-manager").warn(
             {
               databaseId: updatedDb.id,
               name: updatedDb.name,
@@ -322,7 +322,7 @@ export class PostgresDatabaseManager {
 
       return this.toDatabaseInfo(updatedDb);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -354,7 +354,7 @@ export class PostgresDatabaseManager {
 
       return this.toDatabaseInfo(database);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -428,7 +428,7 @@ export class PostgresDatabaseManager {
 
       return databases.map((db) => this.toDatabaseInfo(db));
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -460,7 +460,7 @@ export class PostgresDatabaseManager {
         where: { id: databaseId },
       });
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           databaseId: databaseId,
           name: database.name,
@@ -468,7 +468,7 @@ export class PostgresDatabaseManager {
         "Database configuration deleted",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -512,7 +512,7 @@ export class PostgresDatabaseManager {
       const serverVersion = result.rows[0]?.version;
       const databaseName = result.rows[0]?.current_database;
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           host: config.host,
           port: config.port,
@@ -551,7 +551,7 @@ export class PostgresDatabaseManager {
         errorCode = "CONNECTION_REFUSED";
       }
 
-      servicesLogger().warn(
+      getLogger("db", "postgres-database-manager").warn(
         {
           host: config.host,
           port: config.port,
@@ -580,7 +580,7 @@ export class PostgresDatabaseManager {
         try {
           await client.end();
         } catch (endError) {
-          servicesLogger().warn(
+          getLogger("db", "postgres-database-manager").warn(
             {
               error:
                 endError instanceof Error ? endError.message : "Unknown error",
@@ -622,7 +622,7 @@ export class PostgresDatabaseManager {
 
       return result;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId: databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -682,7 +682,7 @@ export class PostgresDatabaseManager {
         metadata: validationResult.metadata,
       };
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           databaseId,
           healthStatus,
@@ -693,7 +693,7 @@ export class PostgresDatabaseManager {
 
       return result;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -726,7 +726,7 @@ export class PostgresDatabaseManager {
 
       return this.parseConnectionString(database.connectionString);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -801,7 +801,7 @@ export class PostgresDatabaseManager {
         description: row.description,
       }));
 
-      servicesLogger().info(
+      getLogger("db", "postgres-database-manager").info(
         {
           host: request.host,
           port: request.port,
@@ -821,7 +821,7 @@ export class PostgresDatabaseManager {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().warn(
+      getLogger("db", "postgres-database-manager").warn(
         {
           host: request.host,
           port: request.port,
@@ -837,7 +837,7 @@ export class PostgresDatabaseManager {
         try {
           await client.end();
         } catch (endError) {
-          servicesLogger().warn(
+          getLogger("db", "postgres-database-manager").warn(
             {
               error:
                 endError instanceof Error ? endError.message : "Unknown error",
@@ -875,7 +875,7 @@ export class PostgresDatabaseManager {
         },
       });
     } catch (error) {
-      servicesLogger().error(
+      getLogger("db", "postgres-database-manager").error(
         {
           databaseId,
           error: error instanceof Error ? error.message : "Unknown error",

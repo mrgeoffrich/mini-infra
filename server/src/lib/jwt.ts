@@ -1,8 +1,8 @@
 import jwt from "jsonwebtoken";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import { getAuthSecret } from "./security-config";
 
-const logger = appLogger();
+const logger = getLogger("auth", "jwt");
 import type { UserProfile } from "@mini-infra/types";
 
 // JWT payload interface

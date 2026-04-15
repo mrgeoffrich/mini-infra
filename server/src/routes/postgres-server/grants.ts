@@ -1,10 +1,10 @@
 import express from "express";
 import { z } from "zod";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 
-const logger = appLogger();
+const logger = getLogger("db", "grants");
 const router = express.Router();
 
 // Helper to extract userId or throw

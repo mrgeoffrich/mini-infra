@@ -44,6 +44,26 @@ vi.mock("../../services/backup/backup-executor", () => ({
 
 // Mock logger
 vi.mock("../../lib/logger-factory", () => ({
+  getLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
+  clearLoggerCache: vi.fn(),
+  createChildLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
+  selfBackupLogger: vi.fn(() => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  })),
+  serializeError: (e: unknown) => e,
   appLogger: vi.fn(() => ({
     info: vi.fn(),
     warn: vi.fn(),

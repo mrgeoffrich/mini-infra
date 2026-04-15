@@ -12,7 +12,7 @@
 import express from "express";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { tlsLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { emitToChannel } from "../lib/socket";
@@ -28,7 +28,7 @@ import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
 import { Channel, ServerEvent, type CertIssuanceStep } from "@mini-infra/types";
 
-const logger = tlsLogger();
+const logger = getLogger("tls", "tls-certificates");
 const router = express.Router();
 
 // Validation schemas

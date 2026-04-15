@@ -12,7 +12,7 @@ import {
   GitHubAgentAccessLevel,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { CircuitBreaker } from "../circuit-breaker";
 import {
   GITHUB_APP_ERROR_MAPPERS,
@@ -82,7 +82,7 @@ export class GitHubAppService extends ConfigurationService {
       setSetting: (key, value, userId) => this.set(key, value, userId),
       deleteSetting: (key, userId) => this.delete(key, userId),
       fetchGitHub,
-      logger: servicesLogger(),
+      logger: getLogger("integrations", "github-app-service"),
     };
 
     const validationCtx: GitHubAppValidationContext = {
@@ -201,14 +201,14 @@ export class GitHubAppService extends ConfigurationService {
   // --- Configuration Removal (stays on facade — needs circuitBreaker.reset()) ---
 
   async removeConfiguration(userId: string): Promise<void> {
-    servicesLogger().info({ userId }, "Removing GitHub App configuration");
+    getLogger("integrations", "github-app-service").info({ userId }, "Removing GitHub App configuration");
 
     const deletePromises = ALL_SETTING_KEYS.map(async (key) => {
       try {
         await this.delete(key, userId);
       } catch {
         // Ignore errors for keys that don't exist
-        servicesLogger().debug(
+        getLogger("integrations", "github-app-service").debug(
           { key },
           "Setting key not found during removal, skipping",
         );
@@ -220,7 +220,7 @@ export class GitHubAppService extends ConfigurationService {
     // Reset circuit breaker since configuration is gone
     this.circuitBreaker.reset();
 
-    servicesLogger().info("GitHub App configuration removed successfully");
+    getLogger("integrations", "github-app-service").info("GitHub App configuration removed successfully");
   }
 }
 

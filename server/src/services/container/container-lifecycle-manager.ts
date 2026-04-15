@@ -1,5 +1,5 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
 import ContainerLabelManager from "./container-label-manager";
 import { DockerExecutorService } from "../docker-executor";
@@ -105,7 +105,7 @@ export class ContainerLifecycleManager {
 
       const networkName = networkSetting?.value || "mini-infra-network";
 
-      servicesLogger().debug(
+      getLogger("docker", "container-lifecycle-manager").debug(
         {
           networkName,
           fromSettings: !!networkSetting?.value,
@@ -115,7 +115,7 @@ export class ContainerLifecycleManager {
 
       return networkName;
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("docker", "container-lifecycle-manager").warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -134,7 +134,7 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         {
           containerName: options.name,
           image: options.image,
@@ -150,7 +150,7 @@ export class ContainerLifecycleManager {
         : `${options.image}:${options.tag || "latest"}`;
 
       // Pull image with automatic authentication
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         { image: fullImage },
         "Pulling image with automatic registry authentication",
       );
@@ -206,7 +206,7 @@ export class ContainerLifecycleManager {
         NetworkingConfig: this.buildNetworkConfig(options.config.networks),
       };
 
-      servicesLogger().debug(
+      getLogger("docker", "container-lifecycle-manager").debug(
         {
           containerName: options.name,
           config: containerConfig,
@@ -218,7 +218,7 @@ export class ContainerLifecycleManager {
       const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = await docker.createContainer(containerConfig);
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         {
           containerId: container.id,
           containerName: options.name,
@@ -229,7 +229,7 @@ export class ContainerLifecycleManager {
 
       return container.id;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerName: options.name,
           image: options.image,
@@ -255,15 +255,15 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info({ containerId }, "Starting container");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId }, "Starting container");
 
       const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
       await container.start();
 
-      servicesLogger().info({ containerId }, "Container started successfully");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId }, "Container started successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -286,7 +286,7 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info({ containerId, timeout }, "Stopping container");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId, timeout }, "Stopping container");
 
       const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
@@ -301,9 +301,9 @@ export class ContainerLifecycleManager {
         }
       }
 
-      servicesLogger().info({ containerId }, "Container stopped successfully");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId }, "Container stopped successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           timeout,
@@ -327,7 +327,7 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info({ containerId, force }, "Removing container");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId, force }, "Removing container");
 
       const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
       const container = docker.getContainer(containerId);
@@ -337,9 +337,9 @@ export class ContainerLifecycleManager {
         v: true, // Remove associated volumes
       });
 
-      servicesLogger().info({ containerId }, "Container removed successfully");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId }, "Container removed successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           force,
@@ -359,18 +359,18 @@ export class ContainerLifecycleManager {
     timeout: number = 30,
   ): Promise<void> {
     try {
-      servicesLogger().info({ containerId, timeout }, "Restarting container");
+      getLogger("docker", "container-lifecycle-manager").info({ containerId, timeout }, "Restarting container");
 
       await this.stopContainer(containerId, timeout);
       await new Promise((resolve) => setTimeout(resolve, 1000)); // Brief pause
       await this.startContainer(containerId);
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         { containerId },
         "Container restarted successfully",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           timeout,
@@ -425,7 +425,7 @@ export class ContainerLifecycleManager {
         throw error;
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -444,7 +444,7 @@ export class ContainerLifecycleManager {
       const status = await this.getContainerStatus(containerId);
       return status?.status === "running" || false;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           containerId,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -466,7 +466,7 @@ export class ContainerLifecycleManager {
   ): Promise<boolean> {
     const startTime = Date.now();
 
-    servicesLogger().info(
+    getLogger("docker", "container-lifecycle-manager").info(
       {
         containerId,
         targetStatus,
@@ -481,7 +481,7 @@ export class ContainerLifecycleManager {
         const status = await this.getContainerStatus(containerId);
 
         if (!status) {
-          servicesLogger().warn(
+          getLogger("docker", "container-lifecycle-manager").warn(
             { containerId },
             "Container no longer exists while waiting for status",
           );
@@ -489,7 +489,7 @@ export class ContainerLifecycleManager {
         }
 
         if (status.status === targetStatus) {
-          servicesLogger().info(
+          getLogger("docker", "container-lifecycle-manager").info(
             {
               containerId,
               targetStatus,
@@ -503,7 +503,7 @@ export class ContainerLifecycleManager {
 
         // Check for failure states
         if (status.status === "exited" && targetStatus === "running") {
-          servicesLogger().warn(
+          getLogger("docker", "container-lifecycle-manager").warn(
             {
               containerId,
               targetStatus,
@@ -518,7 +518,7 @@ export class ContainerLifecycleManager {
 
         await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       } catch (error) {
-        servicesLogger().error(
+        getLogger("docker", "container-lifecycle-manager").error(
           {
             containerId,
             targetStatus,
@@ -530,7 +530,7 @@ export class ContainerLifecycleManager {
       }
     }
 
-    servicesLogger().warn(
+    getLogger("docker", "container-lifecycle-manager").warn(
       {
         containerId,
         targetStatus,
@@ -558,7 +558,7 @@ export class ContainerLifecycleManager {
         throw new Error("Docker service is not connected");
       }
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         { maxAgeHours },
         "Searching for orphaned containers",
       );
@@ -621,7 +621,7 @@ export class ContainerLifecycleManager {
         }
       }
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         {
           orphanedCount: orphaned.length,
           maxAgeHours,
@@ -631,7 +631,7 @@ export class ContainerLifecycleManager {
 
       return orphaned;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           maxAgeHours,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -653,12 +653,12 @@ export class ContainerLifecycleManager {
       const orphaned = await this.findOrphanedContainers(maxAgeHours);
 
       if (orphaned.length === 0) {
-        servicesLogger().info("No orphaned containers found to cleanup");
+        getLogger("docker", "container-lifecycle-manager").info("No orphaned containers found to cleanup");
         return 0;
       }
 
       if (dryRun) {
-        servicesLogger().info(
+        getLogger("docker", "container-lifecycle-manager").info(
           { orphanedContainers: orphaned },
           "Dry run: Would cleanup orphaned containers",
         );
@@ -669,7 +669,7 @@ export class ContainerLifecycleManager {
 
       for (const container of orphaned) {
         try {
-          servicesLogger().info(
+          getLogger("docker", "container-lifecycle-manager").info(
             {
               containerId: container.id,
               containerName: container.name,
@@ -689,7 +689,7 @@ export class ContainerLifecycleManager {
           await this.removeContainer(container.id, true);
           cleanedCount++;
 
-          servicesLogger().info(
+          getLogger("docker", "container-lifecycle-manager").info(
             {
               containerId: container.id,
               containerName: container.name,
@@ -697,7 +697,7 @@ export class ContainerLifecycleManager {
             "Orphaned container cleaned up successfully",
           );
         } catch (error) {
-          servicesLogger().error(
+          getLogger("docker", "container-lifecycle-manager").error(
             {
               containerId: container.id,
               containerName: container.name,
@@ -708,7 +708,7 @@ export class ContainerLifecycleManager {
         }
       }
 
-      servicesLogger().info(
+      getLogger("docker", "container-lifecycle-manager").info(
         {
           totalOrphaned: orphaned.length,
           cleanedCount,
@@ -719,7 +719,7 @@ export class ContainerLifecycleManager {
 
       return cleanedCount;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-lifecycle-manager").error(
         {
           maxAgeHours,
           dryRun,
@@ -794,7 +794,7 @@ export class ContainerLifecycleManager {
       if (environmentName && !hostPath.startsWith('/') && !hostPath.match(/^[a-zA-Z]:/)) {
         hostPath = `${environmentName}-${hostPath}`;
 
-        servicesLogger().debug(
+        getLogger("docker", "container-lifecycle-manager").debug(
           {
             originalVolumeName: originalHostPath,
             prefixedVolumeName: hostPath,

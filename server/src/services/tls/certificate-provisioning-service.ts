@@ -7,7 +7,7 @@
 
 import { Logger } from "pino";
 import { PrismaClient } from "../../generated/prisma/client";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
 export interface ProvisionRequest {
@@ -34,7 +34,7 @@ export class CertificateProvisioningService {
   constructor(lifecycleManager: CertificateLifecycleManager, prisma: PrismaClient) {
     this.lifecycleManager = lifecycleManager;
     this.prisma = prisma;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "certificate-provisioning-service");
   }
 
   /**

@@ -1,12 +1,12 @@
 import { PrismaClient } from "../../generated/prisma/client";
-import { loadbalancerLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from './haproxy-dataplane-client';
 import { haproxyCertificateDeployer } from './haproxy-certificate-deployer';
 import { HAProxyFrontendManager } from './haproxy-frontend-manager';
 import DockerService from '../docker';
 import type { OperationStep } from '@mini-infra/types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-post-apply");
 
 // The stats frontend name as defined in haproxy.cfg template
 const STATS_FRONTEND_NAME = 'stats';

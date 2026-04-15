@@ -1,4 +1,4 @@
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient, TransactionManager } from "./haproxy-dataplane-client";
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "../../generated/prisma/client";
@@ -14,7 +14,7 @@ interface InternalCreateRequest extends CreateManualFrontendRequest {
   tlsCertificateId?: string;
 }
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "manual-frontend-manager");
 
 export interface ContainerValidationResult {
   isValid: boolean;

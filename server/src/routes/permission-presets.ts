@@ -1,7 +1,7 @@
 import { Router, Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { ALL_PERMISSION_SCOPES } from "@mini-infra/types";
 import {
   getAllPresets,
@@ -10,7 +10,7 @@ import {
   deletePreset,
 } from "../services/permission-preset-service";
 
-const logger = appLogger();
+const logger = getLogger("auth", "permission-presets");
 const router = Router();
 
 const presetBodySchema = z.object({

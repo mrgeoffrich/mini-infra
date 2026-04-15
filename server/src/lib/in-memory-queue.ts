@@ -1,5 +1,8 @@
 import { EventEmitter } from "events";
 import { randomUUID } from "crypto";
+import { getLogger } from "./logger-factory";
+
+const logger = getLogger("platform", "in-memory-queue");
 
 /**
  * Job options for individual jobs
@@ -281,9 +284,8 @@ export class InMemoryQueue extends EventEmitter {
 
       // Process job asynchronously without blocking
       setImmediate(() => {
-        this.executeJob(job).catch((error) => {
-          // This shouldn't happen as executeJob handles its own errors
-          console.error("Unexpected error in executeJob:", error);
+        this.executeJob(job).catch((err) => {
+          logger.error({ err, jobId: job.id }, "Unexpected error in executeJob");
         });
       });
     }

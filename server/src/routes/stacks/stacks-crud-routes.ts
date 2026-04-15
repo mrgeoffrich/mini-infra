@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { Prisma } from "../../generated/prisma/client";
 import prisma from '../../lib/prisma';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { requireDockerConnected } from '../../middleware/require-docker-connected';
@@ -21,7 +21,7 @@ import type {
   StackServiceDefinition,
 } from '@mini-infra/types';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stacks-crud-routes");
 
 const router = Router();
 

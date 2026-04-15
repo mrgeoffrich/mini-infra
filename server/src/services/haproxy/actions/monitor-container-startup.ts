@@ -1,9 +1,9 @@
 import type { ActionContext, ContainerStartupEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager } from '../../container';
 import DockerService from '../../docker';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "monitor-container-startup");
 
 export class MonitorContainerStartup {
     private containerManager: ContainerLifecycleManager;

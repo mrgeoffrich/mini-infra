@@ -1,5 +1,5 @@
 import { PrismaClient } from "../lib/prisma";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import {
   BackupProgressUpdate,
   RestoreProgressUpdate,
@@ -90,10 +90,10 @@ export class ProgressTrackerService extends EventEmitter {
       // Start periodic cleanup
       this.startPeriodicCleanup();
 
-      servicesLogger().info("ProgressTrackerService initialized successfully");
+      getLogger("backup", "progress-tracker").info("ProgressTrackerService initialized successfully");
       this.isInitialized = true;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -129,7 +129,7 @@ export class ProgressTrackerService extends EventEmitter {
 
       return this.mapBackupOperationToProgress(operation);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -166,7 +166,7 @@ export class ProgressTrackerService extends EventEmitter {
 
       return this.mapRestoreOperationToProgress(operation);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -231,7 +231,7 @@ export class ProgressTrackerService extends EventEmitter {
         ),
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -358,7 +358,7 @@ export class ProgressTrackerService extends EventEmitter {
         totalCount = backupCount + restoreCount;
       }
 
-      servicesLogger().debug(
+      getLogger("backup", "progress-tracker").debug(
         {
           filter,
           operationCount: paginatedOperations.length,
@@ -374,7 +374,7 @@ export class ProgressTrackerService extends EventEmitter {
         hasMore,
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           filter,
@@ -413,7 +413,7 @@ export class ProgressTrackerService extends EventEmitter {
         });
       }
 
-      servicesLogger().debug(
+      getLogger("backup", "progress-tracker").debug(
         {
           type,
           operationId: update.operationId,
@@ -423,7 +423,7 @@ export class ProgressTrackerService extends EventEmitter {
         "Progress update broadcasted",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           type,
@@ -525,7 +525,7 @@ export class ProgressTrackerService extends EventEmitter {
         repairedStaleBackupOperations > 0 ||
         repairedStaleRestoreOperations > 0
       ) {
-        servicesLogger().info(
+        getLogger("backup", "progress-tracker").info(
           {
             repairedStaleBackupOperations,
             repairedStaleRestoreOperations,
@@ -597,7 +597,7 @@ export class ProgressTrackerService extends EventEmitter {
         result.repairedStaleBackupOperations > 0 ||
         result.repairedStaleRestoreOperations > 0
       ) {
-        servicesLogger().info(
+        getLogger("backup", "progress-tracker").info(
           {
             ...result,
             completedCutoff: completedCutoff.toISOString(),
@@ -610,7 +610,7 @@ export class ProgressTrackerService extends EventEmitter {
 
       return result;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -632,7 +632,7 @@ export class ProgressTrackerService extends EventEmitter {
       try {
         await this.cleanupOldOperations();
       } catch (error) {
-        servicesLogger().error(
+        getLogger("backup", "progress-tracker").error(
           {
             error: error instanceof Error ? error.message : "Unknown error",
           },
@@ -641,7 +641,7 @@ export class ProgressTrackerService extends EventEmitter {
       }
     }, ProgressTrackerService.CLEANUP_INTERVAL_MS);
 
-    servicesLogger().debug(
+    getLogger("backup", "progress-tracker").debug(
       {
         cleanupIntervalMs: ProgressTrackerService.CLEANUP_INTERVAL_MS,
       },
@@ -686,7 +686,7 @@ export class ProgressTrackerService extends EventEmitter {
           progress.completedSteps = metadata.completedSteps;
         }
       } catch {
-        servicesLogger().debug(
+        getLogger("backup", "progress-tracker").debug(
           { operationId: operation.id },
           "Failed to parse backup operation metadata",
         );
@@ -774,9 +774,9 @@ export class ProgressTrackerService extends EventEmitter {
       // Remove all listeners
       this.removeAllListeners();
 
-      servicesLogger().info("ProgressTrackerService shut down successfully");
+      getLogger("backup", "progress-tracker").info("ProgressTrackerService shut down successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "progress-tracker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

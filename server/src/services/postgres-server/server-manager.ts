@@ -1,10 +1,10 @@
 import { Client } from "pg";
 import prisma from "../../lib/prisma";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import databaseManagerService from "./database-manager";
 import userManagerService from "./user-manager";
 
-const logger = appLogger();
+const logger = getLogger("db", "server-manager");
 
 /**
  * PostgresServerService - Manages PostgreSQL server connections and operations

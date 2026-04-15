@@ -1,6 +1,7 @@
 import prisma from "../../lib/prisma";
 import { PostgresDatabaseManager } from "./postgres-database-manager";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
+import { withOperation } from "../../lib/logging-context";
 
 /**
  * PostgresDatabaseHealthScheduler manages periodic health checks for PostgreSQL database configurations
@@ -11,7 +12,7 @@ export class PostgresDatabaseHealthScheduler {
   private readonly databaseConfigService: PostgresDatabaseManager;
   private intervalId: NodeJS.Timeout | null = null;
   private isRunning = false;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("db", "postgres-database-health-scheduler");
 
   constructor(checkInterval: number = 10 * 60 * 1000) { // 10 minutes default
     this.checkInterval = checkInterval;
@@ -29,12 +30,15 @@ export class PostgresDatabaseHealthScheduler {
 
     this.logger.info("Starting PostgreSQL database health scheduler");
 
-    // Perform initial health checks
-    this.performAllHealthChecks();
+    // Perform initial health checks. performAllHealthChecks handles its own
+    // errors internally and never rejects, so the returned promise is
+    // intentionally discarded — both here and inside the setInterval
+    // callback, which cannot await.
+    void withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
 
     // Schedule periodic health checks
     this.intervalId = setInterval(() => {
-      this.performAllHealthChecks();
+      void withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
     }, this.checkInterval);
 
     this.isRunning = true;

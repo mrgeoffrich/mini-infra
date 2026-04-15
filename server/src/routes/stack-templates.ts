@@ -1,7 +1,7 @@
 import { Router, type Response } from 'express';
 import type { StackTemplateSource, StackTemplateScope, CreateStackTemplateRequest, DraftVersionInput } from '@mini-infra/types';
 import prisma from '../lib/prisma';
-import { appLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
 import {
   StackTemplateService,
@@ -16,7 +16,7 @@ import {
 } from '../services/stacks/stack-template-schemas';
 
 const router = Router();
-const logger = appLogger();
+const logger = getLogger("stacks", "stack-templates");
 
 function getTemplateService() {
   return new StackTemplateService(prisma);

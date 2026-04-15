@@ -9,7 +9,7 @@ import { CertificateClient } from "@azure/keyvault-certificates";
 import { SecretClient } from "@azure/keyvault-secrets";
 import { TokenCredential } from "@azure/identity";
 import { Logger } from "pino";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import {
   CertificateMetadata,
   CertificateInfo,
@@ -28,7 +28,7 @@ export class AzureKeyVaultCertificateStore {
   constructor(keyVaultUrl: string, credential: TokenCredential) {
     this.certificateClient = new CertificateClient(keyVaultUrl, credential);
     this.secretClient = new SecretClient(keyVaultUrl, credential);
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "azure-keyvault-certificate-store");
   }
 
   /**

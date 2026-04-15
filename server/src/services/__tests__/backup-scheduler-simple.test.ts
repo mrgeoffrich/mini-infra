@@ -41,6 +41,11 @@ vi.mock("../../lib/logger-factory", () => {
   };
 
   return {
+    getLogger: vi.fn(function() { return mockLoggerInstance; }),
+    clearLoggerCache: vi.fn(),
+    createChildLogger: vi.fn(function() { return mockLoggerInstance; }),
+    selfBackupLogger: vi.fn(function() { return mockLoggerInstance; }),
+    serializeError: (e: unknown) => e,
     appLogger: vi.fn(function() { return mockLoggerInstance; }),
     servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
     httpLogger: vi.fn(function() { return mockLoggerInstance; }),

@@ -1,10 +1,10 @@
 import type { ActionContext, FrontendRemovalEmit } from './types';
-import { loadbalancerLogger } from "../../../lib/logger-factory";
+import { getLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyFrontendManager } from "../haproxy-frontend-manager";
 import prisma from "../../../lib/prisma";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "remove-frontend");
 
 /**
  * RemoveFrontend action removes HAProxy frontend configuration

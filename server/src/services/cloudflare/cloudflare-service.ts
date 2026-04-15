@@ -6,7 +6,7 @@ import {
   CloudflareTunnelConfig,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
 import type { Zone } from "cloudflare/resources/zones/zones.js";
 import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels/tunnels.js";
@@ -196,7 +196,7 @@ export class CloudflareService extends ConfigurationService {
     // previously-recorded failures don't keep blocking new requests.
     this.circuitBreaker.reset();
 
-    servicesLogger().info(
+    getLogger("integrations", "cloudflare-service").info(
       this.circuitBreaker.redact({ userId, tokenLength: apiToken.length }),
       "API token updated, circuit breaker reset",
     );
@@ -282,7 +282,7 @@ export class CloudflareService extends ConfigurationService {
         settings?.accountId ||
         (await this.get(CloudflareService.ACCOUNT_ID_KEY));
 
-      servicesLogger().debug(
+      getLogger("integrations", "cloudflare-service").debug(
         this.circuitBreaker.redact({
           hasToken: !!apiToken,
           tokenLength: apiToken?.length,
@@ -324,7 +324,7 @@ export class CloudflareService extends ConfigurationService {
       } catch (zoneError) {
         if (this.isPermissionError(zoneError)) {
           missingPermissions.push("Zone:Read");
-          servicesLogger().warn(
+          getLogger("integrations", "cloudflare-service").warn(
             {
               accountId,
               error:
@@ -355,7 +355,7 @@ export class CloudflareService extends ConfigurationService {
       } catch (tunnelError) {
         if (this.isPermissionError(tunnelError)) {
           missingPermissions.push("Tunnel:Read");
-          servicesLogger().warn(
+          getLogger("integrations", "cloudflare-service").warn(
             {
               accountId,
               error:
@@ -400,7 +400,7 @@ export class CloudflareService extends ConfigurationService {
         metadata,
       );
 
-      servicesLogger().info(
+      getLogger("integrations", "cloudflare-service").info(
         this.circuitBreaker.redact({
           responseTime,
           zoneCount: metadata.zoneCount,
@@ -436,7 +436,7 @@ export class CloudflareService extends ConfigurationService {
         result.errorCode,
       );
 
-      servicesLogger().error(
+      getLogger("integrations", "cloudflare-service").error(
         this.circuitBreaker.redact({
           error: errorMessage,
           errorCode,

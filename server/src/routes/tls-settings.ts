@@ -13,7 +13,7 @@
 
 import express, { Request, Response, NextFunction, RequestHandler } from "express";
 import { z } from "zod";
-import { tlsLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
@@ -21,7 +21,7 @@ import { AzureStorageService } from "../services/azure-storage-service";
 import { ACME_PROVIDERS } from "@mini-infra/types";
 import { BlobServiceClient } from "@azure/storage-blob";
 
-const logger = tlsLogger();
+const logger = getLogger("tls", "tls-settings");
 const router = express.Router();
 
 // Create service instances

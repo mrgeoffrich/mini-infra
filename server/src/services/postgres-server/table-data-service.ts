@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import prisma from "../../lib/prisma";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import postgresServerService from "./server-manager";
 import type {
   DatabaseTableInfo,
@@ -8,7 +8,7 @@ import type {
   TableDataRequest,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("db", "table-data-service");
 
 /**
  * Escape a SQL identifier by doubling internal double quotes.

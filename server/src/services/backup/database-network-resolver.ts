@@ -1,5 +1,5 @@
 import { PrismaClient } from "../../generated/prisma/client";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 
 const LEGACY_NETWORK_NAME = "mini-infra-postgres-backup";
 
@@ -24,7 +24,7 @@ export async function resolveDatabaseNetworkName(
       return resource.name;
     }
   } catch (error) {
-    servicesLogger().warn(
+    getLogger("backup", "database-network-resolver").warn(
       {
         error: error instanceof Error ? error.message : "Unknown error",
       },

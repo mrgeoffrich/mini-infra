@@ -1,4 +1,4 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
 import type { RestoreProgressData } from "./types";
 import type { RestoreOperation } from "../../generated/prisma/client";
@@ -48,7 +48,7 @@ export class DbOperations {
         },
       });
 
-      servicesLogger().debug(
+      getLogger("backup", "db-operations").debug(
         {
           operationId,
           status: progressData.status,
@@ -77,13 +77,13 @@ export class DbOperations {
           });
         }
       } catch (emitError) {
-        servicesLogger().error(
+        getLogger("backup", "db-operations").error(
           { operationId, error: emitError instanceof Error ? emitError.message : emitError },
           "Failed to emit restore progress via socket",
         );
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "db-operations").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -115,7 +115,7 @@ export class DbOperations {
    */
   getRestoreDockerImage(): string {
     const dockerImage = getPgBackupImage();
-    servicesLogger().info({ dockerImage }, "Resolved restore Docker image");
+    getLogger("backup", "db-operations").info({ dockerImage }, "Resolved restore Docker image");
     return dockerImage;
   }
 
@@ -138,7 +138,7 @@ export class DbOperations {
         };
       }
 
-      servicesLogger().info(
+      getLogger("backup", "db-operations").info(
         { database: connectionConfig.database },
         "Restored database verified successfully",
       );
@@ -148,7 +148,7 @@ export class DbOperations {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("backup", "db-operations").error(
         {
           error: errorMessage,
           database: connectionConfig.database,

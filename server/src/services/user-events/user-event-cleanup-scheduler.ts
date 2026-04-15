@@ -1,6 +1,7 @@
 import prisma, { PrismaClient } from '../../lib/prisma';
 import * as cron from 'node-cron';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
+import { withOperation } from '../../lib/logging-context';
 import { UserEventService } from './user-event-service';
 
 /**
@@ -12,7 +13,7 @@ export class UserEventCleanupScheduler {
   private userEventService: UserEventService;
   private cleanupTask: cron.ScheduledTask | null = null;
   private isInitialized = false;
-  private logger = servicesLogger();
+  private logger = getLogger("platform", "user-event-cleanup-scheduler");
 
   // Default schedule: Daily at 2 AM
   private static readonly DEFAULT_SCHEDULE = '0 2 * * *';
@@ -114,7 +115,7 @@ export class UserEventCleanupScheduler {
       this.cleanupTask = cron.schedule(
         schedule,
         async () => {
-          await this.executeCleanup();
+          await withOperation("user-event-cleanup-tick", () => this.executeCleanup());
         },
         {
           timezone: UserEventCleanupScheduler.DEFAULT_TIMEZONE,

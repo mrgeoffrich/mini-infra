@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { validateApiKey } from "./api-key-service";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
+import { getContext } from "./logging-context";
 
-const logger = appLogger();
+const logger = getLogger("auth", "api-key-middleware");
 import type { ApiKeyValidationResult } from "@mini-infra/types";
 
 /**
@@ -15,7 +16,7 @@ export async function requireApiKey(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   logger.debug(
     { requestId, path: req.path },
@@ -95,7 +96,7 @@ export async function optionalApiKey(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   try {
     // Extract API key from headers
@@ -160,7 +161,7 @@ export async function requireSessionOrApiKey(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
 
   try {

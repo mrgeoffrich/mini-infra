@@ -1,7 +1,7 @@
 import prisma from "../lib/prisma";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("docker", "network-utils");
 
 /**
  * NetworkUtils provides network-related utilities for the application

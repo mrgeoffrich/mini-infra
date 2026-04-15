@@ -1,8 +1,8 @@
 import type { ActionContext, TrafficEnableEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "enable-traffic");
 
 export class EnableTraffic {
     private haproxyClient: HAProxyDataPlaneClient;

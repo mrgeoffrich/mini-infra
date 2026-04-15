@@ -1,8 +1,8 @@
 import argon2 from "argon2";
 import crypto from "crypto";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("auth", "password-service");
 
 /**
  * Hash a password using argon2id

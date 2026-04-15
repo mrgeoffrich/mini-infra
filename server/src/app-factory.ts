@@ -9,10 +9,14 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "path";
+import { randomUUID } from "crypto";
 import appConfig, { securityConfig } from "./lib/config-new";
 import { createDynamicCorsOrigin } from "./lib/public-url-service";
-import { httpLogger } from "./lib/logger-factory";
-import { requestIdMiddleware } from "./lib/request-id";
+import { buildPinoHttpOptions } from "./lib/logger-factory";
+import {
+  requestContextMiddleware,
+  type RequestWithId,
+} from "./middleware/request-context";
 import { createHelmetMiddleware } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 import { extractJwtUser } from "./lib/jwt-middleware";
@@ -144,11 +148,30 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
   const shouldLogRoutes = !options.quiet && appConfig.server.nodeEnv !== "test";
 
   app.set("trust proxy", true);
-  app.use(requestIdMiddleware as RequestHandler);
+  app.use(requestContextMiddleware as RequestHandler);
 
   app.use(
     pinoHttp({
-      logger: httpLogger(),
+      // Pass pino options instead of a pre-built logger. pino-http bundles
+      // its own nested pino copy, so a logger built with the server's pino
+      // has mismatched internal Symbols (stringifySym etc.) and crashes
+      // pino-http on res.finish. Letting pino-http construct its own
+      // logger from these options keeps component/subcomponent/mixin/
+      // redaction consistent while avoiding the dupe-dependency crash.
+      ...buildPinoHttpOptions("http", "access"),
+      // Reuse the id set by requestContextMiddleware so access-log lines
+      // carry the same requestId as application-code log lines, even
+      // though pino-http emits on res.finish (potentially outside the
+      // original ALS scope). The mixin from buildPinoHttpOptions already
+      // injects requestId from ALS when it's still alive; customProps.userId
+      // is a belt-and-braces fallback because userId is set mid-request by
+      // jwt-middleware and should land on every access log line that has
+      // an authenticated user.
+      genReqId: (req) =>
+        (req as RequestWithId).requestId ?? randomUUID(),
+      customProps: (req) => ({
+        userId: (req as Request).user?.id,
+      }),
       customLogLevel: (_req, res) => {
         if (res.statusCode >= 400) return "warn";
         if (res.statusCode >= 300) return "info";

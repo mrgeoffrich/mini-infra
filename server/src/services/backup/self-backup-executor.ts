@@ -1,5 +1,5 @@
 import { PrismaClient } from "../../lib/prisma";
-import { selfBackupLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
 import { emitBackupHealthStatus } from "./backup-health-socket-emitter";
 import { BlobServiceClient } from "@azure/storage-blob";
@@ -60,7 +60,7 @@ export class SelfBackupExecutor {
       },
     });
 
-    selfBackupLogger().info({
+    getLogger("backup", "self-backup-executor").info({
       backupId: backup.id,
       containerName,
       fileName,
@@ -80,7 +80,7 @@ export class SelfBackupExecutor {
       const dbPath = SelfBackupExecutor.getDbPath();
       await this.createSqliteBackup(dbPath, backupFilePath);
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-executor").info({
         backupId: backup.id,
         sourcePath: dbPath,
         backupFilePath,
@@ -94,7 +94,7 @@ export class SelfBackupExecutor {
       const stats = await fs.stat(zipFilePath);
       const fileSize = stats.size;
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-executor").info({
         backupId: backup.id,
         zipFilePath,
         fileSizeBytes: fileSize,
@@ -108,7 +108,7 @@ export class SelfBackupExecutor {
         fileName
       );
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-executor").info({
         backupId: backup.id,
         azureBlobUrl,
       }, "Backup uploaded to Azure");
@@ -126,7 +126,7 @@ export class SelfBackupExecutor {
         },
       });
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-executor").info({
         backupId: backup.id,
         durationMs,
         durationSeconds: (durationMs / 1000).toFixed(1),
@@ -140,7 +140,7 @@ export class SelfBackupExecutor {
       const errorCode = (error as { code?: string } | null)?.code || 'UNKNOWN';
       const durationMs = Date.now() - startTime;
 
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-executor").error({
         backupId: backup.id,
         error: errorMessage,
         errorCode,
@@ -169,7 +169,7 @@ export class SelfBackupExecutor {
       try {
         await emitBackupHealthStatus();
       } catch (emitError) {
-        selfBackupLogger().error(
+        getLogger("backup", "self-backup-executor").error(
           { error: emitError instanceof Error ? emitError.message : emitError },
           "Failed to emit backup health status via socket",
         );
@@ -203,13 +203,13 @@ export class SelfBackupExecutor {
       // It acquires a shared lock, reads all pages, and writes to destPath
       sourceDb.exec(`VACUUM INTO '${destPath}'`);
 
-      selfBackupLogger().debug({
+      getLogger("backup", "self-backup-executor").debug({
         sourcePath,
         destPath,
       }, "SQLite backup completed via VACUUM INTO");
 
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-executor").error({
         error: error instanceof Error ? error.message : 'Unknown error',
         sourcePath,
         destPath,
@@ -221,7 +221,7 @@ export class SelfBackupExecutor {
         try {
           sourceDb.close();
         } catch (closeError) {
-          selfBackupLogger().warn({
+          getLogger("backup", "self-backup-executor").warn({
             error: closeError instanceof Error ? closeError.message : 'Unknown error',
           }, "Error closing SQLite database connection");
         }
@@ -308,7 +308,7 @@ export class SelfBackupExecutor {
         cleanedCount++;
       } catch (error) {
         // Ignore errors - file might not exist
-        selfBackupLogger().debug({
+        getLogger("backup", "self-backup-executor").debug({
           filePath,
           error: error instanceof Error ? error.message : 'Unknown error',
         }, "Failed to clean up temp file");
@@ -316,7 +316,7 @@ export class SelfBackupExecutor {
     }
 
     if (cleanedCount > 0) {
-      selfBackupLogger().debug({
+      getLogger("backup", "self-backup-executor").debug({
         cleanedCount,
       }, "Temp files cleaned up");
     }

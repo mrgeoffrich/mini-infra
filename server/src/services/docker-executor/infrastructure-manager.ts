@@ -1,5 +1,5 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 
 /**
  * InfrastructureManager - Manages Docker networks and volumes
@@ -45,12 +45,12 @@ export class InfrastructureManager {
           Labels: labels
         });
 
-        servicesLogger().info({ network: networkName, project: projectName }, 'Created network');
+        getLogger("docker", "infrastructure-manager").info({ network: networkName, project: projectName }, 'Created network');
       } else {
-        servicesLogger().info({ network: networkName }, 'Network already exists');
+        getLogger("docker", "infrastructure-manager").info({ network: networkName }, 'Network already exists');
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           network: networkName,
@@ -95,12 +95,12 @@ export class InfrastructureManager {
           Labels: labels
         });
 
-        servicesLogger().info({ volume: volumeName, project: projectName }, 'Created volume');
+        getLogger("docker", "infrastructure-manager").info({ volume: volumeName, project: projectName }, 'Created volume');
       } else {
-        servicesLogger().info({ volume: volumeName }, 'Volume already exists');
+        getLogger("docker", "infrastructure-manager").info({ volume: volumeName }, 'Volume already exists');
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volume: volumeName,
@@ -120,7 +120,7 @@ export class InfrastructureManager {
       const networks = await this.docker.listNetworks();
       return networks.some(network => network.Name === networkName);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           networkName,
@@ -139,7 +139,7 @@ export class InfrastructureManager {
       const volumes = await this.docker.listVolumes();
       return volumes.Volumes?.some(volume => volume.Name === volumeName) || false;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -157,9 +157,9 @@ export class InfrastructureManager {
     try {
       const volume = this.docker.getVolume(volumeName);
       await volume.remove();
-      servicesLogger().info({ volumeName }, 'Docker volume removed successfully');
+      getLogger("docker", "infrastructure-manager").info({ volumeName }, 'Docker volume removed successfully');
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -177,9 +177,9 @@ export class InfrastructureManager {
     try {
       const network = this.docker.getNetwork(networkName);
       await network.remove();
-      servicesLogger().info({ networkName }, 'Docker network removed successfully');
+      getLogger("docker", "infrastructure-manager").info({ networkName }, 'Docker network removed successfully');
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "infrastructure-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           networkName,

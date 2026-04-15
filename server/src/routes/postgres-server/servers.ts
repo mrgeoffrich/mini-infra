@@ -1,12 +1,12 @@
 import express from "express";
 import { z } from "zod";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import postgresServerService from "../../services/postgres-server/server-manager";
 import serverHealthScheduler from "../../services/postgres-server/health-scheduler";
 import { POSTGRES_SSL_MODES } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("db", "servers");
 const router = express.Router();
 
 // Helper to extract userId or throw

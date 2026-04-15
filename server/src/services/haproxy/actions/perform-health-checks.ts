@@ -1,8 +1,8 @@
 import type { ActionContext, HealthCheckEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "perform-health-checks");
 
 export class PerformHealthChecks {
     private haproxyClient: HAProxyDataPlaneClient;
