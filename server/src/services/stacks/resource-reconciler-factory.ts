@@ -17,20 +17,24 @@ import { DockerExecutorService } from '../docker-executor';
  * Initializes TLS lifecycle manager (ACME client, Azure storage, DNS challenge provider)
  * along with Cloudflare DNS and HAProxy certificate deployer services.
  *
- * If Azure storage is not configured, TLS methods on the returned reconciler
- * throw a descriptive error when invoked.
+ * Construction never throws on missing configuration. If Azure storage or the
+ * certificate container setting is not configured, the returned reconciler's
+ * TLS methods throw a descriptive error only when invoked. Callers that
+ * require TLS should preflight with `checkStackConfigurationRequirements()`.
  */
 export async function createResourceReconciler(): Promise<StackResourceReconciler> {
   const tlsConfig = new TlsConfigService(prisma);
   const azureConfig = new AzureStorageService(prisma);
 
-  const containerName = await tlsConfig.getCertificateContainerName();
   const connectionString = await azureConfig.getConnectionString();
+  const containerName = connectionString
+    ? await tlsConfig.getCertificateContainerNameOrNull()
+    : null;
 
   let certLifecycleManager: CertificateLifecycleManager | undefined;
   const cloudflareConfig = new CloudflareService(prisma);
 
-  if (connectionString) {
+  if (connectionString && containerName) {
     const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
     const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
     const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);

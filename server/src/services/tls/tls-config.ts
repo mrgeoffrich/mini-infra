@@ -230,6 +230,15 @@ export class TlsConfigService extends ConfigurationService {
   }
 
   /**
+   * Get certificate storage container name without throwing.
+   * Use this when the caller needs to handle the unconfigured case
+   * (e.g. building services that don't always require TLS).
+   */
+  async getCertificateContainerNameOrNull(): Promise<string | null> {
+    return this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER);
+  }
+
+  /**
    * Get ACME account configuration
    * @returns ACME account configuration
    */
