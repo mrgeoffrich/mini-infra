@@ -22,9 +22,10 @@
 ## Current state (summary)
 
 - Pino is already the foundation via `server/src/lib/logger-factory.ts` and `server/src/lib/logging-config.ts`.
-- 10 legacy categories: `app`, `http`, `prisma`, `services`, `dockerexecutor`, `deployments`, `loadbalancer`, `self-backup`, `tls`, `agent`. Imported by ~218 files.
-- Each category currently writes to its own file (`logs/app-*.log`), rotated daily via `pino-roll`.
+- 10 legacy categories: `app`, `http`, `prisma`, `services`, `dockerexecutor`, `deployments`, `loadbalancer`, `self-backup`, `tls`, `agent`. Imported by ~252 files.
+- Each category currently writes to its own file (`logs/app-*.log`), rotated daily via `pino-roll` with a `1m` size cap (both dev and prod).
 - Per-env levels live in `server/config/logging.json`, validated by Zod.
+- `pino-http` is wired in `app-factory.ts` for HTTP access logging on top of the category loggers.
 - 161 residual `console.*` calls remain across 9 files. The majority are legitimately pre-logger boot code, scripts, or tests; two files (`routes/auth.ts`, `lib/in-memory-queue.ts`) are the only "real" app-code leakage.
 
 ## Design
@@ -182,6 +183,24 @@ The base pino logger options include a `mixin` function that reads `getContext()
 
 Services that start work outside an HTTP request — e.g. schedulers, the certificate renewal loop, the backup scheduler, stack reconcilers — wrap their top-level work in `runWithContext({ operationId }, fn)`. `operationId` matches the `UserEvent` or task-tracker operation ID where one exists, so log lines for a single operation are trivially grep-able.
 
+**ALS and EventEmitter boundaries**
+
+`AsyncLocalStorage` context propagates through `await`, timers, and microtasks, but **not** across `EventEmitter` boundaries: a listener invoked by `emitter.emit(...)` runs in whatever ALS scope the *caller of `emit`* was in, which may or may not be the scope the listener was registered in. For correlation IDs to survive, every code path that emits progress for a tracked operation must follow one of these two rules:
+
+1. **Wrap at the emission site.** The code calling `emitter.emit()` already runs inside `runWithContext({ operationId }, ...)` — listeners inherit the scope naturally because `emit` is synchronous. This is the default expectation for listeners that run sync.
+2. **Thread the ID through the payload.** For async listeners, cross-process hops, or anywhere a listener might execute outside the emitter's scope, include `operationId` in the event payload and re-establish the scope at the top of the listener with `runWithContext({ operationId }, async () => { ... })`.
+
+At-risk surfaces that must follow one of these rules during migration:
+
+- `services/progress-tracker.ts` — emits `backup-progress`, `restore-progress`, `operation-completed`, `operation-failed` via `EventEmitter`.
+- `services/backup/backup-scheduler.ts`, `services/backup/backup-executor.ts`, `services/backup/self-backup-executor.ts` — backup/restore emission paths.
+- `services/restore-executor/*` — restore progress and rollback paths.
+- Docker event callbacks registered via `DockerService.onContainerChange()` / `onContainerEvent()` — invoked outside any request scope; wrap the handler body.
+- `services/user-events/user-event-service.ts` — Socket.IO emission for `EVENT_CREATED` / `EVENT_UPDATED`; the scope should already be live at the call site.
+- Socket.IO emitter modules (`container-socket-emitter`, `haproxy-socket-emitter`, `connectivity-socket-emitter`, `backup-health-socket-emitter`) — same as above.
+
+Socket.IO `emitToChannel` is a plain function call inside the same process, so scope survives it naturally; the risk is only real `EventEmitter` indirection.
+
 ### 6. Migration plan
 
 Delivered as one mechanical PR plus one targeted PR:
@@ -191,7 +210,9 @@ Delivered as one mechanical PR plus one targeted PR:
    - Rewrite `logging-config.ts` schema + defaults to the new twelve-component shape.
    - Rewrite `server/config/logging.json` to the new shape.
    - Add `lib/logging-context.ts` and `middleware/request-context.ts`.
-   - Wire request-context middleware into `app-factory.ts` before routes.
+   - In `app-factory.ts`, mount middleware in order: `requestContext` → `pinoHttp` → auth → routes, so access logs and downstream handlers both pick up `requestId` from ALS via the mixin.
+   - In `server.ts`, call `loadLoggingConfig()` before any service module import chain that could construct a logger, to avoid falling back to hard-coded defaults from `logging-config.ts`.
+   - Update the logger-factory mocks in `server/src/__tests__/setup-unit.ts` and `setup-integration.ts` to match the new `getLogger(component, subcomponent)` signature **in the same commit** that deletes the old exports. Failing to do this will break the full test suite.
    - Mechanically rewrite imports across the ~218 files using a mapping table keyed by directory:
      - `services/tls/*` → `("tls", <filename-derived>)`
      - `services/haproxy/*` and `services/haproxy/dataplane/*` → `("haproxy", <...>)`
@@ -205,6 +226,8 @@ Delivered as one mechanical PR plus one targeted PR:
      - `lib/jwt*`, `lib/auth*`, `lib/api-key*`, `lib/passport*`, `lib/permission*` → `("auth", <...>)`.
      - `lib/prisma.ts` → `("db", "prisma")`.
      - `services/monitoring/*`, `services/health-check*`, `services/circuit-breaker*`, `services/connectivity*`, `services/dns/*`, `lib/connectivity-scheduler*`, `services/self-update*`, `routes/diagnostics*` → `("platform", <...>)`.
+     - `services/environment/*` → `("stacks", <...>)` — the environment manager is part of stack orchestration.
+     - `services/container-log-streamer.ts` → `("docker", "container-log-streamer")`. Note this service's *own* application logs (Docker connectivity, stream failures) go through pino; the *container stdout/stderr* it forwards to clients via Socket.IO stays on its existing path and is out of scope here.
      - Deployment state machines (`blue-green-*`, `services/haproxy/actions/*` involved in deploy flows) → `("deploy", <...>)` where the concern is deploy orchestration, `("haproxy", <...>)` where the concern is HAProxy primitives.
    - Delete unused old exports (`appLogger`, `servicesLogger`, etc.) and the legacy mapping.
    - Migrate `routes/auth.ts` (5 calls) and `lib/in-memory-queue.ts` (1 call) from `console.*` to pino.
@@ -220,6 +243,8 @@ Delivered as one mechanical PR plus one targeted PR:
 - Unit test `logging-context`: nested `runWithContext` calls merge correctly; `setUserId` / `setOperationId` mutate the current scope only.
 - Unit test `logger-factory`: `getLogger(component, subcomponent)` returns distinct instances; each component's root level is independently mutable; `.child` subcomponent binding appears in emitted lines.
 - Unit test pino mixin: when ALS context is set, emitted lines include `requestId` / `userId` / `operationId`; when unset, those fields are absent.
+- Unit test `pino-http` integration: an HTTP access log line emitted by `pino-http` carries the same `requestId` as the application logs for that request (confirms middleware order is correct).
+- Unit test ALS + `EventEmitter`: a listener invoked synchronously from inside `runWithContext` inherits the scope; a listener invoked from outside the scope does **not** — documents the expected behaviour that motivates the payload-threading rule in §5.
 - Integration test: boot the app factory, hit a simple endpoint with a known `X-Request-Id`, assert the response header echoes it and that `logs/app.log` (or the test-mode in-memory destination) contains a line tagged with the same `requestId`, the expected `component=http`, and the subcomponent for that route.
 - Smoke check that test mode still produces zero log output (all components silent, no file destination).
 
