@@ -64,12 +64,14 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
-// ApiKey model for webhook authentication
+// ApiKey model for webhook authentication.
+// userId is nullable: null represents a system credential (e.g. the built-in
+// agent sidecar key) that is not tied to any human user.
 model ApiKey {
   id          String   @id @default(cuid())
   name        String
   key         String   @unique
-  userId      String
+  userId      String?
   active      Boolean  @default(true)
   permissions String?  // JSON array of permission scopes, null = full access
   lastUsedAt  DateTime?
@@ -77,7 +79,7 @@ model ApiKey {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("api_keys")
 }

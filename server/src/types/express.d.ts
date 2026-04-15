@@ -5,8 +5,8 @@ declare module "express-serve-static-core" {
     user?: JWTUser & { mustResetPwd?: boolean };
     apiKey?: {
       id: string;
-      userId: string;
-      user: JWTUser;
+      userId: string | null;
+      user: JWTUser | null;
       permissions: PermissionScope[] | null;
     };
     logout(done: (err: unknown) => void): void;

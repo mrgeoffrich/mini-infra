@@ -56,11 +56,12 @@ export async function requireApiKey(
       return;
     }
 
-    // Add API key info to request object for downstream middleware
+    // Add API key info to request object for downstream middleware.
+    // System keys (agent sidecar etc.) have no associated user.
     req.apiKey = {
       id: validationResult.keyId!,
-      userId: validationResult.userId!,
-      user: validationResult.user!,
+      userId: validationResult.userId ?? null,
+      user: validationResult.user ?? null,
       permissions: validationResult.permissions ?? null,
     };
 
@@ -120,8 +121,8 @@ export async function optionalApiKey(
       // Add API key info to request object
       req.apiKey = {
         id: validationResult.keyId!,
-        userId: validationResult.userId!,
-        user: validationResult.user!,
+        userId: validationResult.userId ?? null,
+        user: validationResult.user ?? null,
         permissions: validationResult.permissions ?? null,
       };
 
@@ -205,8 +206,8 @@ export async function requireSessionOrApiKey(
     // Add API key info to request object
     req.apiKey = {
       id: validationResult.keyId!,
-      userId: validationResult.userId!,
-      user: validationResult.user!,
+      userId: validationResult.userId ?? null,
+      user: validationResult.user ?? null,
       permissions: validationResult.permissions ?? null,
     };
 
@@ -257,8 +258,16 @@ function extractApiKeyFromRequest(req: Request): string | null {
 }
 
 /**
- * Utility function to get the current user from either session or API key
- * Returns the user object regardless of authentication method
+ * Sentinel actor id used for requests authenticated via a system-scoped API
+ * key (e.g. the built-in agent sidecar). Stored in audit fields like
+ * `createdBy` / `updatedBy` when no human user is driving the request.
+ */
+export const SYSTEM_ACTOR_ID = "system";
+
+/**
+ * Utility function to get the current user from either session or API key.
+ * Returns the user object regardless of authentication method, or null when
+ * the request is authed via a system API key (no user attached).
  */
 export function getCurrentUser(req: Request) {
   // Return session user if available
@@ -275,9 +284,17 @@ export function getCurrentUser(req: Request) {
 }
 
 /**
- * Utility function to get the current user ID from either session or API key
+ * Utility function to get the current actor ID for audit fields.
+ *
+ * - Session user → user id
+ * - User-bound API key → user id
+ * - System API key (agent sidecar) → `SYSTEM_ACTOR_ID`
+ * - Unauthenticated → null
  */
 export function getCurrentUserId(req: Request): string | null {
   const user = getCurrentUser(req);
-  return user ? user.id : null;
+  if (user) return user.id;
+  // System API key authenticated with no associated user.
+  if (req.apiKey) return SYSTEM_ACTOR_ID;
+  return null;
 }

@@ -90,7 +90,7 @@ export interface ApiKey {
   id: string;
   name: string;
   key: string;
-  userId: string;
+  userId: string | null;
   active: boolean;
   permissions: PermissionScope[] | null; // null = full access
   lastUsedAt: Date | null;
