@@ -11,10 +11,6 @@ if (-not (Test-Path $envFile)) {
     Write-Host "ERROR: .env file not found at: $envFile" -ForegroundColor Red
     Write-Host ""
     Write-Host "Please create a .env file in the deployment/development/ directory." -ForegroundColor Yellow
-    Write-Host "You can use the following template as a starting point:" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "  # APP_SECRET is auto-generated on first boot if not set"
-    Write-Host "  # APP_SECRET=<optional: openssl rand -base64 32>"
     Write-Host ""
     exit 1
 }

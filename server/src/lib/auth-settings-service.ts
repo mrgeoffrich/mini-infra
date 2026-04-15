@@ -1,23 +1,9 @@
-import CryptoJS from "crypto-js";
 import prisma from "./prisma";
-import { getApiKeySecret } from "./security-config";
 import { appLogger } from "./logger-factory";
 import type { AuthSettingsInfo, UpdateAuthSettingsRequest } from "@mini-infra/types";
 
 const logger = appLogger();
 
-function encrypt(value: string): string {
-  return CryptoJS.AES.encrypt(value, getApiKeySecret()).toString();
-}
-
-function decrypt(encrypted: string): string {
-  const bytes = CryptoJS.AES.decrypt(encrypted, getApiKeySecret());
-  return bytes.toString(CryptoJS.enc.Utf8);
-}
-
-/**
- * Get or create the singleton AuthSettings row
- */
 async function getOrCreateRow() {
   let settings = await prisma.authSettings.findFirst();
   if (!settings) {
@@ -49,9 +35,6 @@ export async function getSettingsInternal() {
   return getOrCreateRow();
 }
 
-/**
- * Update auth settings. Encrypts Google client secret before storing.
- */
 export async function updateSettings(
   data: UpdateAuthSettingsRequest,
 ): Promise<void> {
@@ -66,9 +49,7 @@ export async function updateSettings(
     updateData.googleClientId = data.googleClientId;
   }
   if (data.googleClientSecret !== undefined) {
-    updateData.googleClientSecret = data.googleClientSecret
-      ? encrypt(data.googleClientSecret)
-      : null;
+    updateData.googleClientSecret = data.googleClientSecret || null;
   }
 
   await prisma.authSettings.update({
@@ -79,17 +60,11 @@ export async function updateSettings(
   logger.info("Auth settings updated");
 }
 
-/**
- * Check if initial setup has been completed
- */
 export async function isSetupComplete(): Promise<boolean> {
   const settings = await getOrCreateRow();
   return settings.setupComplete;
 }
 
-/**
- * Mark initial setup as complete
- */
 export async function markSetupComplete(): Promise<void> {
   const settings = await getOrCreateRow();
   await prisma.authSettings.update({
@@ -98,17 +73,11 @@ export async function markSetupComplete(): Promise<void> {
   });
 }
 
-/**
- * Check if Google OAuth is enabled
- */
 export async function isGoogleOAuthEnabled(): Promise<boolean> {
   const settings = await getOrCreateRow();
   return settings.googleOAuthEnabled;
 }
 
-/**
- * Get decrypted Google OAuth credentials (for Passport strategy)
- */
 export async function getGoogleCredentials(): Promise<{
   clientId: string;
   clientSecret: string;
@@ -122,15 +91,10 @@ export async function getGoogleCredentials(): Promise<{
     return null;
   }
 
-  try {
-    return {
-      clientId: settings.googleClientId,
-      clientSecret: decrypt(settings.googleClientSecret),
-    };
-  } catch (error) {
-    logger.error({ error }, "Failed to decrypt Google OAuth credentials");
-    return null;
-  }
+  return {
+    clientId: settings.googleClientId,
+    clientSecret: settings.googleClientSecret,
+  };
 }
 
 function maskString(value: string): string {

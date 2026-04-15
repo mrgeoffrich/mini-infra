@@ -15,8 +15,6 @@ import {
   IconAlertCircle,
   IconCheck,
   IconBrandDocker,
-  IconKey,
-  IconCopy,
   IconArrowRight,
   IconCircleCheck,
   IconCircleDashed,
@@ -358,221 +356,6 @@ function DockerDetectionStep({
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — App Secret
-// ---------------------------------------------------------------------------
-
-function AppSecretStep({
-  onComplete,
-  dockerHost,
-  dockerHostIp,
-}: {
-  onComplete: () => void;
-  dockerHost: string | null;
-  dockerHostIp: string;
-}) {
-  const [generatedSecret, setGeneratedSecret] = useState<string | null>(null);
-  const [useCustom, setUseCustom] = useState(false);
-  const [customSecret, setCustomSecret] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isCompleting, setIsCompleting] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const activeSecret = useCustom ? customSecret : generatedSecret;
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const response = await fetch("/auth/setup/app-secret");
-        if (!response.ok) throw new Error("Failed to retrieve app secret");
-        const data = await response.json();
-        setGeneratedSecret(data.appSecret);
-      } catch {
-        setError("Failed to load app secret");
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
-
-  const handleCopy = async () => {
-    if (!activeSecret) return;
-    try {
-      await navigator.clipboard.writeText(activeSecret);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      const textarea = document.createElement("textarea");
-      textarea.value = activeSecret;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const handleComplete = async () => {
-    if (!activeSecret) return;
-    setIsCompleting(true);
-    setError(null);
-    try {
-      const body: Record<string, string> = {};
-      if (dockerHost) body.dockerHost = dockerHost;
-      if (dockerHostIp) body.dockerHostIp = dockerHostIp;
-      if (useCustom && customSecret) body.appSecret = customSecret;
-
-      const response = await fetch("/auth/setup/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to complete setup");
-      }
-
-      onComplete();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setIsCompleting(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center gap-3 py-6">
-        <IconLoader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (error && !generatedSecret) {
-    return (
-      <Alert variant="destructive">
-        <IconAlertCircle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    );
-  }
-
-  const customTooShort = useCustom && customSecret.length > 0 && customSecret.length < 32;
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        This secret is used to encrypt credentials and sign authentication
-        tokens. If you ever need to restore from a backup or migrate to a new
-        host, you will need this secret to decrypt your data.
-      </p>
-
-      <div className="space-y-2">
-        <label
-          className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-            !useCustom
-              ? "border-primary bg-primary/5"
-              : "border-muted hover:border-muted-foreground/30"
-          }`}
-          onClick={() => setUseCustom(false)}
-        >
-          <IconCircleCheck
-            className={`h-4 w-4 flex-shrink-0 ${!useCustom ? "text-primary" : "text-muted-foreground/30"}`}
-          />
-          <span className="text-sm">Use generated secret</span>
-        </label>
-
-        <label
-          className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
-            useCustom
-              ? "border-primary bg-primary/5"
-              : "border-muted hover:border-muted-foreground/30"
-          }`}
-          onClick={() => setUseCustom(true)}
-        >
-          <IconCircleCheck
-            className={`h-4 w-4 flex-shrink-0 ${useCustom ? "text-primary" : "text-muted-foreground/30"}`}
-          />
-          <span className="text-sm">Use my own secret</span>
-        </label>
-      </div>
-
-      {!useCustom && generatedSecret && (
-        <div className="relative">
-          <div className="rounded-lg border bg-muted/50 p-3 pr-10 font-mono text-xs break-all select-all">
-            {generatedSecret}
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="absolute right-1 top-1 h-8 w-8 p-0"
-            onClick={handleCopy}
-          >
-            {copied ? (
-              <IconCheck className="h-4 w-4 text-green-600" />
-            ) : (
-              <IconCopy className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      )}
-
-      {useCustom && (
-        <div className="space-y-1">
-          <Input
-            type="text"
-            placeholder="Enter your app secret (min 32 characters)"
-            value={customSecret}
-            onChange={(e) => setCustomSecret(e.target.value)}
-            className="font-mono text-xs"
-            autoFocus
-          />
-          {customTooShort && (
-            <p className="text-xs text-destructive">
-              Must be at least 32 characters
-            </p>
-          )}
-        </div>
-      )}
-
-      <Alert>
-        <IconAlertCircle className="h-4 w-4" />
-        <AlertDescription className="text-xs">
-          Store this secret in a safe place. You can also set it as the{" "}
-          <code className="rounded bg-muted px-1 py-0.5">APP_SECRET</code>{" "}
-          environment variable to ensure the same secret is used across
-          restarts.
-        </AlertDescription>
-      </Alert>
-
-      {error && (
-        <Alert variant="destructive">
-          <IconAlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      <Button
-        className="w-full"
-        onClick={handleComplete}
-        disabled={isCompleting || !activeSecret || customTooShort}
-      >
-        {isCompleting ? (
-          <>
-            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
-            Completing setup...
-          </>
-        ) : (
-          "I've saved it — Complete Setup"
-        )}
-      </Button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Step indicator
 // ---------------------------------------------------------------------------
 
@@ -621,8 +404,6 @@ function StepIndicator({
 export function SetupPage() {
   const { data: setupStatus } = useSetupStatus();
   const [step, setStep] = useState(1);
-  const [dockerHost, setDockerHost] = useState<string | null>(null);
-  const [dockerHostIp, setDockerHostIp] = useState<string>("");
 
   // If setup already has users (e.g. page refresh mid-wizard), skip to step 2.
   // Wrapping the setState in `useEffectEvent` keeps it out of the reactive
@@ -639,13 +420,11 @@ export function SetupPage() {
   const stepTitles = [
     { icon: <IconAlertCircle className="h-3.5 w-3.5" />, title: "Create Account" },
     { icon: <IconBrandDocker className="h-3.5 w-3.5" />, title: "Docker Connection" },
-    { icon: <IconKey className="h-3.5 w-3.5" />, title: "App Secret" },
   ];
 
   const stepDescription = {
     1: "Create your admin account to get started.",
     2: "Let's check if Docker is available on this host.",
-    3: "Save your app secret for backup and recovery.",
   }[step];
 
   return (
@@ -676,18 +455,17 @@ export function SetupPage() {
             )}
             {step === 2 && (
               <DockerDetectionStep
-                onComplete={(host, ip) => {
-                  setDockerHost(host);
-                  setDockerHostIp(ip);
-                  setStep(3);
-                }}
-              />
-            )}
-            {step === 3 && (
-              <AppSecretStep
-                dockerHost={dockerHost}
-                dockerHostIp={dockerHostIp}
-                onComplete={() => {
+                onComplete={async (host, ip) => {
+                  const body: Record<string, string> = {};
+                  if (host) body.dockerHost = host;
+                  if (ip) body.dockerHostIp = ip;
+
+                  await fetch("/auth/setup/complete", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(body),
+                  });
+
                   // Full page reload to clear stale cached auth/setup queries.
                   // SPA navigate would hit ProtectedRoute with a stale
                   // "not authenticated" cache (the JWT cookie was set in step 1

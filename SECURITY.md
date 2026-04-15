@@ -40,10 +40,9 @@ This policy applies to the latest version of Mini Infra running as intended. The
 When deploying Mini Infra in production:
 
 1. **Change all default credentials** — especially HAProxy stats and Data Plane API passwords
-2. **Ensure the app secret is generated** — `APP_SECRET` is auto-generated on first boot, or set it manually via environment variable
-3. **Restrict Docker socket access** — the mounted Docker socket gives full control of the host Docker daemon
-4. **Use HTTPS** — deploy behind a reverse proxy with TLS termination
-5. **Set `ALLOWED_ADMIN_EMAILS`** — restrict who can authenticate via Google OAuth
-6. **Keep dependencies updated** — run `npm audit` regularly
+2. **Restrict Docker socket access** — the mounted Docker socket gives full control of the host Docker daemon
+3. **Use HTTPS** — deploy behind a reverse proxy with TLS termination
+4. **Set `ALLOWED_ADMIN_EMAILS`** — restrict who can authenticate via Google OAuth
+5. **Keep dependencies updated** — run `npm audit` regularly
 
 Thank you for helping keep Mini Infra secure.

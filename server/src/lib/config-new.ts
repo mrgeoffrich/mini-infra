@@ -17,7 +17,6 @@ const configSchema = z.object({
     url: z.string(),
   }),
   auth: z.object({
-    appSecret: z.string().nullable(),
     allowedEmails: z.array(z.string()).nullable(),
   }),
   logging: z.object({
@@ -92,10 +91,6 @@ const appConfig: Config = {
     url: getConfigValue("database.url", "DATABASE_URL", "file:./dev.db"),
   },
   auth: {
-    appSecret:
-      getConfigValue("auth.appSecret", "APP_SECRET", null) ||
-      getConfigValue("auth.session.secret", "SESSION_SECRET", null) ||
-      getConfigValue("auth.apiKey.secret", "API_KEY_SECRET", null),
     allowedEmails: (() => {
       const envValue = process.env.ALLOWED_ADMIN_EMAILS;
       if (envValue) {

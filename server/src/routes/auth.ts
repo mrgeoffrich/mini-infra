@@ -25,7 +25,7 @@ import {
 } from "../lib/account-lockout-service";
 import * as authSettingsService from "../lib/auth-settings-service";
 import { requireAuth } from "../lib/auth-middleware";
-import { getApiKeySecret, securityConfig as securityConfigStore } from "../lib/security-config";
+import { getAuthSecret } from "../lib/security-config";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import type {
   AuthStatus,
@@ -71,7 +71,7 @@ function setAuthCookie(res: Response, token: string): void {
 // Hash a recovery token (same HMAC approach as API keys)
 function hashToken(token: string): string {
   return crypto
-    .createHmac("sha256", getApiKeySecret())
+    .createHmac("sha256", getAuthSecret())
     .update(token)
     .digest("hex");
 }
@@ -229,32 +229,6 @@ router.post("/setup/detect-docker", (async (_req: Request, res: Response) => {
 }) as RequestHandler);
 
 // ==========================================
-// Public: Setup — retrieve app secret
-// ==========================================
-router.get("/setup/app-secret", (async (_req: Request, res: Response) => {
-  try {
-    const userCount = await prisma.user.count();
-    const setupComplete = await authSettingsService.isSetupComplete();
-    if (userCount === 0 || setupComplete) {
-      return res.status(403).json({ error: "Setup is not in progress" });
-    }
-
-    const secretSetting = await prisma.systemSettings.findFirst({
-      where: { category: "system", key: "app_secret", isActive: true },
-    });
-
-    if (!secretSetting?.value) {
-      return res.status(500).json({ error: "App secret not found" });
-    }
-
-    res.json({ appSecret: secretSetting.value });
-  } catch (error) {
-    logger.error({ error }, "Error retrieving app secret");
-    res.status(500).json({ error: "Failed to retrieve app secret" });
-  }
-}) as RequestHandler);
-
-// ==========================================
 // Public: Setup — complete setup wizard
 // ==========================================
 router.post("/setup/complete", (async (req: Request, res: Response) => {
@@ -265,43 +239,7 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       return res.status(403).json({ error: "Setup is not in progress" });
     }
 
-    // Optionally update app secret if user provided their own
-    const { dockerHost, appSecret } = req.body as { dockerHost?: string; appSecret?: string };
-    if (appSecret && appSecret.length >= 32) {
-      await prisma.systemSettings.upsert({
-        where: { category_key: { category: "system", key: "app_secret" } },
-        create: {
-          category: "system",
-          key: "app_secret",
-          value: appSecret,
-          isEncrypted: false,
-          isActive: true,
-          createdBy: "system",
-          updatedBy: "system",
-        },
-        update: {
-          value: appSecret,
-          updatedBy: "system",
-          updatedAt: new Date(),
-        },
-      });
-      securityConfigStore.setAppSecret(appSecret);
-
-      // Re-issue JWT — the token from step 1 was signed with the old secret
-      const user = await prisma.user.findFirst();
-      if (user) {
-        const profile: UserProfile = {
-          id: user.id,
-          email: user.email,
-          name: user.name || undefined,
-          createdAt: user.createdAt.toISOString(),
-        };
-        const newToken = generateToken(profile);
-        setAuthCookie(res, newToken);
-      }
-
-      logger.info("Custom app secret saved during setup");
-    }
+    const { dockerHost } = req.body as { dockerHost?: string };
 
     // Optionally save Docker socket configuration and connect
     if (dockerHost) {

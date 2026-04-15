@@ -1,4 +1,4 @@
-import { securityConfig } from "../lib/security-config";
+import { internalSecrets } from "../lib/security-config";
 import {
   disconnectIntegrationTestDatabase,
   getWorkerTestDatabaseUrl,
@@ -12,15 +12,15 @@ process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = getWorkerTestDatabaseUrl();
 process.env.LOG_LEVEL = "silent";
 
-// Initialize security config for tests
-securityConfig.setAppSecret("test-secret-key-for-testing-only");
+// Initialize internal auth secret for tests
+internalSecrets.setAuthSecret("test-secret-key-for-testing-only");
 
 await resetWorkerIntegrationTestDatabase();
 await initializeIntegrationTestDatabase();
 
 afterAll(async () => {
   await disconnectIntegrationTestDatabase();
-  securityConfig.clear();
+  internalSecrets.clear();
 });
 
 afterEach(async () => {

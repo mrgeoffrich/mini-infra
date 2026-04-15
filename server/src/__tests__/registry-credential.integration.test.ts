@@ -11,12 +11,10 @@ import {
 
 describe("RegistryCredentialService", () => {
   let service: RegistryCredentialService;
-  const testEncryptionKey = "test-encryption-key-for-testing";
   const testUserId = "test-user-123";
 
   beforeEach(async () => {
-    // Create a fresh service instance for each test
-    service = new RegistryCredentialService(testPrisma, testEncryptionKey);
+    service = new RegistryCredentialService(testPrisma);
   });
 
   function buildCredentialRequest(
@@ -53,7 +51,7 @@ describe("RegistryCredentialService", () => {
   });
 
   describe("Create Credential", () => {
-    test("should create a new credential with encrypted password", async () => {
+    test("should create a new credential with plaintext password", async () => {
       const request: CreateRegistryCredentialRequest = buildCredentialRequest({
         name: "GitHub Container Registry",
         registryUrl: "ghcr.io",
@@ -71,7 +69,7 @@ describe("RegistryCredentialService", () => {
       expect(credential.name).toBe(request.name);
       expect(credential.registryUrl).toBe(request.registryUrl);
       expect(credential.username).toBe(request.username);
-      expect(credential.password).not.toBe(request.password); // Should be encrypted
+      expect(credential.password).toBe(request.password);
       expect(credential.createdBy).toBe(testUserId);
       expect(credential.updatedBy).toBe(testUserId);
     });
@@ -248,7 +246,7 @@ describe("RegistryCredentialService", () => {
       expect(updated.registryUrl).toBe("registry.example.com"); // Should not change
     });
 
-    test("should encrypt new password when updating", async () => {
+    test("should store new password as plaintext when updating", async () => {
       const created = await service.createCredential(
         {
           name: "Test Registry",
@@ -259,16 +257,14 @@ describe("RegistryCredentialService", () => {
         testUserId,
       );
 
-      const originalEncryptedPassword = created.password;
-
       const updated = await service.updateCredential(
         created.id,
         { password: "new-password" },
         testUserId,
       );
 
-      expect(updated.password).not.toBe("new-password");
-      expect(updated.password).not.toBe(originalEncryptedPassword);
+      expect(updated.password).toBe("new-password");
+      expect(updated.password).not.toBe(created.password);
     });
 
     test("should handle setting credential as default", async () => {
@@ -470,8 +466,8 @@ describe("RegistryCredentialService", () => {
     });
   });
 
-  describe("Password Encryption/Decryption", () => {
-    test("should encrypt and decrypt password correctly", async () => {
+  describe("Password Storage", () => {
+    test("should store password as plaintext and return it unchanged", async () => {
       const originalPassword = "my-secret-password-123";
 
       const credential = await service.createCredential(
@@ -484,10 +480,8 @@ describe("RegistryCredentialService", () => {
         testUserId,
       );
 
-      // Password should be encrypted in database
-      expect(credential.password).not.toBe(originalPassword);
+      expect(credential.password).toBe(originalPassword);
 
-      // But when retrieved via getCredentialsForImage, it should be decrypted
       const result = await service.getCredentialsForImage(
         "test.example.com/image:tag",
       );

@@ -335,12 +335,6 @@
   ref: settings/system-settings#user-events-configuration
 - q: How do I add Docker registry credentials?
   ref: settings/system-settings#registry-credentials
-- q: How do I regenerate the session secret?
-  ref: settings/security-settings#regenerating-a-secret
-- q: How do I regenerate the API key secret?
-  ref: settings/security-settings#regenerating-a-secret
-- q: What happens if I regenerate secrets?
-  ref: settings/security-settings#security-secrets
 - q: How do I configure TLS certificate storage?
   ref: settings/tls-settings#certificate-storage
 - q: What is the difference between Let's Encrypt Production and Staging?

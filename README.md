@@ -11,7 +11,7 @@ docker run -d \
   ghcr.io/mrgeoffrich/mini-infra:latest
 ```
 
-Then open [http://localhost:5000](http://localhost:5000) and you're done. A 3-step setup wizard creates your admin account, detects Docker, and generates your app secret. No config files, no environment variables, no prerequisites beyond Docker itself.
+Then open [http://localhost:5000](http://localhost:5000) and you're done. A 2-step setup wizard creates your admin account and detects Docker. No config files, no environment variables, no prerequisites beyond Docker itself.
 
 ![Setup Wizard](docs/screenshots/setup-wizard.png)
 
@@ -110,7 +110,6 @@ No OAuth setup required. No external databases. No config files. Everything runs
 
 | Variable | Default | Description |
 |---|---|---|
-| `APP_SECRET` | Auto-generated | Secret for auth tokens and encryption. Set this to persist across container recreations |
 | `ALLOWED_ADMIN_EMAILS` | — | Comma-separated emails allowed to create accounts |
 | `LOG_LEVEL` | `info` | Logging verbosity: `trace`, `debug`, `info`, `warn`, `error` |
 

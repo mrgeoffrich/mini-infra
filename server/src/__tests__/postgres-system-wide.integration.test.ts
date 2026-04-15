@@ -30,7 +30,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
       expect(createdDatabase.host).toBe("localhost");
       expect(createdDatabase.port).toBe(5432);
       expect(createdDatabase.tags).toEqual(["test"]);
-      expect(createdDatabase.connectionString).toBe("[ENCRYPTED]");
+      expect(createdDatabase.connectionString).toBe("[REDACTED]");
     });
 
     it("should enforce system-wide unique database names", async () => {

@@ -1,9 +1,7 @@
 import { Client } from "pg";
 import prisma from "../../lib/prisma";
 import { appLogger } from "../../lib/logger-factory";
-import { getEncryptionSecret } from "../../lib/security-config";
 import postgresServerService from "./server-manager";
-import CryptoJS from "crypto-js";
 
 const logger = appLogger();
 
@@ -21,20 +19,10 @@ function escapeIdentifier(identifier: string): string {
  */
 export class GrantManagementService {
   /**
-   * Decrypt a connection string
-   */
-  private decryptConnectionString(encryptedString: string): string {
-    const bytes = CryptoJS.AES.decrypt(encryptedString, getEncryptionSecret());
-    return bytes.toString(CryptoJS.enc.Utf8);
-  }
-
-  /**
    * Get a PostgreSQL client for a specific database
    */
   private async getDatabaseClient(server: { connectionString: string }, databaseName: string): Promise<Client> {
-    const baseConnectionString = this.decryptConnectionString(server.connectionString);
-    // Replace the database name in the connection string
-    const dbConnectionString = baseConnectionString.replace(/\/[^/?]+(\?|$)/, `/${databaseName}$1`);
+    const dbConnectionString = server.connectionString.replace(/\/[^/?]+(\?|$)/, `/${databaseName}$1`);
     return new Client({ connectionString: dbConnectionString });
   }
   /**

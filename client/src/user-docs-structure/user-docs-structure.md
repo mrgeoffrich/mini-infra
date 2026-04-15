@@ -97,7 +97,6 @@ Generated: 2026-04-06
 | `/api-keys/new` | Create API Key | ⚠️ | (none, parent has doc) | — |
 | `/api-keys/presets` | Permission Presets | ✅ | `settings/permission-presets` | ✅ |
 | `/settings-system` | System Settings | ✅ | `settings/system-settings` | ✅ |
-| `/settings-security` | Security Settings | ✅ | `settings/security-settings` | ✅ |
 | `/settings-registry-credentials` | Registry Credentials | ✅ | `settings/system-settings` | ✅ |
 | `/settings-self-backup` | Self-Backup Settings | ✅ | `postgres-backups/configuring-backups` | ✅ |
 | `/settings-tls` | TLS Settings | ✅ | `settings/tls-settings` | ✅ |
@@ -233,7 +232,6 @@ These articles are defined in `extra-docs-defined.md` and supplement the route-d
 | `api-keys.md` | Managing API Keys | How to create, manage, and revoke API keys for programmatic access to Mini Infra. |
 | `permission-presets.md` | API Key Permission Presets | How to create and manage reusable permission templates for API keys. |
 | `system-settings.md` | System Settings | How to configure system-wide settings including Docker images, HAProxy ports, and event retention. |
-| `security-settings.md` | Security Settings | How to manage and regenerate security secrets in Mini Infra. |
 | `tls-settings.md` | TLS Settings | How to configure certificate storage, ACME provider, and renewal scheduling for TLS certificates. |
 | `user-preferences.md` | User Preferences | How to configure personal settings like timezone in Mini Infra. |
 | `ai-assistant.md` | AI Assistant Settings | How to configure the AI assistant's API key, model, and view its capabilities in Mini Infra. |

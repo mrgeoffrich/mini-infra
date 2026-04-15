@@ -2,10 +2,10 @@
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
 
-import { securityConfig } from "../lib/security-config";
+import { internalSecrets } from "../lib/security-config";
 
-// Initialize security config for tests
-securityConfig.setAppSecret("test-secret-key-for-testing-only");
+// Initialize internal auth secret for tests
+internalSecrets.setAuthSecret("test-secret-key-for-testing-only");
 
 // Mock logger factory to silence logs during tests
 vi.mock("../lib/logger-factory.ts", () => {

@@ -1,8 +1,6 @@
 import { Client } from "pg";
 import prisma from "../../lib/prisma";
-import CryptoJS from "crypto-js";
 import { appLogger } from "../../lib/logger-factory";
-import { getEncryptionSecret } from "../../lib/security-config";
 import databaseManagerService from "./database-manager";
 import userManagerService from "./user-manager";
 
@@ -10,24 +8,9 @@ const logger = appLogger();
 
 /**
  * PostgresServerService - Manages PostgreSQL server connections and operations
- * Handles CRUD operations, connection testing, health checks, and encryption
+ * Handles CRUD operations, connection testing, and health checks.
  */
 export class PostgresServerService {
-
-  /**
-   * Encrypt a connection string using AES encryption
-   */
-  private encryptConnectionString(connectionString: string): string {
-    return CryptoJS.AES.encrypt(connectionString, getEncryptionSecret()).toString();
-  }
-
-  /**
-   * Decrypt a connection string
-   */
-  private decryptConnectionString(encryptedString: string): string {
-    const bytes = CryptoJS.AES.decrypt(encryptedString, getEncryptionSecret());
-    return bytes.toString(CryptoJS.enc.Utf8);
-  }
 
   /**
    * Parse tags from JSON string to array
@@ -84,7 +67,6 @@ export class PostgresServerService {
   }) {
     logger.info({ params: { ...params, adminPassword: "***" } }, "Creating PostgreSQL server");
 
-    // Build and encrypt connection string
     const connectionString = this.buildConnectionString(
       params.host,
       params.port,
@@ -93,7 +75,6 @@ export class PostgresServerService {
       "postgres",
       params.sslMode
     );
-    const encryptedConnectionString = this.encryptConnectionString(connectionString);
 
     // Create server record
     const server = await prisma.postgresServer.create({
@@ -102,7 +83,7 @@ export class PostgresServerService {
         host: params.host,
         port: params.port,
         adminUsername: params.adminUsername,
-        connectionString: encryptedConnectionString,
+        connectionString,
         sslMode: params.sslMode,
         tags: params.tags ? JSON.stringify(params.tags) : null,
         linkedContainerId: params.linkedContainerId,
@@ -209,24 +190,20 @@ export class PostgresServerService {
     // Get existing server
     const existingServer = await this.getServer(serverId, userId);
 
-    // If password or connection details changed, rebuild connection string
-    let encryptedConnectionString = existingServer.connectionString;
+    let connectionString = existingServer.connectionString;
     if (updates.adminPassword || updates.host || updates.port || updates.adminUsername || updates.sslMode) {
       const host = updates.host || existingServer.host;
       const port = updates.port || existingServer.port;
       const username = updates.adminUsername || existingServer.adminUsername;
       const sslMode = updates.sslMode || existingServer.sslMode;
 
-      // If no new password provided, decrypt existing connection string to extract password
       let password = updates.adminPassword;
       if (!password) {
-        const existingConnectionString = this.decryptConnectionString(existingServer.connectionString);
-        const match = existingConnectionString.match(/postgresql:\/\/[^:]+:([^@]+)@/);
+        const match = existingServer.connectionString.match(/postgresql:\/\/[^:]+:([^@]+)@/);
         password = match ? match[1] : "";
       }
 
-      const connectionString = this.buildConnectionString(host, port, username, password, "postgres", sslMode);
-      encryptedConnectionString = this.encryptConnectionString(connectionString);
+      connectionString = this.buildConnectionString(host, port, username, password, "postgres", sslMode);
     }
 
     // Update server
@@ -241,7 +218,7 @@ export class PostgresServerService {
         ...(updates.linkedContainerId !== undefined && { linkedContainerId: updates.linkedContainerId }),
         ...(updates.linkedContainerName !== undefined && { linkedContainerName: updates.linkedContainerName }),
         ...(updates.tags && { tags: JSON.stringify(updates.tags) }),
-        connectionString: encryptedConnectionString,
+        connectionString,
       },
     });
 
@@ -304,7 +281,7 @@ export class PostgresServerService {
    */
   async testServerConnection(serverId: string, userId: string): Promise<{ success: boolean; version?: string; error?: string }> {
     const server = await this.getServer(serverId, userId);
-    const connectionString = this.decryptConnectionString(server.connectionString);
+    const connectionString = server.connectionString;
 
     const client = new Client({ connectionString });
 
@@ -346,7 +323,7 @@ export class PostgresServerService {
    */
   async getServerInfo(serverId: string, userId: string) {
     const server = await this.getServer(serverId, userId);
-    const connectionString = this.decryptConnectionString(server.connectionString);
+    const connectionString = server.connectionString;
 
     const client = new Client({ connectionString });
 
@@ -400,7 +377,7 @@ export class PostgresServerService {
    */
   async getClient(serverId: string, userId: string): Promise<Client> {
     const server = await this.getServer(serverId, userId);
-    const connectionString = this.decryptConnectionString(server.connectionString);
+    const connectionString = server.connectionString;
     const client = new Client({ connectionString });
     await client.connect();
     return client;
@@ -412,7 +389,7 @@ export class PostgresServerService {
    */
   async getClientForDatabase(serverId: string, userId: string, databaseName: string): Promise<Client> {
     const server = await this.getServer(serverId, userId);
-    const connectionString = this.decryptConnectionString(server.connectionString);
+    const connectionString = server.connectionString;
 
     // Parse and modify connection string to use the specified database
     const url = new URL(connectionString);
@@ -429,10 +406,7 @@ export class PostgresServerService {
    */
   async getServerAdminPassword(serverId: string, userId: string): Promise<string> {
     const server = await this.getServer(serverId, userId);
-    const connectionString = this.decryptConnectionString(server.connectionString);
-
-    // Parse connection string to extract password
-    const url = new URL(connectionString);
+    const url = new URL(server.connectionString);
     return decodeURIComponent(url.password);
   }
 }

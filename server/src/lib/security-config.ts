@@ -1,77 +1,47 @@
 /**
- * In-Memory Security Configuration Store
+ * In-Memory Internal Secret Store
  *
- * This module provides a singleton store for the application secret
- * that is loaded from the database at application startup.
- *
- * A single secret (APP_SECRET) is used for all cryptographic operations:
- * JWT signing, API key hashing, and credential encryption.
+ * Holds an internal, auto-generated secret used for JWT session signing
+ * and API key HMAC hashing. The secret is loaded from the database at
+ * startup and is never exposed to users via any API, env var, or UI.
  */
 
 import { appLogger } from "./logger-factory";
 
 const logger = appLogger();
 
-class SecurityConfigStore {
-  private appSecret: string | null = null;
+class InternalSecretStore {
+  private authSecret: string | null = null;
 
-  /**
-   * Set the application secret
-   * Should only be called once during application initialization
-   */
-  public setAppSecret(secret: string): void {
-    if (this.appSecret !== null) {
+  public setAuthSecret(secret: string): void {
+    if (this.authSecret !== null) {
       logger.warn(
-        "App secret is being overwritten. This should only happen during initialization.",
+        "Internal auth secret is being overwritten. This should only happen during initialization.",
       );
     }
-    this.appSecret = secret;
-    logger.info("App secret loaded into memory");
+    this.authSecret = secret;
+    logger.info("Internal auth secret loaded into memory");
   }
 
-  /**
-   * Get the application secret
-   * Used for JWT signing, API key hashing, and credential encryption
-   */
-  public getAppSecret(): string {
-    if (this.appSecret === null) {
+  public getAuthSecret(): string {
+    if (this.authSecret === null) {
       throw new Error(
-        "App secret not initialized. Ensure initializeSecuritySecrets() runs at startup.",
+        "Internal auth secret not initialized. Ensure initializeSecuritySecrets() runs at startup.",
       );
     }
-    return this.appSecret;
+    return this.authSecret;
   }
 
-  // Aliases for backwards compatibility -- all return the same secret
-  public getSessionSecret(): string {
-    return this.getAppSecret();
-  }
-
-  public getApiKeySecret(): string {
-    return this.getAppSecret();
-  }
-
-  /**
-   * Check if the secret has been initialized
-   */
   public isInitialized(): boolean {
-    return this.appSecret !== null;
+    return this.authSecret !== null;
   }
 
-  /**
-   * Clear secret from memory
-   * Should only be used during graceful shutdown or in tests
-   */
   public clear(): void {
-    logger.info("Clearing app secret from memory");
-    this.appSecret = null;
+    logger.info("Clearing internal auth secret from memory");
+    this.authSecret = null;
   }
 }
 
-// Export singleton instance
-export const securityConfig = new SecurityConfigStore();
+export const internalSecrets = new InternalSecretStore();
 
-// Export getter functions for convenience
-export const getSessionSecret = () => securityConfig.getSessionSecret();
-export const getApiKeySecret = () => securityConfig.getApiKeySecret();
-export const getEncryptionSecret = () => securityConfig.getAppSecret();
+export const getAuthSecret = () => internalSecrets.getAuthSecret();

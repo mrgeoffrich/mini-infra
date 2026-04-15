@@ -220,10 +220,6 @@ export interface DockerSocketDetectionResult {
   }>;
 }
 
-export interface AppSecretResponse {
-  appSecret: string;
-}
-
 export interface SetupRequest {
   email: string;
   displayName: string;

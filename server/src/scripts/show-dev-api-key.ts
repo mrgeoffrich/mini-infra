@@ -2,7 +2,7 @@
 import { recreateDevApiKey } from "../services/dev-api-key";
 import appConfig from "../lib/config-new";
 import prisma from "../lib/prisma";
-import { securityConfig } from "../lib/security-config";
+import { internalSecrets } from "../lib/security-config";
 import { randomBytes } from "crypto";
 
 /**
@@ -10,35 +10,31 @@ import { randomBytes } from "crypto";
  * Usage: npm run show-dev-key
  */
 
-/**
- * Initialize security secret from database or generate a new one
- * This must run FIRST before creating API keys
- */
 async function initializeSecuritySecrets() {
   const CATEGORY = "system";
-  const APP_SECRET_KEY = "app_secret";
+  const AUTH_SECRET_KEY = "internal_auth_secret";
 
   let secretSetting = await prisma.systemSettings.findFirst({
     where: {
       category: CATEGORY,
-      key: APP_SECRET_KEY,
+      key: AUTH_SECRET_KEY,
       isActive: true,
     },
   });
 
   if (!secretSetting || !secretSetting.value) {
-    const newSecret = appConfig.auth.appSecret || randomBytes(48).toString("base64url");
+    const newSecret = randomBytes(48).toString("base64url");
 
     secretSetting = await prisma.systemSettings.upsert({
       where: {
         category_key: {
           category: CATEGORY,
-          key: APP_SECRET_KEY,
+          key: AUTH_SECRET_KEY,
         },
       },
       create: {
         category: CATEGORY,
-        key: APP_SECRET_KEY,
+        key: AUTH_SECRET_KEY,
         value: newSecret,
         isEncrypted: false,
         isActive: true,
@@ -53,7 +49,7 @@ async function initializeSecuritySecrets() {
     });
   }
 
-  securityConfig.setAppSecret(secretSetting.value);
+  internalSecrets.setAuthSecret(secretSetting.value);
 }
 
 async function main() {

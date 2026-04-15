@@ -48,7 +48,7 @@ import { CloudflareService } from "./services/cloudflare";
 import { AzureStorageService } from "./services/azure-storage-service";
 import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
-import { securityConfig } from "./lib/security-config";
+import { internalSecrets } from "./lib/security-config";
 import { randomBytes } from "crypto";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
@@ -66,48 +66,41 @@ let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 let dnsCacheScheduler: DnsCacheScheduler | null = null;
 
 /**
- * Initialize security secrets from database or generate new ones
- * This must run FIRST before any other service initialization
+ * Initialize the internal auth secret from the database, generating one if
+ * missing. Used for JWT signing and API key HMAC hashing. The secret is
+ * never exposed via any API, env var, or UI.
+ *
+ * Must run FIRST before any other service initialization.
  */
 const initializeSecuritySecrets = async () => {
-  console.log("[STARTUP] Initializing security secrets...");
+  console.log("[STARTUP] Initializing internal auth secret...");
 
   try {
     const CATEGORY = "system";
-    const APP_SECRET_KEY = "app_secret";
+    const AUTH_SECRET_KEY = "internal_auth_secret";
 
-    // Check if app secret exists in database
     let secretSetting = await prisma.systemSettings.findFirst({
       where: {
         category: CATEGORY,
-        key: APP_SECRET_KEY,
+        key: AUTH_SECRET_KEY,
         isActive: true,
       },
     });
 
-    // If no secret in DB, use env var or generate a new one
     if (!secretSetting || !secretSetting.value) {
-      const envSecret = appConfig.auth.appSecret === "default-secret-change-in-production"
-        ? null
-        : appConfig.auth.appSecret;
-      const newSecret = envSecret || randomBytes(48).toString("base64url");
-
-      if (envSecret) {
-        console.log("[STARTUP] App secret seeded from environment variable");
-      } else {
-        console.log("[STARTUP] App secret not found, generating new one...");
-      }
+      const newSecret = randomBytes(48).toString("base64url");
+      console.log("[STARTUP] Internal auth secret not found, generating...");
 
       secretSetting = await prisma.systemSettings.upsert({
         where: {
           category_key: {
             category: CATEGORY,
-            key: APP_SECRET_KEY,
+            key: AUTH_SECRET_KEY,
           },
         },
         create: {
           category: CATEGORY,
-          key: APP_SECRET_KEY,
+          key: AUTH_SECRET_KEY,
           value: newSecret,
           isEncrypted: false,
           isActive: true,
@@ -121,19 +114,17 @@ const initializeSecuritySecrets = async () => {
         },
       });
 
-      logger.info("App secret stored in database");
-      console.log("[STARTUP] ✓ App secret stored in database");
+      logger.info("Internal auth secret stored in database");
+      console.log("[STARTUP] ✓ Internal auth secret stored in database");
     } else {
-      console.log("[STARTUP] ✓ App secret loaded from database");
+      console.log("[STARTUP] ✓ Internal auth secret loaded from database");
     }
 
-    // Load secret into memory
-    securityConfig.setAppSecret(secretSetting.value);
+    internalSecrets.setAuthSecret(secretSetting.value);
 
-    logger.info("Security secret initialized successfully");
-    console.log("[STARTUP] ✓ Security secret initialized and loaded into memory");
+    logger.info("Internal auth secret initialized successfully");
   } catch (error) {
-    console.error("[STARTUP] FATAL: Failed to initialize security secrets");
+    console.error("[STARTUP] FATAL: Failed to initialize internal auth secret");
     console.error(error);
     throw error;
   }

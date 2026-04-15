@@ -22,11 +22,10 @@ Mini Infra is distributed as a Docker image. The recommended way to run it is wi
 
 ## Environment variables
 
-All environment variables are optional. The application auto-generates a secret on first boot if `APP_SECRET` is not set.
+All environment variables are optional.
 
 | Variable | Description |
 |----------|-------------|
-| `APP_SECRET` | (Optional) Secret used for JWT signing, API key hashing, and encryption. Auto-generated if not set. |
 | `ALLOWED_ADMIN_EMAILS` | (Optional) Comma-separated list of emails allowed to log in. |
 
 ## Example docker-compose.yml
@@ -100,5 +99,4 @@ Mini Infra handles `SIGTERM` cleanly — it stops background schedulers, flushes
 ## What to watch out for
 
 - Mounting `/var/run/docker.sock` gives Mini Infra **full control** of the Docker daemon on the host. Only use this in trusted environments.
-- The app secret must remain stable. Changing it invalidates all active sessions and breaks all existing API keys. See [Security Settings](/settings-security) for how to rotate it safely.
 - The `mini-infra-data` volume contains the SQLite database. Losing it means losing all configuration. Back it up or use the self-backup feature (see [Configuring Backup Schedules](/postgres-backups/configuring-backups)).

@@ -7,7 +7,6 @@ const legacyConfig = {
   NODE_ENV: appConfig.server.nodeEnv,
   PORT: appConfig.server.port,
   DATABASE_URL: appConfig.database.url,
-  APP_SECRET: appConfig.auth.appSecret,
   LOG_LEVEL: appConfig.logging.level,
 };
 

@@ -18,7 +18,6 @@ Deploy using pre-built images from ghcr.io:
 cd deployment/production
 
 # Create your .env file (see DEPLOYMENT.md for details)
-# APP_SECRET is auto-generated on first boot if not set
 
 # Run the startup script
 ./start.sh          # Linux/macOS
@@ -47,7 +46,6 @@ cd deployment/development
 Both production and development require a `.env` file in their respective directories.
 
 **Optional variables:**
-- `APP_SECRET` - Application secret for auth and encryption (auto-generated on first boot if not set)
 - `ALLOWED_ADMIN_EMAILS` - Comma-separated list of allowed login emails
 - `LOG_LEVEL` - Logging level (debug, info, warn, error)
 
