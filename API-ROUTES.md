@@ -149,6 +149,12 @@
 | POST | `/api/settings/github-app/agent/token` | Generate agent token via GitHub App |
 | POST | `/api/settings/github-app/agent/revoke` | Revoke agent token |
 
+### Onboarding (`/api/onboarding`)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/onboarding/complete` | Mark onboarding complete and seed backup/TLS defaults |
+
 ### Self-Backup Settings (`/api/settings/self-backup`)
 
 | Method | Path | Description |

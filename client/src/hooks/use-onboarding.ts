@@ -1,9 +1,5 @@
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useSystemSettings,
-  useCreateSystemSetting,
-  useUpdateSystemSetting,
-} from "@/hooks/use-settings";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSystemSettings } from "@/hooks/use-settings";
 
 const ONBOARDING_FILTER = {
   category: "system" as const,
@@ -23,37 +19,37 @@ export function useOnboardingStatus() {
   return { onboardingComplete, isLoading };
 }
 
+async function completeOnboardingRequest(): Promise<void> {
+  const response = await fetch("/api/onboarding/complete", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to complete onboarding: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  if (!data.success) {
+    throw new Error(data.error || "Failed to complete onboarding");
+  }
+}
+
 export function useCompleteOnboarding() {
   const queryClient = useQueryClient();
-  const { data } = useSystemSettings({
-    filters: ONBOARDING_FILTER,
-    limit: 1,
+
+  const mutation = useMutation({
+    mutationFn: completeOnboardingRequest,
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["systemSettings", ONBOARDING_FILTER],
+      });
+      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
+      queryClient.invalidateQueries({ queryKey: ["selfBackupConfig"] });
+      queryClient.invalidateQueries({ queryKey: ["tlsSettings"] });
+    },
   });
-  const createSetting = useCreateSystemSetting();
-  const updateSetting = useUpdateSystemSetting();
 
-  const existing = data?.data?.[0];
-
-  const complete = async () => {
-    if (existing) {
-      await updateSetting.mutateAsync({
-        id: existing.id,
-        setting: { value: "true" },
-      });
-    } else {
-      await createSetting.mutateAsync({
-        category: "system",
-        key: "onboarding_complete",
-        value: "true",
-        isEncrypted: false,
-      });
-    }
-    queryClient.invalidateQueries({
-      queryKey: ["systemSettings", ONBOARDING_FILTER],
-    });
-  };
-
-  const isPending = createSetting.isPending || updateSetting.isPending;
-
-  return { complete, isPending };
+  return { complete: mutation.mutateAsync, isPending: mutation.isPending };
 }
