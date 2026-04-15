@@ -57,7 +57,6 @@ sections:
       - slug: running-with-docker
         topics:
           - Docker Compose setup for Mini Infra
-          - Optional environment variables — APP_SECRET (auto-generated if not set)
           - Volume mounts — docker socket, data, logs
           - Health check endpoint /health
           - Graceful shutdown behavior
@@ -417,12 +416,6 @@ sections:
           - Default Postgres backup container selection
           - Registry credentials — Docker registry authentication for pulls
           - Production mode toggle
-      - slug: security-settings
-        topics:
-          - Session Secret — signing JWT tokens, regeneration logs out all users
-          - API Key Secret — hashing keys and encrypting config, regeneration breaks all keys
-          - When to regenerate secrets — compromise, audit, force re-auth
-          - Regeneration is immediate and irreversible
       - slug: tls-settings
         topics:
           - Certificate storage in Azure Blob Storage

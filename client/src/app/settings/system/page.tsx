@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -39,18 +38,8 @@ import {
   IconHistory,
   IconClock,
   IconWorld,
-  IconKey,
-  IconRefresh,
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
 // System settings schema
@@ -91,41 +80,6 @@ export default function SystemSettingsPage() {
     {},
   );
   const [isSaving, setIsSaving] = useState(false);
-  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false);
-  const queryClient = useQueryClient();
-
-  // Security secrets
-  const {
-    data: secrets,
-    isLoading: secretsLoading,
-  } = useQuery<{ app_secret: string; app_secret_id: string | null }>({
-    queryKey: ["security-secrets"],
-    queryFn: async () => {
-      const res = await fetch("/api/settings/security");
-      if (!res.ok) throw new Error("Failed to fetch security secrets");
-      return res.json();
-    },
-  });
-
-  const regenerateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/settings/security/regenerate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "Failed to regenerate secret");
-      }
-      return res.json() as Promise<{ message: string; warning: string }>;
-    },
-    onSuccess: (data) => {
-      toastWithCopy.success(data.message);
-      setTimeout(() => toastWithCopy.warning(data.warning), 1000);
-      queryClient.invalidateQueries({ queryKey: ["security-secrets"] });
-    },
-    onError: (error: Error) => toastWithCopy.error(error.message),
-  });
 
   // Fetch existing system settings for system category
   const {
@@ -530,52 +484,6 @@ export default function SystemSettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Application Secret */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <IconKey className="h-5 w-5" />
-                      <span>Application Secret</span>
-                    </CardTitle>
-                    <CardDescription>
-                      A single secret used for JWT signing, API key hashing, and credential encryption. Auto-generated on first boot.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3 rounded-lg border p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="space-y-1">
-                          <h3 className="font-semibold text-sm">App Secret</h3>
-                          <p className="text-sm text-muted-foreground">
-                            Used for all authentication and encryption operations
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setConfirmRegenerateOpen(true)}
-                          disabled={regenerateMutation.isPending}
-                        >
-                          {regenerateMutation.isPending ? (
-                            <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <IconRefresh className="h-4 w-4 mr-2" />
-                          )}
-                          Regenerate
-                        </Button>
-                      </div>
-                      <div className="rounded bg-muted p-3 font-mono text-sm">
-                        {secretsLoading ? <Skeleton className="h-5 w-full" /> : (secrets?.app_secret || "••••••••")}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Regenerating will invalidate all active sessions and break all existing API keys.
-                        Users will need to log in again and create new API keys.
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
                 {/* Actions */}
                 <div className="flex justify-end space-x-2">
                   <Button
@@ -601,36 +509,6 @@ export default function SystemSettingsPage() {
         </div>
       </div>
 
-      <Dialog open={confirmRegenerateOpen} onOpenChange={setConfirmRegenerateOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Regenerate App Secret?</DialogTitle>
-            <DialogDescription>
-              This will invalidate all active user sessions and break all
-              existing API keys. All users will need to log in again and create
-              new API keys. Are you sure you want to continue?
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmRegenerateOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                regenerateMutation.mutate();
-                setConfirmRegenerateOpen(false);
-              }}
-              disabled={regenerateMutation.isPending}
-            >
-              {regenerateMutation.isPending && (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              )}
-              Regenerate
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

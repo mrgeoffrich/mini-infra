@@ -1,8 +1,6 @@
 import { PrismaClient } from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import CryptoJS from "crypto-js";
 import { servicesLogger } from "../lib/logger-factory";
-import { getApiKeySecret } from "../lib/security-config";
 import type {
   RegistryCredential,
   CreateRegistryCredentialRequest,
@@ -13,72 +11,9 @@ import { DockerExecutorService } from "./docker-executor";
 
 export class RegistryCredentialService {
   private prisma: PrismaClient;
-  private encryptionKey: string | null;
 
-  constructor(prisma: PrismaClient, encryptionKey?: string) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    // Store provided encryption key or null (will be loaded lazily)
-    this.encryptionKey = encryptionKey || null;
-  }
-
-  /**
-   * Get the encryption key (lazy-loaded from security config if not provided)
-   */
-  private getEncryptionKey(): string {
-    if (!this.encryptionKey) {
-      this.encryptionKey = getApiKeySecret();
-    }
-    return this.encryptionKey;
-  }
-
-  // ====================
-  // Encryption Utilities
-  // ====================
-
-  /**
-   * Encrypt a password
-   * @param password - Plain text password
-   * @returns Encrypted password
-   */
-  private encryptPassword(password: string): string {
-    try {
-      return CryptoJS.AES.encrypt(password, this.getEncryptionKey()).toString();
-    } catch (error) {
-      servicesLogger().error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to encrypt password",
-      );
-      throw new Error("Encryption failed", { cause: error });
-    }
-  }
-
-  /**
-   * Decrypt a password
-   * @param encryptedPassword - Encrypted password
-   * @returns Plain text password
-   */
-  private decryptPassword(encryptedPassword: string): string {
-    try {
-      const bytes = CryptoJS.AES.decrypt(
-        encryptedPassword,
-        this.getEncryptionKey(),
-      );
-      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-      if (!decrypted) {
-        throw new Error("Decryption resulted in empty string");
-      }
-      return decrypted;
-    } catch (error) {
-      servicesLogger().error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to decrypt password",
-      );
-      throw new Error("Decryption failed", { cause: error });
-    }
   }
 
   // ====================
@@ -147,7 +82,7 @@ export class RegistryCredentialService {
       );
       return {
         username: credential.username,
-        password: this.decryptPassword(credential.password),
+        password: credential.password,
       };
     }
 
@@ -160,7 +95,7 @@ export class RegistryCredentialService {
       );
       return {
         username: defaultCredential.username,
-        password: this.decryptPassword(defaultCredential.password),
+        password: defaultCredential.password,
       };
     }
 
@@ -188,9 +123,6 @@ export class RegistryCredentialService {
       "Creating registry credential",
     );
 
-    // Encrypt password before storing
-    const encryptedPassword = this.encryptPassword(data.password);
-
     // If this credential should be default, unset any existing defaults
     if (data.isDefault) {
       await this.prisma.registryCredential.updateMany({
@@ -204,7 +136,7 @@ export class RegistryCredentialService {
         name: data.name,
         registryUrl: data.registryUrl,
         username: data.username,
-        password: encryptedPassword,
+        password: data.password,
         isDefault: data.isDefault ?? false,
         isActive: data.isActive ?? true,
         description: data.description,
@@ -273,7 +205,7 @@ export class RegistryCredentialService {
     if (data.name !== undefined) updateData.name = data.name;
     if (data.username !== undefined) updateData.username = data.username;
     if (data.password !== undefined) {
-      updateData.password = this.encryptPassword(data.password);
+      updateData.password = data.password;
     }
     if (data.isDefault !== undefined) updateData.isDefault = data.isDefault;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
@@ -367,12 +299,10 @@ export class RegistryCredentialService {
       throw new Error("Credential not found");
     }
 
-    const decryptedPassword = this.decryptPassword(credential.password);
-
     return this.testCredential(
       credential.registryUrl,
       credential.username,
-      decryptedPassword,
+      credential.password,
       testImage,
     );
   }

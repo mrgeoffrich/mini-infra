@@ -23,7 +23,6 @@ import dockerRoutes from "./routes/docker";
 import settingsRoutes from "./routes/settings";
 import settingsConnectivityRoutes from "./routes/settings-connectivity";
 import settingsValidationRoutes from "./routes/settings-validation";
-import settingsSecurityRoutes from "./routes/settings-security";
 import settingsDockerRoutes from "./routes/settings-docker";
 import azureSettingsRoutes from "./routes/azure-settings";
 import azureConnectivityRoutes from "./routes/azure-connectivity";
@@ -99,7 +98,6 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "githubBugReport", path: "/api/github/bug-report", name: "githubBugReportRoutes", getRouter: () => githubBugReportRoutes },
     { id: "settingsConnectivity", path: "/api/settings/connectivity", name: "settingsConnectivityRoutes", getRouter: () => settingsConnectivityRoutes },
     { id: "settingsValidation", path: "/api/settings/validate", name: "settingsValidationRoutes", getRouter: () => settingsValidationRoutes },
-    { id: "settingsSecurity", path: "/api/settings/security", name: "settingsSecurityRoutes", getRouter: () => settingsSecurityRoutes },
     { id: "settingsDocker", path: "/api/settings/docker-host", name: "settingsDockerRoutes", getRouter: () => settingsDockerRoutes },
     { id: "settings", path: "/api/settings", name: "settingsRoutes", getRouter: () => settingsRoutes },
     { id: "azureConnectivity", path: "/api/connectivity/azure", name: "azureConnectivityRoutes", getRouter: () => azureConnectivityRoutes },

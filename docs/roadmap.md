@@ -14,17 +14,6 @@ The logging story across server, sidecars, and client is currently fragmented â€
 - Ensure Socket.IO event emissions and task tracker steps have matching log lines at a consistent level.
 - Expose log level configuration via settings so noisy areas can be turned down at runtime without a redeploy.
 
-## Security & Secrets
-
-### App secret management review
-The current approach to managing the application secret is not practical in real use. We need to revisit it end-to-end so it is understandable, recoverable, and safe.
-
-- Audit how the app secret is generated, stored, rotated, and consumed today.
-- Clarify who needs access and at what point in the lifecycle (first boot, upgrade, recovery).
-- Define a usable flow for rotation and for recovering when the secret is lost or the operator changes.
-- Decide on the right storage location (mounted volume, OS keychain, external secret store) and document the tradeoffs.
-- Surface the relevant state in the UI so operators can see whether the secret is healthy without digging through containers.
-
 ## UI / UX
 
 ### Onboarding flow

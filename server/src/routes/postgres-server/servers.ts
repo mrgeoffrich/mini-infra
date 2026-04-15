@@ -60,7 +60,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
     const userId = getUserId(req);
     const servers = await postgresServerService.listServers(userId);
 
-    // Remove encrypted connection strings from response
+    // Never leak connection strings (contain passwords) to the client
     const sanitizedServers = servers.map((server) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { connectionString, ...rest } = server;

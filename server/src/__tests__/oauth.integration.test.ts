@@ -41,16 +41,12 @@ vi.mock("../lib/logger-factory.ts", () => {
 });
 
 vi.mock("../lib/config.ts", () => ({
-  APP_SECRET: "test-secret",
-  default: {
-    APP_SECRET: "test-secret",
-  },
+  default: {},
 }));
 
 // Mock config-new which passport.ts imports
 vi.mock("../lib/config-new", () => ({
   authConfig: {
-    appSecret: "test-secret",
     allowedEmails: ["test@example.com", "existing@example.com"],
   },
   serverConfig: {

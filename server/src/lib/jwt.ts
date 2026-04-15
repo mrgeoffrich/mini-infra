@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { appLogger } from "./logger-factory";
-import { getSessionSecret } from "./security-config";
+import { getAuthSecret } from "./security-config";
 
 const logger = appLogger();
 import type { UserProfile } from "@mini-infra/types";
@@ -36,7 +36,7 @@ export const generateToken = (
       ...(options?.mustResetPwd ? { mustResetPwd: true } : {}),
     };
 
-    const token = jwt.sign(payload, getSessionSecret(), {
+    const token = jwt.sign(payload, getAuthSecret(), {
       expiresIn: JWT_EXPIRES_IN,
       issuer: JWT_ISSUER,
       algorithm: "HS256",
@@ -57,7 +57,7 @@ export const generateToken = (
  */
 export const verifyToken = (token: string): JwtPayload => {
   try {
-    const decoded = jwt.verify(token, getSessionSecret(), {
+    const decoded = jwt.verify(token, getAuthSecret(), {
       issuer: JWT_ISSUER,
       algorithms: ["HS256"],
     }) as JwtPayload;

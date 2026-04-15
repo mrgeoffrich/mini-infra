@@ -1,9 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import { Client as PostgresClient } from "pg";
-import CryptoJS from "crypto-js";
 import { servicesLogger } from "../../lib/logger-factory";
-import { getApiKeySecret } from "../../lib/security-config";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -22,75 +20,9 @@ import {
 
 export class PostgresDatabaseManager {
   private prisma: PrismaClient;
-  private encryptionKey: string | null;
 
-  constructor(prisma: PrismaClient, encryptionKey?: string) {
+  constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    // Store provided encryption key or null (will be loaded lazily)
-    this.encryptionKey = encryptionKey || null;
-  }
-
-  /**
-   * Get the encryption key (lazy-loaded from security config if not provided)
-   */
-  private getEncryptionKey(): string {
-    if (!this.encryptionKey) {
-      this.encryptionKey = getApiKeySecret();
-    }
-    return this.encryptionKey;
-  }
-
-  // ====================
-  // Encryption Utilities
-  // ====================
-
-  /**
-   * Encrypt a connection string
-   * @param connectionString - Plain text connection string
-   * @returns Encrypted connection string
-   */
-  private encryptConnectionString(connectionString: string): string {
-    try {
-      return CryptoJS.AES.encrypt(
-        connectionString,
-        this.getEncryptionKey(),
-      ).toString();
-    } catch (error) {
-      servicesLogger().error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to encrypt connection string",
-      );
-      throw new Error("Encryption failed", { cause: error });
-    }
-  }
-
-  /**
-   * Decrypt a connection string
-   * @param encryptedConnectionString - Encrypted connection string
-   * @returns Plain text connection string
-   */
-  private decryptConnectionString(encryptedConnectionString: string): string {
-    try {
-      const bytes = CryptoJS.AES.decrypt(
-        encryptedConnectionString,
-        this.getEncryptionKey(),
-      );
-      const decrypted = bytes.toString(CryptoJS.enc.Utf8);
-      if (!decrypted) {
-        throw new Error("Decryption resulted in empty string");
-      }
-      return decrypted;
-    } catch (error) {
-      servicesLogger().error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-        "Failed to decrypt connection string",
-      );
-      throw new Error("Decryption failed", { cause: error });
-    }
   }
 
   /**
@@ -161,8 +93,6 @@ export class PostgresDatabaseManager {
       };
 
       const connectionString = this.buildConnectionString(config);
-      const encryptedConnectionString =
-        this.encryptConnectionString(connectionString);
 
       // Check for duplicate name system-wide
       const existingDb = await this.prisma.postgresDatabase.findUnique({
@@ -181,7 +111,7 @@ export class PostgresDatabaseManager {
       const createdDb = await this.prisma.postgresDatabase.create({
         data: {
           name: request.name,
-          connectionString: encryptedConnectionString,
+          connectionString,
           host: request.host,
           port: request.port,
           database: request.database,
@@ -287,11 +217,7 @@ export class PostgresDatabaseManager {
         request.password ||
         request.sslMode
       ) {
-        // Decrypt current connection string to get current config
-        const currentConnectionString = this.decryptConnectionString(
-          existingDb.connectionString,
-        );
-        currentConfig = this.parseConnectionString(currentConnectionString);
+        currentConfig = this.parseConnectionString(existingDb.connectionString);
 
         // Update config with new values
         const newConfig: DatabaseConnectionConfig = {
@@ -303,10 +229,7 @@ export class PostgresDatabaseManager {
           sslMode: request.sslMode || currentConfig.sslMode,
         };
 
-        // Build and encrypt new connection string
-        const newConnectionString = this.buildConnectionString(newConfig);
-        updateData.connectionString =
-          this.encryptConnectionString(newConnectionString);
+        updateData.connectionString = this.buildConnectionString(newConfig);
 
         // Update individual fields
         updateData.host = newConfig.host;
@@ -689,11 +612,7 @@ export class PostgresDatabaseManager {
         throw new Error("Database configuration not found");
       }
 
-      // Decrypt connection string
-      const connectionString = this.decryptConnectionString(
-        database.connectionString,
-      );
-      const config = this.parseConnectionString(connectionString);
+      const config = this.parseConnectionString(database.connectionString);
 
       // Test connection
       const result = await this.testConnection(config);
@@ -731,11 +650,7 @@ export class PostgresDatabaseManager {
         throw new Error("Database configuration not found");
       }
 
-      // Decrypt connection string
-      const connectionString = this.decryptConnectionString(
-        database.connectionString,
-      );
-      const config = this.parseConnectionString(connectionString);
+      const config = this.parseConnectionString(database.connectionString);
 
       // Test connection
       const validationResult = await this.testConnection(config);
@@ -809,11 +724,7 @@ export class PostgresDatabaseManager {
         throw new Error("Database not found");
       }
 
-      // Decrypt connection string and parse configuration
-      const connectionString = this.decryptConnectionString(
-        database.connectionString,
-      );
-      return this.parseConnectionString(connectionString);
+      return this.parseConnectionString(database.connectionString);
     } catch (error) {
       servicesLogger().error(
         {
@@ -983,7 +894,7 @@ export class PostgresDatabaseManager {
     return {
       id: database.id,
       name: database.name,
-      connectionString: "[ENCRYPTED]", // Never expose encrypted connection string
+      connectionString: "[REDACTED]",
       host: database.host,
       port: database.port,
       database: database.database,

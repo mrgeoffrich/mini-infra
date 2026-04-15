@@ -1,8 +1,6 @@
-import CryptoJS from "crypto-js";
 import type { PrismaClient } from "../../../generated/prisma/client";
 import type { ServiceApplyResult } from "@mini-infra/types";
 import { servicesLogger } from "../../../lib/logger-factory";
-import { getApiKeySecret } from "../../../lib/security-config";
 
 interface RegisterContext {
   stackName: string;
@@ -50,9 +48,7 @@ export async function registerPostgresServer(ctx: RegisterContext): Promise<void
   const password = String(ctx.parameterValues["postgres-password"] ?? "");
   const db = String(ctx.parameterValues["postgres-db"] ?? "postgres");
 
-  // Build and encrypt connection string using the same pattern as PostgresDatabaseManager
   const connectionString = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${containerName}:5432/${db}?sslmode=disable`;
-  const encryptedConnectionString = CryptoJS.AES.encrypt(connectionString, getApiKeySecret()).toString();
 
   // userId is required on PostgresServer — use triggeredBy if available
   if (!ctx.triggeredBy) {
@@ -66,7 +62,7 @@ export async function registerPostgresServer(ctx: RegisterContext): Promise<void
       host: containerName,
       port: 5432,
       adminUsername: user,
-      connectionString: encryptedConnectionString,
+      connectionString,
       sslMode: "disable",
       linkedContainerId: postgresResult.containerId,
       linkedContainerName: containerName,

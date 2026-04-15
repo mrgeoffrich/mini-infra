@@ -1,7 +1,5 @@
 import prisma from "../../lib/prisma";
-import CryptoJS from "crypto-js";
 import { appLogger } from "../../lib/logger-factory";
-import { getEncryptionSecret } from "../../lib/security-config";
 import postgresServerService from "./server-manager";
 
 const logger = appLogger();
@@ -19,13 +17,6 @@ function escapeIdentifier(identifier: string): string {
  * Handles user creation, deletion, password management, and syncing
  */
 export class UserManagementService {
-  /**
-   * Encrypt a password using AES encryption
-   */
-  private encryptPassword(password: string): string {
-    return CryptoJS.AES.encrypt(password, getEncryptionSecret()).toString();
-  }
-
   /**
    * List all users/roles from the PostgreSQL server
    */
@@ -167,10 +158,6 @@ export class UserManagementService {
 
       await client.end();
 
-      // Encrypt and store password hash
-      const encryptedPassword = this.encryptPassword(params.password);
-
-      // Create managed user record
       const managedUser = await prisma.managedDatabaseUser.create({
         data: {
           serverId,
@@ -178,7 +165,7 @@ export class UserManagementService {
           canLogin,
           isSuperuser,
           connectionLimit,
-          passwordHash: encryptedPassword,
+          passwordHash: params.password,
           passwordSetAt: new Date(),
           lastSyncedAt: new Date(),
         },
@@ -263,13 +250,10 @@ export class UserManagementService {
 
       await client.end();
 
-      // Encrypt and update password hash
-      const encryptedPassword = this.encryptPassword(newPassword);
-
       await prisma.managedDatabaseUser.update({
         where: { id: managedUserId },
         data: {
-          passwordHash: encryptedPassword,
+          passwordHash: newPassword,
           passwordSetAt: new Date(),
         },
       });

@@ -16,7 +16,6 @@ import {
   IconRocket,
   IconServer,
   IconSettings,
-  IconShield,
   IconTemplate,
   IconHistory,
   IconDownload,
@@ -436,18 +435,6 @@ export const routeConfig: Record<string, RouteConfig> = {
     navSection: "administration",
     description: "System configuration and settings",
     helpDoc: "settings/system-settings",
-  },
-
-  "/settings-security": {
-    path: "/settings-security",
-    title: "Security Settings",
-    breadcrumbLabel: "Security Settings",
-    icon: IconShield,
-    showInNav: false,
-    navGroup: "main",
-    navSection: "administration",
-    description: "Security configuration and API keys",
-    helpDoc: "settings/security-settings",
   },
 
   "/settings-registry-credentials": {

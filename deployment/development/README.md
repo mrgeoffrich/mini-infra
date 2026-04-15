@@ -14,12 +14,7 @@ Use this deployment to:
 
 ### 1. Create Environment File
 
-Ensure a `.env` file exists at `server/.env` (the start script reads it from there):
-
-```bash
-# APP_SECRET is auto-generated on first boot if not set
-# APP_SECRET=<optional: openssl rand -base64 32>
-```
+Ensure a `.env` file exists at `server/.env` (the start script reads it from there).
 
 ### 2. Run the Startup Script
 
