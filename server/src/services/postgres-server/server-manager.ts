@@ -200,7 +200,12 @@ export class PostgresServerService {
       let password = updates.adminPassword;
       if (!password) {
         const match = existingServer.connectionString.match(/postgresql:\/\/[^:]+:([^@]+)@/);
-        password = match ? match[1] : "";
+        if (!match) {
+          throw new Error(
+            "Cannot update server: stored connection string is not parseable. Provide adminPassword to re-enter credentials.",
+          );
+        }
+        password = match[1];
       }
 
       connectionString = this.buildConnectionString(host, port, username, password, "postgres", sslMode);

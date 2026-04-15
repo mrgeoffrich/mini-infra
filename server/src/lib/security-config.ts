@@ -6,9 +6,14 @@
  * startup and is never exposed to users via any API, env var, or UI.
  */
 
+import { randomBytes } from "crypto";
+import type { PrismaClient } from "../generated/prisma/client";
 import { appLogger } from "./logger-factory";
 
 const logger = appLogger();
+
+const CATEGORY = "system";
+const AUTH_SECRET_KEY = "internal_auth_secret";
 
 class InternalSecretStore {
   private authSecret: string | null = null;
@@ -45,3 +50,50 @@ class InternalSecretStore {
 export const internalSecrets = new InternalSecretStore();
 
 export const getAuthSecret = () => internalSecrets.getAuthSecret();
+
+/**
+ * Load the internal auth secret from SystemSettings, generating and
+ * persisting a new one if missing. Sets it on the in-memory store.
+ * Safe to call multiple times — only the first call persists.
+ */
+export async function loadOrCreateInternalAuthSecret(
+  prisma: PrismaClient,
+): Promise<string> {
+  let secretSetting = await prisma.systemSettings.findFirst({
+    where: {
+      category: CATEGORY,
+      key: AUTH_SECRET_KEY,
+      isActive: true,
+    },
+  });
+
+  if (!secretSetting || !secretSetting.value) {
+    const newSecret = randomBytes(48).toString("base64url");
+    secretSetting = await prisma.systemSettings.upsert({
+      where: {
+        category_key: {
+          category: CATEGORY,
+          key: AUTH_SECRET_KEY,
+        },
+      },
+      create: {
+        category: CATEGORY,
+        key: AUTH_SECRET_KEY,
+        value: newSecret,
+        isEncrypted: false,
+        isActive: true,
+        createdBy: "system",
+        updatedBy: "system",
+      },
+      update: {
+        value: newSecret,
+        updatedBy: "system",
+        updatedAt: new Date(),
+      },
+    });
+    logger.info("Internal auth secret generated and stored");
+  }
+
+  internalSecrets.setAuthSecret(secretSetting.value);
+  return secretSetting.value;
+}

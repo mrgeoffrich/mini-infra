@@ -139,6 +139,64 @@ describe("PostgreSQL System-Wide Database Management", () => {
       expect(updatedDatabase.host).toBe("newhost.example.com");
       expect(updatedDatabase.port).toBe(5433);
     });
+
+    it("should rebuild connection string preserving password when only host/port changes", async () => {
+      const createdDatabase = await databaseConfigService.createDatabase(
+        buildPostgresDatabaseRequest({
+          name: "partial-update-db",
+          host: "oldhost.example.com",
+          port: 5432,
+          database: "origdb",
+          username: "originaluser",
+          password: "original-secret-pw",
+          sslMode: "prefer",
+        }),
+      );
+
+      await databaseConfigService.updateDatabase(createdDatabase.id, {
+        host: "newhost.example.com",
+        port: 5433,
+      });
+
+      // Inspect the stored row directly — the public API redacts connectionString.
+      const stored = await testPrisma.postgresDatabase.findUnique({
+        where: { id: createdDatabase.id },
+      });
+
+      expect(stored).not.toBeNull();
+      expect(stored!.connectionString).toBe(
+        "postgresql://originaluser:original-secret-pw@newhost.example.com:5433/origdb?sslmode=prefer",
+      );
+      expect(stored!.host).toBe("newhost.example.com");
+      expect(stored!.port).toBe(5433);
+      expect(stored!.username).toBe("originaluser");
+    });
+
+    it("should rebuild connection string when password changes", async () => {
+      const createdDatabase = await databaseConfigService.createDatabase(
+        buildPostgresDatabaseRequest({
+          name: "password-update-db",
+          host: "host.example.com",
+          port: 5432,
+          database: "mydb",
+          username: "myuser",
+          password: "old-pw",
+          sslMode: "require",
+        }),
+      );
+
+      await databaseConfigService.updateDatabase(createdDatabase.id, {
+        password: "new-pw",
+      });
+
+      const stored = await testPrisma.postgresDatabase.findUnique({
+        where: { id: createdDatabase.id },
+      });
+
+      expect(stored!.connectionString).toBe(
+        "postgresql://myuser:new-pw@host.example.com:5432/mydb?sslmode=require",
+      );
+    });
   });
 
   describe("Database Deletion", () => {

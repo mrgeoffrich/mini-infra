@@ -2,55 +2,12 @@
 import { recreateDevApiKey } from "../services/dev-api-key";
 import appConfig from "../lib/config-new";
 import prisma from "../lib/prisma";
-import { internalSecrets } from "../lib/security-config";
-import { randomBytes } from "crypto";
+import { loadOrCreateInternalAuthSecret } from "../lib/security-config";
 
 /**
  * Script to recreate and display development API key
  * Usage: npm run show-dev-key
  */
-
-async function initializeSecuritySecrets() {
-  const CATEGORY = "system";
-  const AUTH_SECRET_KEY = "internal_auth_secret";
-
-  let secretSetting = await prisma.systemSettings.findFirst({
-    where: {
-      category: CATEGORY,
-      key: AUTH_SECRET_KEY,
-      isActive: true,
-    },
-  });
-
-  if (!secretSetting || !secretSetting.value) {
-    const newSecret = randomBytes(48).toString("base64url");
-
-    secretSetting = await prisma.systemSettings.upsert({
-      where: {
-        category_key: {
-          category: CATEGORY,
-          key: AUTH_SECRET_KEY,
-        },
-      },
-      create: {
-        category: CATEGORY,
-        key: AUTH_SECRET_KEY,
-        value: newSecret,
-        isEncrypted: false,
-        isActive: true,
-        createdBy: "system",
-        updatedBy: "system",
-      },
-      update: {
-        value: newSecret,
-        updatedBy: "system",
-        updatedAt: new Date(),
-      },
-    });
-  }
-
-  internalSecrets.setAuthSecret(secretSetting.value);
-}
 
 async function main() {
 
@@ -62,7 +19,7 @@ async function main() {
   }
 
   // Initialize security secrets first
-  await initializeSecuritySecrets();
+  await loadOrCreateInternalAuthSecret(prisma);
 
   console.log("🔄 Recreating Claude Development API Key...\n");
 

@@ -48,8 +48,7 @@ import { CloudflareService } from "./services/cloudflare";
 import { AzureStorageService } from "./services/azure-storage-service";
 import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
-import { internalSecrets } from "./lib/security-config";
-import { randomBytes } from "crypto";
+import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
@@ -74,55 +73,9 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
  */
 const initializeSecuritySecrets = async () => {
   console.log("[STARTUP] Initializing internal auth secret...");
-
   try {
-    const CATEGORY = "system";
-    const AUTH_SECRET_KEY = "internal_auth_secret";
-
-    let secretSetting = await prisma.systemSettings.findFirst({
-      where: {
-        category: CATEGORY,
-        key: AUTH_SECRET_KEY,
-        isActive: true,
-      },
-    });
-
-    if (!secretSetting || !secretSetting.value) {
-      const newSecret = randomBytes(48).toString("base64url");
-      console.log("[STARTUP] Internal auth secret not found, generating...");
-
-      secretSetting = await prisma.systemSettings.upsert({
-        where: {
-          category_key: {
-            category: CATEGORY,
-            key: AUTH_SECRET_KEY,
-          },
-        },
-        create: {
-          category: CATEGORY,
-          key: AUTH_SECRET_KEY,
-          value: newSecret,
-          isEncrypted: false,
-          isActive: true,
-          createdBy: "system",
-          updatedBy: "system",
-        },
-        update: {
-          value: newSecret,
-          updatedBy: "system",
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info("Internal auth secret stored in database");
-      console.log("[STARTUP] ✓ Internal auth secret stored in database");
-    } else {
-      console.log("[STARTUP] ✓ Internal auth secret loaded from database");
-    }
-
-    internalSecrets.setAuthSecret(secretSetting.value);
-
-    logger.info("Internal auth secret initialized successfully");
+    await loadOrCreateInternalAuthSecret(prisma);
+    console.log("[STARTUP] ✓ Internal auth secret ready");
   } catch (error) {
     console.error("[STARTUP] FATAL: Failed to initialize internal auth secret");
     console.error(error);

@@ -85,13 +85,6 @@
 |--------|------|-------------|
 | POST | `/api/settings/validate/:service` | Validate service connectivity |
 
-### Security (`/api/settings/security`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/settings/security/` | Get security secrets (masked) |
-| POST | `/api/settings/security/regenerate` | Regenerate secret |
-
 ### System Settings (`/api/settings/system`)
 
 | Method | Path | Description |

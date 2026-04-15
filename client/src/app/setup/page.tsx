@@ -230,7 +230,7 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 function DockerDetectionStep({
   onComplete,
 }: {
-  onComplete: (dockerHost: string | null, dockerHostIp: string) => void;
+  onComplete: (dockerHost: string | null, dockerHostIp: string) => Promise<void>;
 }) {
   const [isDetecting, setIsDetecting] = useState(true);
   const [result, setResult] = useState<DockerSocketDetectionResult | null>(
@@ -239,6 +239,8 @@ function DockerDetectionStep({
   const [error, setError] = useState(false);
   const [hostIp, setHostIp] = useState("");
   const [ipError, setIpError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const detect = useCallback(async () => {
     setIsDetecting(true);
@@ -275,9 +277,16 @@ function DockerDetectionStep({
     return true;
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!validateIp(hostIp)) return;
-    onComplete(socket?.displayPath ?? null, hostIp);
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await onComplete(socket?.displayPath ?? null, hostIp);
+    } catch (err) {
+      setSubmitError((err as Error).message || "Failed to complete setup");
+      setIsSubmitting(false);
+    }
   };
 
   if (isDetecting) {
@@ -344,12 +353,29 @@ function DockerDetectionStep({
         )}
       </div>
 
+      {submitError && (
+        <Alert variant="destructive">
+          <IconAlertCircle className="h-4 w-4" />
+          <AlertDescription>{submitError}</AlertDescription>
+        </Alert>
+      )}
+
       <Button
         className="w-full"
         onClick={handleContinue}
+        disabled={isSubmitting}
       >
-        Continue
-        <IconArrowRight className="ml-2 h-4 w-4" />
+        {isSubmitting ? (
+          <>
+            <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+            Completing setup...
+          </>
+        ) : (
+          <>
+            Continue
+            <IconArrowRight className="ml-2 h-4 w-4" />
+          </>
+        )}
       </Button>
     </div>
   );
@@ -460,11 +486,16 @@ export function SetupPage() {
                   if (host) body.dockerHost = host;
                   if (ip) body.dockerHostIp = ip;
 
-                  await fetch("/auth/setup/complete", {
+                  const response = await fetch("/auth/setup/complete", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(body),
                   });
+
+                  if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || "Failed to complete setup");
+                  }
 
                   // Full page reload to clear stale cached auth/setup queries.
                   // SPA navigate would hit ProtectedRoute with a stale
