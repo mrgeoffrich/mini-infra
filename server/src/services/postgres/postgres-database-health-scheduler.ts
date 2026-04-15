@@ -30,12 +30,15 @@ export class PostgresDatabaseHealthScheduler {
 
     this.logger.info("Starting PostgreSQL database health scheduler");
 
-    // Perform initial health checks
-    withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
+    // Perform initial health checks. performAllHealthChecks handles its own
+    // errors internally and never rejects, so the returned promise is
+    // intentionally discarded — both here and inside the setInterval
+    // callback, which cannot await.
+    void withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
 
     // Schedule periodic health checks
     this.intervalId = setInterval(() => {
-      withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
+      void withOperation("pg-db-health-tick", () => this.performAllHealthChecks());
     }, this.checkInterval);
 
     this.isRunning = true;

@@ -290,12 +290,15 @@ export class ConnectivityScheduler {
 
     logger.info("Starting ConnectivityScheduler");
 
-    // Perform initial health checks
-    withOperation("connectivity-tick", () => this.performAllHealthChecks());
+    // Perform initial health checks. performAllHealthChecks handles its own
+    // errors internally and never rejects, so the returned promise is
+    // intentionally discarded — both here and inside the setInterval
+    // callback, which cannot await.
+    void withOperation("connectivity-tick", () => this.performAllHealthChecks());
 
     // Schedule periodic health checks
     this.intervalId = setInterval(() => {
-      withOperation("connectivity-tick", () => this.performAllHealthChecks());
+      void withOperation("connectivity-tick", () => this.performAllHealthChecks());
     }, this.checkInterval);
 
     this.isRunning = true;

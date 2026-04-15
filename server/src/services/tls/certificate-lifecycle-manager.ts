@@ -62,7 +62,7 @@ export class CertificateLifecycleManager {
   async issueCertificate(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<Record<string, unknown>> {
     return withOperation(`cert-issue-${request.primaryDomain}`, () =>
       this.issueCertificateInner(request, onStep),
-    ) as Promise<Record<string, unknown>>;
+    );
   }
 
   private async issueCertificateInner(request: CertificateRequest, onStep?: IssuanceStepCallback): Promise<Record<string, unknown>> {
@@ -195,7 +195,7 @@ export class CertificateLifecycleManager {
   async renewCertificate(certificateId: string): Promise<Record<string, unknown>> {
     return withOperation(`cert-renew-${certificateId}`, () =>
       this.renewCertificateInner(certificateId),
-    ) as Promise<Record<string, unknown>>;
+    );
   }
 
   private async renewCertificateInner(certificateId: string): Promise<Record<string, unknown>> {

@@ -46,6 +46,17 @@ describe("requestContextMiddleware", () => {
     expect(next).toHaveBeenCalledTimes(1);
   });
 
+  it("stashes the id on req so pino-http's genReqId can reuse it", () => {
+    const req = makeReq({ "x-request-id": "for-pino-http" });
+    const res = makeRes();
+    const next: NextFunction = vi.fn();
+
+    requestContextMiddleware(req, res, next);
+    expect((req as unknown as { requestId?: string }).requestId).toBe(
+      "for-pino-http",
+    );
+  });
+
   it("falls through to a fresh id when the incoming header is an empty string", () => {
     const req = makeReq({ "x-request-id": "" });
     const res = makeRes();

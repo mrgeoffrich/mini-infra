@@ -65,7 +65,7 @@ export class StackReconciler {
   async apply(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
     return withOperation(`stack-apply-${stackId}`, () =>
       this.applyInner(stackId, options),
-    ) as Promise<ApplyResult>;
+    );
   }
 
   private async applyInner(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
@@ -343,6 +343,12 @@ export class StackReconciler {
   }
 
   async update(stackId: string, options?: UpdateOptions): Promise<ApplyResult> {
+    return withOperation(`stack-update-${stackId}`, () =>
+      this.updateInner(stackId, options),
+    );
+  }
+
+  private async updateInner(stackId: string, options?: UpdateOptions): Promise<ApplyResult> {
     const startTime = Date.now();
     const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-update', stackId });
 
@@ -568,6 +574,12 @@ export class StackReconciler {
   }
 
   async stopStack(stackId: string, options?: { triggeredBy?: string }): Promise<{ success: boolean; stoppedContainers: number }> {
+    return withOperation(`stack-stop-${stackId}`, () =>
+      this.stopStackInner(stackId, options),
+    );
+  }
+
+  private async stopStackInner(stackId: string, options?: { triggeredBy?: string }): Promise<{ success: boolean; stoppedContainers: number }> {
     const startTime = Date.now();
     const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-stop', stackId });
 
@@ -625,7 +637,7 @@ export class StackReconciler {
   async destroyStack(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
     return withOperation(`stack-destroy-${stackId}`, () =>
       this.destroyStackInner(stackId, _options),
-    ) as Promise<DestroyResult>;
+    );
   }
 
   private async destroyStackInner(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {

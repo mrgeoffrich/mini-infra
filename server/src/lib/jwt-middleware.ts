@@ -7,7 +7,7 @@ import {
 } from "./jwt";
 import prisma from "./prisma";
 import { getLogger } from "./logger-factory";
-import { setUserId } from "./logging-context";
+import { setUserId, getContext } from "./logging-context";
 
 const logger = getLogger("auth", "jwt-middleware");
 import { AuthErrorType, createAuthErrorResponse } from "./auth-middleware";
@@ -51,7 +51,7 @@ export const extractJwtUser = async (
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   try {
     // Skip JWT extraction for certain routes
@@ -134,7 +134,7 @@ export const requireJwtAuth = (
   res: Response,
   next: NextFunction,
 ): void => {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   logger.debug(
     { requestId, path: req.path },
@@ -183,7 +183,7 @@ export const optionalJwtAuth = (
   res: Response,
   next: NextFunction,
 ): void => {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   try {
     if (req.user) {

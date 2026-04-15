@@ -16,6 +16,7 @@
 
 import { Request, Response, NextFunction } from "express";
 import { getLogger } from "./logger-factory";
+import { getContext } from "./logging-context";
 
 const logger = getLogger("auth", "auth-middleware");
 import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
@@ -73,7 +74,7 @@ export function requireAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   logger.debug({ requestId, path: req.path }, "Validating JWT authentication");
 
@@ -150,7 +151,7 @@ export function optionalAuth(
   res: Response,
   next: NextFunction,
 ): void {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
 
   try {
     // Get current user from either JWT or API key
@@ -195,7 +196,7 @@ export function requireAuthorization(
   res: Response,
   next: NextFunction,
 ): void {
-  const requestId = req.headers["x-request-id"] as string;
+  const requestId = getContext()?.requestId ?? "unknown";
   const user = getCurrentUserFromJwt(req) || getCurrentUser(req);
   const userId = getCurrentUserIdFromJwt(req) || getCurrentUserId(req);
 
@@ -251,7 +252,7 @@ export function requireAuthorization(
  */
 export function requireOwnership(paramName: string = "userId") {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const requestId = req.headers["x-request-id"] as string;
+    const requestId = getContext()?.requestId ?? "unknown";
     const currentUserId = getCurrentUserIdFromJwt(req) || getCurrentUserId(req);
 
     logger.debug(

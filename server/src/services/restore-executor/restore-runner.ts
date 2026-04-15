@@ -365,6 +365,11 @@ export class RestoreRunner {
       );
 
       const containerStartTime = Date.now();
+      // Track the latest pending progress update from the callback to avoid
+      // fire-and-forget race conditions where an unawaited DB write completes
+      // after subsequent awaited writes, overwriting the final status.
+      let pendingProgressUpdate: Promise<void> | undefined;
+
       const containerResult =
         await this.dockerExecutor.executeContainerWithProgress(
           {
@@ -440,13 +445,19 @@ export class RestoreRunner {
                 );
             }
 
-            this.dbOps.updateRestoreProgress(operationId, {
+            pendingProgressUpdate = this.dbOps.updateRestoreProgress(operationId, {
               status: "running",
               progress: progressValue,
               message,
             });
           },
         );
+
+      // Ensure callback's DB write completes before we continue to avoid
+      // it racing with subsequent writes and overwriting the final status.
+      if (pendingProgressUpdate) {
+        await pendingProgressUpdate;
+      }
 
       getLogger("backup", "restore-runner").info(
         {

@@ -9,10 +9,14 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import path from "path";
+import { randomUUID } from "crypto";
 import appConfig, { securityConfig } from "./lib/config-new";
 import { createDynamicCorsOrigin } from "./lib/public-url-service";
 import { getLogger } from "./lib/logger-factory";
-import { requestContextMiddleware } from "./middleware/request-context";
+import {
+  requestContextMiddleware,
+  type RequestWithId,
+} from "./middleware/request-context";
 import { createHelmetMiddleware } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 import { extractJwtUser } from "./lib/jwt-middleware";
@@ -149,6 +153,16 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
   app.use(
     pinoHttp({
       logger: getLogger("http", "access"),
+      // Reuse the id set by requestContextMiddleware so access-log lines
+      // carry the same requestId as application-code log lines, even
+      // though pino-http emits on res.finish (potentially outside the
+      // original ALS scope).
+      genReqId: (req) =>
+        (req as RequestWithId).requestId ?? randomUUID(),
+      customProps: (req) => ({
+        requestId: (req as RequestWithId).requestId,
+        userId: (req as Request).user?.id,
+      }),
       customLogLevel: (_req, res) => {
         if (res.statusCode >= 400) return "warn";
         if (res.statusCode >= 300) return "info";

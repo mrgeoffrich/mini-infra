@@ -38,7 +38,12 @@ export function setOperationId(operationId: string): void {
  * operationId. Use at the top of scheduler ticks, scheduled job runs, and
  * non-request-triggered work so downstream logs can be grouped via the
  * operationId structured field.
+ *
+ * Return type mirrors `fn`: sync fn → T, async fn → Promise<T>. Overloaded
+ * so callers don't need `as Promise<T>` casts.
  */
+export function withOperation<T>(prefix: string, fn: () => Promise<T>): Promise<T>;
+export function withOperation<T>(prefix: string, fn: () => T): T;
 export function withOperation<T>(
   prefix: string,
   fn: () => T | Promise<T>,
