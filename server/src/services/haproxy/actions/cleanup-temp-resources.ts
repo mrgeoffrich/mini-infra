@@ -1,6 +1,6 @@
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "cleanup-temp-resources");
 
 interface CleanupSummary {
     deploymentId: string;

@@ -5,13 +5,13 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import type {
   TestDockerRegistryRequest,
   TestDockerRegistryResponse,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("http", "system-settings");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { DockerExecutorService } from "../services/docker-executor";
 import type {

@@ -1,11 +1,11 @@
 import express from "express";
 import { z } from "zod";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import tableDataService from "../../services/postgres-server/table-data-service";
 import { SORT_ORDERS } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("db", "table-data");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId and :dbId
 
 // Helper to extract userId or throw

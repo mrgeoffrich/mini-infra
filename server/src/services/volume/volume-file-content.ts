@@ -1,4 +1,4 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import prisma from "../../lib/prisma";
 import { VolumeFileContent } from "@mini-infra/types";
@@ -38,7 +38,7 @@ export class VolumeFileContentService {
    */
   public async initialize(): Promise<void> {
     await this.dockerExecutor.initialize();
-    servicesLogger().info("VolumeFileContentService initialized successfully");
+    getLogger("docker", "volume-file-content").info("VolumeFileContentService initialized successfully");
   }
 
   /**
@@ -88,7 +88,7 @@ export class VolumeFileContentService {
     for (const fp of filePaths) {
       const validationError = VolumeFileContentService.validateFilePath(fp);
       if (validationError) {
-        servicesLogger().warn(
+        getLogger("docker", "volume-file-content").warn(
           { volumeName, filePath: fp, reason: validationError },
           "Rejected file path due to path traversal validation",
         );
@@ -103,7 +103,7 @@ export class VolumeFileContentService {
     }
 
     try {
-      servicesLogger().info(
+      getLogger("docker", "volume-file-content").info(
         { volumeName, fileCount: validPaths.length },
         "Starting file contents fetch",
       );
@@ -138,7 +138,7 @@ export class VolumeFileContentService {
       fetchResult.skipped += filePaths.length - validPaths.length;
       fetchResult.errors = [...errors, ...fetchResult.errors];
 
-      servicesLogger().info(
+      getLogger("docker", "volume-file-content").info(
         {
           volumeName,
           fetched: fetchResult.fetched,
@@ -153,7 +153,7 @@ export class VolumeFileContentService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("docker", "volume-file-content").error(
         {
           error: errorMessage,
           volumeName,
@@ -280,7 +280,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         const filePath = lines.find((l) => l.trim())?.trim();
 
         if (!filePath) {
-          servicesLogger().warn("Skipping file block with no path");
+          getLogger("docker", "volume-file-content").warn("Skipping file block with no path");
           continue;
         }
 
@@ -288,7 +288,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         const errorIdx = lines.findIndex((l) => l.trim() === "---ERROR---");
         if (errorIdx !== -1) {
           const errorMsg = lines[errorIdx + 1]?.trim() || "Unknown error";
-          servicesLogger().info(
+          getLogger("docker", "volume-file-content").info(
             { volumeName, filePath, error: errorMsg },
             "File skipped or failed",
           );
@@ -311,7 +311,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         );
 
         if (contentStartIdx === -1 || contentEndIdx === -1) {
-          servicesLogger().warn(
+          getLogger("docker", "volume-file-content").warn(
             { volumeName, filePath },
             "Missing content delimiters",
           );
@@ -354,14 +354,14 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
 
         result.fetched++;
 
-        servicesLogger().info(
+        getLogger("docker", "volume-file-content").info(
           { volumeName, filePath, size },
           "File content stored successfully",
         );
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
-        servicesLogger().error(
+        getLogger("docker", "volume-file-content").error(
           { error: errorMessage, volumeName },
           "Failed to process file block",
         );
@@ -405,7 +405,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         updatedAt: fileContent.updatedAt.toISOString(),
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-file-content").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -460,7 +460,7 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         updatedAt: fc.updatedAt.toISOString(),
       }));
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-file-content").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -481,12 +481,12 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         where: { volumeName },
       });
 
-      servicesLogger().info(
+      getLogger("docker", "volume-file-content").info(
         { volumeName, deletedCount: result.count },
         "Deleted file contents for volume",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-file-content").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -514,12 +514,12 @@ ${escapedPaths.map((path) => `process_file '${path}'`).join("\n")}
         },
       });
 
-      servicesLogger().info(
+      getLogger("docker", "volume-file-content").info(
         { volumeName, filePath },
         "Deleted file content",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-file-content").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,

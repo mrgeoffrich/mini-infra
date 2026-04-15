@@ -21,11 +21,11 @@ import { isValidSocketChannel, isValidContainerId, ClientEvent, ParameterizedCha
 import { startLogStream, stopLogStream, cleanupSocketStreams } from "../services/container-log-streamer";
 import { verifyToken, extractTokenFromHeader, extractTokenFromCookie } from "./jwt";
 import { validateApiKey } from "./api-key-service";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import appConfig from "./config-new";
 import { createDynamicCorsOrigin } from "./public-url-service";
 
-const logger = appLogger();
+const logger = getLogger("platform", "socket");
 
 /** Fully typed Socket.IO server instance */
 export type TypedServer = Server<

@@ -1,5 +1,5 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerConfigService } from "../docker-config";
 
 /**
@@ -30,11 +30,11 @@ export class DockerClientFactory {
 
       // Test connection
       await docker.ping();
-      servicesLogger().info("DockerExecutor initialized successfully");
+      getLogger("docker", "docker-client-factory").info("DockerExecutor initialized successfully");
 
       return docker;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "docker-client-factory").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

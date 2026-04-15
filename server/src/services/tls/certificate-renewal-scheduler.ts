@@ -9,7 +9,7 @@
 import * as cron from "node-cron";
 import { Logger } from "pino";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
 interface RenewalCheckResult {
@@ -36,7 +36,7 @@ export class CertificateRenewalScheduler {
   constructor(lifecycleManager: CertificateLifecycleManager, prisma: PrismaClient) {
     this.lifecycleManager = lifecycleManager;
     this.prisma = prisma;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "certificate-renewal-scheduler");
   }
 
   /**

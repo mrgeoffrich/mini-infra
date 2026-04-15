@@ -4,7 +4,7 @@ import {
   StackConfigFile,
   StackServiceDefinition,
 } from '@mini-infra/types';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { groupByProperty } from './utils';
 
 export interface CreateContainerOptions {
@@ -18,7 +18,7 @@ export interface CreateContainerOptions {
 }
 
 export class StackContainerManager {
-  private log = servicesLogger().child({ component: 'stack-container-manager' });
+  private log = getLogger("stacks", "stack-container-manager").child({ component: 'stack-container-manager' });
 
   constructor(private dockerExecutor: DockerExecutorService) {}
 

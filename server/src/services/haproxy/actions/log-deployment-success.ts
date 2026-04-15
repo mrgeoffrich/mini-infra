@@ -1,7 +1,7 @@
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import type { ActionContext } from './types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "log-deployment-success");
 
 interface DeploymentSummary {
     deploymentId: string;

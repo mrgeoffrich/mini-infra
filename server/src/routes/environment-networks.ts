@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { appLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 
 const router = Router({ mergeParams: true });
-const logger = appLogger();
+const logger = getLogger("stacks", "environment-networks");
 
 // Initialize services
 const environmentManager = EnvironmentManager.getInstance(prisma);

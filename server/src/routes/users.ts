@@ -1,6 +1,6 @@
 import { Router, Request, Response, RequestHandler } from "express";
 import prisma from "../lib/prisma";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requireAuth } from "../lib/auth-middleware";
 import {
   hashPassword,
@@ -9,7 +9,7 @@ import {
 } from "../lib/password-service";
 import type { CreateUserRequest, UserInfo } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "users");
 const router = Router();
 
 // All routes require authentication

@@ -1,4 +1,4 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import prisma from "../../lib/prisma";
 import type { ContainerExecutionOptions } from "./types";
 
@@ -57,7 +57,7 @@ export async function getDockerNetworkName(): Promise<string> {
 
     const networkName = networkSetting?.value || "mini-infra-network";
 
-    servicesLogger().debug(
+    getLogger("docker", "utils").debug(
       {
         networkName,
         fromSettings: !!networkSetting?.value,
@@ -67,7 +67,7 @@ export async function getDockerNetworkName(): Promise<string> {
 
     return networkName;
   } catch (error) {
-    servicesLogger().warn(
+    getLogger("docker", "utils").warn(
       {
         error: error instanceof Error ? error.message : "Unknown error",
       },

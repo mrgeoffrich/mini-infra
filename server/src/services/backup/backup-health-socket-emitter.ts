@@ -7,10 +7,10 @@
 
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { emitToChannel } from "../../lib/socket";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { calculateBackupHealth } from "./backup-health-calculator";
 
-const logger = servicesLogger();
+const logger = getLogger("backup", "backup-health-socket-emitter");
 
 /**
  * Calculate and emit the current backup health status via Socket.IO.

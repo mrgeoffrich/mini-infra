@@ -1,6 +1,6 @@
 import { PrismaClient } from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import type {
   RegistryCredential,
   CreateRegistryCredentialRequest,
@@ -62,7 +62,7 @@ export class RegistryCredentialService {
     // 1. Extract registry URL from image name
     const registryUrl = this.extractRegistryFromImage(imageName);
 
-    servicesLogger().debug(
+    getLogger("docker", "registry-credential").debug(
       { imageName, registryUrl },
       "Extracting registry from image",
     );
@@ -76,7 +76,7 @@ export class RegistryCredentialService {
     });
 
     if (credential) {
-      servicesLogger().info(
+      getLogger("docker", "registry-credential").info(
         { registryUrl, credentialId: credential.id },
         "Found credentials for registry",
       );
@@ -89,7 +89,7 @@ export class RegistryCredentialService {
     // 4. Fall back to default credential if configured
     const defaultCredential = await this.getDefaultCredential();
     if (defaultCredential) {
-      servicesLogger().info(
+      getLogger("docker", "registry-credential").info(
         { registryUrl, credentialId: defaultCredential.id },
         "Using default credentials for registry",
       );
@@ -100,7 +100,7 @@ export class RegistryCredentialService {
     }
 
     // 5. No credentials found
-    servicesLogger().debug(
+    getLogger("docker", "registry-credential").debug(
       { imageName, registryUrl },
       "No credentials found for image",
     );
@@ -118,7 +118,7 @@ export class RegistryCredentialService {
     data: CreateRegistryCredentialRequest,
     userId: string,
   ): Promise<RegistryCredential> {
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { registryUrl: data.registryUrl, userId },
       "Creating registry credential",
     );
@@ -146,7 +146,7 @@ export class RegistryCredentialService {
       },
     });
 
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { credentialId: credential.id, registryUrl: credential.registryUrl },
       "Registry credential created successfully",
     );
@@ -187,7 +187,7 @@ export class RegistryCredentialService {
     data: UpdateRegistryCredentialRequest,
     userId: string,
   ): Promise<RegistryCredential> {
-    servicesLogger().info({ credentialId: id, userId }, "Updating credential");
+    getLogger("docker", "registry-credential").info({ credentialId: id, userId }, "Updating credential");
 
     // If setting as default, unset any existing defaults
     if (data.isDefault) {
@@ -217,7 +217,7 @@ export class RegistryCredentialService {
       data: updateData,
     });
 
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { credentialId: credential.id },
       "Credential updated successfully",
     );
@@ -229,14 +229,14 @@ export class RegistryCredentialService {
    * Delete a registry credential (soft delete - sets isActive to false)
    */
   async deleteCredential(id: string): Promise<void> {
-    servicesLogger().info({ credentialId: id }, "Deleting credential");
+    getLogger("docker", "registry-credential").info({ credentialId: id }, "Deleting credential");
 
     await this.prisma.registryCredential.update({
       where: { id },
       data: { isActive: false },
     });
 
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { credentialId: id },
       "Credential deleted successfully",
     );
@@ -246,7 +246,7 @@ export class RegistryCredentialService {
    * Set a credential as the default registry
    */
   async setDefaultCredential(id: string): Promise<void> {
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { credentialId: id },
       "Setting credential as default",
     );
@@ -263,7 +263,7 @@ export class RegistryCredentialService {
       data: { isDefault: true },
     });
 
-    servicesLogger().info(
+    getLogger("docker", "registry-credential").info(
       { credentialId: id },
       "Credential set as default successfully",
     );
@@ -320,13 +320,13 @@ export class RegistryCredentialService {
     password: string,
     testImage?: string,
   ): Promise<RegistryTestResult> {
-    servicesLogger().info({ registryUrl }, "Testing registry credentials");
+    getLogger("docker", "registry-credential").info({ registryUrl }, "Testing registry credentials");
 
     try {
       // Determine the test image to use
       const image = testImage || this.getDefaultTestImage(registryUrl);
 
-      servicesLogger().debug(
+      getLogger("docker", "registry-credential").debug(
         { registryUrl, image },
         "Using test image for registry validation",
       );
@@ -342,7 +342,7 @@ export class RegistryCredentialService {
         registryPassword: password,
       });
 
-      servicesLogger().info(
+      getLogger("docker", "registry-credential").info(
         {
           registryUrl,
           success: dockerResult.success,
@@ -378,7 +378,7 @@ export class RegistryCredentialService {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      servicesLogger().error(
+      getLogger("docker", "registry-credential").error(
         {
           error: errorMessage,
           registryUrl,
@@ -432,7 +432,7 @@ export class RegistryCredentialService {
 
     // For unknown/private registries, we need the user to provide a test image
     // Return a generic format that will likely fail with a helpful error
-    servicesLogger().warn(
+    getLogger("docker", "registry-credential").warn(
       { registryUrl },
       "Unknown registry, user should provide testImage parameter",
     );

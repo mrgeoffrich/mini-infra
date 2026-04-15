@@ -13,9 +13,9 @@ import DockerService from "./docker";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { fetchAndSerializeContainers } from "./container-serializer";
 import { emitToChannel } from "../lib/socket";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("docker", "container-socket-emitter");
 
 const DEBOUNCE_MS = 500;
 

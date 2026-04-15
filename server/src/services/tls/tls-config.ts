@@ -6,7 +6,7 @@ import {
   AcmeProvider,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { BlobServiceClient } from "@azure/storage-blob";
 import { AzureStorageService } from "../azure-storage-service";
 
@@ -53,7 +53,7 @@ export class TlsConfigService extends ConfigurationService {
    */
   async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
-    const logger = servicesLogger();
+    const logger = getLogger("tls", "tls-config");
 
     try {
       // Get container name (from provided settings or database)

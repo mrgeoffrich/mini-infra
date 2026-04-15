@@ -1,4 +1,4 @@
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import prisma from "../../lib/prisma";
 import {
@@ -92,7 +92,7 @@ export class NetworkHealthCheckService {
 
       const curlImage = curlImageSetting?.value || NetworkHealthCheckService.DEFAULT_CURL_IMAGE;
 
-      servicesLogger().debug(
+      getLogger("docker", "network-health-check").debug(
         {
           curlImage,
           fromSettings: !!curlImageSetting?.value,
@@ -102,7 +102,7 @@ export class NetworkHealthCheckService {
 
       return curlImage;
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("docker", "network-health-check").warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -186,7 +186,7 @@ export class NetworkHealthCheckService {
         errorMessage: stderr || (!success ? `Invalid status code: ${statusCode}` : undefined),
       };
     } catch (error) {
-      dockerExecutorLogger().error(
+      getLogger("docker", "network-health-check").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stdout: stdout.substring(0, 500), // Limit log size
@@ -216,7 +216,7 @@ export class NetworkHealthCheckService {
       const regex = new RegExp(pattern);
       return regex.test(body);
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("docker", "network-health-check").warn(
         {
           pattern,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -241,7 +241,7 @@ export class NetworkHealthCheckService {
       const curlCommand = this.buildCurlCommand(config);
       const healthCheckUrl = `http://${config.containerName}:${config.containerPort}${config.endpoint}`;
 
-      dockerExecutorLogger().info(
+      getLogger("docker", "network-health-check").info(
         {
           containerName: config.containerName,
           containerPort: config.containerPort,
@@ -268,7 +268,7 @@ export class NetworkHealthCheckService {
       
       // Log container output to dockerExecutorLogger
       if (executionResult.stdout) {
-        dockerExecutorLogger().debug(
+        getLogger("docker", "network-health-check").debug(
           {
             containerName: config.containerName,
             curlImage,
@@ -279,7 +279,7 @@ export class NetworkHealthCheckService {
       }
       
       if (executionResult.stderr) {
-        dockerExecutorLogger().debug(
+        getLogger("docker", "network-health-check").debug(
           {
             containerName: config.containerName,
             curlImage,
@@ -326,7 +326,7 @@ export class NetworkHealthCheckService {
         healthResult.errorMessage = `Network health check failed validation: ${failedChecks.join(", ")}. ${errorMessage}`.trim();
       }
 
-      dockerExecutorLogger().debug(
+      getLogger("docker", "network-health-check").debug(
         {
           containerName: config.containerName,
           statusCode,
@@ -343,7 +343,7 @@ export class NetworkHealthCheckService {
       const responseTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
-      dockerExecutorLogger().error(
+      getLogger("docker", "network-health-check").error(
         {
           containerName: config.containerName,
           endpoint: config.endpoint,
@@ -371,7 +371,7 @@ export class NetworkHealthCheckService {
     const baseDelay = config.retryDelay ?? NetworkHealthCheckService.DEFAULT_RETRY_DELAY;
     let lastResult: HealthCheckResult | null = null;
 
-    servicesLogger().info(
+    getLogger("docker", "network-health-check").info(
       {
         containerName: config.containerName,
         endpoint: config.endpoint,
@@ -384,7 +384,7 @@ export class NetworkHealthCheckService {
       if (attempt > 0) {
         // Exponential backoff: baseDelay * 2^(attempt-1)
         const delay = baseDelay * Math.pow(2, attempt - 1);
-        servicesLogger().debug(
+        getLogger("docker", "network-health-check").debug(
           {
             containerName: config.containerName,
             attempt,
@@ -400,7 +400,7 @@ export class NetworkHealthCheckService {
       lastResult = result;
 
       if (result.success) {
-        servicesLogger().info(
+        getLogger("docker", "network-health-check").info(
           {
             containerName: config.containerName,
             attempt: attempt + 1,
@@ -413,7 +413,7 @@ export class NetworkHealthCheckService {
         return result;
       }
 
-      servicesLogger().debug(
+      getLogger("docker", "network-health-check").debug(
         {
           containerName: config.containerName,
           attempt: attempt + 1,
@@ -426,7 +426,7 @@ export class NetworkHealthCheckService {
     }
 
     // All attempts failed
-    servicesLogger().warn(
+    getLogger("docker", "network-health-check").warn(
       {
         containerName: config.containerName,
         endpoint: config.endpoint,

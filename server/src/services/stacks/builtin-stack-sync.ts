@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { StackParameterDefinition, StackParameterValue, StackServiceDefinition, StackDefinition } from "@mini-infra/types";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
@@ -28,7 +28,7 @@ function findTemplatesDir(): string {
 const TEMPLATES_DIR = findTemplatesDir();
 
 export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
-  const log = servicesLogger().child({ operation: "builtin-stack-sync" });
+  const log = getLogger("stacks", "builtin-stack-sync").child({ operation: "builtin-stack-sync" });
   const templateService = new StackTemplateService(prisma);
 
   // Discover and validate all template files
@@ -113,7 +113,7 @@ export async function syncBuiltinStacksForEnvironment(
   prisma: PrismaClient,
   environmentId: string
 ): Promise<void> {
-  const log = servicesLogger().child({
+  const log = getLogger("stacks", "builtin-stack-sync").child({
     operation: "builtin-stack-sync",
     environmentId,
   });
@@ -165,7 +165,7 @@ async function syncStackFromTemplate(
   templateId: string,
   template: LoadedTemplate,
   environmentId: string | null,
-  log: ReturnType<typeof servicesLogger>,
+  log: ReturnType<typeof getLogger>,
   networkType: string = "local"
 ): Promise<void> {
   const { definition } = template;
@@ -311,7 +311,7 @@ async function syncStackFromTemplate(
 async function cleanupOrphanedStacks(
   prisma: PrismaClient,
   templates: LoadedTemplate[],
-  log: ReturnType<typeof servicesLogger>
+  log: ReturnType<typeof getLogger>
 ): Promise<void> {
   // Clean up orphaned per-environment monitoring stacks (from old sync logic)
   const orphanedMonitoring = await prisma.stack.findMany({
@@ -369,7 +369,7 @@ async function cleanupOrphanedStacks(
  */
 async function migrateEnvironmentNetworksToInfraResources(
   prisma: PrismaClient,
-  log: ReturnType<typeof servicesLogger>
+  log: ReturnType<typeof getLogger>
 ): Promise<void> {
   const envNetworks = await prisma.environmentNetwork.findMany({
     where: { purpose: { in: ['applications', 'tunnel'] } },

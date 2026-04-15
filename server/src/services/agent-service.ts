@@ -1,4 +1,4 @@
-import { agentLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { agentConversationService } from "./agent-conversation-service";
 import {
   getAgentSidecarUrl,
@@ -7,7 +7,7 @@ import {
   proxyToSidecar,
 } from "./agent-sidecar";
 
-const logger = agentLogger();
+const logger = getLogger("agent", "agent-service");
 
 // Cached flag for whether a DB-stored API key is configured.
 // Updated at startup and whenever the key is saved/deleted.

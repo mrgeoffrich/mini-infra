@@ -2,9 +2,9 @@ import { Request, Response, NextFunction } from "express";
 import { hasAnyPermission } from "@mini-infra/types";
 import type { PermissionScope } from "@mini-infra/types";
 import { requireSessionOrApiKey } from "./api-key-middleware";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("auth", "permission-middleware");
 
 /**
  * Creates middleware that requires authentication AND specific permission(s).

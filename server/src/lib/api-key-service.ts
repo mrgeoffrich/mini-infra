@@ -1,9 +1,9 @@
 import { randomBytes, createHmac } from "crypto";
 import prisma from "./prisma";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import { getAuthSecret } from "./security-config";
 
-const logger = appLogger();
+const logger = getLogger("auth", "api-key-service");
 import type {
   CreateApiKeyRequest,
   CreateApiKeyResponse,

@@ -1,5 +1,5 @@
 import { ContainerConfig } from "@mini-infra/types";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 
 // ====================
 // Container Labeling Types
@@ -184,7 +184,7 @@ export class ContainerLabelManager {
    */
   generateDeploymentLabels(options: DeploymentLabelOptions): Record<string, string> {
     try {
-      servicesLogger().info(
+      getLogger("docker", "container-label-manager").info(
         {
           applicationName: options.applicationName,
           deploymentId: options.deploymentId,
@@ -226,7 +226,7 @@ export class ContainerLabelManager {
           options.containerConfig.volumes.length.toString();
       }
 
-      servicesLogger().debug(
+      getLogger("docker", "container-label-manager").debug(
         {
           applicationName: options.applicationName,
           deploymentId: options.deploymentId,
@@ -237,7 +237,7 @@ export class ContainerLabelManager {
 
       return labels;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-label-manager").error(
         {
           applicationName: options.applicationName,
           deploymentId: options.deploymentId,
@@ -254,7 +254,7 @@ export class ContainerLabelManager {
    */
   generateTaskExecutionLabels(options: TaskExecutionLabelOptions): Record<string, string> {
     try {
-      servicesLogger().info(
+      getLogger("docker", "container-label-manager").info(
         {
           taskType: options.taskType,
           taskId: options.taskId,
@@ -297,7 +297,7 @@ export class ContainerLabelManager {
         labels[`${ContainerLabelManager.MINI_INFRA_PREFIX}.task.timeout`] = options.timeout.toString();
       }
 
-      servicesLogger().debug(
+      getLogger("docker", "container-label-manager").debug(
         {
           taskType: options.taskType,
           taskId: options.taskId,
@@ -308,7 +308,7 @@ export class ContainerLabelManager {
 
       return labels;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-label-manager").error(
         {
           taskType: options.taskType,
           taskId: options.taskId,
@@ -330,7 +330,7 @@ export class ContainerLabelManager {
     customLabels?: Record<string, string>;
   }): Record<string, string> {
     try {
-      servicesLogger().info(
+      getLogger("docker", "container-label-manager").info(
         {
           environmentId: options.environmentId,
           projectName: options.projectName,
@@ -356,7 +356,7 @@ export class ContainerLabelManager {
       );
       Object.assign(labels, composeLabels);
 
-      servicesLogger().debug(
+      getLogger("docker", "container-label-manager").debug(
         {
           environmentId: options.environmentId,
           labelsCount: Object.keys(labels).length
@@ -366,7 +366,7 @@ export class ContainerLabelManager {
 
       return labels;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-label-manager").error(
         {
           environmentId: options.environmentId,
           error: error instanceof Error ? error.message : "Unknown error"

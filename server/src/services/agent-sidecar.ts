@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 import prisma from "../lib/prisma";
@@ -8,7 +8,7 @@ import { getEffectiveModel, getEffectiveApiKey } from "./agent-settings-service"
 import { getAgentApiKey } from "./agent-api-key";
 import type { OperationStep } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = getLogger("agent", "agent-sidecar");
 
 const AGENT_SIDECAR_LABEL = "mini-infra.agent-sidecar";
 const AGENT_SIDECAR_CONTAINER_NAME = "mini-infra-agent-sidecar";

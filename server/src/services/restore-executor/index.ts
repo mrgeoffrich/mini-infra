@@ -1,6 +1,6 @@
 import { PrismaClient } from "../../lib/prisma";
 import { InMemoryQueue, Job as QueueJob } from "../../lib/in-memory-queue";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { AzureStorageService } from "../azure-storage-service";
@@ -159,7 +159,7 @@ export class RestoreExecutorService {
    */
   public async initialize(): Promise<void> {
     if (this.isInitialized) {
-      servicesLogger().debug(
+      getLogger("backup", "restore-executor").debug(
         "RestoreExecutorService already initialized, skipping",
       );
       return;
@@ -167,19 +167,19 @@ export class RestoreExecutorService {
 
     const startTime = Date.now();
     try {
-      servicesLogger().info("Initializing RestoreExecutorService...");
+      getLogger("backup", "restore-executor").info("Initializing RestoreExecutorService...");
 
       // Initialize Docker executor
-      servicesLogger().debug(
+      getLogger("backup", "restore-executor").debug(
         "Initializing Docker executor for restore operations",
       );
       try {
         await this._dockerExecutor.initialize();
-        servicesLogger().debug("Docker executor initialized successfully");
+        getLogger("backup", "restore-executor").debug("Docker executor initialized successfully");
 
         // Ensure database network exists (shared with backup)
         const networkName = await resolveDatabaseNetworkName(this.prisma);
-        servicesLogger().debug(
+        getLogger("backup", "restore-executor").debug(
           `Ensuring restore network exists: ${networkName}`,
         );
         await this._dockerExecutor.createNetwork(
@@ -192,9 +192,9 @@ export class RestoreExecutorService {
             },
           },
         );
-        servicesLogger().debug("Restore network ready");
+        getLogger("backup", "restore-executor").debug("Restore network ready");
       } catch (dockerError) {
-        servicesLogger().warn(
+        getLogger("backup", "restore-executor").warn(
           {
             error:
               dockerError instanceof Error
@@ -206,7 +206,7 @@ export class RestoreExecutorService {
         // Continue initialization without Docker - restore operations will fail gracefully when attempted
       }
 
-      servicesLogger().info(
+      getLogger("backup", "restore-executor").info(
         {
           initializationTimeMs: Date.now() - startTime,
           queueConcurrency: 1,
@@ -217,7 +217,7 @@ export class RestoreExecutorService {
       );
       this.isInitialized = true;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           initializationTimeMs: Date.now() - startTime,
@@ -238,7 +238,7 @@ export class RestoreExecutorService {
     targetDatabaseName?: string,
   ): Promise<RestoreOperationInfo> {
     if (!this.isInitialized) {
-      servicesLogger().debug(
+      getLogger("backup", "restore-executor").debug(
         "RestoreExecutorService not initialized, initializing now",
       );
       await this.initialize();
@@ -246,7 +246,7 @@ export class RestoreExecutorService {
 
     const startTime = Date.now();
     try {
-      servicesLogger().info(
+      getLogger("backup", "restore-executor").info(
         {
           databaseId,
           backupUrl,
@@ -265,7 +265,7 @@ export class RestoreExecutorService {
         },
       });
 
-      servicesLogger().info(
+      getLogger("backup", "restore-executor").info(
         {
           operationId: restoreOperation.id,
           databaseId,
@@ -291,7 +291,7 @@ export class RestoreExecutorService {
         },
       );
 
-      servicesLogger().debug(
+      getLogger("backup", "restore-executor").debug(
         {
           operationId: restoreOperation.id,
           queuePosition: this._restoreQueue.getStats().total,
@@ -301,7 +301,7 @@ export class RestoreExecutorService {
 
       return this.mapRestoreOperationToInfo(restoreOperation);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           databaseId,
@@ -332,7 +332,7 @@ export class RestoreExecutorService {
 
       return this.mapRestoreOperationToInfo(operation);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -371,7 +371,7 @@ export class RestoreExecutorService {
 
       if (job) {
         await this._restoreQueue.remove(job.id);
-        servicesLogger().info(
+        getLogger("backup", "restore-executor").info(
           { operationId, jobId: job.id },
           "Restore job cancelled",
         );
@@ -379,7 +379,7 @@ export class RestoreExecutorService {
 
       return true;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           operationId,
@@ -396,9 +396,9 @@ export class RestoreExecutorService {
   public async shutdown(): Promise<void> {
     try {
       await this._restoreQueue.close();
-      servicesLogger().info("RestoreExecutorService shut down successfully");
+      getLogger("backup", "restore-executor").info("RestoreExecutorService shut down successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -424,7 +424,7 @@ export class RestoreExecutorService {
           targetDatabaseName,
         } = job.data;
 
-        servicesLogger().info(
+        getLogger("backup", "restore-executor").info(
           {
             jobId: job.id,
             operationId: restoreOperationId,
@@ -444,7 +444,7 @@ export class RestoreExecutorService {
             targetDatabaseName,
           );
         } catch (error) {
-          servicesLogger().error(
+          getLogger("backup", "restore-executor").error(
             {
               jobId: job.id,
               operationId: restoreOperationId,
@@ -468,7 +468,7 @@ export class RestoreExecutorService {
 
     // Handle job events
     this._restoreQueue.on("completed", (job: QueueJob<RestoreJobData>,result: unknown) => {
-      servicesLogger().info(
+      getLogger("backup", "restore-executor").info(
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,
@@ -479,7 +479,7 @@ export class RestoreExecutorService {
     });
 
     this._restoreQueue.on("failed", (job: QueueJob<RestoreJobData>,error: Error) => {
-      servicesLogger().error(
+      getLogger("backup", "restore-executor").error(
         {
           jobId: job.id,
           operationId: job.data.restoreOperationId,

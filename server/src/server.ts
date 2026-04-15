@@ -14,7 +14,7 @@ console.log("[STARTUP] ✓ App module imported successfully");
 import appConfig from "./lib/config-new";
 import { initializeSocketIO, shutdownSocketIO } from "./lib/socket";
 import { setupContainerSocketEmitter } from "./services/container-socket-emitter";
-import { appLogger, clearLoggerCache } from "./lib/logger-factory";
+import { getLogger, clearLoggerCache } from "./lib/logger-factory";
 import {
   ensureAgentSidecar,
   removeAgentSidecar,
@@ -24,7 +24,7 @@ import {
 clearLoggerCache();
 
 // Use app logger for server startup
-const logger = appLogger();
+const logger = getLogger("platform", "server");
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
 import { BackupSchedulerService } from "./services/backup";

@@ -7,9 +7,9 @@
 
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { emitToChannel } from "../lib/socket";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "haproxy-socket-emitter");
 
 /**
  * Emit HAProxy update notifications to subscribed clients.

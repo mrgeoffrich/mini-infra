@@ -9,13 +9,13 @@ import {
   UpdateEnvironmentRequest,
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
 import { seedStacksForEnvironment } from '../stacks/seed';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("stacks", "environment-manager");
   private readonly dockerExecutor: DockerExecutorService;
   private readonly userEventService: UserEventService;
 

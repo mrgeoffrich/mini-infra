@@ -1,11 +1,11 @@
 import * as cron from "node-cron";
 import prisma from "../../lib/prisma";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import postgresServerService from "./server-manager";
 import databaseManagementService from "./database-manager";
 import userManagementService from "./user-manager";
 
-const logger = appLogger();
+const logger = getLogger("db", "health-scheduler");
 
 /**
  * ServerHealthScheduler - Manages periodic health checks for PostgreSQL servers

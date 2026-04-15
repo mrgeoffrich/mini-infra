@@ -1,14 +1,14 @@
 import express from "express";
 import { z } from "zod";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import prisma from "../lib/prisma";
 import {
   RegistryCredentialService,
 } from "../services/registry-credential";
 
 type RegistryCredentialsRouterOptions = {
-  logger?: ReturnType<typeof appLogger>;
+  logger?: ReturnType<typeof getLogger>;
   registryCredentialService?: RegistryCredentialService;
 };
 
@@ -42,7 +42,7 @@ const testConnectionSchema = z.object({
 export default function createRegistryCredentialsRouter(
   options: RegistryCredentialsRouterOptions = {},
 ) {
-  const logger = options.logger ?? appLogger();
+  const logger = options.logger ?? getLogger("docker", "registry-credentials");
   const registryCredentialService =
     options.registryCredentialService ??
     new RegistryCredentialService(prisma);

@@ -1,6 +1,6 @@
 import Docker from "dockerode";
 import { DEFAULT_LOG_TAIL_LINES } from "@mini-infra/types";
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerStreamDemuxer } from "../../lib/docker-stream";
 
 /**
@@ -31,7 +31,7 @@ export class ContainerMonitor {
         exitCode: data.State.ExitCode,
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-monitor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
@@ -54,13 +54,13 @@ export class ContainerMonitor {
 
       if (forceKill) {
         await container.kill();
-        servicesLogger().info({ containerId }, "Container killed");
+        getLogger("docker", "container-monitor").info({ containerId }, "Container killed");
       } else {
         await container.stop();
-        servicesLogger().info({ containerId }, "Container stopped");
+        getLogger("docker", "container-monitor").info({ containerId }, "Container stopped");
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "container-monitor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,
@@ -139,7 +139,7 @@ export class ContainerMonitor {
         }, 1000);
       });
     } catch (error) {
-      dockerExecutorLogger().error(
+      getLogger("docker", "container-monitor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           containerId,

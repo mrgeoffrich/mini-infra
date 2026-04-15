@@ -7,7 +7,7 @@
 
 import { Logger } from "pino";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { AcmeClientManager } from "./acme-client-manager";
 import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
@@ -48,7 +48,7 @@ export class CertificateLifecycleManager {
     this.distributor = distributor;
     this.prisma = prisma;
     this.containerName = containerName;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "certificate-lifecycle-manager");
   }
 
   /**

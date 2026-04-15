@@ -1,13 +1,13 @@
 import Docker from "dockerode";
 import fs from "fs";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import { RegistryCredentialService } from "./registry-credential";
 import { RegistryManager } from "./docker-executor/registry-manager";
 import type { SelfUpdateState, SelfUpdateStatus, OperationStep } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "self-update");
 
 const UPDATE_LOCK_LABEL = "mini-infra.update-lock";
 const SIDECAR_LABEL = "mini-infra.sidecar";

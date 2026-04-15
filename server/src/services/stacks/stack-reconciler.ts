@@ -23,7 +23,7 @@ import { DockerExecutorService } from '../docker-executor';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import {
   buildStackTemplateContext,
   buildContainerMap,
@@ -63,7 +63,7 @@ export class StackReconciler {
 
   async apply(stackId: string, options?: ApplyOptions): Promise<ApplyResult> {
     const startTime = Date.now();
-    const log = servicesLogger().child({ operation: 'stack-apply', stackId });
+    const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-apply', stackId });
 
     // 1. Get plan (use pre-computed plan if provided)
     const plan = options?.plan ?? await this.plan(stackId);
@@ -337,7 +337,7 @@ export class StackReconciler {
 
   async update(stackId: string, options?: UpdateOptions): Promise<ApplyResult> {
     const startTime = Date.now();
-    const log = servicesLogger().child({ operation: 'stack-update', stackId });
+    const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-update', stackId });
 
     const plan = await this.plan(stackId);
     await this.promoteStalePullActions(plan, stackId, log);
@@ -562,7 +562,7 @@ export class StackReconciler {
 
   async stopStack(stackId: string, options?: { triggeredBy?: string }): Promise<{ success: boolean; stoppedContainers: number }> {
     const startTime = Date.now();
-    const log = servicesLogger().child({ operation: 'stack-stop', stackId });
+    const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-stop', stackId });
 
     const docker = this.dockerExecutor.getDockerClient();
     const containers = await docker.listContainers({
@@ -617,7 +617,7 @@ export class StackReconciler {
    */
   async destroyStack(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
     const startTime = Date.now();
-    const log = servicesLogger().child({ operation: 'stack-destroy', stackId });
+    const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-destroy', stackId });
 
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },

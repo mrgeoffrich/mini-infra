@@ -9,7 +9,7 @@ import crypto from "crypto";
 import Docker from "dockerode";
 import os from "os";
 import passport from "../lib/passport";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { serverConfig, securityConfig, authConfig } from "../lib/config-new";
 import { generateToken } from "../lib/jwt";
 import prisma from "../lib/prisma";
@@ -39,7 +39,7 @@ import type {
   DockerSocketDetectionResult,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "auth");
 const router = Router();
 
 // Helper function to convert JWTUser to UserProfile for API responses

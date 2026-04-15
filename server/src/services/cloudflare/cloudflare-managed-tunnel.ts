@@ -1,4 +1,4 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 import { CloudflareTunnelApi } from "./cloudflare-tunnel-api";
@@ -75,7 +75,7 @@ export class CloudflareManagedTunnels {
           ingress: [{ service: "http_status:404" }],
         });
       } catch (err) {
-        servicesLogger().warn(
+        getLogger("integrations", "cloudflare-managed-tunnel").warn(
           {
             tunnelId,
             error: err instanceof Error ? err.message : "Unknown",
@@ -108,7 +108,7 @@ export class CloudflareManagedTunnels {
             },
           );
         } catch (cleanupErr) {
-          servicesLogger().error(
+          getLogger("integrations", "cloudflare-managed-tunnel").error(
             {
               tunnelId: createdTunnelId,
               error:
@@ -142,7 +142,7 @@ export class CloudflareManagedTunnels {
         },
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("integrations", "cloudflare-managed-tunnel").error(
         {
           tunnelId,
           error: error instanceof Error ? error.message : "Unknown",
@@ -166,7 +166,7 @@ export class CloudflareManagedTunnels {
     try {
       return await this.store.listAll(this.prismaSystemSettings, this.category);
     } catch (error) {
-      servicesLogger().error(
+      getLogger("integrations", "cloudflare-managed-tunnel").error(
         { error: error instanceof Error ? error.message : "Unknown" },
         "Failed to get all managed tunnels",
       );

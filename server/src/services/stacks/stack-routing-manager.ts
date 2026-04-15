@@ -5,9 +5,9 @@ import { HAProxyDataPlaneClient } from '../haproxy';
 import { EnvironmentValidationService, HAProxyEnvironmentContext } from '../environment';
 import { cloudflareDNSService } from '../cloudflare';
 import { networkUtils } from '../network-utils';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 
-const logger = servicesLogger();
+const logger = getLogger("stacks", "stack-routing-manager");
 
 export interface StackRoutingContext {
   serviceName: string;

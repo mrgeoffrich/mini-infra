@@ -6,9 +6,9 @@ import express, {
 } from "express";
 import { z } from "zod";
 import NodeCache from "node-cache";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "azure-connectivity");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";

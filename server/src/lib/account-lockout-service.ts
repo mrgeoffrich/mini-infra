@@ -1,7 +1,7 @@
 import prisma from "./prisma";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("auth", "account-lockout-service");
 
 const MAX_FAILED_ATTEMPTS = 10;
 const LOCKOUT_DURATION_MS = 60 * 60 * 1000; // 1 hour

@@ -1,9 +1,9 @@
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "../../generated/prisma/client";
 import { generateSharedFrontendName } from "./haproxy-naming";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-remediation-service");
 
 /**
  * Preview of what a full HAProxy rebuild would do

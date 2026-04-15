@@ -1,7 +1,7 @@
 import Docker from "dockerode";
 import NodeCache from "node-cache";
 import { toServiceError } from "../lib/service-error-mapper";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
@@ -41,7 +41,7 @@ class DockerService {
   }
 
   public async initialize(): Promise<void> {
-    servicesLogger().info("Initializing Docker connection at startup...");
+    getLogger("docker", "docker").info("Initializing Docker connection at startup...");
 
     try {
       // Initialize Docker configuration service first
@@ -53,9 +53,9 @@ class DockerService {
       // Attempt to connect
       await this.connect(false); // Don't schedule reconnect during startup
       this.setupEventListeners();
-      servicesLogger().info("Docker service initialized successfully");
+      getLogger("docker", "docker").info("Docker service initialized successfully");
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("docker", "docker").warn(
         {
           error,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -74,14 +74,14 @@ class DockerService {
           );
         }
       } catch (dbError) {
-        servicesLogger().error(
+        getLogger("docker", "docker").error(
           { error: dbError },
           "Failed to record Docker connectivity failure in database",
         );
       }
 
       // Don't throw error - allow server to start with degraded Docker functionality
-      servicesLogger().info(
+      getLogger("docker", "docker").info(
         "Docker service initialized with degraded functionality - will retry connection attempts",
       );
 
@@ -109,23 +109,23 @@ class DockerService {
 
       if (dockerHost) {
         finalHost = dockerHost;
-        servicesLogger().info(
+        getLogger("docker", "docker").info(
           { host: dockerHost },
           "Using Docker host from database settings",
         );
       } else {
-        servicesLogger().warn("Docker host not configured in database settings - Docker functionality will be unavailable");
+        getLogger("docker", "docker").warn("Docker host not configured in database settings - Docker functionality will be unavailable");
         throw new Error("Docker host not configured in database settings");
       }
 
       if (apiVersion) {
         finalApiVersion = apiVersion;
-        servicesLogger().info(
+        getLogger("docker", "docker").info(
           { apiVersion },
           "Using Docker API version from database settings",
         );
       } else {
-        servicesLogger().info(
+        getLogger("docker", "docker").info(
           "No Docker API version specified, using Docker daemon default",
         );
       }
@@ -133,9 +133,9 @@ class DockerService {
       // Create Docker client using the same logic as DockerConfigService
       this.docker = this.createDockerClient(finalHost, finalApiVersion);
 
-      servicesLogger().info("Docker client created successfully");
+      getLogger("docker", "docker").info("Docker client created successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "docker").error(
         { error: error instanceof Error ? error.message : "Unknown error" },
         "Failed to create Docker client from settings",
       );
@@ -156,7 +156,7 @@ class DockerService {
       const responseTimeMs = Date.now() - startTime;
 
       this.connected = true;
-      servicesLogger().info(
+      getLogger("docker", "docker").info(
         { responseTimeMs },
         "Docker service connected successfully",
       );
@@ -170,7 +170,7 @@ class DockerService {
           );
         }
       } catch (dbError) {
-        servicesLogger().error(
+        getLogger("docker", "docker").error(
           { error: dbError },
           "Failed to record successful Docker connectivity in database",
         );
@@ -184,7 +184,7 @@ class DockerService {
       this.connected = false;
       const responseTimeMs = Date.now();
 
-      servicesLogger().error(
+      getLogger("docker", "docker").error(
         {
           error,
           errorMessage: error instanceof Error ? error.message : String(error),
@@ -204,7 +204,7 @@ class DockerService {
           );
         }
       } catch (dbError) {
-        servicesLogger().error(
+        getLogger("docker", "docker").error(
           { error: dbError },
           "Failed to record Docker connectivity failure in database",
         );
@@ -222,7 +222,7 @@ class DockerService {
     if (this.reconnectInterval) return;
 
     this.reconnectInterval = setInterval(async () => {
-      servicesLogger().info("Attempting to reconnect to Docker...");
+      getLogger("docker", "docker").info("Attempting to reconnect to Docker...");
       try {
         // Ensure Docker configuration service is initialized before reconnecting
         if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
@@ -233,7 +233,7 @@ class DockerService {
         await this.createDockerClientFromSettings();
         await this.connect(true); // Allow scheduling reconnect in background
       } catch (error) {
-        servicesLogger().error({ error }, "Reconnection attempt failed");
+        getLogger("docker", "docker").error({ error }, "Reconnection attempt failed");
       }
     }, 10000); // Try every 10 seconds
   }
@@ -310,7 +310,7 @@ class DockerService {
     // Subscribe to Docker events for cache invalidation
     this.docker.getEvents({}, (err, stream) => {
       if (err) {
-        servicesLogger().error(
+        getLogger("docker", "docker").error(
           { error: err },
           "Failed to subscribe to Docker events",
         );
@@ -336,13 +336,13 @@ class DockerService {
             try {
               event = JSON.parse(trimmed);
             } catch (error) {
-              servicesLogger().error({ error }, "Failed to parse Docker event");
+              getLogger("docker", "docker").error({ error }, "Failed to parse Docker event");
               continue;
             }
 
             try {
               if (event.Type === "container") {
-                servicesLogger().debug(
+                getLogger("docker", "docker").debug(
                   {
                     action: event.Action,
                     containerId: event.id,
@@ -355,7 +355,7 @@ class DockerService {
                   try {
                     cb();
                   } catch (err) {
-                    servicesLogger().error({ error: err }, "Container change callback failed");
+                    getLogger("docker", "docker").error({ error: err }, "Container change callback failed");
                   }
                 }
 
@@ -371,11 +371,11 @@ class DockerService {
                   try {
                     cb(typedEvent);
                   } catch (err) {
-                    servicesLogger().error({ error: err }, "Container event callback failed");
+                    getLogger("docker", "docker").error({ error: err }, "Container event callback failed");
                   }
                 }
               } else if (event.Type === "network") {
-                servicesLogger().debug(
+                getLogger("docker", "docker").debug(
                   {
                     action: event.Action,
                     networkId: event.id,
@@ -384,7 +384,7 @@ class DockerService {
                 );
                 this.cache.del("networks");
               } else if (event.Type === "volume") {
-                servicesLogger().debug(
+                getLogger("docker", "docker").debug(
                   {
                     action: event.Action,
                     volumeName: event.Actor?.Attributes?.name,
@@ -394,13 +394,13 @@ class DockerService {
                 this.cache.del("volumes");
               }
             } catch (error) {
-              servicesLogger().error({ error }, "Error handling Docker event");
+              getLogger("docker", "docker").error({ error }, "Error handling Docker event");
             }
           }
         });
 
         stream.on("error", (error) => {
-          servicesLogger().error({ error }, "Docker events stream error");
+          getLogger("docker", "docker").error({ error }, "Docker events stream error");
         });
       }
     });
@@ -448,7 +448,7 @@ class DockerService {
     const cached = this.cache.get<DockerContainerInfo[]>(cacheKey);
 
     if (cached) {
-      servicesLogger().debug("Returning cached container list");
+      getLogger("docker", "docker").debug("Returning cached container list");
       return cached;
     }
 
@@ -463,7 +463,7 @@ class DockerService {
     );
 
     this.cache.set(cacheKey, containerInfos);
-    servicesLogger().info(
+    getLogger("docker", "docker").info(
       `Retrieved ${containerInfos.length} containers from Docker API`,
     );
 
@@ -498,7 +498,7 @@ class DockerService {
       if ((error as { statusCode?: number }).statusCode === 404) {
         return null;
       }
-      servicesLogger().error(
+      getLogger("docker", "docker").error(
         {
           error,
           containerId: id,
@@ -526,7 +526,7 @@ class DockerService {
       return imageName.includes('postgres');
     });
 
-    servicesLogger().debug(
+    getLogger("docker", "docker").debug(
       {
         total: allContainers.length,
         detected: postgresContainers.length,
@@ -567,7 +567,7 @@ class DockerService {
         }
       }
 
-      servicesLogger().debug(
+      getLogger("docker", "docker").debug(
         {
           containerId: id,
           envVarCount: Object.keys(envVars).length,
@@ -580,7 +580,7 @@ class DockerService {
       if ((error as { statusCode?: number }).statusCode === 404) {
         return null;
       }
-      servicesLogger().error(
+      getLogger("docker", "docker").error(
         {
           error,
           containerId: id,
@@ -779,7 +779,7 @@ class DockerService {
 
   public flushCache(): void {
     this.cache.flushAll();
-    servicesLogger().info("Docker service cache flushed");
+    getLogger("docker", "docker").info("Docker service cache flushed");
   }
 
   /**
@@ -821,7 +821,7 @@ class DockerService {
    */
   public async refreshConnection(): Promise<void> {
     return (async () => {
-      servicesLogger().info(
+      getLogger("docker", "docker").info(
         "Refreshing Docker connection with updated settings...",
       );
 
@@ -845,9 +845,9 @@ class DockerService {
       // Setup event listeners for new connection
       this.setupEventListeners();
 
-      servicesLogger().info("Docker connection refreshed successfully");
+      getLogger("docker", "docker").info("Docker connection refreshed successfully");
     })().catch((error) => {
-      servicesLogger().error(
+      getLogger("docker", "docker").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },
@@ -873,7 +873,7 @@ class DockerService {
     const cached = this.cache.get<DockerNetwork[]>(cacheKey);
 
     if (cached) {
-      servicesLogger().debug("Returning cached network list");
+      getLogger("docker", "docker").debug("Returning cached network list");
       return cached;
     }
 
@@ -891,7 +891,7 @@ class DockerService {
     );
 
     this.cache.set(cacheKey, networkInfos);
-    servicesLogger().info(
+    getLogger("docker", "docker").info(
       `Retrieved ${networkInfos.length} networks from Docker API`,
     );
 
@@ -910,7 +910,7 @@ class DockerService {
     const cached = this.cache.get<DockerVolume[]>(cacheKey);
 
     if (cached) {
-      servicesLogger().debug("Returning cached volume list");
+      getLogger("docker", "docker").debug("Returning cached volume list");
       return cached;
     }
 
@@ -928,7 +928,7 @@ class DockerService {
     );
 
     this.cache.set(cacheKey, volumeInfos);
-    servicesLogger().info(
+    getLogger("docker", "docker").info(
       `Retrieved ${volumeInfos.length} volumes from Docker API`,
     );
 
@@ -970,7 +970,7 @@ class DockerService {
     // Invalidate cache
     this.cache.del("networks");
 
-    servicesLogger().info(
+    getLogger("docker", "docker").info(
       { networkId: id, networkName: networkInfo.Name },
       "Network removed successfully",
     );
@@ -999,7 +999,7 @@ class DockerService {
       // Invalidate cache
       this.cache.del("volumes");
 
-      servicesLogger().info(
+      getLogger("docker", "docker").info(
         { volumeName: name },
         "Volume removed successfully",
       );

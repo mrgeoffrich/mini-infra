@@ -2,14 +2,14 @@ import { existsSync } from 'fs';
 import { Router } from 'express';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { appLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 import { MonitoringStatusResponse } from '@mini-infra/types';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../services/stacks/utils';
 
 const router = Router();
-const logger = appLogger();
+const logger = getLogger("platform", "monitoring");
 
 // When the server runs inside Docker, use container names on the shared network.
 // When running on the host, use localhost with the published ports.

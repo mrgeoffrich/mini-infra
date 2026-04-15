@@ -1,10 +1,10 @@
 import type { ActionContext, LBRemovalEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 import DockerService from '../../docker';
 import prisma from '../../../lib/prisma';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "remove-container-from-lb");
 
 export class RemoveContainerFromLB {
     private haproxyClient: HAProxyDataPlaneClient;

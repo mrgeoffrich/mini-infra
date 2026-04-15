@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { agentLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { agentConfig } from "../lib/config-new";
 import { githubAppService } from "./github-app";
 import {
@@ -15,7 +15,7 @@ import type {
   AgentApiKeyValidationResponse,
 } from "@mini-infra/types";
 
-const logger = agentLogger();
+const logger = getLogger("agent", "agent-settings-service");
 
 const SETTINGS_CATEGORY = "agent";
 const API_KEY_KEY = "anthropic_api_key";

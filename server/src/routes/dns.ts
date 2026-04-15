@@ -1,9 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requirePermission } from "../middleware/auth";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { DnsCacheService } from "../services/dns";
 
-const logger = appLogger();
+const logger = getLogger("platform", "dns");
 const router = Router();
 
 /**

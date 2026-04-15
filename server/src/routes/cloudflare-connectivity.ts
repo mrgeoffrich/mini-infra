@@ -2,10 +2,10 @@ import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { CONNECTIVITY_STATUS_TYPES } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "cloudflare-connectivity");
 
 const router = Router();
 

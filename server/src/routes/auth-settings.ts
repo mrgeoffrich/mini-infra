@@ -1,10 +1,10 @@
 import { Router, Request, Response, RequestHandler } from "express";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requireAuth } from "../lib/auth-middleware";
 import * as authSettingsService from "../lib/auth-settings-service";
 import type { UpdateAuthSettingsRequest } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("auth", "auth-settings");
 const router = Router();
 
 // All routes require authentication

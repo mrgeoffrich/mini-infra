@@ -1,9 +1,9 @@
 import type { ActionContext, DnsConfigEmit } from './types';
-import { loadbalancerLogger } from "../../../lib/logger-factory";
+import { getLogger } from "../../../lib/logger-factory";
 import { cloudflareDNSService } from "../../cloudflare";
 import { networkUtils } from "../../network-utils";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "configure-dns");
 
 /**
  * ConfigureDNS action creates DNS records for deployments

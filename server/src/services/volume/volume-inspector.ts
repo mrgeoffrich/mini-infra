@@ -1,4 +1,4 @@
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { VolumeFileContentService } from "./volume-file-content";
 import prisma from "../../lib/prisma";
@@ -40,7 +40,7 @@ export class VolumeInspectorService {
    */
   public async initialize(): Promise<void> {
     await this.dockerExecutor.initialize();
-    servicesLogger().info("VolumeInspectorService initialized successfully");
+    getLogger("docker", "volume-inspector").info("VolumeInspectorService initialized successfully");
   }
 
   /**
@@ -78,14 +78,14 @@ export class VolumeInspectorService {
         },
       });
 
-      servicesLogger().info(
+      getLogger("docker", "volume-inspector").info(
         { volumeName },
         "Started volume inspection",
       );
 
       // Execute inspection in the background (don't await)
       this.performInspection(volumeName, startTime).catch((error) => {
-        servicesLogger().error(
+        getLogger("docker", "volume-inspector").error(
           {
             error: error instanceof Error ? error.message : "Unknown error",
             volumeName,
@@ -94,7 +94,7 @@ export class VolumeInspectorService {
         );
       });
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-inspector").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -113,7 +113,7 @@ export class VolumeInspectorService {
     startTime: number,
   ): Promise<void> {
     try {
-      servicesLogger().info(
+      getLogger("docker", "volume-inspector").info(
         { volumeName },
         "Executing inspection container",
       );
@@ -171,13 +171,13 @@ export class VolumeInspectorService {
           status: finalStatus,
         });
       } catch (emitError) {
-        servicesLogger().error(
+        getLogger("docker", "volume-inspector").error(
           { error: emitError instanceof Error ? emitError.message : "Unknown error", volumeName },
           "Failed to emit volume inspection completed event",
         );
       }
 
-      servicesLogger().info(
+      getLogger("docker", "volume-inspector").info(
         {
           volumeName,
           fileCount: inspectionResult.fileCount,
@@ -209,13 +209,13 @@ export class VolumeInspectorService {
           status: "failed",
         });
       } catch (emitError) {
-        servicesLogger().error(
+        getLogger("docker", "volume-inspector").error(
           { error: emitError instanceof Error ? emitError.message : "Unknown error", volumeName },
           "Failed to emit volume inspection failed event",
         );
       }
 
-      servicesLogger().error(
+      getLogger("docker", "volume-inspector").error(
         {
           error: errorMessage,
           volumeName,
@@ -246,7 +246,7 @@ export class VolumeInspectorService {
         // Parse the stat output: path|size|permissions|user:group|modifiedTimestamp
         const parts = line.split("|");
         if (parts.length !== 5) {
-          servicesLogger().warn(
+          getLogger("docker", "volume-inspector").warn(
             { line },
             "Skipping malformed inspection line",
           );
@@ -258,7 +258,7 @@ export class VolumeInspectorService {
         const modifiedTimestamp = parseInt(modifiedTimestampStr, 10);
 
         if (isNaN(size) || isNaN(modifiedTimestamp)) {
-          servicesLogger().warn(
+          getLogger("docker", "volume-inspector").warn(
             { line },
             "Skipping line with invalid numbers",
           );
@@ -278,7 +278,7 @@ export class VolumeInspectorService {
 
         totalSize += BigInt(size);
       } catch (error) {
-        servicesLogger().warn(
+        getLogger("docker", "volume-inspector").warn(
           {
             error: error instanceof Error ? error.message : "Unknown error",
             line,
@@ -332,7 +332,7 @@ export class VolumeInspectorService {
         try {
           files = JSON.parse(inspection.files);
         } catch (error) {
-          servicesLogger().error(
+          getLogger("docker", "volume-inspector").error(
             {
               error: error instanceof Error ? error.message : "Unknown error",
               volumeName,
@@ -348,7 +348,7 @@ export class VolumeInspectorService {
         files,
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-inspector").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,
@@ -379,12 +379,12 @@ export class VolumeInspectorService {
         where: { volumeName },
       });
 
-      servicesLogger().info(
+      getLogger("docker", "volume-inspector").info(
         { volumeName },
         "Deleted volume inspection",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "volume-inspector").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           volumeName,

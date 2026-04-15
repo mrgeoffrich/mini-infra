@@ -5,7 +5,7 @@ import v8 from "v8";
 import os from "os";
 import path from "path";
 import { requirePermission } from "../middleware/auth";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import {
   readProcStatus,
   readSmapsRollup,
@@ -15,7 +15,7 @@ import {
 } from "../lib/proc-memory";
 
 const router = Router();
-const logger = appLogger();
+const logger = getLogger("platform", "diagnostics");
 
 // GET /api/diagnostics/memory - current memory usage snapshot
 router.get("/memory", requirePermission("settings:read") as RequestHandler, (async (_req, res) => {

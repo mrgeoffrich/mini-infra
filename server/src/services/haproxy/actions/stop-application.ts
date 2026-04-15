@@ -1,9 +1,9 @@
 import type { ActionContext, AppStopEmit } from './types';
-import { loadbalancerLogger } from '../../../lib/logger-factory';
+import { getLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("deploy", "stop-application");
 
 export class StopApplication {
     private dockerService: DockerService;

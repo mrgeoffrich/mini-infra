@@ -1,5 +1,5 @@
 import Docker from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { RegistryCredentialService } from "../registry-credential";
 import type { DockerRegistryTestOptions, DockerRegistryTestResult } from "./types";
 
@@ -27,7 +27,7 @@ export class RegistryManager {
     const startTime = Date.now();
 
     try {
-      servicesLogger().info(
+      getLogger("docker", "registry-manager").info(
         {
           image,
           hasAuth: !!(registryUsername && registryPassword),
@@ -68,7 +68,7 @@ export class RegistryManager {
 
       const pullTimeMs = Date.now() - startTime;
 
-      servicesLogger().info(
+      getLogger("docker", "registry-manager").info(
         {
           image,
           pullTimeMs,
@@ -81,7 +81,7 @@ export class RegistryManager {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      servicesLogger().error(
+      getLogger("docker", "registry-manager").error(
         {
           error: errorMessage,
           image,
@@ -135,14 +135,14 @@ export class RegistryManager {
    * Automatically finds and applies registry credentials from the database
    */
   public async pullImageWithAutoAuth(image: string): Promise<void> {
-    servicesLogger().info({ image }, "Pulling image with automatic authentication");
+    getLogger("docker", "registry-manager").info({ image }, "Pulling image with automatic authentication");
 
     try {
       // Attempt to find credentials for this image's registry
       const credentials = await this.registryCredentialService.getCredentialsForImage(image);
 
       if (credentials) {
-        servicesLogger().info(
+        getLogger("docker", "registry-manager").info(
           { image, hasCredentials: true },
           "Found registry credentials for image",
         );
@@ -153,7 +153,7 @@ export class RegistryManager {
           credentials.password,
         );
       } else {
-        servicesLogger().info(
+        getLogger("docker", "registry-manager").info(
           { image, hasCredentials: false },
           "No registry credentials found, attempting anonymous pull",
         );
@@ -161,7 +161,7 @@ export class RegistryManager {
         return this.pullImageWithAuth(image);
       }
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "registry-manager").error(
         { error, image },
         "Failed to pull image with auto-auth",
       );
@@ -179,7 +179,7 @@ export class RegistryManager {
     let authenticated = false;
 
     try {
-      servicesLogger().info(
+      getLogger("docker", "registry-manager").info(
         {
           image: options.image,
           hasAuth: !!(options.registryUsername && options.registryPassword),
@@ -221,7 +221,7 @@ export class RegistryManager {
 
       const pullTimeMs = Date.now() - startTime;
 
-      servicesLogger().info(
+      getLogger("docker", "registry-manager").info(
         {
           image: options.image,
           pullTimeMs,
@@ -246,7 +246,7 @@ export class RegistryManager {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      servicesLogger().error(
+      getLogger("docker", "registry-manager").error(
         {
           error: errorMessage,
           image: options.image,
@@ -310,7 +310,7 @@ export class RegistryManager {
     let authenticated = false;
 
     try {
-      servicesLogger().info(
+      getLogger("docker", "registry-manager").info(
         {
           image: options.image,
           hasAuth: !!(options.registryUsername && options.registryPassword),
@@ -353,7 +353,7 @@ export class RegistryManager {
       const pullTimeMs = Date.now() - startTime;
 
       if (response.ok) {
-        servicesLogger().info(
+        getLogger("docker", "registry-manager").info(
           {
             image: options.image,
             pullTimeMs,
@@ -392,7 +392,7 @@ export class RegistryManager {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      servicesLogger().error(
+      getLogger("docker", "registry-manager").error(
         {
           error: errorMessage,
           image: options.image,
@@ -488,7 +488,7 @@ export class RegistryManager {
           if (tokenResponse.ok) {
             const tokenData = await tokenResponse.json();
             if (tokenData.token) {
-              servicesLogger().debug(
+              getLogger("docker", "registry-manager").debug(
                 { registry, repository },
                 "Successfully obtained OAuth2 token for registry",
               );
@@ -501,14 +501,14 @@ export class RegistryManager {
       }
 
       // Fall back to Basic authentication
-      servicesLogger().debug(
+      getLogger("docker", "registry-manager").debug(
         { registry },
         "Using Basic authentication for registry",
       );
       const authString = Buffer.from(`${username}:${password}`).toString("base64");
       return `Basic ${authString}`;
     } catch (error) {
-      servicesLogger().warn(
+      getLogger("docker", "registry-manager").warn(
         {
           error: error instanceof Error ? error.message : String(error),
           registry,

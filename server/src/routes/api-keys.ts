@@ -8,7 +8,7 @@ import {
   deleteApiKey,
   getApiKeyStats,
 } from "../lib/api-key-service";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { getCurrentUserId } from "../middleware/auth";
 import { requirePermission } from "../middleware/auth";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@mini-infra/types";
 import { getAllPresets } from "../services/permission-preset-service";
 
-const logger = appLogger();
+const logger = getLogger("auth", "api-keys");
 import type { CreateApiKeyRequest } from "@mini-infra/types";
 
 const router = Router();

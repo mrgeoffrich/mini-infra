@@ -1,5 +1,5 @@
 import { PrismaClient } from "../../generated/prisma/client";
-import { loadbalancerLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../docker-executor';
 import { StackReconciler } from '../stacks/stack-reconciler';
 import DockerService from '../docker';
@@ -9,7 +9,7 @@ import {
 } from './haproxy-post-apply';
 import type { MigrationPreview, MigrationResult, MigrationStep } from '@mini-infra/types';
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-migration-service");
 
 export type { MigrationPreview, MigrationResult, MigrationStep };
 

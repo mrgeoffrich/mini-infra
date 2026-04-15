@@ -7,7 +7,7 @@
  */
 
 import { PrismaClient } from "../../generated/prisma/client";
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { ManualFrontendManager } from "./manual-frontend-manager";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { CertificateProvisioningService } from "../tls/certificate-provisioning-service";
@@ -15,7 +15,7 @@ import { CertificateLifecycleManager } from "../tls/certificate-lifecycle-manage
 import { CertificateDistributor } from "../tls/certificate-distributor";
 import type { CreateManualFrontendRequest, ManualFrontendSetupStep, ManualFrontendSetupResult } from "@mini-infra/types";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "manual-frontend-setup-service");
 
 export type SetupStepCallback = (
   step: ManualFrontendSetupStep,

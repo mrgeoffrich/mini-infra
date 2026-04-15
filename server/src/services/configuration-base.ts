@@ -7,7 +7,7 @@ import {
   ConnectivityService,
   ConnectivityStatusType,
 } from "@mini-infra/types";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
 export abstract class ConfigurationService implements IConfigurationService {
   protected prisma: PrismaClient;
@@ -62,7 +62,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      servicesLogger().info(
+      getLogger("platform", "configuration-base").info(
         {
           category: this.category,
           key: key,
@@ -71,7 +71,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         "Setting updated",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-base").error(
         {
           category: this.category,
           key: key,
@@ -101,7 +101,7 @@ export abstract class ConfigurationService implements IConfigurationService {
 
       return setting?.value || null;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-base").error(
         {
           category: this.category,
           key: key,
@@ -129,7 +129,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
 
-      servicesLogger().info(
+      getLogger("platform", "configuration-base").info(
         {
           category: this.category,
           key: key,
@@ -138,7 +138,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         "Setting deleted",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-base").error(
         {
           category: this.category,
           key: key,
@@ -178,7 +178,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         },
       });
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-base").error(
         {
           service: this.category,
           status: status,
@@ -217,7 +217,7 @@ export abstract class ConfigurationService implements IConfigurationService {
         metadata: record.metadata ?? undefined,
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("platform", "configuration-base").error(
         {
           service: this.category,
           error: error instanceof Error ? error.message : "Unknown error",

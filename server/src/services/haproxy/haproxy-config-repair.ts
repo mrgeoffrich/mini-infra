@@ -1,8 +1,8 @@
 import DockerService from "../docker";
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerStreamDemuxer } from "../../lib/docker-stream";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-config-repair");
 
 const RESOLVERS_BLOCK = `
 resolvers docker

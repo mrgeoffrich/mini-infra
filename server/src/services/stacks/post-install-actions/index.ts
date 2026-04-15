@@ -1,6 +1,6 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
 import type { ServiceApplyResult } from "@mini-infra/types";
-import { servicesLogger } from "../../../lib/logger-factory";
+import { getLogger } from "../../../lib/logger-factory";
 import { registerPostgresServer } from "./register-postgres-server";
 
 interface PostInstallContext {
@@ -35,7 +35,7 @@ export async function runPostInstallActions(
   const handlers = templateHandlers[templateName];
   if (!handlers || handlers.length === 0) return;
 
-  const log = servicesLogger().child({ operation: "post-install-actions", templateName, stackName: ctx.stackName });
+  const log = getLogger("stacks", "post-install-actions").child({ operation: "post-install-actions", templateName, stackName: ctx.stackName });
 
   for (const handler of handlers) {
     try {

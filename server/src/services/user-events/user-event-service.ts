@@ -1,5 +1,5 @@
 import prisma, { PrismaClient } from '../../lib/prisma';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import {
   UserEventInfo,
   UserEventFilter,
@@ -18,7 +18,7 @@ import { Prisma } from "../../generated/prisma/client";
  */
 export class UserEventService {
   private prisma: PrismaClient;
-  private logger = servicesLogger();
+  private logger = getLogger("platform", "user-event-service");
 
   constructor(prismaClient?: PrismaClient) {
     this.prisma = prismaClient || prisma;

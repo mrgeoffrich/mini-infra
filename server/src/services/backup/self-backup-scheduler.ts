@@ -1,7 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
-import { selfBackupLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { SelfBackupExecutor } from "./self-backup-executor";
 
 /**
@@ -84,19 +84,19 @@ export class SelfBackupScheduler {
         // Enable if configured to be enabled
         await this.enableSchedule();
 
-        selfBackupLogger().info({
+        getLogger("backup", "self-backup-scheduler").info({
           schedule: config.cronSchedule,
           timezone: config.timezone,
           containerName: config.azureContainerName,
           nextScheduledAt: this.scheduledJob?.nextScheduledAt?.toISOString(),
         }, "Self-backup scheduler initialized and enabled");
       } else {
-        selfBackupLogger().info("Self-backup scheduler initialized but not enabled");
+        getLogger("backup", "self-backup-scheduler").info("Self-backup scheduler initialized but not enabled");
       }
 
       this.isInitialized = true;
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Failed to initialize SelfBackupScheduler");
       // Don't throw - allow server to continue even if scheduler fails
@@ -143,7 +143,7 @@ export class SelfBackupScheduler {
         enabled,
       };
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Failed to load self-backup configuration from database");
       return null;
@@ -197,7 +197,7 @@ export class SelfBackupScheduler {
         nextScheduledAt,
       };
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-scheduler").info({
         schedule,
         timezone,
         containerName,
@@ -205,7 +205,7 @@ export class SelfBackupScheduler {
       }, "Self-backup schedule registered");
 
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
         schedule,
         timezone,
@@ -225,20 +225,20 @@ export class SelfBackupScheduler {
       }
 
       if (this.scheduledJob.isEnabled) {
-        selfBackupLogger().debug("Self-backup schedule already enabled");
+        getLogger("backup", "self-backup-scheduler").debug("Self-backup schedule already enabled");
         return;
       }
 
       this.scheduledJob.task.start();
       this.scheduledJob.isEnabled = true;
 
-      selfBackupLogger().info({
+      getLogger("backup", "self-backup-scheduler").info({
         schedule: this.scheduledJob.schedule,
         nextScheduledAt: this.scheduledJob.nextScheduledAt?.toISOString(),
       }, "Self-backup schedule enabled");
 
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Failed to enable self-backup schedule");
       throw error;
@@ -251,22 +251,22 @@ export class SelfBackupScheduler {
   public async disableSchedule(): Promise<void> {
     try {
       if (!this.scheduledJob) {
-        selfBackupLogger().debug("No schedule to disable");
+        getLogger("backup", "self-backup-scheduler").debug("No schedule to disable");
         return;
       }
 
       if (!this.scheduledJob.isEnabled) {
-        selfBackupLogger().debug("Self-backup schedule already disabled");
+        getLogger("backup", "self-backup-scheduler").debug("Self-backup schedule already disabled");
         return;
       }
 
       this.scheduledJob.task.stop();
       this.scheduledJob.isEnabled = false;
 
-      selfBackupLogger().info("Self-backup schedule disabled");
+      getLogger("backup", "self-backup-scheduler").info("Self-backup schedule disabled");
 
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Failed to disable self-backup schedule");
       throw error;
@@ -297,7 +297,7 @@ export class SelfBackupScheduler {
       await this.enableSchedule();
     }
 
-    selfBackupLogger().info({
+    getLogger("backup", "self-backup-scheduler").info({
       schedule,
       timezone,
       containerName,
@@ -315,11 +315,11 @@ export class SelfBackupScheduler {
         this.scheduledJob.task.stop();
         this.scheduledJob.task.destroy();
 
-        selfBackupLogger().info("Self-backup schedule unregistered");
+        getLogger("backup", "self-backup-scheduler").info("Self-backup schedule unregistered");
         this.scheduledJob = null;
       }
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Failed to unregister self-backup schedule");
       throw error;
@@ -355,7 +355,7 @@ export class SelfBackupScheduler {
    * Execute scheduled backup
    */
   private async executeScheduledBackup(containerName: string): Promise<void> {
-    selfBackupLogger().info({
+    getLogger("backup", "self-backup-scheduler").info({
       containerName,
     }, "Executing scheduled self-backup");
 
@@ -374,7 +374,7 @@ export class SelfBackupScheduler {
       }
 
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
         containerName,
       }, "Scheduled self-backup failed");
@@ -395,7 +395,7 @@ export class SelfBackupScheduler {
       const next = interval.next();
       return next.toDate();
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
         schedule,
         timezone,
@@ -412,10 +412,10 @@ export class SelfBackupScheduler {
       if (this.scheduledJob) {
         this.scheduledJob.task.stop();
         this.scheduledJob.task.destroy();
-        selfBackupLogger().info("Self-backup scheduler shutdown complete");
+        getLogger("backup", "self-backup-scheduler").info("Self-backup scheduler shutdown complete");
       }
     } catch (error) {
-      selfBackupLogger().error({
+      getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
       }, "Error during self-backup scheduler shutdown");
     }

@@ -1,5 +1,5 @@
 import { ValidationResult, ConnectivityStatusType } from "@mini-infra/types";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
 /**
  * Circuit breaker state for managing API failures
@@ -115,7 +115,7 @@ export class CircuitBreaker {
       ) {
         // Transition to half-open state to allow retry
         this.circuitState.state = "half-open";
-        servicesLogger().info(
+        getLogger("platform", "circuit-breaker").info(
           {
             previousFailures: this.circuitState.consecutiveFailures,
             lastFailureTime: this.circuitState.lastFailureTime,
@@ -137,7 +137,7 @@ export class CircuitBreaker {
       this.circuitState.state === "half-open" ||
       this.circuitState.consecutiveFailures > 0
     ) {
-      servicesLogger().info(
+      getLogger("platform", "circuit-breaker").info(
         {
           previousState: this.circuitState.state,
           previousFailures: this.circuitState.consecutiveFailures,
@@ -168,7 +168,7 @@ export class CircuitBreaker {
         Date.now() + this.cooldownPeriodMs,
       );
 
-      servicesLogger().warn(
+      getLogger("platform", "circuit-breaker").warn(
         {
           consecutiveFailures: this.circuitState.consecutiveFailures,
           errorCode,
@@ -177,7 +177,7 @@ export class CircuitBreaker {
         "Circuit breaker opened due to consecutive failures",
       );
     } else {
-      servicesLogger().debug(
+      getLogger("platform", "circuit-breaker").debug(
         {
           consecutiveFailures: this.circuitState.consecutiveFailures,
           threshold: this.failureThreshold,
@@ -277,7 +277,7 @@ export class CircuitBreaker {
     if (this.pendingValidation) {
       const timeSinceRequest = Date.now() - this.pendingValidation.timestamp;
       if (timeSinceRequest < this.dedupWindowMs) {
-        servicesLogger().debug(
+        getLogger("platform", "circuit-breaker").debug(
           {
             timeSinceRequest,
             dedupWindow: this.dedupWindowMs,
@@ -297,7 +297,7 @@ export class CircuitBreaker {
         ? this.circuitState.nextRetryTime.getTime() - Date.now()
         : 0;
 
-      servicesLogger().info(
+      getLogger("platform", "circuit-breaker").info(
         {
           circuitState: "open",
           consecutiveFailures: this.circuitState.consecutiveFailures,

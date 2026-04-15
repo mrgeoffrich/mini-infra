@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { servicesLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "validation");
 
 // Private symbol keys — not exported, so callers must use the typed accessors below
 // and cannot bypass the type guarantee by reading req.validatedQuery directly.

@@ -15,9 +15,9 @@
  */
 
 import { Request, Response, NextFunction } from "express";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("auth", "auth-middleware");
 import { getCurrentUser, getCurrentUserId } from "./api-key-middleware";
 import {
   getCurrentUserFromJwt,

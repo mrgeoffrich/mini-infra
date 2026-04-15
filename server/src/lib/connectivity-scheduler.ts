@@ -1,11 +1,11 @@
 import prisma from "./prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
 import { SettingsCategory, ConnectivityStatusType } from "@mini-infra/types";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 import { emitConnectivityStatus } from "../services/connectivity-socket-emitter";
 
 // Use app logger for connectivity scheduler
-const logger = appLogger();
+const logger = getLogger("platform", "connectivity-scheduler");
 
 /**
  * CircuitBreakerState represents the possible states of a circuit breaker

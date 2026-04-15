@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { hostname } from 'os';
 import Docker from 'dockerode';
 import { DockerExecutorService } from '../docker-executor';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import {
   IApplicationService,
   ServiceStatus,
@@ -23,7 +23,7 @@ export class MonitoringService implements IApplicationService {
   private readonly prometheusContainerName: string;
   private readonly lokiContainerName: string;
   private readonly alloyContainerName: string;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("platform", "monitoring-service");
   private currentStatus: ServiceStatus = ServiceStatusValues.UNINITIALIZED;
   private startedAt?: Date;
   private stoppedAt?: Date;

@@ -4,7 +4,7 @@ import express, {
   RequestHandler,
 } from "express";
 import { z } from "zod";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { CloudflareService } from "../../services/cloudflare";
@@ -14,7 +14,7 @@ import {
   CloudflareValidationResponse,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "settings-routes");
 
 const createCloudflareSettingSchema = z.object({
   api_token: z.string().min(40, "API token must be at least 40 characters"),

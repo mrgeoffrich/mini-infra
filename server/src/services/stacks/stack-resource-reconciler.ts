@@ -13,9 +13,9 @@ import type {
 import type { CertificateLifecycleManager } from '../tls/certificate-lifecycle-manager';
 import type { CloudflareDNSService } from '../cloudflare/cloudflare-dns';
 import type { CloudflareService } from '../cloudflare/cloudflare-service';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 
-const log = servicesLogger().child({ service: 'stack-resource-reconciler' });
+const log = getLogger("stacks", "stack-resource-reconciler").child({ service: 'stack-resource-reconciler' });
 
 interface ResourceDefinitions {
   tlsCertificates: StackTlsCertificate[];

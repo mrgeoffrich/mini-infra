@@ -10,9 +10,9 @@ import { Channel, ServerEvent } from "@mini-infra/types";
 import type { ConnectivityStatusInfo } from "@mini-infra/types";
 import { emitToChannel } from "../lib/socket";
 import prisma from "../lib/prisma";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "connectivity-socket-emitter");
 
 const NAV_SERVICES = ["docker", "cloudflare", "azure", "github-app"] as const;
 

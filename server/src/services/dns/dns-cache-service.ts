@@ -1,9 +1,9 @@
 import { PrismaClient } from "../../lib/prisma";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { cloudflareDNSService } from "../cloudflare";
 import { DnsCachedZone, DnsCachedRecord, DnsHostnameCheckResult } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "dns-cache-service");
 
 export class DnsCacheService {
   private prisma: PrismaClient;

@@ -10,11 +10,11 @@
 
 import type { ContainerInfo, DockerContainerInfo } from "@mini-infra/types";
 import prisma from "../lib/prisma";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import type DockerService from "./docker";
 import { getOwnContainerId } from "./self-update";
 
-const logger = appLogger();
+const logger = getLogger("docker", "container-serializer");
 
 /**
  * Determine if a container is part of Mini Infra itself.

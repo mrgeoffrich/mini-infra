@@ -1,8 +1,8 @@
 import NodeCache from "node-cache";
 import prisma from "./prisma";
-import { servicesLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "public-url-service");
 
 // 30-minute TTL, check for expired keys every 2 minutes
 const cache = new NodeCache({ stdTTL: 1800, checkperiod: 120 });

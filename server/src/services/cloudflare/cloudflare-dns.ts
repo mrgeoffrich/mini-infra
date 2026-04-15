@@ -5,7 +5,7 @@ import type {
   RecordListParams,
   RecordUpdateParams,
 } from "cloudflare/resources/dns/records.js";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "./cloudflare-service";
 import {
   CloudflareApiRunner,
@@ -19,7 +19,7 @@ import {
   UpdateCloudflareDNSRecordRequest,
 } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = getLogger("integrations", "cloudflare-dns");
 
 /**
  * Extends the SDK RecordResponse with fields the API returns at runtime

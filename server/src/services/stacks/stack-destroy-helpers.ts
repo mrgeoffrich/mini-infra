@@ -1,7 +1,7 @@
 import { createActor } from 'xstate';
 import type { PrismaClient } from "../../generated/prisma/client";
 import prisma from '../../lib/prisma';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../docker-executor';
 import DockerService from '../docker';
 import { HAProxyFrontendManager } from '../haproxy';
@@ -15,7 +15,7 @@ import type {
   StackVolume,
 } from '@mini-infra/types';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stack-destroy-helpers");
 
 type StackWithRelations = Awaited<ReturnType<PrismaClient['stack']['findUniqueOrThrow']>> & {
   services: Array<{

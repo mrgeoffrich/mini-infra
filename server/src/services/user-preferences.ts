@@ -1,11 +1,11 @@
 import prisma from "../lib/prisma";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import type {
   UserPreference,
   UpdateUserPreferencesRequest,
 } from "@mini-infra/types";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "user-preferences");
 
 export class UserPreferencesService {
   /**

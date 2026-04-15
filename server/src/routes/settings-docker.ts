@@ -4,9 +4,9 @@ import express, {
   NextFunction,
   RequestHandler,
 } from "express";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("http", "settings-docker");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 

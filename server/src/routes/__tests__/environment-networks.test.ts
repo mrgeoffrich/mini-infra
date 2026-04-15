@@ -45,6 +45,11 @@ const {
 
 // Mock logger factory first (before other imports)
 vi.mock("../../lib/logger-factory", () => ({
+  getLogger: vi.fn(function() { return mockLogger; }),
+  clearLoggerCache: vi.fn(),
+  createChildLogger: vi.fn(function() { return mockLogger; }),
+  selfBackupLogger: vi.fn(function() { return mockLogger; }),
+  serializeError: (e: unknown) => e,
   appLogger: vi.fn(function() { return mockLogger; }),
   servicesLogger: vi.fn(function() { return mockLogger; }),
   httpLogger: vi.fn(function() { return mockLogger; }),

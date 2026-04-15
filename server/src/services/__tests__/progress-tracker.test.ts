@@ -20,6 +20,11 @@ const { mockLoggerFunctions } = vi.hoisted(() => ({
 
 // Mock logger
 vi.mock("../../lib/logger-factory", () => ({
+  getLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  clearLoggerCache: vi.fn(),
+  createChildLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  selfBackupLogger: vi.fn(function() { return mockLoggerFunctions; }),
+  serializeError: (e: unknown) => e,
   appLogger: vi.fn(function() { return mockLoggerFunctions; }),
   servicesLogger: vi.fn(function() { return mockLoggerFunctions; }),
   httpLogger: vi.fn(function() { return mockLoggerFunctions; }),

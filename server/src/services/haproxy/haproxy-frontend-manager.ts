@@ -1,4 +1,4 @@
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "../../generated/prisma/client";
 import {
@@ -8,7 +8,7 @@ import {
 } from "./haproxy-naming";
 import { haproxyCertificateDeployer } from "./haproxy-certificate-deployer";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-frontend-manager");
 
 /**
  * HAProxyFrontendManager handles frontend creation and management for deployments

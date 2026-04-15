@@ -7,7 +7,7 @@ import {
 import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
-import { appLogger } from '../lib/logger-factory';
+import { getLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
 import { haproxyMigrationService } from '../services/haproxy/haproxy-migration-service';
 import { restoreHAProxyRuntimeState } from '../services/haproxy/haproxy-post-apply';
@@ -17,7 +17,7 @@ import { emitHAProxyUpdate } from '../services/haproxy-socket-emitter';
 import DockerService from '../services/docker';
 
 const router = Router();
-const logger = appLogger();
+const logger = getLogger("stacks", "environments");
 
 // Track in-progress migrations to prevent concurrent runs
 const migratingEnvironments = new Set<string>();

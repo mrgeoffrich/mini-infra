@@ -2,13 +2,13 @@ import {
   DockerEventPatternDetector,
   type DockerContainerEvent,
 } from "../../lib/docker-event-pattern-detector";
-import { loadbalancerLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { repairHAProxyConfig } from "./haproxy-config-repair";
 import prisma from "../../lib/prisma";
 import DockerService from "../docker";
 import { UserEventService } from "../user-events";
 
-const logger = loadbalancerLogger();
+const logger = getLogger("haproxy", "haproxy-crash-loop-watcher");
 
 let detector: DockerEventPatternDetector | null = null;
 

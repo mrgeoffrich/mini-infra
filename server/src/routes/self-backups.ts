@@ -1,7 +1,7 @@
 import express from "express";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import { AzureStorageService } from "../services/azure-storage-service";
 import { calculateBackupHealth } from "../services/backup/backup-health-calculator";
@@ -11,7 +11,7 @@ import type {
   SelfBackupInfo,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("backup", "self-backups");
 const router = express.Router();
 const azureConfigService = new AzureStorageService(prisma);
 

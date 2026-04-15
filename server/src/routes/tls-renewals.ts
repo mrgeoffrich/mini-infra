@@ -7,12 +7,12 @@
  */
 
 import express from "express";
-import { tlsLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
 
-const logger = tlsLogger();
+const logger = getLogger("tls", "tls-renewals");
 const router = express.Router();
 
 /**

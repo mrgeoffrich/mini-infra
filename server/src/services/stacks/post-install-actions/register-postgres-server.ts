@@ -1,6 +1,6 @@
 import type { PrismaClient } from "../../../generated/prisma/client";
 import type { ServiceApplyResult } from "@mini-infra/types";
-import { servicesLogger } from "../../../lib/logger-factory";
+import { getLogger } from "../../../lib/logger-factory";
 
 interface RegisterContext {
   stackName: string;
@@ -17,7 +17,7 @@ interface RegisterContext {
  * from the UI. Skips silently if a server is already registered for this container.
  */
 export async function registerPostgresServer(ctx: RegisterContext): Promise<void> {
-  const log = servicesLogger().child({ action: "register-postgres-server", stackName: ctx.stackName });
+  const log = getLogger("stacks", "register-postgres-server").child({ action: "register-postgres-server", stackName: ctx.stackName });
 
   // Only register on successful create/recreate of the postgres service
   const postgresResult = ctx.serviceResults.find((r) => r.serviceName === "postgres");

@@ -1,5 +1,5 @@
 import { BlobServiceClient } from "@azure/storage-blob";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { AzureStorageService } from "../azure-storage-service";
 import { parseBackupUrl } from "./utils";
 import type { BackupValidationResult } from "./types";
@@ -42,7 +42,7 @@ export class BackupValidator {
         .getContainerClient(containerName)
         .getBlobClient(blobName);
 
-      servicesLogger().debug(
+      getLogger("backup", "backup-validator").debug(
         {
           backupUrl,
           containerName,
@@ -55,7 +55,7 @@ export class BackupValidator {
       // Check if blob exists and get properties
       const exists = await blobClient.exists();
       if (!exists) {
-        servicesLogger().warn(
+        getLogger("backup", "backup-validator").warn(
           {
             backupUrl,
             containerName,
@@ -84,7 +84,7 @@ export class BackupValidator {
       // Check for reasonable maximum file size (e.g., 50GB)
       const maxSizeBytes = 50 * 1024 * 1024 * 1024; // 50GB
       if (sizeBytes > maxSizeBytes) {
-        servicesLogger().warn(
+        getLogger("backup", "backup-validator").warn(
           {
             backupUrl,
             sizeBytes,
@@ -100,7 +100,7 @@ export class BackupValidator {
         const backupDatabaseId = pathParts[0]; // Expected format: databaseId/backup_file.dump
 
         if (backupDatabaseId !== databaseId) {
-          servicesLogger().warn(
+          getLogger("backup", "backup-validator").warn(
             {
               backupUrl,
               expectedDatabaseId: databaseId,
@@ -123,7 +123,7 @@ export class BackupValidator {
       const ageInDays = ageInMs / (1000 * 60 * 60 * 24);
 
       if (ageInDays > maxAgeInDays) {
-        servicesLogger().warn(
+        getLogger("backup", "backup-validator").warn(
           {
             backupUrl,
             ageInDays: Math.round(ageInDays),
@@ -145,7 +145,7 @@ export class BackupValidator {
         properties.contentType &&
         !expectedContentTypes.includes(properties.contentType)
       ) {
-        servicesLogger().warn(
+        getLogger("backup", "backup-validator").warn(
           {
             backupUrl,
             contentType: properties.contentType,
@@ -155,7 +155,7 @@ export class BackupValidator {
         );
       }
 
-      servicesLogger().info(
+      getLogger("backup", "backup-validator").info(
         {
           backupUrl,
           containerName,
@@ -183,7 +183,7 @@ export class BackupValidator {
         },
       };
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "backup-validator").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stack: error instanceof Error ? error.stack : undefined,

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../../lib/prisma';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { asyncHandler } from '../../lib/async-handler';
 import { getUserId } from '../../lib/get-user-id';
 import { requirePermission } from '../../middleware/auth';
@@ -27,7 +27,7 @@ import {
 } from '../../services/stacks/stack-destroy-helpers';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
 
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, DB record

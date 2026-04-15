@@ -1,7 +1,7 @@
 import express, { Request, RequestHandler } from "express";
 import { z } from "zod";
 import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels/tunnels.js";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import {
@@ -17,7 +17,7 @@ import {
   CloudflareTunnelInfo,
 } from "@mini-infra/types";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "tunnels-routes");
 
 function getUserId(req: Request): string {
   return getAuthenticatedUser(req)?.id || "system";

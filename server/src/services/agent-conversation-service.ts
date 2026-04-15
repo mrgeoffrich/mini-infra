@@ -1,5 +1,5 @@
 import prisma from "../lib/prisma";
-import { agentLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import type {
   AgentConversationSummary,
   AgentConversationDetail,
@@ -7,7 +7,7 @@ import type {
   AgentMessageRole,
 } from "@mini-infra/types";
 
-const logger = agentLogger();
+const logger = getLogger("agent", "agent-conversation-service");
 
 export interface CreateMessageData {
   conversationId: string;

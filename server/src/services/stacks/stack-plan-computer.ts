@@ -11,7 +11,7 @@ import type {
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { buildStackTemplateContext, buildContainerMap, mergeParameterValues, toServiceDefinition, resolveServiceConfigs } from './utils';
 import { generateDiffs, buildReason } from './stack-diff-generator';
 import { detectConflicts } from './stack-conflict-detector';
@@ -29,7 +29,7 @@ export class StackPlanComputer {
   ) {}
 
   async compute(stackId: string): Promise<StackPlan> {
-    const log = servicesLogger().child({ operation: 'stack-plan', stackId });
+    const log = getLogger("stacks", "stack-plan-computer").child({ operation: 'stack-plan', stackId });
 
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },

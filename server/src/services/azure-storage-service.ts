@@ -6,7 +6,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
 import { toServiceError } from "../lib/service-error-mapper";
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 import { azureConfig } from "../lib/config-new";
 import {
   BlobServiceClient,
@@ -132,7 +132,7 @@ export class AzureStorageService extends ConfigurationService {
 
         // Exponential backoff with jitter
         const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * 1000;
-        servicesLogger().warn(
+        getLogger("platform", "azure-storage-service").warn(
           {
             attempt: attempt + 1,
             maxRetries: maxRetries + 1,
@@ -214,7 +214,7 @@ export class AzureStorageService extends ConfigurationService {
           if (containers.length >= 10) break;
         }
       } catch (containerError) {
-        servicesLogger().warn(
+        getLogger("platform", "azure-storage-service").warn(
           {
             accountName,
             error:
@@ -305,7 +305,7 @@ export class AzureStorageService extends ConfigurationService {
         result.errorCode,
       );
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           errorCode,
@@ -417,7 +417,7 @@ export class AzureStorageService extends ConfigurationService {
       const connectionString = await this.getConnectionString();
 
       if (!connectionString) {
-        servicesLogger().warn(
+        getLogger("platform", "azure-storage-service").warn(
           "Cannot retrieve container info: Connection string not configured",
         );
         return [];
@@ -464,7 +464,7 @@ export class AzureStorageService extends ConfigurationService {
         timeoutPromise,
       ]);
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerCount: containers.length,
         },
@@ -476,7 +476,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
         },
@@ -510,7 +510,7 @@ export class AzureStorageService extends ConfigurationService {
     }>(cacheKey);
 
     if (cached) {
-      servicesLogger().debug(
+      getLogger("platform", "azure-storage-service").debug(
         { containerName },
         "Container access test result returned from cache",
       );
@@ -567,7 +567,7 @@ export class AzureStorageService extends ConfigurationService {
       // Cache successful result
       AzureStorageService.containerAccessCache.set(cacheKey, result);
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           responseTimeMs: result.responseTimeMs,
@@ -612,7 +612,7 @@ export class AzureStorageService extends ConfigurationService {
       // Cache error result for shorter time (2 minutes)
       AzureStorageService.containerAccessCache.set(cacheKey, result, 120);
 
-      servicesLogger().warn(
+      getLogger("platform", "azure-storage-service").warn(
         {
           containerName,
           error: errorMessage,
@@ -723,7 +723,7 @@ export class AzureStorageService extends ConfigurationService {
       // Sort files by creation date (newest first)
       files.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           pathPrefix,
@@ -744,7 +744,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,
@@ -794,7 +794,7 @@ export class AzureStorageService extends ConfigurationService {
 
       const fileName = blobName.split("/").pop() || blobName;
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           blobName,
@@ -814,7 +814,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,
@@ -886,7 +886,7 @@ export class AzureStorageService extends ConfigurationService {
             deletedFiles.push(blob.name);
             totalSizeFreed += blob.properties.contentLength || 0;
 
-            servicesLogger().debug(
+            getLogger("platform", "azure-storage-service").debug(
               {
                 blobName: blob.name,
                 blobDate: blobDate.toISOString(),
@@ -901,7 +901,7 @@ export class AzureStorageService extends ConfigurationService {
                 : "Unknown error";
             errors.push(`Failed to delete ${blob.name}: ${deleteErrorMessage}`);
 
-            servicesLogger().warn(
+            getLogger("platform", "azure-storage-service").warn(
               {
                 blobName: blob.name,
                 error: deleteErrorMessage,
@@ -912,7 +912,7 @@ export class AzureStorageService extends ConfigurationService {
         }
       }
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           retentionDays,
@@ -935,7 +935,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,
@@ -992,7 +992,7 @@ export class AzureStorageService extends ConfigurationService {
 
       await blobClient.setMetadata(validatedMetadata);
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           blobName,
@@ -1006,7 +1006,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,
@@ -1083,7 +1083,7 @@ export class AzureStorageService extends ConfigurationService {
 
       const isValid = errors.length === 0;
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           blobName,
@@ -1109,7 +1109,7 @@ export class AzureStorageService extends ConfigurationService {
 
       errors.push(`Validation failed: ${errorMessage}`);
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,
@@ -1195,7 +1195,7 @@ export class AzureStorageService extends ConfigurationService {
       // Construct full URL with SAS token
       const blobUrl = `https://${accountName}.blob.core.windows.net/${containerName}/${blobName}?${sasToken}`;
 
-      servicesLogger().info(
+      getLogger("platform", "azure-storage-service").info(
         {
           containerName,
           blobName,
@@ -1211,7 +1211,7 @@ export class AzureStorageService extends ConfigurationService {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
 
-      servicesLogger().error(
+      getLogger("platform", "azure-storage-service").error(
         {
           error: errorMessage,
           containerName,

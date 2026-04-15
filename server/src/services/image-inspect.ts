@@ -1,6 +1,6 @@
-import { servicesLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = servicesLogger();
+const logger = getLogger("docker", "image-inspect");
 
 const DOCKER_HUB_AUTH = "https://auth.docker.io/token";
 const TIMEOUT_MS = 10000;

@@ -1,5 +1,5 @@
 import { DockerExecutorService } from '../docker-executor';
-import { servicesLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import Dockerode from 'dockerode';
 import {
   IApplicationService,
@@ -18,7 +18,7 @@ export class HAProxyService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
   private readonly projectName: string;
   private readonly mainContainerName: string;
-  private readonly logger = servicesLogger();
+  private readonly logger = getLogger("haproxy", "haproxy-service");
   private currentStatus: ServiceStatus = ServiceStatusValues.UNINITIALIZED;
   private startedAt?: Date;
   private stoppedAt?: Date;

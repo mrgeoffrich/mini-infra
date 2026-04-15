@@ -1,8 +1,8 @@
 import type { ErrorRequestHandler } from 'express';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 import { isDockerConnectionError } from '../../services/stacks/utils';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stacks-error-handler");
 
 /**
  * Router-scoped error handler for /api/stacks. Preserves the legacy

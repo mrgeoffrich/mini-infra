@@ -24,6 +24,11 @@ vi.mock('../lib/logger-factory', () => {
   };
   return {
     createLogger: vi.fn(() => mockLogger),
+    getLogger: vi.fn(() => mockLogger),
+    clearLoggerCache: vi.fn(),
+    createChildLogger: vi.fn(() => mockLogger),
+    selfBackupLogger: vi.fn(() => mockLogger),
+    serializeError: (e: unknown) => e,
     appLogger: vi.fn(() => mockLogger),
     httpLogger: vi.fn(() => mockLogger),
     prismaLogger: vi.fn(() => mockLogger),

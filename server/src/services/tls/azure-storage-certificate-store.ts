@@ -7,7 +7,7 @@
 
 import { BlobServiceClient } from "@azure/storage-blob";
 import { Logger } from "pino";
-import { tlsLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import {
   CertificateMetadata,
   CertificateInfo,
@@ -34,7 +34,7 @@ export class AzureStorageCertificateStore {
   constructor(connectionString: string, containerName: string) {
     this.blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
     this.containerName = containerName;
-    this.logger = tlsLogger();
+    this.logger = getLogger("tls", "azure-storage-certificate-store");
   }
 
   /**

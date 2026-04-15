@@ -1,5 +1,5 @@
 import Docker, { Container } from "dockerode";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import prisma from "../../lib/prisma";
 import { DockerConfigService } from "../docker-config";
 import ContainerLabelManager from "../container/container-label-manager";
@@ -114,9 +114,9 @@ export class DockerExecutorService {
 
       // Test connection
       await this._docker.ping();
-      servicesLogger().info("DockerExecutor initialized successfully");
+      getLogger("docker", "docker-executor").info("DockerExecutor initialized successfully");
     } catch (error) {
-      servicesLogger().error(
+      getLogger("docker", "docker-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
         },

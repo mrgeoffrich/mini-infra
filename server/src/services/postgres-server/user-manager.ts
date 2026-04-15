@@ -1,8 +1,8 @@
 import prisma from "../../lib/prisma";
-import { appLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import postgresServerService from "./server-manager";
 
-const logger = appLogger();
+const logger = getLogger("db", "user-manager");
 
 /**
  * Escape a SQL identifier by doubling internal double quotes.

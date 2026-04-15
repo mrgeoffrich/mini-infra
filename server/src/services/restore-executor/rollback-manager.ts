@@ -1,6 +1,6 @@
 import { BlobServiceClient } from "@azure/storage-blob";
 import type { DatabaseConnectionConfig } from "@mini-infra/types";
-import { servicesLogger, dockerExecutorLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { AzureStorageService } from "../azure-storage-service";
 import {
@@ -38,7 +38,7 @@ export class RollbackManager {
   ): Promise<string> {
     const startTime = Date.now();
     try {
-      servicesLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           databaseName,
           host: connectionConfig.host,
@@ -63,7 +63,7 @@ export class RollbackManager {
         "write",
       );
 
-      servicesLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           rollbackContainerName,
           rollbackBlobName,
@@ -83,7 +83,7 @@ export class RollbackManager {
         AZURE_SAS_URL: "[REDACTED]",
       };
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           dockerImage,
           environment: containerEnv,
@@ -107,7 +107,7 @@ export class RollbackManager {
         ...(networkMode && { networkMode }),
       });
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           exitCode: containerResult.exitCode,
           stdoutLength: containerResult.stdout?.length || 0,
@@ -118,7 +118,7 @@ export class RollbackManager {
       );
 
       if (containerResult.stdout) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "rollback-manager").debug(
           {
             stdout: containerResult.stdout.substring(0, 500),
           },
@@ -127,7 +127,7 @@ export class RollbackManager {
       }
 
       if (containerResult.stderr) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "rollback-manager").debug(
           {
             stderr: containerResult.stderr.substring(0, 500),
           },
@@ -136,7 +136,7 @@ export class RollbackManager {
       }
 
       if (containerResult.exitCode !== 0) {
-        servicesLogger().error(
+        getLogger("backup", "rollback-manager").error(
           {
             exitCode: containerResult.exitCode,
             stderr: containerResult.stderr,
@@ -151,7 +151,7 @@ export class RollbackManager {
 
       const rollbackBackupUrl = `https://${getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackBlobName}`;
 
-      servicesLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           rollbackBackupUrl,
           databaseName,
@@ -162,7 +162,7 @@ export class RollbackManager {
 
       return rollbackBackupUrl;
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "rollback-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stack: error instanceof Error ? error.stack : undefined,
@@ -187,7 +187,7 @@ export class RollbackManager {
   ): Promise<void> {
     const startTime = Date.now();
     try {
-      servicesLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           rollbackBackupUrl,
           databaseHost: connectionConfig.host,
@@ -208,7 +208,7 @@ export class RollbackManager {
         "read",
       );
 
-      servicesLogger().debug(
+      getLogger("backup", "rollback-manager").debug(
         {
           rollbackBackupUrl,
           containerName,
@@ -229,7 +229,7 @@ export class RollbackManager {
         DROP_PUBLIC: "yes",
       };
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           dockerImage,
           environment: containerEnv,
@@ -254,7 +254,7 @@ export class RollbackManager {
         ...(networkMode && { networkMode }),
       });
 
-      dockerExecutorLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           rollbackBackupUrl,
           exitCode: containerResult.exitCode,
@@ -266,7 +266,7 @@ export class RollbackManager {
       );
 
       if (containerResult.stdout) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "rollback-manager").debug(
           {
             stdout: containerResult.stdout.substring(0, 500),
           },
@@ -275,7 +275,7 @@ export class RollbackManager {
       }
 
       if (containerResult.stderr) {
-        dockerExecutorLogger().debug(
+        getLogger("backup", "rollback-manager").debug(
           {
             stderr: containerResult.stderr.substring(0, 500),
           },
@@ -284,7 +284,7 @@ export class RollbackManager {
       }
 
       if (containerResult.exitCode !== 0) {
-        servicesLogger().error(
+        getLogger("backup", "rollback-manager").error(
           {
             rollbackBackupUrl,
             exitCode: containerResult.exitCode,
@@ -298,7 +298,7 @@ export class RollbackManager {
         );
       }
 
-      servicesLogger().info(
+      getLogger("backup", "rollback-manager").info(
         {
           rollbackBackupUrl,
           executionTimeMs: Date.now() - startTime,
@@ -306,7 +306,7 @@ export class RollbackManager {
         "Rollback executed successfully",
       );
     } catch (error) {
-      servicesLogger().error(
+      getLogger("backup", "rollback-manager").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stack: error instanceof Error ? error.stack : undefined,
@@ -325,7 +325,7 @@ export class RollbackManager {
   async cleanupRollbackBackup(rollbackBackupUrl: string): Promise<void> {
     const startTime = Date.now();
     try {
-      servicesLogger().debug(
+      getLogger("backup", "rollback-manager").debug(
         {
           rollbackBackupUrl,
         },
@@ -335,7 +335,7 @@ export class RollbackManager {
       const azureConnectionString =
         await this.azureConfigService.get("connection_string");
       if (!azureConnectionString) {
-        servicesLogger().warn(
+        getLogger("backup", "rollback-manager").warn(
           {
             rollbackBackupUrl,
           },
@@ -350,7 +350,7 @@ export class RollbackManager {
 
       const { containerName, blobName } = parseBackupUrl(rollbackBackupUrl);
 
-      servicesLogger().debug(
+      getLogger("backup", "rollback-manager").debug(
         {
           rollbackBackupUrl,
           containerName,
@@ -366,7 +366,7 @@ export class RollbackManager {
       // Check if blob exists before trying to delete
       const exists = await blobClient.exists();
 
-      servicesLogger().debug(
+      getLogger("backup", "rollback-manager").debug(
         {
           rollbackBackupUrl,
           exists,
@@ -377,7 +377,7 @@ export class RollbackManager {
       if (exists) {
         await blobClient.deleteIfExists();
 
-        servicesLogger().info(
+        getLogger("backup", "rollback-manager").info(
           {
             rollbackBackupUrl,
             cleanupTimeMs: Date.now() - startTime,
@@ -385,7 +385,7 @@ export class RollbackManager {
           "Rollback backup deleted successfully",
         );
       } else {
-        servicesLogger().info(
+        getLogger("backup", "rollback-manager").info(
           {
             rollbackBackupUrl,
           },
@@ -394,7 +394,7 @@ export class RollbackManager {
       }
     } catch (error) {
       // Log but don't throw - cleanup failure shouldn't fail the restore
-      servicesLogger().warn(
+      getLogger("backup", "rollback-manager").warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",
           stack: error instanceof Error ? error.stack : undefined,

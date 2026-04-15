@@ -1,8 +1,8 @@
 import * as cron from "node-cron";
-import { servicesLogger } from "../../lib/logger-factory";
+import { getLogger } from "../../lib/logger-factory";
 import { DnsCacheService } from "./dns-cache-service";
 
-const logger = servicesLogger();
+const logger = getLogger("platform", "dns-cache-scheduler");
 
 export class DnsCacheScheduler {
   private dnsCacheService: DnsCacheService;

@@ -1,8 +1,8 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import { UserEventService } from '../user-events';
-import { appLogger } from '../../lib/logger-factory';
+import { getLogger } from '../../lib/logger-factory';
 
-const logger = appLogger();
+const logger = getLogger("stacks", "stack-user-event");
 
 type UpdatePatch = Parameters<UserEventService['updateEvent']>[1];
 type CreateRequest = Parameters<UserEventService['createEvent']>[0];

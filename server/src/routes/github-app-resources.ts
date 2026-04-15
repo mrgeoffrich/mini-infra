@@ -4,9 +4,9 @@ import express, {
   NextFunction,
   RequestHandler,
 } from "express";
-import { appLogger } from "../lib/logger-factory";
+import { getLogger } from "../lib/logger-factory";
 
-const logger = appLogger();
+const logger = getLogger("integrations", "github-app-resources");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubAppService } from "../services/github-app";
 
