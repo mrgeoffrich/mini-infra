@@ -1,4 +1,9 @@
 console.log("[STARTUP] Starting Mini Infra server...");
+// Load logging configuration before any service module is imported, so any
+// component logger constructed during transitive imports uses the configured
+// level instead of the in-code fallback.
+import { loadLoggingConfig } from "./lib/logging-config";
+loadLoggingConfig();
 console.log("[STARTUP] Importing app module...");
 import { createServer } from "http";
 import v8 from "v8";

@@ -11,8 +11,8 @@ import pinoHttp from "pino-http";
 import path from "path";
 import appConfig, { securityConfig } from "./lib/config-new";
 import { createDynamicCorsOrigin } from "./lib/public-url-service";
-import { httpLogger } from "./lib/logger-factory";
-import { requestIdMiddleware } from "./lib/request-id";
+import { getLogger } from "./lib/logger-factory";
+import { requestContextMiddleware } from "./middleware/request-context";
 import { createHelmetMiddleware } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 import { extractJwtUser } from "./lib/jwt-middleware";
@@ -144,11 +144,11 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
   const shouldLogRoutes = !options.quiet && appConfig.server.nodeEnv !== "test";
 
   app.set("trust proxy", true);
-  app.use(requestIdMiddleware as RequestHandler);
+  app.use(requestContextMiddleware as RequestHandler);
 
   app.use(
     pinoHttp({
-      logger: httpLogger(),
+      logger: getLogger("http", "access"),
       customLogLevel: (_req, res) => {
         if (res.statusCode >= 400) return "warn";
         if (res.statusCode >= 300) return "info";

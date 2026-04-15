@@ -6,9 +6,10 @@ import {
   JwtPayload,
 } from "./jwt";
 import prisma from "./prisma";
-import { appLogger } from "./logger-factory";
+import { getLogger } from "./logger-factory";
+import { setUserId } from "./logging-context";
 
-const logger = appLogger();
+const logger = getLogger("auth", "jwt-middleware");
 import { AuthErrorType, createAuthErrorResponse } from "./auth-middleware";
 
 // Extend Express Request type to include JWT user
@@ -106,6 +107,8 @@ export const extractJwtUser = async (
       mustResetPwd: user.mustResetPwd,
       createdAt: user.createdAt,
     };
+
+    setUserId(user.id);
 
     next();
   } catch (error) {
