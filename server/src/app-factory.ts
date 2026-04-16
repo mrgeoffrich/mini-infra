@@ -8,6 +8,7 @@ import express, {
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
+import expressListEndpoints from "express-list-endpoints";
 import path from "path";
 import { randomUUID } from "crypto";
 import appConfig, { securityConfig } from "./lib/config-new";
@@ -71,6 +72,8 @@ import usersRoutes from "./routes/users";
 import authSettingsRoutes from "./routes/auth-settings";
 import diagnosticsRoutes from "./routes/diagnostics";
 import onboardingRoutes from "./routes/onboarding";
+import openapiRoutes from "./routes/openapi";
+import { listRouteMeta } from "./lib/openapi-registry";
 
 type RouteDefinition = {
   id: string;
@@ -84,6 +87,39 @@ export type CreateAppOptions = {
   routeOverrides?: Record<string, Router | undefined>;
   quiet?: boolean;
 };
+
+// Path prefixes that have been migrated to describeRoute(). Expand as more routes adopt it.
+// A warning fires in development for any route under these prefixes that lacks registry metadata.
+const MIGRATED_ROUTE_PREFIXES = ["/api/diagnostics"];
+
+function warnOnRouteMetadataDrift(app: express.Application): void {
+  try {
+    const endpoints = expressListEndpoints(app);
+    const registryKeys = new Set(
+      listRouteMeta().map((m) => `${m.method.toUpperCase()} ${m.path}`),
+    );
+    const missing: string[] = [];
+    for (const endpoint of endpoints) {
+      if (!MIGRATED_ROUTE_PREFIXES.some((p) => endpoint.path.startsWith(p))) {
+        continue;
+      }
+      for (const method of endpoint.methods) {
+        const key = `${method} ${endpoint.path}`;
+        if (!registryKeys.has(key)) {
+          missing.push(key);
+        }
+      }
+    }
+    if (missing.length > 0) {
+      console.warn(
+        `⚠ describeRoute drift: ${missing.length} route(s) under migrated prefixes missing OpenAPI metadata:\n  ` +
+          missing.join("\n  "),
+      );
+    }
+  } catch (err) {
+    console.warn("Route metadata drift check failed:", err);
+  }
+}
 
 function getRouteDefinitions(): RouteDefinition[] {
   return [
@@ -135,6 +171,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "dns", path: "/api/dns", name: "dnsRoutes", getRouter: () => dnsRoutes },
     { id: "images", path: "/api/images", name: "imagesRoutes", getRouter: createImagesRouter },
     { id: "apiRoutes", path: "/api/routes", name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
+    { id: "openapi", path: "/api/openapi.json", name: "openapiRoutes", getRouter: () => openapiRoutes },
     { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
     { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
     { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
@@ -252,6 +289,10 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
       console.error("Error:", error);
       throw error;
     }
+  }
+
+  if (appConfig.server.nodeEnv === "development" && !options.quiet) {
+    warnOnRouteMetadataDrift(app);
   }
 
   if (appConfig.server.nodeEnv === "production") {
