@@ -30,6 +30,10 @@ import {
   useCloudflareConnectivity,
   useCloudflareSettings,
 } from "@/hooks/use-cloudflare-settings";
+import {
+  useAzureSettings,
+  useAzureConnectivityStatus,
+} from "@/hooks/use-azure-settings";
 import type { CreateApplicationFormData } from "@/lib/application-schemas";
 
 interface Props {
@@ -65,6 +69,23 @@ export function RoutingStep({ networkType, detectedPorts }: Props) {
     ? "Cloudflare is not configured. DNS integration requires Cloudflare to create records and manage zones."
     : !cfConnected
       ? "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision DNS records."
+      : null;
+
+  const { data: azSettings } = useAzureSettings({
+    enabled: networkType === "local",
+  });
+  const { data: azConnectivity } = useAzureConnectivityStatus({
+    enabled: networkType === "local",
+  });
+  const azConfigured = azSettings?.data?.connectionConfigured ?? false;
+  const azConnected = azConnectivity?.status === "connected";
+  const azWarning =
+    networkType === "local"
+      ? !azConfigured
+        ? "Azure Storage is not configured. Local applications use Let's Encrypt certificates, which are stored in Azure Blob Storage. Without it, TLS provisioning will fail on deploy."
+        : !azConnected
+          ? "Azure Storage is configured but not reachable. TLS certificate provisioning may fail on deploy."
+          : null
       : null;
 
   const [subdomain, setSubdomain] = useState(() => kebabCase(displayName));
@@ -104,6 +125,23 @@ export function RoutingStep({ networkType, detectedPorts }: Props) {
                 className="mt-2 inline-flex items-center gap-1 underline"
               >
                 Configure Cloudflare
+                <IconExternalLink className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {azWarning && (
+          <div className="flex items-start gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <div>
+              <p className="font-medium">Azure Storage connection issue</p>
+              <p className="mt-1 opacity-90">{azWarning}</p>
+              <Link
+                to="/connectivity-azure"
+                className="mt-2 inline-flex items-center gap-1 underline"
+              >
+                Configure Azure Storage
                 <IconExternalLink className="h-3 w-3" />
               </Link>
             </div>
