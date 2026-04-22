@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFormContext } from "react-hook-form";
+import { Link } from "react-router-dom";
+import { IconAlertTriangle, IconExternalLink } from "@tabler/icons-react";
 import {
   Card,
   CardContent,
@@ -24,6 +26,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDnsZones } from "@/hooks/use-dns";
+import {
+  useCloudflareConnectivity,
+  useCloudflareSettings,
+} from "@/hooks/use-cloudflare-settings";
 import type { CreateApplicationFormData } from "@/lib/application-schemas";
 
 interface Props {
@@ -51,6 +57,16 @@ export function RoutingStep({ networkType, detectedPorts }: Props) {
   const { data: zonesData, isLoading: zonesLoading } = useDnsZones();
   const zones = zonesData?.data?.zones ?? [];
 
+  const { data: cfSettings } = useCloudflareSettings();
+  const { data: cfConnectivity } = useCloudflareConnectivity();
+  const cfConfigured = cfSettings?.data?.isConfigured ?? false;
+  const cfConnected = cfConnectivity?.data?.status === "connected";
+  const cfWarning = !cfConfigured
+    ? "Cloudflare is not configured. DNS integration requires Cloudflare to create records and manage zones."
+    : !cfConnected
+      ? "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision DNS records."
+      : null;
+
   const [subdomain, setSubdomain] = useState(() => kebabCase(displayName));
   const [zoneName, setZoneName] = useState<string>("");
 
@@ -77,6 +93,23 @@ export function RoutingStep({ networkType, detectedPorts }: Props) {
         <CardTitle>Routing</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        {cfWarning && (
+          <div className="flex items-start gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
+            <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+            <div>
+              <p className="font-medium">Cloudflare connection issue</p>
+              <p className="mt-1 opacity-90">{cfWarning}</p>
+              <Link
+                to="/connectivity/cloudflare"
+                className="mt-2 inline-flex items-center gap-1 underline"
+              >
+                Configure Cloudflare
+                <IconExternalLink className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label>Hostname</Label>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
