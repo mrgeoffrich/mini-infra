@@ -19,7 +19,7 @@ tags:
 
 **What to check:** Go to [Connected Services → Cloudflare](/connectivity-cloudflare). Check whether the connection is validated and healthy.
 
-**Fix:** Enter a valid Cloudflare API token with `Zone:Read` and `Tunnel:Read` permissions, plus your Account ID. Click **Validate & Save**.
+**Fix:** Enter a valid Cloudflare API token with `Cloudflare Tunnel:Edit`, `Zone:Read`, and `DNS:Edit` permissions, plus your Account ID. Click **Validate & Save**.
 
 ---
 
@@ -58,6 +58,6 @@ tags:
 
 **What to check:** In the error message on the connectivity page, look for specific details about which permission is missing.
 
-**Fix:** Generate a new API token in the Cloudflare dashboard with `Zone:Read` and `Tunnel:Read` permissions. Verify your Account ID from the Cloudflare URL: `https://dash.cloudflare.com/[account-id]/home`.
+**Fix:** Generate a new API token in the Cloudflare dashboard with `Cloudflare Tunnel:Edit`, `Zone:Read`, and `DNS:Edit` permissions. Verify your Account ID from the Cloudflare URL: `https://dash.cloudflare.com/[account-id]/home`.
 
 ---
