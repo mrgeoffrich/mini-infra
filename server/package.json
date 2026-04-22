@@ -55,6 +55,7 @@
     },
     "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.2.107",
+        "@asteasolutions/zod-to-openapi": "^8.5.0",
         "@azure/identity": "^4.13.1",
         "@azure/keyvault-certificates": "^4.10.3",
         "@azure/keyvault-secrets": "^4.11.1",
