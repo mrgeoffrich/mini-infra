@@ -51,7 +51,6 @@ export const serviceNameSchema = z
 
 export const createApplicationFormSchema = z.object({
   displayName: z.string().min(1, "Application name is required").max(100),
-  description: z.string().max(500).optional(),
   serviceName: serviceNameSchema,
   serviceType: z.enum(STACK_SERVICE_TYPES),
   environmentId: z.string().min(1, "Environment is required"),
@@ -74,8 +73,7 @@ export type CreateApplicationFormData = z.infer<
 
 export const createApplicationDefaults: CreateApplicationFormData = {
   displayName: "",
-  description: "",
-  serviceName: "",
+  serviceName: "web",
   serviceType: "StatelessWeb",
   environmentId: "",
   dockerImage: "",
@@ -83,7 +81,7 @@ export const createApplicationDefaults: CreateApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
-  enableRouting: false,
+  enableRouting: true,
   routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
   enableHealthCheck: false,
