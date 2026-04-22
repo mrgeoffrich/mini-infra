@@ -55,7 +55,6 @@ import HAProxyInstancesPage from "@/app/haproxy/instances/page";
 import HAProxyOverviewPage from "@/app/haproxy/page";
 import SelfUpdateSettingsPage from "@/app/settings/self-update/page";
 import SystemDiagnosticsPage from "@/app/system-diagnostics/page";
-import { HostPage } from "@/app/host/page";
 import { MonitoringPage } from "@/app/monitoring/page";
 import { LogsPage } from "@/app/logs/page";
 import StackTemplatesPage from "@/app/stack-templates/page";
@@ -264,10 +263,6 @@ export const router = createBrowserRouter([
       {
         path: "environments/:id",
         element: <EnvironmentDetailPage />,
-      },
-      {
-        path: "host",
-        element: <HostPage />,
       },
       {
         path: "monitoring",

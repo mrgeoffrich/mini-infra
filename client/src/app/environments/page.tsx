@@ -1,4 +1,5 @@
 import { EnvironmentList } from "@/components/environments";
+import { HostTemplatesList } from "@/components/host/host-templates-list";
 import { IconServer } from "@tabler/icons-react";
 
 export function EnvironmentsPage() {
@@ -22,7 +23,16 @@ export function EnvironmentsPage() {
       <div className="px-4 lg:px-6 max-w-full">
         <div className="space-y-6">
           <EnvironmentList />
+        </div>
+      </div>
 
+      <div className="px-4 lg:px-6 max-w-full">
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold">Host Infrastructure</h2>
+            <p className="text-muted-foreground text-sm">Host-level infrastructure templates and their deployments</p>
+          </div>
+          <HostTemplatesList />
         </div>
       </div>
     </div>
