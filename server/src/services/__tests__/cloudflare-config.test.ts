@@ -20,6 +20,11 @@ const { mockCloudflare } = vi.hoisted(() => ({
         list: vi.fn(),
       },
     },
+    dns: {
+      records: {
+        list: vi.fn(),
+      },
+    },
   },
 }));
 
@@ -148,13 +153,19 @@ describe("CloudflareService", () => {
 
       // Mock successful zone list
       mockCloudflare.zones.list.mockResolvedValue({
-        result: [{ name: "example.com" }, { name: "example.org" }],
+        result: [
+          { id: "zone-1", name: "example.com" },
+          { id: "zone-2", name: "example.org" },
+        ],
       });
 
       // Mock successful tunnel list
       mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
         result: [{ name: "web-tunnel", deleted_at: null }],
       });
+
+      // Mock successful DNS records list (for DNS:Edit probe)
+      mockCloudflare.dns.records.list.mockResolvedValue({ result: [] });
 
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
@@ -227,7 +238,7 @@ describe("CloudflareService", () => {
 
       // Mock successful zone list
       mockCloudflare.zones.list.mockResolvedValue({
-        result: [{ name: "example.com" }],
+        result: [{ id: "zone-1", name: "example.com" }],
       });
 
       // Mock tunnel list failure (missing permission)
@@ -235,12 +246,38 @@ describe("CloudflareService", () => {
         new Error("Forbidden"),
       );
 
+      // DNS probe succeeds so only the tunnel scope is flagged
+      mockCloudflare.dns.records.list.mockResolvedValue({ result: [] });
+
       mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
 
       const result = await cloudflareConfigService.validate();
 
       expect(result.isValid).toBe(false);
-      expect(result.message).toContain("Tunnel:Read");
+      expect(result.message).toContain("Cloudflare Tunnel:Edit");
+      expect(result.errorCode).toBe("MISSING_PERMISSIONS");
+    });
+
+    it("should fail validation when DNS record access is denied", async () => {
+      mockPrisma.systemSettings.findUnique = vi
+        .fn()
+        .mockResolvedValueOnce({ value: "valid-api-token-123" })
+        .mockResolvedValueOnce({ value: "account-456" });
+
+      mockCloudflare.zones.list.mockResolvedValue({
+        result: [{ id: "zone-1", name: "example.com" }],
+      });
+      mockCloudflare.zeroTrust.tunnels.list.mockResolvedValue({
+        result: [{ name: "web-tunnel", deleted_at: null }],
+      });
+      mockCloudflare.dns.records.list.mockRejectedValue(new Error("Forbidden"));
+
+      mockPrisma.connectivityStatus.create = vi.fn().mockResolvedValue({});
+
+      const result = await cloudflareConfigService.validate();
+
+      expect(result.isValid).toBe(false);
+      expect(result.message).toContain("DNS:Edit");
       expect(result.errorCode).toBe("MISSING_PERMISSIONS");
     });
 
@@ -265,7 +302,7 @@ describe("CloudflareService", () => {
 
       expect(result.isValid).toBe(false);
       expect(result.message).toContain("Zone:Read");
-      expect(result.message).toContain("Tunnel:Read");
+      expect(result.message).toContain("Cloudflare Tunnel:Edit");
       expect(result.errorCode).toBe("MISSING_PERMISSIONS");
     });
 

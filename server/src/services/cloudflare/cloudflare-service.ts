@@ -309,6 +309,7 @@ export class CloudflareService extends ConfigurationService {
       const cf = new Cloudflare({ apiToken });
       const metadata: Record<string, unknown> = {};
       const missingPermissions: string[] = [];
+      let firstZoneId: string | undefined;
 
       // Zone:Read — missing scopes are captured rather than thrown so we
       // can report exactly which permissions are absent.
@@ -321,6 +322,7 @@ export class CloudflareService extends ConfigurationService {
         const zones = zonesResponse.result || [];
         metadata.zoneCount = zones.length;
         metadata.zones = zones.slice(0, 10).map((z: Zone) => z.name);
+        firstZoneId = zones[0]?.id;
       } catch (zoneError) {
         if (this.isPermissionError(zoneError)) {
           missingPermissions.push("Zone:Read");
@@ -339,7 +341,9 @@ export class CloudflareService extends ConfigurationService {
         }
       }
 
-      // Tunnel:Read
+      // Cloudflare Tunnel:Edit — listing tunnels requires at minimum Read,
+      // but the app creates managed tunnels and requires Edit. If the probe
+      // fails with a permission error, Edit is definitely absent.
       try {
         const tunnelsResponse = await this.runner.withTimeout(
           cf.zeroTrust.tunnels.list({ account_id: accountId }),
@@ -354,7 +358,7 @@ export class CloudflareService extends ConfigurationService {
           .map((t: TunnelListResponse) => t.name);
       } catch (tunnelError) {
         if (this.isPermissionError(tunnelError)) {
-          missingPermissions.push("Tunnel:Read");
+          missingPermissions.push("Cloudflare Tunnel:Edit");
           getLogger("integrations", "cloudflare-service").warn(
             {
               accountId,
@@ -363,10 +367,42 @@ export class CloudflareService extends ConfigurationService {
                   ? tunnelError.message
                   : "Unknown error",
             },
-            "Cloudflare token lacks Tunnel:Read permission",
+            "Cloudflare token lacks Cloudflare Tunnel:Edit permission",
           );
         } else {
           throw tunnelError;
+        }
+      }
+
+      // DNS:Edit — probe by listing records on the first accessible zone.
+      // Listing technically only requires Read, but DNS:Edit is a superset
+      // and the app needs Edit to create/update records for app routing.
+      // If no zones are accessible we can't probe here; the Zone:Read
+      // failure above will have been captured.
+      if (firstZoneId) {
+        try {
+          await this.runner.withTimeout(
+            cf.dns.records.list({ zone_id: firstZoneId }),
+            "dns record list",
+            CLOUDFLARE_TIMEOUT_MS,
+          );
+        } catch (dnsError) {
+          if (this.isPermissionError(dnsError)) {
+            missingPermissions.push("DNS:Edit");
+            getLogger("integrations", "cloudflare-service").warn(
+              {
+                accountId,
+                zoneId: firstZoneId,
+                error:
+                  dnsError instanceof Error
+                    ? dnsError.message
+                    : "Unknown error",
+              },
+              "Cloudflare token lacks DNS:Edit permission",
+            );
+          } else {
+            throw dnsError;
+          }
         }
       }
 

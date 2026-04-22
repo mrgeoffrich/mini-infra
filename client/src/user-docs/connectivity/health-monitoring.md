@@ -69,7 +69,7 @@ Configure Cloudflare API access for tunnel monitoring and DNS management.
 
 | Field | Description |
 |-------|-------------|
-| **API Token** | Cloudflare API token with Zone:Read and Tunnel:Read permissions |
+| **API Token** | Cloudflare API token with Cloudflare Tunnel:Edit, Zone:Read, and DNS:Edit permissions |
 | **Account ID** | Your 32-character Cloudflare Account ID |
 
 Generate an API token at `https://dash.cloudflare.com/profile/api-tokens`. Find your Account ID in the URL when logged into the Cloudflare dashboard.

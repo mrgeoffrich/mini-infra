@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CloudflareSettingResponse,
   CreateCloudflareSettingRequest,
-  ConnectivityStatusResponse,
   CloudflareTunnelListResponse,
   CloudflareTunnelConfigResponse,
   CloudflareAddHostnameRequest,
@@ -12,6 +11,18 @@ import type {
 } from "@mini-infra/types";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+
+// The /api/connectivity/cloudflare endpoint returns the latest status as a
+// flat object (not the wrapped `{ success, data }` shape used elsewhere).
+export interface CloudflareConnectivityStatus {
+  id: string;
+  service: string;
+  status: "connected" | "failed" | "timeout" | "unreachable";
+  message: string | null;
+  metadata: Record<string, unknown> | null;
+  checkedAt: string;
+  responseTime: number | null;
+}
 
 // Hook for retrieving current Cloudflare settings
 export function useCloudflareSettings() {
@@ -125,7 +136,7 @@ export function useCloudflareConnectivity() {
     },
   );
 
-  return useQuery<ConnectivityStatusResponse>({
+  return useQuery<CloudflareConnectivityStatus>({
     queryKey: ["cloudflare-connectivity"],
     queryFn: async () => {
       const response = await fetch("/api/connectivity/cloudflare", {
