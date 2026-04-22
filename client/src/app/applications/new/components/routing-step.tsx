@@ -61,26 +61,38 @@ export function RoutingStep({ networkType, detectedPorts }: Props) {
   const { data: zonesData, isLoading: zonesLoading } = useDnsZones();
   const zones = zonesData?.data?.zones ?? [];
 
-  const { data: cfSettings } = useCloudflareSettings();
-  const { data: cfConnectivity } = useCloudflareConnectivity();
+  const { data: cfSettings, isLoading: cfSettingsLoading } =
+    useCloudflareSettings();
+  const { data: cfConnectivity, isLoading: cfConnLoading } =
+    useCloudflareConnectivity();
   const cfConfigured = cfSettings?.data?.isConfigured ?? false;
-  const cfConnected = cfConnectivity?.data?.status === "connected";
-  const cfWarning = !cfConfigured
-    ? "Cloudflare is not configured. DNS integration requires Cloudflare to create records and manage zones."
-    : !cfConnected
-      ? "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision DNS records."
-      : null;
+  const cfConnected = cfConnectivity?.status === "connected";
+  const cfLoading = cfSettingsLoading || cfConnLoading;
+  const cfNeedsTunnel = networkType === "internet";
+  const cfWarning = cfLoading
+    ? null
+    : !cfConfigured
+      ? cfNeedsTunnel
+        ? "Cloudflare is not configured. Internet applications require Cloudflare to provision tunnel ingress and DNS records."
+        : "Cloudflare is not configured. DNS integration requires Cloudflare to create records and manage zones."
+      : !cfConnected
+        ? cfNeedsTunnel
+          ? "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision tunnel ingress or DNS records."
+          : "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision DNS records."
+        : null;
 
-  const { data: azSettings } = useAzureSettings({
+  const { data: azSettings, isLoading: azSettingsLoading } = useAzureSettings({
     enabled: networkType === "local",
   });
-  const { data: azConnectivity } = useAzureConnectivityStatus({
-    enabled: networkType === "local",
-  });
+  const { data: azConnectivity, isLoading: azConnLoading } =
+    useAzureConnectivityStatus({
+      enabled: networkType === "local",
+    });
   const azConfigured = azSettings?.data?.connectionConfigured ?? false;
   const azConnected = azConnectivity?.status === "connected";
+  const azLoading = azSettingsLoading || azConnLoading;
   const azWarning =
-    networkType === "local"
+    networkType === "local" && !azLoading
       ? !azConfigured
         ? "Azure Storage is not configured. Local applications use Let's Encrypt certificates, which are stored in Azure Blob Storage. Without it, TLS provisioning will fail on deploy."
         : !azConnected
