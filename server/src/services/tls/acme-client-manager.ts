@@ -187,12 +187,18 @@ export class AcmeClientManager {
 
       this.logger.info({ domains }, "CSR created, initiating ACME challenge");
 
-      // Request certificate with DNS-01 challenge
+      // Request certificate with DNS-01 challenge.
+      // skipChallengeVerification disables the acme library's local TXT self-check:
+      // our recursive resolver seeing the record has no bearing on whether Let's
+      // Encrypt's own geographically distributed resolvers can see it, and the
+      // self-check often times out on fresh records even when LE validation would
+      // have succeeded.
       const certificate = await this.acmeClient!.auto({
         csr: certCsr,
         domains,
         termsOfServiceAgreed: true,
         challengePriority: ["dns-01"],
+        skipChallengeVerification: true,
 
         challengeCreateFn: async (authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string) => {
           this.logger.info(

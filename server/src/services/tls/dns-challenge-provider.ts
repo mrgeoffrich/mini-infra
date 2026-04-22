@@ -2,17 +2,19 @@
  * DNS-01 Challenge Provider
  *
  * This service implements DNS-01 challenge for ACME protocol via Cloudflare.
- * It creates and removes TXT records for domain validation and waits for DNS propagation.
+ * It creates and removes TXT records for domain validation.
  */
 
 import { Logger } from "pino";
 import NodeCache from "node-cache";
-import dns from "dns";
-import { promisify } from "util";
 import { getLogger } from "../../lib/logger-factory";
 import { CloudflareService } from "../cloudflare";
 
-const resolveTxt = promisify(dns.resolveTxt);
+// Small delay between TXT creation and telling Let's Encrypt to validate.
+// LE does its own authoritative lookups from multiple resolvers and retries
+// internally, so we don't need to poll — we just give Cloudflare a moment to
+// commit the record before the first LE query hits.
+const POST_CREATE_DELAY_MS = 5000;
 
 /**
  * Service for handling DNS-01 challenges via Cloudflare
@@ -70,9 +72,7 @@ export class DnsChallenge01Provider {
         "DNS-01 challenge TXT record created",
       );
 
-      // Wait for DNS propagation
-      this.logger.info({ domain, recordName }, "Waiting for DNS propagation...");
-      await this.waitForPropagation(recordName, keyAuthorization, 60000);
+      await new Promise((resolve) => setTimeout(resolve, POST_CREATE_DELAY_MS));
 
       this.logger.info({ domain, recordName }, "DNS challenge ready for validation");
     } catch (error) {
@@ -134,72 +134,6 @@ export class DnsChallenge01Provider {
       );
       // Don't throw - cleanup failures shouldn't fail the certificate issuance
     }
-  }
-
-  /**
-   * Wait for DNS propagation
-   *
-   * Polls DNS until the expected TXT record value is found or timeout occurs.
-   *
-   * @param recordName - Full DNS record name (e.g., "_acme-challenge.example.com")
-   * @param expectedValue - Expected TXT record value
-   * @param maxWaitMs - Maximum time to wait in milliseconds (default: 60000)
-   * @returns true if propagation confirmed, false if timeout
-   * @private
-   */
-  private async waitForPropagation(
-    recordName: string,
-    expectedValue: string,
-    maxWaitMs: number = 60000,
-  ): Promise<boolean> {
-    const startTime = Date.now();
-    const interval = 5000; // Check every 5 seconds
-
-    while (Date.now() - startTime < maxWaitMs) {
-      try {
-        const txtRecords = await resolveTxt(recordName);
-        const flatRecords = txtRecords.flat();
-
-        this.logger.debug(
-          { recordName, txtRecords: flatRecords, expectedValue },
-          "DNS lookup result",
-        );
-
-        if (flatRecords.includes(expectedValue)) {
-          const propagationTime = Date.now() - startTime;
-          this.logger.info(
-            { recordName, propagationTimeMs: propagationTime },
-            "DNS propagation confirmed",
-          );
-          return true;
-        }
-
-        this.logger.debug(
-          { recordName, txtRecords: flatRecords },
-          "DNS not yet propagated, waiting...",
-        );
-      } catch (error) {
-        // DNS lookup failures are expected during propagation
-        this.logger.debug(
-          {
-            recordName,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          "DNS lookup failed (expected during propagation)",
-        );
-      }
-
-      // Wait before next check
-      await new Promise((resolve) => setTimeout(resolve, interval));
-    }
-
-    const totalTime = Date.now() - startTime;
-    this.logger.error(
-      { recordName, maxWaitMs, totalTimeMs: totalTime },
-      "DNS propagation timeout",
-    );
-
-    return false;
   }
 
   /**
