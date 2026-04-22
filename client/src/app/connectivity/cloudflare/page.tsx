@@ -302,8 +302,8 @@ export default function CloudflareSettingsPage() {
                               </div>
                             </FormControl>
                             <FormDescription>
-                              Your Cloudflare API token with Zone:Read,
-                              Tunnel:Read, and Tunnel:Edit permissions.
+                              Your Cloudflare API token with Cloudflare
+                              Tunnel:Edit, Zone:Read, and DNS:Edit permissions.
                               Create one at{" "}
                               <a
                                 href="https://dash.cloudflare.com/profile/api-tokens"
