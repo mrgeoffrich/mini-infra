@@ -328,6 +328,39 @@ async function updateStack(
   return await response.json();
 }
 
+async function updateStackService(
+  stackId: string,
+  serviceName: string,
+  patch: { dockerTag?: string; dockerImage?: string },
+  correlationId: string,
+): Promise<StackResponse> {
+  const response = await fetch(
+    `/api/stacks/${stackId}/services/${encodeURIComponent(serviceName)}`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Correlation-ID": correlationId,
+      },
+      body: JSON.stringify(patch),
+    },
+  );
+
+  if (!response.ok) {
+    let errorMessage = `Failed to update service: ${response.statusText}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorMessage;
+    } catch {
+      // Use default error message
+    }
+    throw new Error(errorMessage);
+  }
+
+  return await response.json();
+}
+
 async function fetchUserStacks(
   correlationId: string,
 ): Promise<StackListResponse> {
@@ -555,6 +588,41 @@ export function useRedeployApplication() {
   return useMutation({
     mutationFn: async (stackId: string) => {
       await updateStack(stackId, correlationId);
+    },
+    onSuccess: () => {
+      toast.success("Application update started");
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to update application: ${error.message}`);
+    },
+  });
+}
+
+export function useDeployApplicationUpdate() {
+  const queryClient = useQueryClient();
+  const correlationId = generateCorrelationId();
+
+  return useMutation({
+    mutationFn: async (args: {
+      stackId: string;
+      serviceName: string;
+      newTag: string;
+      currentTag: string;
+    }) => {
+      if (args.newTag !== args.currentTag) {
+        await updateStackService(
+          args.stackId,
+          args.serviceName,
+          { dockerTag: args.newTag },
+          correlationId,
+        );
+        await applyStack(args.stackId, correlationId);
+      } else {
+        await updateStack(args.stackId, correlationId);
+      }
     },
     onSuccess: () => {
       toast.success("Application update started");

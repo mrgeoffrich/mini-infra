@@ -3,20 +3,10 @@ import { useNavigate } from "react-router-dom";
 import {
   IconApps,
   IconPlus,
-  IconPlayerPlay,
-  IconPlayerStop,
-  IconRefresh,
-  IconDots,
-  IconPencil,
-  IconTrash,
   IconAlertCircle,
   IconLoader2,
   IconPackage,
-  IconExternalLink,
   IconPlugConnected,
-  IconPlugConnectedX,
-  IconWorld,
-  IconDatabase,
 } from "@tabler/icons-react";
 import {
   useApplications,
@@ -32,19 +22,9 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,7 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { UpdateApplicationDialog } from "./update-application-dialog";
+import { ApplicationCard } from "./application-card";
 import type { StackTemplateInfo, StackInfo, StackServiceType } from "@mini-infra/types";
 
 function getAppServiceType(
@@ -91,7 +71,6 @@ export default function ApplicationsPage() {
   const { data: envData } = useEnvironments();
 
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
-  const [updateTarget, setUpdateTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
@@ -288,178 +267,33 @@ export default function ApplicationsPage() {
               const appStacks = stacksByTemplateId.get(app.id);
               const adopted = isAdoptedWeb(app, appStacks);
               const serviceType = getAppServiceType(app, appStacks);
-              const hasStacks = !!appStacks && appStacks.length > 0;
               const isBusy = stoppingId === app.id
-                || appStacks?.some((s) => s.status === "pending");
+                || !!appStacks?.some((s) => s.status === "pending");
               return (
-                <Card
+                <ApplicationCard
                   key={app.id}
-                  className={`group transition-shadow ${isBusy ? "opacity-60 pointer-events-none" : "hover:shadow-md"}`}
-                >
-                  <CardHeader className="pb-2">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base truncate flex items-center gap-1.5">
-                          {serviceType === "AdoptedWeb" && (
-                            <IconPlugConnected className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          {serviceType === "StatelessWeb" && (
-                            <IconWorld className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          {serviceType === "Stateful" && (
-                            <IconDatabase className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          {app.displayName}
-                        </CardTitle>
-                        {(() => {
-                          const url = getAppUrl(app);
-                          if (url) {
-                            return (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <span className="truncate">{url.replace("https://", "")}</span>
-                                <IconExternalLink className="h-3 w-3 shrink-0" />
-                              </a>
-                            );
-                          }
-                          return null;
-                        })()}
-                        {app.description && (
-                          <CardDescription className="mt-1 line-clamp-2">
-                            {app.description}
-                          </CardDescription>
-                        )}
-                      </div>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 shrink-0"
-                          >
-                            <IconDots className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => navigate(`/applications/${app.id}`)}
-                          >
-                            <IconPencil className="h-4 w-4 mr-2" />
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => setDeleteTarget(app)}
-                          >
-                            <IconTrash className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="pt-0">
-                    <div className="flex items-center gap-2 mb-3 flex-wrap">
-                      {app.isArchived && (
-                        <Badge variant="destructive">Archived</Badge>
-                      )}
-                      {(() => {
-                        if (!appStacks || appStacks.length === 0) return null;
-                        const displayStack = appStacks.find((s) => s.status === "synced")
-                          ?? appStacks.find((s) => s.status === "pending")
-                          ?? appStacks[0];
-                        return (
-                          <Badge
-                            variant={
-                              displayStack.status === "synced"
-                                ? "default"
-                                : "outline"
-                            }
-                          >
-                            {displayStack.status === "synced"
-                              ? (adopted ? "Connected" : "Running")
-                              : displayStack.status ?? "Deployed"}
-                          </Badge>
-                        );
-                      })()}
-                      {app.environmentId && environmentNameById.get(app.environmentId) && (
-                        <Badge variant="outline" className="text-xs">
-                          {environmentNameById.get(app.environmentId)}
-                        </Badge>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2">
-                      {!hasStacks && app.environmentId && (
-                        <Button
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleDeploy(app)}
-                        >
-                          {adopted ? (
-                            <IconPlugConnected className="h-4 w-4 mr-1" />
-                          ) : (
-                            <IconPlayerPlay className="h-4 w-4 mr-1" />
-                          )}
-                          {adopted ? "Connect" : "Deploy"}
-                        </Button>
-                      )}
-                      {hasStacks && (
-                        <>
-                          {!adopted && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => setUpdateTarget(app)}
-                            >
-                              <IconRefresh className="h-4 w-4 mr-1" />
-                              Update
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="flex-1"
-                            disabled={stoppingId === app.id}
-                            onClick={() => handleStop(app)}
-                          >
-                            {stoppingId === app.id ? (
-                              <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
-                            ) : adopted ? (
-                              <IconPlugConnectedX className="h-4 w-4 mr-1" />
-                            ) : (
-                              <IconPlayerStop className="h-4 w-4 mr-1" />
-                            )}
-                            {adopted ? "Disconnect" : "Stop"}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                  app={app}
+                  appStacks={appStacks}
+                  environmentName={
+                    app.environmentId
+                      ? environmentNameById.get(app.environmentId)
+                      : undefined
+                  }
+                  appUrl={getAppUrl(app)}
+                  adopted={adopted}
+                  serviceType={serviceType}
+                  isBusy={isBusy}
+                  isStopping={stoppingId === app.id}
+                  onDeploy={handleDeploy}
+                  onStop={handleStop}
+                  onDelete={setDeleteTarget}
+                  onEdit={(a) => navigate(`/applications/${a.id}`)}
+                />
               );
             })}
           </div>
         )}
       </div>
-
-      {/* Update application dialog */}
-      <UpdateApplicationDialog
-        open={!!updateTarget}
-        onOpenChange={(open) => {
-          if (!open) setUpdateTarget(null);
-        }}
-        application={updateTarget}
-        stack={updateTarget ? (stacksByTemplateId.get(updateTarget.id)?.[0] ?? null) : null}
-      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog
