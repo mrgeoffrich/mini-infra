@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mini-infra.worktree-cleanup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>REPO_ROOT/deployment/development/worktree_cleanup.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>REPO_ROOT</string>
+
+    <!-- Run once an hour -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>StandardOutPath</key>
+    <string>MINI_INFRA_HOME/worktree-cleanup.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>MINI_INFRA_HOME/worktree-cleanup.log</string>
+
+    <!-- Only run when the user is logged in -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
