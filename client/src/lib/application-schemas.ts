@@ -47,25 +47,44 @@ export const serviceNameSchema = z
     "Must be lowercase, alphanumeric with hyphens, no leading/trailing hyphens",
   );
 
-// ---- Create form schema (includes deploy + health check options) ----
+// ---- Shared config fields (used by both create and edit forms) ----
 
-export const createApplicationFormSchema = z.object({
-  displayName: z.string().min(1, "Application name is required").max(100),
-  serviceName: serviceNameSchema,
-  serviceType: z.enum(STACK_SERVICE_TYPES),
-  environmentId: z.string().min(1, "Environment is required"),
-  dockerImage: z.string().min(1, "Docker image is required"),
-  dockerTag: z.string().min(1, "Tag is required"),
+export const applicationConfigBaseSchema = z.object({
   ports: z.array(portMappingSchema),
   envVars: z.array(envVarSchema),
   volumeMounts: z.array(volumeMountSchema),
-  enableRouting: z.boolean(),
-  routing: routingSchema.optional(),
-  restartPolicy: z.enum(RESTART_POLICIES),
   enableHealthCheck: z.boolean(),
   healthCheck: healthCheckSchema.optional(),
-  deployImmediately: z.boolean(),
+  restartPolicy: z.enum(RESTART_POLICIES),
 });
+
+export type ApplicationConfigData = z.infer<typeof applicationConfigBaseSchema>;
+
+// ---- Shared routing fields ----
+
+export const applicationRoutingBaseSchema = z.object({
+  enableRouting: z.boolean(),
+  routing: routingSchema.optional(),
+});
+
+export type ApplicationRoutingData = z.infer<
+  typeof applicationRoutingBaseSchema
+>;
+
+// ---- Create form schema (includes deploy + health check options) ----
+
+export const createApplicationFormSchema = z
+  .object({
+    displayName: z.string().min(1, "Application name is required").max(100),
+    serviceName: serviceNameSchema,
+    serviceType: z.enum(STACK_SERVICE_TYPES),
+    environmentId: z.string().min(1, "Environment is required"),
+    dockerImage: z.string().min(1, "Docker image is required"),
+    dockerTag: z.string().min(1, "Tag is required"),
+    deployImmediately: z.boolean(),
+  })
+  .merge(applicationConfigBaseSchema)
+  .merge(applicationRoutingBaseSchema);
 
 export type CreateApplicationFormData = z.infer<
   typeof createApplicationFormSchema
@@ -95,23 +114,41 @@ export const createApplicationDefaults: CreateApplicationFormData = {
   deployImmediately: true,
 };
 
-// ---- Edit form schema (no deploy option, adds SSL/tunnel) ----
+// ---- Edit form schema (no deploy option, adds description + SSL/tunnel) ----
 
-export const editApplicationFormSchema = z.object({
-  displayName: z.string().min(1, "Application name is required").max(100),
-  description: z.string().max(500).optional(),
-  serviceName: serviceNameSchema,
-  serviceType: z.enum(STACK_SERVICE_TYPES),
-  dockerImage: z.string().min(1, "Docker image is required"),
-  dockerTag: z.string().min(1, "Tag is required"),
-  ports: z.array(portMappingSchema),
-  envVars: z.array(envVarSchema),
-  volumeMounts: z.array(volumeMountSchema),
-  enableRouting: z.boolean(),
-  routing: routingSchema.optional(),
-  restartPolicy: z.enum(RESTART_POLICIES),
-});
+export const editApplicationFormSchema = z
+  .object({
+    displayName: z.string().min(1, "Application name is required").max(100),
+    description: z.string().max(500).optional(),
+    serviceName: serviceNameSchema,
+    serviceType: z.enum(STACK_SERVICE_TYPES),
+    dockerImage: z.string().min(1, "Docker image is required"),
+    dockerTag: z.string().min(1, "Tag is required"),
+  })
+  .merge(applicationConfigBaseSchema)
+  .merge(applicationRoutingBaseSchema);
 
-export type EditApplicationFormData = z.infer<
-  typeof editApplicationFormSchema
->;
+export type EditApplicationFormData = z.infer<typeof editApplicationFormSchema>;
+
+export const editApplicationDefaults: EditApplicationFormData = {
+  displayName: "",
+  description: "",
+  serviceName: "",
+  serviceType: "Stateful",
+  dockerImage: "",
+  dockerTag: "latest",
+  ports: [],
+  envVars: [],
+  volumeMounts: [],
+  enableRouting: false,
+  routing: undefined,
+  restartPolicy: "unless-stopped",
+  enableHealthCheck: false,
+  healthCheck: {
+    test: "curl -f http://localhost/ || exit 1",
+    interval: 30,
+    timeout: 10,
+    retries: 3,
+    startPeriod: 15,
+  },
+};
