@@ -99,9 +99,9 @@ export async function buildStateMachineContext(
     certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
     healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
     healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
-      ? Math.round(serviceDef.containerConfig.healthcheck.interval / 1_000_000)
+      ? Math.round(Number(serviceDef.containerConfig.healthcheck.interval) / 1_000_000)
       : 2000,
-    healthCheckRetries: serviceDef.containerConfig.healthcheck?.retries ?? 2,
+    healthCheckRetries: Number(serviceDef.containerConfig.healthcheck?.retries ?? 2),
     containerPorts: serviceDef.containerConfig.ports ?? [],
     containerVolumes: [],
     containerEnvironment: envRecord,
@@ -115,7 +115,7 @@ export async function buildStateMachineContext(
       ...(serviceDef.containerConfig.labels ?? {}),
     },
     containerNetworks,
-    containerPort: routing.listeningPort,
+    containerPort: Number(routing.listeningPort),
     containerName,
   };
 }

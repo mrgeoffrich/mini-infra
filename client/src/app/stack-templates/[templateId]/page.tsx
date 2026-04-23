@@ -27,7 +27,11 @@ import { TemplateMetadataCard } from "@/components/stack-templates/template-meta
 import { TemplateServicesSection } from "@/components/stack-templates/template-services-section";
 import { TemplateParametersSection } from "@/components/stack-templates/template-parameters-section";
 import { TemplateNetworksVolumes } from "@/components/stack-templates/template-networks-volumes";
+import { TemplateConfigFilesSection } from "@/components/stack-templates/config-files/template-config-files-section";
+import { TemplateResourceIOSection } from "@/components/stack-templates/template-resource-io-section";
 import { VersionSidebar } from "@/components/stack-templates/version-sidebar";
+import { CodeView } from "@/components/stack-templates/code-view/code-view";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import type {
   StackServiceDefinition,
@@ -36,6 +40,9 @@ import type {
   StackNetwork,
   StackVolume,
   DraftVersionInput,
+  StackResourceInput,
+  StackResourceOutput,
+  StackTemplateConfigFileInput,
 } from "@mini-infra/types";
 
 export default function StackTemplateDetailPage() {
@@ -46,7 +53,9 @@ export default function StackTemplateDetailPage() {
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [confirmPublish, setConfirmPublish] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [confirmReplaceDraft, setConfirmReplaceDraft] = useState(false);
   const [publishNotes, setPublishNotes] = useState("");
+  const [viewMode, setViewMode] = useState<"graphical" | "code">("graphical");
 
   const saveDraftMutation = useSaveDraft();
   const publishDraftMutation = usePublishDraft();
@@ -60,15 +69,24 @@ export default function StackTemplateDetailPage() {
     : draftVersion ?? template?.currentVersion ?? undefined;
 
   const isViewingDraft = !selectedVersionId && !!draftVersion;
+  const isViewingHistorical =
+    !!selectedVersionId &&
+    !!displayVersion &&
+    displayVersion.status !== "draft";
   const readOnly = !isViewingDraft;
 
-  // Build draft input from displayVersion with optional overrides
+  // Build draft input from displayVersion with optional overrides. Preserves
+  // every optional field so saving one section (e.g. services) doesn't wipe
+  // others (config files, resource I/O, network type defaults, notes).
   const buildDraftInput = useCallback(
     (overrides: Partial<DraftVersionInput> = {}): DraftVersionInput => {
       const v = displayVersion;
       return {
         parameters: v?.parameters ?? [],
         defaultParameterValues: v?.defaultParameterValues ?? {},
+        networkTypeDefaults: v?.networkTypeDefaults ?? {},
+        resourceOutputs: v?.resourceOutputs ?? [],
+        resourceInputs: v?.resourceInputs ?? [],
         networks: v?.networks ?? [],
         volumes: v?.volumes ?? [],
         services:
@@ -82,7 +100,22 @@ export default function StackTemplateDetailPage() {
             dependsOn: s.dependsOn,
             order: s.order,
             routing: s.routing ?? undefined,
+            adoptedContainer: s.adoptedContainer ?? undefined,
           })) ?? [],
+        configFiles:
+          v?.configFiles?.map((cf) => ({
+            serviceName: cf.serviceName,
+            fileName: cf.fileName,
+            volumeName: cf.volumeName,
+            mountPath: cf.mountPath,
+            content: cf.content,
+            permissions: cf.permissions ?? undefined,
+            owner: cf.owner ?? undefined,
+          })) ?? [],
+        // Draft notes round-trip through the code view; carry them through
+        // graphical saves too so editing one section doesn't clobber notes.
+        // Omit entirely when undefined so we don't send `notes: null`.
+        ...(v?.notes != null ? { notes: v.notes } : {}),
         ...overrides,
       };
     },
@@ -113,8 +146,32 @@ export default function StackTemplateDetailPage() {
     (
       parameters: StackParameterDefinition[],
       defaultParameterValues: Record<string, StackParameterValue>,
+      networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>,
     ) => {
-      handleSaveDraft(buildDraftInput({ parameters, defaultParameterValues }));
+      handleSaveDraft(
+        buildDraftInput({
+          parameters,
+          defaultParameterValues,
+          ...(networkTypeDefaults !== undefined ? { networkTypeDefaults } : {}),
+        }),
+      );
+    },
+    [handleSaveDraft, buildDraftInput],
+  );
+
+  const handleConfigFilesChange = useCallback(
+    (configFiles: StackTemplateConfigFileInput[]) => {
+      handleSaveDraft(buildDraftInput({ configFiles }));
+    },
+    [handleSaveDraft, buildDraftInput],
+  );
+
+  const handleResourceIOChange = useCallback(
+    (
+      resourceInputs: StackResourceInput[],
+      resourceOutputs: StackResourceOutput[],
+    ) => {
+      handleSaveDraft(buildDraftInput({ resourceInputs, resourceOutputs }));
     },
     [handleSaveDraft, buildDraftInput],
   );
@@ -164,6 +221,26 @@ export default function StackTemplateDetailPage() {
     await handleSaveDraft(buildDraftInput());
     toast.success("Draft created");
   };
+
+  // "Create Draft from this version" — copies the currently displayed
+  // historical version into a new draft. If a draft already exists, replacing
+  // it needs explicit confirmation.
+  const handleCreateDraftFromVersion = async () => {
+    await handleSaveDraft(buildDraftInput());
+    setSelectedVersionId(null);
+    setConfirmReplaceDraft(false);
+    toast.success(
+      `Draft created from v${displayVersion?.version ?? ""}`.trim(),
+    );
+  };
+
+  function onCreateDraftFromVersionClick() {
+    if (draftVersion) {
+      setConfirmReplaceDraft(true);
+    } else {
+      void handleCreateDraftFromVersion();
+    }
+  }
 
   // Loading state
   if (isLoading) {
@@ -234,22 +311,70 @@ export default function StackTemplateDetailPage() {
           </Button>
           <span className="font-semibold text-sm truncate">{template.displayName}</span>
           <div className="flex items-center gap-2 shrink-0">
-            {template.currentVersion && (
+            {isViewingHistorical && displayVersion ? (
+              <Badge className="bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200">
+                Viewing v{displayVersion.version}
+              </Badge>
+            ) : isViewingDraft ? (
+              <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
+                Editing Draft
+              </Badge>
+            ) : template.currentVersion ? (
               <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
                 Published v{template.currentVersion.version}
               </Badge>
-            )}
-            {draftVersion && (
-              <Badge className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
-                Draft
+            ) : null}
+            {/* Secondary badge: show draft indicator while viewing published/historical. */}
+            {draftVersion && !isViewingDraft && (
+              <Badge
+                variant="outline"
+                className="text-orange-700 border-orange-300 dark:text-orange-300 dark:border-orange-700"
+              >
+                Draft exists
               </Badge>
             )}
           </div>
         </div>
 
-        {/* Right: action buttons */}
+        {/* Right: view toggle + action buttons */}
         <div className="flex items-center gap-2 shrink-0">
-          {draftVersion ? (
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={viewMode}
+            onValueChange={(v) => v && setViewMode(v as "graphical" | "code")}
+            variant="outline"
+          >
+            <ToggleGroupItem value="graphical" aria-label="Graphical">
+              Graphical
+            </ToggleGroupItem>
+            <ToggleGroupItem value="code" aria-label="Code">
+              Code
+            </ToggleGroupItem>
+          </ToggleGroup>
+          {isViewingHistorical && displayVersion ? (
+            <>
+              {draftVersion && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedVersionId(null)}
+                >
+                  Back to Draft
+                </Button>
+              )}
+              <Button
+                size="sm"
+                onClick={onCreateDraftFromVersionClick}
+                disabled={saveDraftMutation.isPending}
+              >
+                {saveDraftMutation.isPending && (
+                  <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                )}
+                Create Draft from v{displayVersion.version}
+              </Button>
+            </>
+          ) : draftVersion ? (
             <>
               <Button
                 variant="outline"
@@ -291,42 +416,88 @@ export default function StackTemplateDetailPage() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Editor */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6">
-          <TemplateMetadataCard template={template} readOnly={readOnly} />
+        <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
+          {viewMode === "graphical" ? (
+            <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6">
+              {isViewingHistorical && displayVersion && (
+                <Alert className="bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800">
+                  <AlertDescription>
+                    Viewing <span className="font-mono">v{displayVersion.version}</span>{" "}
+                    ({displayVersion.status}) — read-only. Use{" "}
+                    <span className="font-medium">
+                      Create Draft from v{displayVersion.version}
+                    </span>{" "}
+                    to edit or roll back.
+                  </AlertDescription>
+                </Alert>
+              )}
+              <TemplateMetadataCard template={template} readOnly={readOnly} />
 
-          {displayVersion ? (
-            <>
-              <TemplateServicesSection
-                services={displayVersion.services ?? []}
-                allServiceNames={(displayVersion.services ?? []).map((s) => s.serviceName)}
-                readOnly={readOnly}
-                onServicesChange={handleServicesChange}
-              />
-              <TemplateParametersSection
-                parameters={displayVersion.parameters ?? []}
-                defaultParameterValues={displayVersion.defaultParameterValues ?? {}}
-                readOnly={readOnly}
-                onParametersChange={handleParametersChange}
-              />
-              <TemplateNetworksVolumes
-                networks={displayVersion.networks ?? []}
-                volumes={displayVersion.volumes ?? []}
-                readOnly={readOnly}
-                onNetworksChange={handleNetworksChange}
-                onVolumesChange={handleVolumesChange}
-              />
-            </>
+              {displayVersion ? (
+                <>
+                  <TemplateServicesSection
+                    services={displayVersion.services ?? []}
+                    allServiceNames={(displayVersion.services ?? []).map((s) => s.serviceName)}
+                    readOnly={readOnly}
+                    onServicesChange={handleServicesChange}
+                  />
+                  <TemplateParametersSection
+                    parameters={displayVersion.parameters ?? []}
+                    defaultParameterValues={displayVersion.defaultParameterValues ?? {}}
+                    networkTypeDefaults={displayVersion.networkTypeDefaults}
+                    templateNetworkType={template.networkType}
+                    readOnly={readOnly}
+                    onParametersChange={handleParametersChange}
+                  />
+                  <TemplateNetworksVolumes
+                    networks={displayVersion.networks ?? []}
+                    volumes={displayVersion.volumes ?? []}
+                    readOnly={readOnly}
+                    onNetworksChange={handleNetworksChange}
+                    onVolumesChange={handleVolumesChange}
+                  />
+                  <TemplateConfigFilesSection
+                    configFiles={displayVersion.configFiles ?? []}
+                    serviceNames={(displayVersion.services ?? []).map((s) => s.serviceName)}
+                    volumeNames={(displayVersion.volumes ?? []).map((v) => v.name)}
+                    readOnly={readOnly}
+                    onConfigFilesChange={handleConfigFilesChange}
+                  />
+                  <TemplateResourceIOSection
+                    resourceInputs={displayVersion.resourceInputs ?? []}
+                    resourceOutputs={displayVersion.resourceOutputs ?? []}
+                    readOnly={readOnly}
+                    onChange={handleResourceIOChange}
+                  />
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
+                  <p className="text-sm">
+                    No version data available. Create a draft to start editing.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
-              <p className="text-sm">
-                No version data available. Create a draft to start editing.
-              </p>
+            <div className="flex-1 min-h-0 p-4 lg:p-6">
+              {displayVersion ? (
+                <CodeView
+                  version={displayVersion}
+                  readOnly={readOnly}
+                  saving={saveDraftMutation.isPending}
+                  onSave={handleSaveDraft}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  No version data available. Create a draft to start editing.
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Version Sidebar */}
-        <div className="w-[280px] border-l bg-muted/30 hidden lg:block">
+        <div className="w-[280px] border-l bg-muted/30 hidden lg:block shrink-0">
           <VersionSidebar
             template={template}
             versions={allVersions}
@@ -390,6 +561,32 @@ export default function StackTemplateDetailPage() {
                 <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
               )}
               Discard Draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Replace-Draft Confirm (shown when creating draft from a historical
+          version while a draft already exists). */}
+      <AlertDialog open={confirmReplaceDraft} onOpenChange={setConfirmReplaceDraft}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace existing draft?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You already have a draft in progress. Creating a new draft from
+              v{displayVersion?.version} will overwrite it. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCreateDraftFromVersion}
+              disabled={saveDraftMutation.isPending}
+            >
+              {saveDraftMutation.isPending && (
+                <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+              )}
+              Replace Draft
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

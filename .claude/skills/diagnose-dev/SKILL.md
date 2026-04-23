@@ -20,7 +20,7 @@ You're debugging a running instance of Mini Infra — a Docker host management w
 - **Docker Compose file**: `deployment/development/docker-compose.yaml`
 - **Source code**: available in the current working directory
 
-Ask the user for an API key as this will change often.
+Read the API key from `environment-details.xml` at the project root (`//admin/apiKey`). If the file is absent or the element is empty, ask the user for the key.
 
 ## Diagnosis Workflow
 
@@ -133,8 +133,9 @@ Use curl with the API key to query endpoints:
 # Health check (no auth needed)
 curl -s "$MINI_INFRA_URL/health"
 
-# Authenticated requests — add the API key header
-curl -s -H "x-api-key: mk_49181f65c1b91ec453684007f69eaceb7633c5cad706c7c901a2c9f5322c72af" "$MINI_INFRA_URL/api/containers"
+# Authenticated requests — read the API key from environment-details.xml
+API_KEY=$(xmllint --xpath 'string(//admin/apiKey)' environment-details.xml)
+curl -s -H "x-api-key: $API_KEY" "$MINI_INFRA_URL/api/containers"
 ```
 
 #### Checking container health

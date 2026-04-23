@@ -48,7 +48,7 @@ export async function detectConflicts(
       warnings.push({
         type: 'port-conflict',
         serviceName,
-        hostPort: port.hostPort,
+        hostPort: Number(port.hostPort),
         protocol: port.protocol,
         conflictingContainerName: containerName,
         conflictingStackName: conflictStackName,

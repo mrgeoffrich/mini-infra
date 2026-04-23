@@ -65,9 +65,11 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     value: value ?? "",
   }));
 
+  // Applications only use literal integer ports; template references like
+  // "{{params.port}}" are a stack-template feature not exposed here.
   const ports = (service.containerConfig?.ports ?? []).map((p) => ({
-    containerPort: p.containerPort,
-    hostPort: p.hostPort,
+    containerPort: Number(p.containerPort),
+    hostPort: Number(p.hostPort),
     protocol: p.protocol as "tcp" | "udp",
   }));
 
@@ -92,7 +94,7 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     routing: hasRouting && service.routing
       ? {
           hostname: service.routing.hostname,
-          listeningPort: service.routing.listeningPort,
+          listeningPort: Number(service.routing.listeningPort),
         }
       : undefined,
     restartPolicy:
@@ -105,10 +107,10 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     healthCheck: hc
       ? {
           test: Array.isArray(hc.test) ? hc.test.slice(1).join(" ") : hc.test,
-          interval: Math.round((hc.interval ?? 30000) / 1000),
-          timeout: Math.round((hc.timeout ?? 10000) / 1000),
-          retries: hc.retries ?? 3,
-          startPeriod: Math.round((hc.startPeriod ?? 15000) / 1000),
+          interval: Math.round(Number(hc.interval ?? 30000) / 1000),
+          timeout: Math.round(Number(hc.timeout ?? 10000) / 1000),
+          retries: Number(hc.retries ?? 3),
+          startPeriod: Math.round(Number(hc.startPeriod ?? 15000) / 1000),
         }
       : editApplicationDefaults.healthCheck,
   };
@@ -149,12 +151,32 @@ function ApplicationEditForm({
       if (e.key) env[e.key] = e.value;
     }
 
-    const volumes = formData.volumeMounts.map((v) => ({ name: v.name }));
-    const mounts = formData.volumeMounts.map((v) => ({
-      source: v.name,
-      target: v.mountPath,
-      type: "volume" as const,
-    }));
+    const existingVersion = application.currentVersion ?? application.draftVersion;
+    const existingService = existingVersion?.services?.[0];
+    const existingMounts = existingService?.containerConfig?.mounts ?? [];
+    const existingVolumes = existingVersion?.volumes ?? [];
+
+    // The form only edits volume-type mounts. Preserve bind/tmpfs mounts and
+    // any top-level volume declarations (e.g. volumes referenced by config
+    // files) so they aren't silently wiped on save.
+    const nonVolumeMounts = existingMounts.filter((m) => m.type !== "volume");
+    const formVolumeNames = new Set(formData.volumeMounts.map((v) => v.name));
+    const preservedExtraVolumes = existingVolumes.filter(
+      (v) => !formVolumeNames.has(v.name)
+    );
+
+    const volumes = [
+      ...formData.volumeMounts.map((v) => ({ name: v.name })),
+      ...preservedExtraVolumes,
+    ];
+    const mounts = [
+      ...formData.volumeMounts.map((v) => ({
+        source: v.name,
+        target: v.mountPath,
+        type: "volume" as const,
+      })),
+      ...nonVolumeMounts,
+    ];
 
     const ports = formData.ports.map((p) => ({
       containerPort: p.containerPort,
@@ -190,7 +212,6 @@ function ApplicationEditForm({
           }
         : undefined;
 
-    const existingVersion = application.currentVersion ?? application.draftVersion;
     const networks =
       existingVersion?.networks && existingVersion.networks.length > 0
         ? existingVersion.networks

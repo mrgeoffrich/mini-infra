@@ -25,11 +25,14 @@ GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[0;33m'
 RED='\033[0;31m'
+GRAY='\033[0;90m'
 NC='\033[0m'
-info()  { echo -e "${CYAN}▸ $1${NC}"; }
-ok()    { echo -e "${GREEN}✓ $1${NC}"; }
-skip()  { echo -e "${YELLOW}• $1${NC}"; }
-fail()  { echo -e "${RED}✗ $1${NC}"; }
+ts()    { date '+%H:%M:%S'; }
+info()  { echo -e "${CYAN}[$(ts)] ▸ $1${NC}"; }
+ok()    { echo -e "${GREEN}[$(ts)] ✓ $1${NC}"; }
+skip()  { echo -e "${YELLOW}[$(ts)] • $1${NC}"; }
+fail()  { echo -e "${RED}[$(ts)] ✗ $1${NC}"; }
+debug() { [ "${SEED_DEBUG:-0}" = "1" ] && echo -e "${GRAY}[$(ts)] DBG $1${NC}" || true; }
 
 : "${UI_PORT:?UI_PORT must be set}"
 : "${DEV_ENV_FILE:?DEV_ENV_FILE must be set}"
@@ -48,19 +51,21 @@ set -a; source "$DEV_ENV_FILE"; set +a
 
 BASE_URL="http://localhost:$UI_PORT"
 
-# Single response-body buffer shared across api() calls. We can't create it
-# inside api() because $(api ...) runs in a subshell and any variable set
-# there would be lost.
+# Shared buffers for API call response body and curl stderr.
+# Can't be created inside api() because $(...) runs in a subshell.
 RESP_FILE="$(mktemp)"
-trap 'rm -f "$RESP_FILE"' EXIT
+CURL_ERR_FILE="$(mktemp)"
+trap 'rm -f "$RESP_FILE" "$CURL_ERR_FILE"' EXIT
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 # Prints the HTTP status to stdout; writes the response body to $RESP_FILE.
+# On curl network failure (status "000"), RESP_FILE contains the curl error.
 api() {
     local method="$1" path="$2" body="${3-}"
     : > "$RESP_FILE"
+    : > "$CURL_ERR_FILE"
     local curl_args=(-sS -o "$RESP_FILE" -w "%{http_code}" -X "$method" \
         -H "Content-Type: application/json" "${BASE_URL}${path}")
     if [ -n "${API_KEY:-}" ]; then
@@ -69,9 +74,34 @@ api() {
     if [ -n "$body" ]; then
         curl_args+=(-d "$body")
     fi
-    # || true so a curl network error (e.g. exit 52) doesn't trip set -e and
-    # abort the whole script. Callers check $status; "000" signals a curl failure.
-    curl "${curl_args[@]}" || echo "000"
+    debug "$method ${BASE_URL}${path}"
+    local http_code
+    http_code=$(curl "${curl_args[@]}" 2>"$CURL_ERR_FILE") || true
+    if [ -z "$http_code" ]; then
+        # curl network failure — stash its stderr in RESP_FILE so callers surface it
+        cat "$CURL_ERR_FILE" > "$RESP_FILE"
+        debug "curl failed: $(cat "$CURL_ERR_FILE")"
+        echo "000"
+        return
+    fi
+    debug "→ $http_code"
+    echo "$http_code"
+}
+
+# Polls GET /health until the app responds 200 or timeout expires.
+wait_for_healthy() {
+    local max="${1:-30}" label="${2:-app}"
+    info "Waiting for $label to become healthy (up to ${max}s)..."
+    for i in $(seq 1 "$max"); do
+        if curl -sf "$BASE_URL/health" >/dev/null 2>&1; then
+            ok "$label is healthy"
+            return 0
+        fi
+        debug "health check attempt $i/$max failed"
+        sleep 1
+    done
+    fail "$label did not become healthy within ${max}s"
+    return 1
 }
 
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))'; }
@@ -145,6 +175,9 @@ else
         exit 1
     fi
     ok "Setup wizard completed"
+    # The server restarts after setup/complete to apply Docker host config.
+    # Wait for it to recover before continuing or subsequent API calls will fail.
+    wait_for_healthy 30 "app after setup"
 fi
 
 # ---------------------------------------------------------------------------
@@ -237,6 +270,13 @@ print(json.dumps({'connectionString': os.environ['AZURE_STORAGE_CONNECTION_STRIN
     status=$(api PUT /api/settings/azure "$body")
     if [ "$status" = "200" ] || [ "$status" = "201" ]; then
         ok "Azure configured"
+        info "Validating Azure connectivity"
+        status=$(api POST /api/settings/validate/azure "{}")
+        if [ "$status" = "200" ] || [ "$status" = "201" ]; then
+            ok "Azure connectivity verified"
+        else
+            skip "Azure validation returned $status (non-fatal): $(cat "$RESP_FILE")"
+        fi
     else
         fail "Azure PUT returned $status: $(cat "$RESP_FILE")"
     fi
@@ -255,6 +295,13 @@ print(json.dumps({
     status=$(api POST /api/settings/cloudflare "$body")
     if [ "$status" = "200" ] || [ "$status" = "201" ]; then
         ok "Cloudflare configured"
+        info "Validating Cloudflare connectivity"
+        status=$(api POST /api/settings/validate/cloudflare "{}")
+        if [ "$status" = "200" ] || [ "$status" = "201" ]; then
+            ok "Cloudflare connectivity verified"
+        else
+            skip "Cloudflare validation returned $status (non-fatal): $(cat "$RESP_FILE")"
+        fi
     else
         fail "Cloudflare POST returned $status: $(cat "$RESP_FILE")"
     fi
@@ -270,6 +317,13 @@ print(json.dumps({'token': os.environ['GITHUB_TOKEN']}))")
     status=$(api PUT /api/settings/github "$body")
     if [ "$status" = "200" ] || [ "$status" = "201" ]; then
         ok "GitHub configured"
+        info "Validating GitHub connectivity"
+        status=$(api POST /api/settings/validate/github-app "{}")
+        if [ "$status" = "200" ] || [ "$status" = "201" ]; then
+            ok "GitHub connectivity verified"
+        else
+            skip "GitHub validation returned $status (non-fatal): $(cat "$RESP_FILE")"
+        fi
     else
         # GitHub settings route shape may differ — surface the response so the
         # user can adjust the payload without guessing.
@@ -499,6 +553,7 @@ if [ -n "${DETAILS_FILE:-}" ]; then
     COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-}" \
     AGENT_SIDECAR_IMAGE_TAG="${AGENT_SIDECAR_IMAGE_TAG:-}" \
     ADMIN_EMAIL="$ADMIN_EMAIL" \
+    API_KEY="${API_KEY:-}" \
     LOCAL_ENV_ID="$LOCAL_ENV_ID" \
     ENVS_JSON="$envs_json" \
     STACKS_JSON="$stacks_json" \
@@ -572,6 +627,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-8"?>
   <admin>
     <email>{t(os.environ['ADMIN_EMAIL'])}</email>
     <password>{t(os.environ['ADMIN_PASSWORD'])}</password>
+    <apiKey>{t(os.environ['API_KEY'])}</apiKey>
   </admin>
   <connectedServices>
     <azure configured="{os.environ['AZURE_SET']}"/>

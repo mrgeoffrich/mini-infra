@@ -117,19 +117,43 @@ function deepResolve(obj: unknown, context: TemplateContext): unknown {
 }
 
 /**
+ * Narrow a resolved value to a finite number, throwing a clear error otherwise.
+ * After template resolution, any remaining non-numeric content (e.g. an
+ * unresolved `{{params.x}}` reference or a typo'd default) would silently
+ * coerce to `NaN` and reach Docker/HAProxy as `"NaN"` — this converts that
+ * into a loud failure at the boundary instead.
+ */
+function toFiniteNumber(value: unknown, field: string, serviceName: string): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    throw new Error(
+      `Service "${serviceName}" field "${field}" did not resolve to a finite number (got ${JSON.stringify(value)})`
+    );
+  }
+  return n;
+}
+
+function coerceExposeOnHost(value: unknown): boolean {
+  // After resolution, a boolean `true` stays boolean; a `{{params.x}}`
+  // reference to a boolean param renders as the string "true" or "false".
+  return value === true || value === 'true';
+}
+
+/**
  * Coerce known numeric fields in a service definition from resolved strings back to numbers.
  * Applied after template resolution.
  */
 function coerceServiceDefinitionTypes(def: StackServiceDefinition): StackServiceDefinition {
   const config = def.containerConfig;
+  const svcName = def.serviceName;
 
   if (config.ports) {
-    config.ports = config.ports.map((p) => ({
+    config.ports = config.ports.map((p, idx) => ({
       ...p,
-      containerPort: Number(p.containerPort),
-      hostPort: Number(p.hostPort),
+      containerPort: toFiniteNumber(p.containerPort, `ports[${idx}].containerPort`, svcName),
+      hostPort: toFiniteNumber(p.hostPort, `ports[${idx}].hostPort`, svcName),
       ...(p.exposeOnHost !== undefined && {
-        exposeOnHost: p.exposeOnHost === true || p.exposeOnHost === ('true' as unknown),
+        exposeOnHost: coerceExposeOnHost(p.exposeOnHost),
       }),
     }));
   }
@@ -137,25 +161,31 @@ function coerceServiceDefinitionTypes(def: StackServiceDefinition): StackService
   if (config.healthcheck) {
     config.healthcheck = {
       ...config.healthcheck,
-      interval: Number(config.healthcheck.interval),
-      timeout: Number(config.healthcheck.timeout),
-      retries: Number(config.healthcheck.retries),
-      startPeriod: Number(config.healthcheck.startPeriod),
+      interval: toFiniteNumber(config.healthcheck.interval, 'healthcheck.interval', svcName),
+      timeout: toFiniteNumber(config.healthcheck.timeout, 'healthcheck.timeout', svcName),
+      retries: toFiniteNumber(config.healthcheck.retries, 'healthcheck.retries', svcName),
+      startPeriod: toFiniteNumber(config.healthcheck.startPeriod, 'healthcheck.startPeriod', svcName),
     };
   }
 
   if (def.routing) {
     def.routing = {
       ...def.routing,
-      listeningPort: Number(def.routing.listeningPort),
+      listeningPort: toFiniteNumber(def.routing.listeningPort, 'routing.listeningPort', svcName),
     };
     if (def.routing.backendOptions) {
       const bo = def.routing.backendOptions;
       def.routing.backendOptions = {
         ...bo,
-        ...(bo.checkTimeout !== undefined && { checkTimeout: Number(bo.checkTimeout) }),
-        ...(bo.connectTimeout !== undefined && { connectTimeout: Number(bo.connectTimeout) }),
-        ...(bo.serverTimeout !== undefined && { serverTimeout: Number(bo.serverTimeout) }),
+        ...(bo.checkTimeout !== undefined && {
+          checkTimeout: toFiniteNumber(bo.checkTimeout, 'routing.backendOptions.checkTimeout', svcName),
+        }),
+        ...(bo.connectTimeout !== undefined && {
+          connectTimeout: toFiniteNumber(bo.connectTimeout, 'routing.backendOptions.connectTimeout', svcName),
+        }),
+        ...(bo.serverTimeout !== undefined && {
+          serverTimeout: toFiniteNumber(bo.serverTimeout, 'routing.backendOptions.serverTimeout', svcName),
+        }),
       };
     }
   }
