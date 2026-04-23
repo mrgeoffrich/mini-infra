@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { IconAlertCircle, IconCheck } from "@tabler/icons-react";
+import { IconAlertCircle, IconCheck, IconDownload } from "@tabler/icons-react";
 import { useBootstrapVault } from "@/hooks/use-vault";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
@@ -199,10 +199,15 @@ export function BootstrapDialog({
               </Button>
             </>
           )}
-          {phase === "complete" && (
-            <Button onClick={() => onOpenChange(false)}>
-              <IconCheck className="h-4 w-4 mr-2" /> I've saved these
-            </Button>
+          {phase === "complete" && result && (
+            <>
+              <Button variant="outline" onClick={() => downloadCredentials(result)}>
+                <IconDownload className="h-4 w-4 mr-2" /> Download
+              </Button>
+              <Button onClick={() => onOpenChange(false)}>
+                <IconCheck className="h-4 w-4 mr-2" /> I've saved these
+              </Button>
+            </>
           )}
           {phase === "failed" && (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -213,6 +218,32 @@ export function BootstrapDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function downloadCredentials(result: VaultBootstrapResult) {
+  const lines = [
+    "=== Vault Bootstrap Credentials ===",
+    `Generated: ${new Date().toISOString()}`,
+    "",
+    "IMPORTANT: Store this file securely and delete it when no longer needed.",
+    "",
+    "--- Unseal Keys (2 of 3 required to unseal) ---",
+    ...result.unsealKeys.map((k, i) => `Key ${i + 1}: ${k}`),
+    "",
+    "--- Root Token (revoked after bootstrap — kept for record-keeping) ---",
+    result.rootToken,
+    "",
+    "--- Operator Credentials (Vault UI userpass login) ---",
+    `Username: ${result.operatorUsername}`,
+    `Password: ${result.operatorPassword}`,
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "vault-credentials.txt";
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function BootstrapComplete({ result }: { result: VaultBootstrapResult }) {

@@ -1,7 +1,7 @@
 {
   "name": "vault",
   "displayName": "Vault (OpenBao)",
-  "builtinVersion": 4,
+  "builtinVersion": 5,
   "scope": "host",
   "category": "security",
   "description": "Managed OpenBao vault. Bootstrap in the Vault UI under Settings → Vault after deploying.",
@@ -9,8 +9,8 @@
     {
       "name": "host-port",
       "type": "number",
-      "default": 0,
-      "description": "Bind the Vault API on 127.0.0.1 at this host port (0 disables the host binding). Containers on the vault network reach Vault at http://mini-infra-vault-vault:8200 regardless."
+      "default": 8200,
+      "description": "Bind the Vault API on the host at this port. Containers on the vault network reach Vault at http://mini-infra-vault-vault:8200 regardless."
     }
   ],
   "resourceOutputs": [
@@ -37,7 +37,7 @@
             "containerPort": 8200,
             "hostPort": "{{params.host-port}}",
             "protocol": "tcp",
-            "exposeOnHost": false
+            "exposeOnHost": true
           }
         ],
         "mounts": [
