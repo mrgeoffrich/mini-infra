@@ -34,6 +34,11 @@ const configFileInputSchema = z.object({
   owner: z.string().optional(),
 });
 
+const networkTypeDefaultsSchema = z.record(
+  z.string(),
+  parameterValuesSchema,
+);
+
 export const createTemplateSchema = z.object({
   name: templateNameSchema,
   displayName: z.string().min(1).max(200),
@@ -43,13 +48,14 @@ export const createTemplateSchema = z.object({
   category: z.string().max(100).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   defaultParameterValues: parameterValuesSchema.optional(),
+  networkTypeDefaults: networkTypeDefaultsSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
-  services: z
-    .array(stackServiceDefinitionSchema)
-    .min(1, "At least one service is required"),
+  // Drafts may be empty — the "at least one service" constraint is enforced
+  // at publish time, so users can create a template and fill it in gradually.
+  services: z.array(stackServiceDefinitionSchema),
   configFiles: z.array(configFileInputSchema).optional(),
 });
 
@@ -62,13 +68,14 @@ export const updateTemplateMetaSchema = z.object({
 export const draftVersionSchema = z.object({
   parameters: z.array(stackParameterDefinitionSchema).optional(),
   defaultParameterValues: parameterValuesSchema.optional(),
+  networkTypeDefaults: networkTypeDefaultsSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
   networks: z.array(stackNetworkSchema),
   volumes: z.array(stackVolumeSchema),
-  services: z
-    .array(stackServiceDefinitionSchema)
-    .min(1, "At least one service is required"),
+  // See createTemplateSchema: the "at least one service" rule is a publish
+  // check, not a draft check.
+  services: z.array(stackServiceDefinitionSchema),
   configFiles: z.array(configFileInputSchema).optional(),
   notes: z.string().max(1000).optional(),
 });

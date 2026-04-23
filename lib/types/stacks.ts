@@ -35,12 +35,17 @@ export const BALANCE_ALGORITHMS = ['roundrobin', 'leastconn', 'source'] as const
 export const NETWORK_PROTOCOLS = ['tcp', 'udp'] as const;
 export const MOUNT_TYPES = ['volume', 'bind'] as const;
 
+// Numeric fields in stack definitions may be literal integers *or* a
+// "{{params.name}}" template reference that gets resolved at instantiation.
+// The resolved runtime value is always a number.
+export type NumOrTemplate = number | string;
+
 export interface StackContainerConfig {
   command?: string[];
   entrypoint?: string[];
   user?: string;
   env?: Record<string, string>;
-  ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean }[];
+  ports?: { containerPort: NumOrTemplate; hostPort: NumOrTemplate; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean | string }[];
   mounts?: { source: string; target: string; type: typeof MOUNT_TYPES[number]; readOnly?: boolean }[];
   labels?: Record<string, string>;
   joinNetworks?: string[];
@@ -48,10 +53,10 @@ export interface StackContainerConfig {
   restartPolicy?: typeof RESTART_POLICIES[number];
   healthcheck?: {
     test: string[];
-    interval: number;
-    timeout: number;
-    retries: number;
-    startPeriod: number;
+    interval: NumOrTemplate;
+    timeout: NumOrTemplate;
+    retries: NumOrTemplate;
+    startPeriod: NumOrTemplate;
   };
   logConfig?: {
     type: string;
@@ -82,16 +87,16 @@ export interface AdoptedContainerRef {
 
 export interface StackServiceRouting {
   hostname: string;
-  listeningPort: number;
+  listeningPort: NumOrTemplate;
   healthCheckEndpoint?: string;
   tlsCertificate?: string;
   dnsRecord?: string;
   tunnelIngress?: string;
   backendOptions?: {
     balanceAlgorithm?: typeof BALANCE_ALGORITHMS[number];
-    checkTimeout?: number;
-    connectTimeout?: number;
-    serverTimeout?: number;
+    checkTimeout?: NumOrTemplate;
+    connectTimeout?: NumOrTemplate;
+    serverTimeout?: NumOrTemplate;
   };
 }
 

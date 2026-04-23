@@ -44,15 +44,30 @@ export class StackRoutingManager {
 
     logger.info({ backendName, serverName, containerName: ctx.containerName }, 'Setting up backend and server');
 
+    // Routing numeric fields may be declared as "{{params.*}}" templates on
+    // the raw definition, but by this execution point they've been resolved
+    // to integers. Narrow via Number() so the Prisma/HAProxy clients see
+    // actual numbers (the shared types are widened to number|string).
+    const listeningPort = Number(ctx.routing.listeningPort);
+    const checkTimeout = ctx.routing.backendOptions?.checkTimeout !== undefined
+      ? Number(ctx.routing.backendOptions.checkTimeout)
+      : undefined;
+    const connectTimeout = ctx.routing.backendOptions?.connectTimeout !== undefined
+      ? Number(ctx.routing.backendOptions.connectTimeout)
+      : undefined;
+    const serverTimeout = ctx.routing.backendOptions?.serverTimeout !== undefined
+      ? Number(ctx.routing.backendOptions.serverTimeout)
+      : undefined;
+
     // Create backend if not exists
     try {
       await haproxyClient.createBackend({
         name: backendName,
         mode: 'http',
         balance: ctx.routing.backendOptions?.balanceAlgorithm ?? 'roundrobin',
-        check_timeout: ctx.routing.backendOptions?.checkTimeout,
-        connect_timeout: ctx.routing.backendOptions?.connectTimeout,
-        server_timeout: ctx.routing.backendOptions?.serverTimeout,
+        check_timeout: checkTimeout,
+        connect_timeout: connectTimeout,
+        server_timeout: serverTimeout,
       });
     } catch (err) {
       // Backend may already exist (e.g., on recreate)
@@ -68,7 +83,7 @@ export class StackRoutingManager {
     await haproxyClient.addServer(backendName, {
       name: serverName,
       address: ctx.containerName,
-      port: ctx.routing.listeningPort,
+      port: listeningPort,
       check: 'enabled',
     });
 
@@ -83,9 +98,9 @@ export class StackRoutingManager {
       update: {
         mode: 'http',
         balanceAlgorithm: ctx.routing.backendOptions?.balanceAlgorithm ?? 'roundrobin',
-        checkTimeout: ctx.routing.backendOptions?.checkTimeout ?? null,
-        connectTimeout: ctx.routing.backendOptions?.connectTimeout ?? null,
-        serverTimeout: ctx.routing.backendOptions?.serverTimeout ?? null,
+        checkTimeout: checkTimeout ?? null,
+        connectTimeout: connectTimeout ?? null,
+        serverTimeout: serverTimeout ?? null,
         status: 'active',
         errorMessage: null,
       },
@@ -94,9 +109,9 @@ export class StackRoutingManager {
         environmentId: ctx.environmentId,
         mode: 'http',
         balanceAlgorithm: ctx.routing.backendOptions?.balanceAlgorithm ?? 'roundrobin',
-        checkTimeout: ctx.routing.backendOptions?.checkTimeout ?? null,
-        connectTimeout: ctx.routing.backendOptions?.connectTimeout ?? null,
-        serverTimeout: ctx.routing.backendOptions?.serverTimeout ?? null,
+        checkTimeout: checkTimeout ?? null,
+        connectTimeout: connectTimeout ?? null,
+        serverTimeout: serverTimeout ?? null,
         sourceType: 'stack',
         status: 'active',
       },
@@ -111,7 +126,7 @@ export class StackRoutingManager {
       },
       update: {
         address: ctx.containerName,
-        port: ctx.routing.listeningPort,
+        port: listeningPort,
         check: 'enabled',
         containerId: ctx.containerId,
         containerName: ctx.containerName,
@@ -122,7 +137,7 @@ export class StackRoutingManager {
         name: serverName,
         backendId: backendRecord.id,
         address: ctx.containerName,
-        port: ctx.routing.listeningPort,
+        port: listeningPort,
         check: 'enabled',
         containerId: ctx.containerId,
         containerName: ctx.containerName,

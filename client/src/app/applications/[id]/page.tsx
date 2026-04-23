@@ -65,9 +65,11 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     value: value ?? "",
   }));
 
+  // Applications only use literal integer ports; template references like
+  // "{{params.port}}" are a stack-template feature not exposed here.
   const ports = (service.containerConfig?.ports ?? []).map((p) => ({
-    containerPort: p.containerPort,
-    hostPort: p.hostPort,
+    containerPort: Number(p.containerPort),
+    hostPort: Number(p.hostPort),
     protocol: p.protocol as "tcp" | "udp",
   }));
 
@@ -92,7 +94,7 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     routing: hasRouting && service.routing
       ? {
           hostname: service.routing.hostname,
-          listeningPort: service.routing.listeningPort,
+          listeningPort: Number(service.routing.listeningPort),
         }
       : undefined,
     restartPolicy:
@@ -105,10 +107,10 @@ function buildDefaultValues(application: ApplicationData): EditApplicationFormDa
     healthCheck: hc
       ? {
           test: Array.isArray(hc.test) ? hc.test.slice(1).join(" ") : hc.test,
-          interval: Math.round((hc.interval ?? 30000) / 1000),
-          timeout: Math.round((hc.timeout ?? 10000) / 1000),
-          retries: hc.retries ?? 3,
-          startPeriod: Math.round((hc.startPeriod ?? 15000) / 1000),
+          interval: Math.round(Number(hc.interval ?? 30000) / 1000),
+          timeout: Math.round(Number(hc.timeout ?? 10000) / 1000),
+          retries: Number(hc.retries ?? 3),
+          startPeriod: Math.round(Number(hc.startPeriod ?? 15000) / 1000),
         }
       : editApplicationDefaults.healthCheck,
   };

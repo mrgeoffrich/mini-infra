@@ -55,6 +55,7 @@ const versionSummary = {
   notes: true,
   parameters: true,
   defaultParameterValues: true,
+  networkTypeDefaults: true,
   resourceOutputs: true,
   resourceInputs: true,
   networks: true,
@@ -475,6 +476,18 @@ export class StackTemplateService {
       throw new TemplateError(
         "No draft version exists for this template",
         404
+      );
+    }
+
+    // A published template must have at least one service. Drafts are allowed
+    // to be empty so users can build them up gradually.
+    const serviceCount = await this.prisma.stackTemplateService.count({
+      where: { versionId: template.draftVersionId },
+    });
+    if (serviceCount < 1) {
+      throw new TemplateError(
+        "Cannot publish: the draft has no services defined",
+        400
       );
     }
 
@@ -1002,6 +1015,7 @@ export class StackTemplateService {
       notes: version.notes,
       parameters: (version.parameters as unknown as StackTemplateVersionInfo['parameters']) ?? [],
       defaultParameterValues: (version.defaultParameterValues as unknown as StackTemplateVersionInfo['defaultParameterValues']) ?? {},
+      networkTypeDefaults: (version.networkTypeDefaults as unknown as StackTemplateVersionInfo['networkTypeDefaults']) ?? undefined,
       resourceOutputs: (version.resourceOutputs as unknown as StackTemplateVersionInfo['resourceOutputs']) ?? undefined,
       resourceInputs: (version.resourceInputs as unknown as StackTemplateVersionInfo['resourceInputs']) ?? undefined,
       networks: (version.networks as unknown as StackTemplateVersionInfo['networks']) ?? [],
