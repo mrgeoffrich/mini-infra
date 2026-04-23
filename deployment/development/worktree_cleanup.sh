@@ -178,8 +178,8 @@ try:
 except Exception:
     print(0)
 ")
-        if [ "${wt_age_hours:-0}" -lt 24 ]; then
-            log_skip "$wt_name — only ${wt_age_hours}h old (< 24h), skipping"
+        if [ "${wt_age_hours:-0}" -lt 2 ]; then
+            log_skip "$wt_name — only ${wt_age_hours}h old (< 2h), skipping"
             ((skipped++)) || true
             wt_path=""
             continue
