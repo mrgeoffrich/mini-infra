@@ -58,6 +58,8 @@ import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
+import { initVaultServices } from "./services/vault/vault-services";
+import { seedVaultPolicies } from "./services/vault/vault-seed";
 
 // Global scheduler instances
 let connectivityScheduler: ConnectivityScheduler | null = null;
@@ -229,6 +231,40 @@ const initializeServices = async () => {
     console.log("[STARTUP] Syncing built-in stack definitions...");
     await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
+
+    // Initialize Vault services (always-on; Vault itself is optional)
+    console.log("[STARTUP] Initializing Vault services...");
+    try {
+      const vaultServices = initVaultServices(prisma);
+      await vaultServices.passphrase.refresh();
+      await vaultServices.passphrase.tryAutoUnlockFromEnv();
+      // Seed built-in vault policies (idempotent; rows only).
+      await seedVaultPolicies(prisma);
+      // Point the admin client at the configured address if one exists.
+      const meta = await vaultServices.stateService.getMeta();
+      if (meta?.address) {
+        vaultServices.admin.useClient(meta.address);
+        if (vaultServices.passphrase.isUnlocked() && meta.bootstrappedAt) {
+          try {
+            await vaultServices.admin.authenticateAsAdmin();
+          } catch (err) {
+            logger.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              "Vault admin re-auth at boot failed (non-fatal)",
+            );
+          }
+        }
+      }
+      // Start the watcher — it is a no-op when Vault isn't configured.
+      vaultServices.healthWatcher.start();
+      logger.info("Vault services initialized");
+      console.log("[STARTUP] ✓ Vault services initialized");
+    } catch (err) {
+      logger.error(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to initialize Vault services (non-fatal)",
+      );
+    }
 
     // When running in Docker, connect to monitoring network (if it exists)
     // so the app can proxy requests to Prometheus/Loki by container name

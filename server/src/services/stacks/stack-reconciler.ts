@@ -37,6 +37,8 @@ import { recordDeploymentFailure } from './stack-deployment-logger';
 import { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackPlanComputer } from './stack-plan-computer';
 import { StackServiceHandlers, type ServiceHandlerContext } from './stack-service-handlers';
+import { VaultCredentialInjector } from '../vault/vault-credential-injector';
+import { vaultServicesReady } from '../vault/vault-services';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -241,6 +243,13 @@ export class StackReconciler {
       });
       const containerByService = buildContainerMap(currentContainers);
 
+      // 6.5. Resolve vault dynamic-env values for services that need them.
+      // Skipped entirely when no binding is present. Runs after image pull is
+      // conceptually complete (handled inside prepareServiceContainer) and
+      // before any container is created, so wrapped secret_ids have the
+      // tightest possible lifetime around container start.
+      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, log);
+
       for (const action of actions) {
         const actionStart = Date.now();
         const svc = serviceMap.get(action.serviceName);
@@ -255,7 +264,7 @@ export class StackReconciler {
         const handlerCtx: ServiceHandlerContext = {
           action, svc: svc!, serviceDef, projectName, stackId, stack,
           networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-          infraNetworkMap, actionStart, log,
+          infraNetworkMap, resolvedEnvOverrides, actionStart, log,
         };
 
         try {
@@ -306,6 +315,11 @@ export class StackReconciler {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
           lastAppliedSnapshot: buildAppliedSnapshot(stack),
+          // Track the AppRole binding that was in effect on this apply so the
+          // credential injector can detect binding changes on future re-applies.
+          ...(allSucceeded
+            ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null }
+            : {}),
           status: resultStatus,
           removedAt: null,
         },
@@ -428,6 +442,9 @@ export class StackReconciler {
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;
 
+      // Vault credential injection for bound stacks (update flow).
+      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, log);
+
       for (const action of actions) {
         const svc = serviceMap.get(action.serviceName);
         const serviceDef = resolvedDefinitions.get(action.serviceName) ?? null;
@@ -436,7 +453,7 @@ export class StackReconciler {
         const handlerCtx: ServiceHandlerContext = {
           action, svc: svc!, serviceDef, projectName, stackId, stack,
           networkNames, serviceHashes, resolvedConfigsMap, containerByService,
-          infraNetworkMap, actionStart, log,
+          infraNetworkMap, resolvedEnvOverrides, actionStart, log,
         };
 
         let result: ServiceApplyResult;
@@ -467,6 +484,9 @@ export class StackReconciler {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
           lastAppliedSnapshot: buildAppliedSnapshot(stack),
+          ...(allSucceeded
+            ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null }
+            : {}),
         },
       });
 
@@ -497,6 +517,51 @@ export class StackReconciler {
       await recordDeploymentFailure(this.prisma, stackId, 'update', stack.version, duration, (err instanceof Error ? err.message : String(err)), options?.triggeredBy, log);
       throw err;
     }
+  }
+
+  /**
+   * Resolve Vault dynamic-env values for every bound service that declares
+   * `dynamicEnv`. Returns an empty map when the stack has no binding or the
+   * vault services aren't initialised. Throws on any per-service failure so
+   * the apply / update aborts cleanly before touching containers.
+   */
+  private async resolveVaultEnv(
+    stack: {
+      vaultAppRoleId: string | null;
+      vaultFailClosed: boolean;
+      lastAppliedVaultAppRoleId: string | null;
+    },
+    resolvedDefinitions: Map<string, StackServiceDefinition>,
+    log: Logger,
+  ): Promise<Map<string, Record<string, string>>> {
+    const overrides = new Map<string, Record<string, string>>();
+    if (!stack.vaultAppRoleId || !vaultServicesReady()) return overrides;
+
+    const injector = new VaultCredentialInjector(this.prisma);
+    for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
+      if (!serviceDef.containerConfig?.dynamicEnv) continue;
+      try {
+        const res = await injector.resolve(
+          {
+            appRoleId: stack.vaultAppRoleId,
+            failClosed: stack.vaultFailClosed,
+            prevBoundAppRoleId: stack.lastAppliedVaultAppRoleId,
+          },
+          serviceDef.containerConfig,
+        );
+        if (res) overrides.set(serviceName, res.values);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.error(
+          { service: serviceName, err: msg },
+          'Vault dynamic env resolution failed',
+        );
+        throw new Error(
+          `Vault credential injection failed for service "${serviceName}": ${msg}`,
+        );
+      }
+    }
+    return overrides;
   }
 
   /**

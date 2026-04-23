@@ -21,7 +21,8 @@ export type PermissionDomain =
   | "backups"
   | "monitoring"
   | "registry"
-  | "stacks";
+  | "stacks"
+  | "vault";
 
 /** Permission actions */
 export type PermissionAction = "read" | "write" | "use";
@@ -413,6 +414,37 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Registry Credentials",
         description:
           "Create, update, delete, test Docker registry credentials",
+      },
+    ],
+  },
+  {
+    domain: "vault",
+    label: "Vault (Secrets)",
+    description: "OpenBao vault bootstrap, policies, AppRoles, and stack bindings",
+    permissions: [
+      {
+        scope: "vault:read",
+        domain: "vault",
+        action: "read",
+        label: "View Vault",
+        description:
+          "View vault status, policies, AppRoles, and stack bindings",
+      },
+      {
+        scope: "vault:write",
+        domain: "vault",
+        action: "write",
+        label: "Manage Vault Policies & Roles",
+        description:
+          "Create, update, delete, publish policies and AppRoles",
+      },
+      {
+        scope: "vault:admin",
+        domain: "vault",
+        action: "write",
+        label: "Vault Administration",
+        description:
+          "Bootstrap, unseal, rotate credentials, change operator passphrase",
       },
     ],
   },

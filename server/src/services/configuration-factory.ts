@@ -10,6 +10,7 @@ import { DockerConfigService } from "./docker-config";
 import { CloudflareService } from "./cloudflare";
 import { AzureStorageService } from "./azure-storage-service";
 import { TlsConfigService } from "./tls/tls-config";
+import { VaultConfigService } from "./vault/vault-config-service";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -20,6 +21,7 @@ export class ConfigurationServiceFactory
     "cloudflare",
     "azure",
     "tls",
+    "vault",
   ];
 
   constructor(prisma: PrismaClient) {
@@ -51,6 +53,9 @@ export class ConfigurationServiceFactory
 
         case "tls":
           return new TlsConfigService(this.prisma);
+
+        case "vault":
+          return new VaultConfigService(this.prisma);
 
         default:
           throw new Error(`Unknown configuration category: ${category}`);

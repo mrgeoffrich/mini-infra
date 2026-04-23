@@ -74,6 +74,9 @@ import diagnosticsRoutes from "./routes/diagnostics";
 import onboardingRoutes from "./routes/onboarding";
 import openapiRoutes from "./routes/openapi";
 import devApiKeyRoutes from "./routes/dev-api-key";
+import vaultRoutes from "./routes/vault";
+import vaultPolicyRoutes from "./routes/vault/policies";
+import vaultAppRoleRoutes from "./routes/vault/approles";
 import { listRouteMeta } from "./lib/openapi-registry";
 
 type RouteDefinition = {
@@ -176,6 +179,9 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
     { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
     { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
+    { id: "vaultPolicies", path: "/api/vault/policies", name: "vaultPolicyRoutes", getRouter: () => vaultPolicyRoutes },
+    { id: "vaultAppRoles", path: "/api/vault/approles", name: "vaultAppRoleRoutes", getRouter: () => vaultAppRoleRoutes },
+    { id: "vault", path: "/api/vault", name: "vaultRoutes", getRouter: () => vaultRoutes },
     // Dev-only: exchange admin credentials for a full-admin API key. Only
     // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
     // returns undefined and the route is skipped.

@@ -1,5 +1,19 @@
 import { createHash } from 'crypto';
-import { StackServiceDefinition, StackConfigFile } from '@mini-infra/types';
+import { StackServiceDefinition, StackConfigFile, StackContainerConfig } from '@mini-infra/types';
+
+/**
+ * Strip apply-time dynamic-env metadata from containerConfig before hashing.
+ *
+ * Dynamic env values (e.g. vault-wrapped-secret-id) are resolved at apply time
+ * and intentionally not part of stack identity — including them in the hash
+ * would cause drift false-positives and force spurious recreates.
+ */
+function stripDynamic(cc: StackContainerConfig | undefined): StackContainerConfig | undefined {
+  if (!cc || !cc.dynamicEnv) return cc;
+  const { dynamicEnv: _omit, ...rest } = cc;
+  void _omit;
+  return rest;
+}
 
 function stableStringify(obj: unknown): string {
   if (obj === null || obj === undefined) {
@@ -42,7 +56,7 @@ export function computeDefinitionHash(
     canonical = {
       dockerImage: service.dockerImage,
       dockerTag: service.dockerTag,
-      containerConfig: service.containerConfig,
+      containerConfig: stripDynamic(service.containerConfig),
       configFiles: sortedConfigFiles,
       initCommands: sortedInitCommands,
       routing: service.routing ?? null,

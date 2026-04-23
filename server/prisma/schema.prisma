@@ -1078,6 +1078,15 @@ model Stack {
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
+  // Vault binding (Phase 3). `lastAppliedVaultAppRoleId` is the AppRole ID
+  // that was in effect on the last successful apply — compared against the
+  // current `vaultAppRoleId` by the credential injector to decide whether
+  // fail-closed degradation is allowed.
+  vaultAppRoleId              String?
+  vaultAppRole                VaultAppRole? @relation(fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
+  vaultFailClosed             Boolean       @default(true)
+  lastAppliedVaultAppRoleId   String?
+
   // Relations
   services             StackService[]
   deployments          StackDeployment[]
@@ -1087,7 +1096,81 @@ model Stack {
   @@index([environmentId])
   @@index([status])
   @@index([templateId])
+  @@index([vaultAppRoleId])
   @@map("stacks")
+}
+
+// Vault Management Models
+
+/// VaultState - Singleton row of encrypted state for the managed OpenBao instance
+model VaultState {
+  id                          String    @id @default(cuid())
+  kind                        String    @unique   // "primary" for MVP; enables multi-vault later
+  stackId                     String?
+  address                     String?
+  initialised                 Boolean   @default(false)
+  initialisedAt               DateTime?
+  bootstrappedAt              DateTime?
+  // Passphrase KDF salt + probe (encrypted known value used to verify unlock)
+  passphraseSalt              Bytes?
+  passphraseProbe             Bytes?
+  // Wrapped long-lived secrets (AES-GCM wrapped with the operator-passphrase-derived key)
+  encryptedUnsealKeys         Bytes?
+  encryptedRootToken          Bytes?
+  encryptedAdminRoleId        Bytes?
+  encryptedAdminSecretId      Bytes?
+  encryptedAdminSecretIdAt    DateTime?
+  encryptedOperatorPassword   Bytes?    // userpass mini-infra-operator password (P2)
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  @@map("vault_state")
+}
+
+/// VaultPolicy - HCL policies managed by Mini Infra, with draft/publish semantics
+model VaultPolicy {
+  id                String        @id @default(cuid())
+  name              String        @unique
+  displayName       String
+  description       String?
+  draftHclBody      String?
+  publishedHclBody  String?
+  publishedVersion  Int           @default(0)
+  publishedAt       DateTime?
+  lastAppliedAt     DateTime?
+  isSystem          Boolean       @default(false)
+  createdById       String?
+  updatedById       String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  appRoles          VaultAppRole[]
+
+  @@index([isSystem])
+  @@map("vault_policies")
+}
+
+/// VaultAppRole - AppRole definitions; Mini Infra reconciles to Vault on apply
+model VaultAppRole {
+  id              String       @id @default(cuid())
+  name            String       @unique
+  policyId        String
+  policy          VaultPolicy  @relation(fields: [policyId], references: [id], onDelete: Restrict)
+  secretIdNumUses Int          @default(1)
+  secretIdTtl     String       @default("0")
+  tokenTtl        String?
+  tokenMaxTtl     String?
+  tokenPeriod     String?
+  cachedRoleId    String?      // captured after apply; nullable until reconciled
+  lastAppliedAt   DateTime?
+  createdById     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  stacks          Stack[]
+
+  @@index([policyId])
+  @@map("vault_app_roles")
 }
 
 // StackService - Individual service within a stack

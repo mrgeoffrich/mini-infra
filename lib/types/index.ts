@@ -80,6 +80,9 @@ export * from "./self-update";
 // Shared operation step types
 export * from "./operations";
 
+// Vault types
+export * from "./vault";
+
 // ====================
 // Type Utilities
 // ====================

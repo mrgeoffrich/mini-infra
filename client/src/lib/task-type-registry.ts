@@ -375,4 +375,50 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
     }),
     invalidateKeys: () => [["self-update-status"]],
   }),
+
+  "vault-bootstrap": defineTaskTypeConfig({
+    channel: Channel.VAULT,
+    startedEvent: ServerEvent.VAULT_BOOTSTRAP_STARTED,
+    stepEvent: ServerEvent.VAULT_BOOTSTRAP_STEP,
+    completedEvent: ServerEvent.VAULT_BOOTSTRAP_COMPLETED,
+    getId: (p) => p.operationId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalSteps,
+      plannedStepNames: p.stepNames ?? [],
+    }),
+    normalizeStep: (p) => p.step,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: p.steps.map((s) => ({
+        step: s.step,
+        status: s.status,
+        detail: s.detail,
+      })),
+      errors: p.errors,
+    }),
+    invalidateKeys: () => [["vault", "status"]],
+  }),
+
+  "vault-unseal": defineTaskTypeConfig({
+    channel: Channel.VAULT,
+    startedEvent: ServerEvent.VAULT_UNSEAL_STARTED,
+    stepEvent: ServerEvent.VAULT_UNSEAL_STEP,
+    completedEvent: ServerEvent.VAULT_UNSEAL_COMPLETED,
+    getId: (p) => p.operationId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalSteps,
+      plannedStepNames: p.stepNames ?? [],
+    }),
+    normalizeStep: (p) => p.step,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: p.steps.map((s) => ({
+        step: s.step,
+        status: s.status,
+        detail: s.detail,
+      })),
+      errors: p.errors,
+    }),
+    invalidateKeys: () => [["vault", "status"]],
+  }),
 };
