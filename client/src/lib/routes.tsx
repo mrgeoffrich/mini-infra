@@ -61,6 +61,11 @@ import StackTemplatesPage from "@/app/stack-templates/page";
 import StackTemplateDetailPage from "@/app/stack-templates/[templateId]/page";
 import UserManagementPage from "@/app/settings/users/page";
 import AuthenticationSettingsPage from "@/app/settings/authentication/page";
+import VaultPage from "@/app/vault/page";
+import VaultPoliciesPage from "@/app/vault/policies/page";
+import VaultPolicyDetailPage from "@/app/vault/policies/[id]/page";
+import VaultAppRolesPage from "@/app/vault/approles/page";
+import VaultAppRoleDetailPage from "@/app/vault/approles/[id]/page";
 
 const HelpPage = React.lazy(() => import("@/app/help/page"));
 const HelpDocPage = React.lazy(
@@ -335,6 +340,26 @@ export const router = createBrowserRouter([
       {
         path: "stack-templates/:templateId",
         element: <StackTemplateDetailPage />,
+      },
+      {
+        path: "vault",
+        element: <VaultPage />,
+      },
+      {
+        path: "vault/policies",
+        element: <VaultPoliciesPage />,
+      },
+      {
+        path: "vault/policies/:id",
+        element: <VaultPolicyDetailPage />,
+      },
+      {
+        path: "vault/approles",
+        element: <VaultAppRolesPage />,
+      },
+      {
+        path: "vault/approles/:id",
+        element: <VaultAppRoleDetailPage />,
       },
       {
         path: "user/settings",

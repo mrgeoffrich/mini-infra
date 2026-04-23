@@ -27,6 +27,8 @@ import {
   IconArrowsShuffle,
   IconRocket,
   IconRefresh,
+  IconShieldLock,
+  IconLock,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
@@ -113,6 +115,10 @@ function getTaskTitle(type: TaskType): string {
       return "Agent Sidecar Startup";
     case "self-update-launch":
       return "Self-Update Launch";
+    case "vault-bootstrap":
+      return "Vault Bootstrap";
+    case "vault-unseal":
+      return "Vault Unseal";
   }
 }
 
@@ -134,6 +140,10 @@ function getTaskIcon(type: TaskType) {
       return <IconRocket className="h-5 w-5" />;
     case "self-update-launch":
       return <IconRefresh className="h-5 w-5" />;
+    case "vault-bootstrap":
+      return <IconShieldLock className="h-5 w-5" />;
+    case "vault-unseal":
+      return <IconLock className="h-5 w-5" />;
   }
 }
 

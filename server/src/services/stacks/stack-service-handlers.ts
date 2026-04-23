@@ -41,8 +41,32 @@ export interface ServiceHandlerContext {
   resolvedConfigsMap: Map<string, StackConfigFile[]>;
   containerByService: Map<string, Docker.ContainerInfo>;
   infraNetworkMap: Map<string, string>;
+  /**
+   * Apply-time dynamic env values resolved by the reconciler between image
+   * pull and container creation. Keyed by service name → env var name → value.
+   * Used to materialise vault-wrapped-secret-id and similar transient vars.
+   */
+  resolvedEnvOverrides?: Map<string, Record<string, string>>;
   actionStart: number;
   log: Logger;
+}
+
+/**
+ * Merge resolved dynamic env values into a service definition's env map.
+ * Returns a shallow copy — never mutates the input.
+ */
+export function mergeDynamicEnv(
+  serviceDef: StackServiceDefinition,
+  overrides?: Record<string, string>,
+): StackServiceDefinition {
+  if (!overrides || Object.keys(overrides).length === 0) return serviceDef;
+  return {
+    ...serviceDef,
+    containerConfig: {
+      ...serviceDef.containerConfig,
+      env: { ...(serviceDef.containerConfig.env ?? {}), ...overrides },
+    },
+  };
 }
 
 /**
@@ -63,11 +87,14 @@ export class StackServiceHandlers {
 
   async applyStateful(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
     const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
-      resolvedConfigsMap, containerByService, infraNetworkMap, actionStart, log } = ctx;
+      resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
+
+    const overridesForService = resolvedEnvOverrides?.get(action.serviceName);
+    const effectiveServiceDef = serviceDef ? mergeDynamicEnv(serviceDef, overridesForService) : null;
 
     switch (action.action) {
       case 'create': {
-        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Creating service');
 
         await removeConflictingContainer(
@@ -79,7 +106,7 @@ export class StackServiceHandlers {
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
-          serviceDef,
+          effectiveServiceDef,
           {
             projectName,
             stackId,
@@ -91,8 +118,8 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, serviceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
+        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
+        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -107,7 +134,7 @@ export class StackServiceHandlers {
       }
 
       case 'recreate': {
-        if (!serviceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Recreating service');
 
         const oldContainer = containerByService.get(action.serviceName);
@@ -121,7 +148,7 @@ export class StackServiceHandlers {
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
-          serviceDef,
+          effectiveServiceDef,
           {
             projectName,
             stackId,
@@ -133,8 +160,8 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, serviceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, serviceDef, infraNetworkMap, log);
+        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
+        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 

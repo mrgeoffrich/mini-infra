@@ -61,11 +61,21 @@ export const parameterValuesSchema = z.record(
 
 // Sub-schemas for JSON field shapes
 
+const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("vault-addr") }),
+  z.object({ kind: z.literal("vault-role-id") }),
+  z.object({
+    kind: z.literal("vault-wrapped-secret-id"),
+    ttlSeconds: z.number().int().positive().optional(),
+  }),
+]);
+
 export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
   entrypoint: z.array(z.string()).optional(),
   user: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
+  dynamicEnv: z.record(z.string(), dynamicEnvSourceSchema).optional(),
   ports: z
     .array(
       z.object({
@@ -309,6 +319,9 @@ export const updateStackSchema = z.object({
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z.array(stackServiceDefinitionSchema).optional(),
+  // Vault binding (Phase 3)
+  vaultAppRoleId: z.string().nullable().optional(),
+  vaultFailClosed: z.boolean().optional(),
 });
 
 export const updateStackServiceSchema = z.object({

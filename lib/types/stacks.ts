@@ -35,11 +35,31 @@ export const BALANCE_ALGORITHMS = ['roundrobin', 'leastconn', 'source'] as const
 export const NETWORK_PROTOCOLS = ['tcp', 'udp'] as const;
 export const MOUNT_TYPES = ['volume', 'bind'] as const;
 
+/**
+ * Source of a dynamically-resolved environment variable, resolved at apply time
+ * by the stack reconciler (NOT at template/plan time). Vault-backed dynamic
+ * values never appear in the stack definition hash or applied snapshot.
+ *
+ * Also re-exported from `./vault` for consumers that import vault types.
+ */
+export type DynamicEnvSource =
+  | { kind: 'vault-addr' }
+  | { kind: 'vault-role-id' }
+  | { kind: 'vault-wrapped-secret-id'; ttlSeconds?: number };
+
 export interface StackContainerConfig {
   command?: string[];
   entrypoint?: string[];
   user?: string;
   env?: Record<string, string>;
+  /**
+   * Environment variables resolved at apply time (e.g. vault wrapped secret_id).
+   * Keys must NOT overlap with `env`. These values are:
+   *  - excluded from `definition-hash.ts` so they don't spuriously mark drift;
+   *  - preserved as-is (not resolved) in the applied snapshot;
+   *  - materialised into real env vars between image pull and container start.
+   */
+  dynamicEnv?: Record<string, DynamicEnvSource>;
   ports?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp'; exposeOnHost?: boolean }[];
   mounts?: { source: string; target: string; type: typeof MOUNT_TYPES[number]; readOnly?: boolean }[];
   labels?: Record<string, string>;

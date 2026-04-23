@@ -77,6 +77,7 @@ describe("ConfigurationServiceFactory", () => {
         "cloudflare",
         "azure",
         "tls",
+        "vault",
       ]);
     });
   });
@@ -183,12 +184,14 @@ describe("ConfigurationServiceFactory", () => {
         "cloudflare",
         "azure",
         "tls",
+        "vault",
       ]);
       expect(categories2).toEqual([
         "docker",
         "cloudflare",
         "azure",
         "tls",
+        "vault",
       ]);
 
       // Should be different array instances
@@ -196,7 +199,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Modifying one shouldn't affect the other
       categories1.push("test" as any);
-      expect(categories2).toHaveLength(4);
+      expect(categories2).toHaveLength(5);
     });
   });
 
@@ -299,7 +302,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Should still create factory but services might fail at runtime
       expect(nullFactory).toBeInstanceOf(ConfigurationServiceFactory);
-      expect(nullFactory.getSupportedCategories()).toHaveLength(4);
+      expect(nullFactory.getSupportedCategories()).toHaveLength(5);
     });
 
     it("should handle factory with corrupted supported categories", () => {

@@ -1,0 +1,50 @@
+{
+  "name": "hello-vault",
+  "displayName": "Hello Vault (demo)",
+  "builtinVersion": 1,
+  "scope": "environment",
+  "category": "examples",
+  "description": "End-to-end demo: unwraps a secret_id at boot, logs into Vault via AppRole, reads a KV secret, and echoes it. Bind a VaultAppRole in the Application settings before deploying.",
+  "parameters": [
+    {
+      "name": "kv-path",
+      "type": "string",
+      "default": "hello-vault",
+      "description": "KV v2 secret path (under secret/data/) to read and echo"
+    }
+  ],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "vault", "optional": false }
+  ],
+  "networks": [],
+  "volumes": [],
+  "services": [
+    {
+      "serviceName": "hello",
+      "serviceType": "Stateful",
+      "dockerImage": "alpine/curl",
+      "dockerTag": "latest",
+      "containerConfig": {
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": [
+          "set -eu; echo 'Unwrapping secret_id at '$VAULT_ADDR; SECRET_ID=$(curl -fsS -X POST -H \"X-Vault-Token: $VAULT_WRAPPED_SECRET_ID\" $VAULT_ADDR/v1/sys/wrapping/unwrap | sed -n 's/.*\"secret_id\":\"\\([^\"]*\\)\".*/\\1/p'); echo 'Logging in via AppRole'; TOKEN=$(curl -fsS -X POST -d '{\"role_id\":\"'$VAULT_ROLE_ID'\",\"secret_id\":\"'$SECRET_ID'\"}' $VAULT_ADDR/v1/auth/approle/login | sed -n 's/.*\"client_token\":\"\\([^\"]*\\)\".*/\\1/p'); echo 'Reading secret/data/{{params.kv-path}}'; SECRET=$(curl -fsS -H \"X-Vault-Token: $TOKEN\" $VAULT_ADDR/v1/secret/data/{{params.kv-path}}); echo \"Secret payload: $SECRET\"; echo 'Idling'; while true; do sleep 30; done"
+        ],
+        "env": {},
+        "dynamicEnv": {
+          "VAULT_ADDR": { "kind": "vault-addr" },
+          "VAULT_ROLE_ID": { "kind": "vault-role-id" },
+          "VAULT_WRAPPED_SECRET_ID": { "kind": "vault-wrapped-secret-id", "ttlSeconds": 300 }
+        },
+        "restartPolicy": "unless-stopped",
+        "joinResourceNetworks": ["vault"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "name": "vault",
+  "displayName": "Vault (OpenBao)",
+  "builtinVersion": 1,
+  "scope": "host",
+  "category": "security",
+  "description": "Managed OpenBao vault. Bootstrap in the Vault UI under Settings → Vault after deploying.",
+  "parameters": [
+    {
+      "name": "host-port",
+      "type": "number",
+      "default": 0,
+      "description": "Bind the Vault API on 127.0.0.1 at this host port (0 disables the host binding). Containers on the vault network reach Vault at http://mini-infra-vault:8200 regardless."
+    }
+  ],
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "vault", "joinSelf": true }
+  ],
+  "networks": [],
+  "volumes": [
+    { "name": "openbao_data" }
+  ],
+  "services": [
+    {
+      "serviceName": "vault",
+      "serviceType": "Stateful",
+      "dockerImage": "openbao/openbao",
+      "dockerTag": "2.5.2",
+      "containerConfig": {
+        "env": {
+          "BAO_LOCAL_CONFIG": "{\"storage\":{\"file\":{\"path\":\"/openbao/file\"}},\"listener\":[{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}}],\"ui\":true,\"api_addr\":\"http://mini-infra-vault:8200\"}"
+        },
+        "ports": [
+          {
+            "containerPort": 8200,
+            "hostPort": "{{params.host-port}}",
+            "protocol": "tcp",
+            "exposeOnHost": false
+          }
+        ],
+        "mounts": [
+          {
+            "source": "openbao_data",
+            "target": "/openbao/file",
+            "type": "volume"
+          }
+        ],
+        "restartPolicy": "unless-stopped",
+        "healthcheck": {
+          "test": ["CMD-SHELL", "wget -qO- http://127.0.0.1:8200/v1/sys/health?uninitcode=200&sealedcode=200&standbycode=200 >/dev/null 2>&1 || exit 1"],
+          "interval": 30,
+          "timeout": 5,
+          "retries": 3,
+          "startPeriod": 15
+        },
+        "joinResourceNetworks": ["vault"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

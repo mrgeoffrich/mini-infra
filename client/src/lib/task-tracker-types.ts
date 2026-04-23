@@ -16,7 +16,9 @@ export type TaskType =
   | "stack-update"
   | "migration"
   | "sidecar-startup"
-  | "self-update-launch";
+  | "self-update-launch"
+  | "vault-bootstrap"
+  | "vault-unseal";
 
 export interface TrackedTask {
   /** Unique identifier — operationId, stackId, or environmentId */

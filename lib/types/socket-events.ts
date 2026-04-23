@@ -15,6 +15,18 @@ import type { UserEventInfo } from "./user-events";
 import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult } from "./stacks";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 import type { OperationStep } from "./operations";
+import type {
+  VaultBootstrapStartedEvent,
+  VaultBootstrapStepEvent,
+  VaultBootstrapCompletedEvent,
+  VaultUnsealStartedEvent,
+  VaultUnsealStepEvent,
+  VaultUnsealCompletedEvent,
+  VaultStatusChangedEvent,
+  VaultPassphraseLockEvent,
+  VaultPolicyAppliedEvent,
+  VaultAppRoleAppliedEvent,
+} from "./vault";
 
 // ====================
 // Socket Channel Constants & Types
@@ -36,6 +48,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "haproxy",
   "agent-sidecar",
   "self-update",
+  "vault",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -69,6 +82,7 @@ export const Channel = {
   HAPROXY: "haproxy",
   AGENT_SIDECAR: "agent-sidecar",
   SELF_UPDATE: "self-update",
+  VAULT: "vault",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -180,6 +194,18 @@ export const ServerEvent = {
   SELF_UPDATE_LAUNCH_STARTED: "self-update:launch:started",
   SELF_UPDATE_LAUNCH_STEP: "self-update:launch:step",
   SELF_UPDATE_LAUNCH_COMPLETED: "self-update:launch:completed",
+  // Vault
+  VAULT_BOOTSTRAP_STARTED: "vault:bootstrap:started",
+  VAULT_BOOTSTRAP_STEP: "vault:bootstrap:step",
+  VAULT_BOOTSTRAP_COMPLETED: "vault:bootstrap:completed",
+  VAULT_UNSEAL_STARTED: "vault:unseal:started",
+  VAULT_UNSEAL_STEP: "vault:unseal:step",
+  VAULT_UNSEAL_COMPLETED: "vault:unseal:completed",
+  VAULT_STATUS_CHANGED: "vault:status:changed",
+  VAULT_PASSPHRASE_UNLOCKED: "vault:passphrase:unlocked",
+  VAULT_PASSPHRASE_LOCKED: "vault:passphrase:locked",
+  VAULT_POLICY_APPLIED: "vault:policy:applied",
+  VAULT_APPROLE_APPLIED: "vault:approle:applied",
 } as const;
 
 /** Client → Server event names */
@@ -408,6 +434,18 @@ export interface ServerToClientEvents {
     errors: string[];
   }) => void;
 
+  // ── Vault ──────────────────────────────────────────
+  "vault:bootstrap:started": (data: VaultBootstrapStartedEvent) => void;
+  "vault:bootstrap:step": (data: VaultBootstrapStepEvent) => void;
+  "vault:bootstrap:completed": (data: VaultBootstrapCompletedEvent) => void;
+  "vault:unseal:started": (data: VaultUnsealStartedEvent) => void;
+  "vault:unseal:step": (data: VaultUnsealStepEvent) => void;
+  "vault:unseal:completed": (data: VaultUnsealCompletedEvent) => void;
+  "vault:status:changed": (data: VaultStatusChangedEvent) => void;
+  "vault:passphrase:unlocked": (data: VaultPassphraseLockEvent) => void;
+  "vault:passphrase:locked": (data: VaultPassphraseLockEvent) => void;
+  "vault:policy:applied": (data: VaultPolicyAppliedEvent) => void;
+  "vault:approle:applied": (data: VaultAppRoleAppliedEvent) => void;
 }
 
 // ====================
