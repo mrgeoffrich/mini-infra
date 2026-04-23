@@ -39,10 +39,11 @@ CYAN='\033[0;36m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-log_info()  { echo -e "${CYAN}$1${NC}"; }
-log_ok()    { echo -e "${GREEN}$1${NC}"; }
-log_warn()  { echo -e "${YELLOW}$1${NC}"; }
-log_error() { echo -e "${RED}$1${NC}"; }
+ts() { date '+%H:%M:%S'; }
+log_info()  { echo -e "${CYAN}[$(ts)] $1${NC}"; }
+log_ok()    { echo -e "${GREEN}[$(ts)] $1${NC}"; }
+log_warn()  { echo -e "${YELLOW}[$(ts)] $1${NC}"; }
+log_error() { echo -e "${RED}[$(ts)] $1${NC}"; }
 
 # Minimal environment-details.xml used when the seeder doesn't run (skip-seed
 # or missing dev.env). The seeder itself writes a richer version including the
@@ -250,7 +251,8 @@ for i in $(seq 1 15); do
         break
     fi
     if [ "$i" -eq 15 ]; then
-        log_error "Local registry failed to become ready on port $REGISTRY_PORT"
+        log_error "Local registry failed to become ready on port $REGISTRY_PORT after 15s"
+        docker compose -f "$COMPOSE_FILE" logs --tail=30 registry || true
         exit 1
     fi
     sleep 1
@@ -293,9 +295,11 @@ for i in $(seq 1 60); do
     fi
     if [ "$i" -eq 60 ]; then
         log_error "Mini Infra did not become healthy within 60s"
+        log_error "Last 100 lines of container logs:"
         docker compose -f "$COMPOSE_FILE" logs --tail=100 mini-infra || true
         exit 1
     fi
+    [ $((i % 10)) -eq 0 ] && log_info "Still waiting... (${i}s elapsed)"
     sleep 1
 done
 log_ok "Mini Infra is healthy"
