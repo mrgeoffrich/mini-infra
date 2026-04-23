@@ -6,10 +6,13 @@ import {
   IconAlertCircle,
   IconCheck,
   IconRefresh,
+  IconCopy,
+  IconKey,
 } from "@tabler/icons-react";
 import {
   useVaultStatus,
   useLockPassphrase,
+  useOperatorCredentials,
 } from "@/hooks/use-vault";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +25,19 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { BootstrapDialog } from "./components/BootstrapDialog";
 import { PassphraseUnlockDialog } from "./components/PassphraseUnlockDialog";
 import { UnsealDialog } from "./components/UnsealDialog";
@@ -127,14 +143,58 @@ export default function VaultPage() {
                 </Button>
               )}
               {!notBootstrapped && !locked && (
-                <Button
-                  variant="outline"
-                  onClick={() => lockMutation.mutate()}
-                  data-tour="vault-lock"
-                >
-                  <IconLock className="h-4 w-4 mr-2" />
-                  Lock Passphrase
-                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      data-tour="vault-lock"
+                    >
+                      <IconLock className="h-4 w-4 mr-2" />
+                      Lock Passphrase
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Lock the operator passphrase?</AlertDialogTitle>
+                      <AlertDialogDescription asChild>
+                        <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+                          <p>
+                            Locking removes the passphrase from memory. This has the following effects:
+                          </p>
+                          <ul className="list-disc pl-5 space-y-1">
+                            <li>
+                              <b>Auto-unseal stops.</b> If Vault restarts or is
+                              manually sealed, Mini Infra cannot unseal it until
+                              you unlock the passphrase again.
+                            </li>
+                            <li>
+                              <b>Operator credentials become unreadable.</b> The
+                              stored password can no longer be decrypted until
+                              unlocked.
+                            </li>
+                            <li>
+                              The currently active admin token continues working
+                              until it expires (1 hour).
+                            </li>
+                          </ul>
+                          <p>
+                            You will need to re-enter the passphrase to resume
+                            normal operation.
+                          </p>
+                        </div>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => lockMutation.mutate()}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Lock Passphrase
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
               {sealed && (
                 <Button
@@ -148,6 +208,10 @@ export default function VaultPage() {
             </div>
           </CardContent>
         </Card>
+
+        {status?.initialised && !locked && (
+          <OperatorCredentialsCard />
+        )}
 
         <Card>
           <CardHeader>
@@ -183,6 +247,88 @@ export default function VaultPage() {
       />
       <UnsealDialog open={unsealOpen} onOpenChange={setUnsealOpen} />
     </div>
+  );
+}
+
+function OperatorCredentialsCard() {
+  const [revealed, setRevealed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { data, isFetching, refetch, error } = useOperatorCredentials();
+
+  const handleReveal = async () => {
+    await refetch();
+    setRevealed(true);
+  };
+
+  const handleCopy = async () => {
+    if (data?.password) {
+      await navigator.clipboard.writeText(data.password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <IconKey className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <CardTitle>Operator Credentials</CardTitle>
+            <CardDescription>
+              Userpass credentials for logging into the Vault UI as{" "}
+              <code>mini-infra-operator</code>
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">Username</Label>
+          <p className="font-mono text-sm">mini-infra-operator</p>
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label className="text-xs text-muted-foreground">Password</Label>
+          {!revealed ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={handleReveal}
+              disabled={isFetching}
+            >
+              {isFetching ? "Loading…" : "Reveal password"}
+            </Button>
+          ) : (
+            <div className="flex gap-2 max-w-sm">
+              <Input
+                type="password"
+                value={data?.password ?? ""}
+                readOnly
+                className="font-mono"
+              />
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleCopy}
+                title="Copy password"
+              >
+                {copied ? (
+                  <IconCheck className="h-4 w-4" />
+                ) : (
+                  <IconCopy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          )}
+          {error && (
+            <p className="text-sm text-destructive">
+              {error instanceof Error ? error.message : "Failed to load credentials"}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

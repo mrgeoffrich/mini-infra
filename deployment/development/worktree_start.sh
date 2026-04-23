@@ -99,12 +99,14 @@ PY
 PROFILE=""
 RESET=false
 SKIP_SEED=false
+FORCE_SEED=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --profile) PROFILE="$2"; shift 2 ;;
         --reset) RESET=true; shift ;;
         --skip-seed) SKIP_SEED=true; shift ;;
+        --seed) FORCE_SEED=true; shift ;;
         -h|--help)
             sed -n '2,12p' "$0"
             exit 0
@@ -280,10 +282,63 @@ docker push "$AGENT_SIDECAR_IMAGE_TAG"
 log_ok "Agent sidecar image pushed"
 
 # ---------------------------------------------------------------------------
+# Capture any extra networks dynamically joined at runtime (e.g. via
+# joinSelf resource outputs like the vault network) so they survive the
+# container recreate that --build triggers.
+# ---------------------------------------------------------------------------
+MINI_INFRA_CONTAINER="${COMPOSE_PROJECT_NAME}-mini-infra-1"
+EXTRA_NETWORKS=""
+if docker inspect "$MINI_INFRA_CONTAINER" >/dev/null 2>&1; then
+    COMPOSE_NETWORKS=$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null \
+        | python3 -c "
+import sys, json
+cfg = json.load(sys.stdin)
+project = cfg.get('name', '')
+nets = set(['default'])
+for svc in cfg.get('services', {}).values():
+    for net_name in svc.get('networks', {}).keys():
+        nets.add(net_name)
+for n in nets:
+    print(f'{project}_{n}')
+" 2>/dev/null)
+    CURRENT_NETWORKS=$(docker inspect "$MINI_INFRA_CONTAINER" \
+        --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\n"}}{{end}}' 2>/dev/null)
+    for net in $CURRENT_NETWORKS; do
+        is_compose=false
+        for cn in $COMPOSE_NETWORKS; do
+            [ "$net" = "$cn" ] && is_compose=true && break
+        done
+        [ "$is_compose" = false ] && EXTRA_NETWORKS="$EXTRA_NETWORKS $net"
+    done
+    [ -n "$EXTRA_NETWORKS" ] && log_info "Will restore extra networks after rebuild:$EXTRA_NETWORKS"
+fi
+
+# ---------------------------------------------------------------------------
 # Build + start the full stack
 # ---------------------------------------------------------------------------
 log_info "Building and starting Mini Infra (project=$COMPOSE_PROJECT_NAME)..."
 docker compose -f "$COMPOSE_FILE" up -d --build
+
+# ---------------------------------------------------------------------------
+# Restore extra networks stripped by the container recreate
+# ---------------------------------------------------------------------------
+if [ -n "$EXTRA_NETWORKS" ]; then
+    log_info "Waiting for ${MINI_INFRA_CONTAINER} to start before restoring networks..."
+    for i in $(seq 1 30); do
+        STATUS=$(docker inspect "$MINI_INFRA_CONTAINER" --format '{{.State.Status}}' 2>/dev/null)
+        [ "$STATUS" = "running" ] && break
+        sleep 1
+    done
+    for net in $EXTRA_NETWORKS; do
+        if docker network inspect "$net" >/dev/null 2>&1; then
+            docker network connect "$net" "$MINI_INFRA_CONTAINER" 2>/dev/null \
+                && log_ok "Rejoined network: $net" \
+                || log_warn "Failed to rejoin network: $net (may already be connected)"
+        else
+            log_warn "Skipping network $net (no longer exists)"
+        fi
+    done
+fi
 
 # ---------------------------------------------------------------------------
 # Wait for health, then seed
@@ -306,9 +361,19 @@ log_ok "Mini Infra is healthy"
 
 DETAILS_FILE="$PROJECT_ROOT/environment-details.xml"
 
+# Detect whether this instance has already been seeded by checking the
+# existing environment-details.xml. Skip the seeder on rebuilds unless
+# --seed or --reset was passed — matching the behaviour of start.sh.
+ALREADY_SEEDED=false
+if [ -f "$DETAILS_FILE" ] && grep -q "<seeded>true</seeded>" "$DETAILS_FILE" 2>/dev/null; then
+    ALREADY_SEEDED=true
+fi
+
 if [ "$SKIP_SEED" = true ]; then
     log_warn "Skipping seed step (--skip-seed)"
     write_minimal_environment_details "$DETAILS_FILE"
+elif [ "$ALREADY_SEEDED" = true ] && [ "$FORCE_SEED" = false ] && [ "$RESET" = false ]; then
+    log_info "Instance already seeded — skipping (pass --seed to re-run)"
 elif [ ! -f "$DEV_ENV_FILE" ]; then
     log_warn "Skipping seed step — $DEV_ENV_FILE not found"
     log_warn "Copy $SCRIPT_DIR/dev.env.example to $DEV_ENV_FILE and fill in values."
@@ -327,5 +392,6 @@ echo "  DOCKER_HOST: $DOCKER_HOST"
 echo ""
 echo "  Logs:   DOCKER_HOST=$DOCKER_HOST docker compose -f $COMPOSE_FILE -p $COMPOSE_PROJECT_NAME logs -f"
 echo "  Stop:   DOCKER_HOST=$DOCKER_HOST docker compose -f $COMPOSE_FILE -p $COMPOSE_PROJECT_NAME down"
-echo "  Nuke:   $0 --reset --profile $PROFILE"
+echo "  Re-seed: $0 --seed --profile $PROFILE"
+echo "  Nuke:    $0 --reset --profile $PROFILE"
 echo ""

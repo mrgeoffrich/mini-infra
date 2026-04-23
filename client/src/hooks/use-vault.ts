@@ -235,6 +235,18 @@ export function useDeleteVaultAppRole() {
   });
 }
 
+export function useOperatorCredentials() {
+  return useQuery<{ username: string; password: string }>({
+    queryKey: ["vault", "operator-credentials"],
+    queryFn: () =>
+      apiFetch<{ username: string; password: string }>(
+        "/api/vault/operator-credentials",
+      ),
+    enabled: false,
+    retry: false,
+  });
+}
+
 export function useAppRoleStacks(id: string | undefined) {
   return useQuery<{ id: string; name: string }[]>({
     queryKey: ["vault", "approles", id, "stacks"],
