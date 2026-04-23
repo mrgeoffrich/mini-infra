@@ -152,7 +152,7 @@ export function ApplicationCard({
         {/* FRONT */}
         <Card
           className={cn(
-            "group transition-shadow [grid-area:1/1] [backface-visibility:hidden]",
+            "group flex flex-col transition-shadow [grid-area:1/1] [backface-visibility:hidden]",
             !isBusy && "hover:shadow-md",
           )}
         >
@@ -219,7 +219,7 @@ export function ApplicationCard({
             </div>
           </CardHeader>
 
-          <CardContent className="pt-0">
+          <CardContent className="pt-0 flex-1 flex flex-col">
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               {app.isArchived && <Badge variant="destructive">Archived</Badge>}
               {primaryStack && (
@@ -242,7 +242,16 @@ export function ApplicationCard({
               )}
             </div>
 
-            <div className="flex gap-2">
+            {primaryService && (
+              <div className="text-xs text-muted-foreground mb-3 truncate">
+                <span className="font-mono">
+                  {primaryService.dockerImage}
+                  {primaryService.dockerTag ? `:${primaryService.dockerTag}` : ""}
+                </span>
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-auto">
               {!hasStacks && app.environmentId && (
                 <Button
                   size="sm"
@@ -294,7 +303,7 @@ export function ApplicationCard({
 
         {/* BACK */}
         <Card
-          className="[grid-area:1/1] [backface-visibility:hidden] [transform:rotateY(180deg)]"
+          className="flex flex-col [grid-area:1/1] [backface-visibility:hidden] [transform:rotateY(180deg)]"
           aria-hidden={!effectivelyFlipped}
         >
           <CardHeader className="pb-2">
@@ -321,7 +330,7 @@ export function ApplicationCard({
             </div>
           </CardHeader>
 
-          <CardContent className="pt-0 space-y-3">
+          <CardContent className="pt-0 flex-1 flex flex-col space-y-3">
             {primaryService ? (
               <>
                 <div className="text-xs text-muted-foreground space-y-0.5">
@@ -363,7 +372,7 @@ export function ApplicationCard({
                   )}
                 </div>
 
-                <div className="flex gap-2 pt-1">
+                <div className="flex gap-2 pt-1 mt-auto">
                   <Button
                     size="sm"
                     variant="outline"
