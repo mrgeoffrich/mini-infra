@@ -151,12 +151,32 @@ function ApplicationEditForm({
       if (e.key) env[e.key] = e.value;
     }
 
-    const volumes = formData.volumeMounts.map((v) => ({ name: v.name }));
-    const mounts = formData.volumeMounts.map((v) => ({
-      source: v.name,
-      target: v.mountPath,
-      type: "volume" as const,
-    }));
+    const existingVersion = application.currentVersion ?? application.draftVersion;
+    const existingService = existingVersion?.services?.[0];
+    const existingMounts = existingService?.containerConfig?.mounts ?? [];
+    const existingVolumes = existingVersion?.volumes ?? [];
+
+    // The form only edits volume-type mounts. Preserve bind/tmpfs mounts and
+    // any top-level volume declarations (e.g. volumes referenced by config
+    // files) so they aren't silently wiped on save.
+    const nonVolumeMounts = existingMounts.filter((m) => m.type !== "volume");
+    const formVolumeNames = new Set(formData.volumeMounts.map((v) => v.name));
+    const preservedExtraVolumes = existingVolumes.filter(
+      (v) => !formVolumeNames.has(v.name)
+    );
+
+    const volumes = [
+      ...formData.volumeMounts.map((v) => ({ name: v.name })),
+      ...preservedExtraVolumes,
+    ];
+    const mounts = [
+      ...formData.volumeMounts.map((v) => ({
+        source: v.name,
+        target: v.mountPath,
+        type: "volume" as const,
+      })),
+      ...nonVolumeMounts,
+    ];
 
     const ports = formData.ports.map((p) => ({
       containerPort: p.containerPort,
@@ -192,7 +212,6 @@ function ApplicationEditForm({
           }
         : undefined;
 
-    const existingVersion = application.currentVersion ?? application.draftVersion;
     const networks =
       existingVersion?.networks && existingVersion.networks.length > 0
         ? existingVersion.networks

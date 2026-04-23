@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconPlus, IconEdit, IconTrash, IconFile } from "@tabler/icons-react";
+import { IconPlus, IconEdit, IconTrash, IconFile, IconAlertTriangle } from "@tabler/icons-react";
 import type {
   StackTemplateConfigFileInfo,
   StackTemplateConfigFileInput,
@@ -95,6 +95,14 @@ export function TemplateConfigFilesSection({
         <div className="space-y-2">
           {configFiles.map((f, index) => {
             const lines = f.content.split("\n").length;
+            // Warn when a config file references a service or volume that no
+            // longer exists — otherwise the user has no way to know the
+            // reference has become dangling.
+            const serviceMissing =
+              serviceNames.length > 0 && !serviceNames.includes(f.serviceName);
+            const volumeMissing =
+              volumeNames.length > 0 && !volumeNames.includes(f.volumeName);
+            const hasOrphan = serviceMissing || volumeMissing;
             return (
               <button
                 type="button"
@@ -106,7 +114,22 @@ export function TemplateConfigFilesSection({
                 <div className="flex items-center gap-2 flex-wrap">
                   <IconFile className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <span className="font-mono text-sm">{f.fileName}</span>
-                  <Badge variant="outline" className="text-xs">{f.serviceName}</Badge>
+                  <Badge
+                    variant={serviceMissing ? "destructive" : "outline"}
+                    className="text-xs"
+                  >
+                    {f.serviceName}
+                  </Badge>
+                  {hasOrphan && (
+                    <Badge variant="destructive" className="text-xs gap-1">
+                      <IconAlertTriangle className="h-3 w-3" />
+                      {serviceMissing && volumeMissing
+                        ? "Missing service & volume"
+                        : serviceMissing
+                          ? "Missing service"
+                          : "Missing volume"}
+                    </Badge>
+                  )}
                   <span className="text-xs text-muted-foreground">
                     {lines} line{lines === 1 ? "" : "s"}
                   </span>
@@ -137,7 +160,11 @@ export function TemplateConfigFilesSection({
                   )}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  <span className="font-mono">{f.volumeName}</span>
+                  <span
+                    className={`font-mono${volumeMissing ? " text-destructive" : ""}`}
+                  >
+                    {f.volumeName}
+                  </span>
                   <span className="mx-1">→</span>
                   <span className="font-mono">{f.mountPath}</span>
                 </div>

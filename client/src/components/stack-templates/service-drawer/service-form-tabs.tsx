@@ -378,19 +378,28 @@ export function PortsTab({ control }: { control: Ctrl }) {
               <FormField
                 control={control}
                 name={`ports.${index}.exposeOnHost`}
-                render={({ field }) => (
-                  <FormItem className="w-24 pt-4">
-                    <div className="flex items-center gap-2">
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormLabel className="text-xs !mt-0">Expose</FormLabel>
-                    </div>
-                  </FormItem>
-                )}
+                render={({ field }) => {
+                  const isTemplate = typeof field.value === "string";
+                  return (
+                    <FormItem className="w-24 pt-4">
+                      <div className="flex items-center gap-2">
+                        <FormControl>
+                          <Switch
+                            checked={isTemplate ? true : Boolean(field.value)}
+                            onCheckedChange={field.onChange}
+                            disabled={isTemplate}
+                          />
+                        </FormControl>
+                        <FormLabel className="text-xs !mt-0">Expose</FormLabel>
+                      </div>
+                      {isTemplate && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Template ref — edit in Code view
+                        </p>
+                      )}
+                    </FormItem>
+                  );
+                }}
               />
               <Button
                 type="button"

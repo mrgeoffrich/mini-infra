@@ -274,6 +274,7 @@ export class StackTemplateService {
             displayName: input.displayName,
             description: input.description ?? null,
             scope: input.scope,
+            networkType: input.networkType ?? null,
             category: input.category ?? null,
             environmentId: input.environmentId ?? null,
             isArchived: false,
@@ -289,6 +290,7 @@ export class StackTemplateService {
             description: input.description ?? null,
             source: "user",
             scope: input.scope,
+            networkType: input.networkType ?? null,
             category: input.category ?? null,
             environmentId: input.environmentId ?? null,
             createdById: createdById ?? null,
@@ -479,19 +481,21 @@ export class StackTemplateService {
       );
     }
 
-    // A published template must have at least one service. Drafts are allowed
-    // to be empty so users can build them up gradually.
-    const serviceCount = await this.prisma.stackTemplateService.count({
-      where: { versionId: template.draftVersionId },
-    });
-    if (serviceCount < 1) {
-      throw new TemplateError(
-        "Cannot publish: the draft has no services defined",
-        400
-      );
-    }
-
     const result = await this.prisma.$transaction(async (tx) => {
+      // A published template must have at least one service. The check lives
+      // inside the transaction so a concurrent `createOrUpdateDraft` (which
+      // deletes + recreates the draft version) can't race with publish and
+      // let an empty draft slip through.
+      const serviceCount = await tx.stackTemplateService.count({
+        where: { versionId: template.draftVersionId! },
+      });
+      if (serviceCount < 1) {
+        throw new TemplateError(
+          "Cannot publish: the draft has no services defined",
+          400
+        );
+      }
+
       // Find the highest published version number
       const maxVersion = await tx.stackTemplateVersion.findFirst({
         where: {

@@ -140,68 +140,103 @@ export function ConfigFileDrawer({
                 <FormField
                   control={form.control}
                   name="serviceName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Service</FormLabel>
-                      {serviceNames.length > 0 ? (
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
+                  render={({ field }) => {
+                    const orphan =
+                      !!field.value &&
+                      serviceNames.length > 0 &&
+                      !serviceNames.includes(field.value);
+                    return (
+                      <FormItem>
+                        <FormLabel>Service</FormLabel>
+                        {serviceNames.length > 0 ? (
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select service" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {/* Keep the orphaned value selectable so the
+                                  user can see and replace it rather than
+                                  silently saving a dangling reference. */}
+                              {orphan && (
+                                <SelectItem value={field.value}>
+                                  {field.value} (missing)
+                                </SelectItem>
+                              )}
+                              {serviceNames.map((name) => (
+                                <SelectItem key={name} value={name}>
+                                  {name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select service" />
-                            </SelectTrigger>
+                            <Input placeholder="service-name" {...field} />
                           </FormControl>
-                          <SelectContent>
-                            {serviceNames.map((name) => (
-                              <SelectItem key={name} value={name}>
-                                {name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <FormControl>
-                          <Input placeholder="service-name" {...field} />
-                        </FormControl>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                        )}
+                        {orphan && (
+                          <p className="text-xs text-destructive">
+                            Service &quot;{field.value}&quot; no longer exists on this template.
+                          </p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
                 <FormField
                   control={form.control}
                   name="volumeName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Volume</FormLabel>
-                      {volumeNames.length > 0 ? (
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
+                  render={({ field }) => {
+                    const orphan =
+                      !!field.value &&
+                      volumeNames.length > 0 &&
+                      !volumeNames.includes(field.value);
+                    return (
+                      <FormItem>
+                        <FormLabel>Volume</FormLabel>
+                        {volumeNames.length > 0 ? (
+                          <Select
+                            onValueChange={field.onChange}
+                            value={field.value}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select volume" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {orphan && (
+                                <SelectItem value={field.value}>
+                                  {field.value} (missing)
+                                </SelectItem>
+                              )}
+                              {volumeNames.map((name) => (
+                                <SelectItem key={name} value={name}>
+                                  {name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
                           <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select volume" />
-                            </SelectTrigger>
+                            <Input placeholder="volume-name" {...field} />
                           </FormControl>
-                          <SelectContent>
-                            {volumeNames.map((name) => (
-                              <SelectItem key={name} value={name}>
-                                {name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <FormControl>
-                          <Input placeholder="volume-name" {...field} />
-                        </FormControl>
-                      )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                        )}
+                        {orphan && (
+                          <p className="text-xs text-destructive">
+                            Volume &quot;{field.value}&quot; no longer exists on this template.
+                          </p>
+                        )}
+                        <FormMessage />
+                      </FormItem>
+                    );
+                  }}
                 />
               </div>
 

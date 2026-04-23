@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ENVIRONMENT_NETWORK_TYPES } from "@mini-infra/types";
 import {
   stackParameterDefinitionSchema,
   parameterValuesSchema,
@@ -28,14 +29,22 @@ const configFileInputSchema = z.object({
     .regex(nameRegex, "Service name can only contain letters, numbers, hyphens, and underscores"),
   fileName: z.string().min(1),
   volumeName: z.string().min(1),
-  mountPath: z.string().min(1),
+  // Must be a safe absolute path — matches `stackInitCommandSchema.mountPath`.
+  // Prevents `../../etc/passwd`-style escapes when a template is instantiated.
+  mountPath: z
+    .string()
+    .min(1)
+    .regex(/^\/[a-zA-Z0-9_./-]*$/, "mountPath must be a safe absolute path"),
   content: z.string(),
   permissions: z.string().optional(),
   owner: z.string().optional(),
 });
 
-const networkTypeDefaultsSchema = z.record(
-  z.string(),
+// `partialRecord` — keys are validated against the environment-network-type
+// enum, but it's OK for a template to set defaults for only some network types
+// (or none). A plain `z.record(enum, ...)` would require every enum value.
+const networkTypeDefaultsSchema = z.partialRecord(
+  z.enum(ENVIRONMENT_NETWORK_TYPES),
   parameterValuesSchema,
 );
 
@@ -44,6 +53,7 @@ export const createTemplateSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
   scope: z.enum(["host", "environment"]),
+  networkType: z.enum(ENVIRONMENT_NETWORK_TYPES).optional(),
   environmentId: z.string().min(1).optional(),
   category: z.string().max(100).optional(),
   parameters: z.array(stackParameterDefinitionSchema).optional(),

@@ -70,7 +70,10 @@ export const serviceFormSchema = z.object({
       hostPort: requiredNumOrTemplateString,
       containerPort: requiredNumOrTemplateString,
       protocol: z.enum(["tcp", "udp"]),
-      exposeOnHost: z.boolean(),
+      // Accept template-string values so the drawer doesn't clobber
+      // `{{params.*}}` references on save. The UI renders a disabled Switch
+      // with a hint when the value is a string.
+      exposeOnHost: z.union([z.boolean(), z.string()]),
     }),
   ),
 
@@ -119,7 +122,15 @@ export const serviceFormSchema = z.object({
 
   // AdoptedWeb
   adoptedContainerName: z.string(),
-  adoptedListeningPort: z.string(), // coerced to number on submit
+  // Adopted listening port is always a literal integer (the adoptedContainer
+  // type doesn't support template refs). Validate at form level so invalid
+  // input is rejected rather than silently coerced to 0 via `Number(...) || 0`.
+  adoptedListeningPort: z
+    .string()
+    .refine(
+      (v) => v === "" || (/^\d+$/.test(v) && Number(v) >= 1 && Number(v) <= 65535),
+      "Must be an integer between 1 and 65535",
+    ),
 
   // Init commands
   initCommands: z.array(
@@ -208,10 +219,11 @@ export function serviceToFormValues(
       hostPort: stringifyNumberOrTemplate(p.hostPort),
       containerPort: stringifyNumberOrTemplate(p.containerPort),
       protocol: p.protocol,
-      // The schema allows `boolean | string` for template references; the UI
-      // toggle only supports literal booleans. Template-string exposeOnHost
-      // must be edited via the YAML code view.
-      exposeOnHost: typeof p.exposeOnHost === "boolean" ? p.exposeOnHost : true,
+      // Pass through boolean values as-is, and preserve template-string
+      // references verbatim so they aren't silently rewritten to `true` on
+      // save. The UI disables the switch for template-string values; the user
+      // must edit them via the YAML code view.
+      exposeOnHost: p.exposeOnHost ?? true,
     })),
 
     mounts: (c.mounts ?? []).map((m) => ({
@@ -385,7 +397,8 @@ export function formValuesToService(
     values.serviceType === "AdoptedWeb" && values.adoptedContainerName.trim()
       ? {
           containerName: values.adoptedContainerName.trim(),
-          listeningPort: Number(values.adoptedListeningPort) || 0,
+          // Zod already enforced integer-in-range; parseInt is a narrowing cast.
+          listeningPort: parseInt(values.adoptedListeningPort, 10),
         }
       : undefined;
 

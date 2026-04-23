@@ -77,7 +77,7 @@ export default function StackTemplateDetailPage() {
 
   // Build draft input from displayVersion with optional overrides. Preserves
   // every optional field so saving one section (e.g. services) doesn't wipe
-  // others (config files, resource I/O, network type defaults).
+  // others (config files, resource I/O, network type defaults, notes).
   const buildDraftInput = useCallback(
     (overrides: Partial<DraftVersionInput> = {}): DraftVersionInput => {
       const v = displayVersion;
@@ -112,6 +112,10 @@ export default function StackTemplateDetailPage() {
             permissions: cf.permissions ?? undefined,
             owner: cf.owner ?? undefined,
           })) ?? [],
+        // Draft notes round-trip through the code view; carry them through
+        // graphical saves too so editing one section doesn't clobber notes.
+        // Omit entirely when undefined so we don't send `notes: null`.
+        ...(v?.notes != null ? { notes: v.notes } : {}),
         ...overrides,
       };
     },
