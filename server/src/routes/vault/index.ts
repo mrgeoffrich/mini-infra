@@ -88,7 +88,6 @@ router.post(
       const msg = err instanceof Error ? err.message : String(err);
       res.status(401).json({ success: false, message: msg });
     }
-    next;
   }) as RequestHandler,
 );
 
@@ -146,55 +145,65 @@ router.post(
       logger.debug({ err }, "Failed to emit VAULT_BOOTSTRAP_STARTED");
     }
 
-    // Respond immediately — the caller tracks progress via Socket.IO.
-    res.json({ success: true, data: { operationId } });
+    // Bootstrap is run synchronously and returns the one-time-viewable
+    // credentials only on this HTTP response. Progress events still broadcast
+    // on Channel.VAULT (step + completed), but WITHOUT the credentials blob —
+    // otherwise any authenticated socket subscriber could read them.
+    let result: VaultBootstrapResult | null = null;
+    let success = false;
+    const errors: string[] = [];
+    let bootstrapError: Error | null = null;
+    try {
+      result = await services.admin.bootstrap({
+        passphrase: parsed.data.passphrase,
+        address: parsed.data.address,
+        stackId: parsed.data.stackId,
+        onStep: (step, completedCount, totalSteps) => {
+          steps.push(step);
+          try {
+            emitToChannel(Channel.VAULT, ServerEvent.VAULT_BOOTSTRAP_STEP, {
+              operationId,
+              step,
+              completedCount,
+              totalSteps,
+            });
+          } catch (err) {
+            logger.debug({ err }, "Failed to emit VAULT_BOOTSTRAP_STEP");
+          }
+        },
+      });
+      success = true;
+    } catch (err) {
+      bootstrapError = err instanceof Error ? err : new Error(String(err));
+      errors.push(bootstrapError.message);
+      logger.error(
+        { err: bootstrapError.message, operationId, userId: user?.id },
+        "Vault bootstrap failed",
+      );
+    }
 
-    // Run in the background. The response has already been sent.
-    void (async () => {
-      let result: VaultBootstrapResult | null = null;
-      let success = false;
-      const errors: string[] = [];
-      try {
-        result = await services.admin.bootstrap({
-          passphrase: parsed.data.passphrase,
-          address: parsed.data.address,
-          stackId: parsed.data.stackId,
-          onStep: (step, completedCount, totalSteps) => {
-            steps.push(step);
-            try {
-              emitToChannel(Channel.VAULT, ServerEvent.VAULT_BOOTSTRAP_STEP, {
-                operationId,
-                step,
-                completedCount,
-                totalSteps,
-              });
-            } catch (err) {
-              logger.debug({ err }, "Failed to emit VAULT_BOOTSTRAP_STEP");
-            }
-          },
-        });
-        success = true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        errors.push(msg);
-        logger.error(
-          { err: msg, operationId, userId: user?.id },
-          "Vault bootstrap failed",
-        );
-      } finally {
-        try {
-          emitToChannel(Channel.VAULT, ServerEvent.VAULT_BOOTSTRAP_COMPLETED, {
-            operationId,
-            success,
-            steps,
-            errors,
-            result: success && result ? result : undefined,
-          });
-        } catch (err) {
-          logger.debug({ err }, "Failed to emit VAULT_BOOTSTRAP_COMPLETED");
-        }
-      }
-    })();
+    try {
+      emitToChannel(Channel.VAULT, ServerEvent.VAULT_BOOTSTRAP_COMPLETED, {
+        operationId,
+        success,
+        steps,
+        errors,
+      });
+    } catch (err) {
+      logger.debug({ err }, "Failed to emit VAULT_BOOTSTRAP_COMPLETED");
+    }
+
+    if (!success || !result) {
+      return res.status(500).json({
+        success: false,
+        message: "Bootstrap failed",
+        data: { operationId, errors },
+      });
+    }
+    return res.json({
+      success: true,
+      data: { operationId, result },
+    });
   }) as RequestHandler,
 );
 

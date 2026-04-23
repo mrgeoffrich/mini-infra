@@ -1078,10 +1078,14 @@ model Stack {
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 
-  // Vault binding (Phase 3)
-  vaultAppRoleId       String?
-  vaultAppRole         VaultAppRole? @relation(fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
-  vaultFailClosed      Boolean     @default(true)
+  // Vault binding (Phase 3). `lastAppliedVaultAppRoleId` is the AppRole ID
+  // that was in effect on the last successful apply — compared against the
+  // current `vaultAppRoleId` by the credential injector to decide whether
+  // fail-closed degradation is allowed.
+  vaultAppRoleId              String?
+  vaultAppRole                VaultAppRole? @relation(fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
+  vaultFailClosed             Boolean       @default(true)
+  lastAppliedVaultAppRoleId   String?
 
   // Relations
   services             StackService[]

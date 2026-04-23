@@ -1,5 +1,5 @@
 import type { PrismaClient } from "../../lib/prisma";
-import type { StackDefinition, StackContainerConfig } from "@mini-infra/types";
+import type { StackContainerConfig, DynamicEnvSource } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultServices } from "./vault-services";
 
@@ -14,26 +14,31 @@ export const DEFAULT_WRAPPED_SECRET_ID_TTL_SECONDS = 300;
 export interface InjectorArgs {
   appRoleId: string;
   failClosed: boolean;
-  /** Last successfully applied stack snapshot, used for degraded fallback. */
-  prevSnapshot: StackDefinition | null;
+  /**
+   * The AppRole ID bound to this stack on the last successful apply, if any.
+   * If present and equals `appRoleId`, the binding is considered stable and
+   * fail-closed degradation is allowed. If it differs, we always fail-closed.
+   */
+  prevBoundAppRoleId: string | null;
 }
 
 export interface InjectorResult {
-  VAULT_ADDR: string;
-  VAULT_ROLE_ID: string;
-  VAULT_WRAPPED_SECRET_ID?: string;
-  /** Keys actually resolved — used to merge into env by name. */
+  /** Env values to merge into the service's containerConfig.env. */
   values: Record<string, string>;
+  /** True when the result is degraded (missing wrapped secret_id). */
+  degraded: boolean;
 }
 
 /**
  * Resolves vault-backed dynamic env values at apply time.
  *
  * Strategy:
- *   - When Vault is reachable: reads role_id, mints a wrapped secret_id, returns full set.
- *   - When Vault is unreachable AND failClosed = true AND a prior snapshot with
- *     the same AppRole binding exists: returns role_id only (degraded). The
- *     running app can retry the login-and-renew cycle once Vault is back.
+ *   - When Vault is reachable: reads role_id, mints a wrapped secret_id,
+ *     returns full set.
+ *   - When Vault is unreachable AND failClosed = true AND the stack's
+ *     `vaultAppRoleId` matches its prior binding AND the AppRole has a
+ *     cached role_id: returns role_id only (degraded). The running app can
+ *     retry login-and-renew once Vault is back.
  *   - Otherwise throws.
  */
 export class VaultCredentialInjector {
@@ -60,7 +65,6 @@ export class VaultCredentialInjector {
       throw new Error("Vault address is not configured");
     }
 
-    // Decide if we need to talk to Vault at all.
     const needsMint = Object.values(dynamicEnv).some(
       (src) => src.kind === "vault-wrapped-secret-id",
     );
@@ -74,10 +78,9 @@ export class VaultCredentialInjector {
 
     const client = services.admin.getClient();
     if (!client) {
-      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv);
+      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle.cachedRoleId);
     }
 
-    // Try the Vault-reachable happy path
     try {
       if (needsRoleId && !roleId) {
         roleId = await client.readAppRoleId(approle.name);
@@ -107,111 +110,85 @@ export class VaultCredentialInjector {
         },
         "Vault unreachable while resolving dynamic env",
       );
-      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv);
+      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle.cachedRoleId);
     }
 
-    return this.buildValues({
-      dynamicEnv,
-      vaultAddress,
-      roleId,
-      wrappedSecretId,
-    });
+    return {
+      values: buildValues(dynamicEnv, vaultAddress, roleId, wrappedSecretId),
+      degraded: false,
+    };
   }
 
   private degradedOrThrow(
     args: InjectorArgs,
     roleId: string | null,
     vaultAddress: string,
-    dynamicEnv: Record<string, import("@mini-infra/types").DynamicEnvSource>,
+    dynamicEnv: Record<string, DynamicEnvSource>,
+    cachedRoleId: string | null,
   ): InjectorResult {
-    const { failClosed, prevSnapshot, appRoleId } = args;
+    const { failClosed, prevBoundAppRoleId, appRoleId } = args;
     if (!failClosed) {
-      // best-effort — return whatever we can
-      return this.buildValues({
-        dynamicEnv,
-        vaultAddress,
-        roleId,
-        wrappedSecretId: undefined,
-      });
+      return {
+        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined),
+        degraded: true,
+      };
     }
-    // fail-closed: only allow degrade when we have a prior snapshot bound to
-    // the same AppRole (so we're definitely a re-apply, not a new deploy).
-    const prevApproleMatches =
-      prevSnapshot !== null &&
-      hasSnapshotBoundToSameApprole(prevSnapshot, appRoleId);
-    if (prevApproleMatches && roleId) {
+    // fail-closed: only degrade when the binding is stable AND the AppRole has
+    // a known role_id (meaning it was successfully applied to Vault at least
+    // once). A binding that changed since the last apply fails closed.
+    const bindingStable = prevBoundAppRoleId === appRoleId && cachedRoleId !== null;
+    if (bindingStable && roleId) {
       log.info(
         { approleId: appRoleId },
-        "Vault unreachable, degrading to role_id-only (prior snapshot present)",
+        "Vault unreachable; proceeding with role_id only (stable binding, cached role_id)",
       );
-      return this.buildValues({
-        dynamicEnv,
-        vaultAddress,
-        roleId,
-        wrappedSecretId: undefined,
-      });
+      return {
+        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined),
+        degraded: true,
+      };
     }
     throw new Error(
-      "Vault is unreachable and this stack has no valid prior snapshot; cannot apply in fail-closed mode",
+      "Vault is unreachable and this stack either has a new binding or no cached role_id; cannot apply in fail-closed mode",
     );
-  }
-
-  private buildValues(args: {
-    dynamicEnv: Record<string, import("@mini-infra/types").DynamicEnvSource>;
-    vaultAddress: string;
-    roleId: string | null;
-    wrappedSecretId?: string;
-  }): InjectorResult {
-    const values: Record<string, string> = {};
-    for (const [key, source] of Object.entries(args.dynamicEnv)) {
-      switch (source.kind) {
-        case "vault-addr":
-          values[key] = args.vaultAddress;
-          break;
-        case "vault-role-id":
-          if (args.roleId) values[key] = args.roleId;
-          break;
-        case "vault-wrapped-secret-id":
-          if (args.wrappedSecretId) values[key] = args.wrappedSecretId;
-          break;
-      }
-    }
-    return {
-      VAULT_ADDR: args.vaultAddress,
-      VAULT_ROLE_ID: args.roleId ?? "",
-      VAULT_WRAPPED_SECRET_ID: args.wrappedSecretId,
-      values,
-    };
   }
 }
 
-function pickTtlSeconds(
-  dynamicEnv: Record<string, import("@mini-infra/types").DynamicEnvSource>,
-): number {
-  let ttl = DEFAULT_WRAPPED_SECRET_ID_TTL_SECONDS;
-  for (const source of Object.values(dynamicEnv)) {
-    if (source.kind === "vault-wrapped-secret-id" && source.ttlSeconds) {
-      // If multiple entries specify a TTL, use the max so all wraps survive
-      ttl = Math.max(ttl, source.ttlSeconds);
+function buildValues(
+  dynamicEnv: Record<string, DynamicEnvSource>,
+  vaultAddress: string,
+  roleId: string | null,
+  wrappedSecretId: string | undefined,
+): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const [key, source] of Object.entries(dynamicEnv)) {
+    switch (source.kind) {
+      case "vault-addr":
+        values[key] = vaultAddress;
+        break;
+      case "vault-role-id":
+        if (roleId) values[key] = roleId;
+        break;
+      case "vault-wrapped-secret-id":
+        if (wrappedSecretId) values[key] = wrappedSecretId;
+        break;
     }
   }
-  return ttl;
+  return values;
 }
 
 /**
- * Snapshots don't carry the binding FK directly — they carry the stack
- * definition. For our purposes, we treat "a prior snapshot exists" as
- * sufficient evidence of a prior successful apply. (The outer caller already
- * ensures this stack's current `vaultAppRoleId` matches its prior one; if it
- * changed, fail-closed SHOULD fail rather than degrade.)
+ * When multiple dynamic-env entries specify a TTL, take the MIN — we must
+ * satisfy the tightest bound. Falls back to the default when no entry
+ * specifies one.
  */
-function hasSnapshotBoundToSameApprole(
-  snapshot: StackDefinition,
-  _appRoleId: string,
-): boolean {
-  // The snapshot is the stack definition, which doesn't include the binding
-  // FK. In lieu of a snapshot-embedded binding, a non-empty snapshot implies a
-  // successful prior apply — our binding matched then, and the caller verifies
-  // binding stability at the API boundary.
-  return snapshot.services != null && snapshot.services.length > 0;
+function pickTtlSeconds(dynamicEnv: Record<string, DynamicEnvSource>): number {
+  let ttl = DEFAULT_WRAPPED_SECRET_ID_TTL_SECONDS;
+  let seen = false;
+  for (const source of Object.values(dynamicEnv)) {
+    if (source.kind === "vault-wrapped-secret-id" && source.ttlSeconds) {
+      ttl = seen ? Math.min(ttl, source.ttlSeconds) : source.ttlSeconds;
+      seen = true;
+    }
+  }
+  return ttl;
 }

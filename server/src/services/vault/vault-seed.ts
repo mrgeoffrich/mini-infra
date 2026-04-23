@@ -94,23 +94,36 @@ path "identity/*" {
 `;
 
 const MINI_INFRA_OPERATOR_HCL = `# mini-infra-operator — userpass human-operator access.
-# Keep in sync with the policy installed during bootstrap.
+# Read-only visibility + secret management + change own password. Keep in sync
+# with the policy installed during bootstrap in vault-admin-service.ts.
 
-path "sys/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+path "sys/health" { capabilities = ["read", "list"] }
+path "sys/seal-status" { capabilities = ["read", "list"] }
+path "sys/mounts" { capabilities = ["read", "list"] }
+path "sys/mounts/*" { capabilities = ["read", "list"] }
+path "sys/auth" { capabilities = ["read", "list"] }
+path "sys/auth/*" { capabilities = ["read", "list"] }
+path "sys/policies/acl" { capabilities = ["read", "list"] }
+path "sys/policies/acl/*" { capabilities = ["read", "list"] }
+path "sys/capabilities-self" { capabilities = ["update"] }
+
+path "auth/approle/role" { capabilities = ["read", "list"] }
+path "auth/approle/role/*" { capabilities = ["read", "list"] }
+
+path "auth/userpass/users/mini-infra-operator/password" {
+  capabilities = ["update"]
 }
 
-path "auth/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "secret/*" {
+path "secret/data/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
-
-path "identity/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
+path "secret/metadata/*" {
+  capabilities = ["read", "list", "delete"]
 }
+
+path "auth/token/lookup-self" { capabilities = ["read"] }
+path "auth/token/renew-self" { capabilities = ["update"] }
+path "auth/token/revoke-self" { capabilities = ["update"] }
 `;
 
 const USER_SELF_SERVICE_HCL = `# User self-service — each authenticated user can manage their own secrets

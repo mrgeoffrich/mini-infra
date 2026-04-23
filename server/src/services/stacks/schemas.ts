@@ -127,6 +127,16 @@ export const stackContainerConfigSchema = z.object({
       maxFile: z.string(),
     })
     .optional(),
+}).superRefine((config, ctx) => {
+  if (!config.env || !config.dynamicEnv) return;
+  const overlap = Object.keys(config.env).filter((k) => k in config.dynamicEnv!);
+  if (overlap.length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["dynamicEnv"],
+      message: `env and dynamicEnv share key(s): ${overlap.join(", ")}. Dynamic keys must be disjoint from static env.`,
+    });
+  }
 });
 
 export const stackConfigFileSchema = z.object({

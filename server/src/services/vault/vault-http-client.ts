@@ -92,10 +92,20 @@ export class VaultHttpClient {
 
   setToken(token: string | null): void {
     this.token = token;
+    // A fresh token means the caller has done something to recover from a
+    // bad-auth failure path. Reset the circuit breaker so subsequent requests
+    // aren't short-circuited by stale failures against the old token.
+    this.resetCircuit();
   }
 
   clearToken(): void {
     this.token = null;
+    this.resetCircuit();
+  }
+
+  resetCircuit(): void {
+    this.circuitBreaker.consecutiveFailures = 0;
+    this.circuitBreaker.openUntil = 0;
   }
 
   /**

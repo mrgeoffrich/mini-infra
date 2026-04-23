@@ -70,23 +70,23 @@ export class OperatorPassphraseService extends EventEmitter {
     this.prisma = prisma;
   }
 
-  /** Refresh state flags from the DB. Does NOT change the in-memory key. */
+  /**
+   * Refresh state flags from the DB. Does NOT change the in-memory key.
+   *
+   * Invariant: `uninitialised` means the DB has no passphrase stored. If the
+   * row gets wiped while we hold a key in memory, the key no longer decrypts
+   * anything useful — we force a re-lock to restore the invariant.
+   */
   async refresh(): Promise<PassphraseState> {
     const row = await this.prisma.vaultState.findUnique({
       where: { kind: VAULT_STATE_KIND },
     });
     if (!row || !row.passphraseSalt || !row.passphraseProbe) {
-      if (this.state !== "uninitialised" && !this.key) {
-        this.state = "uninitialised";
-      }
-      if (!this.key) this.state = "uninitialised";
+      if (this.key) this.lock();
+      this.state = "uninitialised";
       return this.state;
     }
-    if (this.key) {
-      this.state = "unlocked";
-    } else {
-      this.state = "locked";
-    }
+    this.state = this.key ? "unlocked" : "locked";
     return this.state;
   }
 

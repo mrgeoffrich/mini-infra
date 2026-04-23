@@ -132,8 +132,10 @@ export interface VaultBootstrapCompletedEvent {
   success: boolean;
   steps: OperationStep[];
   errors: string[];
-  /** Only present on success — contains one-time-viewable credentials */
-  result?: VaultBootstrapResult;
+  // IMPORTANT: this event does NOT carry the one-time-viewable credentials
+  // (root token, unseal keys, operator password). Those are returned only on
+  // the HTTP response that initiated bootstrap, so they never fan out to other
+  // subscribers on Channel.VAULT. See docs/secrets-vault-implementation.md.
 }
 
 export interface VaultUnsealStartedEvent {

@@ -68,20 +68,9 @@ export function BootstrapDialog({
     },
     open,
   );
-  useSocketEvent(
-    ServerEvent.VAULT_BOOTSTRAP_COMPLETED,
-    (p) => {
-      if (operationId && p.operationId !== operationId) return;
-      if (p.success && p.result) {
-        setResult(p.result);
-        setPhase("complete");
-      } else {
-        setErrors(p.errors);
-        setPhase("failed");
-      }
-    },
-    open,
-  );
+  // Note: VAULT_BOOTSTRAP_COMPLETED no longer carries credentials to avoid
+  // leaking them to every socket subscriber. The result is returned via the
+  // HTTP mutation's resolved value; see submit() below.
 
   useEffect(() => {
     if (open) {
@@ -97,13 +86,20 @@ export function BootstrapDialog({
     passphrase.length >= 8 && passphrase === confirm && address.length > 0;
 
   const submit = async () => {
-    const res = await bootstrap.mutateAsync({
-      passphrase,
-      address,
-      stackId: initialStackId ?? undefined,
-    });
-    setOperationId(res.operationId);
     setPhase("running");
+    try {
+      const res = await bootstrap.mutateAsync({
+        passphrase,
+        address,
+        stackId: initialStackId ?? undefined,
+      });
+      setOperationId(res.operationId);
+      setResult(res.result);
+      setPhase("complete");
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : String(err)]);
+      setPhase("failed");
+    }
   };
 
   return (

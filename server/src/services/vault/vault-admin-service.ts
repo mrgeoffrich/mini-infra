@@ -40,24 +40,46 @@ path "identity/*" {
 }
 `;
 
-const OPERATOR_POLICY_HCL = `# mini-infra-operator — managed by Mini Infra.
-# Used by the userpass mini-infra-operator account for human Vault UI access.
+const OPERATOR_POLICY_HCL = `# mini-infra-operator — userpass policy for human operator logging into the
+# Vault UI to inspect state and debug. Deliberately NOT admin-equivalent: all
+# write paths are delegated to the mini-infra-admin AppRole via the Mini Infra
+# API. If a human operator needs admin capability, grant them the vault:admin
+# scope on Mini Infra and drive Vault through the UI there.
 
-path "sys/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+# Read-only visibility into seal, mounts, policies, audit config
+path "sys/health" { capabilities = ["read", "list"] }
+path "sys/seal-status" { capabilities = ["read", "list"] }
+path "sys/mounts" { capabilities = ["read", "list"] }
+path "sys/mounts/*" { capabilities = ["read", "list"] }
+path "sys/auth" { capabilities = ["read", "list"] }
+path "sys/auth/*" { capabilities = ["read", "list"] }
+path "sys/policies/acl" { capabilities = ["read", "list"] }
+path "sys/policies/acl/*" { capabilities = ["read", "list"] }
+path "sys/capabilities-self" { capabilities = ["update"] }
+
+# List and read AppRoles to see which apps are configured
+path "auth/approle/role" { capabilities = ["read", "list"] }
+path "auth/approle/role/*" { capabilities = ["read", "list"] }
+
+# Let the operator change their own userpass password. Others' passwords and
+# new user creation are NOT allowed — use the admin AppRole via Mini Infra.
+path "auth/userpass/users/mini-infra-operator/password" {
+  capabilities = ["update"]
 }
 
-path "auth/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "secret/*" {
+# Read and write secrets under secret/ — the operator needs this to debug
+# what apps are reading at runtime. KV v2 requires both data/ and metadata/.
+path "secret/data/*" {
   capabilities = ["create", "read", "update", "delete", "list"]
 }
-
-path "identity/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
+path "secret/metadata/*" {
+  capabilities = ["read", "list", "delete"]
 }
+
+# Token lifecycle for own session
+path "auth/token/lookup-self" { capabilities = ["read"] }
+path "auth/token/renew-self" { capabilities = ["update"] }
+path "auth/token/revoke-self" { capabilities = ["update"] }
 `;
 
 const BOOTSTRAP_STEPS = [
@@ -156,6 +178,7 @@ export class VaultAdminService {
       BOOTSTRAP_STEPS[0],
       async () => client.init(3, 2),
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -177,6 +200,7 @@ export class VaultAdminService {
         }
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -189,6 +213,7 @@ export class VaultAdminService {
         await client.enableAuth("userpass", "userpass");
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -200,6 +225,7 @@ export class VaultAdminService {
         await client.enableKvV2("secret");
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -222,6 +248,7 @@ export class VaultAdminService {
         return { adminRoleId: roleId, adminSecretId: secretId };
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -243,24 +270,35 @@ export class VaultAdminService {
         await this.stateService.persistOperatorPassword(operatorPassword);
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
 
-    // 7. Rotate root token — log in via admin AppRole, then revoke root
+    // 7. Rotate root token — log in via the admin AppRole, confirm the admin
+    //    token works, then revoke root. revokeSelf() revokes the token in the
+    //    current X-Vault-Token header — we explicitly set it back to the root
+    //    token for that call so that root is what gets revoked, then switch
+    //    the client to use the admin token for all subsequent operations.
     await this.wrapStep(
       BOOTSTRAP_STEPS[6],
       async () => {
         const loginRes = await client.appRoleLogin(adminRoleId, adminSecretId);
         const adminToken = loginRes.auth.client_token;
         this.adminToken = adminToken;
-        // Revoke root via the admin token so we don't burn it via revoke-self
+        // Sanity check: the admin token can lookup itself. If this fails, root
+        // is still alive and we abort before destroying the recovery path.
+        client.setToken(adminToken);
+        await client.lookupSelf();
+        // Revoke root using root's own token.
         client.setToken(rootToken);
         await client.revokeSelf();
+        // From here on the client uses the admin AppRole token.
         client.setToken(adminToken);
         await this.stateService.clearRootToken();
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -299,6 +337,7 @@ export class VaultAdminService {
         }
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -311,6 +350,7 @@ export class VaultAdminService {
         }
       },
       onStep,
+      () => completed,
       () => ++completed,
       total,
     );
@@ -345,6 +385,7 @@ export class VaultAdminService {
     name: string,
     fn: () => Promise<T>,
     onStep: StepCallback | undefined,
+    getCompleted: () => number,
     incrementCompleted: () => number,
     totalSteps: number,
   ): Promise<T> {
@@ -355,8 +396,8 @@ export class VaultAdminService {
       return res;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
-      // Do NOT increment completed on failure
-      const completed = Math.max(0, incrementCompleted() - 1);
+      // Do NOT increment completed on failure — read the current value.
+      const completed = getCompleted();
       safeStep(
         onStep,
         { step: name, status: "failed", detail },
@@ -364,7 +405,6 @@ export class VaultAdminService {
         totalSteps,
       );
       log.error({ err: detail, step: name }, "Vault bootstrap step failed");
-      if (err instanceof VaultHttpError) throw err;
       throw err;
     }
   }

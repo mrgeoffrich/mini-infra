@@ -4,6 +4,7 @@ import type {
   VaultStatus,
   VaultPolicyInfo,
   VaultAppRoleInfo,
+  VaultBootstrapResult,
   CreateVaultPolicyRequest,
   UpdateVaultPolicyRequest,
   CreateVaultAppRoleRequest,
@@ -73,10 +74,16 @@ export function useLockPassphrase() {
 
 // ── Bootstrap / unseal ──────────────────────────────────
 
-export interface BootstrapKickoff {
+export interface BootstrapResponse {
   operationId: string;
+  result: VaultBootstrapResult;
 }
 
+/**
+ * Bootstrap is synchronous on the wire — the mutation resolves with the
+ * one-time-viewable credentials blob. Progress is still emitted on
+ * `Channel.VAULT` but without credentials.
+ */
 export function useBootstrapVault() {
   return useMutation({
     mutationFn: (input: {
@@ -84,7 +91,7 @@ export function useBootstrapVault() {
       address: string;
       stackId?: string;
     }) =>
-      apiFetch<BootstrapKickoff>("/api/vault/bootstrap", {
+      apiFetch<BootstrapResponse>("/api/vault/bootstrap", {
         method: "POST",
         body: JSON.stringify(input),
       }),

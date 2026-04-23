@@ -335,15 +335,20 @@ export class StackServiceHandlers {
 
   async applyStatelessWeb(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
     const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
-      resolvedConfigsMap, containerByService, infraNetworkMap, actionStart, log } = ctx;
+      resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
     if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
     if (!serviceDef.routing) {
       throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
     }
 
+    const effectiveServiceDef = mergeDynamicEnv(
+      serviceDef,
+      resolvedEnvOverrides?.get(action.serviceName),
+    );
+
     const baseContext = await buildStateMachineContext(
-      this.prisma, action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
+      this.prisma, action, effectiveServiceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     switch (action.action) {
@@ -474,7 +479,7 @@ export class StackServiceHandlers {
 
   async updateStatelessWeb(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
     const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
-      resolvedConfigsMap, containerByService, infraNetworkMap, actionStart, log } = ctx;
+      resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
     if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
     if (!serviceDef.routing) {
@@ -483,8 +488,13 @@ export class StackServiceHandlers {
 
     log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
 
+    const effectiveServiceDef = mergeDynamicEnv(
+      serviceDef,
+      resolvedEnvOverrides?.get(action.serviceName),
+    );
+
     const baseContext = await buildStateMachineContext(
-      this.prisma, action, serviceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
+      this.prisma, action, effectiveServiceDef, projectName, stackId, stack, serviceHashes, infraNetworkMap, networkNames
     );
 
     const oldContainer = containerByService.get(action.serviceName);
