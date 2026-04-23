@@ -127,45 +127,53 @@ docker run --rm -v ${PWD}/zap-reports:/zap/wrk:rw `
 
 ### Testing Localhost Applications
 
-When testing applications running on your host machine (e.g., `http://localhost:3005`):
+When testing Mini Infra on your host machine, resolve the current dev URL from `environment-details.xml` at the project root rather than hardcoding a port:
 
 **Linux/Mac:**
 ```bash
+MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
 docker run --rm --network host \
   -v $(pwd)/zap-reports:/zap/wrk:rw \
   -t ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py \
-  -t http://localhost:3005
+  -t "$MINI_INFRA_URL"
 ```
 
 **Windows:**
 ```powershell
-# Use host.docker.internal to reach host services
+# Swap localhost for host.docker.internal so the ZAP container can reach the host.
+$port = ([xml](Get-Content environment-details.xml)).environment.endpoints.ui -replace '^http://localhost:', ''
+$target = "http://host.docker.internal:$port"
 docker run --rm -v ${PWD}/zap-reports:/zap/wrk:rw `
   -t ghcr.io/zaproxy/zaproxy:stable `
   zap-baseline.py `
-  -t http://host.docker.internal:3005
+  -t $target
 ```
 
 ### Testing Mini Infra Application
 
-**Development Environment (default port 3005):**
+Resolve the dev URL from `environment-details.xml` at the project root (written by `deployment/development/worktree_start.sh`) instead of hardcoding a port — each worktree instance listens on a different host port.
+
+**Development Environment:**
 ```bash
 # Linux/Mac
+MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
 docker run --rm --network host \
   -v $(pwd)/zap-reports:/zap/wrk:rw \
   -t ghcr.io/zaproxy/zaproxy:stable \
   zap-baseline.py \
-  -t http://localhost:3005 \
+  -t "$MINI_INFRA_URL" \
   -r mini-infra-scan.html
 ```
 
 ```powershell
-# Windows
+# Windows — swap localhost for host.docker.internal so the ZAP container can reach the host
+$port = ([xml](Get-Content environment-details.xml)).environment.endpoints.ui -replace '^http://localhost:', ''
+$target = "http://host.docker.internal:$port"
 docker run --rm -v ${PWD}/zap-reports:/zap/wrk:rw `
   -t ghcr.io/zaproxy/zaproxy:stable `
   zap-baseline.py `
-  -t http://host.docker.internal:3005 `
+  -t $target `
   -r mini-infra-scan.html
 ```
 
@@ -366,7 +374,8 @@ Make sure you're using the correct network configuration:
 Create `quick-scan.sh`:
 ```bash
 #!/bin/bash
-TARGET=${1:-http://localhost:3005}
+# Default target resolves from environment-details.xml; override with $1 if needed.
+TARGET=${1:-$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)}
 REPORT_DIR="./zap-reports"
 
 mkdir -p "$REPORT_DIR"
@@ -393,7 +402,12 @@ chmod +x quick-scan.sh
 Create `quick-scan.ps1`:
 ```powershell
 param(
-    [string]$Target = "http://host.docker.internal:3005"
+    # Default: convert localhost URL from environment-details.xml to host.docker.internal
+    # so the ZAP container can reach the host — override with -Target if needed.
+    [string]$Target = $(
+        $port = ([xml](Get-Content environment-details.xml)).environment.endpoints.ui -replace '^http://localhost:', ''
+        "http://host.docker.internal:$port"
+    )
 )
 
 $ReportDir = "./zap-reports"

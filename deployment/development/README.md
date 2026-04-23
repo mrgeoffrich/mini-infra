@@ -155,8 +155,10 @@ docker stop mini-infra-dev 2>/dev/null; docker rm mini-infra-dev 2>/dev/null
 # See container status
 docker ps -a --filter 'name=mini-infra'
 
-# Query the update result via API
-curl -s -H 'x-api-key: <KEY>' http://localhost:3005/api/self-update/status | python3 -m json.tool
+# Query the update result via API — resolve the URL from the generated
+# environment-details.xml rather than hardcoding the port.
+MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
+curl -s -H 'x-api-key: <KEY>' "$MINI_INFRA_URL/api/self-update/status" | python3 -m json.tool
 ```
 
 ## When to Use This vs Regular Development

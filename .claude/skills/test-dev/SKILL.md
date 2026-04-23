@@ -9,7 +9,13 @@ You're running UI tests against a live instance of Mini Infra — a Docker host 
 
 ## Environment
 
-- **App URL**: http://localhost:3005
+- **App URL**: read from `environment-details.xml` at the project root — each worktree instance uses its own host port. Grab it once up front:
+
+  ```bash
+  MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
+  ```
+
+  If `environment-details.xml` is absent, the user is on the legacy single-instance flow — fall back to `http://localhost:3005`.
 - **Login**: geoff.rich@gmail.com / Juliette 2010
 - **Source code**: available in the current working directory
 
@@ -35,7 +41,7 @@ Before opening the browser, write out the test cases you intend to run:
 ### Step 3 — Open a browser and log in
 
 ```bash
-playwright-cli open --persistent http://localhost:3005
+playwright-cli open --persistent "$MINI_INFRA_URL"
 ```
 
 If redirected to `/login`, fill in credentials and submit:
@@ -127,10 +133,10 @@ Track issues as you find them. Do not wait until the end to log — note each on
 
 ```bash
 # Open browser (headless by default — omit --headed unless you need to watch)
-playwright-cli open --persistent http://localhost:3005
+playwright-cli open --persistent "$MINI_INFRA_URL"
 
 # Navigate (always use full URL — relative paths fail)
-playwright-cli goto http://localhost:3005/some/path
+playwright-cli goto "$MINI_INFRA_URL/some/path"
 
 # Inspect the page (always do this before clicking to find refs)
 playwright-cli snapshot

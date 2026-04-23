@@ -2,9 +2,9 @@ import { Router, Request, Response } from "express";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
+import { getAuthenticatedUser } from "../lib/auth-middleware";
 import { UserPreferencesService } from "../services/user-preferences";
 import { TlsConfigService } from "../services/tls/tls-config";
-import type { JWTUser } from "@mini-infra/types";
 
 const logger = getLogger("http", "onboarding");
 const router = Router();
@@ -54,7 +54,9 @@ router.post(
   "/complete",
   requirePermission("settings:write"),
   async (req: Request, res: Response) => {
-    const user = req.user as JWTUser | undefined;
+    // Use the unified helper so API-key auth (where req.user isn't
+    // populated by the JWT middleware) works the same as a session.
+    const user = getAuthenticatedUser(req);
     if (!user?.id) {
       return res
         .status(401)

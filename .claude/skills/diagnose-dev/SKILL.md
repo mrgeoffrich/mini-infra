@@ -9,7 +9,13 @@ You're debugging a running instance of Mini Infra — a Docker host management w
 
 ## Environment
 
-- **App URL**: http://localhost:3005
+- **App URL**: read from `environment-details.xml` at the project root so you're not pinned to a stale port. Grab it once up front and reuse it:
+
+  ```bash
+  MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
+  ```
+
+  If `environment-details.xml` is absent, the user is on the legacy single-instance flow — fall back to `http://localhost:3005`.
 - **Container name**: `mini-infra-dev`
 - **Docker Compose file**: `deployment/development/docker-compose.yaml`
 - **Source code**: available in the current working directory
@@ -125,10 +131,10 @@ Use curl with the API key to query endpoints:
 
 ```bash
 # Health check (no auth needed)
-curl -s http://localhost:3005/health
+curl -s "$MINI_INFRA_URL/health"
 
 # Authenticated requests — add the API key header
-curl -s -H "x-api-key: mk_49181f65c1b91ec453684007f69eaceb7633c5cad706c7c901a2c9f5322c72af" http://localhost:3005/api/containers
+curl -s -H "x-api-key: mk_49181f65c1b91ec453684007f69eaceb7633c5cad706c7c901a2c9f5322c72af" "$MINI_INFRA_URL/api/containers"
 ```
 
 #### Checking container health
@@ -153,7 +159,7 @@ If the issue is visual or involves user interaction, load the Playwright CLI ski
 playwright-cli open --persistent --headed
 
 # Navigate to the app
-playwright-cli goto http://localhost:3005
+playwright-cli goto "$MINI_INFRA_URL"
 
 # Navigate to the affected page, interact with elements, and observe behavior
 # Use snapshots to inspect the DOM state
