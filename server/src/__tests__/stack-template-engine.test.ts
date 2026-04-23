@@ -55,12 +55,12 @@ describe('resolveTemplate', () => {
   });
 
   it('resolves {{volumes.loki_data}}', () => {
-    expect(resolveTemplate('{{volumes.loki_data}}', ctx)).toBe('prod-monitoring-loki_data');
+    expect(resolveTemplate('{{volumes.loki_data}}', ctx)).toBe('prod-monitoring_loki_data');
   });
 
   it('resolves {{networks.monitoring_network}}', () => {
     expect(resolveTemplate('{{networks.monitoring_network}}', ctx)).toBe(
-      'prod-monitoring-monitoring_network'
+      'prod-monitoring_monitoring_network'
     );
   });
 
@@ -93,8 +93,8 @@ describe('buildTemplateContext', () => {
     expect(ctx.services.grafana.containerName).toBe('prod-monitoring-grafana');
     expect(ctx.env.LOG_LEVEL).toBe('info');
     expect(ctx.env.RETENTION).toBe('30d');
-    expect(ctx.volumes.loki_data).toBe('prod-monitoring-loki_data');
-    expect(ctx.networks.monitoring_network).toBe('prod-monitoring-monitoring_network');
+    expect(ctx.volumes.loki_data).toBe('prod-monitoring_loki_data');
+    expect(ctx.networks.monitoring_network).toBe('prod-monitoring_monitoring_network');
   });
 });
 

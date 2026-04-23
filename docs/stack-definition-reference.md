@@ -159,6 +159,7 @@ Important note about `dependsOn`:
 | --- | --- | --- | --- |
 | `command` | No | Container command override. | Array of strings. |
 | `entrypoint` | No | Container entrypoint override. | Array of strings. |
+| `capAdd` | No | Linux capabilities to add to the container. | Array of strings, e.g. `["NET_ADMIN"]`. |
 | `user` | No | User the container should run as. | String. |
 | `env` | No | Static environment variables. | Mapping of string keys to string values. |
 | `dynamicEnv` | No | Apply-time env values resolved by Mini Infra. | Mapping of env var name to a supported dynamic source. Keys must not overlap with `env`. |
@@ -294,14 +295,14 @@ Reference note:
 
 Mini Infra resolves templates from a context that includes:
 
-- `stack.name`
-- `stack.projectName`
-- `services.<serviceName>.containerName`
-- `services.<serviceName>.image`
-- `env.<VAR_NAME>`
-- `volumes.<volumeName>`
-- `networks.<networkName>`
-- `params.<paramName>`
+- `stack.name` — the stack's logical name.
+- `stack.projectName` — the Docker project prefix. Resolves to `{envName}-{stackName}` for environment-scoped stacks and `mini-infra-{stackName}` for host-level stacks.
+- `services.<serviceName>.containerName` — the full Docker container name, e.g. `prod-mystack-web`.
+- `services.<serviceName>.image` — the resolved image reference, e.g. `nginx:1.25`.
+- `env.<VAR_NAME>` — static env vars aggregated from `containerConfig.env` across **all services** in definition order. If two services define the same key, the later one wins.
+- `volumes.<volumeName>` — the actual Docker volume name, `{projectName}_{volumeName}`.
+- `networks.<networkName>` — the actual Docker network name, `{projectName}_{networkName}`.
+- `params.<paramName>` — resolved parameter values.
 
 Important limits:
 
