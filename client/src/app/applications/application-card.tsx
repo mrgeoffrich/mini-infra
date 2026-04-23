@@ -99,10 +99,6 @@ export function ApplicationCard({
   const currentTag = primaryService?.dockerTag ?? "";
   const [tagDraft, setTagDraft] = useState(currentTag);
 
-  // Don't show the flipped face while the stack is churning — the busy overlay
-  // takes precedence. Derived rather than an effect to avoid cascading renders.
-  const effectivelyFlipped = flipped && !isBusy;
-
   const openUpdateForm = () => {
     setTagDraft(currentTag);
     setFlipped(true);
@@ -111,6 +107,14 @@ export function ApplicationCard({
 
   const { registerTask } = useTaskTracker();
   const deployUpdate = useDeployApplicationUpdate();
+
+  // Cover the gap between deployUpdate resolving and the socket "pending" event
+  // arriving — keep the card locked until one or the other is true.
+  const effectivelyBusy = isBusy || deployUpdate.isPending;
+
+  // Don't show the flipped face while the stack is churning — the busy overlay
+  // takes precedence. Derived rather than an effect to avoid cascading renders.
+  const effectivelyFlipped = flipped && !effectivelyBusy;
 
   const trimmedTag = tagDraft.trim();
   const tagChanged = trimmedTag !== currentTag;
@@ -146,14 +150,14 @@ export function ApplicationCard({
         className={cn(
           "grid transition-transform duration-500 [transform-style:preserve-3d]",
           effectivelyFlipped && "[transform:rotateY(180deg)]",
-          isBusy && "opacity-60 pointer-events-none",
+          effectivelyBusy && "opacity-60 pointer-events-none",
         )}
       >
         {/* FRONT */}
         <Card
           className={cn(
             "group flex flex-col transition-shadow [grid-area:1/1] [backface-visibility:hidden]",
-            !isBusy && "hover:shadow-md",
+            !effectivelyBusy && "hover:shadow-md",
           )}
         >
           <CardHeader className="pb-2">
