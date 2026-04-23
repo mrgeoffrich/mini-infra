@@ -5,17 +5,17 @@ description: Using the playwright-cli for browser automation, test features that
 
 # UI Feature Testing
 
-You're running UI tests against a live instance of Mini Infra — a Docker host management web app. Use playwright-cli to drive the browser. The app is a test system so credentials can be shared freely.
+You're running UI tests against a live instance of Mini Infra — a Docker host management web app. Use the playwright-cli skill to drive the browser. The app is a test system so credentials can be shared freely.
 
 ## Environment
 
-- **App URL**: read from `environment-details.xml` at the project root — each worktree instance uses its own host port. Grab it once up front:
+- Look for the existence of `environment-details.xml`.
+- If absent run `deployment/development/worktree_start.sh` to start the environment and when its complete it will generate a `environment-details.xml` file with all the details required.
+- Read from `environment-details.xml` at the project root — each worktree instance uses its own host port. Grab it once up front:
 
   ```bash
   MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
   ```
-
-  If `environment-details.xml` is absent and you are inside a git worktree (check with `git rev-parse --git-dir`), **stop and tell the user to run `deployment/development/worktree_start.sh` first** — do not fall back to localhost:3005, which would test the wrong instance. Only fall back to `http://localhost:3005` when you are certain you are on the main checkout (not a worktree).
 
 - **Named browser session** — multiple worktrees run concurrently and all share the same playwright-cli daemon. The default session (`default`) is shared, so two worktrees will fight over the same browser. Always derive a session name from the worktree profile and pass `-s=<SESSION>` to every `playwright-cli` command:
 
