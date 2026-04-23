@@ -189,6 +189,7 @@ export class StackContainerManager {
       env: config.env ?? {},
       cmd: config.command,
       entrypoint: config.entrypoint,
+      capAdd: config.capAdd,
       user: config.user,
       ports,
       internalPorts,

@@ -1,16 +1,9 @@
-import type { PrismaClient } from "../../../generated/prisma/client";
-import type { ServiceApplyResult } from "@mini-infra/types";
 import { getLogger } from "../../../lib/logger-factory";
 import { registerPostgresServer } from "./register-postgres-server";
+import { registerVaultAddress } from "./register-vault-address";
+import type { PostInstallContext } from "./types";
 
-interface PostInstallContext {
-  stackName: string;
-  projectName: string;
-  parameterValues: Record<string, string | number | boolean>;
-  serviceResults: ServiceApplyResult[];
-  triggeredBy?: string;
-  prisma: PrismaClient;
-}
+export type { PostInstallContext };
 
 type ActionHandler = (ctx: PostInstallContext) => Promise<void>;
 
@@ -20,6 +13,7 @@ type ActionHandler = (ctx: PostInstallContext) => Promise<void>;
  */
 const templateHandlers: Record<string, ActionHandler[]> = {
   postgres: [registerPostgresServer],
+  vault: [registerVaultAddress],
 };
 
 /**

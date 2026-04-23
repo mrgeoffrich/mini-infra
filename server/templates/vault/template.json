@@ -1,7 +1,7 @@
 {
   "name": "vault",
   "displayName": "Vault (OpenBao)",
-  "builtinVersion": 1,
+  "builtinVersion": 4,
   "scope": "host",
   "category": "security",
   "description": "Managed OpenBao vault. Bootstrap in the Vault UI under Settings → Vault after deploying.",
@@ -10,7 +10,7 @@
       "name": "host-port",
       "type": "number",
       "default": 0,
-      "description": "Bind the Vault API on 127.0.0.1 at this host port (0 disables the host binding). Containers on the vault network reach Vault at http://mini-infra-vault:8200 regardless."
+      "description": "Bind the Vault API on 127.0.0.1 at this host port (0 disables the host binding). Containers on the vault network reach Vault at http://mini-infra-vault-vault:8200 regardless."
     }
   ],
   "resourceOutputs": [
@@ -27,8 +27,10 @@
       "dockerImage": "openbao/openbao",
       "dockerTag": "2.5.2",
       "containerConfig": {
+        "command": ["server"],
+        "capAdd": ["IPC_LOCK"],
         "env": {
-          "BAO_LOCAL_CONFIG": "{\"storage\":{\"file\":{\"path\":\"/openbao/file\"}},\"listener\":[{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}}],\"ui\":true,\"api_addr\":\"http://mini-infra-vault:8200\"}"
+          "BAO_LOCAL_CONFIG": "{\"storage\":{\"file\":{\"path\":\"/openbao/file\"}},\"listener\":[{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}}],\"ui\":true,\"api_addr\":\"http://mini-infra-vault-vault:8200\"}"
         },
         "ports": [
           {
@@ -46,13 +48,6 @@
           }
         ],
         "restartPolicy": "unless-stopped",
-        "healthcheck": {
-          "test": ["CMD-SHELL", "wget -qO- http://127.0.0.1:8200/v1/sys/health?uninitcode=200&sealedcode=200&standbycode=200 >/dev/null 2>&1 || exit 1"],
-          "interval": 30,
-          "timeout": 5,
-          "retries": 3,
-          "startPeriod": 15
-        },
         "joinResourceNetworks": ["vault"],
         "logConfig": {
           "type": "json-file",

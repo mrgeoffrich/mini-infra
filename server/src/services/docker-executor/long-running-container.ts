@@ -48,6 +48,7 @@ export class LongRunningContainerManager {
       };
       user?: string;
       entrypoint?: string[];
+      capAdd?: string[];
     }
   ): Promise<Container> {
     try {
@@ -134,6 +135,11 @@ export class LongRunningContainerManager {
       // Add volume mounts
       if (options.mounts) {
         containerOptions.HostConfig!.Mounts = options.mounts;
+      }
+
+      // Add Linux capabilities
+      if (options.capAdd && options.capAdd.length > 0) {
+        containerOptions.HostConfig!.CapAdd = options.capAdd;
       }
 
       // Add restart policy
