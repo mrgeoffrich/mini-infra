@@ -73,13 +73,14 @@ import authSettingsRoutes from "./routes/auth-settings";
 import diagnosticsRoutes from "./routes/diagnostics";
 import onboardingRoutes from "./routes/onboarding";
 import openapiRoutes from "./routes/openapi";
+import devApiKeyRoutes from "./routes/dev-api-key";
 import { listRouteMeta } from "./lib/openapi-registry";
 
 type RouteDefinition = {
   id: string;
   path: string;
   name: string;
-  getRouter: () => Router;
+  getRouter: () => Router | undefined;
 };
 
 export type CreateAppOptions = {
@@ -175,6 +176,18 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
     { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
     { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
+    // Dev-only: exchange admin credentials for a full-admin API key. Only
+    // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
+    // returns undefined and the route is skipped.
+    {
+      id: "devApiKey",
+      path: "/api/dev",
+      name: "devApiKeyRoutes",
+      getRouter: () =>
+        process.env.ENABLE_DEV_API_KEY_ENDPOINT === "true"
+          ? devApiKeyRoutes
+          : undefined,
+    },
   ];
 }
 

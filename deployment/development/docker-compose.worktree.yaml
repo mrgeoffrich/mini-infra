@@ -1,0 +1,59 @@
+# Parameterized compose file for running one Mini Infra instance per worktree.
+# Driven by worktree_start.sh, which sets COMPOSE_PROJECT_NAME, DOCKER_HOST (to
+# a per-worktree Colima socket), and the ${UI_PORT}/${REGISTRY_PORT}/${DOCKER_SOCK}
+# variables below. Container, network, and volume namespacing is handled by
+# COMPOSE_PROJECT_NAME — no resources here are hardcoded to a single instance.
+
+services:
+  registry:
+    image: registry:2
+    restart: unless-stopped
+    ports:
+      - "${REGISTRY_PORT}:5000"
+    volumes:
+      - registry:/var/lib/registry
+
+  mini-infra:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+      args:
+        AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG}
+    user: root
+    restart: unless-stopped
+    depends_on:
+      registry:
+        condition: service_started
+    ports:
+      - "${UI_PORT}:5005"
+    volumes:
+      # /var/run/docker.sock inside the Colima VM is the per-profile daemon
+      # socket — this path is VM-local, not host-local, so no DOCKER_SOCK
+      # variable is needed.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/app/data
+      - logs:/app/server/logs
+    environment:
+      - LOG_LEVEL=debug
+      - ALLOW_INSECURE=true
+      - ENABLE_DEV_API_KEY_ENDPOINT=true
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:5000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 40s
+      retries: 10
+
+volumes:
+  data:
+    driver: local
+  logs:
+    driver: local
+  registry:
+    driver: local
