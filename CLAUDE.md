@@ -21,7 +21,7 @@ When opening the site in playwright use `playwright-cli open --persistent` and b
 * Always use http://localhost:3005 for all frontend and backend requests as this is a vite server that will proxy through to the backend.
 * **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
 * **Sidecar folders are NOT in the npm workspace**. `update-sidecar/` and `agent-sidecar/` are standalone packages — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
-* NOTE: NEVER run `docker-compose` as it no longer exists, instead run `docker compose`
+* When a change is made for the local dev environment make sure to run `deployment/development/start.sh` to rebuild the underlying containers that support http://localhost:3005
 
 ## Project Overview
 

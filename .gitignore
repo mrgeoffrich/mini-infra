@@ -73,3 +73,5 @@ screenshots/
 __pycache__/
 *.pyc
 *.pyo
+
+scheduled_tasks.lock
