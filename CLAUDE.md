@@ -14,14 +14,19 @@ When designing the solution make sure you pick a DRY and well though out solutio
 
 For browser automation and browser testing tasks, use the Playwright CLI skill defined in `.claude/skills/playwright-cli/SKILL.md`. This skill provides browser interaction capabilities including navigation, form filling, screenshots, and web testing.
 
-When opening the site in playwright use `playwright-cli open --persistent` and browse to http://localhost:3005
+When opening the site in playwright, read the current dev UI URL from `environment-details.xml` at the project root rather than hardcoding a port — each worktree instance listens on a different host port:
+
+```bash
+MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
+playwright-cli open --persistent "$MINI_INFRA_URL"
+```
 
 ## Important Instructions
 
-* Always use http://localhost:3005 for all frontend and backend requests as this is a vite server that will proxy through to the backend.
+* Always resolve the frontend/backend URL via `environment-details.xml` (see above) instead of hardcoding a localhost port — Vite proxies client traffic to the backend through whichever port the current worktree instance is bound to.
 * **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
 * **Sidecar folders are NOT in the npm workspace**. `update-sidecar/` and `agent-sidecar/` are standalone packages — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
-* When a change is made for the local dev environment make sure to run `deployment/development/start.sh` to rebuild the underlying containers that support http://localhost:3005
+* When a change is made for the local dev environment rebuild the containers — run `deployment/development/worktree_start.sh` for per-worktree instances (writes the `environment-details.xml`), or the legacy `deployment/development/start.sh` if you're on the single-instance flow.
 
 ## Project Overview
 
