@@ -6,6 +6,7 @@
 #   2. Exchange admin credentials for a full-admin API key via
 #      POST /api/dev/issue-api-key (requires ENABLE_DEV_API_KEY_ENDPOINT=true)
 #   3. Complete the setup wizard (docker host) via POST /auth/setup/complete
+#   3b. Upsert docker_host_ip system setting (needed for application DNS records)
 #   4. Upsert Azure / Cloudflare / GitHub credentials from ~/.mini-infra/dev.env
 #   5. Create a local environment
 #   6. Instantiate the built-in HAProxy stack template into the local env
@@ -68,7 +69,9 @@ api() {
     if [ -n "$body" ]; then
         curl_args+=(-d "$body")
     fi
-    curl "${curl_args[@]}"
+    # || true so a curl network error (e.g. exit 52) doesn't trip set -e and
+    # abort the whole script. Callers check $status; "000" signals a curl failure.
+    curl "${curl_args[@]}" || echo "000"
 }
 
 json_escape() { python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip("\n")))'; }
@@ -142,6 +145,85 @@ else
         exit 1
     fi
     ok "Setup wizard completed"
+fi
+
+# ---------------------------------------------------------------------------
+# 3b. Set Docker host IP (always runs — idempotent upsert via settings API).
+# Used as the DNS A-record target when deploying stateless web apps. Required
+# for POST /api/stack-templates/:id/instantiate to succeed.
+# ---------------------------------------------------------------------------
+info "Setting Docker host IP"
+# Prefer explicit value from dev.env; fall back to auto-detecting the primary
+# outbound interface IP via a UDP probe (never actually sends a packet).
+if [ -z "${DOCKER_HOST_IP:-}" ]; then
+    DOCKER_HOST_IP=$(python3 -c "
+import socket
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(('8.8.8.8', 80))
+    print(s.getsockname()[0])
+    s.close()
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+fi
+
+if [ -z "$DOCKER_HOST_IP" ]; then
+    skip "Could not detect Docker host IP — set DOCKER_HOST_IP in dev.env to enable application DNS records"
+else
+    # Check whether the setting already exists (filter by category + key + isActive).
+    status=$(api GET "/api/settings?category=system&key=docker_host_ip&isActive=true")
+    existing_setting_id=""
+    existing_value=""
+    if [ "$status" = "200" ]; then
+        existing_setting_id=$(RESP_FILE="$RESP_FILE" python3 -c "
+import json, os
+d = json.load(open(os.environ['RESP_FILE']))
+items = d.get('data') if isinstance(d, dict) else d
+for s in (items or []):
+    if s.get('category') == 'system' and s.get('key') == 'docker_host_ip':
+        print(s.get('id', ''))
+        break
+" 2>/dev/null || echo "")
+        existing_value=$(RESP_FILE="$RESP_FILE" python3 -c "
+import json, os
+d = json.load(open(os.environ['RESP_FILE']))
+items = d.get('data') if isinstance(d, dict) else d
+for s in (items or []):
+    if s.get('category') == 'system' and s.get('key') == 'docker_host_ip':
+        print(s.get('value', ''))
+        break
+" 2>/dev/null || echo "")
+    fi
+
+    if [ -n "$existing_setting_id" ] && [ "$existing_value" = "$DOCKER_HOST_IP" ]; then
+        skip "Docker host IP already set ($DOCKER_HOST_IP)"
+    elif [ -n "$existing_setting_id" ]; then
+        body=$(DOCKER_HOST_IP="$DOCKER_HOST_IP" python3 -c "
+import json, os
+print(json.dumps({'value': os.environ['DOCKER_HOST_IP']}))")
+        status=$(api PUT "/api/settings/$existing_setting_id" "$body")
+        if [ "$status" = "200" ]; then
+            ok "Docker host IP updated ($DOCKER_HOST_IP)"
+        else
+            skip "Docker host IP update returned $status (non-fatal): $(cat "$RESP_FILE")"
+        fi
+    else
+        body=$(DOCKER_HOST_IP="$DOCKER_HOST_IP" python3 -c "
+import json, os
+print(json.dumps({
+    'category': 'system',
+    'key': 'docker_host_ip',
+    'value': os.environ['DOCKER_HOST_IP'],
+    'isEncrypted': False,
+}))")
+        status=$(api POST "/api/settings" "$body")
+        if [ "$status" = "201" ] || [ "$status" = "200" ]; then
+            ok "Docker host IP set ($DOCKER_HOST_IP)"
+        else
+            skip "Docker host IP create returned $status (non-fatal): $(cat "$RESP_FILE")"
+        fi
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -489,6 +571,7 @@ xml = f"""<?xml version="1.0" encoding="UTF-8"?>
   </images>
   <admin>
     <email>{t(os.environ['ADMIN_EMAIL'])}</email>
+    <password>{t(os.environ['ADMIN_PASSWORD'])}</password>
   </admin>
   <connectedServices>
     <azure configured="{os.environ['AZURE_SET']}"/>
