@@ -360,16 +360,15 @@ export function ApplicationCard({
                     autoComplete="off"
                     spellCheck={false}
                   />
-                  {!tagValid && trimmedTag.length > 0 && (
-                    <p className="text-xs text-destructive">
-                      Invalid tag. Use letters, digits, dots, dashes, or underscores.
-                    </p>
-                  )}
-                  {!trimmedTag && (
-                    <p className="text-xs text-muted-foreground">
-                      Tag is required.
-                    </p>
-                  )}
+                  <p className="text-xs min-h-4">
+                    {!tagValid && trimmedTag.length > 0 ? (
+                      <span className="text-destructive">
+                        Invalid tag. Use letters, digits, dots, dashes, or underscores.
+                      </span>
+                    ) : !trimmedTag ? (
+                      <span className="text-muted-foreground">Tag is required.</span>
+                    ) : null}
+                  </p>
                 </div>
 
                 <div className="flex gap-2 pt-1 mt-auto">
