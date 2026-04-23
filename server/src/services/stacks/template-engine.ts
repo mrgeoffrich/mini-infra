@@ -44,12 +44,12 @@ export function buildTemplateContext(
 
   const volumeMap: Record<string, string> = {};
   for (const v of stack.volumes) {
-    volumeMap[v.name] = `${projectName}-${v.name}`;
+    volumeMap[v.name] = `${projectName}_${v.name}`;
   }
 
   const networkMap: Record<string, string> = {};
   for (const n of stack.networks) {
-    networkMap[n.name] = `${projectName}-${n.name}`;
+    networkMap[n.name] = `${projectName}_${n.name}`;
   }
 
   return {
