@@ -55,6 +55,7 @@ const versionSummary = {
   notes: true,
   parameters: true,
   defaultParameterValues: true,
+  networkTypeDefaults: true,
   resourceOutputs: true,
   resourceInputs: true,
   networks: true,
@@ -273,6 +274,7 @@ export class StackTemplateService {
             displayName: input.displayName,
             description: input.description ?? null,
             scope: input.scope,
+            networkType: input.networkType ?? null,
             category: input.category ?? null,
             environmentId: input.environmentId ?? null,
             isArchived: false,
@@ -288,6 +290,7 @@ export class StackTemplateService {
             description: input.description ?? null,
             source: "user",
             scope: input.scope,
+            networkType: input.networkType ?? null,
             category: input.category ?? null,
             environmentId: input.environmentId ?? null,
             createdById: createdById ?? null,
@@ -479,6 +482,20 @@ export class StackTemplateService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
+      // A published template must have at least one service. The check lives
+      // inside the transaction so a concurrent `createOrUpdateDraft` (which
+      // deletes + recreates the draft version) can't race with publish and
+      // let an empty draft slip through.
+      const serviceCount = await tx.stackTemplateService.count({
+        where: { versionId: template.draftVersionId! },
+      });
+      if (serviceCount < 1) {
+        throw new TemplateError(
+          "Cannot publish: the draft has no services defined",
+          400
+        );
+      }
+
       // Find the highest published version number
       const maxVersion = await tx.stackTemplateVersion.findFirst({
         where: {
@@ -1002,6 +1019,7 @@ export class StackTemplateService {
       notes: version.notes,
       parameters: (version.parameters as unknown as StackTemplateVersionInfo['parameters']) ?? [],
       defaultParameterValues: (version.defaultParameterValues as unknown as StackTemplateVersionInfo['defaultParameterValues']) ?? {},
+      networkTypeDefaults: (version.networkTypeDefaults as unknown as StackTemplateVersionInfo['networkTypeDefaults']) ?? undefined,
       resourceOutputs: (version.resourceOutputs as unknown as StackTemplateVersionInfo['resourceOutputs']) ?? undefined,
       resourceInputs: (version.resourceInputs as unknown as StackTemplateVersionInfo['resourceInputs']) ?? undefined,
       networks: (version.networks as unknown as StackTemplateVersionInfo['networks']) ?? [],

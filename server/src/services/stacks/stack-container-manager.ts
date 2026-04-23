@@ -147,14 +147,16 @@ export class StackContainerManager {
       ReadOnly: m.readOnly,
     }));
 
-    // Convert healthcheck seconds to nanoseconds
+    // Convert healthcheck seconds to nanoseconds. By this point template
+    // references like "{{params.x}}" have been resolved to numbers, so
+    // Number() is a narrowing cast, not a parse.
     const healthcheck = config.healthcheck
       ? {
           Test: config.healthcheck.test,
-          Interval: config.healthcheck.interval * 1_000_000_000,
-          Timeout: config.healthcheck.timeout * 1_000_000_000,
-          Retries: config.healthcheck.retries,
-          StartPeriod: config.healthcheck.startPeriod * 1_000_000_000,
+          Interval: Number(config.healthcheck.interval) * 1_000_000_000,
+          Timeout: Number(config.healthcheck.timeout) * 1_000_000_000,
+          Retries: Number(config.healthcheck.retries),
+          StartPeriod: Number(config.healthcheck.startPeriod) * 1_000_000_000,
         }
       : undefined;
 

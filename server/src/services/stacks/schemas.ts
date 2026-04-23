@@ -7,8 +7,11 @@ import {
   MOUNT_TYPES,
 } from '@mini-infra/types';
 
-// Template string pattern: allows {{params.key-name}} references
-const templateStringPattern = /\{\{params\.[a-zA-Z0-9_-]+\}\}/;
+// Template string pattern: allows a single, complete {{params.key-name}} reference.
+// Anchored so concatenation like "80; {{params.x}}" or "{{params.a}}{{params.b}}"
+// is rejected — anything else would flow into Number()/Docker/HAProxy as NaN
+// or leak references to non-params scopes via the global replace in template-engine.ts.
+const templateStringPattern = /^\{\{params\.[a-zA-Z0-9_-]+\}\}$/;
 
 // A value that can be either a literal number or a template string
 const numberOrTemplate = z.union([
