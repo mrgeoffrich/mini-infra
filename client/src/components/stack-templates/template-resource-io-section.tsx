@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -6,6 +7,7 @@ import type {
   StackResourceInput,
   StackResourceOutput,
 } from "@mini-infra/types";
+import { AddResourceIODialog } from "./add-resource-io-dialog";
 
 interface TemplateResourceIOSectionProps {
   resourceInputs: StackResourceInput[];
@@ -26,6 +28,9 @@ export function TemplateResourceIOSection({
   readOnly = false,
   onChange,
 }: TemplateResourceIOSectionProps) {
+  const [outputDialogOpen, setOutputDialogOpen] = useState(false);
+  const [inputDialogOpen, setInputDialogOpen] = useState(false);
+
   function updateInputs(next: StackResourceInput[]) {
     onChange(next, resourceOutputs);
   }
@@ -50,12 +55,7 @@ export function TemplateResourceIOSection({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() =>
-                updateOutputs([
-                  ...resourceOutputs,
-                  { type: "", purpose: "", joinSelf: false },
-                ])
-              }
+              onClick={() => setOutputDialogOpen(true)}
             >
               <IconPlus className="mr-1 h-4 w-4" />
               Add Output
@@ -152,12 +152,7 @@ export function TemplateResourceIOSection({
               type="button"
               size="sm"
               variant="outline"
-              onClick={() =>
-                updateInputs([
-                  ...resourceInputs,
-                  { type: "", purpose: "", optional: false },
-                ])
-              }
+              onClick={() => setInputDialogOpen(true)}
             >
               <IconPlus className="mr-1 h-4 w-4" />
               Add Input
@@ -244,6 +239,19 @@ export function TemplateResourceIOSection({
           </div>
         )}
       </div>
+
+      <AddResourceIODialog
+        mode="output"
+        open={outputDialogOpen}
+        onOpenChange={setOutputDialogOpen}
+        onSave={(item) => updateOutputs([...resourceOutputs, item as StackResourceOutput])}
+      />
+      <AddResourceIODialog
+        mode="input"
+        open={inputDialogOpen}
+        onOpenChange={setInputDialogOpen}
+        onSave={(item) => updateInputs([...resourceInputs, item as StackResourceInput])}
+      />
     </div>
   );
 }
