@@ -76,6 +76,7 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
 export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
   entrypoint: z.array(z.string()).optional(),
+  capAdd: z.array(z.string()).optional(),
   user: z.string().optional(),
   env: z.record(z.string(), z.string()).optional(),
   dynamicEnv: z.record(z.string(), dynamicEnvSourceSchema).optional(),

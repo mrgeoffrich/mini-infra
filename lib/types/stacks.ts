@@ -55,6 +55,7 @@ export type NumOrTemplate = number | string;
 export interface StackContainerConfig {
   command?: string[];
   entrypoint?: string[];
+  capAdd?: string[];
   user?: string;
   env?: Record<string, string>;
   /**

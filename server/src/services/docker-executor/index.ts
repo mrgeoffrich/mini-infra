@@ -278,6 +278,7 @@ export class DockerExecutorService {
       };
       user?: string;
       entrypoint?: string[];
+      capAdd?: string[];
     }
   ): Promise<Container> {
     return this.longRunningMgr.createLongRunningContainer(options);

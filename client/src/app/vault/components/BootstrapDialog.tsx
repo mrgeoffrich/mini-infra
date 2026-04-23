@@ -17,7 +17,7 @@ import { Channel, ServerEvent } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
 import { useSocketChannel, useSocketEvent } from "@/hooks/use-socket";
 
-const DEFAULT_ADDRESS = "http://mini-infra-vault:8200";
+const DEFAULT_ADDRESS = "http://mini-infra-vault-vault:8200";
 
 export function BootstrapDialog({
   open,
@@ -129,7 +129,7 @@ export function BootstrapDialog({
                 id="address"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
-                placeholder="http://mini-infra-vault:8200"
+                placeholder="http://mini-infra-vault-vault:8200"
                 data-tour="vault-bootstrap-address"
               />
             </div>

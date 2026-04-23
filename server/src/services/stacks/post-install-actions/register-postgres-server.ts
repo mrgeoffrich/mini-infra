@@ -1,22 +1,12 @@
-import type { PrismaClient } from "../../../generated/prisma/client";
-import type { ServiceApplyResult } from "@mini-infra/types";
 import { getLogger } from "../../../lib/logger-factory";
-
-interface RegisterContext {
-  stackName: string;
-  projectName: string;
-  parameterValues: Record<string, string | number | boolean>;
-  serviceResults: ServiceApplyResult[];
-  triggeredBy?: string;
-  prisma: PrismaClient;
-}
+import type { PostInstallContext } from "./types";
 
 /**
  * After a successful postgres stack deploy, register the container as a managed
  * PostgresServer so it appears in the postgres server list and can be managed
  * from the UI. Skips silently if a server is already registered for this container.
  */
-export async function registerPostgresServer(ctx: RegisterContext): Promise<void> {
+export async function registerPostgresServer(ctx: PostInstallContext): Promise<void> {
   const log = getLogger("stacks", "register-postgres-server").child({ action: "register-postgres-server", stackName: ctx.stackName });
 
   // Only register on successful create/recreate of the postgres service

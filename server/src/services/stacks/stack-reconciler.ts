@@ -118,7 +118,7 @@ export class StackReconciler {
     });
 
     try {
-      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
 
       // Build template context with parameters and resolve service definitions
       const params = mergeParameterValues(
@@ -298,6 +298,7 @@ export class StackReconciler {
 
       // 7c. Run post-install actions declared by the template (failures are non-fatal)
       await runPostInstallActions(stack.template?.name, {
+        stackId,
         stackName: stack.name,
         projectName,
         parameterValues: (stack.parameterValues as Record<string, string | number | boolean>) ?? {},
@@ -412,7 +413,7 @@ export class StackReconciler {
     });
 
     try {
-      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
       const params = mergeParameterValues(
         (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
         (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
@@ -714,7 +715,7 @@ export class StackReconciler {
       include: { services: true, environment: true },
     });
 
-    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
+    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
     const networks = (stack.networks as unknown as StackNetwork[]) ?? [];
     const volumes = (stack.volumes as unknown as StackVolume[]) ?? [];
 

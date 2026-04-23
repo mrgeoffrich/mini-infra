@@ -27,7 +27,7 @@ export function buildTemplateContext(
   environmentName?: string,
   params?: Record<string, StackParameterValue>
 ): TemplateContext {
-  const projectName = environmentName ? `${environmentName}-${stack.name}` : stack.name;
+  const projectName = environmentName ? `${environmentName}-${stack.name}` : `mini-infra-${stack.name}`;
 
   const svcMap: Record<string, { containerName: string; image: string }> = {};
   const envMap: Record<string, string> = {};
