@@ -29,9 +29,9 @@ agent-sidecar/
 └── package.json
 ```
 
-## Important: Not in npm Workspaces
+## Important: Not in the pnpm Workspace
 
-This package is **not** part of the root npm workspace. You must `cd agent-sidecar` to run npm commands, then `cd` back to the project root afterwards.
+This package is **not** part of the root pnpm workspace — it keeps its own `package-lock.json` and stays on npm. You must `cd agent-sidecar` to run npm commands, then `cd` back to the project root afterwards.
 
 ## Commands
 

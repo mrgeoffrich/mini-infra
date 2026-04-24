@@ -23,7 +23,7 @@ Drive an end-to-end refactor of a single oversized file with these outcomes:
 3. The original module's public API is preserved via delegation so external
    callers don't change.
 4. New abstractions get unit tests; delegation and trivial wrappers don't.
-5. `npm run build`, `npm test`, and `npm run lint` are all green at the end.
+5. `pnpm build`, `pnpm --filter <workspace> test`, and `pnpm --filter <workspace> lint` are all green at the end.
 
 The reference precedent for this workflow is PR #180
 (`refactor/cloudflare-service-dry`), which split the 1484-line
@@ -154,12 +154,13 @@ Once the user approves, work in this order:
 
 **Project-specific constraints while implementing:**
 
-- Run **all** commands from the repo root. Use `-w <workspace>` flags:
-  `npm test -w server`, `npm run build -w client`, etc. Never `cd client/`,
-  `cd server/`, or `cd lib/` — that's a repo convention.
-- `update-sidecar/` and `agent-sidecar/` are NOT in the npm workspace — you
-  must `cd` into those directories to run npm commands, then return.
-- Run `npm run build:lib` whenever you change anything in `lib/` before
+- Run **all** commands from the repo root. Use `--filter <workspace>` flags:
+  `pnpm --filter mini-infra-server test`, `pnpm --filter mini-infra-client build`,
+  etc. Never `cd client/`, `cd server/`, or `cd lib/` — that's a repo convention.
+- `update-sidecar/` and `agent-sidecar/` are NOT in the pnpm workspace (they
+  stay on npm) — you must `cd` into those directories to run npm commands,
+  then return.
+- Run `pnpm build:lib` whenever you change anything in `lib/` before
   running server/client builds — the shared types package must compile first.
 - Follow the service-wrapper rules in `server/CLAUDE.md` (DockerService
   singleton, ConfigurationServiceFactory, etc.). If the file you're
@@ -171,10 +172,10 @@ Once the user approves, work in this order:
 **After implementation, verify:**
 
 ```bash
-npm run build:lib            # always first if lib changed
-npm run build -w server      # or -w client, depending on what you touched
-npm run lint -w server
-npm test -w server
+pnpm build:lib                              # always first if lib changed
+pnpm --filter mini-infra-server build       # or mini-infra-client, depending on what you touched
+pnpm --filter mini-infra-server lint
+pnpm --filter mini-infra-server test
 ```
 
 Fix every error the refactor introduced — even pre-existing ones that become
@@ -232,18 +233,18 @@ Follow the existing test conventions in the repo:
 Run the tests:
 
 ```bash
-npx -w server vitest run <path-to-new-test-file>
+pnpm --filter mini-infra-server exec vitest run <path-to-new-test-file>
 ```
 
 Then run the full suite to confirm nothing else regressed:
 
 ```bash
-npm test -w server
+pnpm --filter mini-infra-server test
 ```
 
 Fix everything you broke. If there's a pre-existing test failure you didn't
-introduce, verify it was already failing on `main` (`git stash && npm test
--w server && git stash pop`) before declaring victory.
+introduce, verify it was already failing on `main` (`git stash && pnpm
+--filter mini-infra-server test && git stash pop`) before declaring victory.
 
 ## Guiding principles
 

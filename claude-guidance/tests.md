@@ -6,7 +6,7 @@ This guide describes advanced mocking patterns used in the health-check.test.ts 
 
 ## Running Tests
 
-To run a server tests for a single file: `npx -w server vitest run docker-executor.test.ts`
+To run a server tests for a single file: `pnpm --filter mini-infra-server exec vitest run docker-executor.test.ts`
 
 ## External Library Mocking
 

@@ -3,4 +3,4 @@
 # Kept as .sh so CLAUDE.md / docs / user muscle memory keep working.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-exec npx --prefix "$PROJECT_ROOT" tsx "$SCRIPT_DIR/worktree-start.ts" "$@"
+cd "$PROJECT_ROOT" && exec pnpm dlx tsx@^4.21.0 "$SCRIPT_DIR/worktree-start.ts" "$@"

@@ -407,7 +407,7 @@ const initializeServices = async () => {
           "🔑 Development API key already exists for Claude",
         );
         logger.info(
-          "💡 Use 'npm run show-dev-key' to display the API key information",
+          "💡 Use 'pnpm --filter mini-infra-server show-dev-key' to display the API key information",
         );
       }
     }

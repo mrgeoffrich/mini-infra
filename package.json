@@ -1,32 +1,31 @@
 {
   "name": "mini-infra",
   "private": true,
-  "workspaces": [
-    "client",
-    "server",
-    "lib",
-    "acme"
-  ],
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=10.32"
+  },
   "scripts": {
-    "dev": "concurrently \"npm run dev:lib\" \"npm run dev:acme\" \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:lib": "npm run dev -w lib",
-    "dev:acme": "npm run dev -w acme",
-    "dev:client": "npm run dev -w client",
-    "dev:server": "npm run dev -w server",
-    "build": "npm run build:server && npm run build:client",
-    "build:lib": "npm run build -w lib",
-    "build:acme": "npm run build -w acme",
-    "build:client": "npm run build -w client",
-    "build:server": "npm run build:lib && npm run build:acme && npm run build -w server",
+    "dev": "concurrently \"pnpm dev:lib\" \"pnpm dev:acme\" \"pnpm dev:server\" \"pnpm dev:client\"",
+    "dev:lib": "pnpm --filter @mini-infra/types dev",
+    "dev:acme": "pnpm --filter @mini-infra/acme dev",
+    "dev:client": "pnpm --filter mini-infra-client dev",
+    "dev:server": "pnpm --filter mini-infra-server dev",
+    "build": "pnpm build:server && pnpm build:client",
+    "build:lib": "pnpm --filter @mini-infra/types build",
+    "build:acme": "pnpm --filter @mini-infra/acme build",
+    "build:client": "pnpm --filter mini-infra-client build",
+    "build:server": "pnpm build:lib && pnpm build:acme && pnpm --filter mini-infra-server build",
     "build:sidecar": "npm --prefix update-sidecar install && npm --prefix update-sidecar run build",
     "build:agent-sidecar": "npm --prefix agent-sidecar install && npm --prefix agent-sidecar run build",
     "build:pg-backup": "docker build -t mini-infra-pg-backup:dev ./pg-az-backup",
-    "build:all": "npm run build:lib && npm run build:acme && concurrently \"npm run build:client\" \"npm run build:server\" \"npm run build:sidecar\" \"npm run build:agent-sidecar\"",
-    "start": "npm start -w server",
-    "install:all": "npm install",
+    "build:all": "pnpm build:lib && pnpm build:acme && concurrently \"pnpm build:client\" \"pnpm build:server\" \"pnpm build:sidecar\" \"pnpm build:agent-sidecar\"",
+    "start": "pnpm --filter mini-infra-server start",
+    "install:all": "pnpm install",
     "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
-    "format": "npm run format -w server",
-    "format:check": "npm run format:check -w server"
+    "format": "pnpm --filter mini-infra-server format",
+    "format:check": "pnpm --filter mini-infra-server format:check"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -36,12 +35,5 @@
   },
   "dependencies": {
     "cross-env": "^10.1.0"
-  },
-  "overrides": {
-    "lodash": "^4.18.0",
-    "defu": "^6.1.5",
-    "path-to-regexp": "^8.4.0",
-    "js-yaml": "^4.1.1",
-    "brace-expansion": "^1.1.13"
   }
 }

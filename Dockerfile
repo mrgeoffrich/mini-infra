@@ -1,8 +1,9 @@
-# Multi-stage Docker build for Mini Infra
+# Multi-stage Docker build for Mini Infra (pnpm workspace)
 # Stage 1: Install all dependencies (shared across build stages)
 # Stage 2: Build shared types library
 # Stage 3: Build frontend application
 # Stage 4: Build backend application
+# Stage 4a: Assemble a self-contained prod tree via `pnpm deploy`
 # Stage 5: Production runtime image
 
 # ============================================
@@ -12,26 +13,28 @@ FROM node:24-alpine AS deps
 
 WORKDIR /app
 
-# Copy only package files first for optimal layer caching
-# Changes to source code won't bust this layer
-COPY package*.json ./
-COPY lib/package*.json ./lib/
-COPY acme/package*.json ./acme/
-COPY client/package*.json ./client/
-COPY server/package*.json ./server/
+RUN corepack enable
 
-RUN --mount=type=cache,target=/root/.npm \
-    npm install --production=false
+# Copy only manifest files first for optimal layer caching.
+# Changes to source code won't bust this layer.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY lib/package.json ./lib/
+COPY acme/package.json ./acme/
+COPY client/package.json ./client/
+COPY server/package.json ./server/
+
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm install --frozen-lockfile
 
 # ============================================
 # Stage 2: Build shared types library
 # ============================================
 FROM deps AS lib-builder
 
-# Copy lib source (deps already installed)
 COPY lib ./lib
 
-RUN npm run build:lib
+RUN pnpm --filter @mini-infra/types build
 
 # ============================================
 # Stage 2a: Build in-house ACME library
@@ -40,7 +43,7 @@ FROM deps AS acme-builder
 
 COPY acme ./acme
 
-RUN npm run build:acme
+RUN pnpm --filter @mini-infra/acme build
 
 # ============================================
 # Stage 2b: deps with built lib + acme available
@@ -61,22 +64,37 @@ COPY --from=acme-builder /app/acme/tsconfig.json ./acme/tsconfig.json
 # ============================================
 FROM deps-with-lib AS client-builder
 
-# Copy client source only (deps + built lib already available)
 COPY client ./client
 
 # Build frontend (outputs to server/public via vite.config.ts)
-RUN npm run build -w client
+RUN pnpm --filter mini-infra-client build
 
 # ============================================
 # Stage 4: Build backend application
 # ============================================
 FROM deps-with-lib AS server-builder
 
-# Copy server source only (deps + built lib already available)
 COPY server ./server
 
-# Generate Prisma client and build backend
-RUN cd server && npx prisma generate && npm run build
+# Generate Prisma client and build backend.
+# `pnpm --filter ... exec` scopes prisma resolution to the server workspace.
+RUN pnpm --filter mini-infra-server exec prisma generate && \
+    pnpm --filter mini-infra-server build
+
+# ============================================
+# Stage 4a: Deploy (self-contained prod tree for server)
+# `pnpm deploy` assembles a directory containing only mini-infra-server's
+# prod deps, with workspace:* references (lib, acme) inlined. This replaces
+# the previous `npm install --workspace=... --omit=dev` pattern.
+# ============================================
+FROM server-builder AS deployer
+
+# `--legacy` preserves the pnpm <10 deploy semantics (symlink-traversal of
+# workspace:* deps) so we don't need `inject-workspace-packages=true`
+# globally — which would break dev hot-reload on the lib/ workspace.
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm config set store-dir /pnpm/store && \
+    pnpm deploy --filter=mini-infra-server --prod --legacy /prod/server
 
 # ============================================
 # Stage 5: Production runtime image
@@ -89,53 +107,25 @@ RUN apk add --no-cache dumb-init=1.2.5-r3 docker-cli github-cli
 
 WORKDIR /app
 
-# --- Dependency layer (cached unless package.json or prisma schema changes) ---
-# These layers are large (~710MB) but rarely change, so they should come first.
-
-# Copy package files for workspace resolution and npm install
-COPY --chown=node:node package*.json ./
-COPY --chown=node:node lib/package*.json ./lib/
-COPY --chown=node:node acme/package*.json ./acme/
-COPY --chown=node:node server/package*.json ./server/
-
-# Copy Prisma schema + config for runtime `prisma migrate deploy`
-# (Prisma 7: connection URL lives in prisma.config.ts, not schema.prisma)
-COPY --chown=node:node server/prisma/schema.prisma ./server/prisma/schema.prisma
-COPY --chown=node:node server/prisma.config.ts ./server/prisma.config.ts
-
 # Create directories with proper ownership
 RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 
-# Install production dependencies only
-RUN --mount=type=cache,target=/home/node/.npm,uid=1000,gid=1000 \
-    npm install --workspace=lib --workspace=acme --workspace=server --omit=dev
+# --- Dependency + built-code layer ---
+# `pnpm deploy` produced a self-contained tree with node_modules + package.json
+# + built artefacts (for the server workspace). Drop it at /app/server.
+COPY --chown=node:node --from=deployer /prod/server ./server
 
-# --- Code layer (changes on every code change, but small ~20MB) ---
-
-# Copy built lib artifacts
+# Copy built lib artifacts (consumed as a workspace dep, already linked
+# into /app/server/node_modules by pnpm deploy — this copy keeps the
+# on-disk layout matching previous deploys for any runtime code that
+# references `../lib/dist` directly).
 COPY --chown=node:node --from=lib-builder /app/lib/dist ./lib/dist
 
-# Copy built acme artifacts
+# Copy built acme artifacts (same rationale as lib/dist above).
 COPY --chown=node:node --from=acme-builder /app/acme/dist ./acme/dist
 
 # Copy built frontend assets (served by Express from server/public)
 COPY --chown=node:node --from=client-builder /app/server/public ./server/public
-
-# Copy built backend JavaScript
-COPY --chown=node:node --from=server-builder /app/server/dist ./server/dist
-
-# Copy Prisma migrations for runtime (migrate deploy)
-COPY --chown=node:node server/prisma/migrations ./server/prisma/migrations
-
-# Copy configuration files
-COPY --chown=node:node server/config ./server/config
-
-# Copy stack template files (HAProxy, monitoring, etc.)
-COPY --chown=node:node server/templates ./server/templates
-
-# Copy startup script
-COPY --chown=node:node server/docker-entrypoint.sh ./server/docker-entrypoint.sh
-RUN chmod +x /app/server/docker-entrypoint.sh
 
 # Copy user documentation for agent
 COPY --chown=node:node client/src/user-docs/ /app/agent/docs/

@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx tsx
+#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Install (or uninstall) the worktree cleanup launchd agent.
 //
 // Usage:

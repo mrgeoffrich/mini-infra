@@ -46,8 +46,9 @@ playwright-cli open --persistent "$MINI_INFRA_URL"
 ## Important Instructions
 
 * Always resolve the frontend/backend URL via `environment-details.xml` (see above) instead of hardcoding a localhost port — Vite proxies client traffic to the backend through whichever port the current worktree instance is bound to.
-* **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `-w <workspace>` flags instead (e.g., `npm test -w server`).
-* **Sidecar folders are NOT in the npm workspace**. `update-sidecar/` and `agent-sidecar/` are standalone packages — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
+* **Package manager is pnpm** (pinned in `package.json` via the `packageManager` field). On a fresh checkout run `corepack enable` once, then `pnpm install`. Don't use `npm install` at the repo root — it will fight with the pnpm lockfile.
+* **Always run commands from the project root**. Never `cd` into `client/`, `server/`, or `lib/` subdirectories. Use `--filter <workspace>` flags instead (e.g., `pnpm --filter mini-infra-server test`).
+* **Sidecar folders are NOT in the pnpm workspace and still use npm.** `update-sidecar/` and `agent-sidecar/` are standalone packages with their own `package-lock.json` — you must `cd` into them to run npm commands (e.g., `cd agent-sidecar && npm test`), then `cd` back to the project root afterwards.
 * When a change is made for the local dev environment rebuild the containers — run `deployment/development/worktree_start.sh` for per-worktree instances (writes the `environment-details.xml`), or the legacy `deployment/development/start.sh` if you're on the single-instance flow.
 
 ## Project Overview
@@ -92,11 +93,13 @@ mini-infra/
 ├── docs/                  # Project documentation and specs
 ├── claude-guidance/       # Claude Code guidance files
 ├── .claude/               # Claude Code configuration
-└── package.json           # Root workspace configuration
+├── package.json           # Root workspace configuration
+├── pnpm-workspace.yaml    # pnpm workspace packages + overrides
+└── .npmrc                 # pnpm settings (hoisted linker, peer deps, etc.)
 ```
 
 ### Utility Scripts (`scripts/`)
-- `generate-ui-manifest.mjs` — Scans `client/src/` for `data-tour` attributes and generates `client/src/user-docs/ui-elements/manifest.json`, mapping UI element IDs to routes for the AI agent's `highlight_element` tool. Run via `npm run generate:ui-manifest`.
+- `generate-ui-manifest.mjs` — Scans `client/src/` for `data-tour` attributes and generates `client/src/user-docs/ui-elements/manifest.json`, mapping UI element IDs to routes for the AI agent's `highlight_element` tool. Run via `pnpm generate:ui-manifest`.
 - `top-files-by-lines.sh` — Lists the top N files of a given extension by line count. Usage: `./scripts/top-files-by-lines.sh ts 20`
 
 ## Shared Types Architecture
@@ -108,7 +111,7 @@ The project uses a centralized shared types package (`@mini-infra/types`) that p
 - **Scripts**: `build:lib` → `build:client` / `build:server`
 - **Watch Mode**: All three services run in parallel during development
 - **Type Safety**: Ensures consistent type definitions across full-stack
-- **Testing**: The shared types package must be built (`npm run build:lib`) before running tests, otherwise type imports will fail
+- **Testing**: The shared types package must be built (`pnpm build:lib`) before running tests, otherwise type imports will fail
 
 ## Socket.IO Conventions
 
@@ -135,53 +138,53 @@ Note: Socket IO is not required for the self patching or updating feature.
 
 ## Key Commands
 
-### Root Project (npm workspaces)
-- `npm run dev` - Start all three services: lib watch + server + client (recommended for development)
-- `npm run build` - Build lib, server, then client (production build for frontend)
-- `npm run build:all` - Build lib then client, server, sidecar, and agent-sidecar in parallel
-- `npm run build:lib` - Build shared types package only
-- `npm run build:server` - Build lib then server
-- `npm run build:sidecar` - Build self-update sidecar
-- `npm run build:agent-sidecar` - Build AI agent sidecar
-- `npm install` - Install all workspace dependencies
+### Root Project (pnpm workspaces)
+- `pnpm install` - Install all workspace dependencies (replaces `npm install`)
+- `pnpm dev` - Start all services: lib watch + acme watch + server + client
+- `pnpm build` - Build server, then client (production build for frontend)
+- `pnpm build:all` - Build lib, acme, then client, server, sidecar, and agent-sidecar in parallel
+- `pnpm build:lib` - Build shared types package only
+- `pnpm build:server` - Build lib + acme + server
+- `pnpm build:sidecar` - Build self-update sidecar (npm under the hood — sidecars are standalone)
+- `pnpm build:agent-sidecar` - Build AI agent sidecar (npm under the hood — sidecars are standalone)
 
 ### Frontend (client/) — run from project root
-- `npm run dev -w client` - Start development server (Vite)
-- `npm run build -w client` - Build for production
-- `npm test -w client` - Run tests
-- `npm run lint -w client` - Run linting
+- `pnpm --filter mini-infra-client dev` - Start development server (Vite)
+- `pnpm --filter mini-infra-client build` - Build for production
+- `pnpm --filter mini-infra-client test` - Run tests (when tests exist)
+- `pnpm --filter mini-infra-client lint` - Run linting
 
 ### Backend (server/) — run from project root
-- `npm run dev -w server` - Start development server with hot reload (tsx watch)
-- `npm run build -w server` - Build TypeScript to JavaScript
-- `npm start -w server` - Start production server
-- `npm test -w server` - Run Vitest test suite
-- `npm run test:watch -w server` - Run tests in watch mode
-- `npm run test:coverage -w server` - Run tests with coverage report
-- `npx -w server vitest run <filename>` - Run a single test file (e.g., `npx -w server vitest run src/__tests__/environment-manager.test.ts`)
-- `npm run lint -w server` - Run ESLint on TypeScript files
-- `npm run lint:fix -w server` - Run ESLint with auto-fix
-- `npm run format -w server` - Format code with Prettier
-- `npm run format:check -w server` - Check code formatting
+- `pnpm --filter mini-infra-server dev` - Start development server with hot reload (tsx watch)
+- `pnpm --filter mini-infra-server build` - Build TypeScript to JavaScript
+- `pnpm --filter mini-infra-server start` - Start production server
+- `pnpm --filter mini-infra-server test` - Run Vitest test suite
+- `pnpm --filter mini-infra-server test:watch` - Run tests in watch mode
+- `pnpm --filter mini-infra-server test:coverage` - Run tests with coverage report
+- `pnpm --filter mini-infra-server exec vitest run <filename>` - Run a single test file (e.g., `pnpm --filter mini-infra-server exec vitest run src/__tests__/environment-manager.test.ts`)
+- `pnpm --filter mini-infra-server lint` - Run ESLint on TypeScript files
+- `pnpm --filter mini-infra-server lint:fix` - Run ESLint with auto-fix
+- `pnpm --filter mini-infra-server format` - Format code with Prettier
+- `pnpm --filter mini-infra-server format:check` - Check code formatting
 
-### Self-Update Sidecar (update-sidecar/) — run from project root
-- `npm run build -w update-sidecar` - Build TypeScript to JavaScript
-- `npm test -w update-sidecar` - Run tests
+### Self-Update Sidecar (update-sidecar/) — standalone, uses npm
+- `cd update-sidecar && npm install && npm run build`
+- `cd update-sidecar && npm test`
 
-### Agent Sidecar (agent-sidecar/) — run from project root
-- `npm run build -w agent-sidecar` - Build TypeScript to JavaScript
-- `npm test -w agent-sidecar` - Run tests
+### Agent Sidecar (agent-sidecar/) — standalone, uses npm
+- `cd agent-sidecar && npm install && npm run build`
+- `cd agent-sidecar && npm test`
 
 ### Shared Types (lib/) — run from project root
-- `npm run dev -w lib` - TypeScript watch mode (auto-recompile on changes)
-- `npm run build -w lib` - Compile TypeScript to JavaScript + declarations
-- `npm run clean -w lib` - Remove dist/ build output
+- `pnpm --filter @mini-infra/types dev` - TypeScript watch mode (auto-recompile on changes)
+- `pnpm --filter @mini-infra/types build` - Compile TypeScript to JavaScript + declarations
+- `pnpm --filter @mini-infra/types clean` - Remove dist/ build output
 
 ### Database — run from project root
-- `npx -w server prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
-- `npx -w server prisma generate` - Regenerate Prisma client after schema changes
-- `npx -w server prisma migrate status` - Check migration status and detect drift
-- `npx -w server prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
+- `pnpm --filter mini-infra-server exec prisma migrate dev --name <description>` - Create and apply new migration (use this after schema changes)
+- `pnpm --filter mini-infra-server exec prisma generate` - Regenerate Prisma client after schema changes
+- `pnpm --filter mini-infra-server exec prisma migrate status` - Check migration status and detect drift
+- `pnpm --filter mini-infra-server exec prisma migrate resolve --applied <migration_name>` - Mark an existing migration as applied (useful when fixing drift)
 
 ## Critical Coding Patterns
 

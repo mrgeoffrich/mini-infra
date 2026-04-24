@@ -130,8 +130,9 @@ See [CLAUDE.md](CLAUDE.md) for development setup, project structure, and coding 
 ```bash
 git clone https://github.com/mrgeoffrich/mini-infra.git
 cd mini-infra
-npm install
-npm run dev
+corepack enable
+pnpm install
+pnpm dev
 ```
 
 ## License

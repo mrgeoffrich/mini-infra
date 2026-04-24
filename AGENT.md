@@ -2,27 +2,27 @@
 
 ## Quick Orientation
 - Mini Infra manages Docker-hosted infrastructure: container lifecycle, PostgreSQL backups, declarative stacks with blue-green deployment via HAProxy, and Cloudflare tunnel monitoring.
-- The repository uses npm workspaces with three packages (`client/`, `server/`, `lib/`). TypeScript is everywhere; double-check type safety before shipping changes.
+- The repository uses pnpm workspaces with four packages (`client/`, `server/`, `lib/`, `acme/`). TypeScript is everywhere; double-check type safety before shipping changes. Sidecar packages (`update-sidecar/`, `agent-sidecar/`) are deliberately standalone and stay on npm.
 - Logs, generated assets, and Prisma clients live under `server/`. Avoid checking build output into git.
 - Default assumption: development runs on Windows, commands executed through Git Bash or PowerShell. Convert paths when necessary (`C:\repo` -> `/c/repo` for Bash tools).
 
 ## Command & Tooling Expectations
-- Prefer `npm` scripts defined in each workspace; they wrap tsx, Vitest, ESLint, and Prisma so you do not have to remember raw invocations.
+- Prefer `pnpm` scripts defined in each workspace; they wrap tsx, Vitest, ESLint, and Prisma so you do not have to remember raw invocations.
 - Testing uses Vitest 4 with Supertest. Keep unit/integration tests colocated under `server/src/__tests__/` and `client/src/__tests__/`.
-- Linting and formatting rely on ESLint 9.x and Prettier 3. Run `npm run lint` or `npm run format:check` before handing work back.
-- Prisma controls the SQLite schema. Update `server/prisma/schema.prisma` first, then run `npx prisma migrate dev` or `npx prisma db push` as appropriate.
+- Linting and formatting rely on ESLint 9.x and Prettier 3. Run `pnpm --filter mini-infra-server lint` or `pnpm --filter mini-infra-server format:check` before handing work back.
+- Prisma controls the SQLite schema. Update `server/prisma/schema.prisma` first, then run `pnpm --filter mini-infra-server exec prisma migrate dev` or `pnpm --filter mini-infra-server exec prisma db push` as appropriate.
 
 ## API Access (Dev Only)
 Use the built-in development API key when talking to the backend.
 
 ```bash
-npm run show-dev-key -w server
+pnpm --filter mini-infra-server run show-dev-key
 ```
 
 Recreate the key if needed:
 
 ```bash
-npm run show-dev-key -w server -- --recreate
+pnpm --filter mini-infra-server run show-dev-key -- --recreate
 ```
 
 Pass the key to requests with either header:
@@ -34,7 +34,7 @@ Example endpoints worth probing during debugging:
 - `GET /api/containers`
 - `GET /api/environments`
 
-The dev key appears when `npm run dev` is running.
+The dev key appears when `pnpm dev` is running.
 
 ## Project Highlights
 ### Frontend (client/)
@@ -47,19 +47,19 @@ The dev key appears when `npm run dev` is running.
 - External integrations: dockerode, Azure Blob Storage, Cloudflare, PostgreSQL health checks, HAProxy orchestration.
 
 ### Shared Types (lib/)
-- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`npm run dev -w lib` or `npm run build -w lib`).
+- Holds TypeScript definitions consumed by both client and server. Always build or watch after changing shared types (`pnpm --filter @mini-infra/types dev` or `pnpm --filter @mini-infra/types build`).
 
 ## High-Value Workflows
-- **Run whole stack in dev**: `npm run dev` (from repo root). Starts lib watcher, server, and client simultaneously.
-- **Server only**: `npm run dev -w server`
-- **Client only**: `npm run dev -w client`
-- **Build everything**: `npm run build:all`
-- **Vitest tests**: `npm test -w server`; run a single file with `npx -w server vitest run <filename>`.
-- **Lint**: `npm run lint` (root), or workspace-specific variants.
-- **Format**: `npm run format` (root) or `npm run format:check`.
+- **Run whole stack in dev**: `pnpm dev` (from repo root). Starts lib watcher, acme watcher, server, and client simultaneously.
+- **Server only**: `pnpm --filter mini-infra-server dev`
+- **Client only**: `pnpm --filter mini-infra-client dev`
+- **Build everything**: `pnpm build:all`
+- **Vitest tests**: `pnpm --filter mini-infra-server test`; run a single file with `pnpm --filter mini-infra-server exec vitest run <filename>`.
+- **Lint**: `pnpm --filter mini-infra-server lint` (or whichever workspace).
+- **Format**: `pnpm format` (root, targets server) or `pnpm format:check`.
 
 ## Data & Persistence Notes
-- SQLite database file resides under `server/prisma`. Use Prisma Studio (`npx prisma studio`) for quick inspections.
+- SQLite database file resides under `server/prisma`. Use Prisma Studio (`pnpm --filter mini-infra-server exec prisma studio`) for quick inspections.
 - Seed data lives in `server/prisma/seed.ts`. Keep it aligned with migrations; update seeds whenever schema changes.
 - Backups leverage Azure Blob Storage. Local development expects `.env` variables; check `.env.example` files before adding new config.
 

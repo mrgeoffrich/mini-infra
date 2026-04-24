@@ -85,7 +85,7 @@ enum VolumeQuiesceMode {
 - `quiesceMode` is denormalised onto each operation so historical runs retain their mode even if the policy is later edited.
 - `metadata` is a JSON string (following existing `BackupOperation.metadata` pattern). Used by `stop-restart` mode to record which containers were stopped, for resumable rollback on executor crash.
 
-Migration: `npx -w server prisma migrate dev --name add_volume_backups`.
+Migration: `pnpm --filter mini-infra-server exec prisma migrate dev --name add_volume_backups`.
 
 ## Socket.IO events
 
@@ -376,7 +376,7 @@ New components under `client/src/components/volume-backups/`:
 
 Routes: no new top-level routes. The volume detail page already exists; add a tab.
 
-Data-tour attributes: add `data-tour="volume-backup-policy-button"`, `data-tour="volume-backup-trigger"`, `data-tour="volume-restore-button"` so the agent sidecar can guide operators. Run `npm run generate:ui-manifest` after.
+Data-tour attributes: add `data-tour="volume-backup-policy-button"`, `data-tour="volume-backup-trigger"`, `data-tour="volume-restore-button"` so the agent sidecar can guide operators. Run `pnpm generate:ui-manifest` after.
 
 ## New `DockerService.execInContainer` helper
 
