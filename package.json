@@ -29,7 +29,10 @@
     "format:check": "npm run format:check -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "@types/js-yaml": "^4.0.9",
+    "concurrently": "^9.2.1",
+    "js-yaml": "^4.1.1",
+    "tsx": "^4.21.0"
   },
   "dependencies": {
     "cross-env": "^10.1.0"
