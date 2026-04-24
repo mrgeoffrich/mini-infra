@@ -41,12 +41,21 @@ export interface TaskTypeConfig<
   TStarted extends keyof ServerToClientEvents,
   TStep extends keyof ServerToClientEvents | null,
   TCompleted extends keyof ServerToClientEvents,
+  TFailed extends keyof ServerToClientEvents | null = null,
 > {
   channel: SocketChannel;
   startedEvent: TStarted;
   /** null for task types that emit no intermediate step events */
   stepEvent: TStep;
   completedEvent: TCompleted;
+  /**
+   * Optional separate event for the failure terminal state. Used when the
+   * protocol splits success and failure across two distinct events (e.g.
+   * pool spawn: STARTED on success, FAILED on failure). When null, the
+   * completedEvent handler is expected to produce both success and failure
+   * outcomes from the same payload (the stack-apply pattern).
+   */
+  failedEvent?: TFailed;
   /** Extract the task ID from a started-event payload */
   getId: (payload: EventPayload<TStarted>) => string;
   /** Normalize "started" payload */
@@ -62,6 +71,14 @@ export interface TaskTypeConfig<
     steps: OperationStep[];
     errors: string[];
   };
+  /** Normalize "failed" payload (only when failedEvent is set) */
+  normalizeFailed?: TFailed extends keyof ServerToClientEvents
+    ? (payload: EventPayload<TFailed>) => {
+        success: boolean;
+        steps: OperationStep[];
+        errors: string[];
+      }
+    : never;
   /** Query keys to invalidate on completion */
   invalidateKeys?: (taskId: string) => unknown[][];
 }
@@ -74,9 +91,10 @@ function defineTaskTypeConfig<
   TStarted extends keyof ServerToClientEvents,
   TStep extends keyof ServerToClientEvents | null,
   TCompleted extends keyof ServerToClientEvents,
+  TFailed extends keyof ServerToClientEvents | null = null,
 >(
-  config: TaskTypeConfig<TStarted, TStep, TCompleted>,
-): TaskTypeConfig<TStarted, TStep, TCompleted> {
+  config: TaskTypeConfig<TStarted, TStep, TCompleted, TFailed>,
+): TaskTypeConfig<TStarted, TStep, TCompleted, TFailed> {
   return config;
 }
 
@@ -101,6 +119,7 @@ export interface RuntimeTaskTypeConfig {
   startedEvent: keyof ServerToClientEvents;
   stepEvent: keyof ServerToClientEvents | null;
   completedEvent: keyof ServerToClientEvents;
+  failedEvent?: keyof ServerToClientEvents | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getId: (payload: any) => string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -109,6 +128,8 @@ export interface RuntimeTaskTypeConfig {
   normalizeStep: ((payload: any) => OperationStep) | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   normalizeCompleted: (payload: any) => { success: boolean; steps: OperationStep[]; errors: string[] };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  normalizeFailed?: (payload: any) => { success: boolean; steps: OperationStep[]; errors: string[] };
   invalidateKeys?: (taskId: string) => unknown[][];
 }
 
@@ -397,6 +418,50 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       errors: p.errors,
     }),
     invalidateKeys: () => [["vault", "status"]],
+  }),
+
+  "pool-spawn": defineTaskTypeConfig({
+    channel: Channel.POOLS,
+    startedEvent: ServerEvent.POOL_INSTANCE_STARTING,
+    stepEvent: null,
+    completedEvent: ServerEvent.POOL_INSTANCE_STARTED,
+    failedEvent: ServerEvent.POOL_INSTANCE_FAILED,
+    getId: (p) => `${p.stackId}:${p.serviceName}:${p.instanceId}`,
+    normalizeStarted: () => ({
+      totalSteps: 1,
+      plannedStepNames: ["Spawn pool instance"],
+    }),
+    normalizeStep: null,
+    normalizeCompleted: (p) => ({
+      success: true,
+      steps: [
+        {
+          step: "Spawn pool instance",
+          status: "completed",
+          detail: `containerId=${p.containerId.slice(0, 12)}`,
+        },
+      ],
+      errors: [],
+    }),
+    normalizeFailed: (p) => ({
+      success: false,
+      steps: [
+        {
+          step: "Spawn pool instance",
+          status: "failed",
+          detail: p.error,
+        },
+      ],
+      errors: [p.error],
+    }),
+    invalidateKeys: (taskId) => {
+      // taskId is `${stackId}:${serviceName}:${instanceId}`
+      const [stackId, serviceName] = taskId.split(":");
+      return [
+        ["pool-instances", stackId, serviceName],
+        ["stack", stackId],
+      ];
+    },
   }),
 
   "vault-unseal": defineTaskTypeConfig({

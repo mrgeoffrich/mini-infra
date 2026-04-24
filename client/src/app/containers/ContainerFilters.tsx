@@ -81,7 +81,13 @@ export function ContainerFilters({
   }, [resetFilters]);
 
   const hasActiveFilters = useMemo(() => {
-    return Boolean(filters.status || filters.name || filters.image || filters.deploymentManaged);
+    return Boolean(
+      filters.status ||
+        filters.name ||
+        filters.image ||
+        filters.deploymentManaged ||
+        filters.poolInstance,
+    );
   }, [filters]);
 
   return (
@@ -148,6 +154,20 @@ export function ContainerFilters({
           </SelectContent>
         </Select>
 
+        {/* Pool Instance toggle — chip-style button for parity with the
+            other filters. Toggles presence of mini-infra.pool-instance=true
+            on each container row. */}
+        <Button
+          variant={filters.poolInstance ? "default" : "outline"}
+          size="sm"
+          onClick={() =>
+            updateFilter("poolInstance", filters.poolInstance ? undefined : true)
+          }
+          className="shrink-0"
+        >
+          Pool instances
+        </Button>
+
         {/* Sort By */}
         <Select
           value={`${sortBy}-${sortOrder}`}
@@ -207,6 +227,11 @@ export function ContainerFilters({
           {filters.deploymentManaged !== undefined && (
             <span className="bg-secondary px-2 py-1 rounded-md">
               {filters.deploymentManaged ? "Deployment-managed" : "Not managed"}
+            </span>
+          )}
+          {filters.poolInstance && (
+            <span className="bg-secondary px-2 py-1 rounded-md">
+              Pool instances only
             </span>
           )}
         </div>

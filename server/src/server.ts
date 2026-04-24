@@ -43,6 +43,7 @@ import { UserEventCleanupScheduler } from "./services/user-events";
 import prisma from "./lib/prisma";
 import { DnsCacheService, DnsCacheScheduler } from "./services/dns";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
+import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
 import { TlsConfigService } from "./services/tls/tls-config";
 import { AzureStorageCertificateStore } from "./services/tls/azure-storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
@@ -70,6 +71,7 @@ let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 let dnsCacheScheduler: DnsCacheScheduler | null = null;
+let poolInstanceReaper: PoolInstanceReaper | null = null;
 
 /**
  * Initialize the internal auth secret from the database, generating one if
@@ -195,6 +197,13 @@ const initializeServices = async () => {
     );
     connectivityScheduler.start();
     console.log("[STARTUP] ✓ Connectivity scheduler initialized");
+
+    // Initialize pool instance reaper (stops idle pool instances on a 60s
+    // cadence; also force-fails spawns stuck in `starting` for >5 min).
+    console.log("[STARTUP] Initializing pool instance reaper...");
+    poolInstanceReaper = new PoolInstanceReaper(prisma);
+    poolInstanceReaper.start();
+    console.log("[STARTUP] ✓ Pool instance reaper initialized");
 
     // Initialize backup scheduler
     console.log("[STARTUP] Initializing backup scheduler...");
@@ -540,6 +549,12 @@ startServer()
       if (dnsCacheScheduler) {
         dnsCacheScheduler.stop();
         logger.info("DNS cache scheduler stopped");
+      }
+
+      // Stop pool instance reaper
+      if (poolInstanceReaper) {
+        poolInstanceReaper.stop();
+        logger.info("Pool instance reaper stopped");
       }
 
       // Shutdown agent service

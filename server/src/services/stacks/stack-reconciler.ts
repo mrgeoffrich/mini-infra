@@ -39,6 +39,7 @@ import { StackPlanComputer } from './stack-plan-computer';
 import { StackServiceHandlers, type ServiceHandlerContext } from './stack-service-handlers';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
+import { rotatePoolManagementTokens } from './pool-management-token';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -235,20 +236,28 @@ export class StackReconciler {
       // 7. Execute actions
       const serviceResults: ServiceApplyResult[] = [];
 
-      // Get current containers for recreate/remove operations
+      // Get current containers for recreate/remove operations. Exclude pool
+      // instance containers — they share the stack-id label but aren't tied
+      // to a declared service row.
       const docker = this.dockerExecutor.getDockerClient();
-      const currentContainers = await docker.listContainers({
+      const currentContainers = (await docker.listContainers({
         all: true,
         filters: { label: [`mini-infra.stack-id=${stackId}`] },
-      });
+      })).filter((c) => c.Labels['mini-infra.pool-instance'] !== 'true');
       const containerByService = buildContainerMap(currentContainers);
+
+      // 6.4. Mint fresh pool management tokens for every Pool service in
+      // this stack with `managedBy`. Persists the argon2 hash; returns
+      // plaintexts so the caller service's dynamicEnv resolution can inject
+      // them. Tokens rotate on every apply by design.
+      const poolTokens = await rotatePoolManagementTokens(this.prisma, stackId);
 
       // 6.5. Resolve vault dynamic-env values for services that need them.
       // Skipped entirely when no binding is present. Runs after image pull is
       // conceptually complete (handled inside prepareServiceContainer) and
       // before any container is created, so wrapped secret_ids have the
       // tightest possible lifetime around container start.
-      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, log);
+      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, poolTokens, log);
 
       for (const action of actions) {
         const actionStart = Date.now();
@@ -430,10 +439,10 @@ export class StackReconciler {
       const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
 
       const docker = this.dockerExecutor.getDockerClient();
-      const containers = await docker.listContainers({
+      const containers = (await docker.listContainers({
         all: true,
         filters: { label: [`mini-infra.stack-id=${stackId}`] },
-      });
+      })).filter((c) => c.Labels['mini-infra.pool-instance'] !== 'true');
       const containerByService = buildContainerMap(containers);
 
       const networkNames = (stack.networks as unknown as StackNetwork[]).map(
@@ -443,8 +452,9 @@ export class StackReconciler {
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;
 
-      // Vault credential injection for bound stacks (update flow).
-      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, log);
+      // Mint fresh pool management tokens + resolve dynamic env (update flow).
+      const poolTokens = await rotatePoolManagementTokens(this.prisma, stackId);
+      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, poolTokens, log);
 
       for (const action of actions) {
         const svc = serviceMap.get(action.serviceName);
@@ -521,10 +531,11 @@ export class StackReconciler {
   }
 
   /**
-   * Resolve Vault dynamic-env values for every bound service that declares
-   * `dynamicEnv`. Returns an empty map when the stack has no binding or the
-   * vault services aren't initialised. Throws on any per-service failure so
-   * the apply / update aborts cleanly before touching containers.
+   * Resolve dynamic-env values (Vault + pool-management-token) for every
+   * service that declares `dynamicEnv`. Returns per-service env overrides.
+   * Services with *only* pool-management-token entries are resolved even
+   * when the stack has no Vault binding. Throws on any per-service Vault
+   * failure so apply aborts cleanly before touching containers.
    */
   private async resolveVaultEnv(
     stack: {
@@ -533,20 +544,51 @@ export class StackReconciler {
       lastAppliedVaultAppRoleId: string | null;
     },
     resolvedDefinitions: Map<string, StackServiceDefinition>,
+    poolTokens: Record<string, string>,
     log: Logger,
   ): Promise<Map<string, Record<string, string>>> {
     const overrides = new Map<string, Record<string, string>>();
-    if (!stack.vaultAppRoleId || !vaultServicesReady()) return overrides;
+    const vaultBound = Boolean(stack.vaultAppRoleId) && vaultServicesReady();
+    const injector = vaultBound ? new VaultCredentialInjector(this.prisma) : null;
 
-    const injector = new VaultCredentialInjector(this.prisma);
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
-      if (!serviceDef.containerConfig?.dynamicEnv) continue;
+      // Pool services never get a container at apply time — skip resolution
+      // entirely so we don't waste a Vault mint on something we won't use.
+      if (serviceDef.serviceType === 'Pool') continue;
+      const dynamicEnv = serviceDef.containerConfig?.dynamicEnv;
+      if (!dynamicEnv) continue;
+
+      const hasVaultEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind !== 'pool-management-token',
+      );
+      const hasPoolTokenEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind === 'pool-management-token',
+      );
+
+      // No Vault binding but service wants a pool-management-token — resolve
+      // those entries directly without touching Vault.
+      if (!vaultBound && hasPoolTokenEntries && !hasVaultEntries) {
+        const values: Record<string, string> = {};
+        for (const [key, src] of Object.entries(dynamicEnv)) {
+          if (src.kind === 'pool-management-token') {
+            const token = poolTokens[src.poolService];
+            if (token) values[key] = token;
+          }
+        }
+        if (Object.keys(values).length > 0) overrides.set(serviceName, values);
+        continue;
+      }
+
+      // Vault binding present — injector handles both vault-* and
+      // pool-management-token kinds (pool tokens flow through `args`).
+      if (!injector || !stack.vaultAppRoleId) continue;
       try {
         const res = await injector.resolve(
           {
             appRoleId: stack.vaultAppRoleId,
             failClosed: stack.vaultFailClosed,
             prevBoundAppRoleId: stack.lastAppliedVaultAppRoleId,
+            poolTokens,
           },
           serviceDef.containerConfig,
         );
@@ -589,6 +631,8 @@ export class StackReconciler {
     // Pull all images (regardless of action — we always want latest)
     const pulledImageIds = new Map<string, string>();
     for (const svc of stack.services) {
+      // Pool services don't run containers at apply time, so don't pull/compare.
+      if (svc.serviceType === 'Pool') continue;
       const imageRef = `${svc.dockerImage}:${svc.dockerTag}`;
       try {
         log.info({ service: svc.serviceName, image: imageRef }, 'Force-pulling image');
@@ -603,11 +647,11 @@ export class StackReconciler {
       }
     }
 
-    // Get running containers to compare image IDs
-    const containers = await docker.listContainers({
+    // Get running containers to compare image IDs (skip pool instances).
+    const containers = (await docker.listContainers({
       all: true,
       filters: { label: [`mini-infra.stack-id=${stackId}`] },
-    });
+    })).filter((c) => c.Labels['mini-infra.pool-instance'] !== 'true');
     const containerByService = buildContainerMap(containers);
 
     // Promote no-op actions to recreate if the image digest changed
@@ -673,6 +717,14 @@ export class StackReconciler {
         log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to stop container, continuing');
       }
     }
+
+    // Transition any active pool instances for this stack to stopped. The
+    // containers were already removed in the loop above (they carry the
+    // stack-id label); the DB state must follow or it will be stale.
+    await this.prisma.poolInstance.updateMany({
+      where: { stackId, status: { in: ['starting', 'running', 'stopping'] } },
+      data: { status: 'stopped', stoppedAt: new Date() },
+    });
 
     // Update stack status to undeployed
     await this.prisma.stack.update({

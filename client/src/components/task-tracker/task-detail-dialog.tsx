@@ -119,6 +119,8 @@ function getTaskTitle(type: TaskType): string {
       return "Vault Bootstrap";
     case "vault-unseal":
       return "Vault Unseal";
+    case "pool-spawn":
+      return "Pool Instance Spawn";
   }
 }
 
@@ -144,6 +146,8 @@ function getTaskIcon(type: TaskType) {
       return <IconShieldLock className="h-5 w-5" />;
     case "vault-unseal":
       return <IconLock className="h-5 w-5" />;
+    case "pool-spawn":
+      return <IconRocket className="h-5 w-5" />;
   }
 }
 

@@ -17,7 +17,7 @@ import type {
   PersistedTask,
   TaskTrackerContextType,
 } from "@/lib/task-tracker-types";
-import type { OperationState } from "@/hooks/use-operation-progress";
+import type { OperationState, OperationStep } from "@/hooks/use-operation-progress";
 import { useSocketChannel, useSocketEvent } from "@/hooks/use-socket";
 import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 
@@ -149,45 +149,63 @@ function TaskEventListener({
     isExecuting && !!config.stepEvent,
   );
 
+  const applyTerminalResult = (
+    result: { success: boolean; steps: OperationStep[]; errors: string[] },
+  ): void => {
+    onUpdate(task.id, (prev) => {
+      const phase = result.success ? "success" : "error";
+
+      // Show toast if the originating dialog is not open
+      if (!prev.dialogOpen) {
+        if (result.success) {
+          toast.success(`${prev.label} — completed`);
+        } else {
+          toast.error(`${prev.label} — failed`);
+        }
+      }
+
+      return {
+        ...prev,
+        completedAt: Date.now(),
+        operationState: {
+          phase,
+          totalSteps: result.steps.length || prev.operationState.totalSteps,
+          completedSteps: result.steps,
+          plannedStepNames: prev.operationState.plannedStepNames,
+          errors: result.errors,
+        },
+      };
+    });
+
+    // Invalidate queries
+    if (config.invalidateKeys) {
+      for (const key of config.invalidateKeys(task.id)) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    }
+  };
+
   // Completed event
   useSocketEvent(
     config.completedEvent,
     ((data: AnyEventPayload) => {
       if (config.getId(data) !== task.id) return;
-      const result = config.normalizeCompleted(data);
-      onUpdate(task.id, (prev) => {
-        const phase = result.success ? "success" : "error";
-
-        // Show toast if the originating dialog is not open
-        if (!prev.dialogOpen) {
-          if (result.success) {
-            toast.success(`${prev.label} — completed`);
-          } else {
-            toast.error(`${prev.label} — failed`);
-          }
-        }
-
-        return {
-          ...prev,
-          completedAt: Date.now(),
-          operationState: {
-            phase,
-            totalSteps: result.steps.length || prev.operationState.totalSteps,
-            completedSteps: result.steps,
-            plannedStepNames: prev.operationState.plannedStepNames,
-            errors: result.errors,
-          },
-        };
-      });
-
-      // Invalidate queries
-      if (config.invalidateKeys) {
-        for (const key of config.invalidateKeys(task.id)) {
-          queryClient.invalidateQueries({ queryKey: key });
-        }
-      }
+      applyTerminalResult(config.normalizeCompleted(data));
     }) as AnyServerHandler,
     isExecuting,
+  );
+
+  // Optional failure event (e.g. pool-spawn splits success/failure into two
+  // distinct events). When present, the failed payload feeds into the same
+  // terminal-result handler so the task transitions to the error phase.
+  useSocketEvent(
+    config.failedEvent ?? config.completedEvent, // fallback doesn't matter when disabled
+    ((data: AnyEventPayload) => {
+      if (!config.failedEvent || !config.normalizeFailed) return;
+      if (config.getId(data) !== task.id) return;
+      applyTerminalResult(config.normalizeFailed(data));
+    }) as AnyServerHandler,
+    isExecuting && !!config.failedEvent,
   );
 
   return null;

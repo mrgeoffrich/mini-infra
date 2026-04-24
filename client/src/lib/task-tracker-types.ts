@@ -18,7 +18,8 @@ export type TaskType =
   | "sidecar-startup"
   | "self-update-launch"
   | "vault-bootstrap"
-  | "vault-unseal";
+  | "vault-unseal"
+  | "pool-spawn";
 
 export interface TrackedTask {
   /** Unique identifier — operationId, stackId, or environmentId */

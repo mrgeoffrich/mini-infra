@@ -55,10 +55,15 @@ export class StackPlanComputer {
     const { resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
 
     const docker = this.dockerExecutor.getDockerClient();
-    const containers = await docker.listContainers({
+    const rawContainers = await docker.listContainers({
       all: true,
       filters: { label: [`mini-infra.stack-id=${stackId}`] },
     });
+    // Pool instance containers share the stack label but represent on-demand
+    // instances, not declared services — exclude them from plan comparison.
+    const containers = rawContainers.filter(
+      (c) => c.Labels['mini-infra.pool-instance'] !== 'true',
+    );
 
     const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : stack.name;
     const planWarnings = await detectConflicts(resolvedDefinitions, stackId, projectName, docker);
@@ -70,6 +75,13 @@ export class StackPlanComputer {
 
     for (const svc of stack.services) {
       const desiredHash = serviceHashes.get(svc.serviceName)!;
+
+      // Pool services are templates for on-demand instances; they never run
+      // their own container at apply time. Always emit a no-op for them.
+      if (svc.serviceType === 'Pool') {
+        actions.push({ serviceName: svc.serviceName, action: 'no-op' });
+        continue;
+      }
 
       if (svc.serviceType === 'AdoptedWeb') {
         const adopted = svc.adoptedContainer as unknown as { containerName: string; listeningPort: number } | null;

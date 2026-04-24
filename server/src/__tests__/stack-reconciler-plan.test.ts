@@ -417,4 +417,41 @@ describe('StackReconciler.plan', () => {
     );
     expect(plan.hasChanges).toBe(true);
   });
+
+  it('returns no-op for Pool services regardless of container state', async () => {
+    const stack = makeStackRow([
+      {
+        serviceName: 'worker',
+        serviceType: 'Pool',
+        configFiles: null,
+        initCommands: null,
+        poolConfig: {
+          defaultIdleTimeoutMinutes: 30,
+          maxInstances: 50,
+          managedBy: 'manager',
+        },
+      },
+      {
+        serviceName: 'manager',
+        serviceType: 'Stateful',
+      },
+    ]);
+    mockFindUniqueOrThrow.mockResolvedValue(stack);
+
+    // Include a pool instance container to confirm it's filtered out.
+    const poolInstanceContainer = makeContainerInfo(
+      'worker',
+      { 'mini-infra.pool-instance': 'true', 'mini-infra.pool-instance-id': 'user-1' },
+      'grafana/loki:2.9.0',
+    );
+    mockListContainers.mockResolvedValue([poolInstanceContainer]);
+
+    const plan = await reconciler.plan('stack-1');
+
+    const workerAction = plan.actions.find((a) => a.serviceName === 'worker');
+    expect(workerAction).toMatchObject({ serviceName: 'worker', action: 'no-op' });
+    // The manager service has no container → should be create.
+    const managerAction = plan.actions.find((a) => a.serviceName === 'manager');
+    expect(managerAction?.action).toBe('create');
+  });
 });

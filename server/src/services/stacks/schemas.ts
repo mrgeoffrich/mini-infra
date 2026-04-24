@@ -71,7 +71,17 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
     kind: z.literal("vault-wrapped-secret-id"),
     ttlSeconds: z.number().int().positive().optional(),
   }),
+  z.object({
+    kind: z.literal("pool-management-token"),
+    poolService: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  }),
 ]);
+
+export const poolConfigSchema = z.object({
+  defaultIdleTimeoutMinutes: z.number().int().min(1).max(24 * 60),
+  maxInstances: z.number().int().min(1).nullable(),
+  managedBy: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).nullable(),
+});
 
 export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
@@ -252,6 +262,8 @@ export const stackServiceDefinitionSchema = z
     order: z.number().int().min(0),
     routing: stackServiceRoutingSchema.optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
+    poolConfig: poolConfigSchema.optional(),
+    vaultAppRoleId: z.string().min(1).nullable().optional(),
   })
   .refine(
     (data) => {
@@ -285,7 +297,71 @@ export const stackServiceDefinitionSchema = z
     {
       message: "AdoptedWeb services must have adoptedContainer",
     }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "Pool" && !data.poolConfig) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Pool services must have poolConfig",
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "Pool" && data.routing) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Pool services cannot have routing",
+    }
   );
+
+// Stack-level refinement: cross-service constraints for Pool services.
+// - `poolConfig.managedBy` must reference a service in the same stack.
+// - Every `pool-management-token` dynamicEnv kind must name an existing Pool service.
+function refineCrossServicePoolRefs<
+  T extends { services: Array<z.infer<typeof stackServiceDefinitionSchema>> }
+>(data: T, ctx: z.RefinementCtx): void {
+  const servicesByName = new Map(data.services.map((s) => [s.serviceName, s]));
+  for (let i = 0; i < data.services.length; i++) {
+    const svc = data.services[i];
+    if (svc.serviceType === 'Pool' && svc.poolConfig?.managedBy) {
+      if (!servicesByName.has(svc.poolConfig.managedBy)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['services', i, 'poolConfig', 'managedBy'],
+          message: `managedBy references unknown service "${svc.poolConfig.managedBy}"`,
+        });
+      }
+    }
+    const dyn = svc.containerConfig?.dynamicEnv;
+    if (!dyn) continue;
+    for (const [envKey, source] of Object.entries(dyn)) {
+      if (source.kind !== 'pool-management-token') continue;
+      const target = servicesByName.get(source.poolService);
+      if (!target) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['services', i, 'containerConfig', 'dynamicEnv', envKey, 'poolService'],
+          message: `pool-management-token references unknown service "${source.poolService}"`,
+        });
+        continue;
+      }
+      if (target.serviceType !== 'Pool') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['services', i, 'containerConfig', 'dynamicEnv', envKey, 'poolService'],
+          message: `pool-management-token must reference a Pool service; "${source.poolService}" is ${target.serviceType}`,
+        });
+      }
+    }
+  }
+}
 
 // The portable StackDefinition shape (no DB fields)
 export const stackDefinitionSchema = z.object({
@@ -300,7 +376,7 @@ export const stackDefinitionSchema = z.object({
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z.array(stackServiceDefinitionSchema),
-});
+}).superRefine(refineCrossServicePoolRefs);
 
 // API request schemas
 
@@ -318,7 +394,7 @@ export const createStackSchema = z.object({
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z.array(stackServiceDefinitionSchema),
-});
+}).superRefine(refineCrossServicePoolRefs);
 
 export const updateStackSchema = z.object({
   name: stackNameSchema.optional(),
@@ -336,6 +412,8 @@ export const updateStackSchema = z.object({
   // Vault binding (Phase 3)
   vaultAppRoleId: z.string().nullable().optional(),
   vaultFailClosed: z.boolean().optional(),
+}).superRefine((data, ctx) => {
+  if (data.services) refineCrossServicePoolRefs({ services: data.services }, ctx);
 });
 
 export const updateStackServiceSchema = z.object({
@@ -349,6 +427,8 @@ export const updateStackServiceSchema = z.object({
   order: z.number().int().min(0).optional(),
   routing: stackServiceRoutingSchema.nullable().optional(),
   adoptedContainer: adoptedContainerSchema.nullable().optional(),
+  poolConfig: poolConfigSchema.nullable().optional(),
+  vaultAppRoleId: z.string().nullable().optional(),
 });
 
 export const applyStackSchema = z.object({

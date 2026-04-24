@@ -1030,6 +1030,7 @@ enum StackServiceType {
   Stateful
   StatelessWeb
   AdoptedWeb
+  Pool
 }
 
 enum StackTemplateSource {
@@ -1083,7 +1084,7 @@ model Stack {
   // current `vaultAppRoleId` by the credential injector to decide whether
   // fail-closed degradation is allowed.
   vaultAppRoleId              String?
-  vaultAppRole                VaultAppRole? @relation(fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
+  vaultAppRole                VaultAppRole? @relation("StackVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   vaultFailClosed             Boolean       @default(true)
   lastAppliedVaultAppRoleId   String?
 
@@ -1092,6 +1093,7 @@ model Stack {
   deployments          StackDeployment[]
   resources            StackResource[]
   infraResources       InfraResource[]
+  poolInstances        PoolInstance[]
 
   @@index([environmentId])
   @@index([status])
@@ -1167,7 +1169,8 @@ model VaultAppRole {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  stacks          Stack[]
+  stacks          Stack[]        @relation("StackVaultAppRole")
+  stackServices   StackService[] @relation("ServiceVaultAppRole")
 
   @@index([policyId])
   @@map("vault_app_roles")
@@ -1189,12 +1192,43 @@ model StackService {
   order           Int
   routing         Json?            // StackServiceRouting (required for StatelessWeb/AdoptedWeb, forbidden for Stateful)
   adoptedContainer Json?           // AdoptedContainerRef (required for AdoptedWeb)
+  poolConfig      Json?            // PoolConfig (required for Pool services)
+  poolManagementTokenHash   String? // bcrypt hash, rotated on every apply
+  vaultAppRoleId              String?
+  vaultAppRole                VaultAppRole? @relation("ServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
+  lastAppliedVaultAppRoleId   String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   @@unique([stackId, serviceName])
   @@index([stackId])
+  @@index([vaultAppRoleId])
   @@map("stack_services")
+}
+
+// PoolInstance - a live or historical instance of a Pool-type service.
+// Status transitions: starting → running → stopped/error (or stopping → stopped).
+// Partial unique index on (stackId, serviceName, instanceId) for active statuses
+// is enforced via raw-SQL migration — Prisma doesn't support filtered indexes.
+model PoolInstance {
+  id                 String    @id @default(cuid())
+  stackId            String
+  stack              Stack     @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  serviceName        String
+  instanceId         String
+  containerId        String?
+  status             String    // starting | running | stopping | stopped | error
+  idleTimeoutMinutes Int
+  lastActive         DateTime  @default(now())
+  createdAt          DateTime  @default(now())
+  stoppedAt          DateTime?
+  errorMessage       String?
+
+  @@index([stackId])
+  @@index([stackId, serviceName])
+  @@index([status])
+  @@index([status, lastActive])
+  @@map("pool_instances")
 }
 
 // StackDeployment - Immutable log of each apply/stop operation

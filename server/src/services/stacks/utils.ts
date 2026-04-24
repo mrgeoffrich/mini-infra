@@ -98,6 +98,8 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     adoptedContainer: s.adoptedContainer
       ? (s.adoptedContainer as unknown as Prisma.InputJsonValue)
       : Prisma.DbNull,
+    poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    vaultAppRoleId: s.vaultAppRoleId ?? null,
   };
 }
 
@@ -223,6 +225,8 @@ export function resolveServiceConfigs(
     order: number;
     routing: unknown;
     adoptedContainer?: unknown;
+    poolConfig?: unknown;
+    vaultAppRoleId?: string | null;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>
 ): {
@@ -267,6 +271,8 @@ export function toServiceDefinition(svc: {
   order: number;
   routing: unknown;
   adoptedContainer?: unknown;
+  poolConfig?: unknown;
+  vaultAppRoleId?: string | null;
 }): StackServiceDefinition {
   return {
     serviceName: svc.serviceName,
@@ -280,6 +286,8 @@ export function toServiceDefinition(svc: {
     order: svc.order,
     routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
     adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
+    poolConfig: (svc.poolConfig as unknown as StackServiceDefinition['poolConfig']) ?? undefined,
+    vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
   };
 }
 

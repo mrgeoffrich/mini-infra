@@ -4,7 +4,7 @@
 
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
-export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb'] as const;
+export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
@@ -45,7 +45,62 @@ export const MOUNT_TYPES = ['volume', 'bind'] as const;
 export type DynamicEnvSource =
   | { kind: 'vault-addr' }
   | { kind: 'vault-role-id' }
-  | { kind: 'vault-wrapped-secret-id'; ttlSeconds?: number };
+  | { kind: 'vault-wrapped-secret-id'; ttlSeconds?: number }
+  | { kind: 'pool-management-token'; poolService: string };
+
+/**
+ * Per-service configuration for a `Pool` service. Pools are container
+ * blueprints; instances are created on demand via the pool API.
+ */
+export interface PoolConfig {
+  /** Default idle timeout for instances when the caller doesn't override. */
+  defaultIdleTimeoutMinutes: number;
+  /** Hard cap on simultaneous instances. `null` = unlimited. */
+  maxInstances: number | null;
+  /** Name of the caller service in the stack that gets the pool management token. */
+  managedBy: string | null;
+}
+
+/** Lifecycle statuses for a pool instance row. */
+export const POOL_INSTANCE_STATUSES = ['starting', 'running', 'stopping', 'stopped', 'error'] as const;
+export type PoolInstanceStatus = typeof POOL_INSTANCE_STATUSES[number];
+
+/** DB shape for a pool instance (Date fields). */
+export interface PoolInstance {
+  id: string;
+  stackId: string;
+  serviceName: string;
+  instanceId: string;
+  containerId: string | null;
+  status: PoolInstanceStatus;
+  idleTimeoutMinutes: number;
+  lastActive: Date;
+  createdAt: Date;
+  stoppedAt: Date | null;
+  errorMessage: string | null;
+}
+
+/** API response shape for a pool instance (string dates). */
+export interface PoolInstanceInfo {
+  id: string;
+  stackId: string;
+  serviceName: string;
+  instanceId: string;
+  containerId: string | null;
+  status: PoolInstanceStatus;
+  idleTimeoutMinutes: number;
+  lastActive: string;
+  createdAt: string;
+  stoppedAt: string | null;
+  errorMessage: string | null;
+}
+
+/** Request body for POST /api/stacks/:stackId/pools/:serviceName/instances */
+export interface EnsurePoolInstanceRequest {
+  instanceId: string;
+  env?: Record<string, string>;
+  idleTimeoutMinutes?: number;
+}
 
 // Numeric fields in stack definitions may be literal integers *or* a
 // "{{params.name}}" template reference that gets resolved at instantiation.
@@ -208,6 +263,10 @@ export interface StackService {
   order: number;
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
+  poolConfig: PoolConfig | null;
+  vaultAppRoleId: string | null;
+  lastAppliedVaultAppRoleId: string | null;
+  poolManagementTokenHash: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -256,6 +315,7 @@ export interface StackServiceInfo {
   order: number;
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
+  poolConfig: PoolConfig | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -274,6 +334,8 @@ export interface StackServiceDefinition {
   order: number;
   routing?: StackServiceRouting;
   adoptedContainer?: AdoptedContainerRef;
+  poolConfig?: PoolConfig;
+  vaultAppRoleId?: string | null;
 }
 
 export interface StackDefinition {
@@ -318,6 +380,8 @@ export function serializeStack(
       order: s.order,
       routing: s.routing ?? undefined,
       adoptedContainer: s.adoptedContainer ?? undefined,
+      poolConfig: s.poolConfig ?? undefined,
+      vaultAppRoleId: s.vaultAppRoleId ?? undefined,
     })),
   };
 }
@@ -554,6 +618,8 @@ export interface UpdateStackServiceRequest {
   dependsOn?: string[];
   order?: number;
   routing?: StackServiceRouting | null;
+  poolConfig?: PoolConfig | null;
+  vaultAppRoleId?: string | null;
 }
 
 export interface ApplyStackRequest {
