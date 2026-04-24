@@ -484,6 +484,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Server process memory and heap diagnostics",
+    helpDoc: "settings/system-diagnostics",
   },
 
   "/settings-self-update": {
@@ -507,6 +508,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "User account management",
+    helpDoc: "settings/user-management",
   },
 
   "/settings-authentication": {
@@ -518,6 +520,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Authentication method configuration",
+    helpDoc: "settings/authentication",
   },
 
   "/stack-templates": {
@@ -549,6 +552,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     navGroup: "main",
     navSection: "administration",
     description: "Managed OpenBao secrets vault — bootstrap, policies, AppRoles",
+    helpDoc: "vault/vault-overview",
     children: {
       policies: {
         path: "/vault/policies",
@@ -556,6 +560,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Policies",
         parent: "/vault",
         showInNav: false,
+        helpDoc: "vault/vault-policies",
       },
       policyDetail: {
         path: "/vault/policies/:id",
@@ -563,6 +568,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/vault/policies",
         showInNav: false,
+        helpDoc: "vault/vault-policies",
       },
       approles: {
         path: "/vault/approles",
@@ -570,6 +576,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "AppRoles",
         parent: "/vault",
         showInNav: false,
+        helpDoc: "vault/vault-approles",
       },
       approleDetail: {
         path: "/vault/approles/:id",
@@ -577,6 +584,7 @@ export const routeConfig: Record<string, RouteConfig> = {
         breadcrumbLabel: "Details",
         parent: "/vault/approles",
         showInNav: false,
+        helpDoc: "vault/vault-approles",
       },
     },
   },

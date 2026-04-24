@@ -443,3 +443,68 @@ sections:
           - Update process — pull, stop, recreate, health check, rollback on failure
           - Update progress monitoring with step-by-step status
           - Automatic rollback on failed health checks
+      - slug: user-management
+        topics:
+          - Creating user accounts — email, display name, temporary password
+          - User table — email, display name, auth method, created date
+          - Resetting a user's password — generates temporary password
+          - Deleting user accounts — permanent and immediate
+          - Cannot delete your own account
+          - Auth method values — local (password) vs google (OAuth)
+      - slug: authentication
+        topics:
+          - Password authentication — always enabled, no configuration required
+          - Enabling Google OAuth — toggle and credentials fields
+          - Google Client ID and Client Secret setup
+          - Authorized redirect URI for Google OAuth
+          - Disabling Google OAuth — impact on existing Google-linked accounts
+          - Creating OAuth credentials in Google Cloud Console
+      - slug: system-diagnostics
+        topics:
+          - Server process memory — RSS, heap used, heap total, external, array buffers
+          - Linux process memory — /proc/self/status fields (VmRSS, VmHWM, RssAnon, etc.)
+          - Shared vs private memory — PSS, Private Dirty, Shared Clean
+          - V8 heap statistics — used, total, physical, available, limit, native contexts
+          - Heap spaces per-area breakdown — new_space, old_space, code_space, etc.
+          - Resource usage — CPU time, page faults, context switches, FS I/O
+          - Top contributors to RSS — /proc/self/smaps aggregated by pathname
+          - Memory region inspection — peek raw process memory via /proc/self/mem
+          - Downloading heap snapshots and diagnostic reports
+          - Show explanations toggle for metric descriptions
+
+  - slug: vault
+    label: Vault
+    description: Managed OpenBao secrets vault — bootstrap, policies, and AppRoles
+    articles:
+      - slug: vault-overview
+        topics:
+          - Vault (OpenBao) managed secrets service overview
+          - Bootstrap process — bao init, unseal keys, operator passphrase
+          - Vault status indicators — bootstrapped, reachable, seal state, passphrase
+          - Seal states — unsealed, sealed, unknown
+          - Passphrase lock and unlock — effect on auto-unseal and operator credentials
+          - Operator credentials — mini-infra-operator userpass account
+          - Navigating to Policies and AppRoles
+          - Manual unseal button
+          - Prerequisites — Vault stack must be deployed first
+      - slug: vault-policies
+        topics:
+          - HCL policy documents for Vault — path and capabilities
+          - Policy status — draft vs published
+          - System policies — built-in, cannot be deleted
+          - Creating a policy — name, display name, description, HCL body
+          - Publishing a policy — pushes to Vault, increments version
+          - Policy detail page — editing HCL and version history
+          - Deleting a policy — Mini Infra only, not removed from Vault
+          - HCL policy syntax — path rules, capabilities (read, list, create, update, delete)
+      - slug: vault-approles
+        topics:
+          - Vault AppRole authentication for applications
+          - AppRole status — applied vs not applied
+          - role_id and secret_id — how applications authenticate
+          - Creating an AppRole — name, policy, secret_id_num_uses, token_period
+          - Applying an AppRole — pushes to Vault, fetches role_id
+          - secret_id_num_uses — 0 unlimited, 1 boot-once
+          - token_period — for long-running services that need indefinite renewal
+          - Deleting an AppRole — Mini Infra only, not removed from Vault
+          - AppRole login flow — POST /v1/auth/approle/login
