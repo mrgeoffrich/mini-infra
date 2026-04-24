@@ -22,6 +22,7 @@ export type PermissionDomain =
   | "monitoring"
   | "registry"
   | "stacks"
+  | "pools"
   | "vault";
 
 /** Permission actions */
@@ -163,6 +164,27 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         action: "write",
         label: "Manage Stacks",
         description: "Create, update, delete stacks, apply changes",
+      },
+    ],
+  },
+  {
+    domain: "pools",
+    label: "Pool Instances",
+    description: "Stack pool service instance management",
+    permissions: [
+      {
+        scope: "pools:read",
+        domain: "pools",
+        action: "read",
+        label: "View Pool Instances",
+        description: "List and inspect pool instances",
+      },
+      {
+        scope: "pools:write",
+        domain: "pools",
+        action: "write",
+        label: "Manage Pool Instances",
+        description: "Create, stop, and heartbeat pool instances",
       },
     ],
   },

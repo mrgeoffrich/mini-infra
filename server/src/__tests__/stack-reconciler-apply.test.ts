@@ -180,6 +180,13 @@ const mockPrisma = {
   stackResource: {
     findMany: vi.fn().mockResolvedValue([]),
   },
+  stackService: {
+    findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn().mockResolvedValue({}),
+  },
+  poolInstance: {
+    updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
 } as any;
 
 const mockDockerExecutor = {

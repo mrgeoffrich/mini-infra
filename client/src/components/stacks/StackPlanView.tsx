@@ -32,6 +32,7 @@ import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
 import { StackParametersDialog } from "./StackParametersDialog";
+import { PoolServiceRow } from "./PoolServiceRow";
 
 interface StackPlanViewProps {
   stackId: string;
@@ -341,6 +342,7 @@ export const StackPlanView = React.memo(function StackPlanView({
 
   // No changes needed
   if (!plan.hasChanges) {
+    const poolServices = stackInfo?.services?.filter((s) => s.serviceType === 'Pool') ?? [];
     return (
       <>
         <StackParametersDialog
@@ -352,6 +354,22 @@ export const StackPlanView = React.memo(function StackPlanView({
           onConfirm={handleSaveAndDeploy}
           isSaving={updateParamsMutation.isPending}
         />
+        {poolServices.length > 0 && (
+          <div className={`space-y-2 mb-4 ${className ?? ""}`}>
+            <h4 className="text-sm font-semibold text-muted-foreground">
+              Pool services
+            </h4>
+            <div className="space-y-2">
+              {poolServices.map((svc) => (
+                <PoolServiceRow
+                  key={svc.id}
+                  stackId={stackId}
+                  service={svc}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <Card className={className}>
         <CardContent className="flex items-center gap-3 py-8 justify-center">
           <IconCheck className="h-6 w-6 text-green-500" />
@@ -531,6 +549,28 @@ export const StackPlanView = React.memo(function StackPlanView({
           ))}
         </CardContent>
       </Card>
+
+      {/* Pool services — on-demand instance templates, live instance list.
+          Rendered below the standard action list because pool services are
+          always no-op at plan time and have their own lifecycle. */}
+      {stackInfo?.services && stackInfo.services.some((s) => s.serviceType === 'Pool') && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-muted-foreground">
+            Pool services
+          </h4>
+          <div className="space-y-2">
+            {stackInfo.services
+              .filter((s) => s.serviceType === 'Pool')
+              .map((svc) => (
+                <PoolServiceRow
+                  key={svc.id}
+                  stackId={stackId}
+                  service={svc}
+                />
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Validation warning */}
       {hasValidationErrors && (

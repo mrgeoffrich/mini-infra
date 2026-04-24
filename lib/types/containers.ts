@@ -59,6 +59,11 @@ export interface ContainerFilters {
   image?: string;
   deploymentId?: string;
   deploymentManaged?: boolean; // Filter for containers managed by deployments
+  /**
+   * When true, restrict the list to containers labelled
+   * `mini-infra.pool-instance=true`. Applied client-side.
+   */
+  poolInstance?: boolean;
 }
 
 export interface ContainerQueryParams {
@@ -71,6 +76,7 @@ export interface ContainerQueryParams {
   image?: string;
   deploymentId?: string;
   deploymentManaged?: boolean;
+  poolInstance?: boolean;
   filters?: ContainerFilters;
 }
 

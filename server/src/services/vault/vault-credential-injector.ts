@@ -20,6 +20,12 @@ export interface InjectorArgs {
    * fail-closed degradation is allowed. If it differs, we always fail-closed.
    */
   prevBoundAppRoleId: string | null;
+  /**
+   * Plaintext pool-management tokens minted earlier in the apply flow,
+   * keyed by pool service name. Used to resolve
+   * `kind: pool-management-token` dynamicEnv entries.
+   */
+  poolTokens?: Record<string, string>;
 }
 
 export interface InjectorResult {
@@ -114,7 +120,7 @@ export class VaultCredentialInjector {
     }
 
     return {
-      values: buildValues(dynamicEnv, vaultAddress, roleId, wrappedSecretId),
+      values: buildValues(dynamicEnv, vaultAddress, roleId, wrappedSecretId, args.poolTokens ?? {}),
       degraded: false,
     };
   }
@@ -127,9 +133,10 @@ export class VaultCredentialInjector {
     cachedRoleId: string | null,
   ): InjectorResult {
     const { failClosed, prevBoundAppRoleId, appRoleId } = args;
+    const poolTokens = args.poolTokens ?? {};
     if (!failClosed) {
       return {
-        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined),
+        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined, poolTokens),
         degraded: true,
       };
     }
@@ -143,7 +150,7 @@ export class VaultCredentialInjector {
         "Vault unreachable; proceeding with role_id only (stable binding, cached role_id)",
       );
       return {
-        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined),
+        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined, poolTokens),
         degraded: true,
       };
     }
@@ -158,6 +165,7 @@ function buildValues(
   vaultAddress: string,
   roleId: string | null,
   wrappedSecretId: string | undefined,
+  poolTokens: Record<string, string>,
 ): Record<string, string> {
   const values: Record<string, string> = {};
   for (const [key, source] of Object.entries(dynamicEnv)) {
@@ -171,6 +179,11 @@ function buildValues(
       case "vault-wrapped-secret-id":
         if (wrappedSecretId) values[key] = wrappedSecretId;
         break;
+      case "pool-management-token": {
+        const token = poolTokens[source.poolService];
+        if (token) values[key] = token;
+        break;
+      }
     }
   }
   return values;
@@ -185,7 +198,7 @@ function pickTtlSeconds(dynamicEnv: Record<string, DynamicEnvSource>): number {
   let ttl = DEFAULT_WRAPPED_SECRET_ID_TTL_SECONDS;
   let seen = false;
   for (const source of Object.values(dynamicEnv)) {
-    if (source.kind === "vault-wrapped-secret-id" && source.ttlSeconds) {
+    if (source.kind === "vault-wrapped-secret-id" && source.ttlSeconds !== undefined) {
       ttl = seen ? Math.min(ttl, source.ttlSeconds) : source.ttlSeconds;
       seen = true;
     }

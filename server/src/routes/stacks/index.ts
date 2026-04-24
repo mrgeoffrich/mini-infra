@@ -6,6 +6,7 @@ import applyRoutes from './stacks-apply-route';
 import updateRoutes from './stacks-update-route';
 import destroyRoutes from './stacks-destroy-route';
 import historyRoutes from './stacks-history-routes';
+import poolRoutes from './stacks-pool-routes';
 import { stacksErrorHandler } from './stacks-error-handler';
 
 const router = Router();
@@ -21,6 +22,7 @@ router.use(applyRoutes);
 router.use(updateRoutes);
 router.use(destroyRoutes);
 router.use(historyRoutes);
+router.use(poolRoutes);
 
 router.use(stacksErrorHandler);
 

@@ -49,6 +49,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "agent-sidecar",
   "self-update",
   "vault",
+  "pools",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -83,6 +84,7 @@ export const Channel = {
   AGENT_SIDECAR: "agent-sidecar",
   SELF_UPDATE: "self-update",
   VAULT: "vault",
+  POOLS: "pools",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -194,6 +196,12 @@ export const ServerEvent = {
   SELF_UPDATE_LAUNCH_STARTED: "self-update:launch:started",
   SELF_UPDATE_LAUNCH_STEP: "self-update:launch:step",
   SELF_UPDATE_LAUNCH_COMPLETED: "self-update:launch:completed",
+  // Pool Instances
+  POOL_INSTANCE_STARTING: "pool:instance:starting",
+  POOL_INSTANCE_STARTED: "pool:instance:started",
+  POOL_INSTANCE_FAILED: "pool:instance:failed",
+  POOL_INSTANCE_IDLE_STOPPED: "pool:instance:idle-stopped",
+  POOL_INSTANCE_STOPPED: "pool:instance:stopped",
   // Vault
   VAULT_BOOTSTRAP_STARTED: "vault:bootstrap:started",
   VAULT_BOOTSTRAP_STEP: "vault:bootstrap:step",
@@ -432,6 +440,41 @@ export interface ServerToClientEvents {
     success: boolean;
     steps: OperationStep[];
     errors: string[];
+  }) => void;
+
+  // ── Pool Instances ─────────────────────────────────
+  /** Pool instance spawn started */
+  "pool:instance:starting": (data: {
+    stackId: string;
+    serviceName: string;
+    instanceId: string;
+  }) => void;
+  /** Pool instance reached running state */
+  "pool:instance:started": (data: {
+    stackId: string;
+    serviceName: string;
+    instanceId: string;
+    containerId: string;
+  }) => void;
+  /** Pool instance spawn or runtime failure */
+  "pool:instance:failed": (data: {
+    stackId: string;
+    serviceName: string;
+    instanceId: string;
+    error: string;
+  }) => void;
+  /** Pool instance stopped by idle reaper */
+  "pool:instance:idle-stopped": (data: {
+    stackId: string;
+    serviceName: string;
+    instanceId: string;
+    idleMinutes: number;
+  }) => void;
+  /** Pool instance stopped by caller or destroy */
+  "pool:instance:stopped": (data: {
+    stackId: string;
+    serviceName: string;
+    instanceId: string;
   }) => void;
 
   // ── Vault ──────────────────────────────────────────

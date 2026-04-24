@@ -48,17 +48,24 @@ const ContainerNameCell = React.memo(
     selfRole,
     postgresAction,
     onPostgresAction,
+    isPoolInstance,
   }: {
     name: string;
     selfRole?: string;
     postgresAction?: "add" | "manage";
     onPostgresAction?: () => void;
+    isPoolInstance?: boolean;
   }) => (
     <div className="flex items-center gap-2 min-h-[2rem]">
       <span className="font-medium truncate">{name}</span>
       {selfRole && SELF_ROLE_LABELS[selfRole] && (
         <span className="shrink-0 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-1.5 py-0.5 rounded">
           {SELF_ROLE_LABELS[selfRole]}
+        </span>
+      )}
+      {isPoolInstance && (
+        <span className="shrink-0 text-xs bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded">
+          Pool
         </span>
       )}
       {postgresAction && onPostgresAction && (
@@ -90,7 +97,8 @@ const ContainerNameCell = React.memo(
   (prevProps, nextProps) =>
     prevProps.name === nextProps.name &&
     prevProps.selfRole === nextProps.selfRole &&
-    prevProps.postgresAction === nextProps.postgresAction,
+    prevProps.postgresAction === nextProps.postgresAction &&
+    prevProps.isPoolInstance === nextProps.isPoolInstance,
 );
 
 ContainerNameCell.displayName = "ContainerNameCell";
@@ -305,12 +313,15 @@ export const ContainerTable = React.memo(function ContainerTable({
             onPostgresAction = () => navigate(`/postgres-server/${serverId}`);
           }
 
+          const isPoolInstance = container.labels?.["mini-infra.pool-instance"] === "true";
+
           return (
             <ContainerNameCell
               name={row.getValue("name")}
               selfRole={container.selfRole}
               postgresAction={postgresAction}
               onPostgresAction={onPostgresAction}
+              isPoolInstance={isPoolInstance}
             />
           );
         },
