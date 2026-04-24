@@ -246,11 +246,20 @@ export class StackReconciler {
       })).filter((c) => c.Labels['mini-infra.pool-instance'] !== 'true');
       const containerByService = buildContainerMap(currentContainers);
 
-      // 6.4. Mint fresh pool management tokens for every Pool service in
-      // this stack with `managedBy`. Persists the argon2 hash; returns
-      // plaintexts so the caller service's dynamicEnv resolution can inject
-      // them. Tokens rotate on every apply by design.
-      const poolTokens = await rotatePoolManagementTokens(this.prisma, stackId);
+      // 6.4. Mint fresh pool management tokens for every Pool service whose
+      // `managedBy` caller is being (re)created in this apply. Tokens are
+      // bound to the caller container's lifetime — no-op callers retain
+      // their existing plaintext, so the stored hash must also stay put.
+      const recreatedCallers = new Set(
+        actions
+          .filter((a) => a.action === 'create' || a.action === 'recreate')
+          .map((a) => a.serviceName),
+      );
+      const poolTokens = await rotatePoolManagementTokens(
+        this.prisma,
+        stackId,
+        recreatedCallers,
+      );
 
       // 6.5. Resolve vault dynamic-env values for services that need them.
       // Skipped entirely when no binding is present. Runs after image pull is
@@ -453,7 +462,18 @@ export class StackReconciler {
       let completedCount = 0;
 
       // Mint fresh pool management tokens + resolve dynamic env (update flow).
-      const poolTokens = await rotatePoolManagementTokens(this.prisma, stackId);
+      // Same lifecycle rule as apply: rotate only for callers whose container
+      // is being replaced, so existing no-op callers keep a valid token.
+      const recreatedCallers = new Set(
+        actions
+          .filter((a) => a.action === 'create' || a.action === 'recreate')
+          .map((a) => a.serviceName),
+      );
+      const poolTokens = await rotatePoolManagementTokens(
+        this.prisma,
+        stackId,
+        recreatedCallers,
+      );
       const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, poolTokens, log);
 
       for (const action of actions) {

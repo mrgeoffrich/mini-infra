@@ -79,8 +79,21 @@ function requirePoolAccess(requiredScope: 'pools:read' | 'pools:write') {
     }
 
     // Path 2 — session or API key with the right permission.
+    // Promise-wrap `requireSessionOrApiKey` so we can await it, but guarantee
+    // the promise settles even if the middleware sends a response without
+    // calling next (the auth layer does this for 401s). Without the
+    // finish/close listeners the frame would hang forever and pin the req/res
+    // objects in memory.
     await new Promise<void>((resolve) => {
-      requireSessionOrApiKey(req, res, () => resolve());
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      res.once('finish', done);
+      res.once('close', done);
+      requireSessionOrApiKey(req, res, done);
     });
     if (res.headersSent) return;
 
@@ -163,28 +176,8 @@ router.post(
     const { instanceId, env, idleTimeoutMinutes } = parsed.data;
     const effectiveIdle = idleTimeoutMinutes ?? poolConfig.defaultIdleTimeoutMinutes;
 
-    // Idempotency: if there's already an active (starting/running) row, return it.
-    const existing = await prisma.poolInstance.findFirst({
-      where: { stackId, serviceName, instanceId, status: { in: ['starting', 'running'] } },
-    });
-    if (existing) {
-      return res.json({ success: true, data: serializeInstance(existing as unknown as PoolInstanceDb) });
-    }
-
-    // Enforce maxInstances.
-    if (poolConfig.maxInstances !== null) {
-      const activeCount = await prisma.poolInstance.count({
-        where: { stackId, serviceName, status: { in: ['starting', 'running'] } },
-      });
-      if (activeCount >= poolConfig.maxInstances) {
-        return res.status(409).json({
-          success: false,
-          message: `Pool has reached maxInstances=${poolConfig.maxInstances}`,
-        });
-      }
-    }
-
-    // Fetch stack for naming context.
+    // Fetch stack for naming context — cheap, doesn't need to be inside the
+    // reservation transaction.
     const stack = await prisma.stack.findUnique({
       where: { id: stackId },
       include: { environment: true },
@@ -198,29 +191,66 @@ router.post(
         .json({ success: false, message: 'Cannot spawn into a stack in error state' });
     }
 
-    // Insert starting row.
-    let row;
+    // Reserve the slot atomically: idempotency check, maxInstances cap, and
+    // insert all inside one transaction so concurrent callers can't both
+    // observe `activeCount = max - 1` and both succeed in inserting. SQLite
+    // serialises writes so this is race-free in practice. Throws sentinel
+    // errors that the catch block translates into HTTP responses.
+    const MAX_REACHED = Symbol('pool-max-reached');
+    type TxResult = { existing: true; row: PoolInstanceDb } | { existing: false; row: PoolInstanceDb };
+
+    let txResult: TxResult;
     try {
-      row = await prisma.poolInstance.create({
-        data: {
-          stackId,
-          serviceName,
-          instanceId,
-          status: 'starting',
-          idleTimeoutMinutes: effectiveIdle,
-        },
+      txResult = await prisma.$transaction(async (tx) => {
+        const existing = await tx.poolInstance.findFirst({
+          where: { stackId, serviceName, instanceId, status: { in: ['starting', 'running'] } },
+        });
+        if (existing) return { existing: true, row: existing as unknown as PoolInstanceDb };
+
+        if (poolConfig.maxInstances !== null) {
+          const activeCount = await tx.poolInstance.count({
+            where: { stackId, serviceName, status: { in: ['starting', 'running'] } },
+          });
+          if (activeCount >= poolConfig.maxInstances) {
+            throw MAX_REACHED;
+          }
+        }
+
+        const created = await tx.poolInstance.create({
+          data: {
+            stackId,
+            serviceName,
+            instanceId,
+            status: 'starting',
+            idleTimeoutMinutes: effectiveIdle,
+          },
+        });
+        return { existing: false, row: created as unknown as PoolInstanceDb };
       });
     } catch (err) {
-      // Partial unique index race — another request is already spawning.
+      if (err === MAX_REACHED) {
+        return res.status(409).json({
+          success: false,
+          message: `Pool has reached maxInstances=${poolConfig.maxInstances}`,
+        });
+      }
+      // Partial unique index violation — another writer won the race between
+      // the existence check and the create. Re-read and return if an active
+      // row is now present.
       const existingAfter = await prisma.poolInstance.findFirst({
         where: { stackId, serviceName, instanceId, status: { in: ['starting', 'running'] } },
       });
       if (existingAfter) {
         return res.json({ success: true, data: serializeInstance(existingAfter as unknown as PoolInstanceDb) });
       }
-      log.error({ stackId, serviceName, instanceId, err }, 'Failed to insert pool instance row');
+      log.error({ stackId, serviceName, instanceId, err }, 'Failed to reserve pool instance');
       return res.status(500).json({ success: false, message: 'Failed to reserve pool instance' });
     }
+
+    if (txResult.existing) {
+      return res.json({ success: true, data: serializeInstance(txResult.row) });
+    }
+    const row = txResult.row;
 
     // Emit starting event + respond immediately. Spawn runs in the
     // background; callers observe progress via pool:instance:* events or by
@@ -229,7 +259,7 @@ router.post(
 
     res.status(202).json({
       success: true,
-      data: serializeInstance(row as unknown as PoolInstanceDb),
+      data: serializeInstance(row),
     });
 
     void spawnInBackground({
