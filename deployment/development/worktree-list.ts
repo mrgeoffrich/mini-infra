@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx tsx
+#!/usr/bin/env -S pnpm dlx tsx
 // Mini Infra Worktree List
 //
 // Prints every worktree environment recorded in ~/.mini-infra/worktrees.yaml

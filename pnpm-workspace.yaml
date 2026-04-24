@@ -1,0 +1,24 @@
+packages:
+  - client
+  - server
+  - lib
+  - acme
+
+# Transitive dependency version pins. These were previously in the root
+# package.json `overrides` field under npm.
+overrides:
+  lodash: ^4.18.0
+  defu: ^6.1.5
+  path-to-regexp: ^8.4.0
+  js-yaml: ^4.1.1
+  brace-expansion: ^1.1.13
+
+# pnpm 10 blocks postinstall scripts by default. Native modules and
+# Prisma tooling need their install scripts to run, so allow them.
+onlyBuiltDependencies:
+  - better-sqlite3
+  - argon2
+  - esbuild
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma

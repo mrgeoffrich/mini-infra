@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx tsx
+#!/usr/bin/env -S pnpm dlx tsx
 // Mini Infra Per-Worktree Development Startup (TypeScript)
 //
 // Runs one fully isolated Mini Infra instance per worktree by giving each a
@@ -164,6 +164,31 @@ async function main(): Promise<void> {
       process.exit(1);
     }
   }
+  if (!commandExists('corepack')) {
+    logError('corepack is not available. Install a recent Node.js (>=16.9) or run: npm install -g corepack');
+    process.exit(1);
+  }
+
+  // Sync host-side Node dependencies via pnpm (pinned in package.json
+  // via the `packageManager` field). Idempotent; fast on warm installs.
+  logInfo('Syncing host-side Node dependencies via pnpm...');
+  const prep = exec('corepack', ['prepare', '--activate'], {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+  });
+  if (prep.status !== 0) {
+    logError('corepack prepare failed — is your Node version recent enough?');
+    process.exit(1);
+  }
+  const install = exec('pnpm', ['install', '--frozen-lockfile'], {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+  });
+  if (install.status !== 0) {
+    logError('pnpm install failed');
+    process.exit(1);
+  }
+  logOk('Host dependencies synced');
 
   fs.mkdirSync(MINI_INFRA_HOME, { recursive: true });
   migrateFromJsonIfNeeded();

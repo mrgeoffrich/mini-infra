@@ -52,11 +52,11 @@ After making changes, verify the code compiles without errors:
 
 ```bash
 # Build shared types first (always required)
-npm run build:lib
+pnpm build:lib
 
 # Then build the affected workspace(s)
-npm run build -w server   # if server changed
-npm run build -w client   # if client changed
+pnpm --filter mini-infra-server build   # if server changed
+pnpm --filter mini-infra-client build   # if client changed
 ```
 
 Fix any build errors before proceeding. Do not skip this step — a fix that doesn't compile is not a fix.
@@ -64,7 +64,7 @@ Fix any build errors before proceeding. Do not skip this step — a fix that doe
 If tests exist for the area you changed, run them:
 
 ```bash
-npm test -w server   # or client
+pnpm --filter mini-infra-server test   # or mini-infra-client
 ```
 
 ---

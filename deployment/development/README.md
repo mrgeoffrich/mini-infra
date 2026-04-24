@@ -163,7 +163,7 @@ curl -s -H 'x-api-key: <KEY>' "$MINI_INFRA_URL/api/self-update/status" | python3
 
 ## When to Use This vs Regular Development
 
-| Scenario | Use This | Use `npm run dev` |
+| Scenario | Use This | Use `pnpm dev` |
 |----------|----------|-------------------|
 | Testing Docker builds | ✅ Yes | ❌ No |
 | Testing docker-compose | ✅ Yes | ❌ No |
