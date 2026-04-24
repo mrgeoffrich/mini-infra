@@ -12,11 +12,12 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useContainers } from "@/hooks/useContainers";
+import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import type { ContainerInfo } from "@mini-infra/types";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useSocket } from "@/hooks/use-socket";
 import { ContainerTable } from "./ContainerTable";
+import { ContainerFilters } from "./ContainerFilters";
 import {
   IconAlertCircle,
   IconSettings,
@@ -33,6 +34,18 @@ interface ContainerGroup {
 export function ContainerDashboard() {
   const { formatDateTime } = useFormattedDate();
   const { connected } = useSocket();
+
+  // Filter + sort state (localStorage-backed). `poolInstance` is applied
+  // client-side below; everything else rides on the server query.
+  const {
+    filters,
+    sortBy,
+    sortOrder,
+    updateFilter,
+    updateSort,
+    resetFilters,
+    queryParams,
+  } = useContainerFilters();
 
   // Check Docker connectivity first
   const { data: connectivityData, isLoading: isConnectivityLoading } =
@@ -57,6 +70,7 @@ export function ContainerDashboard() {
     refetch,
   } = useContainers({
     enabled: isDockerConnected === true, // Only fetch when explicitly connected
+    queryParams,
   });
 
   // Fetch PostgreSQL containers
@@ -103,9 +117,17 @@ export function ContainerDashboard() {
     [managedContainerMap]
   );
 
-  // Group containers by environment
+  // Group containers by environment. The `poolInstance` filter is applied
+  // client-side here — the server list endpoint doesn't know about the
+  // `mini-infra.pool-instance` label.
   const containerGroups = React.useMemo((): ContainerGroup[] => {
     if (!containerData?.containers) return [];
+
+    const source = filters.poolInstance
+      ? containerData.containers.filter(
+          (c) => c.labels?.["mini-infra.pool-instance"] === "true",
+        )
+      : containerData.containers;
 
     const envGroups = new Map<string, ContainerGroup>();
     const hostStackGroups = new Map<string, ContainerGroup>();
@@ -113,7 +135,7 @@ export function ContainerDashboard() {
     const managedPostgresContainers: ContainerInfo[] = [];
     const unmanagedContainers: ContainerInfo[] = [];
 
-    containerData.containers.forEach((container) => {
+    source.forEach((container) => {
       const stackName = container.labels["mini-infra.stack"];
 
       // Check if this is a Mini Infra container (main or sidecar)
@@ -186,7 +208,7 @@ export function ContainerDashboard() {
     }
 
     return result;
-  }, [containerData, managedContainerIds]);
+  }, [containerData, managedContainerIds, filters.poolInstance]);
 
   // Log business event when container list is viewed
   React.useEffect(() => {
@@ -356,6 +378,14 @@ export function ContainerDashboard() {
     <div data-tour="containers-table">
       <Card>
           <CardContent className="space-y-4 pt-6">
+            <ContainerFilters
+              filters={filters}
+              updateFilter={updateFilter}
+              resetFilters={resetFilters}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              updateSort={updateSort}
+            />
 
             {isLoading && !containerData ? (
               <div className="space-y-2">
