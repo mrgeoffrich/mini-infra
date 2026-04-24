@@ -1,0 +1,567 @@
+// Mini Infra worktree seeder — TypeScript port of worktree_seed.sh.
+//
+// Drives the running app via its REST API to skip onboarding:
+//   1. Create the first admin user via POST /auth/setup
+//   2. Exchange admin credentials for a full-admin API key via
+//      POST /api/dev/issue-api-key (requires ENABLE_DEV_API_KEY_ENDPOINT=true)
+//   3. Complete the setup wizard (docker host) via POST /auth/setup/complete
+//   3b. Upsert docker_host_ip system setting (needed for application DNS)
+//   4. Upsert Azure / Cloudflare / GitHub credentials
+//   5. Create a local environment
+//   6. Instantiate + apply the built-in HAProxy stack template
+//   7. Mark onboarding complete
+//   8. Write environment-details.xml at the project root.
+//
+// Each step is idempotent-ish: already-configured state is skipped, but the
+// seeder does not back out partial state on failure — fix the env file and re-run.
+
+import * as dgram from 'node:dgram';
+import { ApiClient, pickItems, pickObject, type ApiResponse } from './api.js';
+import { loadDevEnv, type DevEnv } from './dev-env.js';
+import {
+  writeFullEnvironmentDetails,
+  type LocalEnvironmentSummary,
+  type StackSummary,
+} from './env-details.js';
+import { logInfo, logOk, logError, logSkip } from './log.js';
+
+export interface SeederInput {
+  uiPort: number;
+  registryPort: number;
+  profile: string;
+  projectRoot: string;
+  dockerHost: string;
+  composeProject: string;
+  agentSidecarImageTag: string;
+  devEnvPath: string;
+  detailsFile: string;
+}
+
+export interface SeederOutput {
+  adminEmail: string;
+  adminPassword: string;
+  apiKey: string;
+  localEnvId?: string;
+  haproxyStackId?: string;
+}
+
+interface SetupStatus {
+  setupComplete?: boolean;
+  hasUsers?: boolean;
+}
+
+interface ApiKeyResponse {
+  apiKey?: string;
+}
+
+interface Environment {
+  id?: string;
+  name?: string;
+  type?: string;
+  networkType?: string;
+}
+
+interface Stack {
+  id?: string;
+  name?: string;
+  status?: string;
+  lastAppliedAt?: string;
+}
+
+interface Template {
+  id?: string;
+  name?: string;
+}
+
+interface SystemSetting {
+  id?: string;
+  category?: string;
+  key?: string;
+  value?: string;
+}
+
+const HEALTH_PATH = '/health';
+const SEED_DEBUG = process.env.SEED_DEBUG === '1';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function debug(msg: string): void {
+  if (SEED_DEBUG) console.log(`  [seed debug] ${msg}`);
+}
+
+async function waitForHealthy(baseUrl: string, maxSeconds: number, label: string): Promise<void> {
+  logInfo(`Waiting for ${label} to become healthy (up to ${maxSeconds}s)...`);
+  for (let i = 1; i <= maxSeconds; i++) {
+    try {
+      const res = await fetch(`${baseUrl}${HEALTH_PATH}`);
+      if (res.ok) {
+        logOk(`${label} is healthy`);
+        return;
+      }
+    } catch {
+      // swallow — expected during startup
+    }
+    debug(`health check ${i}/${maxSeconds} failed`);
+    await sleep(1000);
+  }
+  throw new Error(`${label} did not become healthy within ${maxSeconds}s`);
+}
+
+async function detectDockerHostIp(): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ip: string | null): void => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+      resolve(ip);
+    };
+
+    let socket: dgram.Socket;
+    try {
+      socket = dgram.createSocket('udp4');
+    } catch {
+      resolve(null);
+      return;
+    }
+    socket.once('error', () => finish(null));
+    const timer = setTimeout(() => finish(null), 2000);
+
+    socket.connect(80, '8.8.8.8', () => {
+      clearTimeout(timer);
+      try {
+        const addr = socket.address().address;
+        finish(addr || null);
+      } catch {
+        finish(null);
+      }
+    });
+  });
+}
+
+function assertStatus(res: ApiResponse<unknown>, expected: number[], label: string): void {
+  if (!expected.includes(res.status)) {
+    throw new Error(`${label} returned ${res.status}: ${res.bodyText}`);
+  }
+}
+
+async function getSetupStatus(api: ApiClient): Promise<SetupStatus> {
+  const res = await api.get<SetupStatus>('/auth/setup-status');
+  assertStatus(res, [200], 'setup-status');
+  return res.body || {};
+}
+
+async function ensureAdminUser(api: ApiClient, env: DevEnv): Promise<SetupStatus> {
+  logInfo('Checking setup status');
+  const status = await getSetupStatus(api);
+  if (status.hasUsers) {
+    logSkip('Admin user already exists');
+    return status;
+  }
+  logInfo(`Creating admin user ${env.ADMIN_EMAIL}`);
+  const res = await api.post('/auth/setup', {
+    email: env.ADMIN_EMAIL,
+    displayName: env.ADMIN_DISPLAY_NAME,
+    password: env.ADMIN_PASSWORD,
+  });
+  assertStatus(res, [201], 'POST /auth/setup');
+  logOk('Admin user created');
+  return status;
+}
+
+async function issueApiKey(api: ApiClient, env: DevEnv): Promise<string> {
+  logInfo('Issuing dev API key');
+  const res = await api.post<ApiKeyResponse>('/api/dev/issue-api-key', {
+    email: env.ADMIN_EMAIL,
+    password: env.ADMIN_PASSWORD,
+    name: 'worktree-seeder',
+  });
+  if (res.status !== 201) {
+    logError(`issue-api-key returned ${res.status}: ${res.bodyText}`);
+    logError('Is ENABLE_DEV_API_KEY_ENDPOINT=true set on the container?');
+    throw new Error(`issue-api-key failed with status ${res.status}`);
+  }
+  const apiKey = res.body?.apiKey;
+  if (!apiKey) {
+    throw new Error(`issue-api-key response missing apiKey field: ${res.bodyText}`);
+  }
+  logOk('API key obtained');
+  return apiKey;
+}
+
+async function completeSetupWizardIfNeeded(
+  api: ApiClient,
+  baseUrl: string,
+  setupComplete: boolean,
+): Promise<void> {
+  if (setupComplete) {
+    logSkip('Setup wizard already completed');
+    return;
+  }
+  logInfo('Completing setup wizard');
+  const res = await api.post('/auth/setup/complete', {
+    dockerHost: 'unix:///var/run/docker.sock',
+  });
+  if (res.status !== 200 && res.status !== 201) {
+    throw new Error(`setup/complete returned ${res.status}: ${res.bodyText}`);
+  }
+  logOk('Setup wizard completed');
+  // Server restarts after setup/complete to apply Docker host config.
+  await waitForHealthy(baseUrl, 30, 'app after setup');
+}
+
+async function ensureDockerHostIp(api: ApiClient, env: DevEnv): Promise<void> {
+  logInfo('Setting Docker host IP');
+  let ip = env.DOCKER_HOST_IP || '';
+  if (!ip) {
+    const detected = await detectDockerHostIp();
+    if (detected) ip = detected;
+  }
+  if (!ip) {
+    logSkip(
+      'Could not detect Docker host IP — set DOCKER_HOST_IP in dev.env to enable application DNS records',
+    );
+    return;
+  }
+
+  const listRes = await api.get<unknown>(
+    '/api/settings?category=system&key=docker_host_ip&isActive=true',
+  );
+  let existingId = '';
+  let existingValue = '';
+  if (listRes.status === 200) {
+    const items = pickItems<SystemSetting>(listRes.body);
+    const match = items.find((s) => s.category === 'system' && s.key === 'docker_host_ip');
+    if (match) {
+      existingId = match.id || '';
+      existingValue = match.value || '';
+    }
+  }
+
+  if (existingId && existingValue === ip) {
+    logSkip(`Docker host IP already set (${ip})`);
+    return;
+  }
+  if (existingId) {
+    const res = await api.put(`/api/settings/${existingId}`, { value: ip });
+    if (res.status === 200) {
+      logOk(`Docker host IP updated (${ip})`);
+    } else {
+      logSkip(`Docker host IP update returned ${res.status} (non-fatal): ${res.bodyText}`);
+    }
+    return;
+  }
+  const res = await api.post('/api/settings', {
+    category: 'system',
+    key: 'docker_host_ip',
+    value: ip,
+    isEncrypted: false,
+  });
+  if (res.status === 200 || res.status === 201) {
+    logOk(`Docker host IP set (${ip})`);
+  } else {
+    logSkip(`Docker host IP create returned ${res.status} (non-fatal): ${res.bodyText}`);
+  }
+}
+
+async function configureAzure(api: ApiClient, connectionString: string): Promise<void> {
+  logInfo('Configuring Azure Storage');
+  const put = await api.put('/api/settings/azure', { connectionString });
+  if (put.status !== 200 && put.status !== 201) {
+    logError(`Azure PUT returned ${put.status}: ${put.bodyText}`);
+    return;
+  }
+  logOk('Azure configured');
+  logInfo('Validating Azure connectivity');
+  const val = await api.post('/api/settings/validate/azure', {});
+  if (val.status === 200 || val.status === 201) {
+    logOk('Azure connectivity verified');
+  } else {
+    logSkip(`Azure validation returned ${val.status} (non-fatal): ${val.bodyText}`);
+  }
+}
+
+async function configureCloudflare(
+  api: ApiClient,
+  apiToken: string,
+  accountId: string,
+): Promise<void> {
+  logInfo('Configuring Cloudflare');
+  const post = await api.post('/api/settings/cloudflare', {
+    api_token: apiToken,
+    account_id: accountId,
+  });
+  if (post.status !== 200 && post.status !== 201) {
+    logError(`Cloudflare POST returned ${post.status}: ${post.bodyText}`);
+    return;
+  }
+  logOk('Cloudflare configured');
+  logInfo('Validating Cloudflare connectivity');
+  const val = await api.post('/api/settings/validate/cloudflare', {});
+  if (val.status === 200 || val.status === 201) {
+    logOk('Cloudflare connectivity verified');
+  } else {
+    logSkip(`Cloudflare validation returned ${val.status} (non-fatal): ${val.bodyText}`);
+  }
+}
+
+async function configureGithub(api: ApiClient, token: string): Promise<void> {
+  logInfo('Configuring GitHub');
+  const put = await api.put('/api/settings/github', { token });
+  if (put.status !== 200 && put.status !== 201) {
+    // GitHub settings route shape may differ; surface and continue.
+    logSkip(
+      `GitHub PUT returned ${put.status} (likely a payload-shape mismatch): ${put.bodyText}`,
+    );
+    return;
+  }
+  logOk('GitHub configured');
+  logInfo('Validating GitHub connectivity');
+  const val = await api.post('/api/settings/validate/github-app', {});
+  if (val.status === 200 || val.status === 201) {
+    logOk('GitHub connectivity verified');
+  } else {
+    logSkip(`GitHub validation returned ${val.status} (non-fatal): ${val.bodyText}`);
+  }
+}
+
+async function configureServices(api: ApiClient, env: DevEnv): Promise<void> {
+  if (env.AZURE_STORAGE_CONNECTION_STRING) {
+    await configureAzure(api, env.AZURE_STORAGE_CONNECTION_STRING);
+  } else {
+    logSkip('AZURE_STORAGE_CONNECTION_STRING not set — skipping');
+  }
+  if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
+    await configureCloudflare(api, env.CLOUDFLARE_API_TOKEN, env.CLOUDFLARE_ACCOUNT_ID);
+  } else {
+    logSkip('CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not set — skipping');
+  }
+  if (env.GITHUB_TOKEN) {
+    await configureGithub(api, env.GITHUB_TOKEN);
+  } else {
+    logSkip('GITHUB_TOKEN not set — skipping');
+  }
+}
+
+async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<string> {
+  logInfo('Creating local environment');
+  const list = await api.get<unknown>('/api/environments');
+  if (list.status === 200) {
+    const items = pickItems<Environment>(list.body);
+    const existing = items.find((e) => e.networkType === 'local');
+    if (existing?.id) {
+      logSkip(`Local environment already exists (id=${existing.id})`);
+      return existing.id;
+    }
+  }
+  const res = await api.post<Environment>('/api/environments', {
+    name: env.LOCAL_ENV_NAME,
+    description: 'Dev local environment (seeded)',
+    type: 'nonproduction',
+    networkType: 'local',
+  });
+  if (res.status !== 201) {
+    throw new Error(`POST /api/environments returned ${res.status}: ${res.bodyText}`);
+  }
+  const created = pickObject<Environment>(res.body);
+  const id = created?.id || '';
+  if (!id) {
+    throw new Error(`POST /api/environments response missing id: ${res.bodyText}`);
+  }
+  logOk(`Local environment created (id=${id})`);
+  return id;
+}
+
+async function findTemplate(api: ApiClient, needle: string): Promise<string | null> {
+  const res = await api.get<unknown>('/api/stack-templates');
+  if (res.status !== 200) return null;
+  const items = pickItems<Template>(res.body);
+  const match = items.find((t) => (t.name || '').toLowerCase().includes(needle));
+  return match?.id || null;
+}
+
+async function ensureHaproxyStack(api: ApiClient, envId: string): Promise<string | null> {
+  const stackName = 'haproxy-local';
+  logInfo(`Looking for existing ${stackName} stack in local env`);
+  const list = await api.get<unknown>(`/api/stacks?environmentId=${envId}`);
+  if (list.status === 200) {
+    const items = pickItems<Stack>(list.body);
+    const existing = items.find((s) => s.name === stackName);
+    if (existing?.id) {
+      logSkip(`HAProxy stack already exists (id=${existing.id})`);
+      return existing.id;
+    }
+  }
+  logInfo('Locating HAProxy stack template');
+  const templateId = await findTemplate(api, 'haproxy');
+  if (!templateId) {
+    logSkip('HAProxy template not found — skipping HAProxy setup');
+    return null;
+  }
+  const res = await api.post<unknown>(
+    `/api/stack-templates/${templateId}/instantiate`,
+    { environmentId: envId, name: stackName },
+  );
+  if (res.status !== 201) {
+    logError(`HAProxy instantiate returned ${res.status}: ${res.bodyText}`);
+    return null;
+  }
+  const created = pickObject<Stack>(res.body);
+  const id = created?.id || '';
+  if (!id) {
+    logError(`HAProxy instantiate response missing id: ${res.bodyText}`);
+    return null;
+  }
+  logOk(`HAProxy stack created (id=${id})`);
+  return id;
+}
+
+async function applyAndWaitForSynced(api: ApiClient, stackId: string): Promise<void> {
+  // Snapshot pre-apply status + lastAppliedAt. The status field may still read
+  // "error" (or whatever) from a prior run until the reconciler finishes this
+  // one, so lastAppliedAt is the authoritative "reconciler completed a new run"
+  // signal.
+  let prevStatus = '';
+  let prevLastAppliedAt = '';
+  const pre = await api.get<unknown>(`/api/stacks/${stackId}`);
+  if (pre.status === 200) {
+    const s = pickObject<Stack>(pre.body);
+    prevStatus = s?.status || '';
+    prevLastAppliedAt = s?.lastAppliedAt || '';
+  }
+
+  if (prevStatus.toLowerCase() === 'synced') {
+    logSkip('HAProxy stack is already Synced — skipping apply');
+    return;
+  }
+
+  logInfo(`Applying HAProxy stack (current status: ${prevStatus || 'unknown'})`);
+  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {});
+  if (applyRes.status !== 200 && applyRes.status !== 202) {
+    logError(`Apply returned ${applyRes.status}: ${applyRes.bodyText}`);
+    return;
+  }
+
+  logInfo('Apply started — polling for completion (timeout 120s)');
+  let lastStatus = '';
+  for (let i = 1; i <= 40; i++) {
+    await sleep(3000);
+    const res = await api.get<unknown>(`/api/stacks/${stackId}`);
+    if (res.status !== 200) continue;
+    const s = pickObject<Stack>(res.body);
+    const polledStatus = s?.status || '';
+    const polledLastApplied = s?.lastAppliedAt || '';
+    // Only treat a terminal status as meaningful once lastAppliedAt has advanced.
+    if (polledLastApplied === prevLastAppliedAt) continue;
+    lastStatus = polledStatus;
+    const lower = polledStatus.toLowerCase();
+    if (lower === 'synced') {
+      logOk('HAProxy stack is Synced');
+      return;
+    }
+    if (lower === 'error') {
+      logError('HAProxy stack apply failed (status=error)');
+      return;
+    }
+  }
+  logSkip(`Timed out waiting for HAProxy to sync (last status: ${lastStatus || 'unknown'})`);
+}
+
+async function markOnboardingComplete(api: ApiClient): Promise<void> {
+  logInfo('Marking onboarding complete');
+  const res = await api.post('/api/onboarding/complete', {});
+  if (res.status === 200 || res.status === 201 || res.status === 204) {
+    logOk('Onboarding marked complete');
+  } else {
+    logSkip(`onboarding/complete returned ${res.status} (may already be complete): ${res.bodyText}`);
+  }
+}
+
+async function fetchEnvironmentSummary(
+  api: ApiClient,
+  envId: string,
+): Promise<LocalEnvironmentSummary | null> {
+  const res = await api.get<unknown>('/api/environments');
+  if (res.status !== 200) return null;
+  const items = pickItems<Environment>(res.body);
+  const match = items.find((e) => e.id === envId);
+  if (!match) return null;
+  return {
+    id: match.id,
+    name: match.name,
+    type: match.type,
+    networkType: match.networkType,
+  };
+}
+
+async function fetchStackSummaries(api: ApiClient, envId: string): Promise<StackSummary[]> {
+  const res = await api.get<unknown>(`/api/stacks?environmentId=${envId}`);
+  if (res.status !== 200) return [];
+  const items = pickItems<Stack>(res.body);
+  return items.map((s) => ({
+    id: s.id,
+    name: s.name,
+    status: s.status,
+    lastAppliedAt: s.lastAppliedAt,
+  }));
+}
+
+export async function seed(input: SeederInput): Promise<SeederOutput> {
+  const env = loadDevEnv(input.devEnvPath);
+  const baseUrl = `http://localhost:${input.uiPort}`;
+  const api = new ApiClient(baseUrl);
+
+  const setupStatus = await ensureAdminUser(api, env);
+  const apiKey = await issueApiKey(api, env);
+  api.setApiKey(apiKey);
+
+  await completeSetupWizardIfNeeded(api, baseUrl, setupStatus.setupComplete === true);
+  await ensureDockerHostIp(api, env);
+  await configureServices(api, env);
+
+  const localEnvId = await ensureLocalEnvironment(api, env);
+  const haproxyStackId = await ensureHaproxyStack(api, localEnvId);
+  if (haproxyStackId) {
+    await applyAndWaitForSynced(api, haproxyStackId);
+  }
+  await markOnboardingComplete(api);
+
+  logInfo(`Writing ${input.detailsFile}`);
+  const localEnvironment = await fetchEnvironmentSummary(api, localEnvId);
+  const stacks = await fetchStackSummaries(api, localEnvId);
+  writeFullEnvironmentDetails(input.detailsFile, {
+    profile: input.profile,
+    projectRoot: input.projectRoot,
+    dockerHost: input.dockerHost,
+    composeProject: input.composeProject,
+    uiPort: input.uiPort,
+    registryPort: input.registryPort,
+    agentSidecarImageTag: input.agentSidecarImageTag,
+    adminEmail: env.ADMIN_EMAIL,
+    adminPassword: env.ADMIN_PASSWORD,
+    apiKey,
+    azureConfigured: Boolean(env.AZURE_STORAGE_CONNECTION_STRING),
+    cloudflareConfigured: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
+    githubConfigured: Boolean(env.GITHUB_TOKEN),
+    localEnvironment,
+    stacks,
+  });
+  logOk(`Wrote ${input.detailsFile}`);
+
+  console.log('');
+  logOk('Seeder finished');
+
+  return {
+    adminEmail: env.ADMIN_EMAIL,
+    adminPassword: env.ADMIN_PASSWORD,
+    apiKey,
+    localEnvId,
+    haproxyStackId: haproxyStackId ?? undefined,
+  };
+}

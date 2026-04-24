@@ -1,0 +1,471 @@
+#!/usr/bin/env -S npx tsx
+// Mini Infra Per-Worktree Development Startup (TypeScript)
+//
+// Runs one fully isolated Mini Infra instance per worktree by giving each a
+// dedicated Colima VM (its own Docker daemon) and a namespaced Compose project.
+// Ports are allocated from ~/.mini-infra/worktrees.yaml so re-runs are stable.
+//
+// Usage: tsx worktree-start.ts [--profile <name>] [--reset] [--skip-seed] [--seed]
+//
+// After the app is healthy, this script calls the in-process seeder (POST
+// /setup, issue an admin API key, seed service configs, apply HAProxy stack)
+// and then writes admin credentials into the central worktrees.yaml.
+
+import { parseArgs } from 'node:util';
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import { logInfo, logOk, logWarn, logError } from './lib/log.js';
+import {
+  allocatePorts,
+  DEV_ENV_FILE,
+  MINI_INFRA_HOME,
+  migrateFromJsonIfNeeded,
+  upsertEntry,
+} from './lib/registry.js';
+import { readEnvironmentDetails, writeMinimalEnvironmentDetails } from './lib/env-details.js';
+import { isColimaRunning, startColima } from './lib/colima.js';
+import { seed } from './lib/seeder.js';
+
+const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
+const COMPOSE_FILE = path.join(SCRIPT_DIR, 'docker-compose.worktree.yaml');
+
+const COLIMA_CPUS = 2;
+const COLIMA_MEMORY_GIB = 8;
+
+function usage(): void {
+  const lines = fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n');
+  console.log(lines.slice(1, 12).join('\n'));
+}
+
+function normaliseProfile(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForHttp(url: string, attempts: number, label: string): Promise<boolean> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return true;
+    } catch {
+      // swallow — expected during startup
+    }
+    if (i % 10 === 0) logInfo(`Still waiting... (${i}s elapsed) — ${label}`);
+    await sleep(1000);
+  }
+  return false;
+}
+
+function commandExists(cmd: string): boolean {
+  const res = spawnSync('command', ['-v', cmd], { shell: '/bin/bash' });
+  return res.status === 0;
+}
+
+function exec(
+  cmd: string,
+  args: string[],
+  opts: { env?: NodeJS.ProcessEnv; cwd?: string; stdio?: 'inherit' | 'pipe' } = {},
+): { status: number; stdout: string; stderr: string } {
+  const res = spawnSync(cmd, args, {
+    encoding: 'utf8',
+    env: { ...process.env, ...(opts.env || {}) },
+    cwd: opts.cwd,
+    stdio: opts.stdio || 'pipe',
+  });
+  return {
+    status: res.status ?? 1,
+    stdout: res.stdout ?? '',
+    stderr: res.stderr ?? '',
+  };
+}
+
+function compose(args: string[], env: NodeJS.ProcessEnv, stdio: 'inherit' | 'pipe' = 'inherit'): number {
+  const res = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, ...args], {
+    env: { ...process.env, ...env },
+    stdio,
+  });
+  return res.status ?? 1;
+}
+
+interface Args {
+  profile?: string;
+  reset: boolean;
+  skipSeed: boolean;
+  forceSeed: boolean;
+}
+
+function parseCliArgs(): Args {
+  try {
+    const { values } = parseArgs({
+      options: {
+        profile: { type: 'string' },
+        reset: { type: 'boolean', default: false },
+        'skip-seed': { type: 'boolean', default: false },
+        seed: { type: 'boolean', default: false },
+        help: { type: 'boolean', short: 'h', default: false },
+      },
+      allowPositionals: false,
+    });
+    if (values.help) {
+      usage();
+      process.exit(0);
+    }
+    return {
+      profile: values.profile as string | undefined,
+      reset: Boolean(values.reset),
+      skipSeed: Boolean(values['skip-seed']),
+      forceSeed: Boolean(values.seed),
+    };
+  } catch (err) {
+    logError(`Unknown arg: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+}
+
+async function confirm(prompt: string): Promise<boolean> {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = await rl.question(prompt);
+    return /^[Yy]$/.test(answer.trim());
+  } finally {
+    rl.close();
+  }
+}
+
+async function main(): Promise<void> {
+  const args = parseCliArgs();
+
+  let profile = args.profile;
+  if (!profile) {
+    profile = path.basename(PROJECT_ROOT);
+  }
+  profile = normaliseProfile(profile);
+  if (!profile) {
+    logError('Could not derive a valid profile name');
+    process.exit(1);
+  }
+  logInfo(`Worktree profile: ${profile}`);
+
+  // Prereqs
+  for (const tool of ['colima', 'docker']) {
+    if (!commandExists(tool)) {
+      logError(`${tool} is not installed. Install with: brew install ${tool}`);
+      process.exit(1);
+    }
+  }
+
+  fs.mkdirSync(MINI_INFRA_HOME, { recursive: true });
+  migrateFromJsonIfNeeded();
+
+  // Port allocation
+  const { ui_port: uiPort, registry_port: registryPort } = allocatePorts(profile);
+  // Persist early so the entry exists even if later steps fail
+  upsertEntry({
+    profile,
+    worktree_path: PROJECT_ROOT,
+    colima_vm: profile,
+    ui_port: uiPort,
+    registry_port: registryPort,
+    url: `http://localhost:${uiPort}`,
+  });
+  logInfo(`Ports: UI=${uiPort}, registry=${registryPort}`);
+
+  // Colima
+  if (!isColimaRunning(profile)) {
+    logInfo(`Starting Colima profile '${profile}' (vz, ${COLIMA_CPUS} CPU, ${COLIMA_MEMORY_GIB}G RAM)...`);
+    startColima({ profile, cpus: COLIMA_CPUS, memoryGib: COLIMA_MEMORY_GIB });
+    logOk(`Colima profile '${profile}' started`);
+  } else {
+    logInfo(`Colima profile '${profile}' already running`);
+  }
+
+  const dockerSockPath = path.join(process.env.HOME || '', '.colima', profile, 'docker.sock');
+  if (!fs.existsSync(dockerSockPath)) {
+    logError(`Expected Colima socket not found at ${dockerSockPath}`);
+    process.exit(1);
+  }
+  const dockerHost = `unix://${dockerSockPath}`;
+  const composeProjectName = `mini-infra-${profile}`;
+  const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
+
+  const stackEnv: NodeJS.ProcessEnv = {
+    DOCKER_HOST: dockerHost,
+    COMPOSE_PROJECT_NAME: composeProjectName,
+    UI_PORT: String(uiPort),
+    REGISTRY_PORT: String(registryPort),
+    AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
+    PROJECT_ROOT,
+    PROFILE: profile,
+  };
+
+  // --reset
+  if (args.reset) {
+    logWarn(`⚠  WARNING: This will destroy ALL data for profile '${profile}' including:`);
+    console.log('  - The database (users, settings, configuration)');
+    console.log('  - All log files');
+    console.log('  - Registry images');
+    console.log('');
+    const ok = await confirm('Are you sure? [y/N] ');
+    if (!ok) {
+      console.log('Aborted.');
+      process.exit(0);
+    }
+    logInfo(`Stopping containers and removing volumes for ${composeProjectName}...`);
+    compose(['down', '-v'], stackEnv);
+    logOk('Reset complete. Rebuilding...');
+    console.log('');
+  }
+
+  // Registry first
+  logInfo('Ensuring local Docker registry is running...');
+  if (compose(['up', '-d', 'registry'], stackEnv) !== 0) {
+    logError('Failed to start registry container');
+    process.exit(1);
+  }
+  let ok = await waitForHttp(`http://localhost:${registryPort}/v2/`, 15, 'registry');
+  if (!ok) {
+    logError(`Local registry failed to become ready on port ${registryPort} after 15s`);
+    compose(['logs', '--tail=30', 'registry'], stackEnv);
+    process.exit(1);
+  }
+  logOk(`Local registry is ready at localhost:${registryPort}`);
+
+  // Pre-pull alpine (stack reconciler uses it for ephemeral helpers)
+  logInfo('Pre-pulling alpine:latest (used by stack reconciler for ephemeral helpers)...');
+  const pull = exec('docker', ['pull', 'alpine:latest'], { env: stackEnv });
+  if (pull.status !== 0) {
+    logError('Failed to pull alpine:latest');
+    process.stderr.write(pull.stderr);
+    process.exit(1);
+  }
+  logOk('alpine:latest ready');
+
+  // Build + push sidecar image
+  logInfo('Building agent sidecar image...');
+  const build = exec(
+    'docker',
+    [
+      'build',
+      '-t',
+      agentSidecarImageTag,
+      '-f',
+      path.join(PROJECT_ROOT, 'agent-sidecar', 'Dockerfile'),
+      PROJECT_ROOT,
+    ],
+    { env: stackEnv, stdio: 'inherit' },
+  );
+  if (build.status !== 0) {
+    logError('Agent sidecar build failed');
+    process.exit(1);
+  }
+  logInfo(`Pushing agent sidecar image to ${agentSidecarImageTag}...`);
+  const push = exec('docker', ['push', agentSidecarImageTag], { env: stackEnv, stdio: 'inherit' });
+  if (push.status !== 0) {
+    logError('Agent sidecar push failed');
+    process.exit(1);
+  }
+  logOk('Agent sidecar image pushed');
+
+  // Capture extra networks joined at runtime (e.g. vault) so they survive rebuild
+  const miniInfraContainer = `${composeProjectName}-mini-infra-1`;
+  const extraNetworks: string[] = [];
+  const inspect = exec('docker', ['inspect', miniInfraContainer], { env: stackEnv });
+  if (inspect.status === 0) {
+    const cfg = exec('docker', ['compose', '-f', COMPOSE_FILE, 'config', '--format', 'json'], {
+      env: stackEnv,
+    });
+    const composeNetworks = new Set<string>();
+    if (cfg.status === 0) {
+      try {
+        const parsed = JSON.parse(cfg.stdout) as {
+          name?: string;
+          services?: Record<string, { networks?: Record<string, unknown> }>;
+        };
+        const projectName = parsed.name || '';
+        const nets = new Set<string>(['default']);
+        for (const svc of Object.values(parsed.services || {})) {
+          for (const netName of Object.keys(svc.networks || {})) {
+            nets.add(netName);
+          }
+        }
+        for (const n of nets) composeNetworks.add(`${projectName}_${n}`);
+      } catch {
+        // ignore — cfg parsing best-effort
+      }
+    }
+
+    const currentRes = exec(
+      'docker',
+      [
+        'inspect',
+        miniInfraContainer,
+        '--format',
+        '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{"\\n"}}{{end}}',
+      ],
+      { env: stackEnv },
+    );
+    if (currentRes.status === 0) {
+      for (const net of currentRes.stdout.split('\n').map((s) => s.trim()).filter(Boolean)) {
+        if (!composeNetworks.has(net)) extraNetworks.push(net);
+      }
+    }
+    if (extraNetworks.length) {
+      logInfo(`Will restore extra networks after rebuild: ${extraNetworks.join(' ')}`);
+    }
+  }
+
+  // Build + start
+  logInfo(`Building and starting Mini Infra (project=${composeProjectName})...`);
+  if (compose(['up', '-d', '--build'], stackEnv) !== 0) {
+    logError('docker compose up --build failed');
+    process.exit(1);
+  }
+
+  // Restore extra networks
+  if (extraNetworks.length) {
+    logInfo(`Waiting for ${miniInfraContainer} to start before restoring networks...`);
+    for (let i = 0; i < 30; i++) {
+      const s = exec('docker', ['inspect', miniInfraContainer, '--format', '{{.State.Status}}'], {
+        env: stackEnv,
+      });
+      if (s.status === 0 && s.stdout.trim() === 'running') break;
+      await sleep(1000);
+    }
+    for (const net of extraNetworks) {
+      const n = exec('docker', ['network', 'inspect', net], { env: stackEnv });
+      if (n.status !== 0) {
+        logWarn(`Skipping network ${net} (no longer exists)`);
+        continue;
+      }
+      const c = exec('docker', ['network', 'connect', net, miniInfraContainer], { env: stackEnv });
+      if (c.status === 0) {
+        logOk(`Rejoined network: ${net}`);
+      } else {
+        logWarn(`Failed to rejoin network: ${net} (may already be connected)`);
+      }
+    }
+  }
+
+  // Health wait
+  logInfo(`Waiting for Mini Infra to become healthy on port ${uiPort}...`);
+  ok = await waitForHttp(`http://localhost:${uiPort}/health`, 60, 'Mini Infra');
+  if (!ok) {
+    logError('Mini Infra did not become healthy within 60s');
+    logError('Last 100 lines of container logs:');
+    compose(['logs', '--tail=100', 'mini-infra'], stackEnv);
+    process.exit(1);
+  }
+  logOk('Mini Infra is healthy');
+
+  // Seeder decision
+  const detailsFile = path.join(PROJECT_ROOT, 'environment-details.xml');
+  const alreadySeeded =
+    fs.existsSync(detailsFile) && /<seeded>true<\/seeded>/.test(fs.readFileSync(detailsFile, 'utf8'));
+
+  const minimalDetailsInput = {
+    profile,
+    projectRoot: PROJECT_ROOT,
+    dockerHost,
+    dockerSocket: dockerSockPath,
+    composeProject: composeProjectName,
+    uiPort,
+    registryPort,
+    agentSidecarImageTag,
+  };
+
+  let seededThisRun = false;
+  if (args.skipSeed) {
+    logWarn('Skipping seed step (--skip-seed)');
+    writeMinimalEnvironmentDetails(detailsFile, minimalDetailsInput);
+  } else if (alreadySeeded && !args.forceSeed && !args.reset) {
+    logInfo('Instance already seeded — skipping (pass --seed to re-run)');
+  } else if (!fs.existsSync(DEV_ENV_FILE)) {
+    logWarn(`Skipping seed step — ${DEV_ENV_FILE} not found`);
+    logWarn(`Copy ${path.join(SCRIPT_DIR, 'dev.env.example')} to ${DEV_ENV_FILE} and fill in values.`);
+    writeMinimalEnvironmentDetails(detailsFile, minimalDetailsInput);
+  } else {
+    logInfo('Running seeder...');
+    try {
+      const result = await seed({
+        uiPort,
+        registryPort,
+        profile,
+        projectRoot: PROJECT_ROOT,
+        dockerHost,
+        composeProject: composeProjectName,
+        agentSidecarImageTag,
+        devEnvPath: DEV_ENV_FILE,
+        detailsFile,
+      });
+      upsertEntry({
+        profile,
+        worktree_path: PROJECT_ROOT,
+        colima_vm: profile,
+        ui_port: uiPort,
+        registry_port: registryPort,
+        url: `http://localhost:${uiPort}`,
+        admin_email: result.adminEmail,
+        admin_password: result.adminPassword,
+        api_key: result.apiKey,
+        seeded: true,
+      });
+      logOk('Updated central registry (~/.mini-infra/worktrees.yaml) with admin credentials');
+      seededThisRun = true;
+    } catch (err) {
+      logError(`Seeder failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+
+  // For already-seeded re-runs, copy creds from the existing XML into the
+  // central registry (the YAML might be stale if it was wiped while the XML
+  // survives). Skip-seed / no-dev-env paths leave creds blank.
+  if (!seededThisRun) {
+    const details = readEnvironmentDetails(detailsFile);
+    upsertEntry({
+      profile,
+      worktree_path: PROJECT_ROOT,
+      colima_vm: profile,
+      ui_port: uiPort,
+      registry_port: registryPort,
+      url: `http://localhost:${uiPort}`,
+      seeded: details?.seeded ?? false,
+      admin_email: details?.admin.email,
+      admin_password: details?.admin.password,
+      api_key: details?.admin.apiKey,
+    });
+  }
+
+  console.log('');
+  logOk(`Mini Infra dev instance for '${profile}' is up`);
+  console.log('');
+  console.log(`  URL:         http://localhost:${uiPort}`);
+  console.log(`  Registry:    localhost:${registryPort}`);
+  console.log(`  DOCKER_HOST: ${dockerHost}`);
+  console.log('');
+  console.log(`  Logs:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} logs -f`);
+  console.log(`  Stop:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} down`);
+  console.log(`  Re-seed: ${path.join(SCRIPT_DIR, 'worktree_start.sh')} --seed --profile ${profile}`);
+  console.log(`  Nuke:    ${path.join(SCRIPT_DIR, 'worktree_start.sh')} --reset --profile ${profile}`);
+  console.log(`  List all: ${path.join(SCRIPT_DIR, 'worktree_list.sh')}`);
+  console.log('');
+}
+
+main().catch((err) => {
+  logError(err instanceof Error ? err.message : String(err));
+  if (err instanceof Error && err.stack) {
+    console.error(err.stack);
+  }
+  process.exit(1);
+});

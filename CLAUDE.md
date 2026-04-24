@@ -14,7 +14,7 @@ When designing the solution make sure you pick a DRY and well though out solutio
 
 For parallel dev work, each git worktree runs its own fully isolated Mini Infra instance on its own Colima VM. This is the default flow — use it instead of fighting over a single dev daemon when you have multiple WIPs in flight.
 
-1. **Spin up.** From the worktree root, run `deployment/development/worktree_start.sh`. This creates (or reuses) a Colima profile named after the worktree directory, allocates stable UI/registry ports from `~/.mini-infra/worktrees.json`, builds + starts the stack, then seeds credentials from `~/.mini-infra/dev.env` so the onboarding wizard is skipped.
+1. **Spin up.** From the worktree root, run `deployment/development/worktree_start.sh`. This creates (or reuses) a Colima profile named after the worktree directory, allocates stable UI/registry ports from `~/.mini-infra/worktrees.yaml`, builds + starts the stack, then seeds credentials from `~/.mini-infra/dev.env` so the onboarding wizard is skipped.
 
 2. **Find the URL.** The script writes `environment-details.xml` at the worktree root with the UI URL, Docker host, seeded resource IDs, and connected-service status. Read from it instead of assuming a port (see Browser Automation below for the one-liner).
 
@@ -24,7 +24,9 @@ For parallel dev work, each git worktree runs its own fully isolated Mini Infra 
 
 5. **Test.** Use the `test-dev` or `diagnose-dev` skills; both resolve the URL from `environment-details.xml` automatically.
 
-6. **Tear down.** `colima delete <profile> --data --force` removes the entire VM for that worktree. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
+6. **List everything.** Run `deployment/development/worktree_list.sh` from anywhere to see every registered environment (URL, admin login, path, seed status) in a table. `--wide` also prints the API key and admin password; `--json` emits the raw registry.
+
+7. **Tear down.** `colima delete <profile> --data --force` removes the entire VM for that worktree. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
 
 Run `git` commands from inside the worktree directory, not the main checkout — mixing shells between the two is the main way commits land on the wrong branch.
 
