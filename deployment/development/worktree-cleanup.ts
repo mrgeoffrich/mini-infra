@@ -1,4 +1,4 @@
-#!/usr/bin/env -S pnpm dlx tsx
+#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Worktree Cleanup (TypeScript)
 //
 // Runs from the main repo checkout (not a worktree). Scans all git worktrees,

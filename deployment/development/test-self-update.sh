@@ -75,7 +75,7 @@ if [ -z "$API_KEY" ]; then
     echo -e "${RED}Usage: $0 <API_KEY>${NC}"
     echo ""
     echo "  Get your API key from the Mini Infra UI (Settings > API Keys)"
-    echo "  or by running: npm run show-dev-key -w server  (local dev mode only)"
+    echo "  or by running: pnpm --filter mini-infra-server show-dev-key  (local dev mode only)"
     echo ""
     echo "  Other commands:"
     echo "    $0 cleanup    Clean up test resources"

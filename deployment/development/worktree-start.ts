@@ -1,4 +1,4 @@
-#!/usr/bin/env -S pnpm dlx tsx
+#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Per-Worktree Development Startup (TypeScript)
 //
 // Runs one fully isolated Mini Infra instance per worktree by giving each a
