@@ -30,6 +30,7 @@ import {
   buildContainerMap,
   mergeParameterValues,
   resolveServiceConfigs,
+  synthesiseDefaultNetworkIfNeeded,
 } from './utils';
 import { runPostInstallActions } from './post-install-actions';
 import { buildAppliedSnapshot } from './stack-applied-snapshot';
@@ -144,7 +145,8 @@ export class StackReconciler {
       const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
 
       // 5b. Ensure stack-owned networks and volumes
-      const networks = stack.networks as unknown as StackNetwork[];
+      const declaredNetworks = (stack.networks as unknown as StackNetwork[]) ?? [];
+      const networks = synthesiseDefaultNetworkIfNeeded(declaredNetworks, stack.services, log);
       const volumes = stack.volumes as unknown as StackVolume[];
       const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
 
@@ -454,9 +456,12 @@ export class StackReconciler {
       })).filter((c) => c.Labels['mini-infra.pool-instance'] !== 'true');
       const containerByService = buildContainerMap(containers);
 
-      const networkNames = (stack.networks as unknown as StackNetwork[]).map(
-        (n) => `${projectName}_${n.name}`
+      const updateNetworks = synthesiseDefaultNetworkIfNeeded(
+        (stack.networks as unknown as StackNetwork[]) ?? [],
+        stack.services,
+        log,
       );
+      const networkNames = updateNetworks.map((n) => `${projectName}_${n.name}`);
 
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;
@@ -621,6 +626,7 @@ export class StackReconciler {
         );
         throw new Error(
           `Vault credential injection failed for service "${serviceName}": ${msg}`,
+          { cause: err },
         );
       }
     }
@@ -639,24 +645,36 @@ export class StackReconciler {
   ): Promise<void> {
     const docker = this.dockerExecutor.getDockerClient();
 
-    // Load service definitions for image names
+    // Load stack + services so we can resolve template references on dockerImage
+    // / dockerTag the same way the apply path does. Pulling against the raw
+    // Prisma row would send `{{params.foo}}` to Docker as a literal string.
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },
-      include: { services: true },
+      include: { services: true, environment: true },
     });
-    const serviceImageMap = new Map(
-      stack.services.map((s) => [s.serviceName, `${s.dockerImage}:${s.dockerTag}`])
+    const params = mergeParameterValues(
+      (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+      (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
     );
+    const templateContext = buildStackTemplateContext(stack, params);
+    const { resolvedDefinitions } = resolveServiceConfigs(stack.services, templateContext);
+
+    const serviceImageMap = new Map<string, string>();
+    for (const [serviceName, def] of resolvedDefinitions.entries()) {
+      serviceImageMap.set(serviceName, `${def.dockerImage}:${def.dockerTag}`);
+    }
 
     // Pull all images (regardless of action — we always want latest)
     const pulledImageIds = new Map<string, string>();
     for (const svc of stack.services) {
       // Pool services don't run containers at apply time, so don't pull/compare.
       if (svc.serviceType === 'Pool') continue;
-      const imageRef = `${svc.dockerImage}:${svc.dockerTag}`;
+      const def = resolvedDefinitions.get(svc.serviceName);
+      if (!def) continue;
+      const imageRef = `${def.dockerImage}:${def.dockerTag}`;
       try {
         log.info({ service: svc.serviceName, image: imageRef }, 'Force-pulling image');
-        await this.containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+        await this.containerManager.pullImage(def.dockerImage, def.dockerTag);
 
         // Get the image ID of the freshly-pulled image
         const image = docker.getImage(imageRef);
@@ -788,7 +806,12 @@ export class StackReconciler {
     });
 
     const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
-    const networks = (stack.networks as unknown as StackNetwork[]) ?? [];
+    // Include any synthesised default network so destroy reaps it as well.
+    const networks = synthesiseDefaultNetworkIfNeeded(
+      (stack.networks as unknown as StackNetwork[]) ?? [],
+      stack.services,
+      log,
+    );
     const volumes = (stack.volumes as unknown as StackVolume[]) ?? [];
 
     log.info({ stackName: stack.name, projectName }, 'Destroying stack');

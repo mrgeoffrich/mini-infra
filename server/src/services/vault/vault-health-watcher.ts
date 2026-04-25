@@ -1,7 +1,6 @@
 import { OperatorPassphraseService } from "../../lib/operator-passphrase-service";
 import { VaultAdminService, UNSEAL_STEP_NAMES } from "./vault-admin-service";
 import { VaultStateService } from "./vault-state-service";
-import { VaultHttpClient } from "./vault-http-client";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { VaultStatus } from "@mini-infra/types";

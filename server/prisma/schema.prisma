@@ -1385,6 +1385,8 @@ model StackTemplateService {
   order           Int
   routing         Json?                 // StackServiceRouting | null
   adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
+  poolConfig      Json?                 // PoolConfig (required for Pool services)
+  vaultAppRoleId  String?               // Optional per-service Vault AppRole binding
 
   @@unique([versionId, serviceName])
   @@index([versionId])

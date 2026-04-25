@@ -159,6 +159,8 @@ router.post(
       tlsCertificates,
       dnsRecords,
       tunnelIngress,
+      vaultAppRoleId,
+      vaultFailClosed,
     } = parsed.data;
 
     if (environmentId) {
@@ -208,6 +210,8 @@ router.post(
         tlsCertificates: tlsCertificates ?? [],
         dnsRecords: dnsRecords ?? [],
         tunnelIngress: tunnelIngress ?? [],
+        vaultAppRoleId: vaultAppRoleId ?? null,
+        ...(vaultFailClosed !== undefined ? { vaultFailClosed } : {}),
         services: {
           create: (services as StackServiceDefinition[]).map(toServiceCreateInput),
         },

@@ -394,6 +394,10 @@ export const createStackSchema = z.object({
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
   tunnelIngress: z.array(stackTunnelIngressSchema).optional(),
   services: z.array(stackServiceDefinitionSchema),
+  // Vault binding — accepted on create so callers don't have to follow up with
+  // a PUT just to attach a Vault AppRole before the first apply.
+  vaultAppRoleId: z.string().nullable().optional(),
+  vaultFailClosed: z.boolean().optional(),
 }).superRefine(refineCrossServicePoolRefs);
 
 export const updateStackSchema = z.object({

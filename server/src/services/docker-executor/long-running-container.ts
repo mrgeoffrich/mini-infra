@@ -170,8 +170,17 @@ export class LongRunningContainerManager {
         containerOptions.NetworkingConfig = {
           EndpointsConfig: {}
         };
+        // Alias each endpoint with the bare service name so other containers
+        // on the same network can resolve `http://<serviceName>` directly,
+        // mirroring docker-compose semantics. The full container name is
+        // still resolvable via the default DNS entry.
+        const serviceName = options.serviceName;
         for (const network of options.networks) {
-          containerOptions.NetworkingConfig.EndpointsConfig![network] = {};
+          const endpoint: Docker.EndpointSettings = {};
+          if (serviceName) {
+            endpoint.Aliases = [serviceName];
+          }
+          containerOptions.NetworkingConfig.EndpointsConfig![network] = endpoint;
         }
       }
 

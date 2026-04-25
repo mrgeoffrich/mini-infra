@@ -1081,6 +1081,8 @@ function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<tru
     order: svc.order,
     routing: svc.routing as unknown as StackTemplateServiceInfo['routing'],
     adoptedContainer: (svc.adoptedContainer ?? undefined) as unknown as StackTemplateServiceInfo['adoptedContainer'],
+    poolConfig: (svc.poolConfig ?? null) as unknown as StackTemplateServiceInfo['poolConfig'],
+    vaultAppRoleId: svc.vaultAppRoleId ?? null,
   };
 }
 
@@ -1116,6 +1118,8 @@ function toTemplateServiceCreate(
     order: s.order ?? fallbackOrder,
     routing: s.routing ? (s.routing as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    vaultAppRoleId: s.vaultAppRoleId ?? null,
   };
 }
 
@@ -1237,6 +1241,8 @@ function buildServiceDefinitionsFromVersion(version: {
       order: svc.order,
       routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
       adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
+      poolConfig: (svc.poolConfig as unknown as StackServiceDefinition['poolConfig']) ?? undefined,
+      vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
     };
   });
 }
