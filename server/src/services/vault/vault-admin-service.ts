@@ -119,6 +119,13 @@ export class VaultAdminService {
   private adminToken: string | null = null;
   private client: VaultHttpClient | null = null;
   private renewalTimer: NodeJS.Timeout | null = null;
+  /**
+   * Set while a `renew-self` request is in-flight or while
+   * `authenticateAsAdmin` is logging in. Other token-mutating calls await
+   * this so we never have two parallel auth flows mutating `adminToken`,
+   * `client.token`, and the renewal timer at the same time.
+   */
+  private authInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -369,8 +376,30 @@ export class VaultAdminService {
    * Re-authenticate the in-memory admin token using stored AppRole credentials.
    * Called after restarts / passphrase unlocks so subsequent admin operations
    * (policy apply, AppRole management) have a live token.
+   *
+   * Serialised against any in-flight renewal so `adminToken` / `client.token`
+   * never get clobbered by a racing `renewSelfTick`.
    */
   async authenticateAsAdmin(): Promise<void> {
+    if (this.authInFlight) {
+      await this.authInFlight;
+      // If the in-flight op was a successful login/renewal, we now have a
+      // live token and don't need to log in again.
+      if (this.adminToken) return;
+    }
+    const op = this.authenticateAsAdminInner();
+    this.authInFlight = op.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await op;
+    } finally {
+      this.authInFlight = null;
+    }
+  }
+
+  private async authenticateAsAdminInner(): Promise<void> {
     if (!this.client) throw new Error("No Vault address configured");
     if (!this.passphrase.isUnlocked()) {
       throw new Error("Operator passphrase must be unlocked");
@@ -458,10 +487,36 @@ export class VaultAdminService {
    * Renew the cached admin token. On success, schedule the next renewal.
    * On failure, drop the cached token and emit a warning so operators can see
    * the degraded state instead of getting silent 500s on subsequent calls.
+   *
+   * Serialised against `authenticateAsAdmin` via `authInFlight`. If a manual
+   * re-auth is already underway when the renewal timer fires, we wait for it
+   * and then bail — the manual re-auth has already produced a fresh token
+   * and scheduled the next renewal.
    */
   private async renewSelfTick(): Promise<void> {
+    if (this.authInFlight) {
+      await this.authInFlight;
+      // The manual re-auth scheduled its own next renewal. Don't double up.
+      return;
+    }
     if (!this.client || !this.adminToken) {
-      // Nothing to renew — bail without rescheduling.
+      this.renewalTimer = null;
+      return;
+    }
+    const op = this.renewSelfTickInner();
+    this.authInFlight = op.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await op;
+    } finally {
+      this.authInFlight = null;
+    }
+  }
+
+  private async renewSelfTickInner(): Promise<void> {
+    if (!this.client || !this.adminToken) {
       this.renewalTimer = null;
       return;
     }

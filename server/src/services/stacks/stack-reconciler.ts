@@ -463,6 +463,23 @@ export class StackReconciler {
       );
       const networkNames = updateNetworks.map((n) => `${projectName}_${n.name}`);
 
+      // Ensure stack-owned networks exist. Update is normally called after at
+      // least one apply, so the original networks should already be present —
+      // but a stack that flipped from 1 service to 2+ services since last
+      // apply needs the synthesised default network to be created here.
+      const updateStackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
+      for (const net of updateNetworks) {
+        const netName = `${projectName}_${net.name}`;
+        const exists = await this.dockerExecutor.networkExists(netName);
+        if (!exists) {
+          log.info({ network: netName }, 'Creating network');
+          await this.dockerExecutor.createNetwork(netName, projectName, {
+            driver: net.driver,
+            labels: updateStackLabels,
+          });
+        }
+      }
+
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;
 

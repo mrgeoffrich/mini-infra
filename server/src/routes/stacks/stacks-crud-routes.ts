@@ -194,7 +194,9 @@ router.post(
       data: {
         name,
         description: description ?? null,
-        environmentId: environmentId ?? undefined,
+        ...(environmentId
+          ? { environment: { connect: { id: environmentId } } }
+          : {}),
         parameters: parameters ? (parameters as unknown as Prisma.InputJsonValue) : undefined,
         parameterValues: parameterValues
           ? (parameterValues as unknown as Prisma.InputJsonValue)
@@ -210,7 +212,11 @@ router.post(
         tlsCertificates: tlsCertificates ?? [],
         dnsRecords: dnsRecords ?? [],
         tunnelIngress: tunnelIngress ?? [],
-        vaultAppRoleId: vaultAppRoleId ?? null,
+        // Use the relation form so Prisma validates the FK at the type level
+        // and stays consistent with the service-level PUT handler.
+        ...(vaultAppRoleId
+          ? { vaultAppRole: { connect: { id: vaultAppRoleId } } }
+          : {}),
         ...(vaultFailClosed !== undefined ? { vaultFailClosed } : {}),
         services: {
           create: (services as StackServiceDefinition[]).map(toServiceCreateInput),
@@ -255,6 +261,7 @@ router.put(
       tlsCertificates,
       dnsRecords,
       tunnelIngress,
+      vaultAppRoleId,
       ...fields
     } = parsed.data;
 
@@ -275,6 +282,16 @@ router.put(
       ...(tlsCertificates !== undefined ? { tlsCertificates } : {}),
       ...(dnsRecords !== undefined ? { dnsRecords } : {}),
       ...(tunnelIngress !== undefined ? { tunnelIngress } : {}),
+      // vaultAppRoleId goes through the relation form so Prisma validates the
+      // FK and we stay consistent with the service-level PUT handler.
+      ...(vaultAppRoleId !== undefined
+        ? {
+            vaultAppRole:
+              vaultAppRoleId === null
+                ? { disconnect: true }
+                : { connect: { id: vaultAppRoleId } },
+          }
+        : {}),
       version: existing.version + 1,
       status: 'pending',
     };
