@@ -24,6 +24,7 @@ export interface WorktreeEntry {
   admin_email?: string;
   admin_password?: string;
   api_key?: string;
+  description?: string;
   seeded: boolean;
   updated_at: string;
 }
@@ -67,6 +68,7 @@ export function upsertEntry(
     admin_email: partial.admin_email ?? existing?.admin_email,
     admin_password: partial.admin_password ?? existing?.admin_password,
     api_key: partial.api_key ?? existing?.api_key,
+    description: partial.description ?? existing?.description,
     seeded: partial.seeded ?? existing?.seeded ?? false,
     updated_at: new Date().toISOString(),
   };

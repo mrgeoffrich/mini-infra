@@ -9,6 +9,7 @@ export interface XmlAdminDetails {
 export interface EnvironmentDetailsSummary {
   seeded: boolean;
   admin: XmlAdminDetails;
+  description?: { short?: string; long?: string };
 }
 
 export function xmlEscape(value: string): string {
@@ -52,6 +53,10 @@ export function readEnvironmentDetails(filePath: string): EnvironmentDetailsSumm
       password: extractTag(xml, 'password', 'admin'),
       apiKey: extractTag(xml, 'apiKey', 'admin'),
     },
+    description: {
+      short: extractTag(xml, 'short', 'description'),
+      long: extractTag(xml, 'long', 'description'),
+    },
   };
 }
 
@@ -64,6 +69,8 @@ export interface MinimalEnvironmentDetailsInput {
   uiPort: number;
   registryPort: number;
   agentSidecarImageTag: string;
+  shortDescription?: string;
+  longDescription?: string;
 }
 
 function isoWithUtcOffset(): string {
@@ -71,14 +78,25 @@ function isoWithUtcOffset(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, '+00:00');
 }
 
+function buildDescriptionBlock(short?: string, long?: string): string {
+  if (!short && !long) return '';
+  const t = (v: string | undefined): string => xmlEscape(v || '');
+  const lines = ['  <description>'];
+  if (short) lines.push(`    <short>${t(short)}</short>`);
+  if (long) lines.push(`    <long>${t(long)}</long>`);
+  lines.push('  </description>');
+  return lines.join('\n') + '\n';
+}
+
 export function writeMinimalEnvironmentDetails(
   filePath: string,
   input: MinimalEnvironmentDetailsInput,
 ): void {
+  const descBlock = buildDescriptionBlock(input.shortDescription, input.longDescription);
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <environment>
   <generated>${xmlEscape(isoWithUtcOffset())}</generated>
-  <seeded>false</seeded>
+${descBlock}  <seeded>false</seeded>
   <worktree>
     <profile>${xmlEscape(input.profile)}</profile>
     <path>${xmlEscape(input.projectRoot)}</path>
@@ -128,6 +146,8 @@ export interface FullEnvironmentDetailsInput {
   githubConfigured: boolean;
   localEnvironment: LocalEnvironmentSummary | null;
   stacks: StackSummary[];
+  shortDescription?: string;
+  longDescription?: string;
 }
 
 export function writeFullEnvironmentDetails(
@@ -160,10 +180,11 @@ export function writeFullEnvironmentDetails(
       `  </localEnvironment>`
     : '';
 
+  const descBlock = buildDescriptionBlock(input.shortDescription, input.longDescription);
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <environment>
   <generated>${t(isoWithUtcOffset())}</generated>
-  <seeded>true</seeded>
+${descBlock}  <seeded>true</seeded>
   <worktree>
     <profile>${t(input.profile)}</profile>
     <path>${t(input.projectRoot)}</path>

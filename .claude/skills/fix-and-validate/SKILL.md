@@ -91,6 +91,13 @@ ADMIN_EMAIL=$(xmllint --xpath 'string(//environment/admin/email)' environment-de
 ADMIN_PASSWORD=$(xmllint --xpath 'string(//environment/admin/password)' environment-details.xml)
 ```
 
+Optionally read the worktree description to understand the job this environment was created for:
+
+```bash
+xmllint --xpath 'string(//environment/description/short)' environment-details.xml
+xmllint --xpath 'string(//environment/description/long)'  environment-details.xml
+```
+
 If the environment **already exists**, rebuild the containers to pick up your code changes:
 
 ```bash
