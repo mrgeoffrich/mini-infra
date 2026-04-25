@@ -1169,8 +1169,9 @@ model VaultAppRole {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  stacks          Stack[]        @relation("StackVaultAppRole")
-  stackServices   StackService[] @relation("ServiceVaultAppRole")
+  stacks                  Stack[]                @relation("StackVaultAppRole")
+  stackServices           StackService[]         @relation("ServiceVaultAppRole")
+  stackTemplateServices   StackTemplateService[] @relation("TemplateServiceVaultAppRole")
 
   @@index([policyId])
   @@map("vault_app_roles")
@@ -1385,9 +1386,13 @@ model StackTemplateService {
   order           Int
   routing         Json?                 // StackServiceRouting | null
   adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
+  poolConfig      Json?                 // PoolConfig (required for Pool services)
+  vaultAppRoleId  String?               // Optional per-service Vault AppRole binding
+  vaultAppRole    VaultAppRole?         @relation("TemplateServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
 
   @@unique([versionId, serviceName])
   @@index([versionId])
+  @@index([vaultAppRoleId])
   @@map("stack_template_services")
 }
 

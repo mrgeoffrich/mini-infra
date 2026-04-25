@@ -49,6 +49,16 @@ export interface VaultWrappedResponse {
   };
 }
 
+export interface VaultAuthResponse {
+  auth: {
+    client_token: string;
+    /** Lease duration in seconds */
+    lease_duration?: number;
+    renewable?: boolean;
+    token_policies?: string[];
+  };
+}
+
 export class VaultHttpError extends Error {
   constructor(
     message: string,
@@ -346,12 +356,20 @@ export class VaultHttpClient {
   }
 
   /** AppRole login returns a full token response; caller extracts client_token */
-  async appRoleLogin(roleId: string, secretId: string): Promise<{ auth: { client_token: string } }> {
-    return this.request<{ auth: { client_token: string } }>(
-      "POST",
-      "auth/approle/login",
-      { body: { role_id: roleId, secret_id: secretId } },
-    );
+  async appRoleLogin(
+    roleId: string,
+    secretId: string,
+  ): Promise<VaultAuthResponse> {
+    return this.request<VaultAuthResponse>("POST", "auth/approle/login", {
+      body: { role_id: roleId, secret_id: secretId },
+    });
+  }
+
+  /** Renew the current X-Vault-Token (in-place). Returns the auth response. */
+  async renewSelf(increment?: string): Promise<VaultAuthResponse> {
+    return this.request<VaultAuthResponse>("POST", "auth/token/renew-self", {
+      body: increment ? { increment } : {},
+    });
   }
 
   // ── KV v2 ─────────────────────────────────────────────

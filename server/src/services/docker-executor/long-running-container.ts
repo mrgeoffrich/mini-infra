@@ -170,8 +170,28 @@ export class LongRunningContainerManager {
         containerOptions.NetworkingConfig = {
           EndpointsConfig: {}
         };
+        // Alias each endpoint with the bare service name so other containers
+        // on the same network can resolve `http://<serviceName>` directly,
+        // mirroring docker-compose semantics. The full container name is
+        // still resolvable via the default DNS entry.
+        //
+        // Aliases are only added on stack-owned networks (`${projectName}_*`).
+        // Resource networks shared between stacks (e.g. an HAProxy bridge)
+        // could otherwise see alias collisions if two stacks happen to have a
+        // service with the same name attached.
+        const serviceName = options.serviceName;
+        const projectName = options.projectName;
+        const stackOwnedPrefix = projectName ? `${projectName}_` : null;
         for (const network of options.networks) {
-          containerOptions.NetworkingConfig.EndpointsConfig![network] = {};
+          const endpoint: Docker.EndpointSettings = {};
+          if (
+            serviceName &&
+            stackOwnedPrefix &&
+            network.startsWith(stackOwnedPrefix)
+          ) {
+            endpoint.Aliases = [serviceName];
+          }
+          containerOptions.NetworkingConfig.EndpointsConfig![network] = endpoint;
         }
       }
 

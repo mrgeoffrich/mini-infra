@@ -667,10 +667,16 @@ export interface StackValidationError {
   error: string;
 }
 
+export interface StackValidationWarning {
+  code: string;
+  message: string;
+}
+
 export interface StackValidationResult {
   success: boolean;
   valid: boolean;
   errors: StackValidationError[];
+  warnings?: StackValidationWarning[];
 }
 
 // ====================

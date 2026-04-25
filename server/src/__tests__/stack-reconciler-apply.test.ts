@@ -507,6 +507,38 @@ describe('StackReconciler.apply', () => {
     expect(configCall![0].HostConfig.Binds[0]).toContain('config:/vol');
   });
 
+  it('resolves {{params}} templates in dockerImage / dockerTag before pulling', async () => {
+    const stack = {
+      ...makeStackRow([{
+        serviceName: 'loki',
+        configFiles: [],
+        initCommands: [],
+        dockerImage: '{{params.image-registry}}/grafana/loki',
+        dockerTag: '{{params.image-tag}}',
+      }]),
+      parameters: [
+        { name: 'image-registry', type: 'string', default: 'localhost:5103' },
+        { name: 'image-tag', type: 'string', default: 'latest' },
+      ],
+      parameterValues: {
+        'image-registry': 'localhost:5103',
+        'image-tag': '2.9.0',
+      },
+    };
+    mockFindUniqueOrThrow.mockResolvedValue(stack);
+    mockListContainers.mockResolvedValue([]);
+
+    await reconciler.apply('stack-1');
+
+    // The pull must receive the resolved image ref, NOT the raw {{params.…}} string.
+    expect(mockPullImageWithAutoAuth).toHaveBeenCalledWith(
+      'localhost:5103/grafana/loki:2.9.0',
+    );
+    expect(mockPullImageWithAutoAuth).not.toHaveBeenCalledWith(
+      expect.stringContaining('{{params'),
+    );
+  });
+
   it('creates networks and volumes if they do not exist', async () => {
     const stack = makeStackRow([{
       serviceName: 'loki',

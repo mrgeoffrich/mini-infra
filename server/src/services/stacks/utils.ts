@@ -292,18 +292,55 @@ export function toServiceDefinition(svc: {
 }
 
 /**
+ * Name of the network mini-infra synthesises for multi-service stacks that
+ * declare `networks: []`. Mirrors docker-compose's `<project>_default` so
+ * services can reach each other by service name on a shared bridge network.
+ */
+export const DEFAULT_STACK_NETWORK_NAME = 'default';
+
+/**
+ * If a stack has 2+ container-bearing services and no declared networks,
+ * synthesise a single `default` network so the services share a bridge with
+ * DNS by service name. Single-service and Pool-only stacks keep `networks: []`
+ * unchanged — they have no DNS resolution problem to solve.
+ */
+export function synthesiseDefaultNetworkIfNeeded(
+  declaredNetworks: StackNetwork[],
+  services: Array<{ serviceType: string }>,
+  log?: { info: (obj: object, msg: string) => void },
+): StackNetwork[] {
+  if (declaredNetworks.length > 0) return declaredNetworks;
+  // Pool services don't run a container at apply time; AdoptedWeb attaches
+  // to an externally-managed container. Only count types whose containers
+  // mini-infra creates and that would otherwise land on the host bridge.
+  const containerBearing = services.filter(
+    (s) => s.serviceType === 'Stateful' || s.serviceType === 'StatelessWeb',
+  );
+  if (containerBearing.length < 2) return declaredNetworks;
+  log?.info(
+    { serviceCount: containerBearing.length },
+    `Synthesising '${DEFAULT_STACK_NETWORK_NAME}' network for multi-service stack`,
+  );
+  return [{ name: DEFAULT_STACK_NETWORK_NAME, driver: 'bridge' }];
+}
+
+/**
  * Pull image, run init commands, and write config files for a service.
  * Common preparation step before creating a container.
+ *
+ * Takes the *resolved* service definition (post template-substitution) so
+ * `dockerImage` / `dockerTag` references like `{{params.foo}}` are expanded
+ * before the pull is dispatched to Docker.
  */
 export async function prepareServiceContainer(
   containerManager: StackContainerManager,
-  svc: { dockerImage: string; dockerTag: string; initCommands: unknown },
+  serviceDef: Pick<StackServiceDefinition, 'dockerImage' | 'dockerTag' | 'initCommands'>,
   resolvedConfigs: StackConfigFile[],
   projectName: string
 ): Promise<void> {
-  await containerManager.pullImage(svc.dockerImage, svc.dockerTag);
+  await containerManager.pullImage(serviceDef.dockerImage, serviceDef.dockerTag);
 
-  const initCmds = (svc.initCommands as unknown as StackServiceDefinition['initCommands']) ?? [];
+  const initCmds = serviceDef.initCommands ?? [];
   if (initCmds.length > 0) {
     await containerManager.runInitCommands(initCmds, projectName);
   }

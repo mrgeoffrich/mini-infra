@@ -15,6 +15,7 @@ import type {
   StackResourceOutput,
   StackResourceInput,
   AdoptedContainerRef,
+  PoolConfig,
 } from './stacks';
 import type { EnvironmentNetworkType } from './environments';
 
@@ -161,6 +162,8 @@ export interface StackTemplateServiceInfo {
   order: number;
   routing: StackServiceRouting | null;
   adoptedContainer?: AdoptedContainerRef;
+  poolConfig?: PoolConfig | null;
+  vaultAppRoleId?: string | null;
 }
 
 export interface StackTemplateConfigFileInfo {

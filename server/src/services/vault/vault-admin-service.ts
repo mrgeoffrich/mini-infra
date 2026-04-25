@@ -1,13 +1,21 @@
 import crypto from "crypto";
 import { PrismaClient } from "../../lib/prisma";
 import { OperatorPassphraseService } from "../../lib/operator-passphrase-service";
-import { VaultHttpClient, VaultHttpError } from "./vault-http-client";
+import { VaultHttpClient } from "./vault-http-client";
+import type { VaultAuthResponse } from "./vault-http-client";
 import { VaultStateService } from "./vault-state-service";
 import { getLogger } from "../../lib/logger-factory";
+import { emitToChannel } from "../../lib/socket";
+import { Channel, ServerEvent } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
 
 const log = getLogger("platform", "vault-admin-service");
+
+/** Floor for renewal scheduling — never schedule sooner than 30 s. */
+const MIN_RENEWAL_DELAY_MS = 30_000;
+/** Default lease used when Vault doesn't return one (shouldn't happen, but). */
+const DEFAULT_LEASE_SECONDS = 60 * 60;
 
 export type StepCallback = (
   step: OperationStep,
@@ -110,6 +118,14 @@ export interface BootstrapOptions {
 export class VaultAdminService {
   private adminToken: string | null = null;
   private client: VaultHttpClient | null = null;
+  private renewalTimer: NodeJS.Timeout | null = null;
+  /**
+   * Set while a `renew-self` request is in-flight or while
+   * `authenticateAsAdmin` is logging in. Other token-mutating calls await
+   * this so we never have two parallel auth flows mutating `adminToken`,
+   * `client.token`, and the renewal timer at the same time.
+   */
+  private authInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaClient,
@@ -285,7 +301,6 @@ export class VaultAdminService {
       async () => {
         const loginRes = await client.appRoleLogin(adminRoleId, adminSecretId);
         const adminToken = loginRes.auth.client_token;
-        this.adminToken = adminToken;
         // Sanity check: the admin token can lookup itself. If this fails, root
         // is still alive and we abort before destroying the recovery path.
         client.setToken(adminToken);
@@ -293,9 +308,10 @@ export class VaultAdminService {
         // Revoke root using root's own token.
         client.setToken(rootToken);
         await client.revokeSelf();
-        // From here on the client uses the admin AppRole token.
-        client.setToken(adminToken);
         await this.stateService.clearRootToken();
+        // From here on the client uses the admin AppRole token. Routing the
+        // login response through adoptAuthResponse also schedules the renewal.
+        this.adoptAuthResponse(loginRes);
       },
       onStep,
       () => completed,
@@ -360,8 +376,30 @@ export class VaultAdminService {
    * Re-authenticate the in-memory admin token using stored AppRole credentials.
    * Called after restarts / passphrase unlocks so subsequent admin operations
    * (policy apply, AppRole management) have a live token.
+   *
+   * Serialised against any in-flight renewal so `adminToken` / `client.token`
+   * never get clobbered by a racing `renewSelfTick`.
    */
   async authenticateAsAdmin(): Promise<void> {
+    if (this.authInFlight) {
+      await this.authInFlight;
+      // If the in-flight op was a successful login/renewal, we now have a
+      // live token and don't need to log in again.
+      if (this.adminToken) return;
+    }
+    const op = this.authenticateAsAdminInner();
+    this.authInFlight = op.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await op;
+    } finally {
+      this.authInFlight = null;
+    }
+  }
+
+  private async authenticateAsAdminInner(): Promise<void> {
     if (!this.client) throw new Error("No Vault address configured");
     if (!this.passphrase.isUnlocked()) {
       throw new Error("Operator passphrase must be unlocked");
@@ -369,8 +407,7 @@ export class VaultAdminService {
     const roleId = await this.stateService.readAdminRoleId();
     const secretId = await this.stateService.readAdminSecretId();
     const res = await this.client.appRoleLogin(roleId, secretId);
-    this.adminToken = res.auth.client_token;
-    this.client.setToken(this.adminToken);
+    this.adoptAuthResponse(res);
   }
 
   hasAdminToken(): boolean {
@@ -379,6 +416,137 @@ export class VaultAdminService {
 
   getAdminToken(): string | null {
     return this.adminToken;
+  }
+
+  /**
+   * Returns a Vault client that's known-authenticated as the admin AppRole.
+   * If the cached token is missing (e.g. dropped after a failed renewal),
+   * attempts a fresh AppRole login once. Throws if the passphrase is locked
+   * or the AppRole login fails.
+   */
+  async getAuthenticatedClient(): Promise<VaultHttpClient> {
+    if (!this.client) throw new Error("No Vault address configured");
+    if (!this.adminToken) {
+      await this.authenticateAsAdmin();
+    }
+    return this.client;
+  }
+
+  /**
+   * Cancel any scheduled renewal and drop the cached admin token. Call from
+   * shutdown paths so the timer doesn't keep the process alive.
+   */
+  destroy(): void {
+    this.cancelRenewalTimer();
+    this.adminToken = null;
+  }
+
+  /**
+   * Capture the freshly-issued auth response, store the token on the client,
+   * and schedule the next renewal at half the lease.
+   */
+  private adoptAuthResponse(res: VaultAuthResponse): void {
+    this.adminToken = res.auth.client_token;
+    this.client?.setToken(this.adminToken);
+    const leaseSeconds = res.auth.lease_duration ?? DEFAULT_LEASE_SECONDS;
+    const renewable = res.auth.renewable !== false;
+    if (!renewable) {
+      log.warn(
+        { leaseSeconds },
+        "Admin token is not renewable; renewal loop disabled",
+      );
+      this.cancelRenewalTimer();
+      return;
+    }
+    this.scheduleRenewal(leaseSeconds);
+  }
+
+  private scheduleRenewal(leaseSeconds: number): void {
+    this.cancelRenewalTimer();
+    const halfLeaseMs = Math.floor((leaseSeconds * 1000) / 2);
+    const delayMs = Math.max(halfLeaseMs, MIN_RENEWAL_DELAY_MS);
+    log.debug(
+      { leaseSeconds, delayMs },
+      "Scheduling vault admin token renewal",
+    );
+    this.renewalTimer = setTimeout(() => {
+      void this.renewSelfTick();
+    }, delayMs);
+    // Don't keep the process alive on this timer alone.
+    this.renewalTimer.unref?.();
+  }
+
+  private cancelRenewalTimer(): void {
+    if (this.renewalTimer) {
+      clearTimeout(this.renewalTimer);
+      this.renewalTimer = null;
+    }
+  }
+
+  /**
+   * Renew the cached admin token. On success, schedule the next renewal.
+   * On failure, drop the cached token and emit a warning so operators can see
+   * the degraded state instead of getting silent 500s on subsequent calls.
+   *
+   * Serialised against `authenticateAsAdmin` via `authInFlight`. If a manual
+   * re-auth is already underway when the renewal timer fires, we wait for it
+   * and then bail — the manual re-auth has already produced a fresh token
+   * and scheduled the next renewal.
+   */
+  private async renewSelfTick(): Promise<void> {
+    if (this.authInFlight) {
+      await this.authInFlight;
+      // The manual re-auth scheduled its own next renewal. Don't double up.
+      return;
+    }
+    if (!this.client || !this.adminToken) {
+      this.renewalTimer = null;
+      return;
+    }
+    const op = this.renewSelfTickInner();
+    this.authInFlight = op.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await op;
+    } finally {
+      this.authInFlight = null;
+    }
+  }
+
+  private async renewSelfTickInner(): Promise<void> {
+    if (!this.client || !this.adminToken) {
+      this.renewalTimer = null;
+      return;
+    }
+    try {
+      const res = await this.client.renewSelf();
+      const leaseSeconds =
+        res.auth.lease_duration ?? DEFAULT_LEASE_SECONDS;
+      log.debug(
+        { leaseSeconds },
+        "Renewed vault admin token",
+      );
+      this.scheduleRenewal(leaseSeconds);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      log.warn(
+        { err: detail },
+        "Vault admin token renewal failed; dropping cached token",
+      );
+      this.adminToken = null;
+      this.client.clearToken();
+      this.cancelRenewalTimer();
+      try {
+        emitToChannel(Channel.VAULT, ServerEvent.VAULT_STATUS_CHANGED, {
+          adminTokenStale: true,
+          reason: detail,
+        });
+      } catch (emitErr) {
+        log.debug({ err: emitErr }, "Failed to emit VAULT_STATUS_CHANGED");
+      }
+    }
   }
 
   private async wrapStep<T>(

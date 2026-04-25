@@ -54,7 +54,7 @@ const passphraseSchema = z.object({
 router.post(
   "/passphrase/unlock",
   requirePermission("vault:admin") as RequestHandler,
-  (async (req: Request, res: Response, next: NextFunction) => {
+  (async (req: Request, res: Response, _next: NextFunction) => {
     try {
       const parsed = passphraseSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -108,6 +108,33 @@ router.post(
   }) as RequestHandler,
 );
 
+// ── Admin re-authentication ─────────────────────────────
+
+// Allows external tooling (e.g. installers) to force a refresh of the cached
+// admin token without going through the lock + unlock UI dance. Gated on
+// passphrase being unlocked so it can't bypass operator-presence requirements.
+router.post(
+  "/admin/reauthenticate",
+  requirePermission("vault:admin") as RequestHandler,
+  (async (_req: Request, res: Response) => {
+    const services = getVaultServices();
+    if (!services.passphrase.isUnlocked()) {
+      return res.status(400).json({
+        success: false,
+        message: "Operator passphrase must be unlocked",
+      });
+    }
+    try {
+      await services.admin.authenticateAsAdmin();
+      res.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, "Admin re-authentication failed");
+      res.status(500).json({ success: false, message: msg });
+    }
+  }) as RequestHandler,
+);
+
 // ── Bootstrap ───────────────────────────────────────────
 
 const bootstrapSchema = z.object({
@@ -152,7 +179,6 @@ router.post(
     let result: VaultBootstrapResult | null = null;
     let success = false;
     const errors: string[] = [];
-    let bootstrapError: Error | null = null;
     try {
       result = await services.admin.bootstrap({
         passphrase: parsed.data.passphrase,
@@ -174,7 +200,7 @@ router.post(
       });
       success = true;
     } catch (err) {
-      bootstrapError = err instanceof Error ? err : new Error(String(err));
+      const bootstrapError = err instanceof Error ? err : new Error(String(err));
       errors.push(bootstrapError.message);
       logger.error(
         { err: bootstrapError.message, operationId, userId: user?.id },

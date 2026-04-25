@@ -48,6 +48,24 @@ router.put(
     if (data.order !== undefined) updateData.order = data.order;
     if (data.routing !== undefined)
       updateData.routing = data.routing as unknown as Prisma.InputJsonValue;
+    if (data.adoptedContainer !== undefined) {
+      updateData.adoptedContainer =
+        data.adoptedContainer === null
+          ? Prisma.DbNull
+          : (data.adoptedContainer as unknown as Prisma.InputJsonValue);
+    }
+    if (data.poolConfig !== undefined) {
+      updateData.poolConfig =
+        data.poolConfig === null
+          ? Prisma.DbNull
+          : (data.poolConfig as unknown as Prisma.InputJsonValue);
+    }
+    if (data.vaultAppRoleId !== undefined) {
+      updateData.vaultAppRole =
+        data.vaultAppRoleId === null
+          ? { disconnect: true }
+          : { connect: { id: data.vaultAppRoleId } };
+    }
 
     await prisma.$transaction([
       prisma.stackService.update({ where: { id: service.id }, data: updateData }),

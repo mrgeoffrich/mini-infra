@@ -159,7 +159,21 @@ export interface VaultUnsealCompletedEvent {
 }
 
 export interface VaultStatusChangedEvent {
-  status: VaultStatus;
+  /**
+   * Full vault status snapshot. Optional because some events (e.g. admin
+   * token staleness) only carry a degradation flag without re-probing health.
+   */
+  status?: VaultStatus;
+  /**
+   * Set to `true` when the cached admin token has been dropped after a failed
+   * renewal. UI should surface a banner prompting the operator to lock+unlock
+   * the passphrase (or hit the reauthenticate endpoint).
+   */
+  adminTokenStale?: boolean;
+  /**
+   * Human-readable reason accompanying `adminTokenStale`.
+   */
+  reason?: string;
 }
 
 export interface VaultPassphraseLockEvent {

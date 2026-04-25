@@ -102,7 +102,7 @@ export class StackServiceHandlers {
           this.dockerExecutor.getDockerClient(), this.containerManager, log
         );
 
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
+        await prepareServiceContainer(this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
@@ -144,7 +144,7 @@ export class StackServiceHandlers {
           });
         }
 
-        await prepareServiceContainer(this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
+        await prepareServiceContainer(this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
         const containerId = await this.containerManager.createAndStartContainer(
           action.serviceName,
@@ -334,7 +334,7 @@ export class StackServiceHandlers {
   }
 
   async applyStatelessWeb(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
-    const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
+    const { action, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
       resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
     if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
@@ -356,7 +356,7 @@ export class StackServiceHandlers {
         log.info({ service: action.serviceName }, 'Creating StatelessWeb service via initial deployment state machine');
 
         await prepareServiceContainer(
-          this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
+          this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
         );
 
         const initialContext = {
@@ -396,7 +396,7 @@ export class StackServiceHandlers {
         const oldContainer = containerByService.get(action.serviceName);
 
         await prepareServiceContainer(
-          this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
+          this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
         );
 
         const blueGreenContext = {
@@ -478,7 +478,7 @@ export class StackServiceHandlers {
   }
 
   async updateStatelessWeb(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
-    const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
+    const { action, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
       resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
     if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
@@ -500,7 +500,7 @@ export class StackServiceHandlers {
     const oldContainer = containerByService.get(action.serviceName);
 
     await prepareServiceContainer(
-      this.containerManager, svc, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
+      this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName
     );
 
     const blueGreenContext = {

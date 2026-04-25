@@ -185,7 +185,7 @@ export class OperatorPassphraseService extends EventEmitter {
       zeroise(candidate);
       if (err instanceof CryptoError) {
         this.recordFailure();
-        throw new Error("Invalid passphrase");
+        throw new Error("Invalid passphrase", { cause: err });
       }
       throw err;
     }
