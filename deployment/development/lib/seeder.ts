@@ -35,6 +35,8 @@ export interface SeederInput {
   agentSidecarImageTag: string;
   devEnvPath: string;
   detailsFile: string;
+  shortDescription?: string;
+  longDescription?: string;
 }
 
 export interface SeederOutput {
@@ -551,6 +553,8 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     githubConfigured: Boolean(env.GITHUB_TOKEN),
     localEnvironment,
     stacks,
+    shortDescription: input.shortDescription,
+    longDescription: input.longDescription,
   });
   logOk(`Wrote ${input.detailsFile}`);
 

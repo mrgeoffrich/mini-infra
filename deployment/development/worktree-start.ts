@@ -5,7 +5,7 @@
 // dedicated Colima VM (its own Docker daemon) and a namespaced Compose project.
 // Ports are allocated from ~/.mini-infra/worktrees.yaml so re-runs are stable.
 //
-// Usage: tsx worktree-start.ts [--profile <name>] [--reset] [--skip-seed] [--seed]
+// Usage: tsx worktree-start.ts [--profile <name>] [--description <short>] [--long-description <long>] [--reset] [--skip-seed] [--seed]
 //
 // After the app is healthy, this script calls the in-process seeder (POST
 // /setup, issue an admin API key, seed service configs, apply HAProxy stack)
@@ -24,6 +24,7 @@ import {
   MINI_INFRA_HOME,
   migrateFromJsonIfNeeded,
   upsertEntry,
+  loadRegistry,
 } from './lib/registry.js';
 import { readEnvironmentDetails, writeMinimalEnvironmentDetails } from './lib/env-details.js';
 import { isColimaRunning, startColima } from './lib/colima.js';
@@ -103,6 +104,8 @@ interface Args {
   reset: boolean;
   skipSeed: boolean;
   forceSeed: boolean;
+  description?: string;
+  longDescription?: string;
 }
 
 function parseCliArgs(): Args {
@@ -113,6 +116,8 @@ function parseCliArgs(): Args {
         reset: { type: 'boolean', default: false },
         'skip-seed': { type: 'boolean', default: false },
         seed: { type: 'boolean', default: false },
+        description: { type: 'string' },
+        'long-description': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
       allowPositionals: false,
@@ -126,11 +131,18 @@ function parseCliArgs(): Args {
       reset: Boolean(values.reset),
       skipSeed: Boolean(values['skip-seed']),
       forceSeed: Boolean(values.seed),
+      description: values.description as string | undefined,
+      longDescription: values['long-description'] as string | undefined,
     };
   } catch (err) {
     logError(`Unknown arg: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
+}
+
+function warnWordCount(value: string, max: number, label: string): void {
+  const count = value.trim().split(/\s+/).filter(Boolean).length;
+  if (count > max) logWarn(`${label} is ${count} words (recommended max ${max})`);
 }
 
 async function confirm(prompt: string): Promise<boolean> {
@@ -193,6 +205,34 @@ async function main(): Promise<void> {
   fs.mkdirSync(MINI_INFRA_HOME, { recursive: true });
   migrateFromJsonIfNeeded();
 
+  // Description resolution
+  const existingEntry = loadRegistry()[profile];
+  let shortDesc: string | undefined;
+  let longDesc: string | undefined;
+
+  if (args.description) {
+    shortDesc = args.description;
+    longDesc = args.longDescription;
+    warnWordCount(shortDesc, 10, 'Short description');
+    if (longDesc) warnWordCount(longDesc, 50, 'Long description');
+  } else if (existingEntry?.description) {
+    shortDesc = existingEntry.description;
+    logInfo(`Worktree description: ${shortDesc}`);
+  } else {
+    const rl = readline.createInterface({ input, output });
+    try {
+      shortDesc = (await rl.question('Short description (≤10 words, what is this worktree for?): ')).trim();
+      warnWordCount(shortDesc, 10, 'Short description');
+      const longRaw = (await rl.question('Long description (≤50 words, optional — press Enter to skip): ')).trim();
+      if (longRaw) {
+        longDesc = longRaw;
+        warnWordCount(longDesc, 50, 'Long description');
+      }
+    } finally {
+      rl.close();
+    }
+  }
+
   // Port allocation
   const { ui_port: uiPort, registry_port: registryPort } = allocatePorts(profile);
   // Persist early so the entry exists even if later steps fail
@@ -203,6 +243,7 @@ async function main(): Promise<void> {
     ui_port: uiPort,
     registry_port: registryPort,
     url: `http://localhost:${uiPort}`,
+    description: shortDesc,
   });
   logInfo(`Ports: UI=${uiPort}, registry=${registryPort}`);
 
@@ -407,6 +448,8 @@ async function main(): Promise<void> {
     uiPort,
     registryPort,
     agentSidecarImageTag,
+    shortDescription: shortDesc,
+    longDescription: longDesc,
   };
 
   let seededThisRun = false;
@@ -432,6 +475,8 @@ async function main(): Promise<void> {
         agentSidecarImageTag,
         devEnvPath: DEV_ENV_FILE,
         detailsFile,
+        shortDescription: shortDesc,
+        longDescription: longDesc,
       });
       upsertEntry({
         profile,
@@ -443,6 +488,7 @@ async function main(): Promise<void> {
         admin_email: result.adminEmail,
         admin_password: result.adminPassword,
         api_key: result.apiKey,
+        description: shortDesc,
         seeded: true,
       });
       logOk('Updated central registry (~/.mini-infra/worktrees.yaml) with admin credentials');
@@ -469,6 +515,7 @@ async function main(): Promise<void> {
       admin_email: details?.admin.email,
       admin_password: details?.admin.password,
       api_key: details?.admin.apiKey,
+      description: shortDesc,
     });
   }
 

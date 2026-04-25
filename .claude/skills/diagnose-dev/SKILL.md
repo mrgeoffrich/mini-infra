@@ -22,6 +22,12 @@ You're debugging a running instance of Mini Infra — a Docker host management w
 
 Read the API key from `environment-details.xml` at the project root (`//admin/apiKey`). If the file is absent or the element is empty, ask the user for the key.
 
+- **Worktree purpose**: optionally recorded in `environment-details.xml` — read it to understand the job this environment was created for:
+  ```bash
+  xmllint --xpath 'string(//environment/description/short)' environment-details.xml
+  xmllint --xpath 'string(//environment/description/long)'  environment-details.xml
+  ```
+
 ## Diagnosis Workflow
 
 ### 1. Understand the problem

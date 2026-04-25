@@ -44,6 +44,12 @@ You're running UI tests against a live instance of Mini Infra — a Docker host 
 
 - **Source code**: available in the current working directory
 
+- **Worktree purpose**: optionally recorded in `environment-details.xml` — read it to understand the job this environment was created for:
+  ```bash
+  xmllint --xpath 'string(//environment/description/short)' environment-details.xml
+  xmllint --xpath 'string(//environment/description/long)'  environment-details.xml
+  ```
+
 ---
 
 ## Testing Workflow

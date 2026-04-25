@@ -71,6 +71,7 @@ function main(): void {
   if (args.wide) {
     rows.push([
       'PROFILE',
+      'DESCRIPTION',
       'URL',
       'UI',
       'REG',
@@ -84,6 +85,7 @@ function main(): void {
     for (const e of values) {
       rows.push([
         e.profile,
+        dash(e.description),
         dash(e.url),
         e.ui_port ? String(e.ui_port) : '-',
         e.registry_port ? String(e.registry_port) : '-',
@@ -96,10 +98,11 @@ function main(): void {
       ]);
     }
   } else {
-    rows.push(['PROFILE', 'URL', 'ADMIN EMAIL', 'SEEDED', 'PATH']);
+    rows.push(['PROFILE', 'DESCRIPTION', 'URL', 'ADMIN EMAIL', 'SEEDED', 'PATH']);
     for (const e of values) {
       rows.push([
         e.profile,
+        dash(e.description),
         dash(e.url),
         dash(e.admin_email),
         e.seeded ? 'yes' : 'no',
