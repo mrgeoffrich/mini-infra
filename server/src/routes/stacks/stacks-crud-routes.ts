@@ -15,6 +15,29 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
+import { decryptInputValues, encryptInputValues, mergeForUpgrade } from '../../services/stacks/stack-input-values-service';
+
+/**
+ * Serialize a stack for an API response: convert dates, add inputValueKeys,
+ * and strip the encryptedInputValues blob (never returned to callers).
+ */
+function serializeStackResponse(stack: Parameters<typeof serializeStack>[0] & { encryptedInputValues?: string | null }): ReturnType<typeof serializeStack> {
+  const base = serializeStack(stack);
+  let inputValueKeys: string[] | undefined;
+  if (stack.encryptedInputValues) {
+    try {
+      inputValueKeys = Object.keys(decryptInputValues(stack.encryptedInputValues));
+    } catch {
+      inputValueKeys = [];
+    }
+  }
+  const result = { ...base };
+  delete (result as Record<string, unknown>)['encryptedInputValues'];
+  if (inputValueKeys !== undefined) {
+    result.inputValueKeys = inputValueKeys;
+  }
+  return result;
+}
 import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
@@ -61,7 +84,7 @@ router.get(
       orderBy: { name: 'asc' },
     });
 
-    res.json({ success: true, data: stacks.map(serializeStack) });
+    res.json({ success: true, data: stacks.map(serializeStackResponse) });
   }),
 );
 
@@ -129,7 +152,7 @@ router.get(
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    res.json({ success: true, data: serializeStack(stack) });
+    res.json({ success: true, data: serializeStackResponse(stack) });
   }),
 );
 
@@ -226,7 +249,7 @@ router.post(
     });
 
     logger.info({ stackId: stack.id, stackName: stack.name }, 'Stack created');
-    res.status(201).json({ success: true, data: serializeStack(stack) });
+    res.status(201).json({ success: true, data: serializeStackResponse(stack) });
   }),
 );
 
@@ -262,11 +285,30 @@ router.put(
       dnsRecords,
       tunnelIngress,
       vaultAppRoleId,
+      inputValues,
       ...fields
     } = parsed.data;
 
+    // Merge supplied input values with stored ones, applying rotateOnUpgrade rules.
+    let encryptedInputValues: string | undefined;
+    if (inputValues !== undefined) {
+      const stored = existing.encryptedInputValues
+        ? (() => {
+            try { return decryptInputValues(existing.encryptedInputValues); }
+            catch { return {}; }
+          })()
+        : {};
+      // We don't have template declarations at this level (that's PR 2 territory),
+      // so treat every supplied value as non-rotateOnUpgrade and merge freely.
+      const merged = mergeForUpgrade(stored, inputValues, []);
+      if (Object.keys(merged).length > 0 || Object.keys(inputValues).length > 0) {
+        encryptedInputValues = encryptInputValues({ ...stored, ...inputValues });
+      }
+    }
+
     const updateData: Prisma.StackUpdateInput = {
       ...fields,
+      ...(encryptedInputValues !== undefined ? { encryptedInputValues } : {}),
       networks: fields.networks ? (fields.networks as unknown as Prisma.InputJsonValue) : undefined,
       volumes: fields.volumes ? (fields.volumes as unknown as Prisma.InputJsonValue) : undefined,
       parameters: parameters ? (parameters as unknown as Prisma.InputJsonValue) : undefined,
@@ -312,7 +354,7 @@ router.put(
         });
       });
 
-      res.json({ success: true, data: serializeStack(stack) });
+      res.json({ success: true, data: serializeStackResponse(stack) });
     } else {
       const stack = await prisma.stack.update({
         where: { id: stackId },
@@ -320,7 +362,7 @@ router.put(
         include: { services: true },
       });
 
-      res.json({ success: true, data: serializeStack(stack) });
+      res.json({ success: true, data: serializeStackResponse(stack) });
     }
   }),
 );

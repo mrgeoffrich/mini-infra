@@ -30,6 +30,7 @@ import {
   parameterNamesFromDefinitions,
   validateTemplateSubstitutions,
 } from "./template-substitution-validator";
+import { encryptInputValues, decryptInputValues } from "./stack-input-values-service";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -64,6 +65,10 @@ const versionSummary = {
   resourceInputs: true,
   networks: true,
   volumes: true,
+  inputs: true,
+  vaultPolicies: true,
+  vaultAppRoles: true,
+  vaultKv: true,
   publishedAt: true,
   createdAt: true,
   createdById: true,
@@ -419,15 +424,20 @@ export class StackTemplateService {
     // Catch substitution typos (e.g. {{stak.id}}, {{environment.foo}}) at
     // draft-save time so the operator sees them immediately instead of
     // discovering them at apply when a real deploy is in flight.
+    const inputNames = new Set((input.inputs ?? []).map((i) => i.name));
     const issues = validateTemplateSubstitutions({
       scope: template.scope,
       parameterNames: parameterNamesFromDefinitions(input.parameters),
+      inputNames,
       services: input.services,
       configFiles: input.configFiles,
       networks: input.networks,
       volumes: input.volumes,
       resourceInputs: input.resourceInputs,
       resourceOutputs: input.resourceOutputs,
+      vaultPolicies: input.vault?.policies,
+      vaultAppRoles: input.vault?.appRoles,
+      vaultKvPaths: (input.vault?.kv ?? []).map((k) => k.path),
     });
     if (issues.length > 0) {
       const summary = issues
@@ -465,6 +475,10 @@ export class StackTemplateService {
           resourceInputs: input.resourceInputs ? (input.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
           networks: input.networks as unknown as Prisma.InputJsonValue,
           volumes: input.volumes as unknown as Prisma.InputJsonValue,
+          inputs: input.inputs ? (input.inputs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultPolicies: input.vault?.policies ? (input.vault.policies as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -955,6 +969,11 @@ export class StackTemplateService {
       }
     }
 
+    const encryptedInputValues =
+      input.inputValues && Object.keys(input.inputValues).length > 0
+        ? encryptInputValues(input.inputValues)
+        : null;
+
     const stack = await this.prisma.stack.create({
       data: {
         name: stackName,
@@ -979,6 +998,7 @@ export class StackTemplateService {
         tunnelIngress: tunnelIngressDefs.length > 0 ? tunnelIngressDefs : undefined,
         tlsCertificates: tlsCertDefs.length > 0 ? tlsCertDefs : undefined,
         dnsRecords: dnsRecordDefs.length > 0 ? dnsRecordDefs : undefined,
+        encryptedInputValues,
         services: {
           create: services.map(toServiceCreateInput),
         },
@@ -988,7 +1008,7 @@ export class StackTemplateService {
       },
     });
 
-    return serializeStack(stack);
+    return serializeStackWithInputKeys(stack);
   }
 
   // =====================
@@ -1040,6 +1060,8 @@ export class StackTemplateService {
     // Fields common to both detail and summary payload shapes.
     // JSON columns (parameters, networks, etc.) come back from Prisma as
     // JsonValue and need a double-assertion to reach the domain types.
+    const versionRecord = version as unknown as Record<string, unknown>;
+    const vaultSection = buildVaultSection(versionRecord);
     const base: StackTemplateVersionInfo = {
       id: version.id,
       templateId: version.templateId,
@@ -1056,6 +1078,8 @@ export class StackTemplateService {
       publishedAt: version.publishedAt?.toISOString() ?? null,
       createdAt: version.createdAt.toISOString(),
       createdById: version.createdById,
+      inputs: (versionRecord['inputs'] as unknown as StackTemplateVersionInfo['inputs']) ?? undefined,
+      vault: vaultSection,
     };
 
     if (isVersionDetailPayload(version)) {
@@ -1112,6 +1136,7 @@ function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<tru
     adoptedContainer: (svc.adoptedContainer ?? undefined) as unknown as StackTemplateServiceInfo['adoptedContainer'],
     poolConfig: (svc.poolConfig ?? null) as unknown as StackTemplateServiceInfo['poolConfig'],
     vaultAppRoleId: svc.vaultAppRoleId ?? null,
+    vaultAppRoleRef: svc.vaultAppRoleRef ?? null,
   };
 }
 
@@ -1133,7 +1158,7 @@ function serializeTemplateConfigFile(cf: Prisma.StackTemplateConfigFileGetPayloa
  * Convert a StackServiceDefinition to a Prisma create input for StackTemplateService.
  */
 function toTemplateServiceCreate(
-  s: StackServiceDefinition,
+  s: StackServiceDefinition & { vaultAppRoleRef?: string },
   fallbackOrder: number
 ) {
   return {
@@ -1149,7 +1174,46 @@ function toTemplateServiceCreate(
     adoptedContainer: s.adoptedContainer ? (s.adoptedContainer as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
+    vaultAppRoleRef: s.vaultAppRoleRef ?? null,
   };
+}
+
+/**
+ * Build the vault section for a serialized version from its stored JSON columns.
+ * Returns undefined if no vault columns are set.
+ */
+function buildVaultSection(version: Record<string, unknown>): StackTemplateVersionInfo['vault'] {
+  if (!version['vaultPolicies'] && !version['vaultAppRoles'] && !version['vaultKv']) return undefined;
+  type VaultSection = NonNullable<StackTemplateVersionInfo['vault']>;
+  return {
+    policies: (version['vaultPolicies'] as unknown as VaultSection['policies']) ?? undefined,
+    appRoles: (version['vaultAppRoles'] as unknown as VaultSection['appRoles']) ?? undefined,
+    kv: (version['vaultKv'] as unknown as VaultSection['kv']) ?? undefined,
+  };
+}
+
+/**
+ * Serialize a stack record to the API shape, adding inputValueKeys (the set of
+ * input names that have encrypted values stored) while stripping the raw
+ * encryptedInputValues blob. Never returns decrypted values.
+ */
+function serializeStackWithInputKeys(stack: { encryptedInputValues?: string | null; [key: string]: unknown }): StackInfo {
+  const base = serializeStack(stack as Parameters<typeof serializeStack>[0]);
+  let inputValueKeys: string[] | undefined;
+  if (stack.encryptedInputValues) {
+    try {
+      inputValueKeys = Object.keys(decryptInputValues(stack.encryptedInputValues));
+    } catch {
+      inputValueKeys = [];
+    }
+  }
+  // Strip the encrypted blob — never send it to callers.
+  const result = { ...base };
+  delete (result as Record<string, unknown>)['encryptedInputValues'];
+  if (inputValueKeys !== undefined) {
+    result.inputValueKeys = inputValueKeys;
+  }
+  return result;
 }
 
 /**

@@ -1,5 +1,6 @@
-import { Router, type Response } from 'express';
+import { Router, type Request, type Response } from 'express';
 import type { StackTemplateSource, StackTemplateScope, CreateStackTemplateRequest, DraftVersionInput } from '@mini-infra/types';
+import { hasPermission } from '@mini-infra/types';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
@@ -138,9 +139,44 @@ router.patch('/:templateId', requirePermission('stacks:write'), async (req, res)
   }
 });
 
+/**
+ * Check if a draft input contains a non-empty vault section.
+ * Used to gate template-vault:write permission.
+ */
+function draftHasVaultSection(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null) return false;
+  const vault = (body as Record<string, unknown>).vault;
+  if (typeof vault !== 'object' || vault === null) return false;
+  const v = vault as Record<string, unknown>;
+  return (
+    (Array.isArray(v.policies) && v.policies.length > 0) ||
+    (Array.isArray(v.appRoles) && v.appRoles.length > 0) ||
+    (Array.isArray(v.kv) && v.kv.length > 0)
+  );
+}
+
+/**
+ * Return true if the caller has a specific scope (session users always pass).
+ */
+function callerHasScope(req: Request, scope: string): boolean {
+  if (req.user && !(req as { apiKey?: unknown }).apiKey) return true;
+  const apiKey = (req as { apiKey?: { permissions: string[] | null } }).apiKey;
+  if (!apiKey) return false;
+  return hasPermission(apiKey.permissions, scope);
+}
+
 // POST /:templateId/draft — Create or replace draft version
 router.post('/:templateId/draft', requirePermission('stacks:write'), async (req, res) => {
   try {
+    // Vault sections require an additional elevated scope on top of stacks:write.
+    if (draftHasVaultSection(req.body) && !callerHasScope(req, 'template-vault:write')) {
+      return res.status(403).json({
+        success: false,
+        message: 'The vault section requires the template-vault:write scope',
+        code: 'template_vault_scope_required',
+      });
+    }
+
     const parsed = draftVersionSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
@@ -217,6 +253,7 @@ router.post('/:templateId/instantiate', requirePermission('stacks:write'), async
       {
         templateId: String(req.params.templateId),
         ...parsed.data,
+        inputValues: parsed.data.inputValues,
       },
       (req as { user?: { id?: string } }).user?.id
     );

@@ -435,6 +435,8 @@ export const updateStackSchema = z.object({
   // Vault binding (Phase 3)
   vaultAppRoleId: z.string().nullable().optional(),
   vaultFailClosed: z.boolean().optional(),
+  // Phase 2 — operator-supplied input values (encrypted at rest).
+  inputValues: z.record(z.string(), z.string()).optional(),
 }).superRefine((data, ctx) => {
   if (data.services) refineCrossServicePoolRefs({ services: data.services }, ctx);
 });
