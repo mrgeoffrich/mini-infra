@@ -15,7 +15,6 @@ import {
   templateInputDeclSchema,
   templateVaultPolicySchema,
   templateVaultAppRoleSchema,
-  kvFieldValueSchema,
   templateVaultKvSchema,
 } from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
