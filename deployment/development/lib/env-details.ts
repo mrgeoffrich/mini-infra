@@ -4,6 +4,7 @@ export interface XmlAdminDetails {
   email?: string;
   password?: string;
   apiKey?: string;
+  vaultPassphrase?: string;
 }
 
 export interface EnvironmentDetailsSummary {
@@ -52,6 +53,7 @@ export function readEnvironmentDetails(filePath: string): EnvironmentDetailsSumm
       email: extractTag(xml, 'email', 'admin'),
       password: extractTag(xml, 'password', 'admin'),
       apiKey: extractTag(xml, 'apiKey', 'admin'),
+      vaultPassphrase: extractTag(xml, 'vaultPassphrase', 'admin'),
     },
     description: {
       short: extractTag(xml, 'short', 'description'),
@@ -141,6 +143,7 @@ export interface FullEnvironmentDetailsInput {
   adminEmail: string;
   adminPassword: string;
   apiKey: string;
+  vaultPassphrase: string;
   azureConfigured: boolean;
   cloudflareConfigured: boolean;
   githubConfigured: boolean;
@@ -202,6 +205,7 @@ ${descBlock}  <seeded>true</seeded>
     <email>${t(input.adminEmail)}</email>
     <password>${t(input.adminPassword)}</password>
     <apiKey>${t(input.apiKey)}</apiKey>
+    <vaultPassphrase>${t(input.vaultPassphrase)}</vaultPassphrase>
   </admin>
   <connectedServices>
     <azure configured="${input.azureConfigured}"/>

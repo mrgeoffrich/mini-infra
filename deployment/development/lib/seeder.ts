@@ -85,6 +85,12 @@ interface SystemSetting {
 const HEALTH_PATH = '/health';
 const SEED_DEBUG = process.env.SEED_DEBUG === '1';
 
+// Fixed passphrase used for the dev-only managed Vault. Persisted to
+// environment-details.xml so re-runs of this seeder (and skills like
+// diagnose-dev) can call /api/vault/passphrase/unlock after a server restart
+// without operator intervention. NOT for production use.
+export const DEV_VAULT_PASSPHRASE = 'UnWrapMiniInfra100';
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -380,11 +386,19 @@ async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<stri
   return id;
 }
 
-async function findTemplate(api: ApiClient, needle: string): Promise<string | null> {
+async function findTemplate(
+  api: ApiClient,
+  needle: string,
+  opts: { exact?: boolean } = {},
+): Promise<string | null> {
   const res = await api.get<unknown>('/api/stack-templates');
   if (res.status !== 200) return null;
   const items = pickItems<Template>(res.body);
-  const match = items.find((t) => (t.name || '').toLowerCase().includes(needle));
+  const lower = needle.toLowerCase();
+  const match = items.find((t) => {
+    const name = (t.name || '').toLowerCase();
+    return opts.exact ? name === lower : name.includes(lower);
+  });
   return match?.id || null;
 }
 
@@ -424,7 +438,11 @@ async function ensureHaproxyStack(api: ApiClient, envId: string): Promise<string
   return id;
 }
 
-async function applyAndWaitForSynced(api: ApiClient, stackId: string): Promise<void> {
+async function applyAndWaitForSynced(
+  api: ApiClient,
+  stackId: string,
+  label: string,
+): Promise<void> {
   // Snapshot pre-apply status + lastAppliedAt. The status field may still read
   // "error" (or whatever) from a prior run until the reconciler finishes this
   // one, so lastAppliedAt is the authoritative "reconciler completed a new run"
@@ -439,11 +457,11 @@ async function applyAndWaitForSynced(api: ApiClient, stackId: string): Promise<v
   }
 
   if (prevStatus.toLowerCase() === 'synced') {
-    logSkip('HAProxy stack is already Synced — skipping apply');
+    logSkip(`${label} stack is already Synced — skipping apply`);
     return;
   }
 
-  logInfo(`Applying HAProxy stack (current status: ${prevStatus || 'unknown'})`);
+  logInfo(`Applying ${label} stack (current status: ${prevStatus || 'unknown'})`);
   const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {});
   if (applyRes.status !== 200 && applyRes.status !== 202) {
     logError(`Apply returned ${applyRes.status}: ${applyRes.bodyText}`);
@@ -464,15 +482,140 @@ async function applyAndWaitForSynced(api: ApiClient, stackId: string): Promise<v
     lastStatus = polledStatus;
     const lower = polledStatus.toLowerCase();
     if (lower === 'synced') {
-      logOk('HAProxy stack is Synced');
+      logOk(`${label} stack is Synced`);
       return;
     }
     if (lower === 'error') {
-      logError('HAProxy stack apply failed (status=error)');
+      logError(`${label} stack apply failed (status=error)`);
       return;
     }
   }
-  logSkip(`Timed out waiting for HAProxy to sync (last status: ${lastStatus || 'unknown'})`);
+  logSkip(`Timed out waiting for ${label} to sync (last status: ${lastStatus || 'unknown'})`);
+}
+
+async function ensureVaultStack(api: ApiClient): Promise<string | null> {
+  const stackName = 'vault';
+  logInfo(`Looking for existing ${stackName} host stack`);
+  // Vault is host-scoped — no environmentId filter, but the listing returns
+  // all stacks the caller can see, so we still match by name.
+  const list = await api.get<unknown>('/api/stacks');
+  if (list.status === 200) {
+    const items = pickItems<Stack>(list.body);
+    const existing = items.find((s) => s.name === stackName);
+    if (existing?.id) {
+      logSkip(`Vault stack already exists (id=${existing.id})`);
+      return existing.id;
+    }
+  }
+  logInfo('Locating Vault stack template');
+  // Exact-name match: there's also a `hello-vault` template in the catalog
+  // which is environment-scoped, so a substring match would land on the wrong
+  // one and reject our host-scoped instantiate.
+  const templateId = await findTemplate(api, 'vault', { exact: true });
+  if (!templateId) {
+    logSkip('Vault template not found — skipping Vault setup');
+    return null;
+  }
+  // Host-scoped instantiate: no environmentId.
+  const res = await api.post<unknown>(
+    `/api/stack-templates/${templateId}/instantiate`,
+    { name: stackName },
+  );
+  if (res.status !== 201) {
+    logError(`Vault instantiate returned ${res.status}: ${res.bodyText}`);
+    return null;
+  }
+  const created = pickObject<Stack>(res.body);
+  const id = created?.id || '';
+  if (!id) {
+    logError(`Vault instantiate response missing id: ${res.bodyText}`);
+    return null;
+  }
+  logOk(`Vault stack created (id=${id})`);
+  return id;
+}
+
+interface VaultStatusResponse {
+  initialised?: boolean;
+  bootstrappedAt?: string | null;
+  reachable?: boolean;
+  address?: string | null;
+  stackId?: string | null;
+  passphrase?: { state?: 'uninitialised' | 'locked' | 'unlocked' };
+}
+
+/**
+ * Bootstrap-or-unlock the managed Vault using the dev passphrase. Idempotent:
+ * - already unlocked → skip
+ * - locked          → POST /api/vault/passphrase/unlock
+ * - uninitialised   → POST /api/vault/bootstrap (requires address + stackId
+ *                     populated by the post-install action of a vault stack apply)
+ * - unreachable     → log skip
+ *
+ * Always returns. Failures are logged but non-fatal so a partly-broken Vault
+ * never breaks the rest of the dev environment.
+ */
+export async function ensureVaultUnlocked(api: ApiClient): Promise<void> {
+  // Refresh status — the server reads VaultState and probes the address.
+  const statusRes = await api.get<{ data?: VaultStatusResponse } | VaultStatusResponse>(
+    '/api/vault/status',
+  );
+  if (statusRes.status !== 200) {
+    logSkip(`Vault status returned ${statusRes.status} — skipping unlock`);
+    return;
+  }
+  const body = statusRes.body as { data?: VaultStatusResponse } | VaultStatusResponse | null;
+  const status = (body && 'data' in body && body.data ? body.data : body) as
+    | VaultStatusResponse
+    | null;
+  if (!status) {
+    logSkip('Vault status response missing body — skipping unlock');
+    return;
+  }
+  if (!status.reachable) {
+    logSkip('Vault unreachable — skipping unlock (deploy the vault stack first)');
+    return;
+  }
+  const passphraseState = status.passphrase?.state ?? 'uninitialised';
+
+  if (passphraseState === 'unlocked') {
+    logSkip('Vault passphrase already unlocked');
+    return;
+  }
+
+  if (passphraseState === 'locked') {
+    logInfo('Unlocking Vault passphrase');
+    const res = await api.post('/api/vault/passphrase/unlock', {
+      passphrase: DEV_VAULT_PASSPHRASE,
+    });
+    if (res.status === 200 || res.status === 201) {
+      logOk('Vault passphrase unlocked');
+    } else {
+      logError(
+        `Vault unlock returned ${res.status}: ${res.bodyText} (passphrase mismatch? wipe colima VM to reset)`,
+      );
+    }
+    return;
+  }
+
+  // passphraseState === 'uninitialised' → bootstrap.
+  if (!status.address || !status.stackId) {
+    logSkip(
+      'Vault is reachable but address/stackId missing — re-apply the vault stack so register-vault-address runs',
+    );
+    return;
+  }
+  logInfo('Bootstrapping Vault (one-time)');
+  const res = await api.post('/api/vault/bootstrap', {
+    passphrase: DEV_VAULT_PASSPHRASE,
+    address: status.address,
+    stackId: status.stackId,
+  });
+  if (res.status === 200 || res.status === 201) {
+    logOk('Vault bootstrapped');
+  } else {
+    logError(`Vault bootstrap returned ${res.status}: ${res.bodyText}`);
+  }
 }
 
 async function markOnboardingComplete(api: ApiClient): Promise<void> {
@@ -530,8 +673,13 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   const localEnvId = await ensureLocalEnvironment(api, env);
   const haproxyStackId = await ensureHaproxyStack(api, localEnvId);
   if (haproxyStackId) {
-    await applyAndWaitForSynced(api, haproxyStackId);
+    await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
   }
+  const vaultStackId = await ensureVaultStack(api);
+  if (vaultStackId) {
+    await applyAndWaitForSynced(api, vaultStackId, 'Vault');
+  }
+  await ensureVaultUnlocked(api);
   await markOnboardingComplete(api);
 
   logInfo(`Writing ${input.detailsFile}`);
@@ -548,6 +696,7 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     adminEmail: env.ADMIN_EMAIL,
     adminPassword: env.ADMIN_PASSWORD,
     apiKey,
+    vaultPassphrase: DEV_VAULT_PASSPHRASE,
     azureConfigured: Boolean(env.AZURE_STORAGE_CONNECTION_STRING),
     cloudflareConfigured: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
     githubConfigured: Boolean(env.GITHUB_TOKEN),
