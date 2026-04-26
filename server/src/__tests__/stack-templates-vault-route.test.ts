@@ -13,7 +13,7 @@
  */
 
 import supertest from 'supertest';
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 
 // ─── Hoisted mocks (must come before route imports) ──────────────────────────
 
@@ -25,13 +25,13 @@ const { mockCreateOrUpdateDraft, mockApiKeyRef, mockIsSessionRef } = vi.hoisted(
 });
 
 vi.mock('../middleware/auth', () => ({
-  requirePermission: () => (req: any, _res: any, next: any) => {
+  requirePermission: () => (req: Request, _res: Response, next: NextFunction) => {
     if (mockIsSessionRef.value) {
-      req.user = { id: 'session-user' };
+      (req as Request & { user?: { id: string } }).user = { id: 'session-user' };
       // No apiKey on session users
     } else {
-      req.user = { id: 'api-user' };
-      req.apiKey = { id: 'test-key', permissions: mockApiKeyRef.permissions };
+      (req as Request & { user?: { id: string }; apiKey?: { id: string; permissions: string[] | null } }).user = { id: 'api-user' };
+      (req as Request & { apiKey?: { id: string; permissions: string[] | null } }).apiKey = { id: 'test-key', permissions: mockApiKeyRef.permissions };
     }
     next();
   },

@@ -253,7 +253,6 @@ router.post('/:templateId/instantiate', requirePermission('stacks:write'), async
       {
         templateId: String(req.params.templateId),
         ...parsed.data,
-        inputValues: parsed.data.inputValues,
       },
       (req as { user?: { id?: string } }).user?.id
     );

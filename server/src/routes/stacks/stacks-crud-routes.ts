@@ -15,7 +15,7 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
-import { encryptInputValues, mergeForUpgrade } from '../../services/stacks/stack-input-values-service';
+import { encryptInputValues, decryptInputValues } from '../../services/stacks/stack-input-values-service';
 import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
@@ -267,7 +267,8 @@ router.put(
       ...fields
     } = parsed.data;
 
-    // Merge supplied input values with stored ones, applying rotateOnUpgrade rules.
+    // Merge supplied input values with stored ones. PR 2 will add mergeForUpgrade
+    // enforcement once template declarations are loaded at apply time.
     let encryptedInputValues: string | undefined;
     if (inputValues !== undefined) {
       const stored = existing.encryptedInputValues
@@ -276,10 +277,7 @@ router.put(
             catch { return {}; }
           })()
         : {};
-      // We don't have template declarations at this level (that's PR 2 territory),
-      // so treat every supplied value as non-rotateOnUpgrade and merge freely.
-      const merged = mergeForUpgrade(stored, inputValues, []);
-      if (Object.keys(merged).length > 0 || Object.keys(inputValues).length > 0) {
+      if (Object.keys(inputValues).length > 0 || Object.keys(stored).length > 0) {
         encryptedInputValues = encryptInputValues({ ...stored, ...inputValues });
       }
     }

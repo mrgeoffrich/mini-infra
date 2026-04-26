@@ -16,7 +16,7 @@
  */
 
 import crypto from "crypto";
-import { encryptString, decryptString, CryptoError } from "../../lib/crypto";
+import { encryptString, decryptString, CryptoError, zeroise } from "../../lib/crypto";
 import { getAuthSecret } from "../../lib/security-config";
 import type { TemplateInputDeclaration } from "@mini-infra/types";
 
@@ -105,6 +105,3 @@ export function mergeForUpgrade(
   return merged;
 }
 
-function zeroise(buf: Buffer): void {
-  buf.fill(0);
-}
