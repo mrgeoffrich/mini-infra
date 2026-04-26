@@ -11,9 +11,15 @@ import {
   stackResourceOutputSchema,
   stackResourceInputSchema,
 } from "./schemas";
+import {
+  templateInputDeclSchema,
+  templateVaultPolicySchema,
+  templateVaultAppRoleSchema,
+  kvFieldValueSchema,
+  templateVaultKvSchema,
+} from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
-import { validateKvPath } from "../vault/vault-kv-paths";
 
 // =====================
 // Template File Schema
@@ -60,66 +66,8 @@ const templateServiceSchema = z.object({
 );
 
 // =====================
-// Inputs & Vault Schemas
+// Vault Section Schema (composed from canonical sub-schemas)
 // =====================
-
-const templateInputSchema = z.object({
-  name: z.string().min(1).max(100).regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "Input name must start with a letter and contain only letters, numbers, underscores, and hyphens"),
-  description: z.string().max(500).optional(),
-  sensitive: z.boolean().default(true),
-  required: z.boolean().default(true),
-  rotateOnUpgrade: z.boolean().default(false),
-});
-
-const templateVaultPolicySchema = z.object({
-  name: z.string().min(1).max(100),
-  body: z.string().min(1),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-  description: z.string().max(500).optional(),
-});
-
-const templateVaultAppRoleSchema = z.object({
-  name: z.string().min(1).max(100),
-  policy: z.string().min(1),
-  scope: z.enum(["host", "environment", "stack"]).default("environment"),
-  tokenPeriod: z.string().optional(),
-  tokenTtl: z.string().optional(),
-  tokenMaxTtl: z.string().optional(),
-  secretIdNumUses: z.number().int().min(0).optional(),
-  secretIdTtl: z.string().optional(),
-});
-
-const kvFieldValueSchema = z.union([
-  z.object({ fromInput: z.string().min(1) }),
-  z.object({ value: z.string() }),
-]);
-
-/**
- * Strip `{{...}}` substitution tokens from a template KV path so the
- * structural part can be validated by validateKvPath.
- *
- * Template paths may contain tokens like `{{stack.id}}` or `{{inputs.tok}}`
- * which are only resolved at apply time. The characters `{` and `}` are not
- * allowed in real Vault paths, so we replace every token with a placeholder
- * segment before running the path validator.
- */
-function stripTemplateTokens(path: string): string {
-  return path.replace(/\{\{[^}]+\}\}/g, "_token_");
-}
-
-const templateVaultKvSchema = z.object({
-  path: z.string().min(1).superRefine((p, ctx) => {
-    try {
-      validateKvPath(stripTemplateTokens(p));
-    } catch (err) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: err instanceof Error ? err.message : "Invalid KV path",
-      });
-    }
-  }),
-  fields: z.record(z.string(), kvFieldValueSchema),
-});
 
 const templateVaultSchema = z.object({
   policies: z.array(templateVaultPolicySchema).optional(),
@@ -148,13 +96,12 @@ export const templateFileSchema = z.object({
   services: z.array(templateServiceSchema),
   configFiles: z.array(templateConfigFileSchema).optional(),
   postInstallActions: z.array(postInstallActionSchema).optional(),
-  inputs: z.array(templateInputSchema).optional(),
+  inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSchema.optional(),
 }).superRefine((data, ctx) => {
   const inputNames = new Set((data.inputs ?? []).map((i) => i.name));
   const policyNames = new Set((data.vault?.policies ?? []).map((p) => p.name));
   const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
-  const kvPaths = (data.vault?.kv ?? []).map((k) => k.path);
 
   // Unique input names
   const seenInputNames = new Set<string>();
@@ -229,12 +176,11 @@ export const templateFileSchema = z.object({
     }
   }
 
-  void kvPaths; // referenced above via seenKvPaths
 });
 
 export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
 
-export type TemplateInput = z.infer<typeof templateInputSchema>;
+export type TemplateInput = z.infer<typeof templateInputDeclSchema>;
 export type TemplateVaultPolicy = z.infer<typeof templateVaultPolicySchema>;
 export type TemplateVaultAppRole = z.infer<typeof templateVaultAppRoleSchema>;
 export type TemplateVaultKv = z.infer<typeof templateVaultKvSchema>;

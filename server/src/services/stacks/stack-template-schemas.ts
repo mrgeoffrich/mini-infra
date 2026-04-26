@@ -9,15 +9,16 @@ import {
   stackResourceOutputSchema,
   stackResourceInputSchema,
 } from "./schemas";
-import { validateKvPath } from "../vault/vault-kv-paths";
+import { validateKvPath, stripTemplateTokens } from "../vault/vault-kv-paths";
 
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
 
 // =====================
 // Inputs & Vault Schemas (for API request validation)
+// Exported so template-file-loader.ts can compose these without drift.
 // =====================
 
-const templateInputDeclSchema = z.object({
+export const templateInputDeclSchema = z.object({
   name: z.string().min(1).max(100).regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "Input name must start with a letter"),
   description: z.string().max(500).optional(),
   sensitive: z.boolean().default(true),
@@ -25,14 +26,14 @@ const templateInputDeclSchema = z.object({
   rotateOnUpgrade: z.boolean().default(false),
 });
 
-const templateVaultPolicySchema = z.object({
+export const templateVaultPolicySchema = z.object({
   name: z.string().min(1).max(100),
   body: z.string().min(1),
   scope: z.enum(["host", "environment", "stack"]).default("environment"),
   description: z.string().max(500).optional(),
 });
 
-const templateVaultAppRoleSchema = z.object({
+export const templateVaultAppRoleSchema = z.object({
   name: z.string().min(1).max(100),
   policy: z.string().min(1),
   scope: z.enum(["host", "environment", "stack"]).default("environment"),
@@ -43,15 +44,15 @@ const templateVaultAppRoleSchema = z.object({
   secretIdTtl: z.string().optional(),
 });
 
-const kvFieldValueSchema = z.union([
+export const kvFieldValueSchema = z.union([
   z.object({ fromInput: z.string().min(1) }),
   z.object({ value: z.string() }),
 ]);
 
-const templateVaultKvSchema = z.object({
+export const templateVaultKvSchema = z.object({
   path: z.string().min(1).superRefine((p, ctx) => {
     try {
-      validateKvPath(p);
+      validateKvPath(stripTemplateTokens(p));
     } catch (err) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

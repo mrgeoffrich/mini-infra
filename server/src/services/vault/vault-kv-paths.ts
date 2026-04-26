@@ -62,3 +62,13 @@ export function validateKvFieldName(field: string): string {
  * all refer to the same mount via this constant.
  */
 export const KV_MOUNT = "secret";
+
+/**
+ * Replace `{{...}}` substitution tokens in a template KV path with a
+ * placeholder segment so the structural portion can be validated by
+ * validateKvPath. Tokens like `{{stack.id}}` are only resolved at apply time;
+ * the characters `{` and `}` are not valid in real Vault paths.
+ */
+export function stripTemplateTokens(path: string): string {
+  return path.replace(/\{\{[^}]+\}\}/g, "_token_");
+}
