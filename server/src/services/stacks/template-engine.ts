@@ -40,12 +40,23 @@ export interface TemplateContext {
    * template variable" error from `resolveTemplate`.
    */
   environment?: TemplateContextEnvironment;
+  /**
+   * Decrypted input values populated at apply time. The validator restricts
+   * `{{inputs.*}}` tokens to KV paths only; other substitution sites will
+   * not expose these values.
+   */
+  inputs?: Record<string, string>;
 }
 
 export interface BuildTemplateContextOptions {
   stackId?: string;
   environment?: TemplateContextEnvironment;
   params?: Record<string, StackParameterValue>;
+  /**
+   * Decrypted input values. Only supplied at apply time; omit during planning.
+   * Enables `{{inputs.*}}` substitution in KV paths.
+   */
+  inputs?: Record<string, string>;
 }
 
 export function buildTemplateContext(
@@ -58,7 +69,7 @@ export function buildTemplateContext(
   }[],
   options: BuildTemplateContextOptions = {}
 ): TemplateContext {
-  const { stackId, environment, params } = options;
+  const { stackId, environment, params, inputs } = options;
   const projectName = environment ? `${environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
 
   const svcMap: Record<string, { containerName: string; image: string }> = {};
@@ -94,6 +105,7 @@ export function buildTemplateContext(
   };
 
   if (environment) ctx.environment = environment;
+  if (inputs !== undefined) ctx.inputs = inputs;
 
   return ctx;
 }
