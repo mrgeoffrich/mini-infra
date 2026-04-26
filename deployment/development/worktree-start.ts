@@ -235,7 +235,11 @@ async function main(): Promise<void> {
   }
 
   // Port allocation
-  const { ui_port: uiPort, registry_port: registryPort } = allocatePorts(profile);
+  const {
+    ui_port: uiPort,
+    registry_port: registryPort,
+    vault_port: vaultPort,
+  } = allocatePorts(profile);
   // Persist early so the entry exists even if later steps fail
   upsertEntry({
     profile,
@@ -243,10 +247,11 @@ async function main(): Promise<void> {
     colima_vm: profile,
     ui_port: uiPort,
     registry_port: registryPort,
+    vault_port: vaultPort,
     url: `http://localhost:${uiPort}`,
     description: shortDesc,
   });
-  logInfo(`Ports: UI=${uiPort}, registry=${registryPort}`);
+  logInfo(`Ports: UI=${uiPort}, registry=${registryPort}, vault=${vaultPort}`);
 
   // Colima
   if (!isColimaRunning(profile)) {
@@ -448,6 +453,7 @@ async function main(): Promise<void> {
     composeProject: composeProjectName,
     uiPort,
     registryPort,
+    vaultPort,
     agentSidecarImageTag,
     shortDescription: shortDesc,
     longDescription: longDesc,
@@ -469,6 +475,7 @@ async function main(): Promise<void> {
       const result = await seed({
         uiPort,
         registryPort,
+        vaultPort,
         profile,
         projectRoot: PROJECT_ROOT,
         dockerHost,
@@ -485,6 +492,7 @@ async function main(): Promise<void> {
         colima_vm: profile,
         ui_port: uiPort,
         registry_port: registryPort,
+        vault_port: vaultPort,
         url: `http://localhost:${uiPort}`,
         admin_email: result.adminEmail,
         admin_password: result.adminPassword,
@@ -511,6 +519,7 @@ async function main(): Promise<void> {
       colima_vm: profile,
       ui_port: uiPort,
       registry_port: registryPort,
+      vault_port: vaultPort,
       url: `http://localhost:${uiPort}`,
       seeded: details?.seeded ?? false,
       admin_email: details?.admin.email,
@@ -540,6 +549,7 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`  URL:         http://localhost:${uiPort}`);
   console.log(`  Registry:    localhost:${registryPort}`);
+  console.log(`  Vault:       http://localhost:${vaultPort}`);
   console.log(`  DOCKER_HOST: ${dockerHost}`);
   console.log('');
   console.log(`  Logs:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} logs -f`);

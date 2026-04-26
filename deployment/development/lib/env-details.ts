@@ -70,6 +70,7 @@ export interface MinimalEnvironmentDetailsInput {
   composeProject: string;
   uiPort: number;
   registryPort: number;
+  vaultPort: number;
   agentSidecarImageTag: string;
   shortDescription?: string;
   longDescription?: string;
@@ -109,6 +110,7 @@ ${descBlock}  <seeded>false</seeded>
   <endpoints>
     <ui>http://localhost:${input.uiPort}</ui>
     <registry>localhost:${input.registryPort}</registry>
+    <vault>http://localhost:${input.vaultPort}</vault>
   </endpoints>
   <images>
     <agentSidecar>${xmlEscape(input.agentSidecarImageTag)}</agentSidecar>
@@ -139,6 +141,7 @@ export interface FullEnvironmentDetailsInput {
   composeProject: string;
   uiPort: number;
   registryPort: number;
+  vaultPort: number;
   agentSidecarImageTag: string;
   adminEmail: string;
   adminPassword: string;
@@ -197,6 +200,7 @@ ${descBlock}  <seeded>true</seeded>
   <endpoints>
     <ui>http://localhost:${input.uiPort}</ui>
     <registry>localhost:${input.registryPort}</registry>
+    <vault>http://localhost:${input.vaultPort}</vault>
   </endpoints>
   <images>
     <agentSidecar>${t(input.agentSidecarImageTag)}</agentSidecar>

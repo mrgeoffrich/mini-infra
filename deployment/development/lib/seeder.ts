@@ -28,6 +28,7 @@ import { logInfo, logOk, logError, logSkip } from './log.js';
 export interface SeederInput {
   uiPort: number;
   registryPort: number;
+  vaultPort: number;
   profile: string;
   projectRoot: string;
   dockerHost: string;
@@ -493,7 +494,7 @@ async function applyAndWaitForSynced(
   logSkip(`Timed out waiting for ${label} to sync (last status: ${lastStatus || 'unknown'})`);
 }
 
-async function ensureVaultStack(api: ApiClient): Promise<string | null> {
+async function ensureVaultStack(api: ApiClient, vaultPort: number): Promise<string | null> {
   const stackName = 'vault';
   logInfo(`Looking for existing ${stackName} host stack`);
   // Vault is host-scoped — no environmentId filter, but the listing returns
@@ -516,10 +517,13 @@ async function ensureVaultStack(api: ApiClient): Promise<string | null> {
     logSkip('Vault template not found — skipping Vault setup');
     return null;
   }
-  // Host-scoped instantiate: no environmentId.
+  // Host-scoped instantiate: no environmentId. Override host-port so each
+  // worktree's Vault binds a unique macOS host port — the colima VMs all
+  // publish on their VM's :8200 internally, but only one wins host:8200 via
+  // colima's port forwarder, so distinct host ports are essential.
   const res = await api.post<unknown>(
     `/api/stack-templates/${templateId}/instantiate`,
-    { name: stackName },
+    { name: stackName, parameterValues: { 'host-port': vaultPort } },
   );
   if (res.status !== 201) {
     logError(`Vault instantiate returned ${res.status}: ${res.bodyText}`);
@@ -618,6 +622,51 @@ export async function ensureVaultUnlocked(api: ApiClient): Promise<void> {
   }
 }
 
+interface VaultPolicySummary {
+  id?: string;
+  name?: string;
+  publishedVersion?: number;
+}
+
+/**
+ * Publish the two system Vault policies (`mini-infra-admin` and
+ * `mini-infra-operator`) so the DB tracks them as published. The bootstrap
+ * flow already writes the HCL to Vault directly, but leaves the DB rows in
+ * draft state — without this step they show as unpublished in the UI on a
+ * fresh dev environment. Idempotent: skips policies already at version >= 1.
+ */
+async function publishSystemVaultPolicies(api: ApiClient): Promise<void> {
+  const SYSTEM_POLICY_NAMES = ['mini-infra-admin', 'mini-infra-operator'];
+
+  const res = await api.get<unknown>('/api/vault/policies');
+  if (res.status !== 200) {
+    logSkip(`Vault policies list returned ${res.status} — skipping system policy publish`);
+    return;
+  }
+  const policies = pickItems<VaultPolicySummary>(res.body);
+
+  for (const name of SYSTEM_POLICY_NAMES) {
+    const policy = policies.find((p) => p.name === name);
+    if (!policy?.id) {
+      logSkip(`System Vault policy '${name}' not found — skipping publish`);
+      continue;
+    }
+    if ((policy.publishedVersion ?? 0) > 0) {
+      logSkip(`Vault policy '${name}' already published (v${policy.publishedVersion})`);
+      continue;
+    }
+    logInfo(`Publishing Vault policy '${name}'`);
+    const publishRes = await api.post(`/api/vault/policies/${policy.id}/publish`);
+    if (publishRes.status === 200 || publishRes.status === 201) {
+      logOk(`Vault policy '${name}' published`);
+    } else {
+      logError(
+        `Publishing Vault policy '${name}' returned ${publishRes.status}: ${publishRes.bodyText}`,
+      );
+    }
+  }
+}
+
 async function markOnboardingComplete(api: ApiClient): Promise<void> {
   logInfo('Marking onboarding complete');
   const res = await api.post('/api/onboarding/complete', {});
@@ -675,11 +724,12 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   if (haproxyStackId) {
     await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
   }
-  const vaultStackId = await ensureVaultStack(api);
+  const vaultStackId = await ensureVaultStack(api, input.vaultPort);
   if (vaultStackId) {
     await applyAndWaitForSynced(api, vaultStackId, 'Vault');
   }
   await ensureVaultUnlocked(api);
+  await publishSystemVaultPolicies(api);
   await markOnboardingComplete(api);
 
   logInfo(`Writing ${input.detailsFile}`);
@@ -692,6 +742,7 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     composeProject: input.composeProject,
     uiPort: input.uiPort,
     registryPort: input.registryPort,
+    vaultPort: input.vaultPort,
     agentSidecarImageTag: input.agentSidecarImageTag,
     adminEmail: env.ADMIN_EMAIL,
     adminPassword: env.ADMIN_PASSWORD,
