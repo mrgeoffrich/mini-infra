@@ -524,19 +524,40 @@ export class VaultAdminService {
       const res = await this.client.renewSelf();
       const leaseSeconds =
         res.auth.lease_duration ?? DEFAULT_LEASE_SECONDS;
-      log.debug(
-        { leaseSeconds },
-        "Renewed vault admin token",
-      );
+      log.debug({ leaseSeconds }, "Renewed vault admin token");
       this.scheduleRenewal(leaseSeconds);
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
+      return;
+    } catch (renewErr) {
+      const detail = renewErr instanceof Error ? renewErr.message : String(renewErr);
       log.warn(
         { err: detail },
-        "Vault admin token renewal failed; dropping cached token",
+        "Vault admin token renewal failed; attempting AppRole re-login",
       );
+      // Drop the stale token before re-auth so the AppRole login starts clean.
       this.adminToken = null;
       this.client.clearToken();
+    }
+
+    // Renewal failed — most often the token expired (Vault returns "permission
+    // denied" for expired tokens, indistinguishable from a real ACL denial).
+    // The AppRole credentials are persisted, so just log in again. If that
+    // also fails (passphrase locked, AppRole revoked), drop into the
+    // degenerate-state path below so callers get a clear error instead of
+    // silent 500s on every subsequent admin op.
+    try {
+      await this.authenticateAsAdminInner();
+      log.info(
+        "Vault admin token re-issued via AppRole login after renewal failure",
+      );
+      return;
+    } catch (loginErr) {
+      const detail = loginErr instanceof Error ? loginErr.message : String(loginErr);
+      log.warn(
+        { err: detail },
+        "Vault admin AppRole re-login failed; dropping cached token",
+      );
+      this.adminToken = null;
+      this.client?.clearToken();
       this.cancelRenewalTimer();
       try {
         emitToChannel(Channel.VAULT, ServerEvent.VAULT_STATUS_CHANGED, {

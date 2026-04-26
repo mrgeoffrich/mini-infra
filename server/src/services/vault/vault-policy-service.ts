@@ -93,10 +93,12 @@ export class VaultPolicyService {
     const policy = await this.prisma.vaultPolicy.findUnique({ where: { id } });
     if (!policy) return;
 
-    // Best-effort remove from Vault; continue on any failure.
-    const client = this.admin.getClient();
-    if (client && policy.publishedVersion > 0) {
+    // Best-effort remove from Vault; continue on any failure. Use the
+    // authenticated-client getter so we lazily re-login if the cached admin
+    // token has been dropped (e.g. after a renewal failure).
+    if (policy.publishedVersion > 0) {
       try {
+        const client = await this.admin.getAuthenticatedClient();
         await client.deletePolicy(policy.name);
       } catch (err) {
         log.warn(
@@ -118,10 +120,11 @@ export class VaultPolicyService {
     if (!row.draftHclBody) {
       throw new Error("Policy has no draft HCL to publish");
     }
-    const client = this.admin.getClient();
-    if (!client) {
-      throw new Error("Vault client is not configured; bootstrap required");
-    }
+    // Use getAuthenticatedClient so we lazily re-login via the AppRole if the
+    // cached admin token has been dropped — otherwise renewal-window glitches
+    // surface as 500 "permission denied" until someone hits the manual
+    // /admin/reauthenticate endpoint.
+    const client = await this.admin.getAuthenticatedClient();
     await client.writePolicy(row.name, row.draftHclBody);
     const updated = await this.prisma.vaultPolicy.update({
       where: { id },

@@ -287,33 +287,72 @@ export async function spawnPoolInstance(
     }
   }
 
-  // Vault network when a binding is in play. Resolve the actual docker
-  // network name from `infraResource` rather than hardcoding it — vault
-  // resource networks are named `mini-infra-vault` (host scope) or
-  // `<env>-vault` (environment scope), never `mini-infra-vault-net`.
-  const needsVaultNet = effectiveAppRoleId && Object.keys(vaultEnv).length > 0;
-  if (needsVaultNet) {
-    const vaultResource = await prisma.infraResource.findFirst({
-      where: {
-        type: 'docker-network',
-        purpose: 'vault',
-        ...(stack.environmentId
-          ? { environmentId: stack.environmentId, scope: 'environment' }
-          : { scope: 'host', environmentId: null }),
-      },
-    });
-    if (vaultResource) {
-      const docker = dockerExecutor.getDockerClient();
+  // Attach infra resource networks declared by the service template's
+  // `joinResourceNetworks` (e.g. `['vault']`). Mirrors the static service
+  // path in StackInfraResourceManager.joinResourceNetworks — without this,
+  // pool workers that need to read shared secrets from Vault directly (or
+  // talk to any other resource-network sibling) crash on DNS resolution.
+  //
+  // We also implicitly require the vault network when an AppRole binding is
+  // in play, even if the template didn't list it — this preserves the prior
+  // belt-and-suspenders behaviour for AppRole-bound pool services whose
+  // dynamicEnv was working only because pool-spawner attached vault for them.
+  const declaredPurposes = new Set(containerConfig.joinResourceNetworks ?? []);
+  if (effectiveAppRoleId && Object.keys(vaultEnv).length > 0) {
+    declaredPurposes.add('vault');
+  }
+  if (declaredPurposes.size > 0) {
+    const docker = dockerExecutor.getDockerClient();
+    for (const purpose of declaredPurposes) {
+      const resource = await prisma.infraResource.findFirst({
+        where: {
+          type: 'docker-network',
+          purpose,
+          ...(stack.environmentId
+            ? { environmentId: stack.environmentId, scope: 'environment' }
+            : { scope: 'host', environmentId: null }),
+        },
+      });
+      if (!resource) {
+        // Fall back to host scope when the env-scoped resource is missing —
+        // matches StackInfraResourceManager.resolveInputs.
+        const hostResource = stack.environmentId
+          ? await prisma.infraResource.findFirst({
+              where: {
+                type: 'docker-network',
+                purpose,
+                scope: 'host',
+                environmentId: null,
+              },
+            })
+          : null;
+        if (!hostResource) {
+          log.warn(
+            { containerId, stackId: ctx.stackId, purpose },
+            'Infra resource network not found; skipping attach (pool worker may fail to reach this resource)',
+          );
+          continue;
+        }
+        try {
+          await docker.getNetwork(hostResource.name).connect({ Container: containerId });
+          log.info({ containerId, network: hostResource.name, purpose }, 'Attached infra resource network');
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/already exists/i.test(msg)) {
+            log.warn({ containerId, network: hostResource.name, purpose, err: msg }, 'Failed to attach infra resource network');
+          }
+        }
+        continue;
+      }
       try {
-        await docker.getNetwork(vaultResource.name).connect({ Container: containerId });
+        await docker.getNetwork(resource.name).connect({ Container: containerId });
+        log.info({ containerId, network: resource.name, purpose }, 'Attached infra resource network');
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!/already exists/i.test(msg)) {
-          log.warn({ containerId, network: vaultResource.name, err: msg }, 'Failed to attach vault network (non-fatal)');
+          log.warn({ containerId, network: resource.name, purpose, err: msg }, 'Failed to attach infra resource network');
         }
       }
-    } else {
-      log.warn({ containerId, stackId: ctx.stackId }, 'Vault InfraResource not found; skipping vault network attach');
     }
   }
 

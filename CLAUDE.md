@@ -16,7 +16,7 @@ For parallel dev work, each git worktree runs its own fully isolated Mini Infra 
 
 1. **Spin up.** From the worktree root, run `deployment/development/worktree_start.sh`. This creates (or reuses) a Colima profile named after the worktree directory, allocates stable UI/registry ports from `~/.mini-infra/worktrees.yaml`, builds + starts the stack, then seeds credentials from `~/.mini-infra/dev.env` so the onboarding wizard is skipped.
 
-2. **Find the URL.** The script writes `environment-details.xml` at the worktree root with the UI URL, Docker host, seeded resource IDs, and connected-service status. Read from it instead of assuming a port (see Browser Automation below for the one-liner).
+2. **Find the URL.** The script writes `environment-details.xml` at the worktree root with the UI URL, Vault URL, Docker host, seeded resource IDs, and connected-service status. Read from it instead of assuming a port (see Browser Automation below for the one-liner). Worktree-unique ports are allocated for the UI (3100-3199), local registry (5100-5199), and Vault (8200-8299) — every parallel instance gets its own slot so multiple Vaults don't collide on `localhost:8200`.
 
 3. **Edit code normally.** The `server/` / `client/` / `lib/` layout and workspace rules below still apply.
 

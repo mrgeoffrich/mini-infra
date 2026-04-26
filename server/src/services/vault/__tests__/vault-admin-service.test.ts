@@ -80,13 +80,70 @@ describe("VaultAdminService — admin token renewal", () => {
     svc.destroy();
   });
 
-  it("drops the cached token and emits VAULT_STATUS_CHANGED on renewal failure", async () => {
+  it("re-issues the admin token via AppRole login when renewal fails", async () => {
+    // Renewal returning "permission denied" usually means the cached token
+    // expired. The service should fall back to a fresh AppRole login so the
+    // next admin op succeeds without manual intervention.
     const renewSelf = vi
       .fn()
       .mockRejectedValue(new Error("permission denied"));
-    const appRoleLogin = vi.fn().mockResolvedValue({
-      auth: { client_token: "fresh", lease_duration: 3600, renewable: true },
-    });
+    const appRoleLogin = vi
+      .fn()
+      .mockResolvedValueOnce({
+        auth: { client_token: "initial", lease_duration: 3600, renewable: true },
+      })
+      .mockResolvedValueOnce({
+        auth: { client_token: "rebuilt", lease_duration: 3600, renewable: true },
+      });
+    const setToken = vi.fn();
+    const clearToken = vi.fn();
+    const fakeClient = {
+      appRoleLogin,
+      renewSelf,
+      setToken,
+      clearToken,
+    } as unknown as VaultHttpClient;
+
+    const svc = new VaultAdminService(
+      mkPrisma(),
+      mkPassphrase(true),
+      mkStateService(),
+    );
+    (svc as unknown as { client: VaultHttpClient }).client = fakeClient;
+
+    await svc.authenticateAsAdmin();
+    expect(svc.hasAdminToken()).toBe(true);
+
+    // Trigger the half-lease renewal timer — renewal will fail, re-login
+    // succeeds. Don't drain further timers (the recovery path schedules
+    // another renewal at +1800s which we don't want to chain into).
+    await vi.advanceTimersByTimeAsync(1_800_000);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Renewal failed → AppRole login was re-invoked → token is live again.
+    expect(appRoleLogin).toHaveBeenCalledTimes(2);
+    expect(setToken).toHaveBeenLastCalledWith("rebuilt");
+    expect(svc.hasAdminToken()).toBe(true);
+    // Stale-token event NOT emitted — we recovered without operator action.
+    expect(emitToChannel).not.toHaveBeenCalledWith(
+      "vault",
+      "vault:status:changed",
+      expect.objectContaining({ adminTokenStale: true }),
+    );
+
+    svc.destroy();
+  });
+
+  it("drops the cached token and emits VAULT_STATUS_CHANGED when both renewal and re-login fail", async () => {
+    const renewSelf = vi
+      .fn()
+      .mockRejectedValue(new Error("permission denied"));
+    const appRoleLogin = vi
+      .fn()
+      .mockResolvedValueOnce({
+        auth: { client_token: "initial", lease_duration: 3600, renewable: true },
+      })
+      .mockRejectedValueOnce(new Error("invalid secret_id"));
     const setToken = vi.fn();
     const clearToken = vi.fn();
     const fakeClient = {
@@ -107,7 +164,6 @@ describe("VaultAdminService — admin token renewal", () => {
     expect(svc.hasAdminToken()).toBe(true);
 
     await vi.advanceTimersByTimeAsync(1_800_000);
-    // Allow the renewSelfTick microtask + catch handlers to settle.
     await vi.runOnlyPendingTimersAsync();
 
     expect(svc.hasAdminToken()).toBe(false);
@@ -210,13 +266,16 @@ describe("VaultAdminService — admin token renewal", () => {
     svc.destroy();
   });
 
-  it("does not schedule a follow-up renewal after a renewal failure", async () => {
+  it("does not schedule a follow-up renewal when both renewal and re-login fail", async () => {
     const renewSelf = vi
       .fn()
       .mockRejectedValue(new Error("permission denied"));
-    const appRoleLogin = vi.fn().mockResolvedValue({
-      auth: { client_token: "fresh", lease_duration: 3600, renewable: true },
-    });
+    const appRoleLogin = vi
+      .fn()
+      .mockResolvedValueOnce({
+        auth: { client_token: "initial", lease_duration: 3600, renewable: true },
+      })
+      .mockRejectedValueOnce(new Error("invalid secret_id"));
     const fakeClient = {
       appRoleLogin,
       renewSelf,
@@ -236,7 +295,8 @@ describe("VaultAdminService — admin token renewal", () => {
     await vi.runOnlyPendingTimersAsync();
     expect(renewSelf).toHaveBeenCalledTimes(1);
 
-    // After the failure handler runs, no further timer should be scheduled.
+    // Both paths failed → token dropped, no further timer scheduled.
+    expect(svc.hasAdminToken()).toBe(false);
     await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
     expect(renewSelf).toHaveBeenCalledTimes(1);
 

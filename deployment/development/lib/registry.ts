@@ -13,6 +13,8 @@ export const UI_PORT_MIN = 3100;
 export const UI_PORT_MAX = 3199;
 export const REGISTRY_PORT_MIN = 5100;
 export const REGISTRY_PORT_MAX = 5199;
+export const VAULT_PORT_MIN = 8200;
+export const VAULT_PORT_MAX = 8299;
 
 export interface WorktreeEntry {
   profile: string;
@@ -21,6 +23,7 @@ export interface WorktreeEntry {
   url: string;
   ui_port: number;
   registry_port: number;
+  vault_port: number;
   admin_email?: string;
   admin_password?: string;
   api_key?: string;
@@ -65,6 +68,7 @@ export function upsertEntry(
     url: partial.url ?? existing?.url ?? '',
     ui_port: partial.ui_port ?? existing?.ui_port ?? 0,
     registry_port: partial.registry_port ?? existing?.registry_port ?? 0,
+    vault_port: partial.vault_port ?? existing?.vault_port ?? 0,
     admin_email: partial.admin_email ?? existing?.admin_email,
     admin_password: partial.admin_password ?? existing?.admin_password,
     api_key: partial.api_key ?? existing?.api_key,
@@ -85,40 +89,60 @@ export function removeEntry(profile: string): boolean {
   return true;
 }
 
-export function allocatePorts(profile: string): { ui_port: number; registry_port: number } {
+/**
+ * Allocate the UI/registry/vault port triple for a worktree as a single
+ * "slot" — so each profile's three ports share the same trailing index
+ * (slot 0 → 3100/5100/8200, slot 4 → 3104/5104/8204, etc.). This keeps
+ * ports easy to reason about and ensures vault never collides with another
+ * worktree's slot. Existing entries' ui_port wins as the source of truth
+ * for the slot.
+ */
+export function allocatePorts(
+  profile: string,
+): { ui_port: number; registry_port: number; vault_port: number } {
+  const SLOT_COUNT = UI_PORT_MAX - UI_PORT_MIN + 1;
   const entries = loadRegistry();
   const existing = entries[profile];
-  if (existing && existing.ui_port && existing.registry_port) {
-    return { ui_port: existing.ui_port, registry_port: existing.registry_port };
-  }
 
-  const usedUi = new Set<number>();
-  const usedReg = new Set<number>();
+  const slotOf = (e: WorktreeEntry): number | undefined => {
+    if (e.ui_port && e.ui_port >= UI_PORT_MIN && e.ui_port <= UI_PORT_MAX) {
+      return e.ui_port - UI_PORT_MIN;
+    }
+    if (e.registry_port && e.registry_port >= REGISTRY_PORT_MIN && e.registry_port <= REGISTRY_PORT_MAX) {
+      return e.registry_port - REGISTRY_PORT_MIN;
+    }
+    if (e.vault_port && e.vault_port >= VAULT_PORT_MIN && e.vault_port <= VAULT_PORT_MAX) {
+      return e.vault_port - VAULT_PORT_MIN;
+    }
+    return undefined;
+  };
+
+  const usedSlots = new Set<number>();
   for (const e of Object.values(entries)) {
-    if (e.ui_port) usedUi.add(e.ui_port);
-    if (e.registry_port) usedReg.add(e.registry_port);
+    if (e.profile === profile) continue;
+    const s = slotOf(e);
+    if (s !== undefined) usedSlots.add(s);
   }
 
-  let ui = 0;
-  for (let p = UI_PORT_MIN; p <= UI_PORT_MAX; p++) {
-    if (!usedUi.has(p)) {
-      ui = p;
-      break;
+  let slot = existing ? slotOf(existing) : undefined;
+  if (slot === undefined) {
+    for (let s = 0; s < SLOT_COUNT; s++) {
+      if (!usedSlots.has(s)) {
+        slot = s;
+        break;
+      }
     }
   }
-  let reg = 0;
-  for (let p = REGISTRY_PORT_MIN; p <= REGISTRY_PORT_MAX; p++) {
-    if (!usedReg.has(p)) {
-      reg = p;
-      break;
-    }
-  }
-  if (!ui || !reg) {
+  if (slot === undefined) {
     throw new Error(
-      `Port allocation failed — UI range ${UI_PORT_MIN}-${UI_PORT_MAX} or registry range ${REGISTRY_PORT_MIN}-${REGISTRY_PORT_MAX} is exhausted. Check ${REGISTRY_YAML}.`,
+      `Port allocation failed — all ${SLOT_COUNT} slots in use. Check ${REGISTRY_YAML}.`,
     );
   }
-  return { ui_port: ui, registry_port: reg };
+  return {
+    ui_port: UI_PORT_MIN + slot,
+    registry_port: REGISTRY_PORT_MIN + slot,
+    vault_port: VAULT_PORT_MIN + slot,
+  };
 }
 
 export function migrateFromJsonIfNeeded(): void {
@@ -126,7 +150,7 @@ export function migrateFromJsonIfNeeded(): void {
   if (!fs.existsSync(REGISTRY_JSON_LEGACY)) return;
 
   ensureHome();
-  type JsonEntry = { profile?: string; ui_port?: number; registry_port?: number };
+  type JsonEntry = { profile?: string; ui_port?: number; registry_port?: number; vault_port?: number };
   type JsonFile = { worktrees?: Record<string, JsonEntry> };
 
   let parsed: JsonFile;
@@ -147,6 +171,7 @@ export function migrateFromJsonIfNeeded(): void {
       url: uiPort ? `http://localhost:${uiPort}` : '',
       ui_port: uiPort,
       registry_port: e.registry_port || 0,
+      vault_port: e.vault_port || 0,
       seeded: false,
       updated_at: now,
     };
