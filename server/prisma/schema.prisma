@@ -1092,6 +1092,14 @@ model Stack {
   // Never returned via API; GET /stacks/:id returns inputValueKeys (names only).
   encryptedInputValues        String?
 
+  // Phase 2 — Vault reconciliation snapshot: content hashes per phase (policies,
+  // appRoles, kv) recorded after a successful Vault apply. Used for idempotency —
+  // identical hashes → skip the write on re-apply.
+  lastAppliedVaultSnapshot    Json?
+
+  // Populated when the Vault pre-service phase fails; cleared on success.
+  lastFailureReason           String?
+
   // Relations
   services             StackService[]
   deployments          StackDeployment[]

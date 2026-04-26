@@ -29,6 +29,9 @@ export type UserEventType =
   | 'vault_kv_write'
   | 'vault_kv_patch'
   | 'vault_kv_delete'
+  | 'stack_vault_policy_apply'
+  | 'stack_vault_approle_apply'
+  | 'stack_vault_kv_apply'
   | 'other';
 
 // Event category enumeration
