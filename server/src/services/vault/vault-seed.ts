@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { MINI_INFRA_ADMIN_HCL } from "./vault-policy-bodies";
 
 const log = getLogger("platform", "vault-seed");
 
@@ -73,25 +74,8 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
   log.info({ count: policies.length }, "Vault policies seeded");
 }
 
-const MINI_INFRA_ADMIN_HCL = `# mini-infra-admin — managed by Mini Infra.
-# Full administrative access used by Mini Infra's own admin AppRole.
-
-path "sys/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "auth/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "secret/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "identity/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-`;
+// MINI_INFRA_ADMIN_HCL imported from ./vault-policy-bodies — single source of
+// truth shared with vault-admin-service.ts (bootstrap + per-login self-heal).
 
 const MINI_INFRA_OPERATOR_HCL = `# mini-infra-operator — userpass human-operator access.
 # Read-only visibility + secret management + change own password. Keep in sync

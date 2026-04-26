@@ -41,6 +41,7 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { rotatePoolManagementTokens } from './pool-management-token';
+import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -268,7 +269,8 @@ export class StackReconciler {
       // conceptually complete (handled inside prepareServiceContainer) and
       // before any container is created, so wrapped secret_ids have the
       // tightest possible lifetime around container start.
-      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, poolTokens, log);
+      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordApply } =
+        await this.resolveVaultEnv(stack, stack.services, resolvedDefinitions, poolTokens, log);
 
       for (const action of actions) {
         const actionStart = Date.now();
@@ -345,6 +347,28 @@ export class StackReconciler {
           removedAt: null,
         },
       });
+
+      // 8b. Record per-service AppRole bindings that were just applied so
+      // the next apply's stable-binding check can degrade gracefully when
+      // Vault is briefly unreachable. Only services with their OWN binding
+      // need this; services that fall back to the stack-level binding rely
+      // on the Stack row's lastAppliedVaultAppRoleId above.
+      if (allSucceeded && serviceBindingsToRecordApply.size > 0) {
+        const successfulServiceNames = new Set(
+          serviceResults.filter((r) => r.success).map((r) => r.serviceName),
+        );
+        await Promise.all(
+          Array.from(serviceBindingsToRecordApply, ([serviceName, appRoleId]) => {
+            if (!successfulServiceNames.has(serviceName)) return Promise.resolve();
+            const svcRow = serviceMap.get(serviceName);
+            if (!svcRow) return Promise.resolve();
+            return this.prisma.stackService.update({
+              where: { id: svcRow.id },
+              data: { lastAppliedVaultAppRoleId: appRoleId },
+            });
+          }),
+        );
+      }
 
       // 9. Record deployment history
       await this.prisma.stackDeployment.create({
@@ -496,7 +520,8 @@ export class StackReconciler {
         stackId,
         recreatedCallers,
       );
-      const resolvedEnvOverrides = await this.resolveVaultEnv(stack, resolvedDefinitions, poolTokens, log);
+      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordUpdate } =
+        await this.resolveVaultEnv(stack, stack.services, resolvedDefinitions, poolTokens, log);
 
       for (const action of actions) {
         const svc = serviceMap.get(action.serviceName);
@@ -543,6 +568,23 @@ export class StackReconciler {
         },
       });
 
+      if (allSucceeded && serviceBindingsToRecordUpdate.size > 0) {
+        const successfulServiceNames = new Set(
+          serviceResults.filter((r) => r.success).map((r) => r.serviceName),
+        );
+        await Promise.all(
+          Array.from(serviceBindingsToRecordUpdate, ([serviceName, appRoleId]) => {
+            if (!successfulServiceNames.has(serviceName)) return Promise.resolve();
+            const svcRow = serviceMap.get(serviceName);
+            if (!svcRow) return Promise.resolve();
+            return this.prisma.stackService.update({
+              where: { id: svcRow.id },
+              data: { lastAppliedVaultAppRoleId: appRoleId },
+            });
+          }),
+        );
+      }
+
       await this.prisma.stackDeployment.create({
         data: {
           stackId,
@@ -574,9 +616,17 @@ export class StackReconciler {
 
   /**
    * Resolve dynamic-env values (Vault + pool-management-token) for every
-   * service that declares `dynamicEnv`. Returns per-service env overrides.
+   * service that declares `dynamicEnv`. Returns per-service env overrides
+   * plus a map of services whose per-service AppRole binding succeeded
+   * (so the caller can record `service.lastAppliedVaultAppRoleId` for the
+   * fail-closed stable-binding check on the next apply).
+   *
+   * Effective AppRole per service: `service.vaultAppRoleId ?? stack.vaultAppRoleId`.
+   * Effective `prevBoundAppRoleId` follows the same fallback so the stable-
+   * binding check compares like-for-like.
+   *
    * Services with *only* pool-management-token entries are resolved even
-   * when the stack has no Vault binding. Throws on any per-service Vault
+   * when no AppRole binding is present. Throws on any per-service Vault
    * failure so apply aborts cleanly before touching containers.
    */
   private async resolveVaultEnv(
@@ -585,13 +635,24 @@ export class StackReconciler {
       vaultFailClosed: boolean;
       lastAppliedVaultAppRoleId: string | null;
     },
+    services: Array<{
+      serviceName: string;
+      vaultAppRoleId: string | null;
+      lastAppliedVaultAppRoleId: string | null;
+    }>,
     resolvedDefinitions: Map<string, StackServiceDefinition>,
     poolTokens: Record<string, string>,
     log: Logger,
-  ): Promise<Map<string, Record<string, string>>> {
+  ): Promise<{
+    overrides: Map<string, Record<string, string>>;
+    /** serviceName → effective AppRoleId, populated only for services with their OWN binding. */
+    serviceBindingsToRecord: Map<string, string>;
+  }> {
     const overrides = new Map<string, Record<string, string>>();
-    const vaultBound = Boolean(stack.vaultAppRoleId) && vaultServicesReady();
-    const injector = vaultBound ? new VaultCredentialInjector(this.prisma) : null;
+    const serviceBindingsToRecord = new Map<string, string>();
+    const serviceByName = new Map(services.map((s) => [s.serviceName, s]));
+    const vaultReady = vaultServicesReady();
+    const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
       // Pool services never get a container at apply time — skip resolution
@@ -600,16 +661,25 @@ export class StackReconciler {
       const dynamicEnv = serviceDef.containerConfig?.dynamicEnv;
       if (!dynamicEnv) continue;
 
-      const hasVaultEntries = Object.values(dynamicEnv).some(
+      const hasAppRoleEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id',
+      );
+      const hasVaultTouchEntries = Object.values(dynamicEnv).some(
         (src) => src.kind !== 'pool-management-token',
       );
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
       );
 
-      // No Vault binding but service wants a pool-management-token — resolve
-      // those entries directly without touching Vault.
-      if (!vaultBound && hasPoolTokenEntries && !hasVaultEntries) {
+      const svcRow = serviceByName.get(serviceName) ?? {
+        vaultAppRoleId: null,
+        lastAppliedVaultAppRoleId: null,
+      };
+      const binding = resolveEffectiveVaultBinding(stack, svcRow);
+
+      // Pool-token-only entries: resolve inline without invoking Vault. Used
+      // when a stack has Pool services but no other Vault dependencies.
+      if (!hasVaultTouchEntries && hasPoolTokenEntries) {
         const values: Record<string, string> = {};
         for (const [key, src] of Object.entries(dynamicEnv)) {
           if (src.kind === 'pool-management-token') {
@@ -621,20 +691,31 @@ export class StackReconciler {
         continue;
       }
 
-      // Vault binding present — injector handles both vault-* and
-      // pool-management-token kinds (pool tokens flow through `args`).
-      if (!injector || !stack.vaultAppRoleId) continue;
+      // Anything else (vault-addr / vault-role-id / vault-wrapped-secret-id /
+      // vault-kv) goes through the injector. Vault must be ready; AppRole
+      // entries additionally require a binding (the injector enforces this).
+      if (!injector) continue;
+      if (hasAppRoleEntries && !binding.appRoleId) {
+        // Be loud rather than silent — the apply would otherwise leave the
+        // service running without the env vars it asked for.
+        throw new Error(
+          `Service "${serviceName}" declares vault-role-id or vault-wrapped-secret-id but no AppRole is bound on the service or stack`,
+        );
+      }
       try {
         const res = await injector.resolve(
           {
-            appRoleId: stack.vaultAppRoleId,
+            appRoleId: binding.appRoleId,
             failClosed: stack.vaultFailClosed,
-            prevBoundAppRoleId: stack.lastAppliedVaultAppRoleId,
+            prevBoundAppRoleId: binding.prevBoundAppRoleId,
             poolTokens,
           },
           serviceDef.containerConfig,
         );
         if (res) overrides.set(serviceName, res.values);
+        if (binding.recordPerService && binding.appRoleId) {
+          serviceBindingsToRecord.set(serviceName, binding.appRoleId);
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         log.error(
@@ -647,7 +728,7 @@ export class StackReconciler {
         );
       }
     }
-    return overrides;
+    return { overrides, serviceBindingsToRecord };
   }
 
   /**

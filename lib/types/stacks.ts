@@ -46,7 +46,14 @@ export type DynamicEnvSource =
   | { kind: 'vault-addr' }
   | { kind: 'vault-role-id' }
   | { kind: 'vault-wrapped-secret-id'; ttlSeconds?: number }
-  | { kind: 'pool-management-token'; poolService: string };
+  | { kind: 'pool-management-token'; poolService: string }
+  /**
+   * Read a single field from a Vault KV v2 path at apply time using the
+   * Mini Infra admin token. The container receives the value as a plain
+   * env var — no Vault client SDK or AppRole needed by the running app.
+   * Apply re-runs re-read; KV updates do not propagate until the next apply.
+   */
+  | { kind: 'vault-kv'; path: string; field: string };
 
 /**
  * Per-service configuration for a `Pool` service. Pools are container

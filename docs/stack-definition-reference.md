@@ -295,17 +295,18 @@ Reference note:
 
 Mini Infra resolves templates from a context that includes:
 
+- `stack.id` — the stack's database ID. Available at apply time (after instantiate), not at template publish time. Useful for services that call back into the Mini Infra API and need to identify their own stack — e.g. `MINI_INFRA_STACK_ID: '{{stack.id}}'` in a service `env`.
 - `stack.name` — the stack's logical name.
 - `stack.projectName` — the Docker project prefix. Resolves to `{envName}-{stackName}` for environment-scoped stacks and `mini-infra-{stackName}` for host-level stacks.
+- `environment.id`, `environment.name`, `environment.type`, `environment.networkType` — environment metadata. **Only available for environment-scoped stacks.** Referencing `{{environment.*}}` in a host-scoped template throws "Unresolved template variable" at apply time.
 - `services.<serviceName>.containerName` — the full Docker container name, e.g. `prod-mystack-web`.
 - `services.<serviceName>.image` — the resolved image reference, e.g. `nginx:1.25`.
-- `env.<VAR_NAME>` — static env vars aggregated from `containerConfig.env` across **all services** in definition order. If two services define the same key, the later one wins.
+- `env.<VAR_NAME>` — static container env vars aggregated from `containerConfig.env` across **all services** in definition order. If two services define the same key, the later one wins. Distinct from `environment.*` above, which carries Mini Infra environment metadata.
 - `volumes.<volumeName>` — the actual Docker volume name, `{projectName}_{volumeName}`.
 - `networks.<networkName>` — the actual Docker network name, `{projectName}_{networkName}`.
 - `params.<paramName>` — resolved parameter values.
 
 Important limits:
 
-- For numeric and boolean typed fields that support parameters, the template must be the entire value, for example `{{params.port}}`.
-- Free-form string fields can contain template expressions because service definitions are resolved recursively at apply time.
-- `configFiles[].content` is also template-resolved before being written.
+- For numeric and boolean typed fields that support parameters, the template must be the entire value and must reference `{{params.<name>}}` only. The narrow regex on these fields rejects other namespaces because they would never coerce to a number.
+- Free-form string fields (e.g. `containerConfig.env` values, `command`, `mounts.source`, `configFiles[].content`) can contain template expressions because service definitions are resolved recursively at apply time. Any of the namespaces above can be used here.

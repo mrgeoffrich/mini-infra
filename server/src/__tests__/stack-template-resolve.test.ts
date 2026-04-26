@@ -9,8 +9,10 @@ function ctx(params: Record<string, string | number | boolean> = {}) {
   return buildTemplateContext(
     { name: 'app', networks: [], volumes: [] },
     [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: {} }],
-    'prod',
-    params,
+    {
+      environment: { id: 'env-1', name: 'prod', type: 'production', networkType: 'local' },
+      params,
+    },
   );
 }
 

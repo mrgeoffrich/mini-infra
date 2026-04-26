@@ -27,7 +27,10 @@ function makeContext(): TemplateContext {
         containerConfig: {},
       },
     ],
-    'prod'
+    {
+      stackId: 'stk_abc123',
+      environment: { id: 'env_xyz', name: 'prod', type: 'production', networkType: 'internet' },
+    }
   );
 }
 
@@ -80,6 +83,35 @@ describe('resolveTemplate', () => {
 
   it('returns plain string unchanged', () => {
     expect(resolveTemplate('no variables here', ctx)).toBe('no variables here');
+  });
+
+  it('resolves {{stack.id}} when stackId provided', () => {
+    expect(resolveTemplate('id={{stack.id}}', ctx)).toBe('id=stk_abc123');
+  });
+
+  it('resolves {{environment.id}}, {{environment.name}}, {{environment.type}}, {{environment.networkType}}', () => {
+    expect(resolveTemplate('{{environment.id}}', ctx)).toBe('env_xyz');
+    expect(resolveTemplate('{{environment.name}}', ctx)).toBe('prod');
+    expect(resolveTemplate('{{environment.type}}', ctx)).toBe('production');
+    expect(resolveTemplate('{{environment.networkType}}', ctx)).toBe('internet');
+  });
+
+  it('throws when {{stack.id}} is referenced but not provided', () => {
+    const noIdCtx = buildTemplateContext(
+      { name: 'app', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: {} }],
+      {},
+    );
+    expect(() => resolveTemplate('{{stack.id}}', noIdCtx)).toThrow('Unresolved template variable');
+  });
+
+  it('throws when {{environment.*}} is referenced on a host-scoped stack (no environment)', () => {
+    const hostCtx = buildTemplateContext(
+      { name: 'app', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: {} }],
+      {},
+    );
+    expect(() => resolveTemplate('{{environment.name}}', hostCtx)).toThrow('Unresolved template variable');
   });
 });
 

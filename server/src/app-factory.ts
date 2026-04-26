@@ -77,6 +77,7 @@ import devApiKeyRoutes from "./routes/dev-api-key";
 import vaultRoutes from "./routes/vault";
 import vaultPolicyRoutes from "./routes/vault/policies";
 import vaultAppRoleRoutes from "./routes/vault/approles";
+import vaultKvRoutes from "./routes/vault/kv";
 import { listRouteMeta } from "./lib/openapi-registry";
 
 type RouteDefinition = {
@@ -181,6 +182,10 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
     { id: "vaultPolicies", path: "/api/vault/policies", name: "vaultPolicyRoutes", getRouter: () => vaultPolicyRoutes },
     { id: "vaultAppRoles", path: "/api/vault/approles", name: "vaultAppRoleRoutes", getRouter: () => vaultAppRoleRoutes },
+    // KV broker — must be mounted BEFORE the catch-all `/api/vault` router
+    // so requests to `/api/vault/kv/...` reach this router instead of the
+    // shared status/bootstrap router.
+    { id: "vaultKv", path: "/api/vault/kv", name: "vaultKvRoutes", getRouter: () => vaultKvRoutes },
     { id: "vault", path: "/api/vault", name: "vaultRoutes", getRouter: () => vaultRoutes },
     // Dev-only: exchange admin credentials for a full-admin API key. Only
     // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
