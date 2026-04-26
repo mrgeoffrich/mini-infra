@@ -28,7 +28,8 @@ import {
 } from './lib/registry.js';
 import { readEnvironmentDetails, writeMinimalEnvironmentDetails } from './lib/env-details.js';
 import { isColimaRunning, startColima } from './lib/colima.js';
-import { seed } from './lib/seeder.js';
+import { seed, ensureVaultUnlocked } from './lib/seeder.js';
+import { ApiClient } from './lib/api.js';
 
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
 const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
@@ -517,6 +518,21 @@ async function main(): Promise<void> {
       api_key: details?.admin.apiKey,
       description: shortDesc,
     });
+
+    // Server restarts re-lock the operator passphrase; re-unlock here so admin
+    // operations (publish policy, mint AppRole secret-id) keep working without
+    // a manual visit to /vault. Only attempt if we have an API key from a
+    // prior seed.
+    if (details?.admin.apiKey) {
+      const api = new ApiClient(`http://localhost:${uiPort}`, details.admin.apiKey);
+      try {
+        await ensureVaultUnlocked(api);
+      } catch (err) {
+        logWarn(
+          `Vault unlock attempt failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
   }
 
   console.log('');

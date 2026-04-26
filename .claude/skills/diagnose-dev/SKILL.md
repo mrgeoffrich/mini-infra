@@ -157,6 +157,24 @@ docker logs mini-infra-dev --tail 50
 docker exec mini-infra-dev ps aux
 ```
 
+#### Vault locked? re-unlock
+
+The dev seeder bootstraps the managed Vault with a fixed passphrase and unlocks it on every `worktree_start.sh` run. If you see `permission denied` from Vault, `Operator passphrase must be unlocked`, or `/api/vault/status` reporting `passphrase.state: locked`, the in-memory passphrase has dropped (typically after an in-place container restart). Re-unlock without a UI round-trip:
+
+```bash
+API_KEY=$(xmllint --xpath 'string(//admin/apiKey)' environment-details.xml)
+PASSPHRASE=$(xmllint --xpath 'string(//environment/admin/vaultPassphrase)' environment-details.xml)
+curl -s -X POST -H "x-api-key: $API_KEY" -H 'content-type: application/json' \
+  -d "{\"passphrase\":\"$PASSPHRASE\"}" \
+  "$MINI_INFRA_URL/api/vault/passphrase/unlock"
+
+# Confirm
+curl -s -H "x-api-key: $API_KEY" "$MINI_INFRA_URL/api/vault/status" \
+  | jq '.data | {reachable, sealState, passphrase: .passphrase.state}'
+```
+
+If `<vaultPassphrase>` is missing from the XML (older worktrees pre-auto-unlock), re-run `deployment/development/worktree_start.sh` — the seeder will repopulate it.
+
 #### Using Playwright for UI issues
 
 If the issue is visual or involves user interaction, load the Playwright CLI skill (`.claude/skills/playwright-cli/SKILL.md`) and use a persistent headed browser session to reproduce and inspect the problem:
