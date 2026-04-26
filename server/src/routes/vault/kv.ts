@@ -7,15 +7,51 @@ import express, {
 import { z } from "zod";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { getLogger } from "../../lib/logger-factory";
+import { hasPermission, type UserEventType } from "@mini-infra/types";
 import {
   getVaultKVService,
   VaultKVError,
   validateKvPath,
 } from "../../services/vault/vault-kv-service";
+import { UserEventService } from "../../services/user-events/user-event-service";
 
 const log = getLogger("platform", "vault-kv-routes");
 
 const router = express.Router();
+
+// Audit-trail writes (queryable in UI; survives log rotation). Keep failures
+// non-fatal — losing the audit row should never break the operation itself.
+async function recordKvAuditEvent(
+  req: Request,
+  eventType: UserEventType,
+  path: string,
+  status: 'completed' | 'failed',
+  metadata: Record<string, unknown>,
+  errorMessage?: string,
+): Promise<void> {
+  try {
+    const user = getAuthenticatedUser(req);
+    const apiKeyId = req.apiKey?.id ?? null;
+    await new UserEventService().createEvent({
+      eventType,
+      eventCategory: 'security',
+      eventName: `KV ${eventType.replace('vault_kv_', '')}: ${path}`,
+      userId: user?.id,
+      triggeredBy: req.apiKey ? 'api' : 'manual',
+      status,
+      progress: status === 'completed' ? 100 : 0,
+      resourceType: 'system',
+      resourceName: `vault-kv:${path}`,
+      description: errorMessage ?? `Brokered Vault KV ${eventType.replace('vault_kv_', '')}`,
+      metadata: { path, apiKeyId, ...metadata },
+    });
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err), eventType, path },
+      "Failed to record KV audit event (non-fatal)",
+    );
+  }
+}
 
 // ── Helpers ─────────────────────────────────────────────
 
@@ -47,9 +83,38 @@ function parsePath(req: Request, res: Response): string | null {
   }
 }
 
+/**
+ * Translate a `VaultKVError` code into the HTTP status the broker should
+ * surface. Transient/upstream issues become 5xx so clients retry; client
+ * errors (bad path, bad data) stay 4xx so they don't.
+ */
+function statusForKvErrorCode(code: string, fallback: number | undefined): number {
+  switch (code) {
+    case "invalid_path":
+    case "invalid_field":
+    case "invalid_data":
+      return 400;
+    case "vault_permission_denied":
+      return 403;
+    case "path_not_found":
+    case "field_not_found":
+      return 404;
+    case "vault_rate_limited":
+      return 429;
+    case "vault_not_ready":
+    case "vault_unavailable":
+    case "vault_sealed":
+    case "vault_standby":
+      return 503;
+    case "vault_error":
+    default:
+      return fallback ?? 500;
+  }
+}
+
 function handleVaultKvError(res: Response, err: unknown, action: string): void {
   if (err instanceof VaultKVError) {
-    const status = err.status ?? (err.code === "vault_not_ready" || err.code === "vault_unavailable" ? 503 : 500);
+    const status = statusForKvErrorCode(err.code, err.status);
     log.warn({ err: err.message, code: err.code, action }, "Vault KV operation failed");
     res.status(status).json({ success: false, message: err.message, code: err.code });
     return;
@@ -109,14 +174,18 @@ router.post(
         details: parsed.error.issues,
       });
     }
+    const fields = Object.keys(parsed.data.data);
     try {
       await getVaultKVService().write(path, parsed.data.data);
       log.info(
-        { path, userId: getAuthenticatedUser(req)?.id ?? null, fields: Object.keys(parsed.data.data) },
+        { path, userId: getAuthenticatedUser(req)?.id ?? null, fields },
         "KV write",
       );
+      await recordKvAuditEvent(req, "vault_kv_write", path, "completed", { fields });
       res.json({ success: true, data: { path } });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await recordKvAuditEvent(req, "vault_kv_write", path, "failed", { fields }, msg);
       handleVaultKvError(res, err, "write");
     }
   }) as RequestHandler,
@@ -140,14 +209,18 @@ router.patch(
         details: parsed.error.issues,
       });
     }
+    const fields = Object.keys(parsed.data.data);
     try {
       await getVaultKVService().patch(path, parsed.data.data);
       log.info(
-        { path, userId: getAuthenticatedUser(req)?.id ?? null, fields: Object.keys(parsed.data.data) },
+        { path, userId: getAuthenticatedUser(req)?.id ?? null, fields },
         "KV patch",
       );
+      await recordKvAuditEvent(req, "vault_kv_patch", path, "completed", { fields });
       res.json({ success: true, data: { path } });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await recordKvAuditEvent(req, "vault_kv_patch", path, "failed", { fields }, msg);
       handleVaultKvError(res, err, "patch");
     }
   }) as RequestHandler,
@@ -156,6 +229,11 @@ router.patch(
 /**
  * Delete a KV path. Soft-delete by default (KV v2 preserves history); pass
  * `?permanent=true` to wipe all versions and metadata.
+ *
+ * Permission gate is two-stage: the route requires `vault-kv:write` for any
+ * delete; if `?permanent=true`, the handler additionally checks
+ * `vault-kv:destroy`. Session (UI) users bypass the destroy check because
+ * they always have full access (see `requirePermission` middleware).
  */
 router.delete(
   "/*splat",
@@ -164,14 +242,29 @@ router.delete(
     const path = parsePath(req, res);
     if (path === null) return;
     const permanent = req.query.permanent === "true" || req.query.permanent === "1";
+    if (permanent && req.apiKey && !hasPermission(req.apiKey.permissions, "vault-kv:destroy")) {
+      log.warn(
+        { keyId: req.apiKey.id, path },
+        "API key permission denied for vault-kv:destroy",
+      );
+      return res.status(403).json({
+        success: false,
+        message: "?permanent=true requires the vault-kv:destroy scope",
+        code: "vault_destroy_forbidden",
+        requiredPermissions: ["vault-kv:destroy"],
+      });
+    }
     try {
       await getVaultKVService().delete(path, { permanent });
       log.info(
         { path, permanent, userId: getAuthenticatedUser(req)?.id ?? null },
         "KV delete",
       );
+      await recordKvAuditEvent(req, "vault_kv_delete", path, "completed", { permanent });
       res.json({ success: true, data: { path, permanent } });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await recordKvAuditEvent(req, "vault_kv_delete", path, "failed", { permanent }, msg);
       handleVaultKvError(res, err, "delete");
     }
   }) as RequestHandler,

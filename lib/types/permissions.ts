@@ -490,7 +490,14 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         domain: "vault-kv",
         action: "write",
         label: "Write KV Secrets",
-        description: "Write, patch, and delete values at Vault KV v2 paths via the broker",
+        description: "Write, patch, and soft-delete values at Vault KV v2 paths via the broker (history preserved on delete)",
+      },
+      {
+        scope: "vault-kv:destroy",
+        domain: "vault-kv",
+        action: "write",
+        label: "Permanently Destroy KV Secrets",
+        description: "Wipe all versions and metadata for a KV path (?permanent=true on DELETE). Irrecoverable — kept distinct from vault-kv:write so a 'rotation editor' role can patch but not destroy.",
       },
     ],
   },
@@ -564,7 +571,8 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "events:write",
       // Stacks routinely seed shared KV secrets that their services consume
       // via the vault-kv dynamicEnv resolver. Granting read alongside write
-      // matches the implicit pattern (write→read).
+      // matches the implicit pattern (write→read). Destroy is intentionally
+      // NOT in this preset — wiping all versions of a secret is admin-only.
       "vault-kv:read",
       "vault-kv:write",
     ],

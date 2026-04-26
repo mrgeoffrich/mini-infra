@@ -163,6 +163,18 @@ export class VaultCredentialInjector {
     };
   }
 
+  /**
+   * Read each `vault-kv` entry's value via the admin-token broker. The
+   * returned values are merged into the in-memory `resolvedEnvOverrides`
+   * Map and handed to Docker's `createContainer` Env field at apply.
+   *
+   * Never persisted: stack snapshots / diffs use the unresolved template
+   * only, so KV values can't leak to the DB or `lastAppliedSnapshot`. Never
+   * logged: no log site stringifies `containerConfig.env` after merging,
+   * and Docker daemon errors don't echo Env contents. If you add a new log
+   * site that includes `containerConfig`, redact `env` and `dynamicEnv` —
+   * the global pino redact patterns only match known auth-key heuristics.
+   */
   private async resolveKvEntries(
     dynamicEnv: Record<string, DynamicEnvSource>,
   ): Promise<Record<string, string>> {

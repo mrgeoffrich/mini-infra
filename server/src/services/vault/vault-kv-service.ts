@@ -135,17 +135,40 @@ export class VaultKVService {
   }
 }
 
+/**
+ * Map a low-level Vault HTTP error into a structured KV error with a code
+ * the route handler can translate to a meaningful HTTP status. Vault is
+ * sometimes specific (`sealed`, `standby`, `permission denied`) and
+ * sometimes generic — we lean on the response status and the well-known
+ * error strings rather than fragile regex on the body.
+ */
 function wrapVaultError(err: unknown, op: string, path: string): VaultKVError {
   if (err instanceof VaultKVError) return err;
   if (err instanceof VaultHttpError) {
+    const code = classifyVaultHttpError(err);
     return new VaultKVError(
       `Vault KV ${op} failed for '${path}': ${err.message}`,
-      "vault_error",
+      code,
       err.status,
     );
   }
   const msg = err instanceof Error ? err.message : String(err);
   return new VaultKVError(`Vault KV ${op} failed for '${path}': ${msg}`, "vault_error");
+}
+
+function classifyVaultHttpError(err: VaultHttpError): string {
+  // 503 from Vault means sealed or standby — both are transient and the
+  // caller should retry once Mini Infra reconnects.
+  if (err.status === 503) {
+    if (err.errors.some((e) => /sealed/i.test(e))) return "vault_sealed";
+    if (err.errors.some((e) => /standby/i.test(e))) return "vault_standby";
+    return "vault_unavailable";
+  }
+  if (err.status === 429) return "vault_rate_limited";
+  if (err.status === 412) return "vault_standby"; // Vault sends 412 for read-after-write on a standby node
+  if (err.status === 403) return "vault_permission_denied";
+  if (err.status === 0) return "vault_unavailable"; // network-level failure
+  return "vault_error";
 }
 
 let kvServiceSingleton: VaultKVService | null = null;
