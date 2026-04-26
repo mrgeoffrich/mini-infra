@@ -127,6 +127,50 @@ export interface StackTemplateInfo {
   linkedStacks?: StackTemplateLinkedStack[];
 }
 
+// Input declarations that template authors include in a template draft.
+// Sensitive values are encrypted at rest on the Stack row when instantiated.
+export interface TemplateInputDeclaration {
+  name: string;
+  description?: string;
+  sensitive: boolean;
+  required: boolean;
+  rotateOnUpgrade: boolean;
+}
+
+// Vault dependency surface declared by a template author.
+export interface TemplateVaultPolicy {
+  name: string;
+  body: string;
+  scope: 'host' | 'environment' | 'stack';
+  description?: string;
+}
+
+export interface TemplateVaultAppRole {
+  name: string;
+  policy: string;
+  scope: 'host' | 'environment' | 'stack';
+  tokenPeriod?: string;
+  tokenTtl?: string;
+  tokenMaxTtl?: string;
+  secretIdNumUses?: number;
+  secretIdTtl?: string;
+}
+
+export type TemplateKvFieldValue =
+  | { fromInput: string }
+  | { value: string };
+
+export interface TemplateVaultKv {
+  path: string;
+  fields: Record<string, TemplateKvFieldValue>;
+}
+
+export interface TemplateVaultSection {
+  policies?: TemplateVaultPolicy[];
+  appRoles?: TemplateVaultAppRole[];
+  kv?: TemplateVaultKv[];
+}
+
 export interface StackTemplateVersionInfo {
   id: string;
   templateId: string;
@@ -147,6 +191,8 @@ export interface StackTemplateVersionInfo {
   serviceTypes?: StackServiceType[];
   services?: StackTemplateServiceInfo[];
   configFiles?: StackTemplateConfigFileInfo[];
+  inputs?: TemplateInputDeclaration[];
+  vault?: TemplateVaultSection;
 }
 
 export interface StackTemplateServiceInfo {
@@ -164,6 +210,8 @@ export interface StackTemplateServiceInfo {
   adoptedContainer?: AdoptedContainerRef;
   poolConfig?: PoolConfig | null;
   vaultAppRoleId?: string | null;
+  /** Symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time (PR 2). */
+  vaultAppRoleRef?: string | null;
 }
 
 export interface StackTemplateConfigFileInfo {
@@ -227,6 +275,8 @@ export interface DraftVersionInput {
   services: StackServiceDefinition[];
   configFiles?: StackTemplateConfigFileInput[];
   notes?: string;
+  inputs?: TemplateInputDeclaration[];
+  vault?: TemplateVaultSection;
 }
 
 export interface PublishDraftRequest {
@@ -238,6 +288,7 @@ export interface CreateStackFromTemplateRequest {
   name?: string;
   environmentId?: string;
   parameterValues?: Record<string, StackParameterValue>;
+  inputValues?: Record<string, string>;
 }
 
 // API responses
