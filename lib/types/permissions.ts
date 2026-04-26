@@ -26,7 +26,12 @@ export type PermissionDomain =
   | "vault"
   // Vault KV broker is a sub-domain so write→read implication works without
   // entangling KV scopes with the broader vault:write (policies/AppRoles).
-  | "vault-kv";
+  | "vault-kv"
+  // Governs whether an API key may embed vault sections (policies/appRoles/kv)
+  // inside a stack template draft. Separate from stacks:write so template
+  // authors can build templates without needing broad Vault admin rights, while
+  // Vault sections still require an explicit elevated scope.
+  | "template-vault";
 
 /** Permission actions */
 export type PermissionAction = "read" | "write" | "use";
@@ -474,6 +479,21 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    domain: "template-vault",
+    label: "Template Vault Sections",
+    description: "Embed Vault policies, AppRoles, and KV sections inside stack template drafts",
+    permissions: [
+      {
+        scope: "template-vault:write",
+        domain: "template-vault",
+        action: "write",
+        label: "Author Template Vault Sections",
+        description:
+          "Include vault.policies, vault.appRoles, or vault.kv inside a template draft. Still requires stacks:write for the draft itself.",
+      },
+    ],
+  },
+  {
     domain: "vault-kv",
     label: "Vault KV (Secrets)",
     description: "Brokered Vault KV v2 secret reads and writes via the Mini Infra admin token",
@@ -575,6 +595,9 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       // NOT in this preset — wiping all versions of a secret is admin-only.
       "vault-kv:read",
       "vault-kv:write",
+      // Stack managers author templates — granting vault section authoring
+      // alongside stacks:write is the natural pairing.
+      "template-vault:write",
     ],
   },
   {

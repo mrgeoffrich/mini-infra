@@ -11,6 +11,12 @@ import {
   stackResourceOutputSchema,
   stackResourceInputSchema,
 } from "./schemas";
+import {
+  templateInputDeclSchema,
+  templateVaultPolicySchema,
+  templateVaultAppRoleSchema,
+  templateVaultKvSchema,
+} from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
 
@@ -45,6 +51,9 @@ const templateServiceSchema = z.object({
   dependsOn: z.array(z.string()),
   order: z.number().int().min(0),
   routing: stackServiceRoutingSchema.optional(),
+  // Symbolic reference to a vault.appRoles[].name declared in this template;
+  // resolved to a concrete vaultAppRoleId at apply time in PR 2.
+  vaultAppRoleRef: z.string().min(1).optional(),
 }).refine(
   (data) => {
     if (data.serviceType === "StatelessWeb" && !data.routing) return false;
@@ -54,6 +63,16 @@ const templateServiceSchema = z.object({
   },
   { message: "StatelessWeb/AdoptedWeb services must have routing; Stateful services must not have routing" }
 );
+
+// =====================
+// Vault Section Schema (composed from canonical sub-schemas)
+// =====================
+
+const templateVaultSchema = z.object({
+  policies: z.array(templateVaultPolicySchema).optional(),
+  appRoles: z.array(templateVaultAppRoleSchema).optional(),
+  kv: z.array(templateVaultKvSchema).optional(),
+});
 
 const postInstallActionSchema = z.object({
   type: z.string().min(1),
@@ -76,9 +95,102 @@ export const templateFileSchema = z.object({
   services: z.array(templateServiceSchema),
   configFiles: z.array(templateConfigFileSchema).optional(),
   postInstallActions: z.array(postInstallActionSchema).optional(),
+  inputs: z.array(templateInputDeclSchema).optional(),
+  vault: templateVaultSchema.optional(),
+}).superRefine((data, ctx) => {
+  const inputNames = new Set((data.inputs ?? []).map((i) => i.name));
+  const policyNames = new Set((data.vault?.policies ?? []).map((p) => p.name));
+  const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
+
+  // Unique input names
+  const seenInputNames = new Set<string>();
+  for (const input of data.inputs ?? []) {
+    if (seenInputNames.has(input.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate input name: '${input.name}'`, path: ["inputs"] });
+    }
+    seenInputNames.add(input.name);
+  }
+
+  // Unique policy names
+  const seenPolicyNames = new Set<string>();
+  for (const policy of data.vault?.policies ?? []) {
+    if (seenPolicyNames.has(policy.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate policy name: '${policy.name}'`, path: ["vault", "policies"] });
+    }
+    seenPolicyNames.add(policy.name);
+  }
+
+  // Unique appRole names
+  const seenAppRoleNames = new Set<string>();
+  for (const appRole of data.vault?.appRoles ?? []) {
+    if (seenAppRoleNames.has(appRole.name)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate appRole name: '${appRole.name}'`, path: ["vault", "appRoles"] });
+    }
+    seenAppRoleNames.add(appRole.name);
+  }
+
+  // Unique KV paths
+  const seenKvPaths = new Set<string>();
+  for (const kv of data.vault?.kv ?? []) {
+    if (seenKvPaths.has(kv.path)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate KV path: '${kv.path}'`, path: ["vault", "kv"] });
+    }
+    seenKvPaths.add(kv.path);
+  }
+
+  // AppRole.policy refs must resolve to a policy name in this template
+  for (const appRole of data.vault?.appRoles ?? []) {
+    if (!policyNames.has(appRole.policy)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `AppRole '${appRole.name}' references unknown policy '${appRole.policy}' (defined policies: ${formatNameSet(policyNames)})`,
+        path: ["vault", "appRoles"],
+      });
+    }
+  }
+
+  // KV fromInput refs must resolve to an input name in this template
+  for (const kv of data.vault?.kv ?? []) {
+    for (const [field, val] of Object.entries(kv.fields)) {
+      if ("fromInput" in val) {
+        if (!inputNames.has(val.fromInput)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `KV path '${kv.path}' field '${field}' references unknown input '${val.fromInput}' (defined inputs: ${formatNameSet(inputNames)})`,
+            path: ["vault", "kv"],
+          });
+        }
+      }
+    }
+  }
+
+  // services[].vaultAppRoleRef must resolve to an appRole name in this template
+  for (const svc of data.services) {
+    if (svc.vaultAppRoleRef !== undefined && !appRoleNames.has(svc.vaultAppRoleRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
+        path: ["services"],
+      });
+    }
+  }
+
 });
 
 export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
+
+export type TemplateInput = z.infer<typeof templateInputDeclSchema>;
+export type TemplateVaultPolicy = z.infer<typeof templateVaultPolicySchema>;
+export type TemplateVaultAppRole = z.infer<typeof templateVaultAppRoleSchema>;
+export type TemplateVaultKv = z.infer<typeof templateVaultKvSchema>;
+export type TemplateVault = z.infer<typeof templateVaultSchema>;
+
+function formatNameSet(set: Set<string>): string {
+  if (set.size === 0) return "none defined";
+  return Array.from(set)
+    .map((n) => `'${n}'`)
+    .join(", ");
+}
 
 // =====================
 // Loader
@@ -97,6 +209,8 @@ export interface LoadedTemplate {
   category?: string;
   description?: string;
   postInstallActions?: PostInstallAction[];
+  inputs?: TemplateInput[];
+  vault?: TemplateVault;
   definition: {
     name: string;
     description?: string;
@@ -117,6 +231,7 @@ export interface LoadedTemplate {
       dependsOn: string[];
       order: number;
       routing?: z.infer<typeof stackServiceRoutingSchema>;
+      vaultAppRoleRef?: string;
     }>;
   };
   configFiles: StackTemplateConfigFileInput[];
@@ -234,6 +349,7 @@ export function loadTemplateFromObject(
       dependsOn: svc.dependsOn,
       order: svc.order,
       routing: svc.routing,
+      vaultAppRoleRef: svc.vaultAppRoleRef,
     };
   });
 
@@ -246,6 +362,8 @@ export function loadTemplateFromObject(
     category: data.category,
     description: data.description,
     postInstallActions: data.postInstallActions,
+    inputs: data.inputs,
+    vault: data.vault,
     definition: {
       name: data.name,
       description: data.description,

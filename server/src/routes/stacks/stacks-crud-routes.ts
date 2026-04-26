@@ -15,6 +15,7 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
+import { encryptInputValues, decryptInputValues } from '../../services/stacks/stack-input-values-service';
 import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
@@ -262,11 +263,28 @@ router.put(
       dnsRecords,
       tunnelIngress,
       vaultAppRoleId,
+      inputValues,
       ...fields
     } = parsed.data;
 
+    // Merge supplied input values with stored ones. PR 2 will add mergeForUpgrade
+    // enforcement once template declarations are loaded at apply time.
+    let encryptedInputValues: string | undefined;
+    if (inputValues !== undefined) {
+      const stored = existing.encryptedInputValues
+        ? (() => {
+            try { return decryptInputValues(existing.encryptedInputValues); }
+            catch { return {}; }
+          })()
+        : {};
+      if (Object.keys(inputValues).length > 0 || Object.keys(stored).length > 0) {
+        encryptedInputValues = encryptInputValues({ ...stored, ...inputValues });
+      }
+    }
+
     const updateData: Prisma.StackUpdateInput = {
       ...fields,
+      ...(encryptedInputValues !== undefined ? { encryptedInputValues } : {}),
       networks: fields.networks ? (fields.networks as unknown as Prisma.InputJsonValue) : undefined,
       volumes: fields.volumes ? (fields.volumes as unknown as Prisma.InputJsonValue) : undefined,
       parameters: parameters ? (parameters as unknown as Prisma.InputJsonValue) : undefined,

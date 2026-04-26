@@ -306,6 +306,8 @@ export interface StackInfo {
   createdAt: string;
   updatedAt: string;
   services?: StackServiceInfo[];
+  /** Names of input values that have been supplied and encrypted at rest. Never the values themselves. */
+  inputValueKeys?: string[];
 }
 
 export interface StackServiceInfo {

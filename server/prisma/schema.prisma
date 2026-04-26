@@ -1088,6 +1088,10 @@ model Stack {
   vaultFailClosed             Boolean       @default(true)
   lastAppliedVaultAppRoleId   String?
 
+  // Phase 2 — AES-256-GCM encrypted JSON blob of operator-supplied input values.
+  // Never returned via API; GET /stacks/:id returns inputValueKeys (names only).
+  encryptedInputValues        String?
+
   // Relations
   services             StackService[]
   deployments          StackDeployment[]
@@ -1357,6 +1361,13 @@ model StackTemplateVersion {
   createdAt              DateTime                    @default(now())
   createdById            String?
 
+  // Phase 2 — Vault dependency surface declared by the template author.
+  // Stored as JSON blobs; validated at draft-save and publish time.
+  inputs                 Json?                       // TemplateInputDeclaration[] — operator-supplied values
+  vaultPolicies          Json?                       // TemplateVaultPolicy[]
+  vaultAppRoles          Json?                       // TemplateVaultAppRole[]
+  vaultKv                Json?                       // TemplateVaultKv[]
+
   // Relations
   services               StackTemplateService[]
   configFiles            StackTemplateConfigFile[]
@@ -1387,8 +1398,10 @@ model StackTemplateService {
   routing         Json?                 // StackServiceRouting | null
   adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
   poolConfig      Json?                 // PoolConfig (required for Pool services)
-  vaultAppRoleId  String?               // Optional per-service Vault AppRole binding
+  vaultAppRoleId  String?               // Optional per-service Vault AppRole binding (resolved concrete ID)
   vaultAppRole    VaultAppRole?         @relation("TemplateServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
+  // Phase 2 — symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time.
+  vaultAppRoleRef String?
 
   @@unique([versionId, serviceName])
   @@index([versionId])
