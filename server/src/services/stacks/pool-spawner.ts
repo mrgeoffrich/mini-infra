@@ -3,11 +3,19 @@ import type {
   PoolConfig,
   StackContainerConfig,
   StackNetwork,
+  StackParameterDefinition,
+  StackParameterValue,
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { getLogger } from '../../lib/logger-factory';
+import {
+  buildStackTemplateContext,
+  mergeParameterValues,
+  resolveServiceConfigs,
+  synthesiseDefaultNetworkIfNeeded,
+} from './utils';
 
 const log = getLogger('stacks', 'pool-spawner');
 
@@ -82,17 +90,35 @@ export async function spawnPoolInstance(
 ): Promise<PoolSpawnResult> {
   const stack = await prisma.stack.findUnique({
     where: { id: ctx.stackId },
-    include: { environment: true },
+    include: { environment: true, services: { orderBy: { order: 'asc' } } },
   });
   if (!stack) return { success: false, error: 'Stack not found' };
 
-  const service = await prisma.stackService.findFirst({
-    where: { stackId: ctx.stackId, serviceName: ctx.serviceName, serviceType: 'Pool' },
-  });
+  const service = stack.services.find(
+    (s) => s.serviceName === ctx.serviceName && s.serviceType === 'Pool',
+  );
   if (!service) return { success: false, error: 'Pool service not found' };
 
-  const containerConfig = service.containerConfig as unknown as StackContainerConfig;
-  const poolConfig = service.poolConfig as unknown as PoolConfig | null;
+  // Resolve `{{params.X}}`, `{{volumes.X}}`, etc. on the service definition —
+  // mirrors what stack-reconciler does on apply. Pool services were skipped
+  // here previously, so `dockerImage`/`dockerTag` and any templated
+  // `containerConfig` field reached Docker as the raw template string (and
+  // `docker pull` rejects them as invalid references).
+  const params = mergeParameterValues(
+    (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+    (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {},
+  );
+  const templateContext = buildStackTemplateContext(stack, params);
+  const { resolvedDefinitions } = resolveServiceConfigs(stack.services, templateContext);
+  const resolvedDef = resolvedDefinitions.get(ctx.serviceName);
+  if (!resolvedDef) {
+    return { success: false, error: 'Pool service missing from resolved definitions' };
+  }
+
+  const dockerImage = resolvedDef.dockerImage;
+  const dockerTag = resolvedDef.dockerTag;
+  const containerConfig = resolvedDef.containerConfig as StackContainerConfig;
+  const poolConfig = (resolvedDef.poolConfig ?? null) as PoolConfig | null;
   if (!poolConfig) return { success: false, error: 'Pool service missing poolConfig' };
 
   const projectName = stack.environment
@@ -145,15 +171,19 @@ export async function spawnPoolInstance(
 
   // Pull image (with registry auth resolution).
   try {
-    log.info({ image: service.dockerImage, tag: service.dockerTag, containerName }, 'Pulling image for pool spawn');
-    await dockerExecutor.pullImageWithAutoAuth(`${service.dockerImage}:${service.dockerTag}`);
+    log.info({ image: dockerImage, tag: dockerTag, containerName }, 'Pulling image for pool spawn');
+    await dockerExecutor.pullImageWithAutoAuth(`${dockerImage}:${dockerTag}`);
   } catch (err) {
     return { success: false, error: `Image pull failed: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  // Build the network list: stack-owned networks prefixed with projectName.
-  const stackNetworks = (stack.networks as unknown as StackNetwork[]) ?? [];
-  const networkNames = stackNetworks.map((n) => `${projectName}_${n.name}`);
+  // Build the network list. Mirror stack-reconciler: declared networks plus
+  // the synthesised `<project>_default` for multi-service stacks. Without
+  // the synthesis call, pool containers attach only to the vault network +
+  // bridge and can't resolve sibling stack services by name (e.g. `nats`).
+  const declaredNetworks = (stack.networks as unknown as StackNetwork[]) ?? [];
+  const networks = synthesiseDefaultNetworkIfNeeded(declaredNetworks, stack.services);
+  const networkNames = networks.map((n) => `${projectName}_${n.name}`);
 
   // Labels that match static stack containers, plus pool-instance markers.
   const labels: Record<string, string> = {
@@ -217,7 +247,7 @@ export async function spawnPoolInstance(
   let containerId: string;
   try {
     const container = await dockerExecutor.createLongRunningContainer({
-      image: `${service.dockerImage}:${service.dockerTag}`,
+      image: `${dockerImage}:${dockerTag}`,
       name: containerName,
       projectName,
       serviceName: ctx.serviceName,
@@ -257,17 +287,33 @@ export async function spawnPoolInstance(
     }
   }
 
-  // Vault network when a binding is in play.
+  // Vault network when a binding is in play. Resolve the actual docker
+  // network name from `infraResource` rather than hardcoding it — vault
+  // resource networks are named `mini-infra-vault` (host scope) or
+  // `<env>-vault` (environment scope), never `mini-infra-vault-net`.
   const needsVaultNet = effectiveAppRoleId && Object.keys(vaultEnv).length > 0;
   if (needsVaultNet) {
-    const docker = dockerExecutor.getDockerClient();
-    try {
-      await docker.getNetwork('mini-infra-vault-net').connect({ Container: containerId });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/already exists/i.test(msg)) {
-        log.warn({ containerId, err: msg }, 'Failed to attach vault network (non-fatal)');
+    const vaultResource = await prisma.infraResource.findFirst({
+      where: {
+        type: 'docker-network',
+        purpose: 'vault',
+        ...(stack.environmentId
+          ? { environmentId: stack.environmentId, scope: 'environment' }
+          : { scope: 'host', environmentId: null }),
+      },
+    });
+    if (vaultResource) {
+      const docker = dockerExecutor.getDockerClient();
+      try {
+        await docker.getNetwork(vaultResource.name).connect({ Container: containerId });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/already exists/i.test(msg)) {
+          log.warn({ containerId, network: vaultResource.name, err: msg }, 'Failed to attach vault network (non-fatal)');
+        }
       }
+    } else {
+      log.warn({ containerId, stackId: ctx.stackId }, 'Vault InfraResource not found; skipping vault network attach');
     }
   }
 
