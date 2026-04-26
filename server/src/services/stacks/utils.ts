@@ -14,6 +14,7 @@ import type {
 import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
 import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
+import { decryptInputValues } from './stack-input-values-service';
 
 /**
  * Loose shape of a Prisma stack record extended with optional relations.
@@ -34,6 +35,7 @@ type SerializableStack = {
   createdAt: Date;
   updatedAt: Date;
   services?: SerializableService[];
+  encryptedInputValues?: string | null;
   [key: string]: unknown;
 };
 
@@ -45,10 +47,27 @@ type SerializableService = {
 
 /**
  * Serialize a Prisma stack (with Date objects) to the API response shape (ISO strings).
+ *
+ * encryptedInputValues is always stripped from the output — the ciphertext blob
+ * must never leave the server. inputValueKeys (the set of stored input names) is
+ * added instead so callers can tell which inputs have been supplied without
+ * seeing the values.
  */
 export function serializeStack(stack: SerializableStack): StackInfo {
+  let inputValueKeys: string[] | undefined;
+  if (stack.encryptedInputValues) {
+    try {
+      inputValueKeys = Object.keys(decryptInputValues(stack.encryptedInputValues));
+    } catch {
+      inputValueKeys = [];
+    }
+  }
+
+  const { encryptedInputValues: _stripped, ...rest } = stack;
+  void _stripped;
+
   return {
-    ...stack,
+    ...rest,
     parameters: stack.parameters ?? [],
     parameterValues: stack.parameterValues ?? {},
     resourceOutputs: stack.resourceOutputs ?? [],
@@ -63,6 +82,7 @@ export function serializeStack(stack: SerializableStack): StackInfo {
     createdAt: stack.createdAt.toISOString(),
     updatedAt: stack.updatedAt.toISOString(),
     services: stack.services?.map(serializeService),
+    ...(inputValueKeys !== undefined ? { inputValueKeys } : {}),
   } as StackInfo;
 }
 

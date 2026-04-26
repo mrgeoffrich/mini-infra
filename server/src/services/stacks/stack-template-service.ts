@@ -30,7 +30,7 @@ import {
   parameterNamesFromDefinitions,
   validateTemplateSubstitutions,
 } from "./template-substitution-validator";
-import { encryptInputValues, decryptInputValues } from "./stack-input-values-service";
+import { encryptInputValues } from "./stack-input-values-service";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -1008,7 +1008,7 @@ export class StackTemplateService {
       },
     });
 
-    return serializeStackWithInputKeys(stack);
+    return serializeStack(stack);
   }
 
   // =====================
@@ -1192,29 +1192,6 @@ function buildVaultSection(version: Record<string, unknown>): StackTemplateVersi
   };
 }
 
-/**
- * Serialize a stack record to the API shape, adding inputValueKeys (the set of
- * input names that have encrypted values stored) while stripping the raw
- * encryptedInputValues blob. Never returns decrypted values.
- */
-function serializeStackWithInputKeys(stack: { encryptedInputValues?: string | null; [key: string]: unknown }): StackInfo {
-  const base = serializeStack(stack as Parameters<typeof serializeStack>[0]);
-  let inputValueKeys: string[] | undefined;
-  if (stack.encryptedInputValues) {
-    try {
-      inputValueKeys = Object.keys(decryptInputValues(stack.encryptedInputValues));
-    } catch {
-      inputValueKeys = [];
-    }
-  }
-  // Strip the encrypted blob — never send it to callers.
-  const result = { ...base };
-  delete (result as Record<string, unknown>)['encryptedInputValues'];
-  if (inputValueKeys !== undefined) {
-    result.inputValueKeys = inputValueKeys;
-  }
-  return result;
-}
 
 /**
  * Convert a config file input to a Prisma create shape for StackTemplateConfigFile.

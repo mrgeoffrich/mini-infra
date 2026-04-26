@@ -15,29 +15,7 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
-import { decryptInputValues, encryptInputValues, mergeForUpgrade } from '../../services/stacks/stack-input-values-service';
-
-/**
- * Serialize a stack for an API response: convert dates, add inputValueKeys,
- * and strip the encryptedInputValues blob (never returned to callers).
- */
-function serializeStackResponse(stack: Parameters<typeof serializeStack>[0] & { encryptedInputValues?: string | null }): ReturnType<typeof serializeStack> {
-  const base = serializeStack(stack);
-  let inputValueKeys: string[] | undefined;
-  if (stack.encryptedInputValues) {
-    try {
-      inputValueKeys = Object.keys(decryptInputValues(stack.encryptedInputValues));
-    } catch {
-      inputValueKeys = [];
-    }
-  }
-  const result = { ...base };
-  delete (result as Record<string, unknown>)['encryptedInputValues'];
-  if (inputValueKeys !== undefined) {
-    result.inputValueKeys = inputValueKeys;
-  }
-  return result;
-}
+import { encryptInputValues, mergeForUpgrade } from '../../services/stacks/stack-input-values-service';
 import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
@@ -84,7 +62,7 @@ router.get(
       orderBy: { name: 'asc' },
     });
 
-    res.json({ success: true, data: stacks.map(serializeStackResponse) });
+    res.json({ success: true, data: stacks.map(serializeStack) });
   }),
 );
 
@@ -152,7 +130,7 @@ router.get(
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    res.json({ success: true, data: serializeStackResponse(stack) });
+    res.json({ success: true, data: serializeStack(stack) });
   }),
 );
 
@@ -249,7 +227,7 @@ router.post(
     });
 
     logger.info({ stackId: stack.id, stackName: stack.name }, 'Stack created');
-    res.status(201).json({ success: true, data: serializeStackResponse(stack) });
+    res.status(201).json({ success: true, data: serializeStack(stack) });
   }),
 );
 
@@ -354,7 +332,7 @@ router.put(
         });
       });
 
-      res.json({ success: true, data: serializeStackResponse(stack) });
+      res.json({ success: true, data: serializeStack(stack) });
     } else {
       const stack = await prisma.stack.update({
         where: { id: stackId },
@@ -362,7 +340,7 @@ router.put(
         include: { services: true },
       });
 
-      res.json({ success: true, data: serializeStackResponse(stack) });
+      res.json({ success: true, data: serializeStack(stack) });
     }
   }),
 );
