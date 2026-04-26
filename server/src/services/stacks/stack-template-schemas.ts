@@ -9,8 +9,64 @@ import {
   stackResourceOutputSchema,
   stackResourceInputSchema,
 } from "./schemas";
+import { validateKvPath } from "../vault/vault-kv-paths";
 
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
+
+// =====================
+// Inputs & Vault Schemas (for API request validation)
+// =====================
+
+const templateInputDeclSchema = z.object({
+  name: z.string().min(1).max(100).regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "Input name must start with a letter"),
+  description: z.string().max(500).optional(),
+  sensitive: z.boolean().default(true),
+  required: z.boolean().default(true),
+  rotateOnUpgrade: z.boolean().default(false),
+});
+
+const templateVaultPolicySchema = z.object({
+  name: z.string().min(1).max(100),
+  body: z.string().min(1),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+  description: z.string().max(500).optional(),
+});
+
+const templateVaultAppRoleSchema = z.object({
+  name: z.string().min(1).max(100),
+  policy: z.string().min(1),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+  tokenPeriod: z.string().optional(),
+  tokenTtl: z.string().optional(),
+  tokenMaxTtl: z.string().optional(),
+  secretIdNumUses: z.number().int().min(0).optional(),
+  secretIdTtl: z.string().optional(),
+});
+
+const kvFieldValueSchema = z.union([
+  z.object({ fromInput: z.string().min(1) }),
+  z.object({ value: z.string() }),
+]);
+
+const templateVaultKvSchema = z.object({
+  path: z.string().min(1).superRefine((p, ctx) => {
+    try {
+      validateKvPath(p);
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : "Invalid KV path",
+      });
+    }
+  }),
+  fields: z.record(z.string(), kvFieldValueSchema),
+});
+
+const templateVaultSectionSchema = z.object({
+  policies: z.array(templateVaultPolicySchema).optional(),
+  appRoles: z.array(templateVaultAppRoleSchema).optional(),
+  kv: z.array(templateVaultKvSchema).optional(),
+});
 
 const templateNameSchema = z
   .string()
@@ -88,6 +144,8 @@ export const draftVersionSchema = z.object({
   services: z.array(stackServiceDefinitionSchema),
   configFiles: z.array(configFileInputSchema).optional(),
   notes: z.string().max(1000).optional(),
+  inputs: z.array(templateInputDeclSchema).optional(),
+  vault: templateVaultSectionSchema.optional(),
 });
 
 export const publishDraftSchema = z.object({
@@ -98,4 +156,5 @@ export const instantiateTemplateSchema = z.object({
   environmentId: z.string().min(1).optional(),
   parameterValues: parameterValuesSchema.optional(),
   name: z.string().min(1).max(100).optional(),
+  inputValues: z.record(z.string(), z.string()).optional(),
 });

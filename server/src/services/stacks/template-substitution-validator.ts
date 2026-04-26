@@ -32,6 +32,8 @@ export interface ValidateInput {
   scope: 'host' | 'environment' | 'any' | string;
   /** Defined parameter names (from the draft) for `{{params.X}}` lookup. */
   parameterNames: Set<string>;
+  /** Defined input names for `{{inputs.X}}` lookup (only valid in vault.kv[].path). */
+  inputNames?: Set<string>;
   /** All template fields that may contain `{{...}}`. Walks recursively. */
   services: unknown;
   configFiles: unknown;
@@ -39,13 +41,19 @@ export interface ValidateInput {
   volumes: unknown;
   resourceInputs: unknown;
   resourceOutputs: unknown;
+  /** Vault section — policy names, appRole names, and KV paths support substitution. */
+  vaultPolicies?: unknown;
+  vaultAppRoles?: unknown;
+  vaultKvPaths?: string[];
 }
 
 export function validateTemplateSubstitutions(input: ValidateInput): TemplateSubstitutionIssue[] {
   const issues: TemplateSubstitutionIssue[] = [];
-  const ctx = {
+  const ctx: WalkContext = {
     scope: input.scope,
     parameterNames: input.parameterNames,
+    inputNames: input.inputNames ?? new Set(),
+    inputsContext: false,
     issues,
   };
   walk(input.services, 'services', ctx);
@@ -54,6 +62,23 @@ export function validateTemplateSubstitutions(input: ValidateInput): TemplateSub
   walk(input.volumes, 'volumes', ctx);
   walk(input.resourceInputs, 'resourceInputs', ctx);
   walk(input.resourceOutputs, 'resourceOutputs', ctx);
+
+  // Vault policy names and bodies — {{stack.id}}, {{environment.*}}, {{params.*}} allowed
+  if (input.vaultPolicies) {
+    walk(input.vaultPolicies, 'vault.policies', ctx);
+  }
+  // Vault appRole names — same set of allowed namespaces
+  if (input.vaultAppRoles) {
+    walk(input.vaultAppRoles, 'vault.appRoles', ctx);
+  }
+  // KV paths only — {{inputs.*}} additionally allowed here
+  if (input.vaultKvPaths) {
+    const kvCtx: WalkContext = { ...ctx, inputsContext: true };
+    for (let i = 0; i < input.vaultKvPaths.length; i++) {
+      walk(input.vaultKvPaths[i], `vault.kv[${i}].path`, kvCtx);
+    }
+  }
+
   return issues;
 }
 
@@ -67,6 +92,9 @@ export function parameterNamesFromDefinitions(
 interface WalkContext {
   scope: string;
   parameterNames: Set<string>;
+  inputNames: Set<string>;
+  /** True when walking a context where {{inputs.*}} is valid (KV paths only). */
+  inputsContext: boolean;
   issues: TemplateSubstitutionIssue[];
 }
 
@@ -101,7 +129,7 @@ function checkString(value: string, path: string, ctx: WalkContext): void {
       ctx.issues.push({
         path,
         token,
-        message: `'${token}' is missing a namespace — expected one of params|stack|environment`,
+        message: `'${token}' is missing a namespace — expected one of params|stack|environment${ctx.inputsContext ? '|inputs' : ''}`,
       });
       continue;
     }
@@ -143,11 +171,28 @@ function checkString(value: string, path: string, ctx: WalkContext): void {
           });
         }
         break;
+      case 'inputs':
+        if (!ctx.inputsContext) {
+          ctx.issues.push({
+            path,
+            token,
+            message: `'${token}' uses the 'inputs' namespace which is only valid inside vault.kv[].path — use the structured fromInput: form elsewhere`,
+          });
+          break;
+        }
+        if (!ctx.inputNames.has(key)) {
+          ctx.issues.push({
+            path,
+            token,
+            message: `'${token}' references unknown input '${key}' (defined inputs: ${formatList(ctx.inputNames)})`,
+          });
+        }
+        break;
       default:
         ctx.issues.push({
           path,
           token,
-          message: `'${token}' uses unknown namespace '${namespace}' (allowed: params, stack, environment)`,
+          message: `'${token}' uses unknown namespace '${namespace}' (allowed: params, stack, environment${ctx.inputsContext ? ', inputs' : ''})`,
         });
     }
   }
