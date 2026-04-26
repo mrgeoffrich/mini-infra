@@ -15,7 +15,12 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
-import { encryptInputValues, decryptInputValues } from '../../services/stacks/stack-input-values-service';
+import {
+  encryptInputValues,
+  decryptInputValues,
+  mergeForUpgrade,
+  InputValuesMissingError,
+} from '../../services/stacks/stack-input-values-service';
 import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
@@ -267,8 +272,8 @@ router.put(
       ...fields
     } = parsed.data;
 
-    // Merge supplied input values with stored ones. PR 2 will add mergeForUpgrade
-    // enforcement once template declarations are loaded at apply time.
+    // Merge supplied input values with stored ones using mergeForUpgrade so that
+    // rotateOnUpgrade declarations are enforced at the PATCH boundary.
     let encryptedInputValues: string | undefined;
     if (inputValues !== undefined) {
       const stored = existing.encryptedInputValues
@@ -277,8 +282,38 @@ router.put(
             catch { return {}; }
           })()
         : {};
-      if (Object.keys(inputValues).length > 0 || Object.keys(stored).length > 0) {
-        encryptedInputValues = encryptInputValues({ ...stored, ...inputValues });
+
+      // Load input declarations from the template version if the stack is
+      // template-bound. Falls back to a bare spread merge when no template is
+      // linked (manually-created stacks without a vault section).
+      let declarations: import('@mini-infra/types').TemplateInputDeclaration[] = [];
+      if (existing.templateId && existing.templateVersion != null) {
+        const tv = await prisma.stackTemplateVersion.findFirst({
+          where: { templateId: existing.templateId, version: existing.templateVersion },
+          select: { inputs: true },
+        });
+        if (tv?.inputs) {
+          declarations = tv.inputs as unknown as import('@mini-infra/types').TemplateInputDeclaration[];
+        }
+      }
+
+      try {
+        const merged = declarations.length > 0
+          ? mergeForUpgrade(stored, inputValues, declarations)
+          : { ...stored, ...inputValues };
+        if (Object.keys(merged).length > 0) {
+          encryptedInputValues = encryptInputValues(merged);
+        }
+      } catch (err) {
+        if (err instanceof InputValuesMissingError) {
+          return res.status(400).json({
+            success: false,
+            message: err.message,
+            code: 'input_rotation_required',
+            input: err.inputName,
+          });
+        }
+        throw err;
       }
     }
 
