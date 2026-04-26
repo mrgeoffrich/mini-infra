@@ -9,6 +9,10 @@ import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
+// Single source of truth for the admin policy HCL. Imported by the seeder so
+// the DB row, the bootstrap-time write, and the per-login self-heal all
+// publish the same body — no drift when capabilities are added or removed.
+import { MINI_INFRA_ADMIN_HCL } from "./vault-policy-bodies";
 
 const log = getLogger("platform", "vault-admin-service");
 
@@ -28,25 +32,7 @@ const MINI_INFRA_OPERATOR_POLICY_NAME = "mini-infra-operator";
 const MINI_INFRA_ADMIN_APPROLE_NAME = "mini-infra-admin";
 const MINI_INFRA_OPERATOR_USERPASS_NAME = "mini-infra-operator";
 
-const ADMIN_POLICY_HCL = `# mini-infra-admin — managed by Mini Infra. Do not edit directly.
-# Full administrative access used by Mini Infra's own admin AppRole.
-
-path "sys/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "auth/*" {
-  capabilities = ["create", "read", "update", "delete", "list", "sudo"]
-}
-
-path "secret/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-
-path "identity/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-`;
+const ADMIN_POLICY_HCL = MINI_INFRA_ADMIN_HCL;
 
 const OPERATOR_POLICY_HCL = `# mini-infra-operator — userpass policy for human operator logging into the
 # Vault UI to inspect state and debug. Deliberately NOT admin-equivalent: all
@@ -408,6 +394,21 @@ export class VaultAdminService {
     const secretId = await this.stateService.readAdminSecretId();
     const res = await this.client.appRoleLogin(roleId, secretId);
     this.adoptAuthResponse(res);
+    // Reconcile the admin policy with the source-of-truth HCL on every
+    // successful login. Idempotent overwrite — keeps policy capabilities in
+    // sync with the codebase even after upgrades that add new capabilities
+    // (e.g. KV `patch` for the brokered Vault KV API).
+    try {
+      await this.client.writePolicy(MINI_INFRA_ADMIN_POLICY_NAME, ADMIN_POLICY_HCL);
+    } catch (err) {
+      // Non-fatal — apply will surface a clearer error if the policy is
+      // missing capabilities. We still want the login to succeed so the
+      // operator can investigate via the UI.
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to refresh admin policy on login (non-fatal)",
+      );
+    }
   }
 
   hasAdminToken(): boolean {

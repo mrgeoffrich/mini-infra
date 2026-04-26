@@ -179,6 +179,7 @@ export function mergeParameterValues(
 
 export function buildStackTemplateContext(
   stack: {
+    id?: string;
     name: string;
     networks: unknown;
     volumes: unknown;
@@ -188,7 +189,15 @@ export function buildStackTemplateContext(
       dockerTag: string;
       containerConfig: unknown;
     }>;
-    environment?: { name: string } | null;
+    // Accept Prisma's broader `string` for type/networkType and narrow inside.
+    // The DB schema constrains these via the Environment row; downstream
+    // template substitution treats them as opaque values.
+    environment?: {
+      id: string;
+      name: string;
+      type: string;
+      networkType: string;
+    } | null;
   },
   params?: Record<string, StackParameterValue>
 ) {
@@ -204,8 +213,18 @@ export function buildStackTemplateContext(
       dockerTag: s.dockerTag,
       containerConfig: s.containerConfig as unknown as StackContainerConfig,
     })),
-    stack.environment?.name,
-    params
+    {
+      stackId: stack.id,
+      environment: stack.environment
+        ? {
+            id: stack.environment.id,
+            name: stack.environment.name,
+            type: stack.environment.type as import('@mini-infra/types').EnvironmentType,
+            networkType: stack.environment.networkType as import('@mini-infra/types').EnvironmentNetworkType,
+          }
+        : undefined,
+      params,
+    }
   );
 }
 

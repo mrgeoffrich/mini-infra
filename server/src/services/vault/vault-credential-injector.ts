@@ -2,6 +2,7 @@ import type { PrismaClient } from "../../lib/prisma";
 import type { StackContainerConfig, DynamicEnvSource } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultServices } from "./vault-services";
+import { getVaultKVService, VaultKVError } from "./vault-kv-service";
 
 const log = getLogger("platform", "vault-credential-injector");
 
@@ -12,12 +13,20 @@ const log = getLogger("platform", "vault-credential-injector");
 export const DEFAULT_WRAPPED_SECRET_ID_TTL_SECONDS = 300;
 
 export interface InjectorArgs {
-  appRoleId: string;
+  /**
+   * AppRole ID for entries that need it (`vault-role-id`,
+   * `vault-wrapped-secret-id`). Pass null when the service has no AppRole
+   * binding — `vault-kv`, `vault-addr`, and `pool-management-token` entries
+   * are still resolved. Throws if any entry needs an AppRole and none is
+   * supplied.
+   */
+  appRoleId: string | null;
   failClosed: boolean;
   /**
-   * The AppRole ID bound to this stack on the last successful apply, if any.
-   * If present and equals `appRoleId`, the binding is considered stable and
-   * fail-closed degradation is allowed. If it differs, we always fail-closed.
+   * The AppRole ID bound to this stack/service on the last successful apply,
+   * if any. If present and equals `appRoleId`, the binding is considered
+   * stable and fail-closed degradation is allowed. If it differs, we always
+   * fail-closed.
    */
   prevBoundAppRoleId: string | null;
   /**
@@ -58,13 +67,6 @@ export class VaultCredentialInjector {
     if (!dynamicEnv || Object.keys(dynamicEnv).length === 0) return null;
 
     const services = getVaultServices();
-    const approle = await this.prisma.vaultAppRole.findUnique({
-      where: { id: args.appRoleId },
-    });
-    if (!approle) {
-      throw new Error(`Vault AppRole ${args.appRoleId} not found`);
-    }
-
     const meta = await services.stateService.getMeta();
     const vaultAddress = meta?.address ?? "";
     if (!vaultAddress) {
@@ -77,52 +79,112 @@ export class VaultCredentialInjector {
     const needsRoleId = Object.values(dynamicEnv).some(
       (src) => src.kind === "vault-role-id",
     );
+    const needsAppRole = needsMint || needsRoleId;
+    const needsKv = Object.values(dynamicEnv).some((src) => src.kind === "vault-kv");
 
-    let roleId: string | null = approle.cachedRoleId ?? null;
+    let approle: { id: string; name: string; cachedRoleId: string | null } | null = null;
+    if (needsAppRole) {
+      if (!args.appRoleId) {
+        throw new Error(
+          "dynamicEnv contains vault-role-id or vault-wrapped-secret-id but no AppRole is bound to this service or stack",
+        );
+      }
+      approle = await this.prisma.vaultAppRole.findUnique({
+        where: { id: args.appRoleId },
+      });
+      if (!approle) {
+        throw new Error(`Vault AppRole ${args.appRoleId} not found`);
+      }
+    }
+
+    let roleId: string | null = approle?.cachedRoleId ?? null;
     let wrappedSecretId: string | undefined;
+    let kvValues: Record<string, string> = {};
     const ttlSeconds = pickTtlSeconds(dynamicEnv);
 
     const client = services.admin.getClient();
     if (!client) {
-      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle.cachedRoleId);
+      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle?.cachedRoleId ?? null);
     }
 
     try {
-      if (needsRoleId && !roleId) {
-        roleId = await client.readAppRoleId(approle.name);
-        // Best-effort cache
-        await this.prisma.vaultAppRole.update({
-          where: { id: approle.id },
-          data: { cachedRoleId: roleId },
-        }).catch((err: unknown) => {
-          log.debug(
-            { err: err instanceof Error ? err.message : String(err) },
-            "Failed to cache role_id (non-fatal)",
+      if (approle) {
+        if (needsRoleId && !roleId) {
+          roleId = await client.readAppRoleId(approle.name);
+          // Best-effort cache
+          await this.prisma.vaultAppRole.update({
+            where: { id: approle.id },
+            data: { cachedRoleId: roleId },
+          }).catch((err: unknown) => {
+            log.debug(
+              { err: err instanceof Error ? err.message : String(err) },
+              "Failed to cache role_id (non-fatal)",
+            );
+          });
+        }
+        if (needsMint) {
+          const wrapped = await client.mintWrappedAppRoleSecretId(
+            approle.name,
+            ttlSeconds,
           );
-        });
+          wrappedSecretId = wrapped.wrap_info.token;
+        }
       }
-      if (needsMint) {
-        const wrapped = await client.mintWrappedAppRoleSecretId(
-          approle.name,
-          ttlSeconds,
-        );
-        wrappedSecretId = wrapped.wrap_info.token;
+
+      if (needsKv) {
+        kvValues = await this.resolveKvEntries(dynamicEnv);
       }
     } catch (err) {
+      // KV failures are not eligible for the AppRole stable-binding degrade
+      // (no role_id cache to fall back on), so they bubble up.
+      if (err instanceof VaultKVError) {
+        log.error(
+          { err: err.message, code: err.code },
+          "Vault KV resolution failed",
+        );
+        throw new Error(`Vault KV resolution failed: ${err.message}`, { cause: err });
+      }
       log.warn(
         {
           err: err instanceof Error ? err.message : String(err),
-          approle: approle.name,
+          approle: approle?.name,
         },
         "Vault unreachable while resolving dynamic env",
       );
-      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle.cachedRoleId);
+      return this.degradedOrThrow(args, roleId, vaultAddress, dynamicEnv, approle?.cachedRoleId ?? null);
     }
 
     return {
-      values: buildValues(dynamicEnv, vaultAddress, roleId, wrappedSecretId, args.poolTokens ?? {}),
+      values: {
+        ...buildValues(dynamicEnv, vaultAddress, roleId, wrappedSecretId, args.poolTokens ?? {}),
+        ...kvValues,
+      },
       degraded: false,
     };
+  }
+
+  /**
+   * Read each `vault-kv` entry's value via the admin-token broker. The
+   * returned values are merged into the in-memory `resolvedEnvOverrides`
+   * Map and handed to Docker's `createContainer` Env field at apply.
+   *
+   * Never persisted: stack snapshots / diffs use the unresolved template
+   * only, so KV values can't leak to the DB or `lastAppliedSnapshot`. Never
+   * logged: no log site stringifies `containerConfig.env` after merging,
+   * and Docker daemon errors don't echo Env contents. If you add a new log
+   * site that includes `containerConfig`, redact `env` and `dynamicEnv` —
+   * the global pino redact patterns only match known auth-key heuristics.
+   */
+  private async resolveKvEntries(
+    dynamicEnv: Record<string, DynamicEnvSource>,
+  ): Promise<Record<string, string>> {
+    const kvService = getVaultKVService();
+    const out: Record<string, string> = {};
+    for (const [envKey, source] of Object.entries(dynamicEnv)) {
+      if (source.kind !== "vault-kv") continue;
+      out[envKey] = await kvService.readField(source.path, source.field);
+    }
+    return out;
   }
 
   private degradedOrThrow(
@@ -134,6 +196,27 @@ export class VaultCredentialInjector {
   ): InjectorResult {
     const { failClosed, prevBoundAppRoleId, appRoleId } = args;
     const poolTokens = args.poolTokens ?? {};
+    // Vault-kv entries cannot be degraded — there's no cache. If any are
+    // present and we're in this branch (Vault unreachable), apply must fail.
+    const hasKv = Object.values(dynamicEnv).some((s) => s.kind === "vault-kv");
+    if (hasKv) {
+      throw new Error(
+        "Vault is unreachable and dynamicEnv contains vault-kv entries; cannot apply",
+      );
+    }
+    // Services without any AppRole-needing entry (e.g. only vault-addr) can
+    // safely degrade because vaultAddress is read from local state, not from
+    // Vault. The stable-binding guard below only applies when an AppRole is
+    // actually in play.
+    const hasAppRoleEntry = Object.values(dynamicEnv).some(
+      (s) => s.kind === "vault-role-id" || s.kind === "vault-wrapped-secret-id",
+    );
+    if (!hasAppRoleEntry) {
+      return {
+        values: buildValues(dynamicEnv, vaultAddress, roleId, undefined, poolTokens),
+        degraded: true,
+      };
+    }
     if (!failClosed) {
       return {
         values: buildValues(dynamicEnv, vaultAddress, roleId, undefined, poolTokens),
@@ -184,6 +267,11 @@ function buildValues(
         if (token) values[key] = token;
         break;
       }
+      case "vault-kv":
+        // Resolved separately via VaultKVService and merged at the call site.
+        // Skipped here because buildValues only handles entries this function
+        // knows how to fill from its arguments.
+        break;
     }
   }
   return values;

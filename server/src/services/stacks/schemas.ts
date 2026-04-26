@@ -64,6 +64,20 @@ export const parameterValuesSchema = z.record(
 
 // Sub-schemas for JSON field shapes
 
+// KV path/field shape mirrors VaultKVService validation (vault-kv-service.ts).
+// Kept narrow so the schema rejects malformed entries before they reach the
+// resolver — Vault KV v2 paths don't allow leading '/' or '..', and field
+// names must be simple identifiers because they're injected as env keys'
+// values.
+const kvPathSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[a-zA-Z0-9_/-]+$/, "vault-kv path may only contain letters, numbers, '_', '-', '/'")
+  .refine((p) => !p.startsWith("/") && !p.endsWith("/") && !p.includes("..") && !p.includes("//"), {
+    message: "vault-kv path must not start/end with '/' or contain '..' or '//'",
+  });
+
 const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("vault-addr") }),
   z.object({ kind: z.literal("vault-role-id") }),
@@ -74,6 +88,11 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("pool-management-token"),
     poolService: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  }),
+  z.object({
+    kind: z.literal("vault-kv"),
+    path: kvPathSchema,
+    field: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "vault-kv field may only contain letters, numbers, '_', '-'"),
   }),
 ]);
 

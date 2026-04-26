@@ -121,7 +121,14 @@ function computeHashForService(
       dockerTag: s.dockerTag,
       containerConfig: s.containerConfig as StackContainerConfig,
     })),
-    stack.environment.name
+    {
+      environment: {
+        id: 'env-test',
+        name: stack.environment.name,
+        type: 'nonproduction',
+        networkType: 'local',
+      },
+    }
   );
   const resolved = resolveStackConfigFiles(
     (svc.configFiles as StackConfigFile[]) ?? [],

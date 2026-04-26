@@ -9,6 +9,7 @@ import type {
 import type { DockerExecutorService } from '../docker-executor';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
+import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { getLogger } from '../../lib/logger-factory';
 import {
   buildStackTemplateContext,
@@ -131,11 +132,11 @@ export async function spawnPoolInstance(
     ctx.instanceId,
   );
 
-  // Resolve Vault dynamic env (service-level binding overrides stack-level).
-  const effectiveAppRoleId = service.vaultAppRoleId ?? stack.vaultAppRoleId ?? null;
+  // Resolve Vault dynamic env via the shared effective-binding helper —
+  // single source of truth for service-level vs. stack-level fallback.
+  const binding = resolveEffectiveVaultBinding(stack, service);
   let vaultEnv: Record<string, string> = {};
   if (
-    effectiveAppRoleId &&
     vaultServicesReady() &&
     containerConfig.dynamicEnv &&
     Object.values(containerConfig.dynamicEnv).some((src) => src.kind !== 'pool-management-token')
@@ -144,11 +145,12 @@ export async function spawnPoolInstance(
       const injector = new VaultCredentialInjector(prisma);
       const res = await injector.resolve(
         {
-          appRoleId: effectiveAppRoleId,
+          appRoleId: binding.appRoleId,
           // Freshly-spawned instances never start in degraded mode —
-          // fail loudly if Vault is unreachable.
+          // fail loudly if Vault is unreachable. failClosed=false is fine
+          // because a fresh spawn has nothing to fall back to anyway.
           failClosed: false,
-          prevBoundAppRoleId: null,
+          prevBoundAppRoleId: binding.prevBoundAppRoleId,
           poolTokens: {},
         },
         containerConfig,
@@ -298,7 +300,7 @@ export async function spawnPoolInstance(
   // belt-and-suspenders behaviour for AppRole-bound pool services whose
   // dynamicEnv was working only because pool-spawner attached vault for them.
   const declaredPurposes = new Set(containerConfig.joinResourceNetworks ?? []);
-  if (effectiveAppRoleId && Object.keys(vaultEnv).length > 0) {
+  if (binding.appRoleId && Object.keys(vaultEnv).length > 0) {
     declaredPurposes.add('vault');
   }
   if (declaredPurposes.size > 0) {

@@ -1,4 +1,6 @@
 import {
+  EnvironmentNetworkType,
+  EnvironmentType,
   StackConfigFile,
   StackContainerConfig,
   StackNetwork,
@@ -7,13 +9,43 @@ import {
   StackVolume,
 } from '@mini-infra/types';
 
+export interface TemplateContextStack {
+  id?: string;
+  name: string;
+  projectName: string;
+}
+
+export interface TemplateContextEnvironment {
+  id: string;
+  name: string;
+  type: EnvironmentType;
+  networkType: EnvironmentNetworkType;
+}
+
 export interface TemplateContext {
-  stack: { name: string; projectName: string };
+  stack: TemplateContextStack;
   services: Record<string, { containerName: string; image: string }>;
+  /**
+   * Static container env vars merged across services. Internal to the engine —
+   * not currently reachable via `{{env.*}}` substitution because the schema
+   * regex restricts substitution to the `params|stack|environment` namespaces.
+   */
   env: Record<string, string>;
   volumes: Record<string, string>;
   networks: Record<string, string>;
   params: Record<string, StackParameterValue>;
+  /**
+   * Present only for environment-scoped stacks. Host-scoped templates that
+   * reference `{{environment.*}}` will fail at apply with an "Unresolved
+   * template variable" error from `resolveTemplate`.
+   */
+  environment?: TemplateContextEnvironment;
+}
+
+export interface BuildTemplateContextOptions {
+  stackId?: string;
+  environment?: TemplateContextEnvironment;
+  params?: Record<string, StackParameterValue>;
 }
 
 export function buildTemplateContext(
@@ -24,10 +56,10 @@ export function buildTemplateContext(
     dockerTag: string;
     containerConfig: StackContainerConfig;
   }[],
-  environmentName?: string,
-  params?: Record<string, StackParameterValue>
+  options: BuildTemplateContextOptions = {}
 ): TemplateContext {
-  const projectName = environmentName ? `${environmentName}-${stack.name}` : `mini-infra-${stack.name}`;
+  const { stackId, environment, params } = options;
+  const projectName = environment ? `${environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
 
   const svcMap: Record<string, { containerName: string; image: string }> = {};
   const envMap: Record<string, string> = {};
@@ -52,14 +84,18 @@ export function buildTemplateContext(
     networkMap[n.name] = `${projectName}_${n.name}`;
   }
 
-  return {
-    stack: { name: stack.name, projectName },
+  const ctx: TemplateContext = {
+    stack: { name: stack.name, projectName, ...(stackId !== undefined ? { id: stackId } : {}) },
     services: svcMap,
     env: envMap,
     volumes: volumeMap,
     networks: networkMap,
     params: params ?? {},
   };
+
+  if (environment) ctx.environment = environment;
+
+  return ctx;
 }
 
 export function resolveTemplate(template: string, context: TemplateContext): string {

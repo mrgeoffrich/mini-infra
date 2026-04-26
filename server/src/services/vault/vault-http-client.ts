@@ -394,6 +394,31 @@ export class VaultHttpClient {
     }
   }
 
+  /**
+   * KV v2 patch — server-side merge against the latest version. Requires the
+   * `update` capability on the data path and `Content-Type: application/merge-patch+json`.
+   */
+  async kvPatch(mount: string, path: string, data: Record<string, unknown>): Promise<void> {
+    await this.request("PATCH", `${mount}/data/${path}`, {
+      body: { data },
+      headers: { "Content-Type": "application/merge-patch+json" },
+    });
+  }
+
+  /**
+   * KV v2 soft-delete — marks the latest version deleted but preserves
+   * history (versions can be undeleted via `undelete`). Use `kvDestroy` for
+   * permanent removal, or `kvDeleteMetadata` to wipe everything.
+   */
+  async kvDelete(mount: string, path: string): Promise<void> {
+    await this.request("DELETE", `${mount}/data/${path}`, { allow404: true });
+  }
+
+  /** KV v2 destroy of all versions and metadata for a path. */
+  async kvDeleteMetadata(mount: string, path: string): Promise<void> {
+    await this.request("DELETE", `${mount}/metadata/${path}`, { allow404: true });
+  }
+
   // ── Circuit breaker ───────────────────────────────────
 
   private isCircuitOpen(): boolean {

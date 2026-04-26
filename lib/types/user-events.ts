@@ -26,6 +26,9 @@ export type UserEventType =
   | 'stack_deploy'
   | 'stack_update'
   | 'stack_destroy'
+  | 'vault_kv_write'
+  | 'vault_kv_patch'
+  | 'vault_kv_delete'
   | 'other';
 
 // Event category enumeration

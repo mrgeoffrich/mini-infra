@@ -26,6 +26,10 @@ import type {
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
 import { CloudflareService } from "../cloudflare/cloudflare-service";
 import { networkUtils } from "../network-utils";
+import {
+  parameterNamesFromDefinitions,
+  validateTemplateSubstitutions,
+} from "./template-substitution-validator";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -410,6 +414,31 @@ export class StackTemplateService {
     }
     if (template.source === "system") {
       throw new TemplateError("Cannot modify system templates", 403);
+    }
+
+    // Catch substitution typos (e.g. {{stak.id}}, {{environment.foo}}) at
+    // draft-save time so the operator sees them immediately instead of
+    // discovering them at apply when a real deploy is in flight.
+    const issues = validateTemplateSubstitutions({
+      scope: template.scope,
+      parameterNames: parameterNamesFromDefinitions(input.parameters),
+      services: input.services,
+      configFiles: input.configFiles,
+      networks: input.networks,
+      volumes: input.volumes,
+      resourceInputs: input.resourceInputs,
+      resourceOutputs: input.resourceOutputs,
+    });
+    if (issues.length > 0) {
+      const summary = issues
+        .slice(0, 5)
+        .map((i) => `${i.path}: ${i.message}`)
+        .join('; ');
+      const suffix = issues.length > 5 ? ` (+${issues.length - 5} more)` : '';
+      throw new TemplateError(
+        `Template substitution validation failed: ${summary}${suffix}`,
+        400,
+      );
     }
 
     const configFileInputs = input.configFiles ?? [];

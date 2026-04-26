@@ -23,7 +23,10 @@ export type PermissionDomain =
   | "registry"
   | "stacks"
   | "pools"
-  | "vault";
+  | "vault"
+  // Vault KV broker is a sub-domain so write→read implication works without
+  // entangling KV scopes with the broader vault:write (policies/AppRoles).
+  | "vault-kv";
 
 /** Permission actions */
 export type PermissionAction = "read" | "write" | "use";
@@ -470,6 +473,34 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       },
     ],
   },
+  {
+    domain: "vault-kv",
+    label: "Vault KV (Secrets)",
+    description: "Brokered Vault KV v2 secret reads and writes via the Mini Infra admin token",
+    permissions: [
+      {
+        scope: "vault-kv:read",
+        domain: "vault-kv",
+        action: "read",
+        label: "Read KV Secrets",
+        description: "Read values from Vault KV v2 paths (broker uses the admin token; caller does not need a Vault token)",
+      },
+      {
+        scope: "vault-kv:write",
+        domain: "vault-kv",
+        action: "write",
+        label: "Write KV Secrets",
+        description: "Write, patch, and soft-delete values at Vault KV v2 paths via the broker (history preserved on delete)",
+      },
+      {
+        scope: "vault-kv:destroy",
+        domain: "vault-kv",
+        action: "write",
+        label: "Permanently Destroy KV Secrets",
+        description: "Wipe all versions and metadata for a KV path (?permanent=true on DELETE). Irrecoverable — kept distinct from vault-kv:write so a 'rotation editor' role can patch but not destroy.",
+      },
+    ],
+  },
 ];
 
 /** All available permission scopes */
@@ -538,6 +569,12 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "stacks:write",
       "events:read",
       "events:write",
+      // Stacks routinely seed shared KV secrets that their services consume
+      // via the vault-kv dynamicEnv resolver. Granting read alongside write
+      // matches the implicit pattern (write→read). Destroy is intentionally
+      // NOT in this preset — wiping all versions of a secret is admin-only.
+      "vault-kv:read",
+      "vault-kv:write",
     ],
   },
   {
