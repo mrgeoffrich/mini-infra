@@ -37,6 +37,7 @@ services:
       - LOG_LEVEL=debug
       - ALLOW_INSECURE=true
       - ENABLE_DEV_API_KEY_ENDPOINT=true
+      - BUNDLES_DRIVE_BUILTIN=true
     healthcheck:
       test:
         [
