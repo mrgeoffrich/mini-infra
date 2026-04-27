@@ -74,11 +74,8 @@ vi.mock('../services/stacks/stack-vault-reconciler', () => ({
   runStackVaultReconciler: vi.fn().mockResolvedValue({
     status: 'applied' as const,
     appliedAppRoleIdByName: { 'my-approle': MOCK_AR_ID },
-    snapshot: {
-      policies: { hashes: { 'my-policy': 'abc' } },
-      appRoles: { hashes: { 'my-approle': 'def' } },
-      kv: { hashes: {} },
-    },
+    // encryptedSnapshot is a String? now — use a dummy base64 blob for tests.
+    encryptedSnapshot: Buffer.from(JSON.stringify({ version: 2, policies: {}, appRoles: {}, kv: {} })).toString('base64'),
   }),
 }));
 
