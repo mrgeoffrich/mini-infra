@@ -764,8 +764,48 @@ export async function runStackVaultReconciler(
   const status: VaultReconcileStatus = anyApplied ? "applied" : "noop";
   log.info({ stackId, status, appRolesMapped: Object.keys(appliedAppRoleIdByName).length }, "Vault reconcile complete");
 
+  await upsertStackVaultResources(prisma, stackId, newSnapshot);
+
   const encryptedSnapshot = encryptSnapshot(newSnapshot);
   return { status, appliedAppRoleIdByName, encryptedSnapshot };
+}
+
+/**
+ * Upsert StackVaultResource rows to reflect the concrete Vault objects owned
+ * by this stack after a successful apply. Existing rows for this stack are
+ * replaced wholesale so stale entries from prior template versions are pruned.
+ * Non-fatal on failure.
+ */
+async function upsertStackVaultResources(
+  prisma: PrismaClient,
+  stackId: string,
+  snapshot: SnapshotV2,
+): Promise<void> {
+  try {
+    const rows: Array<{ stackId: string; type: string; concreteName: string; scope: string | null }> = [];
+
+    for (const [name, entry] of Object.entries(snapshot.policies)) {
+      rows.push({ stackId, type: "policy", concreteName: name, scope: entry.scope ?? null });
+    }
+    for (const [name, entry] of Object.entries(snapshot.appRoles)) {
+      rows.push({ stackId, type: "approle", concreteName: name, scope: entry.scope ?? null });
+    }
+    for (const path of Object.keys(snapshot.kv)) {
+      rows.push({ stackId, type: "kv", concreteName: path, scope: null });
+    }
+
+    await prisma.$transaction([
+      prisma.stackVaultResource.deleteMany({ where: { stackId } }),
+      ...rows.map((r) =>
+        prisma.stackVaultResource.create({ data: r }),
+      ),
+    ]);
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err), stackId },
+      "Failed to upsert StackVaultResource index (non-fatal)",
+    );
+  }
 }
 
 async function markStackError(prisma: PrismaClient, stackId: string, reason: string): Promise<void> {
