@@ -1092,10 +1092,11 @@ model Stack {
   // Never returned via API; GET /stacks/:id returns inputValueKeys (names only).
   encryptedInputValues        String?
 
-  // Phase 2 — Vault reconciliation snapshot: content hashes per phase (policies,
-  // appRoles, kv) recorded after a successful Vault apply. Used for idempotency —
-  // identical hashes → skip the write on re-apply.
-  lastAppliedVaultSnapshot    Json?
+  // Phase 2/4 — AES-256-GCM encrypted snapshot blob. Stores SnapshotV2 JSON
+  // (policies, appRoles, kv with concrete bodies + hashes). Encrypted with the
+  // same domain-separated key as encryptedInputValues. Never returned via API.
+  // Column changed from Json? to String? in phase 4 to carry encrypted blobs.
+  lastAppliedVaultSnapshot    String?
 
   // Populated when the Vault pre-service phase fails; cleared on success.
   lastFailureReason           String?
