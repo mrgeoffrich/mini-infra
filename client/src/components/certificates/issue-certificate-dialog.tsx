@@ -6,7 +6,7 @@
  */
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { IconPlus, IconAlertCircle, IconCertificate } from "@tabler/icons-react";
@@ -56,6 +56,9 @@ export function IssueCertificateDialog({
       autoRenew: true,
     },
   });
+
+  const primaryDomain = useWatch({ control: form.control, name: "primaryDomain" });
+  const autoRenew = useWatch({ control: form.control, name: "autoRenew" });
 
   const handleAddDomain = () => {
     if (domainInput && !domains.includes(domainInput)) {
@@ -169,7 +172,7 @@ export function IssueCertificateDialog({
                   <Badge
                     key={domain}
                     variant={
-                      form.watch("primaryDomain") === domain
+                      primaryDomain === domain
                         ? "default"
                         : "secondary"
                     }
@@ -206,7 +209,7 @@ export function IssueCertificateDialog({
               </p>
             </div>
             <Switch
-              checked={form.watch("autoRenew")}
+              checked={autoRenew}
               onCheckedChange={(checked) => form.setValue("autoRenew", checked)}
             />
           </div>

@@ -288,7 +288,9 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     return () => {
       cancelled = true;
     };
-  }, []); // intentional: fire once on mount only
+    // setActiveConversationId is a setter from a parent context — the
+    // exhaustive-deps lint can't tell that it's stable, so list it explicitly.
+  }, [setActiveConversationId]);
 
   // Notify backend when the user's route changes during an active session
   useEffect(() => {
@@ -302,6 +304,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       // Non-critical — ignore failures
     });
   }, [session, currentPath]);
+
+  const connectSSERef = useRef<(sessionId: string, isRetry?: boolean) => void>(
+    () => {},
+  );
 
   const connectSSE = useCallback(
     (sessionId: string, isRetry = false) => {
@@ -605,7 +611,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
           reconnectAttemptedRef.current = true;
           setSessionStatus("connecting");
           reconnectTimeoutRef.current = setTimeout(() => {
-            connectSSE(sessionId, true);
+            connectSSERef.current(sessionId, true);
           }, 3000);
         } else {
           markAllThinkingComplete();
@@ -631,6 +637,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       upsertThinkingMessage,
     ],
   );
+
+  useEffect(() => {
+    connectSSERef.current = connectSSE;
+  }, [connectSSE]);
 
   const sendMessage = useCallback(
     async (message: string) => {
@@ -759,7 +769,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     setModel(null);
     setActiveConversationId(null);
     hasRestoredRef.current = true; // prevent restore from firing again
-  }, [session, closeEventSource, clearThinkingIndex]);
+  }, [session, closeEventSource, clearThinkingIndex, setActiveConversationId]);
 
   const loadConversation = useCallback(
     (conversationId: string, msgs: ChatMessage[]) => {
@@ -783,7 +793,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       setActiveConversationId(conversationId);
       hasRestoredRef.current = true;
     },
-    [session, closeEventSource, clearThinkingIndex],
+    [session, closeEventSource, clearThinkingIndex, setActiveConversationId],
   );
 
   return {

@@ -4,13 +4,13 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
   getFilteredRowModel,
   ColumnFiltersState,
   RowSelectionState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   Table,
   TableBody,
@@ -136,12 +136,11 @@ export function VolumeInspectPage() {
   };
 
   const filteredFiles = useMemo(() => {
-    if (!inspection?.files) return [];
-
-    return inspection.files.filter((file) =>
-      file.path.toLowerCase().includes(searchFilter.toLowerCase())
+    const files = inspection?.files ?? [];
+    return files.filter((file) =>
+      file.path.toLowerCase().includes(searchFilter.toLowerCase()),
     );
-  }, [inspection?.files, searchFilter]);
+  }, [inspection, searchFilter]);
 
   const columns: ColumnDef<VolumeFileInfo>[] = [
     {
@@ -273,7 +272,7 @@ export function VolumeInspectPage() {
     },
   ];
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: filteredFiles,
     columns,
     getCoreRowModel: getCoreRowModel(),

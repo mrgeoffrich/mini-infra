@@ -4,9 +4,9 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   Cell,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   Table,
   TableBody,
@@ -370,7 +370,7 @@ export const ContainerTable = React.memo(function ContainerTable({
     [sortBy, sortOrder],
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: containers,
     columns,
     getCoreRowModel: getCoreRowModel(),

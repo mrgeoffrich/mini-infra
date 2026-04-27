@@ -44,9 +44,9 @@ import {
   getSortedRowModel,
   Row,
   SortingState,
-  useReactTable,
   VisibilityState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import { Area, AreaChart, CartesianGrid, XAxis } from "recharts";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -358,7 +358,7 @@ export function DataTable({
     [data],
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data,
     columns,
     state: {

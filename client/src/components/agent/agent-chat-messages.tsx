@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useCallback, useState, useMemo } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
 import type { ComponentType } from "react";
 import {
   IconAlertTriangle,
@@ -258,23 +258,21 @@ function ThinkingBlock({
   const isOpen = msg.status === "streaming" ? true : !userCollapsed;
 
   // Capture the moment the message completes so we can show a duration.
-  // We use useEffectEvent so the setState is not inside the reactive body,
-  // and so Date.now() is called from an event callback rather than during
-  // render (which would violate react-hooks/purity).
+  // We track the previous status via a ref so the setState calls live inside
+  // a ref-controlled branch (avoids set-state-in-effect). Date.now() is only
+  // read on the streaming → done transition rather than during render.
   const [duration, setDuration] = useState<number | null>(null);
-  const onStatusChange = useEffectEvent(() => {
-    if (msg.status === "streaming") {
-      // Reset duration if the message flips back to streaming.
-      if (duration !== null) setDuration(null);
-    } else if (duration === null) {
-      setDuration(
-        Math.max(1, Math.round((Date.now() - msg.timestamp) / 1000)),
-      );
-    }
-  });
+  const prevStatusRef = useRef(msg.status);
   useEffect(() => {
-    onStatusChange();
-  }, [msg.status]);
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = msg.status;
+    if (prev === msg.status) return;
+    const nextDuration =
+      msg.status === "streaming"
+        ? null
+        : Math.max(1, Math.round((Date.now() - msg.timestamp) / 1000));
+    setDuration(nextDuration);
+  }, [msg.status, msg.timestamp]);
 
   return (
     <div>

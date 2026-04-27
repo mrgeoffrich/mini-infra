@@ -1,5 +1,6 @@
 import React from "react";
-import { ColumnDef, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { ColumnDef, getCoreRowModel } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -333,7 +334,7 @@ export const AzureContainerList = React.memo(function AzureContainerList({
     [filters.sortBy, filters.sortOrder],
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: paginatedContainers,
     columns,
     getCoreRowModel: getCoreRowModel(),

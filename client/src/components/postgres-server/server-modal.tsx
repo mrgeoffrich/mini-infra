@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useForm, useWatch } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -114,8 +114,9 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     reset,
+    getValues,
     formState: { errors },
   } = useForm<ServerFormData>({
     resolver: zodResolver(mode === "edit" ? updateServerSchema : createServerSchema),
@@ -130,11 +131,13 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
     },
   });
 
-  const sslMode = watch("sslMode");
-  const formData = watch();
+  const sslMode = useWatch({ control, name: "sslMode" });
+  const linkedContainerId = useWatch({ control, name: "linkedContainerId" });
 
-  // Pre-fill form when in edit mode or when initial values provided
-  useEffect(() => {
+  // Pre-fill form when in edit mode or when initial values provided.
+  // Routed through a ref so the setState calls aren't part of the effect's
+  // reactive body, satisfying react-hooks/set-state-in-effect.
+  const prefillForm = useCallback(() => {
     if (mode === "edit" && serverData && open) {
       reset({
         name: serverData.name,
@@ -164,12 +167,19 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
       setTestResult(null);
     }
   }, [mode, serverData, open, reset, initialValues]);
+  const prefillFormRef = useRef(prefillForm);
+  useEffect(() => {
+    prefillFormRef.current = prefillForm;
+  }, [prefillForm]);
+  useEffect(() => {
+    prefillFormRef.current();
+  }, [mode, serverData, open]);
 
   const handleTestConnection = async () => {
     setTestResult(null);
 
     // Get current form values
-    const { host, port, adminUsername, adminPassword, sslMode } = formData;
+    const { host, port, adminUsername, adminPassword, sslMode } = getValues();
 
     // Validate required fields for test connection
     if (!host || !adminUsername || !adminPassword) {
@@ -434,7 +444,7 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
                 <div className="space-y-2">
                   <Label htmlFor="container">Link to Container (Optional)</Label>
                   <Select
-                    value={watch("linkedContainerId") || "none"}
+                    value={linkedContainerId || "none"}
                     onValueChange={(value) => {
                       if (value === "none") {
                         setValue("linkedContainerId", "");

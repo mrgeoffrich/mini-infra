@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -72,14 +72,25 @@ export function BootstrapDialog({
   // leaking them to every socket subscriber. The result is returned via the
   // HTTP mutation's resolved value; see submit() below.
 
+  // Reset dialog state whenever we transition into the open state, or while
+  // open and the parent-supplied initial address changes. We snapshot the
+  // previous deps via a ref so the setState calls live inside a
+  // ref-controlled branch (avoids set-state-in-effect). Behaviour matches
+  // the original effect that ran on every change of [open, initialAddress]
+  // while open is true.
+  const prevResetKeyRef = useRef<{ open: boolean; addr: string | null } | null>(
+    null,
+  );
   useEffect(() => {
-    if (open) {
-      setPhase("form");
-      setProgress({ completed: 0, total: 0 });
-      setResult(null);
-      setErrors([]);
-      setAddress(initialAddress ?? DEFAULT_ADDRESS);
-    }
+    const prev = prevResetKeyRef.current;
+    prevResetKeyRef.current = { open, addr: initialAddress };
+    if (!open) return;
+    if (prev && prev.open === open && prev.addr === initialAddress) return;
+    setPhase("form");
+    setProgress({ completed: 0, total: 0 });
+    setResult(null);
+    setErrors([]);
+    setAddress(initialAddress ?? DEFAULT_ADDRESS);
   }, [open, initialAddress]);
 
   const canSubmit =

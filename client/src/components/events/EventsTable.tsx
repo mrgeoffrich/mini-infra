@@ -4,8 +4,8 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   IconClock,
   IconEye,
@@ -199,7 +199,7 @@ export function EventsTable({ events, isLoading, onDeleteEvent }: EventsTablePro
     [navigate, formatDateTime, onDeleteEvent],
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: events,
     columns,
     getCoreRowModel: getCoreRowModel(),

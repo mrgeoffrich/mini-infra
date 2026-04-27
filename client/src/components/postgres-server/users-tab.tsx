@@ -104,7 +104,7 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
 
   // Fetch users
   const { data: usersResponse, isLoading, error } = useManagedDatabaseUsers(serverId);
-  const users = usersResponse?.data || [];
+  const users = useMemo(() => usersResponse?.data || [], [usersResponse]);
 
   // Filter users based on showSystemUsers toggle
   const filteredUsers = useMemo(() => {

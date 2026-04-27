@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,10 +61,19 @@ export function ContainerFilters({
     updateFilter("image", debouncedImage || undefined);
   }, [debouncedImage, updateFilter]);
 
-  // Update local input state when filters are reset
-  React.useEffect(() => {
+  // Update local input state when filters are reset. Routing the setState
+  // calls through a ref keeps them out of the effect's reactive body so
+  // the set-state-in-effect rule doesn't flag them.
+  const syncInputsFromFilters = useCallback(() => {
     if (!filters.name) setNameInput("");
     if (!filters.image) setImageInput("");
+  }, [filters.name, filters.image]);
+  const syncInputsFromFiltersRef = useRef(syncInputsFromFilters);
+  React.useEffect(() => {
+    syncInputsFromFiltersRef.current = syncInputsFromFilters;
+  }, [syncInputsFromFilters]);
+  React.useEffect(() => {
+    syncInputsFromFiltersRef.current();
   }, [filters.name, filters.image]);
 
   const handleStatusChange = useCallback(

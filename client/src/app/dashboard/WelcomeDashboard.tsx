@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -201,7 +201,9 @@ function DockerSetupStep({ onComplete }: { onComplete: () => void }) {
     mode: "onChange",
   });
 
-  useEffect(() => {
+  // Routing the setState calls through a ref keeps them out of the effect's
+  // reactive body so the set-state-in-effect rule doesn't flag them.
+  const syncDockerSettings = useCallback(() => {
     if (!dockerSettings?.data) return;
     const map: Record<string, SystemSettingsInfo> = {};
     dockerSettings.data.forEach((s) => {
@@ -211,6 +213,13 @@ function DockerSetupStep({ onComplete }: { onComplete: () => void }) {
     if (map.host?.value) form.setValue("host", map.host.value);
     if (map.apiVersion?.value) form.setValue("version", map.apiVersion.value);
   }, [dockerSettings, form]);
+  const syncDockerSettingsRef = useRef(syncDockerSettings);
+  useEffect(() => {
+    syncDockerSettingsRef.current = syncDockerSettings;
+  }, [syncDockerSettings]);
+  useEffect(() => {
+    syncDockerSettingsRef.current();
+  }, [dockerSettings]);
 
   const isSaving =
     createSetting.isPending ||

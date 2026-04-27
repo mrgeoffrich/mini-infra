@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -237,6 +237,8 @@ export default function SelfBackupSettingsPage() {
       timezone: configData?.config?.timezone || userPreferences?.timezone || "UTC",
     },
   });
+
+  const timezoneValue = useWatch({ control: form.control, name: "timezone" });
 
   // Update form when config loads
   useEffect(() => {
@@ -475,9 +477,9 @@ export default function SelfBackupSettingsPage() {
                     </Popover>
                     <FormDescription>
                       Timezone for the backup schedule. Current time:{" "}
-                      {form.watch("timezone") &&
+                      {timezoneValue &&
                         new Date().toLocaleString("en-US", {
-                          timeZone: form.watch("timezone") || "UTC",
+                          timeZone: timezoneValue || "UTC",
                           dateStyle: "short",
                           timeStyle: "medium",
                         })}

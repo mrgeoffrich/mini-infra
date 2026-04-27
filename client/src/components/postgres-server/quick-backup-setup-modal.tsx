@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -68,7 +68,7 @@ export function QuickBackupSetupModal({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<QuickBackupSetupFormData>({
     resolver: zodResolver(quickBackupSetupSchema),
@@ -77,7 +77,7 @@ export function QuickBackupSetupModal({
     },
   });
 
-  const selectedDatabaseName = watch("databaseName");
+  const selectedDatabaseName = useWatch({ control, name: "databaseName" });
   const timezone = userPreferences?.timezone || "UTC";
   const defaultContainer =
     defaultContainerData?.data?.[0]?.value || "postgres-backups";

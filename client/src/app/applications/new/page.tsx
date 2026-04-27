@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
 import {
@@ -44,10 +44,10 @@ export default function NewApplicationPage() {
   const [imageValidated, setImageValidated] = useState(false);
   const [detectedPorts, setDetectedPorts] = useState<number[]>([]);
 
-  const selectedEnvId = form.watch("environmentId");
-  const displayName = form.watch("displayName");
-  const serviceType = form.watch("serviceType");
-  const deployImmediately = form.watch("deployImmediately");
+  const selectedEnvId = useWatch({ control: form.control, name: "environmentId" });
+  const displayName = useWatch({ control: form.control, name: "displayName" });
+  const serviceType = useWatch({ control: form.control, name: "serviceType" });
+  const deployImmediately = useWatch({ control: form.control, name: "deployImmediately" });
 
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;

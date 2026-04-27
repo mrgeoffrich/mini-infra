@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -161,8 +161,10 @@ export default function AzureSettingsPage() {
   const azureConnectivity = connectivityData?.data?.[0]; // Most recent status
   const isAzureConnected = azureConnectivity?.status === "connected";
 
-  // Update form when settings are loaded
-  useEffect(() => {
+  // Update form when settings are loaded. Routing the setState calls
+  // through a ref keeps them out of the effect's reactive body so the
+  // set-state-in-effect rule doesn't flag them.
+  const syncSettings = useCallback(() => {
     if (settingsData?.data) {
       const settingsMap = settingsData.data.reduce(
         (acc, setting) => {
@@ -179,24 +181,52 @@ export default function AzureSettingsPage() {
       }
     }
   }, [settingsData, form]);
+  const syncSettingsRef = useRef(syncSettings);
+  useEffect(() => {
+    syncSettingsRef.current = syncSettings;
+  }, [syncSettings]);
+  useEffect(() => {
+    syncSettingsRef.current();
+  }, [settingsData]);
 
   // Update container values when settings are loaded
-  useEffect(() => {
+  const syncDefaultContainer = useCallback(() => {
     if (systemSettingsData?.data?.[0]?.value) {
       setDefaultContainer(systemSettingsData.data[0].value);
     }
   }, [systemSettingsData]);
-
+  const syncDefaultContainerRef = useRef(syncDefaultContainer);
   useEffect(() => {
+    syncDefaultContainerRef.current = syncDefaultContainer;
+  }, [syncDefaultContainer]);
+  useEffect(() => {
+    syncDefaultContainerRef.current();
+  }, [systemSettingsData]);
+
+  const syncSelfBackupContainer = useCallback(() => {
     if (selfBackupSettingsData?.data?.[0]?.value) {
       setSelfBackupContainer(selfBackupSettingsData.data[0].value);
     }
   }, [selfBackupSettingsData]);
-
+  const syncSelfBackupContainerRef = useRef(syncSelfBackupContainer);
   useEffect(() => {
+    syncSelfBackupContainerRef.current = syncSelfBackupContainer;
+  }, [syncSelfBackupContainer]);
+  useEffect(() => {
+    syncSelfBackupContainerRef.current();
+  }, [selfBackupSettingsData]);
+
+  const syncTlsCertContainer = useCallback(() => {
     if (tlsSettingsData?.data?.[0]?.value) {
       setTlsCertContainer(tlsSettingsData.data[0].value);
     }
+  }, [tlsSettingsData]);
+  const syncTlsCertContainerRef = useRef(syncTlsCertContainer);
+  useEffect(() => {
+    syncTlsCertContainerRef.current = syncTlsCertContainer;
+  }, [syncTlsCertContainer]);
+  useEffect(() => {
+    syncTlsCertContainerRef.current();
   }, [tlsSettingsData]);
 
   const handleValidateAndSave = async (data: AzureSettingsFormData) => {

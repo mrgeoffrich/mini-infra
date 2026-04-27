@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -50,7 +50,7 @@ export function ChangeOwnerModal({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<ChangeOwnerFormData>({
     resolver: zodResolver(changeOwnerSchema),
@@ -59,7 +59,7 @@ export function ChangeOwnerModal({
     },
   });
 
-  const newOwner = watch("newOwner");
+  const newOwner = useWatch({ control, name: "newOwner" });
 
   // Filter out the current owner from the available users
   const selectableUsers = availableUsers.filter(

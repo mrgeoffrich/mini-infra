@@ -11,7 +11,6 @@ overrides:
   defu: ^6.1.5
   path-to-regexp: ^8.4.0
   js-yaml: ^4.1.1
-  brace-expansion: ^1.1.13
 
 # pnpm 10 blocks postinstall scripts by default. Native modules and
 # Prisma tooling need their install scripts to run, so allow them.

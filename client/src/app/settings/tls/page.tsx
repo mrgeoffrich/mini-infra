@@ -6,7 +6,7 @@ import {
   useTlsSettings,
   useUpdateTlsSettings,
 } from "@/hooks/use-tls-settings";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -39,6 +39,8 @@ export default function TlsSettingsPage() {
       renewal_days_before_expiry: "30",
     },
   });
+
+  const defaultAcmeProvider = useWatch({ control: form.control, name: "default_acme_provider" });
 
   // Update form when settings load, merging with defaults so unset fields keep their default values
   useEffect(() => {
@@ -94,7 +96,7 @@ export default function TlsSettingsPage() {
                 <div data-tour="tls-acme-provider">
                   <Label>Provider</Label>
                   <Select
-                    value={form.watch("default_acme_provider") || "letsencrypt"}
+                    value={defaultAcmeProvider || "letsencrypt"}
                     onValueChange={(value) =>
                       form.setValue("default_acme_provider", value)
                     }

@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   IconArrowLeft,
@@ -141,7 +141,8 @@ function ApplicationEditForm({
     defaultValues: buildDefaultValues(application),
   });
 
-  const serviceType = form.watch("serviceType");
+  const serviceType = useWatch({ control: form.control, name: "serviceType" });
+  const enableRouting = useWatch({ control: form.control, name: "enableRouting" });
 
   const onSubmit = async (formData: EditApplicationFormData) => {
     const templateName = application.name;
@@ -388,7 +389,7 @@ function ApplicationEditForm({
 
         <ConfigurationCard />
 
-        {(serviceType === "StatelessWeb" || form.watch("enableRouting")) && (
+        {(serviceType === "StatelessWeb" || enableRouting) && (
           <RoutingCard networkType={networkType} showEnableToggle />
         )}
 

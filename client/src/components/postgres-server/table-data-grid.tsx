@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react";
 import {
-  useReactTable,
   getCoreRowModel,
   getSortedRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   IconTable,
   IconArrowUp,
@@ -67,9 +67,8 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
 
   // Create columns dynamically from table metadata
   const columns = useMemo<ColumnDef<Record<string, unknown>>[]>(() => {
-    if (!tableData?.columns) return [];
-
-    return tableData.columns.map((col: { name: string; isPrimaryKey: boolean; dataType: string; isNullable: boolean }) => ({
+    const cols = tableData?.columns ?? [];
+    return cols.map((col: { name: string; isPrimaryKey: boolean; dataType: string; isNullable: boolean }) => ({
       id: col.name,
       accessorKey: col.name,
       header: ({ column }: { column: { getIsSorted: () => false | "asc" | "desc"; toggleSorting: (desc: boolean) => void } }) => {
@@ -114,9 +113,9 @@ export function TableDataGrid({ serverId, databaseId, tableName }: TableDataGrid
         isNullable: col.isNullable,
       },
     }));
-  }, [tableData?.columns]);
+  }, [tableData]);
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: tableData?.rows || [],
     columns,
     state: {

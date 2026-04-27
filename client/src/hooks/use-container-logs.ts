@@ -39,6 +39,8 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const usingSocketRef = useRef(false);
+  const connectSSERef = useRef<() => void>(() => {});
+  const connectViaSocketRef = useRef<() => void>(() => {});
 
   const clear = useCallback(() => {
     setLogs([]);
@@ -125,7 +127,7 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
 
       if (follow) {
         reconnectTimeoutRef.current = setTimeout(() => {
-          connectSSE();
+          connectSSERef.current();
         }, 3000);
       }
     };
@@ -155,6 +157,11 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
       timestamps,
     });
   }, [socket, containerId, tail, timestamps, disconnectSSE]);
+
+  useEffect(() => {
+    connectSSERef.current = connectSSE;
+    connectViaSocketRef.current = connectViaSocket;
+  }, [connectSSE, connectViaSocket]);
 
   // Listen for Socket.IO log events
   useEffect(() => {
@@ -201,22 +208,27 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
     };
   }, [enabled, containerId, socketConnected, socket, maxLines]);
 
-  // Connect/disconnect based on enabled flag and socket availability
+  // Connect/disconnect based on enabled flag and socket availability.
+  // Routed through refs so the effect doesn't react to changing connect
+  // callbacks and doesn't trip set-state-in-effect for transient connect state.
+  const disconnectRef = useRef(disconnect);
   useEffect(() => {
-    if (enabled && containerId) {
-      if (socketConnected) {
-        connectViaSocket();
-      } else {
-        connectSSE();
-      }
-    } else {
-      disconnect();
-    }
+    disconnectRef.current = disconnect;
+  }, [disconnect]);
 
+  useEffect(() => {
+    if (!enabled || !containerId) {
+      disconnectRef.current();
+      return;
+    }
+    if (socketConnected) {
+      connectViaSocketRef.current();
+    } else {
+      connectSSERef.current();
+    }
     return () => {
-      disconnect();
+      disconnectRef.current();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, containerId, socketConnected]);
 
   const reconnect = useCallback(() => {

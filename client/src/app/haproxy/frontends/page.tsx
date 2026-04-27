@@ -14,11 +14,11 @@ import {
 import {
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
   ColumnDef,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 
 import { useAllFrontends } from "@/hooks/use-haproxy-frontend";
 import { useDeleteManualFrontend } from "@/hooks/use-manual-haproxy-frontend";
@@ -71,8 +71,14 @@ export function FrontendsListPage() {
 
   const { mutate: deleteFrontend, isPending: isDeleting } = useDeleteManualFrontend();
 
-  const frontends = frontendsResponse?.data || [];
-  const environments = environmentsResponse?.environments || [];
+  const frontends = useMemo(
+    () => frontendsResponse?.data || [],
+    [frontendsResponse],
+  );
+  const environments = useMemo(
+    () => environmentsResponse?.environments || [],
+    [environmentsResponse],
+  );
 
   // Create environment lookup map
   const environmentsById = useMemo(() => {
@@ -263,7 +269,7 @@ export function FrontendsListPage() {
     [navigate, environmentsById]
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: filteredFrontends,
     columns,
     getCoreRowModel: getCoreRowModel(),

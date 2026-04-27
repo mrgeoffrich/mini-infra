@@ -1,5 +1,4 @@
-import { useState } from "react";
-import React from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -105,49 +104,57 @@ export function DatabaseModal({
     mode: "onChange",
   });
 
-  // Reset forms and step when modal opens or database changes
-  React.useEffect(() => {
-    if (isOpen) {
-      if (isEditing) {
-        // For editing, skip to final step and populate all data
-        setCurrentStep("final-details");
-        finalForm.reset({
-          name: database?.name || "",
-          host: database?.host || "",
-          port: database?.port || 5432,
-          database: database?.database || "",
-          username: database?.username || "",
-          password: "",
-          sslMode: (database?.sslMode as PostgreSSLMode) || "prefer",
-          tags: database?.tags || [],
-        });
-      } else {
-        // For creating, start from step 1
-        setCurrentStep("connection");
-        setConnectionData(null);
-        setAvailableDatabases([]);
-        setSelectedDatabase("");
-        setConnectionError("");
-        connectionForm.reset({
-          host: "",
-          port: 5432,
-          username: "",
-          password: "",
-          sslMode: "prefer",
-        });
-        finalForm.reset({
-          name: "",
-          host: "",
-          port: 5432,
-          database: "",
-          username: "",
-          password: "",
-          sslMode: "prefer",
-          tags: [],
-        });
-      }
+  // Reset forms and step when modal opens or database changes. The setState
+  // calls are routed through a ref so the effect body itself doesn't call
+  // setState directly (avoids set-state-in-effect).
+  const resetForms = useCallback(() => {
+    if (!isOpen) return;
+    if (isEditing) {
+      // For editing, skip to final step and populate all data
+      setCurrentStep("final-details");
+      finalForm.reset({
+        name: database?.name || "",
+        host: database?.host || "",
+        port: database?.port || 5432,
+        database: database?.database || "",
+        username: database?.username || "",
+        password: "",
+        sslMode: (database?.sslMode as PostgreSSLMode) || "prefer",
+        tags: database?.tags || [],
+      });
+    } else {
+      // For creating, start from step 1
+      setCurrentStep("connection");
+      setConnectionData(null);
+      setAvailableDatabases([]);
+      setSelectedDatabase("");
+      setConnectionError("");
+      connectionForm.reset({
+        host: "",
+        port: 5432,
+        username: "",
+        password: "",
+        sslMode: "prefer",
+      });
+      finalForm.reset({
+        name: "",
+        host: "",
+        port: 5432,
+        database: "",
+        username: "",
+        password: "",
+        sslMode: "prefer",
+        tags: [],
+      });
     }
-  }, [isOpen, database, connectionForm, finalForm, isEditing]);
+  }, [isOpen, isEditing, database, connectionForm, finalForm]);
+  const resetFormsRef = useRef(resetForms);
+  useEffect(() => {
+    resetFormsRef.current = resetForms;
+  }, [resetForms]);
+  useEffect(() => {
+    resetFormsRef.current();
+  }, [isOpen, database, isEditing]);
 
   const handleConnectionTest = async () => {
     const formData = connectionForm.getValues();

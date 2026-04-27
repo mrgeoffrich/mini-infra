@@ -855,14 +855,21 @@ describe("DockerExecutorService", () => {
       });
     });
 
-    it.skip("should handle log capture timeout", async () => {
-      // Skipping this test as it takes 30+ seconds to complete
-      // The timeout functionality is tested implicitly by the implementation
-      const mockLogStream = new Readable({ read() {} });
-      mockContainer.logs = vi.fn().mockResolvedValue(mockLogStream);
+    it("should handle log capture timeout", async () => {
+      vi.useFakeTimers();
+      try {
+        const mockLogStream = new Readable({ read() {} });
+        mockContainer.logs = vi.fn().mockResolvedValue(mockLogStream);
 
-      await expect(dockerExecutorService.captureContainerLogs("container-123"))
-        .rejects.toThrow("Log capture timeout");
+        const promise = dockerExecutorService.captureContainerLogs("container-123");
+        // Attach a catch handler synchronously so the rejection is observed
+        // even though we await the assertion below.
+        const assertion = expect(promise).rejects.toThrow("Log capture timeout");
+        await vi.advanceTimersByTimeAsync(30_000);
+        await assertion;
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("should handle log capture with custom options", async () => {

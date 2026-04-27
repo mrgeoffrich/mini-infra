@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -97,7 +97,7 @@ function CreateUserModalContent({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<CreateManagedDatabaseUserRequest>({
     resolver: zodResolver(createUserSchema),
@@ -110,8 +110,8 @@ function CreateUserModalContent({
     },
   });
 
-  const canLogin = watch("canLogin");
-  const isSuperuser = watch("isSuperuser");
+  const canLogin = useWatch({ control, name: "canLogin" });
+  const isSuperuser = useWatch({ control, name: "isSuperuser" });
 
   const handleFormSubmit = async (data: CreateManagedDatabaseUserRequest) => {
     setIsSubmitting(true);
@@ -316,7 +316,7 @@ function EditUserModalContent({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<UpdateManagedDatabaseUserRequest>({
     resolver: zodResolver(editUserSchema),
@@ -327,8 +327,8 @@ function EditUserModalContent({
     },
   });
 
-  const canLogin = watch("canLogin");
-  const isSuperuser = watch("isSuperuser");
+  const canLogin = useWatch({ control, name: "canLogin" });
+  const isSuperuser = useWatch({ control, name: "isSuperuser" });
 
   // Update form when existing user data loads
   useEffect(() => {

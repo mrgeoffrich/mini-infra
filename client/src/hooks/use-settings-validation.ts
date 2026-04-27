@@ -371,6 +371,14 @@ export function useValidationRecovery(
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [isRecovering, setIsRecovering] = useState<Record<string, boolean>>({});
   const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const retryValidationRef = useRef<
+    (
+      service: SettingsCategory,
+      settings: Record<string, string>,
+      validationFn: () => Promise<void>,
+      error: Error,
+    ) => boolean
+  >(() => false);
 
   const retryValidation = useCallback(
     (
@@ -404,8 +412,14 @@ export function useValidationRecovery(
           // Reset retry count on success
           setRetryCount((prev) => ({ ...prev, [key]: 0 }));
         } catch (retryError) {
-          // Recursive retry if still under max retries
-          retryValidation(service, settings, validationFn, retryError as Error);
+          // Recursive retry if still under max retries — go through ref so
+          // the callback identity is stable and lint stays happy.
+          retryValidationRef.current(
+            service,
+            settings,
+            validationFn,
+            retryError as Error,
+          );
         } finally {
           setIsRecovering((prev) => ({ ...prev, [key]: false }));
         }
@@ -415,6 +429,10 @@ export function useValidationRecovery(
     },
     [retryCount, maxRetries, retryDelay, onMaxRetriesExceeded],
   );
+
+  useEffect(() => {
+    retryValidationRef.current = retryValidation;
+  }, [retryValidation]);
 
   const resetRetries = useCallback((service?: SettingsCategory) => {
     if (service) {

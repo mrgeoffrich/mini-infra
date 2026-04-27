@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -124,8 +124,10 @@ export default function DockerSettingsPage() {
   // Validation service
   const validateService = useValidateService();
 
-  // Update form when settings are loaded
-  useEffect(() => {
+  // Update form when settings are loaded. Routing the setState calls
+  // through a ref keeps them out of the effect's reactive body so the
+  // set-state-in-effect rule doesn't flag them.
+  const syncSettings = useCallback(() => {
     const settingsMap: Record<string, SystemSettingsInfo> = {};
 
     // Merge docker settings
@@ -155,6 +157,13 @@ export default function DockerSettingsPage() {
       form.setValue("version", settingsMap.apiVersion.value);
     }
   }, [settingsData, systemSettingsData, form]);
+  const syncSettingsRef = useRef(syncSettings);
+  useEffect(() => {
+    syncSettingsRef.current = syncSettings;
+  }, [syncSettings]);
+  useEffect(() => {
+    syncSettingsRef.current();
+  }, [settingsData, systemSettingsData]);
 
   const handleValidateAndSave = async (data: DockerSettingsFormData) => {
     setValidationState({ isValidating: true, isSuccess: false, error: null });

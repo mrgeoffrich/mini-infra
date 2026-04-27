@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -81,8 +81,11 @@ export default function AdoptContainerPage() {
   const { data: envData } = useEnvironments();
   const environments = envData?.environments ?? [];
 
-  const selectedEnvId = form.watch("environmentId");
-  const selectedContainerName = form.watch("containerName");
+  const selectedEnvId = useWatch({ control: form.control, name: "environmentId" });
+  const selectedContainerName = useWatch({
+    control: form.control,
+    name: "containerName",
+  });
 
   const selectedEnvironment = environments.find((e) => e.id === selectedEnvId);
   const networkType = selectedEnvironment?.networkType;
@@ -90,7 +93,10 @@ export default function AdoptContainerPage() {
   // Fetch eligible containers for the selected environment
   const { data: eligibleData, isLoading: loadingContainers } =
     useEligibleContainers(selectedEnvId || undefined);
-  const eligibleContainers = eligibleData?.data ?? [];
+  const eligibleContainers = useMemo(
+    () => eligibleData?.data ?? [],
+    [eligibleData],
+  );
 
   // Check if HAProxy stack with applications network exists
   const { data: stacksData } = useStacks(selectedEnvId || undefined);

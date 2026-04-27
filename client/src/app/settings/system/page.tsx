@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -76,9 +76,6 @@ const systemSettingsSchema = z.object({
 type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 export default function SystemSettingsPage() {
-  const [settings, setSettings] = useState<Record<string, SystemSettingsInfo>>(
-    {},
-  );
   const [isSaving, setIsSaving] = useState(false);
 
   // Fetch existing system settings for system category
@@ -110,23 +107,24 @@ export default function SystemSettingsPage() {
   });
 
 
-  // Update form when settings are loaded
-  useEffect(() => {
-    if (settingsData?.data) {
-      const settingsMap = settingsData.data.reduce(
-        (acc, setting) => {
-          acc[setting.key] = setting;
-          return acc;
-        },
-        {} as Record<string, SystemSettingsInfo>,
-      );
-      setSettings(settingsMap);
+  // Derive the settings map from query data instead of mirroring it in state.
+  const settings = useMemo<Record<string, SystemSettingsInfo>>(() => {
+    if (!settingsData?.data) return {};
+    return settingsData.data.reduce(
+      (acc, setting) => {
+        acc[setting.key] = setting;
+        return acc;
+      },
+      {} as Record<string, SystemSettingsInfo>,
+    );
+  }, [settingsData]);
 
-      // Update form with current values
-      form.setValue(
-        "publicUrl",
-        settingsMap.public_url?.value || "",
-      );
+  // Update form when settings are loaded. Wrapping the form.setValue calls in
+  // `useEffectEvent` keeps the setState-style writes out of the reactive
+  // effect body (avoids set-state-in-effect).
+  const syncFormFromSettings = useEffectEvent(
+    (settingsMap: Record<string, SystemSettingsInfo>) => {
+      form.setValue("publicUrl", settingsMap.public_url?.value || "");
       form.setValue(
         "corsEnabled",
         settingsMap.cors_enabled?.value === "true",
@@ -135,17 +133,18 @@ export default function SystemSettingsPage() {
         "isProduction",
         settingsMap.is_production?.value === "true",
       );
-      form.setValue(
-        "dockerHostIp",
-        settingsMap.docker_host_ip?.value || "",
-      );
+      form.setValue("dockerHostIp", settingsMap.docker_host_ip?.value || "");
       form.setValue(
         "userEventsRetentionDays",
         settingsMap.user_events_retention_days?.value || "30",
       );
+    },
+  );
+  useEffect(() => {
+    if (settingsData?.data) {
+      syncFormFromSettings(settings);
     }
-
-  }, [settingsData, form]);
+  }, [settingsData, settings]);
 
   const handleSubmit = async (data: SystemSettingsFormData) => {
     setIsSaving(true);

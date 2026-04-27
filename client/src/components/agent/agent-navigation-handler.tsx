@@ -83,11 +83,12 @@ export function AgentNavigationHandler() {
         intervalRef.current = null;
       }
     };
-  }, [pending?.path, navigate]);
+  }, [pending, navigate]);
 
   // Escape key to cancel
+  const hasPending = !!pending;
   useEffect(() => {
-    if (!pending) return;
+    if (!hasPending) return;
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -98,7 +99,7 @@ export function AgentNavigationHandler() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [!!pending, cancel]);
+  }, [hasPending, cancel]);
 
   if (!pending) return null;
 
