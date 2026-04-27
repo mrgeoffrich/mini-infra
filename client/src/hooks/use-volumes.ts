@@ -222,7 +222,7 @@ async function startVolumeInspection(volumeName: string): Promise<VolumeInspecti
 async function fetchVolumeInspection(
   volumeName: string,
   correlationId: string
-): Promise<VolumeInspection> {
+): Promise<VolumeInspection | null> {
   const response = await fetch(
     `/api/docker/volumes/${encodeURIComponent(volumeName)}/inspect`,
     {
@@ -235,10 +235,6 @@ async function fetchVolumeInspection(
   );
 
   if (!response.ok) {
-    if (response.status === 404) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || "Inspection not found");
-    }
     throw new Error(`Failed to fetch inspection: ${response.statusText}`);
   }
 
@@ -248,6 +244,9 @@ async function fetchVolumeInspection(
     throw new Error(data.message || "Failed to fetch inspection");
   }
 
+  // `data.data` is null when the volume has never been inspected. The list
+  // view probes this on every row mount, so the route returns 200 with null
+  // rather than 404.
   return data.data;
 }
 
@@ -344,14 +343,7 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
     queryKey: ["volume-inspection", volumeName],
     queryFn: () => fetchVolumeInspection(volumeName, correlationId),
     enabled: enabled && !!volumeName,
-    retry: (failureCount: number, error: Error) => {
-      // Don't retry on 404 (inspection doesn't exist yet)
-      if (error.message.includes("Inspection not found")) {
-        return false;
-      }
-      // Retry up to 3 times for other errors
-      return failureCount < 3;
-    },
+    retry: (failureCount: number) => failureCount < 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
     staleTime: 1000,
     gcTime: 5 * 60 * 1000,
