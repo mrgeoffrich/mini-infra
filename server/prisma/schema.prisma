@@ -1108,11 +1108,29 @@ model Stack {
   infraResources       InfraResource[]
   poolInstances        PoolInstance[]
 
+  vaultResources       StackVaultResource[]
+
   @@index([environmentId])
   @@index([status])
   @@index([templateId])
   @@index([vaultAppRoleId])
   @@map("stacks")
+}
+
+/// StackVaultResource — index of concrete Vault objects owned by a stack after apply.
+/// Populated on every successful apply; used by the delete cascade to determine
+/// which resources are safe to remove vs. shared by another stack.
+model StackVaultResource {
+  id           String  @id @default(cuid())
+  stackId      String
+  stack        Stack   @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  type         String  // "policy" | "approle" | "kv"
+  concreteName String  // for kv: the path
+  scope        String? // "host" | "environment" | "stack" | null (kv entries have no scope)
+
+  @@unique([stackId, type, concreteName])
+  @@index([type, concreteName])
+  @@map("stack_vault_resources")
 }
 
 // Vault Management Models
