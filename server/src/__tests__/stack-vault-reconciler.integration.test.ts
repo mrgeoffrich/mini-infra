@@ -26,14 +26,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createId } from '@paralleldrive/cuid2';
 import { testPrisma } from './integration-test-helpers';
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
-import type { PolicyServiceFacade, AppRoleServiceFacade, KVServiceFacade } from '../services/stacks/stack-vault-reconciler';
 import { encryptInputValues } from '../services/stacks/stack-input-values-service';
 import { encryptSnapshot, decryptSnapshot, type SnapshotV2 } from '../services/stacks/stack-vault-snapshot';
 import { pruneOrphanedInputValues } from '../services/stacks/orphan-input-pruner';
 import type { TemplateInputDeclaration, TemplateVaultPolicy, TemplateVaultAppRole, TemplateVaultKv } from '@mini-infra/types';
-import { createId } from '@paralleldrive/cuid2';
+import {
+  makePolicySvc,
+  makeAppRoleSvc,
+  makeKVSvc,
+  makeVaultServiceLoaders as makeServices,
+} from './fixtures/vault-mocks';
+import { createTestEnvironment, createTestStack } from './fixtures/vault-test-db';
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
@@ -51,119 +57,6 @@ function ar(name: string, policy: string): TemplateVaultAppRole {
 
 function kv(path: string, fields: TemplateVaultKv['fields']): TemplateVaultKv {
   return { path, fields };
-}
-
-/** Build a mock host environment. Returns the ID. */
-async function createTestEnvironment(): Promise<string> {
-  const env = await testPrisma.environment.create({
-    data: {
-      id: createId(),
-      name: `test-env-${createId().slice(0, 6)}`,
-      type: 'nonproduction',
-      networkType: 'local',
-    },
-  });
-  return env.id;
-}
-
-/** Create a minimal Stack row suitable for vault reconciler tests. */
-async function createTestStack(opts: {
-  encryptedInputValues?: string;
-  environmentId?: string | null;
-  /** Pass an encrypted blob string directly (from encryptSnapshot()). */
-  lastAppliedVaultSnapshot?: string | null;
-  services?: Array<{ serviceName: string; vaultAppRoleRef?: string }>;
-} = {}): Promise<string> {
-  const id = createId();
-  await testPrisma.stack.create({
-    data: {
-      id,
-      name: `stack-${id.slice(0, 6)}`,
-      networks: JSON.stringify([]),
-      volumes: JSON.stringify([]),
-      encryptedInputValues: opts.encryptedInputValues ?? null,
-      ...(opts.environmentId !== undefined ? { environmentId: opts.environmentId } : {}),
-      lastAppliedVaultSnapshot: opts.lastAppliedVaultSnapshot ?? null,
-    },
-  });
-
-  if (opts.services && opts.services.length > 0) {
-    for (const [i, svc] of opts.services.entries()) {
-      await testPrisma.stackService.create({
-        data: {
-          id: createId(),
-          stackId: id,
-          serviceName: svc.serviceName,
-          serviceType: 'Stateful',
-          dockerImage: 'myimage',
-          dockerTag: 'latest',
-          containerConfig: JSON.stringify({ restartPolicy: 'unless-stopped' }),
-          dependsOn: JSON.stringify([]),
-          order: i,
-          vaultAppRoleRef: svc.vaultAppRoleRef ?? null,
-        },
-      });
-    }
-  }
-
-  return id;
-}
-
-// Mock services helpers
-
-function makePolicySvc(opts: { throwOnCreate?: boolean; throwOnPublish?: boolean } = {}): PolicyServiceFacade {
-  let callCount = 0;
-  return {
-    getByName: vi.fn().mockResolvedValue(null),
-    create: opts.throwOnCreate
-      ? vi.fn().mockRejectedValue(new Error('policy create failed'))
-      : vi.fn().mockImplementation((input: { name: string }) => {
-          callCount++;
-          return Promise.resolve({ id: `pol-${callCount}`, displayName: input.name });
-        }),
-    update: vi.fn().mockImplementation((_id: string) => Promise.resolve({ id: _id, displayName: 'updated' })),
-    publish: opts.throwOnPublish
-      ? vi.fn().mockRejectedValue(new Error('policy publish failed'))
-      : vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeAppRoleSvc(opts: { throwOnApply?: boolean } = {}): AppRoleServiceFacade {
-  let callCount = 0;
-  return {
-    getByName: vi.fn().mockResolvedValue(null),
-    create: vi.fn().mockImplementation((input: { name: string }) => {
-      callCount++;
-      return Promise.resolve({ id: `ar-${callCount}-${input.name}` });
-    }),
-    update: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    apply: opts.throwOnApply
-      ? vi.fn().mockRejectedValue(new Error('approle apply failed'))
-      : vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeKVSvc(opts: { throwOnWrite?: boolean } = {}): KVServiceFacade {
-  return {
-    write: opts.throwOnWrite
-      ? vi.fn().mockRejectedValue(new Error('kv write failed'))
-      : vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeServices(overrides: {
-  policy?: PolicyServiceFacade;
-  appRole?: AppRoleServiceFacade;
-  kv?: KVServiceFacade;
-} = {}) {
-  return {
-    getPolicyService: vi.fn().mockResolvedValue(overrides.policy ?? makePolicySvc()),
-    getAppRoleService: vi.fn().mockResolvedValue(overrides.appRole ?? makeAppRoleSvc()),
-    getKVService: vi.fn().mockResolvedValue(overrides.kv ?? makeKVSvc()),
-  };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

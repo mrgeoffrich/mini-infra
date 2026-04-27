@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { testPrisma } from './integration-test-helpers';
+import { makeFakeLog } from './fixtures/vault-mocks';
 
 describe('boot ordering — builtin vault reconciler runs after Vault init', () => {
   beforeEach(() => {
@@ -38,13 +39,7 @@ describe('boot ordering — builtin vault reconciler runs after Vault init', () 
 
     const reconcileMod = await import('../services/stacks/builtin-vault-reconcile');
 
-    const fakeLog = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      child: vi.fn().mockReturnThis(),
-    } as unknown as ReturnType<typeof import('../lib/logger-factory').getLogger>;
+    const fakeLog = makeFakeLog();
 
     const templateByName = new Map<string, { id: string; template: import('../services/stacks/template-file-loader').LoadedTemplate }>();
 
@@ -62,13 +57,7 @@ describe('boot ordering — builtin vault reconciler runs after Vault init', () 
 
     const reconcileMod = await import('../services/stacks/builtin-vault-reconcile');
 
-    const fakeLog = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-      child: vi.fn().mockReturnThis(),
-    } as unknown as ReturnType<typeof import('../lib/logger-factory').getLogger>;
+    const fakeLog = makeFakeLog();
 
     const templateByName = new Map<string, { id: string; template: import('../services/stacks/template-file-loader').LoadedTemplate }>();
 
