@@ -43,7 +43,7 @@ export type UserEventCategory =
   | 'configuration';
 
 // Event status enumeration
-export const USER_EVENT_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const;
+export const USER_EVENT_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped'] as const;
 export type UserEventStatus = typeof USER_EVENT_STATUSES[number];
 
 // Trigger type enumeration

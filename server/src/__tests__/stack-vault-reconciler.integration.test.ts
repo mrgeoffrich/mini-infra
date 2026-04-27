@@ -3,16 +3,22 @@
  *
  * Vault service calls are mocked at the facade level — no real Vault needed.
  * The DB layer (Prisma) is real so we can verify:
- *   - lastAppliedVaultSnapshot is persisted
- *   - lastFailureReason is set on error / cleared on success
+ *   - The reconciler returns a snapshot that the caller can persist
+ *   - lastFailureReason is set on error
+ *   - Idempotent re-apply (snapshot in DB causes noop)
  *   - StackService.vaultAppRoleId is written by the apply route helper
  *   - Orphaned input pruning removes keys not in the current template
  *   - mergeForUpgrade route enforcement
  *
- * Coverage (30+ tests total across unit + integration):
- *   - Full apply with all 3 phases → snapshot recorded in DB
- *   - Missing required input → 400 error, no Vault writes
- *   - Idempotent re-apply → no writes, snapshot preserved
+ * Note: lastAppliedVaultSnapshot is now written by the apply route (caller),
+ * not by the reconciler itself. Reconciler returns result.snapshot for the
+ * caller to commit atomically with service ID updates. Tests that need the
+ * snapshot to be in the DB (e.g. idempotency) must persist it manually.
+ *
+ * Coverage:
+ *   - Full apply with all 3 phases → result.snapshot populated
+ *   - Missing required input → error, no Vault writes
+ *   - Idempotent re-apply → no writes (requires snapshot pre-written to DB)
  *   - Changed KV field → only KV write issued
  *   - AppRole failure → stack.lastFailureReason populated, KV not executed
  *   - Orphaned input cleanup after successful apply
@@ -23,7 +29,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { testPrisma } from './integration-test-helpers';
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
 import type { PolicyServiceFacade, AppRoleServiceFacade, KVServiceFacade } from '../services/stacks/stack-vault-reconciler';
-import { encryptInputValues, decryptInputValues } from '../services/stacks/stack-input-values-service';
+import { encryptInputValues } from '../services/stacks/stack-input-values-service';
+import { pruneOrphanedInputValues } from '../services/stacks/orphan-input-pruner';
 import type { TemplateInputDeclaration, TemplateVaultPolicy, TemplateVaultAppRole, TemplateVaultKv } from '@mini-infra/types';
 import { createId } from '@paralleldrive/cuid2';
 
@@ -161,7 +168,7 @@ function makeServices(overrides: {
 describe('stack-vault-reconciler integration', () => {
 
   describe('full apply — all three phases', () => {
-    it('persists lastAppliedVaultSnapshot to DB after a full apply', async () => {
+    it('returns a snapshot in result.snapshot after a full apply', async () => {
       const encrypted = encryptInputValues({ slackToken: 'xoxb-secret' });
       const stackId = await createTestStack({ encryptedInputValues: encrypted });
 
@@ -183,25 +190,18 @@ describe('stack-vault-reconciler integration', () => {
       }, svcs);
 
       expect(result.status).toBe('applied');
-
-      const stack = await testPrisma.stack.findUniqueOrThrow({ where: { id: stackId } });
-      expect(stack.lastAppliedVaultSnapshot).not.toBeNull();
-      const snap = stack.lastAppliedVaultSnapshot as Record<string, unknown>;
-      expect(snap).toHaveProperty('policies');
-      expect(snap).toHaveProperty('appRoles');
-      expect(snap).toHaveProperty('kv');
+      expect(result.snapshot).toBeDefined();
+      expect(result.snapshot).toHaveProperty('policies');
+      expect(result.snapshot).toHaveProperty('appRoles');
+      expect(result.snapshot).toHaveProperty('kv');
     });
 
-    it('clears lastFailureReason on success', async () => {
+    it('does not set lastFailureReason (caller owns DB writes on success)', async () => {
       const stackId = await createTestStack();
-      await testPrisma.stack.update({
-        where: { id: stackId },
-        data: { lastFailureReason: 'old error', status: 'error' },
-      });
 
       const svcs = makeServices({ policy: makePolicySvc() });
 
-      await runStackVaultReconciler(testPrisma, stackId, {
+      const result = await runStackVaultReconciler(testPrisma, stackId, {
         stackId,
         templateVersion: 1,
         inputs: [],
@@ -209,8 +209,9 @@ describe('stack-vault-reconciler integration', () => {
         userId: 'user-test',
       }, svcs);
 
+      expect(result.status).toBe('applied');
       const stack = await testPrisma.stack.findUniqueOrThrow({ where: { id: stackId } });
-      expect(stack.lastFailureReason).toBeNull();
+      expect(stack.lastAppliedVaultSnapshot).toBeNull();
     });
 
     it('vault writes go to the kv service with resolved inputs', async () => {
@@ -263,7 +264,7 @@ describe('stack-vault-reconciler integration', () => {
       const polSvc1 = makePolicySvc();
       const svcs1 = makeServices({ policy: polSvc1 });
 
-      await runStackVaultReconciler(testPrisma, stackId, {
+      const result1 = await runStackVaultReconciler(testPrisma, stackId, {
         stackId,
         templateVersion: 1,
         inputs: [decl('key')],
@@ -272,6 +273,12 @@ describe('stack-vault-reconciler integration', () => {
       }, svcs1);
 
       expect(polSvc1.create).toHaveBeenCalledOnce();
+
+      // Simulate what the apply route does: persist the snapshot to the DB.
+      await testPrisma.stack.update({
+        where: { id: stackId },
+        data: { lastAppliedVaultSnapshot: result1.snapshot as unknown as import('../generated/prisma/client').Prisma.InputJsonValue },
+      });
 
       // Second apply — same vault section — should be noop
       const polSvc2 = makePolicySvc();
@@ -304,7 +311,7 @@ describe('stack-vault-reconciler integration', () => {
       const kvSvc1 = makeKVSvc();
       const svcs1 = makeServices({ policy: makePolicySvc(), kv: kvSvc1 });
 
-      await runStackVaultReconciler(testPrisma, stackId, {
+      const result1 = await runStackVaultReconciler(testPrisma, stackId, {
         stackId,
         templateVersion: 1,
         inputs: [decl('val')],
@@ -316,6 +323,12 @@ describe('stack-vault-reconciler integration', () => {
       }, svcs1);
 
       expect(kvSvc1.write).toHaveBeenCalledOnce();
+
+      // Simulate what the apply route does: persist the snapshot to the DB.
+      await testPrisma.stack.update({
+        where: { id: stackId },
+        data: { lastAppliedVaultSnapshot: result1.snapshot as unknown as import('../generated/prisma/client').Prisma.InputJsonValue },
+      });
 
       // Update the encrypted input (simulate value change)
       const encrypted2 = encryptInputValues({ val: 'changed' });
@@ -394,23 +407,22 @@ describe('stack-vault-reconciler integration', () => {
         },
       });
 
-      const versionId = createId();
       await testPrisma.stackTemplateVersion.create({
         data: {
-          id: versionId,
+          id: createId(),
           templateId,
           version: 2,
           status: 'published',
-          parameters: JSON.stringify([]),
-          defaultParameterValues: JSON.stringify({}),
-          networkTypeDefaults: JSON.stringify({}),
-          networks: JSON.stringify([]),
-          volumes: JSON.stringify([]),
-          inputs: JSON.stringify([
+          parameters: [],
+          defaultParameterValues: {},
+          networkTypeDefaults: {},
+          networks: [],
+          volumes: [],
+          inputs: [
             decl('a'),
             decl('c'),
             // 'b' is dropped
-          ]),
+          ],
         },
       });
 
@@ -420,30 +432,78 @@ describe('stack-vault-reconciler integration', () => {
         data: { templateId, templateVersion: 2 },
       });
 
-      // Simulate the pruning that happens after a successful apply
-      // by calling the function directly via the apply route helper.
-      // Since we can't call the private pruneOrphanedInputValues directly,
-      // we replicate its logic here to test the DB state.
-      const stack = await testPrisma.stack.findUniqueOrThrow({
+      // Call the real pruneOrphanedInputValues via the exported function.
+      await pruneOrphanedInputValues(testPrisma, stackId);
+
+      const after = await testPrisma.stack.findUniqueOrThrow({
         where: { id: stackId },
-        select: { templateId: true, templateVersion: true, encryptedInputValues: true },
+        select: { encryptedInputValues: true },
       });
 
-      const tv = await testPrisma.stackTemplateVersion.findFirst({
-        where: { templateId: stack.templateId!, version: stack.templateVersion! },
-        select: { inputs: true },
-      });
-
-      const rawInputs = tv?.inputs;
-      const declarations: TemplateInputDeclaration[] = rawInputs
-        ? (typeof rawInputs === 'string' ? JSON.parse(rawInputs) : rawInputs) as TemplateInputDeclaration[]
-        : [];
-      const validKeys = new Set(declarations.map((d) => d.name));
-      const stored = decryptInputValues(stack.encryptedInputValues!);
-      const pruned = Object.fromEntries(Object.entries(stored).filter(([k]) => validKeys.has(k)));
+      expect(after.encryptedInputValues).not.toBeNull();
+      const { decryptInputValues: decrypt } = await import('../services/stacks/stack-input-values-service');
+      const pruned = decrypt(after.encryptedInputValues!);
 
       expect(pruned).toEqual({ a: 'val-a', c: 'val-c' });
       expect(Object.keys(pruned)).not.toContain('b');
+    });
+
+    it('is a no-op when all keys are still declared', async () => {
+      const encrypted = encryptInputValues({ a: 'val-a' });
+      const stackId = await createTestStack({ encryptedInputValues: encrypted });
+
+      const templateId = createId();
+      await testPrisma.stackTemplate.create({
+        data: {
+          id: templateId,
+          name: `tpl-${templateId.slice(0, 6)}`,
+          displayName: 'No-op Template',
+          source: 'user',
+          scope: 'host',
+          currentVersionId: null,
+          draftVersionId: null,
+        },
+      });
+
+      await testPrisma.stackTemplateVersion.create({
+        data: {
+          id: createId(),
+          templateId,
+          version: 1,
+          status: 'published',
+          parameters: [],
+          defaultParameterValues: {},
+          networkTypeDefaults: {},
+          networks: [],
+          volumes: [],
+          inputs: [decl('a')],
+        },
+      });
+
+      await testPrisma.stack.update({
+        where: { id: stackId },
+        data: { templateId, templateVersion: 1 },
+      });
+
+      const before = await testPrisma.stack.findUniqueOrThrow({
+        where: { id: stackId },
+        select: { encryptedInputValues: true },
+      });
+
+      await pruneOrphanedInputValues(testPrisma, stackId);
+
+      const after = await testPrisma.stack.findUniqueOrThrow({
+        where: { id: stackId },
+        select: { encryptedInputValues: true },
+      });
+
+      expect(after.encryptedInputValues).toBe(before.encryptedInputValues);
+    });
+
+    it('does not throw when encryptedInputValues is null', async () => {
+      const stackId = await createTestStack({ encryptedInputValues: undefined });
+
+      await expect(pruneOrphanedInputValues(testPrisma, stackId)).resolves.toBeUndefined();
     });
   });
 

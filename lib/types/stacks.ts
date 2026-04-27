@@ -308,6 +308,8 @@ export interface StackInfo {
   services?: StackServiceInfo[];
   /** Names of input values that have been supplied and encrypted at rest. Never the values themselves. */
   inputValueKeys?: string[];
+  /** Human-readable reason the last apply failed; null when the last apply succeeded. */
+  lastFailureReason?: string | null;
 }
 
 export interface StackServiceInfo {

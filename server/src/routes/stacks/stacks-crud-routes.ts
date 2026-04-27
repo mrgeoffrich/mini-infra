@@ -236,7 +236,7 @@ router.post(
   }),
 );
 
-// PUT /:stackId — Update stack definition
+// PUT /:stackId — Update stack definition (or supply/rotate input values)
 router.put(
   '/:stackId',
   requirePermission('stacks:write'),
@@ -273,7 +273,7 @@ router.put(
     } = parsed.data;
 
     // Merge supplied input values with stored ones using mergeForUpgrade so that
-    // rotateOnUpgrade declarations are enforced at the PATCH boundary.
+    // rotateOnUpgrade declarations are enforced on every input-values write.
     let encryptedInputValues: string | undefined;
     if (inputValues !== undefined) {
       const stored = existing.encryptedInputValues

@@ -48,10 +48,16 @@ type SerializableService = {
 /**
  * Serialize a Prisma stack (with Date objects) to the API response shape (ISO strings).
  *
- * encryptedInputValues is always stripped from the output — the ciphertext blob
- * must never leave the server. inputValueKeys (the set of stored input names) is
- * added instead so callers can tell which inputs have been supplied without
- * seeing the values.
+ * encryptedInputValues is always stripped — the ciphertext must never leave
+ * the server. inputValueKeys (the set of stored input names) is included
+ * instead so callers know which inputs have been supplied without seeing the
+ * values.
+ *
+ * lastAppliedVaultSnapshot is internal reconciliation state; it is stripped
+ * because it contains concrete policy/path names and content hashes that are
+ * not useful to API consumers and would increase response size.
+ *
+ * lastFailureReason is kept — operators need it to diagnose failed applies.
  */
 export function serializeStack(stack: SerializableStack): StackInfo {
   let inputValueKeys: string[] | undefined;
@@ -63,8 +69,13 @@ export function serializeStack(stack: SerializableStack): StackInfo {
     }
   }
 
-  const { encryptedInputValues: _stripped, ...rest } = stack;
-  void _stripped;
+  const {
+    encryptedInputValues: _strippedEncrypted,
+    lastAppliedVaultSnapshot: _strippedSnapshot,
+    ...rest
+  } = stack;
+  void _strippedEncrypted;
+  void _strippedSnapshot;
 
   return {
     ...rest,

@@ -13,10 +13,7 @@ import { StackUserEvent } from '../../services/stacks/stack-user-event';
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
 import { runStackVaultReconciler } from '../../services/stacks/stack-vault-reconciler';
 import { vaultServicesReady } from '../../services/vault/vault-services';
-import {
-  encryptInputValues,
-  decryptInputValues,
-} from '../../services/stacks/stack-input-values-service';
+import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import type {
   TemplateInputDeclaration,
   TemplateVaultAppRole,
@@ -242,7 +239,7 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       // Prune orphaned input values so keys removed from the template don't
       // accumulate silently across versions.
       if (result.success) {
-        await pruneOrphanedInputValues(stackId);
+        await doPruneOrphanedInputValues(prisma, stackId);
       }
 
       await finalizeApplyEvent(userEvent, result);
@@ -278,9 +275,11 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
  * Load the stack's current template version and run the Vault pre-service
  * reconciliation phase if the template has a non-empty vault section.
  *
- * After a successful vault phase, also writes `StackService.vaultAppRoleId`
- * for any service whose `vaultAppRoleRef` resolves to a concrete AppRole ID
- * created by this apply.
+ * After a successful vault phase, writes `StackService.vaultAppRoleId` for any
+ * service whose template-declared `vaultAppRoleRef` resolves to a concrete
+ * AppRole ID created by this apply. The snapshot write and service ID writes
+ * are committed in a single transaction so a crash between them cannot leave
+ * the snapshot recorded while services remain unbound.
  */
 async function runVaultPhaseIfNeeded(
   stackId: string,
@@ -291,7 +290,7 @@ async function runVaultPhaseIfNeeded(
     select: {
       templateId: true,
       templateVersion: true,
-      services: { select: { id: true, serviceName: true, vaultAppRoleRef: true } },
+      services: { select: { id: true, serviceName: true } },
     },
   });
 
@@ -308,6 +307,7 @@ async function runVaultPhaseIfNeeded(
       vaultPolicies: true,
       vaultAppRoles: true,
       vaultKv: true,
+      services: { select: { serviceName: true, vaultAppRoleRef: true } },
     },
   });
 
@@ -337,25 +337,44 @@ async function runVaultPhaseIfNeeded(
     throw new Error(vaultResult.error ?? 'Vault reconciliation phase failed');
   }
 
-  // Write concrete vaultAppRoleId to StackService rows for services that
-  // declared a vaultAppRoleRef. Done atomically with the vault snapshot
-  // write inside runStackVaultReconciler — we just propagate to services here.
-  const servicesToUpdate = (stack.services ?? []).filter(
-    (s) => s.vaultAppRoleRef && vaultResult.appliedAppRoleIdByName[s.vaultAppRoleRef],
+  // On noop the snapshot is already in the DB — nothing to write.
+  if (vaultResult.status === 'noop' || !vaultResult.snapshot) return;
+
+  // Build a map from serviceName → vaultAppRoleRef using the template version's
+  // service definitions. `StackService` rows do not carry vaultAppRoleRef (that
+  // field lives only on StackTemplateServiceDefinition).
+  const templateRefByServiceName = new Map<string, string>(
+    templateVersion.services
+      .filter((s) => s.vaultAppRoleRef != null)
+      .map((s) => [s.serviceName, s.vaultAppRoleRef as string]),
   );
 
-  if (servicesToUpdate.length > 0) {
-    await prisma.$transaction(
-      servicesToUpdate.map((svc) =>
-        prisma.stackService.update({
-          where: { id: svc.id },
-          data: {
-            vaultAppRoleId: vaultResult.appliedAppRoleIdByName[svc.vaultAppRoleRef!],
-          },
-        }),
-      ),
-    );
-  }
+  // Pair each running StackService with the concrete AppRole ID resolved during
+  // this apply, then commit both the snapshot update and all service ID writes
+  // in a single transaction so a crash cannot leave them out of sync.
+  const serviceUpdates = (stack.services ?? [])
+    .map((svc) => {
+      const ref = templateRefByServiceName.get(svc.serviceName);
+      const concreteId = ref ? vaultResult.appliedAppRoleIdByName[ref] : undefined;
+      return concreteId ? { id: svc.id, vaultAppRoleId: concreteId } : null;
+    })
+    .filter((u): u is { id: string; vaultAppRoleId: string } => u !== null);
+
+  await prisma.$transaction([
+    prisma.stack.update({
+      where: { id: stackId },
+      data: {
+        lastAppliedVaultSnapshot: vaultResult.snapshot as unknown as import('../../generated/prisma/client').Prisma.InputJsonValue,
+        lastFailureReason: null,
+      },
+    }),
+    ...serviceUpdates.map((u) =>
+      prisma.stackService.update({
+        where: { id: u.id },
+        data: { vaultAppRoleId: u.vaultAppRoleId },
+      }),
+    ),
+  ]);
 }
 
 async function maybeRestoreHAProxy(
@@ -386,53 +405,7 @@ async function maybeRestoreHAProxy(
   return { success: postApplyResult.success, errors: postApplyResult.errors };
 }
 
-/**
- * After a successful apply, prune encryptedInputValues to contain only keys
- * that match the current template version's inputs[] declarations. Orphaned
- * values from prior template versions are silently removed.
- */
-async function pruneOrphanedInputValues(stackId: string): Promise<void> {
-  try {
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { templateId: true, templateVersion: true, encryptedInputValues: true },
-    });
-    if (!stack?.encryptedInputValues || !stack.templateId || stack.templateVersion == null) return;
-
-    const tv = await prisma.stackTemplateVersion.findFirst({
-      where: { templateId: stack.templateId, version: stack.templateVersion },
-      select: { inputs: true },
-    });
-    if (!tv?.inputs) return;
-
-    const declarations = tv.inputs as unknown as TemplateInputDeclaration[];
-    const validKeys = new Set(declarations.map((d) => d.name));
-
-    let stored: Record<string, string>;
-    try {
-      stored = decryptInputValues(stack.encryptedInputValues);
-    } catch {
-      return; // Corrupt blob — leave untouched; apply will surface the error
-    }
-
-    const pruned = Object.fromEntries(
-      Object.entries(stored).filter(([k]) => validKeys.has(k)),
-    );
-
-    if (Object.keys(pruned).length === Object.keys(stored).length) return; // Nothing to prune
-
-    const newBlob = Object.keys(pruned).length > 0 ? encryptInputValues(pruned) : null;
-    await prisma.stack.update({
-      where: { id: stackId },
-      data: { encryptedInputValues: newBlob },
-    });
-  } catch (err) {
-    logger.warn(
-      { err: err instanceof Error ? err.message : String(err), stackId },
-      'Failed to prune orphaned input values (non-fatal)',
-    );
-  }
-}
+export { pruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 
 async function maybeEnsureMonitoringNetwork(stackId: string, overallSuccess: boolean): Promise<void> {
   if (!overallSuccess) return;

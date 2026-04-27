@@ -59,6 +59,11 @@ export interface StackVaultReconcileResult {
   status: VaultReconcileStatus;
   /** Mapping from template appRole name → concrete DB AppRole ID. */
   appliedAppRoleIdByName: Record<string, string>;
+  /**
+   * New snapshot to persist — caller commits this with any other writes.
+   * Undefined on error or noop (no changes to persist).
+   */
+  snapshot?: VaultApplySnapshot;
   error?: string;
 }
 
@@ -98,10 +103,10 @@ function sanitizeName(name: string): string {
 }
 
 /**
- * Render a policy/appRole name through the template context. Keeps the raw
- * name if it has no template tokens.
+ * Render a string through the template context. Keeps the raw
+ * string if it has no template tokens. Used for names, paths, and HCL bodies.
  */
-function renderName(template: string, ctx: TemplateContext): string {
+function renderTemplate(template: string, ctx: TemplateContext): string {
   if (!template.includes("{{")) return template;
   return resolveTemplate(template, ctx);
 }
@@ -120,7 +125,7 @@ async function emitVaultEvent(
       eventCategory: "security",
       eventName: `${eventType}: ${metadata.concreteName ?? metadata.concretePath ?? ""}`,
       triggeredBy,
-      status: status === "noop" ? "completed" : status,
+      status: status === "noop" ? "skipped" : status,
       progress: status === "failed" ? 0 : 100,
       resourceType: "stack",
       description:
@@ -148,7 +153,7 @@ interface VaultSnapshotPhase {
   hashes: Record<string, string>;
 }
 
-interface VaultApplySnapshot {
+export interface VaultApplySnapshot {
   policies: VaultSnapshotPhase;
   appRoles: VaultSnapshotPhase;
   kv: VaultSnapshotPhase;
@@ -278,8 +283,8 @@ export async function runStackVaultReconciler(
   for (const policy of policies) {
     // policyService is always non-null here — it's set iff policies.length > 0
     const svc = policyService!;
-    const concreteName = sanitizeName(renderName(policy.name, templateCtx));
-    const concreteBody = renderName(policy.body, templateCtx);
+    const concreteName = sanitizeName(renderTemplate(policy.name, templateCtx));
+    const concreteBody = renderTemplate(policy.body, templateCtx);
     const contentHash = sha256(concreteName + "\n" + concreteBody);
 
     newSnapshot.policies.hashes[concreteName] = contentHash;
@@ -366,8 +371,8 @@ export async function runStackVaultReconciler(
   for (const appRole of appRoles) {
     // appRoleService is always non-null here — it's set iff appRoles.length > 0
     const arSvc = appRoleService!;
-    const concreteName = sanitizeName(renderName(appRole.name, templateCtx));
-    const concretePolicyName = sanitizeName(renderName(appRole.policy, templateCtx));
+    const concreteName = sanitizeName(renderTemplate(appRole.name, templateCtx));
+    const concretePolicyName = sanitizeName(renderTemplate(appRole.policy, templateCtx));
     const contentHash = sha256(
       concreteName +
         "\n" +
@@ -478,7 +483,7 @@ export async function runStackVaultReconciler(
     // kvService is always non-null here — it's set iff kvEntries.length > 0
     const kSvc = kvService!;
     // Render path via substitution
-    const concretePath = renderName(kv.path, templateCtx);
+    const concretePath = renderTemplate(kv.path, templateCtx);
 
     // Re-validate the concrete path — catches injection via {{inputs.x}}
     try {
@@ -506,7 +511,7 @@ export async function runStackVaultReconciler(
         }
         resolvedFields[fieldName] = val;
       } else {
-        resolvedFields[fieldName] = renderName(fieldSpec.value, templateCtx);
+        resolvedFields[fieldName] = renderTemplate(fieldSpec.value, templateCtx);
       }
     }
 
@@ -555,18 +560,9 @@ export async function runStackVaultReconciler(
     }
   }
 
-  // 6. Persist snapshot and clear any prior failure reason
-  await prisma.stack.update({
-    where: { id: stackId },
-    data: {
-      lastAppliedVaultSnapshot: newSnapshot as unknown as import("../../generated/prisma/client").Prisma.InputJsonValue,
-      lastFailureReason: null,
-    },
-  });
-
   const status: VaultReconcileStatus = anyApplied ? "applied" : "noop";
   log.info({ stackId, status, appRolesMapped: Object.keys(appliedAppRoleIdByName).length }, "Vault reconcile complete");
-  return { status, appliedAppRoleIdByName };
+  return { status, appliedAppRoleIdByName, snapshot: newSnapshot };
 }
 
 async function markStackError(prisma: PrismaClient, stackId: string, reason: string): Promise<void> {

@@ -605,7 +605,7 @@ describe('runStackVaultReconciler', () => {
   });
 
   describe('snapshot and state management', () => {
-    it('persists lastAppliedVaultSnapshot after successful apply', async () => {
+    it('returns result.snapshot populated after successful apply (caller owns DB write)', async () => {
       const prisma = makePrisma();
       const svcs = makeServices({
         policy: makePolicySvc({ existing: null }),
@@ -613,7 +613,7 @@ describe('runStackVaultReconciler', () => {
         kv: makeKVSvc(),
       });
 
-      await runStackVaultReconciler(prisma, BASE_STACK_ID, {
+      const result = await runStackVaultReconciler(prisma, BASE_STACK_ID, {
         stackId: BASE_STACK_ID,
         templateVersion: BASE_TEMPLATE_VERSION,
         inputs: [],
@@ -625,23 +625,27 @@ describe('runStackVaultReconciler', () => {
         userId: 'user-1',
       }, svcs);
 
-      const updateCalls = (prisma.stack.update as ReturnType<typeof vi.fn>).mock.calls;
-      expect(updateCalls.length).toBeGreaterThan(0);
-      const updateData = updateCalls[updateCalls.length - 1][0].data;
-      expect(updateData.lastAppliedVaultSnapshot).toBeDefined();
-      const snap = updateData.lastAppliedVaultSnapshot as Record<string, unknown>;
+      expect(result.status).toBe('applied');
+      expect(result.snapshot).toBeDefined();
+      const snap = result.snapshot as Record<string, unknown>;
       expect(snap).toHaveProperty('policies');
       expect(snap).toHaveProperty('appRoles');
       expect(snap).toHaveProperty('kv');
+
+      // Reconciler must NOT persist the snapshot itself — the apply route commits
+      // it atomically with service ID updates.
+      const updateCalls = (prisma.stack.update as ReturnType<typeof vi.fn>).mock.calls;
+      const snapshotWrite = updateCalls.find((c) => c[0]?.data?.lastAppliedVaultSnapshot !== undefined);
+      expect(snapshotWrite).toBeUndefined();
     });
 
-    it('clears lastFailureReason on successful apply', async () => {
+    it('does NOT clear lastFailureReason on success (caller owns that write)', async () => {
       const prisma = makePrisma({ lastFailureReason: 'previous error' });
       const svcs = makeServices({
         policy: makePolicySvc({ existing: null }),
       });
 
-      await runStackVaultReconciler(prisma, BASE_STACK_ID, {
+      const result = await runStackVaultReconciler(prisma, BASE_STACK_ID, {
         stackId: BASE_STACK_ID,
         templateVersion: BASE_TEMPLATE_VERSION,
         inputs: [],
@@ -649,9 +653,13 @@ describe('runStackVaultReconciler', () => {
         userId: 'user-1',
       }, svcs);
 
+      expect(result.status).toBe('applied');
+
+      // The reconciler no longer writes lastFailureReason on success.
+      // The apply route clears it atomically with the snapshot write.
       const updateCalls = (prisma.stack.update as ReturnType<typeof vi.fn>).mock.calls;
-      const lastUpdate = updateCalls[updateCalls.length - 1][0].data;
-      expect(lastUpdate.lastFailureReason).toBeNull();
+      const failureReasonClear = updateCalls.find((c) => c[0]?.data?.lastFailureReason === null);
+      expect(failureReasonClear).toBeUndefined();
     });
   });
 
