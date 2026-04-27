@@ -48,6 +48,13 @@ import {
   type SnapshotV2KvEntry,
   type AppliedThisRun,
 } from "./stack-vault-snapshot";
+import {
+  resolveVaultServiceFacades,
+  type VaultPolicyFacade,
+  type VaultAppRoleFacade,
+  type VaultKVFacade,
+  type VaultServiceLoaders,
+} from "./vault-services-loader";
 import type {
   TemplateInputDeclaration,
   TemplateVaultAppRole,
@@ -94,27 +101,6 @@ export interface StackVaultReconcileResult {
 /** SHA-256 of an arbitrary string — used for content-hash idempotency. */
 function sha256(data: string): string {
   return crypto.createHash("sha256").update(data).digest("hex");
-}
-
-/**
- * Lazy-import Vault services inside the function body to avoid pulling the
- * full Vault wiring into unit tests that don't need it.
- */
-async function getVaultPolicyService(prisma: PrismaClient) {
-  const { VaultPolicyService } = await import("../vault/vault-policy-service");
-  const { getVaultServices } = await import("../vault/vault-services");
-  return new VaultPolicyService(prisma, getVaultServices().admin);
-}
-
-async function getVaultAppRoleService(prisma: PrismaClient) {
-  const { VaultAppRoleService } = await import("../vault/vault-approle-service");
-  const { getVaultServices } = await import("../vault/vault-services");
-  return new VaultAppRoleService(prisma, getVaultServices().admin);
-}
-
-async function getVaultKVSvc() {
-  const { getVaultKVService } = await import("../vault/vault-kv-service");
-  return getVaultKVService();
 }
 
 /** Build a Vault-safe lowercase-alphanumeric-hyphen name from a template-rendered string. */
@@ -193,9 +179,9 @@ async function rollbackApplied(
   rollbackTriggeredBy: string,
   svc: UserEventService,
   services: {
-    policyService: PolicyServiceFacade | null;
-    appRoleService: AppRoleServiceFacade | null;
-    kvService: KVServiceFacade | null;
+    policyService: VaultPolicyFacade | null;
+    appRoleService: VaultAppRoleFacade | null;
+    kvService: VaultKVFacade | null;
   },
 ): Promise<string | null> {
   const { kvToRestore, appRolesToRestore, policiesToRestore } = computeRestoreItems({
@@ -338,11 +324,7 @@ export async function runStackVaultReconciler(
   prisma: PrismaClient,
   stackId: string,
   input: StackVaultReconcilerInput,
-  services?: {
-    getPolicyService?: (prisma: PrismaClient) => Promise<PolicyServiceFacade>;
-    getAppRoleService?: (prisma: PrismaClient) => Promise<AppRoleServiceFacade>;
-    getKVService?: () => Promise<KVServiceFacade>;
-  },
+  services?: VaultServiceLoaders,
 ): Promise<StackVaultReconcileResult> {
   const { templateVersion, inputs, vault, userId } = input;
 
@@ -437,24 +419,17 @@ export async function runStackVaultReconciler(
   const userEventSvc = new UserEventService(prisma);
   let anyApplied = false;
 
-  // Lazy-load service facades
-  const policyService = policies.length > 0
-    ? (services?.getPolicyService
-      ? await services.getPolicyService(prisma)
-      : await getVaultPolicyService(prisma))
-    : null;
-
-  const appRoleService = appRoles.length > 0
-    ? (services?.getAppRoleService
-      ? await services.getAppRoleService(prisma)
-      : await getVaultAppRoleService(prisma))
-    : null;
-
-  const kvService = kvEntries.length > 0
-    ? (services?.getKVService
-      ? await services.getKVService()
-      : await getVaultKVSvc())
-    : null;
+  // Lazy-load only the facades whose phase is non-empty.
+  const { policy: policyService, appRole: appRoleService, kv: kvService } =
+    await resolveVaultServiceFacades(
+      prisma,
+      {
+        policy: policies.length > 0,
+        appRole: appRoles.length > 0,
+        kv: kvEntries.length > 0,
+      },
+      services,
+    );
 
   // Helper: handle a phase failure with rollback
   async function handlePhaseFailure(failMsg: string): Promise<StackVaultReconcileResult> {
@@ -823,38 +798,13 @@ async function markStackError(prisma: PrismaClient, stackId: string, reason: str
 }
 
 // =====================
-// Service facades (for injection in tests)
+// Service facades — re-exported from vault-services-loader so existing
+// imports (`PolicyServiceFacade`, `AppRoleServiceFacade`, `KVServiceFacade`)
+// continue to resolve. New code should import the canonical names directly.
 // =====================
 
-export interface PolicyServiceFacade {
-  getByName(name: string): Promise<{ id: string; displayName: string } | null>;
-  create(input: { name: string; displayName: string; description?: string; draftHclBody: string }, userId: string): Promise<{ id: string; displayName: string }>;
-  update(id: string, input: { draftHclBody?: string; displayName?: string }, userId: string): Promise<{ id: string; displayName: string }>;
-  publish(id: string): Promise<{ id: string }>;
-}
-
-export interface AppRoleServiceFacade {
-  getByName(name: string): Promise<{ id: string } | null>;
-  create(input: {
-    name: string;
-    policyId: string;
-    secretIdNumUses?: number;
-    secretIdTtl?: string;
-    tokenTtl?: string;
-    tokenMaxTtl?: string;
-    tokenPeriod?: string;
-  }, userId: string): Promise<{ id: string }>;
-  update(id: string, input: {
-    policyId?: string;
-    secretIdNumUses?: number;
-    secretIdTtl?: string;
-    tokenTtl?: string;
-    tokenMaxTtl?: string;
-    tokenPeriod?: string;
-  }): Promise<{ id: string }>;
-  apply(id: string): Promise<{ id: string }>;
-}
-
-export interface KVServiceFacade {
-  write(path: string, data: Record<string, unknown>): Promise<void>;
-}
+export type {
+  VaultPolicyFacade as PolicyServiceFacade,
+  VaultAppRoleFacade as AppRoleServiceFacade,
+  VaultKVFacade as KVServiceFacade,
+} from "./vault-services-loader";

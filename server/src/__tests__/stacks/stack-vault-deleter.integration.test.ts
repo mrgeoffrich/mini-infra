@@ -71,8 +71,11 @@ function makePolicySvc(opts: {
   return {
     getByName: vi.fn().mockImplementation((name: string) => {
       const id = (opts.existing ?? {})[name];
-      return Promise.resolve(id ? { id } : null);
+      return Promise.resolve(id ? { id, displayName: name } : null);
     }),
+    create: vi.fn().mockResolvedValue({ id: 'pol-unused', displayName: 'unused' }),
+    update: vi.fn().mockResolvedValue({ id: 'pol-unused', displayName: 'unused' }),
+    publish: vi.fn().mockResolvedValue({ id: 'pol-unused' }),
     delete: vi.fn().mockImplementation((id: string) => {
       const shouldFail = (opts.failOn ?? []).includes(id);
       if (shouldFail) return Promise.reject(new Error(`delete failed for ${id}`));
@@ -90,6 +93,9 @@ function makeAppRoleSvc(opts: {
       const id = (opts.existing ?? {})[name];
       return Promise.resolve(id ? { id } : null);
     }),
+    create: vi.fn().mockResolvedValue({ id: 'ar-unused' }),
+    update: vi.fn().mockResolvedValue({ id: 'ar-unused' }),
+    apply: vi.fn().mockResolvedValue({ id: 'ar-unused' }),
     delete: vi.fn().mockImplementation((id: string) => {
       const shouldFail = (opts.failOn ?? []).includes(id);
       if (shouldFail) return Promise.reject(new Error(`delete failed for ${id}`));
@@ -100,6 +106,7 @@ function makeAppRoleSvc(opts: {
 
 function makeKVSvc(opts: { failOn?: string[]; notFound?: string[] } = {}): KVDeleteFacade {
   return {
+    write: vi.fn().mockResolvedValue(undefined),
     delete: vi.fn().mockImplementation((path: string) => {
       if ((opts.notFound ?? []).includes(path)) {
         const err = new Error('404 not found');

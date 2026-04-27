@@ -116,6 +116,7 @@ function makePolicySvc(opts: { existing?: { id: string; displayName: string } | 
     publish: opts.throwOnPublish
       ? vi.fn().mockRejectedValue(new Error('policy publish failed'))
       : vi.fn().mockResolvedValue({ id: existing?.id ?? 'pol-1' }),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -130,6 +131,7 @@ function makeAppRoleSvc(opts: { existing?: { id: string } | null; throwOnCreate?
     apply: opts.throwOnApply
       ? vi.fn().mockRejectedValue(new Error('approle apply failed'))
       : vi.fn().mockResolvedValue({ id: existing?.id ?? 'ar-1' }),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -138,6 +140,7 @@ function makeKVSvc(opts: { throwOnWrite?: boolean } = {}): KVServiceFacade {
     write: opts.throwOnWrite
       ? vi.fn().mockRejectedValue(new Error('kv write failed'))
       : vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
