@@ -55,6 +55,7 @@ import {
   type VaultKVFacade,
   type VaultServiceLoaders,
 } from "./vault-services-loader";
+import { emitVaultPhaseEvent } from "./vault-event-emitter";
 import type {
   TemplateInputDeclaration,
   TemplateVaultAppRole,
@@ -117,47 +118,6 @@ function renderTemplate(template: string, ctx: TemplateContext): string {
   return resolveTemplate(template, ctx);
 }
 
-type VaultEventType =
-  | "stack_vault_policy_apply"
-  | "stack_vault_approle_apply"
-  | "stack_vault_kv_apply"
-  | "stack_vault_policy_rollback"
-  | "stack_vault_approle_rollback"
-  | "stack_vault_kv_rollback";
-
-/** Emit a UserEvent row for an individual Vault mutation. Non-fatal on failure. */
-async function emitVaultEvent(
-  svc: UserEventService,
-  eventType: VaultEventType,
-  triggeredBy: string,
-  status: "completed" | "noop" | "failed",
-  metadata: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await svc.createEvent({
-      eventType,
-      eventCategory: "security",
-      eventName: `${eventType}: ${metadata.concreteName ?? metadata.concretePath ?? ""}`,
-      triggeredBy,
-      status: status === "noop" ? "skipped" : status,
-      progress: status === "failed" ? 0 : 100,
-      resourceType: "stack",
-      description:
-        status === "noop"
-          ? `Skipped (no change) — ${eventType}`
-          : status === "failed"
-            ? `Failed — ${eventType}`
-            : `Applied — ${eventType}`,
-      metadata: { ...metadata, action: status },
-    });
-  } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err.message : String(err), eventType },
-      "Failed to emit vault audit event (non-fatal)",
-    );
-  }
-}
-
 // =====================
 // Rollback helpers
 // =====================
@@ -196,7 +156,7 @@ async function rollbackApplied(
     for (const { path, entry } of kvToRestore) {
       try {
         await services.kvService.write(path, entry.fields);
-        await emitVaultEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "completed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "completed", {
           stackId,
           concretePath: path,
           phase: "kv",
@@ -206,7 +166,7 @@ async function rollbackApplied(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         rollbackErrors.push(`KV rollback failed for '${path}': ${msg}`);
-        await emitVaultEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "failed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "failed", {
           stackId,
           concretePath: path,
           phase: "kv",
@@ -249,7 +209,7 @@ async function rollbackApplied(
             await arSvc.apply(existing.id);
           }
         }
-        await emitVaultEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "completed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "completed", {
           stackId,
           concreteName: name,
           phase: "appRoles",
@@ -259,7 +219,7 @@ async function rollbackApplied(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         rollbackErrors.push(`AppRole rollback failed for '${name}': ${msg}`);
-        await emitVaultEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "failed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "failed", {
           stackId,
           concreteName: name,
           phase: "appRoles",
@@ -284,7 +244,7 @@ async function rollbackApplied(
           // Resource was created during this apply (didn't exist before) — no prior state to restore.
           log.warn({ policy: name }, "Policy not found during rollback — may have been created this apply");
         }
-        await emitVaultEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "completed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "completed", {
           stackId,
           concreteName: name,
           phase: "policies",
@@ -294,7 +254,7 @@ async function rollbackApplied(
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         rollbackErrors.push(`Policy rollback failed for '${name}': ${msg}`);
-        await emitVaultEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "failed", {
+        await emitVaultPhaseEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "failed", {
           stackId,
           concreteName: name,
           phase: "policies",
@@ -496,7 +456,7 @@ export async function runStackVaultReconciler(
       if (existing) {
         policyIdByConcreteName[concreteName] = existing.id;
         log.debug({ policy: concreteName }, "Policy unchanged — skipping write");
-        await emitVaultEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "noop", {
+        await emitVaultPhaseEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "noop", {
           stackId,
           templateVersion,
           concreteName,
@@ -535,7 +495,7 @@ export async function runStackVaultReconciler(
       appliedThisRun.policies.push(concreteName);
       anyApplied = true;
 
-      await emitVaultEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "completed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "completed", {
         stackId,
         templateVersion,
         concreteName,
@@ -544,7 +504,7 @@ export async function runStackVaultReconciler(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error({ policy: concreteName, err: msg }, "Policy upsert failed");
-      await emitVaultEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "failed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "failed", {
         stackId,
         templateVersion,
         concreteName,
@@ -602,7 +562,7 @@ export async function runStackVaultReconciler(
       if (existing) {
         appliedAppRoleIdByName[appRole.name] = existing.id;
         log.debug({ appRole: concreteName }, "AppRole unchanged — skipping write");
-        await emitVaultEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "noop", {
+        await emitVaultPhaseEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "noop", {
           stackId,
           templateVersion,
           concreteName,
@@ -644,7 +604,7 @@ export async function runStackVaultReconciler(
       appliedThisRun.appRoles.push(concreteName);
       anyApplied = true;
 
-      await emitVaultEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "completed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "completed", {
         stackId,
         templateVersion,
         concreteName,
@@ -653,7 +613,7 @@ export async function runStackVaultReconciler(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error({ appRole: concreteName, err: msg }, "AppRole upsert failed");
-      await emitVaultEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "failed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "failed", {
         stackId,
         templateVersion,
         concreteName,
@@ -701,7 +661,7 @@ export async function runStackVaultReconciler(
     const prevEntry = priorSnapshot?.kv[concretePath];
     if (prevEntry?.hash === contentHash) {
       log.debug({ path: concretePath }, "KV entry unchanged — skipping write");
-      await emitVaultEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "noop", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "noop", {
         stackId,
         templateVersion,
         concretePath,
@@ -716,7 +676,7 @@ export async function runStackVaultReconciler(
       appliedThisRun.kv.push(concretePath);
       anyApplied = true;
 
-      await emitVaultEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "completed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "completed", {
         stackId,
         templateVersion,
         concretePath,
@@ -725,7 +685,7 @@ export async function runStackVaultReconciler(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error({ path: concretePath, err: msg }, "KV write failed");
-      await emitVaultEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "failed", {
+      await emitVaultPhaseEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "failed", {
         stackId,
         templateVersion,
         concretePath,
