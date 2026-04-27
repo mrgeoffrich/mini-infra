@@ -35,6 +35,9 @@ export type UserEventType =
   | 'stack_vault_policy_rollback'
   | 'stack_vault_approle_rollback'
   | 'stack_vault_kv_rollback'
+  | 'stack_vault_policy_delete'
+  | 'stack_vault_approle_delete'
+  | 'stack_vault_kv_delete'
   | 'other';
 
 // Event category enumeration
