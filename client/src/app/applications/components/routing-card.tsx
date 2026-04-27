@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFormContext } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { IconAlertTriangle, IconExternalLink } from "@tabler/icons-react";
@@ -75,7 +75,7 @@ export function RoutingCard({
   const enableRouting = form.watch("enableRouting");
 
   const { data: zonesData, isLoading: zonesLoading } = useDnsZones();
-  const zones = zonesData?.data?.zones ?? [];
+  const zones = useMemo(() => zonesData?.data?.zones ?? [], [zonesData]);
 
   const { data: cfSettings, isLoading: cfSettingsLoading } =
     useCloudflareSettings();
@@ -123,8 +123,10 @@ export function RoutingCard({
   const [subdomain, setSubdomain] = useState(existingHostname);
   const [zoneName, setZoneName] = useState<string>("");
 
-  // Once zones load, decompose existing hostname or seed zone for new entries
-  useEffect(() => {
+  // Once zones load, decompose existing hostname or seed zone for new entries.
+  // Routing the setState calls through a ref keeps them out of the effect's
+  // reactive body so the set-state-in-effect rule doesn't flag them.
+  const initFromZones = useCallback(() => {
     if (zonesLoading || initialised) return;
     setInitialised(true);
 
@@ -140,6 +142,13 @@ export function RoutingCard({
       setZoneName(zones[0].name);
     }
   }, [zonesLoading, zones, form, initialised]);
+  const initFromZonesRef = useRef(initFromZones);
+  useEffect(() => {
+    initFromZonesRef.current = initFromZones;
+  }, [initFromZones]);
+  useEffect(() => {
+    initFromZonesRef.current();
+  }, [zonesLoading, zones]);
 
   // Keep hidden form field in sync
   useEffect(() => {

@@ -1,6 +1,6 @@
 import request from 'supertest';
 
-const { mockEnvironmentManager } = vi.hoisted(() => ({
+const { mockEnvironmentManager, mockPrisma } = vi.hoisted(() => ({
   mockEnvironmentManager: {
     listEnvironments: vi.fn(),
     createEnvironment: vi.fn(),
@@ -8,6 +8,11 @@ const { mockEnvironmentManager } = vi.hoisted(() => ({
     updateEnvironment: vi.fn(),
     deleteEnvironment: vi.fn(),
     getInstance: vi.fn(),
+  },
+  mockPrisma: {
+    environment: {
+      findFirst: vi.fn(),
+    },
   },
 }));
 
@@ -63,7 +68,7 @@ vi.mock('../services/environment/environment-manager', () => ({
   },
 }));
 vi.mock('../lib/prisma', () => ({
-  default: {},
+  default: mockPrisma,
 }));
 vi.mock('../middleware/auth', () => ({
   requireSessionOrApiKey: (req: any, res: any, next: any) => {
@@ -109,6 +114,7 @@ describe('Environment API', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockPrisma.environment.findFirst.mockResolvedValue(null);
   });
 
   describe('GET /api/environments', () => {

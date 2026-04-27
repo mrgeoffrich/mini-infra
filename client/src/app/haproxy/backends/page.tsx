@@ -14,11 +14,11 @@ import {
 import {
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
   ColumnDef,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 
 import { useAllBackends } from "@/hooks/use-haproxy-backends";
 import { useEnvironments } from "@/hooks/use-environments";
@@ -133,8 +133,14 @@ export function BackendsListPage() {
     filters: { limit: 100 },
   });
 
-  const backends = backendsResponse?.data || [];
-  const environments = environmentsResponse?.environments || [];
+  const backends = useMemo(
+    () => backendsResponse?.data || [],
+    [backendsResponse],
+  );
+  const environments = useMemo(
+    () => environmentsResponse?.environments || [],
+    [environmentsResponse],
+  );
 
   // Create environment lookup map
   const environmentsById = useMemo(() => {
@@ -275,7 +281,7 @@ export function BackendsListPage() {
     [navigate, environmentsById],
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: filteredBackends,
     columns,
     getCoreRowModel: getCoreRowModel(),

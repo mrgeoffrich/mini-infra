@@ -1,4 +1,4 @@
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -71,7 +71,7 @@ export function AddRouteDialog({
 
   const createRouteMutation = useCreateRoute();
 
-  const enableSsl = form.watch("useSSL");
+  const enableSsl = useWatch({ control: form.control, name: "useSSL" });
 
   const onSubmit = async (data: AddRouteFormValues) => {
     try {

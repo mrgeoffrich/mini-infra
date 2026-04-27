@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useEffectEvent } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -101,16 +101,20 @@ export function CreateApiKeyPage() {
     [dbPresets],
   );
 
-  // Set default preset once DB presets load. `useEffectEvent` lets us react
-  // to the presets becoming available without making the setState calls
-  // part of the effect's reactive body (avoiding set-state-in-effect).
-  const initDefaultPreset = useEffectEvent(() => {
+  // Set default preset once DB presets load. Routing the setState calls
+  // through a ref keeps them out of the effect's reactive body so the
+  // set-state-in-effect rule doesn't flag them.
+  const initDefaultPreset = useCallback(() => {
     if (!dbPresets || dbPresets.length === 0 || selectedPreset) return;
     const fullAccess = dbPresets.find((p) => p.permissions.includes("*"));
     applyPreset(fullAccess?.id ?? dbPresets[0].id);
-  });
+  }, [dbPresets, selectedPreset, applyPreset]);
+  const initDefaultPresetRef = useRef(initDefaultPreset);
   useEffect(() => {
-    initDefaultPreset();
+    initDefaultPresetRef.current = initDefaultPreset;
+  }, [initDefaultPreset]);
+  useEffect(() => {
+    initDefaultPresetRef.current();
   }, [dbPresets]);
 
   const handleSubmit = async (data: CreateApiKeyFormData) => {

@@ -1,4 +1,4 @@
-import React, { Suspense } from "react";
+import { Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PublicRoute } from "@/components/public-route";
@@ -66,11 +66,6 @@ import VaultPoliciesPage from "@/app/vault/policies/page";
 import VaultPolicyDetailPage from "@/app/vault/policies/[id]/page";
 import VaultAppRolesPage from "@/app/vault/approles/page";
 import VaultAppRoleDetailPage from "@/app/vault/approles/[id]/page";
-
-const HelpPage = React.lazy(() => import("@/app/help/page"));
-const HelpDocPage = React.lazy(
-  () => import("@/app/help/[category]/[slug]/page")
-);
 
 export const router = createBrowserRouter([
   {
@@ -367,19 +362,31 @@ export const router = createBrowserRouter([
       },
       {
         path: "help",
-        element: (
-          <Suspense>
-            <HelpPage />
-          </Suspense>
-        ),
+        lazy: async () => {
+          const { default: HelpPage } = await import("@/app/help/page");
+          return {
+            element: (
+              <Suspense>
+                <HelpPage />
+              </Suspense>
+            ),
+          };
+        },
       },
       {
         path: "help/:category/:slug",
-        element: (
-          <Suspense>
-            <HelpDocPage />
-          </Suspense>
-        ),
+        lazy: async () => {
+          const { default: HelpDocPage } = await import(
+            "@/app/help/[category]/[slug]/page"
+          );
+          return {
+            element: (
+              <Suspense>
+                <HelpDocPage />
+              </Suspense>
+            ),
+          };
+        },
       },
       // Development-only routes
       ...(import.meta.env.VITE_SHOW_DEV_MENU === 'true'

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -66,7 +66,7 @@ export function DatabaseModal({
     handleSubmit,
     formState: { errors },
     setValue,
-    watch,
+    control,
     reset,
   } = useForm<DatabaseFormData>({
     resolver: zodResolver(databaseSchema),
@@ -79,9 +79,9 @@ export function DatabaseModal({
     },
   });
 
-  const owner = watch("owner");
-  const encoding = watch("encoding");
-  const template = watch("template");
+  const owner = useWatch({ control, name: "owner" });
+  const encoding = useWatch({ control, name: "encoding" });
+  const template = useWatch({ control, name: "template" });
 
   const handleFormSubmit = async (data: DatabaseFormData) => {
     setIsSubmitting(true);

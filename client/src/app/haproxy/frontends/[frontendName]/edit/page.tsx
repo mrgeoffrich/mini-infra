@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -97,6 +97,8 @@ export function EditManualFrontendPage() {
       tlsCertificateId: frontend?.tlsCertificateId || undefined,
     },
   });
+
+  const enableSsl = useWatch({ control: form.control, name: "enableSsl" });
 
   // Update form when frontend data loads
   if (frontend && !form.formState.isDirty) {
@@ -211,8 +213,6 @@ export function EditManualFrontendPage() {
       </div>
     );
   }
-
-  const enableSsl = form.watch("enableSsl");
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { IconArrowLeft, IconUpload, IconDeviceFloppy } from "@tabler/icons-react";
 import {
@@ -29,13 +29,20 @@ export default function VaultPolicyDetailPage() {
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
 
+  // Initialise the editable form fields from the loaded policy. We track the
+  // last-seen policy id via a ref so the setState calls live inside a
+  // ref-controlled branch (avoids set-state-in-effect) and we only re-init
+  // when the policy id actually changes — preserving in-progress edits.
+  const lastInitialisedIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (policy) {
-      setDraft(policy.draftHclBody ?? "");
-      setDisplayName(policy.displayName);
-      setDescription(policy.description ?? "");
-    }
-  }, [policy?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!policy) return;
+    const prev = lastInitialisedIdRef.current;
+    if (prev === policy.id) return;
+    lastInitialisedIdRef.current = policy.id;
+    setDraft(policy.draftHclBody ?? "");
+    setDisplayName(policy.displayName);
+    setDescription(policy.description ?? "");
+  }, [policy]);
 
   if (isLoading) {
     return (

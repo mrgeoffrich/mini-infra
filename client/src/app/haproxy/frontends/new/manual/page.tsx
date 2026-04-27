@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -132,7 +132,7 @@ export default function CreateManualFrontendPage() {
 
   const { data: environmentsData, isLoading: isLoadingEnvironments } =
     useEnvironments();
-  const selectedEnvironmentId = form.watch("environmentId");
+  const selectedEnvironmentId = useWatch({ control: form.control, name: "environmentId" });
   const { data: containersData, isLoading: isLoadingContainers } =
     useEligibleContainers(selectedEnvironmentId || null);
 
@@ -327,6 +327,8 @@ function EnvironmentSelectionCard({
   environmentsData,
   isLoading,
 }: EnvironmentSelectionCardProps) {
+  const selectedEnvId = useWatch({ control: form.control, name: "environmentId" });
+
   if (isLoading) {
     return (
       <Card>
@@ -342,7 +344,6 @@ function EnvironmentSelectionCard({
   }
 
   const environments: Environment[] = environmentsData?.environments || [];
-  const selectedEnvId = form.watch("environmentId");
   const selectedEnv = environments.find((e) => e.id === selectedEnvId);
 
   return (
@@ -412,6 +413,8 @@ function ContainerSelectionCard({
   isLoading,
   haproxyNetwork,
 }: ContainerSelectionCardProps) {
+  const selectedContainerId = useWatch({ control: form.control, name: "containerId" });
+
   if (isLoading) {
     return (
       <Card>
@@ -427,7 +430,6 @@ function ContainerSelectionCard({
   }
 
   const containers: EligibleContainer[] = containersData?.data?.containers || [];
-  const selectedContainerId = form.watch("containerId");
   const selectedContainer = containers.find(
     (c) => c.id === selectedContainerId,
   );
@@ -565,8 +567,8 @@ function FrontendConfigurationCard({
   form,
   environmentId,
 }: FrontendConfigurationCardProps) {
-  const hostname = form.watch("hostname");
-  const enableSsl = form.watch("enableSsl");
+  const hostname = useWatch({ control: form.control, name: "hostname" });
+  const enableSsl = useWatch({ control: form.control, name: "enableSsl" });
   const { available: hostnameAvailable, conflictingFrontend } =
     useValidateHostname(hostname, environmentId);
 

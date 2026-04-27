@@ -74,7 +74,7 @@ export default function ApplicationsPage() {
   const [stoppingId, setStoppingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
-  const userStacks = stacksData?.data ?? [];
+  const userStacks = useMemo(() => stacksData?.data ?? [], [stacksData]);
 
   // Build a map from templateId to all stacks for that template
   const stacksByTemplateId = useMemo(() => {

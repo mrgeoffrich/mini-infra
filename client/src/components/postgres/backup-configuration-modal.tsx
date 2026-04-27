@@ -1,6 +1,6 @@
 import { useState } from "react";
 import React from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,6 +120,9 @@ export function BackupConfigurationModal({
     mode: "onChange",
   });
 
+  const watchedTimezone = useWatch({ control: form.control, name: "timezone" });
+  const watchedIsEnabled = useWatch({ control: form.control, name: "isEnabled" });
+
   const onSubmit = async (data: BackupConfigFormData) => {
     setSubmitError(null);
     try {
@@ -178,9 +181,13 @@ export function BackupConfigurationModal({
     }
   };
 
-  // Clear error when modal opens/closes
+  // Clear error when the modal opens. Tracked via a ref so the setState
+  // call sits outside the effect's reactive body.
+  const prevIsOpenRef = React.useRef(isOpen);
   React.useEffect(() => {
-    if (isOpen) {
+    const justOpened = isOpen && !prevIsOpenRef.current;
+    prevIsOpenRef.current = isOpen;
+    if (justOpened) {
       setSubmitError(null);
     }
   }, [isOpen]);
@@ -330,9 +337,9 @@ export function BackupConfigurationModal({
                   </Popover>
                   <FormDescription>
                     Timezone for the backup schedule. Current time:{" "}
-                    {form.watch("timezone") &&
+                    {watchedTimezone &&
                       new Date().toLocaleString("en-US", {
-                        timeZone: form.watch("timezone") || "UTC",
+                        timeZone: watchedTimezone || "UTC",
                         dateStyle: "short",
                         timeStyle: "medium",
                       })}
@@ -343,7 +350,7 @@ export function BackupConfigurationModal({
             />
 
             {/* Next Scheduled Time */}
-            {backupConfig?.nextScheduledAt && form.watch("isEnabled") && (
+            {backupConfig?.nextScheduledAt && watchedIsEnabled && (
               <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                 <IconClock className="w-4 h-4" />
                 <span>
@@ -352,14 +359,14 @@ export function BackupConfigurationModal({
                     "en-US",
                     {
                       timeZone:
-                        form.watch("timezone") ||
+                        watchedTimezone ||
                         backupConfig.timezone ||
                         "UTC",
                       dateStyle: "medium",
                       timeStyle: "short",
                     },
                   )}{" "}
-                  ({form.watch("timezone") || backupConfig.timezone || "UTC"})
+                  ({watchedTimezone || backupConfig.timezone || "UTC"})
                 </span>
               </div>
             )}

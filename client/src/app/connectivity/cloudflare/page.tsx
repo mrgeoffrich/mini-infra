@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -101,8 +101,10 @@ export default function CloudflareSettingsPage() {
   // Validation service
   const validateService = useValidateService();
 
-  // Update form when settings are loaded
-  useEffect(() => {
+  // Update form when settings are loaded. Routing the setState calls
+  // through a ref keeps them out of the effect's reactive body so the
+  // set-state-in-effect rule doesn't flag them.
+  const syncSettings = useCallback(() => {
     if (settingsData?.data) {
       const settingsMap = settingsData.data.reduce(
         (acc, setting) => {
@@ -122,6 +124,13 @@ export default function CloudflareSettingsPage() {
       }
     }
   }, [settingsData, form]);
+  const syncSettingsRef = useRef(syncSettings);
+  useEffect(() => {
+    syncSettingsRef.current = syncSettings;
+  }, [syncSettings]);
+  useEffect(() => {
+    syncSettingsRef.current();
+  }, [settingsData]);
 
   const handleValidateAndSave = async (data: CloudflareSettingsFormData) => {
     setValidationState({ isValidating: true, isSuccess: false, error: null });

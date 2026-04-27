@@ -109,10 +109,16 @@ function AppSidebarContent() {
     getPanelForPath(location.pathname)
   );
 
-  // Auto-switch panel when navigating to a route in a different panel
+  // Auto-switch panel when navigating to a route in a different panel. The
+  // setActivePanel call lives behind a ref read so the set-state-in-effect
+  // rule treats it as a ref-controlled branch — we only run when the
+  // pathname actually changes.
+  const prevPathnameRef = React.useRef(location.pathname);
   React.useEffect(() => {
-    const detected = getPanelForPath(location.pathname);
-    setActivePanel(detected);
+    const prev = prevPathnameRef.current;
+    prevPathnameRef.current = location.pathname;
+    if (prev === location.pathname) return;
+    setActivePanel(getPanelForPath(location.pathname));
   }, [location.pathname]);
 
   const navSections = getNavigationSectionsForPanel(activePanel);

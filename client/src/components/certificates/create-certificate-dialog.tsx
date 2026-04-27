@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { IconPlus, IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useCreateCertificate } from "@/hooks/use-certificates";
@@ -52,6 +52,10 @@ export function CreateCertificateDialog({
       renewalDaysBeforeExpiry: 30,
     },
   });
+
+  const primaryDomain = useWatch({ control: form.control, name: "primaryDomain" });
+  const autoRenew = useWatch({ control: form.control, name: "autoRenew" });
+  const renewalDaysBeforeExpiry = useWatch({ control: form.control, name: "renewalDaysBeforeExpiry" });
 
   const handleAddDomain = () => {
     if (domainInput && !domains.includes(domainInput)) {
@@ -134,7 +138,7 @@ export function CreateCertificateDialog({
                   <Badge
                     key={domain}
                     variant={
-                      form.watch("primaryDomain") === domain
+                      primaryDomain === domain
                         ? "default"
                         : "secondary"
                     }
@@ -171,13 +175,13 @@ export function CreateCertificateDialog({
               </p>
             </div>
             <Switch
-              checked={form.watch("autoRenew")}
+              checked={autoRenew}
               onCheckedChange={(checked) => form.setValue("autoRenew", checked)}
             />
           </div>
 
           {/* Renewal days */}
-          {form.watch("autoRenew") && (
+          {autoRenew && (
             <div className="space-y-2">
               <Label>Renew Days Before Expiry</Label>
               <Input
@@ -190,7 +194,7 @@ export function CreateCertificateDialog({
               />
               <p className="text-xs text-muted-foreground">
                 Certificate will renew automatically{" "}
-                {form.watch("renewalDaysBeforeExpiry")} days before expiration
+                {renewalDaysBeforeExpiry} days before expiration
               </p>
             </div>
           )}

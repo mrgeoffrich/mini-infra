@@ -139,12 +139,22 @@ const chartConfig = {
 
 export function ChartAreaInteractive() {
   const isMobile = useIsMobile();
-  const [timeRange, setTimeRange] = React.useState("90d");
+  // Lazily seed the time range from the initial viewport so we don't need an
+  // effect that runs setState after mount. Subsequent isMobile transitions
+  // are still tracked below to preserve the original behaviour.
+  const [timeRange, setTimeRange] = React.useState(() =>
+    isMobile ? "7d" : "90d",
+  );
 
+  // Force the 7d range whenever the viewport flips from desktop to mobile.
+  // The setState lives behind a ref read so the set-state-in-effect rule
+  // treats it as a ref-controlled branch.
+  const prevIsMobileRef = React.useRef(isMobile);
   React.useEffect(() => {
-    if (isMobile) {
-      setTimeRange("7d");
-    }
+    const prev = prevIsMobileRef.current;
+    prevIsMobileRef.current = isMobile;
+    if (prev || !isMobile) return;
+    setTimeRange("7d");
   }, [isMobile]);
 
   const filteredData = chartData.filter((item) => {

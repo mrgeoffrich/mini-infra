@@ -120,10 +120,10 @@ export function useFormattedDateTime(
 export function useFormattedContainerDate(
   date: string | Date | number | null | undefined,
 ) {
-  const { formatContainerDate, timezone } = useFormattedDate();
+  const { formatContainerDate } = useFormattedDate();
 
   return useMemo(() => {
     if (!date) return null;
     return formatContainerDate(date);
-  }, [date, formatContainerDate, timezone]);
+  }, [date, formatContainerDate]);
 }

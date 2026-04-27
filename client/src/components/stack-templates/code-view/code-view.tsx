@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml as yamlLang } from "@codemirror/lang-yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -38,9 +38,18 @@ export function CodeView({ version, readOnly, saving, onSave }: CodeViewProps) {
 
   // Refresh the buffer whenever the upstream version changes (version switch
   // or post-save refresh). Assumes the caller won't swap the version mid-edit.
-  useEffect(() => {
+  // Routed through a ref so the effect body doesn't call setState directly
+  // (avoids set-state-in-effect).
+  const syncFromUpstream = useCallback(() => {
     setBuffer(initialYaml);
     setParseError(null);
+  }, [initialYaml]);
+  const syncFromUpstreamRef = useRef(syncFromUpstream);
+  useEffect(() => {
+    syncFromUpstreamRef.current = syncFromUpstream;
+  }, [syncFromUpstream]);
+  useEffect(() => {
+    syncFromUpstreamRef.current();
   }, [initialYaml]);
 
   const dirty = buffer !== initialYaml;

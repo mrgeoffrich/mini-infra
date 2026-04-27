@@ -12,10 +12,10 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   Table,
   TableBody,
@@ -218,7 +218,7 @@ export function CertificateList({ certificates }: CertificateListProps) {
     [formatDateTime, navigate, handleRevokeClick]
   );
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: certificates,
     columns,
     getCoreRowModel: getCoreRowModel(),

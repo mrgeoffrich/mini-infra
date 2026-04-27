@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useEffect, useRef, useState } from "react";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { z } from "zod";
 import {
@@ -83,12 +83,19 @@ export function ServiceEditDrawer({
     defaultValues: emptyFormValues,
   });
 
-  const serviceType = form.watch("serviceType");
+  const serviceType = useWatch({ control: form.control, name: "serviceType" });
 
+  // Reset form + tab whenever the drawer opens or the service changes while
+  // open. Routed through a ref so setActiveTab sits outside the reactive
+  // body of the effect.
+  const prevOpenRef = useRef(open);
   useEffect(() => {
-    if (open) {
+    const justOpened = open && !prevOpenRef.current;
+    const switchedWhileOpen = open && prevOpenRef.current;
+    prevOpenRef.current = open;
+    if (justOpened || switchedWhileOpen) {
       form.reset(service ? serviceToFormValues(service) : emptyFormValues);
-      setActiveTab("general");
+      if (justOpened) setActiveTab("general");
     }
   }, [open, service, form]);
 

@@ -4,10 +4,10 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   Table,
   TableBody,
@@ -154,12 +154,11 @@ export function VolumesList() {
   const { data, isLoading, error } = useVolumes();
 
   const filteredVolumes = useMemo(() => {
-    if (!data?.volumes) return [];
-
-    return data.volumes.filter((volume) =>
-      volume.name.toLowerCase().includes(searchFilter.toLowerCase())
+    const volumes = data?.volumes ?? [];
+    return volumes.filter((volume) =>
+      volume.name.toLowerCase().includes(searchFilter.toLowerCase()),
     );
-  }, [data?.volumes, searchFilter]);
+  }, [data, searchFilter]);
 
   const columns = useMemo<ColumnDef<DockerVolume>[]>(() => [
     {
@@ -235,7 +234,7 @@ export function VolumesList() {
     },
   ], []);
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: filteredVolumes,
     columns,
     getRowId: (row) => row.name,

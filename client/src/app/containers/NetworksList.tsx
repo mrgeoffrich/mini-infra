@@ -3,10 +3,10 @@ import {
   ColumnDef,
   flexRender,
   getCoreRowModel,
-  useReactTable,
   getSortedRowModel,
   SortingState,
 } from "@tanstack/react-table";
+import { useDataTable } from "@/lib/react-table";
 import {
   Table,
   TableBody,
@@ -50,12 +50,11 @@ export function NetworksList() {
   });
 
   const filteredNetworks = useMemo(() => {
-    if (!data?.networks) return [];
-
-    return data.networks.filter((network) =>
-      network.name.toLowerCase().includes(searchFilter.toLowerCase())
+    const networks = data?.networks ?? [];
+    return networks.filter((network) =>
+      network.name.toLowerCase().includes(searchFilter.toLowerCase()),
     );
-  }, [data?.networks, searchFilter]);
+  }, [data, searchFilter]);
 
   const columns = useMemo<ColumnDef<DockerNetwork>[]>(() => [
     {
@@ -160,7 +159,7 @@ export function NetworksList() {
     },
   ], []);
 
-  const table = useReactTable({
+  const table = useDataTable({
     data: filteredNetworks,
     columns,
     getRowId: (row) => row.id,
