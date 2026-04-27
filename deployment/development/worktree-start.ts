@@ -220,6 +220,9 @@ async function main(): Promise<void> {
     shortDesc = existingEntry.description;
     logInfo(`Worktree description: ${shortDesc}`);
   } else {
+    logInfo(
+      'Tip: pass --description "<short>" (and optionally --long-description "<long>") to skip these prompts.',
+    );
     const rl = readline.createInterface({ input, output });
     try {
       shortDesc = (await rl.question('Short description (≤10 words, what is this worktree for?): ')).trim();

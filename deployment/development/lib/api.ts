@@ -4,11 +4,23 @@
 //   - Returns { status, body, bodyText }.
 //   - Network failure is reported as status: 0 (bash uses "000").
 //   - Adds Authorization: Bearer <apiKey> automatically once setApiKey() is called.
+//   - Retries on socket-level failures (status: 0) only. HTTP responses pass
+//     through untouched so 4xx/5xx still surface to the caller verbatim.
 
 export interface ApiResponse<T = unknown> {
   status: number;
   body: T | null;
   bodyText: string;
+}
+
+// Retry only when fetch() itself throws. Backoff is short — the typical cause is
+// a stale keep-alive socket against a freshly restarted server (the setup
+// wizard restarts the app to load the Docker config), and a 250ms delay is
+// enough for the next request to open a fresh TCP connection.
+const NETWORK_RETRY_DELAYS_MS = [250, 750, 1500];
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ApiClient {
@@ -39,32 +51,44 @@ export class ApiClient {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    // Disable keep-alive to avoid undici reusing a TCP connection the server
+    // has already torn down (notably right after /auth/setup/complete restarts
+    // the app). Cheap enough — the seeder makes ~30 requests total.
+    headers.Connection = 'close';
 
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-    } catch (err) {
-      return {
-        status: 0,
-        body: null,
-        bodyText: err instanceof Error ? err.message : String(err),
-      };
-    }
+    const init: RequestInit = {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    };
 
-    const bodyText = await res.text();
-    let parsed: T | null = null;
-    if (bodyText.length) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt++) {
       try {
-        parsed = JSON.parse(bodyText) as T;
-      } catch {
-        parsed = null;
+        const res = await fetch(url, init);
+        const bodyText = await res.text();
+        let parsed: T | null = null;
+        if (bodyText.length) {
+          try {
+            parsed = JSON.parse(bodyText) as T;
+          } catch {
+            parsed = null;
+          }
+        }
+        return { status: res.status, body: parsed, bodyText };
+      } catch (err) {
+        lastError = err;
+        const delay = NETWORK_RETRY_DELAYS_MS[attempt];
+        if (delay === undefined) break;
+        await sleep(delay);
       }
     }
-    return { status: res.status, body: parsed, bodyText };
+
+    return {
+      status: 0,
+      body: null,
+      bodyText: lastError instanceof Error ? lastError.message : String(lastError),
+    };
   }
 }
 
