@@ -30,7 +30,7 @@ For parallel dev work, each git worktree runs its own fully isolated Mini Infra 
 
 Run `git` commands from inside the worktree directory, not the main checkout — mixing shells between the two is the main way commits land on the wrong branch.
 
-See [docs/colima-reference.md](docs/colima-reference.md) for Colima command/config detail and gotchas.
+See [docs/user/colima-reference.md](docs/user/colima-reference.md) for Colima command/config detail and gotchas.
 
 ## Browser Automation & Testing
 

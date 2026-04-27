@@ -73,10 +73,10 @@ Give Mini Infra a way to reach operators proactively, starting simple and buildi
 
 Host OpenBao as a managed service inside Mini Infra, mint short-lived AppRole credentials for deployed stacks at apply time, and manage Vault policies as HCL files. Mini Infra itself does not depend on Vault.
 
-- **Main design** — [secrets-vault-plan.md](secrets-vault-plan.md): OpenBao stack template, operator-passphrase-gated unseal, HCL policy resource with draft/publish, per-deploy wrapped secret_id injection into stack containers.
-- **Implementation plan** — [secrets-vault-implementation.md](secrets-vault-implementation.md): phase-by-phase build plan with file paths, schema changes, and the systems each phase touches.
-- **Deferred: Vault UI SSO** — [vault-oidc-plan.md](vault-oidc-plan.md): JWT auth method MVP so operators open the Vault UI already authenticated as themselves, with a later path to a full OIDC provider or external IdP passthrough.
-- **Deferred: Volume backups** — [volume-azure-backup-plan.md](volume-azure-backup-plan.md): generalises the Postgres-to-Azure backup pattern to arbitrary Docker volumes (covers backup of the Vault data volume).
+- **Main design** — [secrets-vault-plan.md](shipped/secrets-vault-plan.md): OpenBao stack template, operator-passphrase-gated unseal, HCL policy resource with draft/publish, per-deploy wrapped secret_id injection into stack containers.
+- **Implementation plan** — [secrets-vault-implementation.md](shipped/secrets-vault-implementation.md): phase-by-phase build plan with file paths, schema changes, and the systems each phase touches.
+- **Deferred: Vault UI SSO** — [vault-oidc-plan.md](not-shipped/vault-oidc-plan.md): JWT auth method MVP so operators open the Vault UI already authenticated as themselves, with a later path to a full OIDC provider or external IdP passthrough.
+- **Deferred: Volume backups** — [volume-azure-backup-plan.md](not-shipped/volume-azure-backup-plan.md): generalises the Postgres-to-Azure backup pattern to arbitrary Docker volumes (covers backup of the Vault data volume).
 
 ## Cloudflare Improvements
 

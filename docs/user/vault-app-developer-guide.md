@@ -2,7 +2,7 @@
 
 This guide is for developers writing applications that want to read secrets from Mini Infra's managed Vault (OpenBao) at runtime. It covers how Mini Infra hands credentials to your container, what your container has to do to turn those credentials into a usable token, and exactly what the stack template needs to look like.
 
-If you're an operator setting Vault up for the first time, see [secrets-vault-plan.md](secrets-vault-plan.md) for the high-level model and [secrets-vault-implementation.md](secrets-vault-implementation.md) for the implementation phases.
+If you're an operator setting Vault up for the first time, see [secrets-vault-plan.md](../planning/shipped/secrets-vault-plan.md) for the high-level model and [secrets-vault-implementation.md](../planning/shipped/secrets-vault-implementation.md) for the implementation phases.
 
 ## The one-line summary
 
