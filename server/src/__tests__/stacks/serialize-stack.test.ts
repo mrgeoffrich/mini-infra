@@ -42,6 +42,27 @@ function makeStack(overrides: Record<string, unknown> = {}): Parameters<typeof s
   };
 }
 
+describe('serializeStack — field stripping and inclusion', () => {
+  it('strips lastAppliedVaultSnapshot from output', () => {
+    const snapshot = { policies: { hashes: {} }, appRoles: { hashes: {} }, kv: { hashes: { 'smoke/cma23xx': 'abc123' } } };
+    const result = serializeStack(makeStack({ lastAppliedVaultSnapshot: snapshot }));
+
+    expect((result as Record<string, unknown>)['lastAppliedVaultSnapshot']).toBeUndefined();
+  });
+
+  it('includes lastFailureReason in output when set', () => {
+    const result = serializeStack(makeStack({ lastFailureReason: 'KV path validation failed for smoke/cma23xx' }));
+
+    expect((result as Record<string, unknown>)['lastFailureReason']).toBe('KV path validation failed for smoke/cma23xx');
+  });
+
+  it('includes lastFailureReason: null when cleared', () => {
+    const result = serializeStack(makeStack({ lastFailureReason: null }));
+
+    expect((result as Record<string, unknown>)['lastFailureReason']).toBeNull();
+  });
+});
+
 describe('serializeStack — encryptedInputValues handling', () => {
   it('strips encryptedInputValues when present', () => {
     const blob = encryptInputValues({ token: 'secret-value' });

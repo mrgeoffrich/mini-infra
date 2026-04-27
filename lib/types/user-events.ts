@@ -29,6 +29,9 @@ export type UserEventType =
   | 'vault_kv_write'
   | 'vault_kv_patch'
   | 'vault_kv_delete'
+  | 'stack_vault_policy_apply'
+  | 'stack_vault_approle_apply'
+  | 'stack_vault_kv_apply'
   | 'other';
 
 // Event category enumeration
@@ -40,7 +43,7 @@ export type UserEventCategory =
   | 'configuration';
 
 // Event status enumeration
-export const USER_EVENT_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled'] as const;
+export const USER_EVENT_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled', 'skipped'] as const;
 export type UserEventStatus = typeof USER_EVENT_STATUSES[number];
 
 // Trigger type enumeration

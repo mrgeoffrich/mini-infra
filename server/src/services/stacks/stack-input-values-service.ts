@@ -39,6 +39,8 @@ function deriveInputValuesKey(): Buffer {
   );
 }
 
+// sensitive controls UI masking only — values are always encrypted at rest regardless of that flag.
+
 /**
  * Encrypt a map of input values to a base64 string suitable for storing in
  * Stack.encryptedInputValues.

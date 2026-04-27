@@ -33,6 +33,14 @@ export class VaultAppRoleService {
     return row ? toInfo(row, row.policy.name) : null;
   }
 
+  async getByName(name: string): Promise<VaultAppRoleInfo | null> {
+    const row = await this.prisma.vaultAppRole.findUnique({
+      where: { name },
+      include: { policy: { select: { name: true } } },
+    });
+    return row ? toInfo(row, row.policy.name) : null;
+  }
+
   async create(
     input: CreateVaultAppRoleRequest,
     userId: string,
