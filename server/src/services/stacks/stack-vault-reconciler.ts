@@ -3,17 +3,26 @@
  *
  * Runs before the existing container reconcile loop. Templates with a non-empty
  * `vault: { policies, appRoles, kv }` section have those resources upserted into
- * Vault. Each sub-phase is skipped entirely when no items are declared; skipping is
- * also applied per-item using content hashes against the last applied snapshot for
- * idempotency.
+ * Vault. Each sub-phase is skipped entirely when no items are declared; skipping
+ * is also applied per-item using content hashes against the last applied snapshot
+ * for idempotency.
  *
  * Pipeline:
  *   1. Decrypt encryptedInputValues → verify all required non-rotateOnUpgrade have values
- *   2. Build template context (substitutes {{stack.id}}, {{environment.*}}, {{inputs.*}})
- *   3. Policies  — render name + body, hash, upsert+publish
- *   4. AppRoles  — render name, resolve policy, upsert+apply, record concrete ID
- *   5. KV        — render path (re-validate), resolve fromInput, hash, write
- *   6. Persist lastAppliedVaultSnapshot; return appliedAppRoleIdByName
+ *   2. Load + decrypt prior SnapshotV2 (null = no rollback target)
+ *   3. Build template context (substitutes {{stack.id}}, {{environment.*}}, {{inputs.*}})
+ *   4. Policies  — render name + body, hash, upsert+publish; track written
+ *   5. AppRoles  — render name, resolve policy, upsert+apply; track written
+ *   6. KV        — render path (re-validate), resolve fromInput, hash, write; track written
+ *   7. On any phase failure → rollback written resources in reverse (KV→AR→Policy)
+ *      from the prior snapshot's concrete bodies. If no prior snapshot, log + surface orphans.
+ *   8. Return new SnapshotV2 (encrypted) for the caller to commit.
+ *
+ * Rollback notes:
+ *   - KV is forward-only (append-only version history). Restore writes a new version.
+ *     Audit events carry triggeredBy "stack-apply:<id>:rollback" to distinguish restores.
+ *   - Rollback failures are accumulated into lastFailureReason; status = error.
+ *   - Resources NOT touched this apply are NOT restored.
  */
 
 import crypto from "crypto";
@@ -28,6 +37,17 @@ import {
 } from "./template-engine";
 import { validateKvPath } from "../vault/vault-kv-paths";
 import { UserEventService } from "../user-events/user-event-service";
+import {
+  encryptSnapshot,
+  decryptSnapshot,
+  emptySnapshotV2,
+  computeRestoreItems,
+  type SnapshotV2,
+  type SnapshotV2PolicyEntry,
+  type SnapshotV2AppRoleEntry,
+  type SnapshotV2KvEntry,
+  type AppliedThisRun,
+} from "./stack-vault-snapshot";
 import type {
   TemplateInputDeclaration,
   TemplateVaultAppRole,
@@ -60,10 +80,10 @@ export interface StackVaultReconcileResult {
   /** Mapping from template appRole name → concrete DB AppRole ID. */
   appliedAppRoleIdByName: Record<string, string>;
   /**
-   * New snapshot to persist — caller commits this with any other writes.
+   * Encrypted snapshot blob to persist — caller commits this with any other writes.
    * Undefined on error or noop (no changes to persist).
    */
-  snapshot?: VaultApplySnapshot;
+  encryptedSnapshot?: string;
   error?: string;
 }
 
@@ -111,10 +131,18 @@ function renderTemplate(template: string, ctx: TemplateContext): string {
   return resolveTemplate(template, ctx);
 }
 
+type VaultEventType =
+  | "stack_vault_policy_apply"
+  | "stack_vault_approle_apply"
+  | "stack_vault_kv_apply"
+  | "stack_vault_policy_rollback"
+  | "stack_vault_approle_rollback"
+  | "stack_vault_kv_rollback";
+
 /** Emit a UserEvent row for an individual Vault mutation. Non-fatal on failure. */
 async function emitVaultEvent(
   svc: UserEventService,
-  eventType: "stack_vault_policy_apply" | "stack_vault_approle_apply" | "stack_vault_kv_apply",
+  eventType: VaultEventType,
   triggeredBy: string,
   status: "completed" | "noop" | "failed",
   metadata: Record<string, unknown>,
@@ -145,26 +173,154 @@ async function emitVaultEvent(
 }
 
 // =====================
-// Snapshot shape
+// Rollback helpers
 // =====================
 
-interface VaultSnapshotPhase {
-  /** concreteName/path → content hash */
-  hashes: Record<string, string>;
-}
+/**
+ * Attempt to restore Vault to the state described in priorSnapshot for the
+ * resources that were written during this apply run.
+ *
+ * Restore order: KV → AppRoles → Policies (reverse apply order). This ensures
+ * that when an AppRole is re-bound to its prior policy, the policy body is
+ * already restored.
+ *
+ * Returns a string describing any rollback failures, or null if clean.
+ */
+async function rollbackApplied(
+  appliedThisRun: AppliedThisRun,
+  priorSnapshot: SnapshotV2,
+  stackId: string,
+  rollbackTriggeredBy: string,
+  svc: UserEventService,
+  services: {
+    policyService: PolicyServiceFacade | null;
+    appRoleService: AppRoleServiceFacade | null;
+    kvService: KVServiceFacade | null;
+  },
+): Promise<string | null> {
+  const { kvToRestore, appRolesToRestore, policiesToRestore } = computeRestoreItems({
+    priorSnapshot,
+    appliedThisRun,
+  });
 
-export interface VaultApplySnapshot {
-  policies: VaultSnapshotPhase;
-  appRoles: VaultSnapshotPhase;
-  kv: VaultSnapshotPhase;
-}
+  const rollbackErrors: string[] = [];
 
-function emptySnapshot(): VaultApplySnapshot {
-  return {
-    policies: { hashes: {} },
-    appRoles: { hashes: {} },
-    kv: { hashes: {} },
-  };
+  // ── KV restore (forward-only: writes a new version) ──
+  if (kvToRestore.length > 0 && services.kvService) {
+    for (const { path, entry } of kvToRestore) {
+      try {
+        await services.kvService.write(path, entry.fields);
+        await emitVaultEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "completed", {
+          stackId,
+          concretePath: path,
+          phase: "kv",
+          action: "rollback",
+        });
+        log.info({ path }, "KV rollback write completed");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        rollbackErrors.push(`KV rollback failed for '${path}': ${msg}`);
+        await emitVaultEvent(svc, "stack_vault_kv_rollback", rollbackTriggeredBy, "failed", {
+          stackId,
+          concretePath: path,
+          phase: "kv",
+          action: "rollback",
+          error: msg,
+        });
+        log.error({ path, err: msg }, "KV rollback write failed");
+      }
+    }
+  }
+
+  // ── AppRole restore ──
+  if (appRolesToRestore.length > 0 && services.appRoleService) {
+    const arSvc = services.appRoleService;
+    for (const { name, entry } of appRolesToRestore) {
+      try {
+        // Re-lookup policy by name to get its ID — policy may have been restored already.
+        // If the policy service isn't available we can still attempt the update with the
+        // known policy name; VaultAppRoleService.getByName gives us the existing record.
+        const existing = await arSvc.getByName(name);
+        if (existing) {
+          // We need the policy DB ID. Use policy service lookup if available.
+          let policyId: string | undefined;
+          if (services.policyService) {
+            const pol = await services.policyService.getByName(entry.policy);
+            policyId = pol?.id;
+          }
+          if (policyId) {
+            await arSvc.update(existing.id, {
+              policyId,
+              tokenPeriod: entry.tokenPeriod ?? undefined,
+              tokenTtl: entry.tokenTtl ?? undefined,
+              tokenMaxTtl: entry.tokenMaxTtl ?? undefined,
+              secretIdNumUses: entry.secretIdNumUses ?? undefined,
+              secretIdTtl: entry.secretIdTtl ?? undefined,
+            });
+            await arSvc.apply(existing.id);
+          } else {
+            // Policy ID unavailable; apply without changing policy binding.
+            await arSvc.apply(existing.id);
+          }
+        }
+        await emitVaultEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "completed", {
+          stackId,
+          concreteName: name,
+          phase: "appRoles",
+          action: "rollback",
+        });
+        log.info({ appRole: name }, "AppRole rollback completed");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        rollbackErrors.push(`AppRole rollback failed for '${name}': ${msg}`);
+        await emitVaultEvent(svc, "stack_vault_approle_rollback", rollbackTriggeredBy, "failed", {
+          stackId,
+          concreteName: name,
+          phase: "appRoles",
+          action: "rollback",
+          error: msg,
+        });
+        log.error({ appRole: name, err: msg }, "AppRole rollback failed");
+      }
+    }
+  }
+
+  // ── Policy restore ──
+  if (policiesToRestore.length > 0 && services.policyService) {
+    const polSvc = services.policyService;
+    for (const { name, entry } of policiesToRestore) {
+      try {
+        const existing = await polSvc.getByName(name);
+        if (existing) {
+          await polSvc.update(existing.id, { draftHclBody: entry.body }, "system");
+          await polSvc.publish(existing.id);
+        } else {
+          // Resource was created during this apply (didn't exist before) — no prior state to restore.
+          log.warn({ policy: name }, "Policy not found during rollback — may have been created this apply");
+        }
+        await emitVaultEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "completed", {
+          stackId,
+          concreteName: name,
+          phase: "policies",
+          action: "rollback",
+        });
+        log.info({ policy: name }, "Policy rollback completed");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        rollbackErrors.push(`Policy rollback failed for '${name}': ${msg}`);
+        await emitVaultEvent(svc, "stack_vault_policy_rollback", rollbackTriggeredBy, "failed", {
+          stackId,
+          concreteName: name,
+          phase: "policies",
+          action: "rollback",
+          error: msg,
+        });
+        log.error({ policy: name, err: msg }, "Policy rollback failed");
+      }
+    }
+  }
+
+  return rollbackErrors.length > 0 ? rollbackErrors.join("; ") : null;
 }
 
 // =====================
@@ -195,6 +351,7 @@ export async function runStackVaultReconciler(
   const kvEntries = vault.kv ?? [];
 
   const triggeredBy = `stack-apply:${stackId}:v${templateVersion}`;
+  const rollbackTriggeredBy = `stack-apply:${stackId}:rollback`;
 
   // Load current snapshot (null if first apply)
   const stackRow = await prisma.stack.findUniqueOrThrow({
@@ -227,7 +384,19 @@ export async function runStackVaultReconciler(
     };
   }
 
-  // 2. Build template context including inputs namespace
+  // 2. Load + decrypt prior snapshot — null means no rollback target
+  const priorSnapshot: SnapshotV2 | null = stackRow.lastAppliedVaultSnapshot
+    ? decryptSnapshot(stackRow.lastAppliedVaultSnapshot)
+    : null;
+
+  if (stackRow.lastAppliedVaultSnapshot && priorSnapshot === null) {
+    log.warn(
+      { stackId },
+      "Prior vault snapshot could not be decrypted (pre-PR4 schema or corrupt) — rollback unavailable if this apply fails",
+    );
+  }
+
+  // 3. Build template context including inputs namespace
   let environment: TemplateContextEnvironment | undefined;
   if (stackRow.environmentId) {
     const env = await prisma.environment.findUnique({
@@ -258,40 +427,96 @@ export async function runStackVaultReconciler(
     },
   );
 
-  const prevSnapshot = stackRow.lastAppliedVaultSnapshot
-    ? (stackRow.lastAppliedVaultSnapshot as unknown as VaultApplySnapshot)
-    : emptySnapshot();
+  // The new SnapshotV2 being built by this apply run
+  const newSnapshot = emptySnapshotV2();
 
-  const newSnapshot = emptySnapshot();
+  // Track what we write during this apply for rollback targeting
+  const appliedThisRun: AppliedThisRun = { policies: [], appRoles: [], kv: [] };
+
   const appliedAppRoleIdByName: Record<string, string> = {};
   const userEventSvc = new UserEventService(prisma);
   let anyApplied = false;
 
-  // =====================
-  // 3. Policies
-  // =====================
-  /** concreteName → DB id, built as we upsert so AppRoles can reference it */
-  const policyIdByConcreteName: Record<string, string> = {};
-
-  // Load lazily so tests that pass an empty vault section don't exercise the service factory
+  // Lazy-load service facades
   const policyService = policies.length > 0
     ? (services?.getPolicyService
       ? await services.getPolicyService(prisma)
       : await getVaultPolicyService(prisma))
     : null;
 
+  const appRoleService = appRoles.length > 0
+    ? (services?.getAppRoleService
+      ? await services.getAppRoleService(prisma)
+      : await getVaultAppRoleService(prisma))
+    : null;
+
+  const kvService = kvEntries.length > 0
+    ? (services?.getKVService
+      ? await services.getKVService()
+      : await getVaultKVSvc())
+    : null;
+
+  // Helper: handle a phase failure with rollback
+  async function handlePhaseFailure(failMsg: string): Promise<StackVaultReconcileResult> {
+    log.error({ stackId, failMsg }, "Vault reconcile phase failed — attempting rollback");
+
+    const rollbackServices = { policyService, appRoleService, kvService };
+
+    let combinedFailureReason = failMsg;
+
+    if (priorSnapshot === null) {
+      // No prior snapshot → cannot roll back; orphans may exist
+      const orphanMsg = stackRow.lastAppliedVaultSnapshot
+        ? "rollback unavailable: snapshot is pre-PR4 schema"
+        : "first apply failed; vault may have orphan policies/approles/kv — delete the stack to clean up";
+      log.error({ stackId }, `Vault rollback skipped: ${orphanMsg}`);
+      combinedFailureReason = `${failMsg}; ${orphanMsg}`;
+    } else {
+      const rollbackError = await rollbackApplied(
+        appliedThisRun,
+        priorSnapshot,
+        stackId,
+        rollbackTriggeredBy,
+        userEventSvc,
+        rollbackServices,
+      );
+      if (rollbackError) {
+        combinedFailureReason = `${failMsg}; rollback errors: ${rollbackError}`;
+        log.error({ stackId, rollbackError }, "Rollback completed with errors");
+      } else {
+        log.info({ stackId }, "Rollback completed successfully");
+      }
+    }
+
+    await markStackError(prisma, stackId, combinedFailureReason);
+    return {
+      status: "error",
+      appliedAppRoleIdByName: {},
+      error: combinedFailureReason,
+    };
+  }
+
+  // =====================
+  // 4. Policies
+  // =====================
+  /** concreteName → DB id, built as we upsert so AppRoles can reference it */
+  const policyIdByConcreteName: Record<string, string> = {};
+
   for (const policy of policies) {
-    // policyService is always non-null here — it's set iff policies.length > 0
     const svc = policyService!;
     const concreteName = sanitizeName(renderTemplate(policy.name, templateCtx));
     const concreteBody = renderTemplate(policy.body, templateCtx);
     const contentHash = sha256(concreteName + "\n" + concreteBody);
 
-    newSnapshot.policies.hashes[concreteName] = contentHash;
+    const policyEntry: SnapshotV2PolicyEntry = {
+      body: concreteBody,
+      scope: policy.scope,
+      hash: contentHash,
+    };
+    newSnapshot.policies[concreteName] = policyEntry;
 
-    const prevHash = prevSnapshot.policies.hashes[concreteName];
-    if (prevHash === contentHash) {
-      // Idempotent — load existing record for AppRole resolution below
+    const prevEntry = priorSnapshot?.policies[concreteName];
+    if (prevEntry?.hash === contentHash) {
       const existing = await svc.getByName(concreteName);
       if (existing) {
         policyIdByConcreteName[concreteName] = existing.id;
@@ -332,6 +557,7 @@ export async function runStackVaultReconciler(
 
       const published = await svc.publish(existing.id);
       policyIdByConcreteName[concreteName] = published.id;
+      appliedThisRun.policies.push(concreteName);
       anyApplied = true;
 
       await emitVaultEvent(userEventSvc, "stack_vault_policy_apply", triggeredBy, "completed", {
@@ -350,26 +576,14 @@ export async function runStackVaultReconciler(
         phase: "policies",
         error: msg,
       });
-      await markStackError(prisma, stackId, `Vault policy apply failed for '${concreteName}': ${msg}`);
-      return {
-        status: "error",
-        appliedAppRoleIdByName: {},
-        error: `Vault policy apply failed for '${concreteName}': ${msg}`,
-      };
+      return handlePhaseFailure(`Vault policy apply failed for '${concreteName}': ${msg}`);
     }
   }
 
   // =====================
-  // 4. AppRoles
+  // 5. AppRoles
   // =====================
-  const appRoleService = appRoles.length > 0
-    ? (services?.getAppRoleService
-      ? await services.getAppRoleService(prisma)
-      : await getVaultAppRoleService(prisma))
-    : null;
-
   for (const appRole of appRoles) {
-    // appRoleService is always non-null here — it's set iff appRoles.length > 0
     const arSvc = appRoleService!;
     const concreteName = sanitizeName(renderTemplate(appRole.name, templateCtx));
     const concretePolicyName = sanitizeName(renderTemplate(appRole.policy, templateCtx));
@@ -389,17 +603,26 @@ export async function runStackVaultReconciler(
         (appRole.secretIdTtl ?? ""),
     );
 
-    newSnapshot.appRoles.hashes[concreteName] = contentHash;
+    const appRoleEntry: SnapshotV2AppRoleEntry = {
+      policy: concretePolicyName,
+      tokenPeriod: appRole.tokenPeriod ?? null,
+      tokenTtl: appRole.tokenTtl ?? null,
+      tokenMaxTtl: appRole.tokenMaxTtl ?? null,
+      secretIdNumUses: appRole.secretIdNumUses ?? null,
+      secretIdTtl: appRole.secretIdTtl ?? null,
+      scope: appRole.scope,
+      hash: contentHash,
+    };
+    newSnapshot.appRoles[concreteName] = appRoleEntry;
 
     const policyId = policyIdByConcreteName[concretePolicyName];
     if (!policyId) {
       const msg = `AppRole '${concreteName}' references policy '${concretePolicyName}' which was not found after policy phase`;
-      await markStackError(prisma, stackId, msg);
-      return { status: "error", appliedAppRoleIdByName: {}, error: msg };
+      return handlePhaseFailure(msg);
     }
 
-    const prevHash = prevSnapshot.appRoles.hashes[concreteName];
-    if (prevHash === contentHash) {
+    const prevEntry = priorSnapshot?.appRoles[concreteName];
+    if (prevEntry?.hash === contentHash) {
       const existing = await arSvc.getByName(concreteName);
       if (existing) {
         appliedAppRoleIdByName[appRole.name] = existing.id;
@@ -443,6 +666,7 @@ export async function runStackVaultReconciler(
 
       const applied = await arSvc.apply(existing.id);
       appliedAppRoleIdByName[appRole.name] = applied.id;
+      appliedThisRun.appRoles.push(concreteName);
       anyApplied = true;
 
       await emitVaultEvent(userEventSvc, "stack_vault_approle_apply", triggeredBy, "completed", {
@@ -461,42 +685,23 @@ export async function runStackVaultReconciler(
         phase: "appRoles",
         error: msg,
       });
-      await markStackError(prisma, stackId, `Vault AppRole apply failed for '${concreteName}': ${msg}`);
-      return {
-        status: "error",
-        appliedAppRoleIdByName: {},
-        error: `Vault AppRole apply failed for '${concreteName}': ${msg}`,
-      };
+      return handlePhaseFailure(`Vault AppRole apply failed for '${concreteName}': ${msg}`);
     }
   }
 
   // =====================
-  // 5. KV
+  // 6. KV
   // =====================
-  const kvService = kvEntries.length > 0
-    ? (services?.getKVService
-      ? await services.getKVService()
-      : await getVaultKVSvc())
-    : null;
-
   for (const kv of kvEntries) {
-    // kvService is always non-null here — it's set iff kvEntries.length > 0
     const kSvc = kvService!;
-    // Render path via substitution
     const concretePath = renderTemplate(kv.path, templateCtx);
 
-    // Re-validate the concrete path — catches injection via {{inputs.x}}
     try {
       validateKvPath(concretePath);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.error({ path: concretePath, err: msg }, "KV path invalid after substitution — rejecting");
-      await markStackError(prisma, stackId, `KV path '${concretePath}' is invalid after substitution: ${msg}`);
-      return {
-        status: "error",
-        appliedAppRoleIdByName: {},
-        error: `KV path '${concretePath}' is invalid after substitution: ${msg}`,
-      };
+      return handlePhaseFailure(`KV path '${concretePath}' is invalid after substitution: ${msg}`);
     }
 
     // Resolve fields
@@ -506,8 +711,7 @@ export async function runStackVaultReconciler(
         const val = decryptedInputs[fieldSpec.fromInput];
         if (val === undefined) {
           const msg = `KV path '${concretePath}' field '${fieldName}' references input '${fieldSpec.fromInput}' which has no value`;
-          await markStackError(prisma, stackId, msg);
-          return { status: "error", appliedAppRoleIdByName: {}, error: msg };
+          return handlePhaseFailure(msg);
         }
         resolvedFields[fieldName] = val;
       } else {
@@ -516,10 +720,11 @@ export async function runStackVaultReconciler(
     }
 
     const contentHash = sha256(concretePath + "\n" + JSON.stringify(resolvedFields));
-    newSnapshot.kv.hashes[concretePath] = contentHash;
+    const kvEntry: SnapshotV2KvEntry = { fields: resolvedFields, hash: contentHash };
+    newSnapshot.kv[concretePath] = kvEntry;
 
-    const prevHash = prevSnapshot.kv.hashes[concretePath];
-    if (prevHash === contentHash) {
+    const prevEntry = priorSnapshot?.kv[concretePath];
+    if (prevEntry?.hash === contentHash) {
       log.debug({ path: concretePath }, "KV entry unchanged — skipping write");
       await emitVaultEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "noop", {
         stackId,
@@ -533,6 +738,7 @@ export async function runStackVaultReconciler(
     log.info({ path: concretePath }, "Writing KV entry");
     try {
       await kSvc.write(concretePath, resolvedFields);
+      appliedThisRun.kv.push(concretePath);
       anyApplied = true;
 
       await emitVaultEvent(userEventSvc, "stack_vault_kv_apply", triggeredBy, "completed", {
@@ -551,18 +757,15 @@ export async function runStackVaultReconciler(
         phase: "kv",
         error: msg,
       });
-      await markStackError(prisma, stackId, `Vault KV write failed for '${concretePath}': ${msg}`);
-      return {
-        status: "error",
-        appliedAppRoleIdByName: {},
-        error: `Vault KV write failed for '${concretePath}': ${msg}`,
-      };
+      return handlePhaseFailure(`Vault KV write failed for '${concretePath}': ${msg}`);
     }
   }
 
   const status: VaultReconcileStatus = anyApplied ? "applied" : "noop";
   log.info({ stackId, status, appRolesMapped: Object.keys(appliedAppRoleIdByName).length }, "Vault reconcile complete");
-  return { status, appliedAppRoleIdByName, snapshot: newSnapshot };
+
+  const encryptedSnapshot = encryptSnapshot(newSnapshot);
+  return { status, appliedAppRoleIdByName, encryptedSnapshot };
 }
 
 async function markStackError(prisma: PrismaClient, stackId: string, reason: string): Promise<void> {
