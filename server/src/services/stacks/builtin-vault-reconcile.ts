@@ -124,7 +124,7 @@ async function reconcileBuiltinStackVault(
     return;
   }
 
-  if (result.status === "noop" || !result.snapshot) {
+  if (result.status === "noop" || !result.encryptedSnapshot) {
     log.debug({ stackName, stackId }, "Vault reconcile noop — no changes");
     return;
   }
@@ -148,7 +148,7 @@ async function reconcileBuiltinStackVault(
     prisma.stack.update({
       where: { id: stackId },
       data: {
-        lastAppliedVaultSnapshot: result.snapshot as unknown as import("../../generated/prisma/client").Prisma.InputJsonValue,
+        lastAppliedVaultSnapshot: result.encryptedSnapshot,
         lastFailureReason: null,
       },
     }),

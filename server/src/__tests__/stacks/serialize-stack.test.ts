@@ -1,8 +1,10 @@
 /**
- * Regression test: serializeStack() must never leak encryptedInputValues.
+ * Regression test: serializeStack() must never leak encryptedInputValues or
+ * lastAppliedVaultSnapshot.
  *
  * Covers:
  *   - encryptedInputValues is stripped from output for every call site (CRITICAL)
+ *   - lastAppliedVaultSnapshot (encrypted blob) is stripped from output (CRITICAL)
  *   - inputValueKeys contains the stored input names when values are present
  *   - inputValueKeys is absent (not []) when no values are stored
  *   - inputValueKeys is [] when the ciphertext cannot be decrypted
@@ -10,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { encryptInputValues } from '../../services/stacks/stack-input-values-service';
+import { encryptSnapshot, emptySnapshotV2 } from '../../services/stacks/stack-vault-snapshot';
 import { serializeStack } from '../../services/stacks/utils';
 
 function makeStack(overrides: Record<string, unknown> = {}): Parameters<typeof serializeStack>[0] {
@@ -43,9 +46,16 @@ function makeStack(overrides: Record<string, unknown> = {}): Parameters<typeof s
 }
 
 describe('serializeStack — field stripping and inclusion', () => {
-  it('strips lastAppliedVaultSnapshot from output', () => {
-    const snapshot = { policies: { hashes: {} }, appRoles: { hashes: {} }, kv: { hashes: { 'smoke/cma23xx': 'abc123' } } };
-    const result = serializeStack(makeStack({ lastAppliedVaultSnapshot: snapshot }));
+  it('strips lastAppliedVaultSnapshot (encrypted blob) from output', () => {
+    const snapshot = emptySnapshotV2();
+    const encrypted = encryptSnapshot(snapshot);
+    const result = serializeStack(makeStack({ lastAppliedVaultSnapshot: encrypted }));
+
+    expect((result as Record<string, unknown>)['lastAppliedVaultSnapshot']).toBeUndefined();
+  });
+
+  it('strips lastAppliedVaultSnapshot even when null', () => {
+    const result = serializeStack(makeStack({ lastAppliedVaultSnapshot: null }));
 
     expect((result as Record<string, unknown>)['lastAppliedVaultSnapshot']).toBeUndefined();
   });

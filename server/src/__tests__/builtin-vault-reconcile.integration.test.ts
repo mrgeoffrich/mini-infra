@@ -217,15 +217,15 @@ describe('runBuiltinVaultReconcile — core reconcile loop', () => {
     );
 
     expect(result.status).toBe('applied');
-    expect(result.snapshot).not.toBeNull();
+    expect(result.encryptedSnapshot).not.toBeNull();
     expect(policySvc.create).toHaveBeenCalledOnce();
     expect(appRoleSvc.create).toHaveBeenCalledOnce();
 
     // Persist snapshot (as the caller would)
-    if (result.snapshot) {
+    if (result.encryptedSnapshot) {
       await testPrisma.stack.update({
         where: { id: stackId },
-        data: { lastAppliedVaultSnapshot: result.snapshot as never },
+        data: { lastAppliedVaultSnapshot: result.encryptedSnapshot },
       });
     }
 
@@ -256,7 +256,7 @@ describe('runBuiltinVaultReconcile — core reconcile loop', () => {
     // Persist snapshot (as the caller would after a successful apply)
     await testPrisma.stack.update({
       where: { id: stackId },
-      data: { lastAppliedVaultSnapshot: first.snapshot as never },
+      data: { lastAppliedVaultSnapshot: first.encryptedSnapshot },
     });
 
     // Second apply — same content hash → noop. getByName returns the existing

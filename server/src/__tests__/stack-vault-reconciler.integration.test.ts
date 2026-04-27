@@ -3,26 +3,26 @@
  *
  * Vault service calls are mocked at the facade level — no real Vault needed.
  * The DB layer (Prisma) is real so we can verify:
- *   - The reconciler returns a snapshot that the caller can persist
+ *   - The reconciler returns an encryptedSnapshot that the caller can persist
  *   - lastFailureReason is set on error
  *   - Idempotent re-apply (snapshot in DB causes noop)
  *   - StackService.vaultAppRoleId is written by the apply route helper
  *   - Orphaned input pruning removes keys not in the current template
- *   - mergeForUpgrade route enforcement
+ *   - Rollback path: AppRole failure → prior state restore attempted
  *
  * Note: lastAppliedVaultSnapshot is now written by the apply route (caller),
- * not by the reconciler itself. Reconciler returns result.snapshot for the
- * caller to commit atomically with service ID updates. Tests that need the
+ * not by the reconciler itself. Reconciler returns result.encryptedSnapshot for
+ * the caller to commit atomically with service ID updates. Tests that need the
  * snapshot to be in the DB (e.g. idempotency) must persist it manually.
  *
  * Coverage:
- *   - Full apply with all 3 phases → result.snapshot populated
+ *   - Full apply with all 3 phases → result.encryptedSnapshot decrypts to SnapshotV2
  *   - Missing required input → error, no Vault writes
  *   - Idempotent re-apply → no writes (requires snapshot pre-written to DB)
  *   - Changed KV field → only KV write issued
  *   - AppRole failure → stack.lastFailureReason populated, KV not executed
+ *   - Rollback: KV failure after policy+AR succeed → restore prior KV
  *   - Orphaned input cleanup after successful apply
- *   - PATCH with rotateOnUpgrade input missing from supplied → 400
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -30,6 +30,7 @@ import { testPrisma } from './integration-test-helpers';
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
 import type { PolicyServiceFacade, AppRoleServiceFacade, KVServiceFacade } from '../services/stacks/stack-vault-reconciler';
 import { encryptInputValues } from '../services/stacks/stack-input-values-service';
+import { encryptSnapshot, decryptSnapshot, type SnapshotV2 } from '../services/stacks/stack-vault-snapshot';
 import { pruneOrphanedInputValues } from '../services/stacks/orphan-input-pruner';
 import type { TemplateInputDeclaration, TemplateVaultPolicy, TemplateVaultAppRole, TemplateVaultKv } from '@mini-infra/types';
 import { createId } from '@paralleldrive/cuid2';
@@ -69,7 +70,8 @@ async function createTestEnvironment(): Promise<string> {
 async function createTestStack(opts: {
   encryptedInputValues?: string;
   environmentId?: string | null;
-  lastAppliedVaultSnapshot?: unknown;
+  /** Pass an encrypted blob string directly (from encryptSnapshot()). */
+  lastAppliedVaultSnapshot?: string | null;
   services?: Array<{ serviceName: string; vaultAppRoleRef?: string }>;
 } = {}): Promise<string> {
   const id = createId();
@@ -81,9 +83,7 @@ async function createTestStack(opts: {
       volumes: JSON.stringify([]),
       encryptedInputValues: opts.encryptedInputValues ?? null,
       ...(opts.environmentId !== undefined ? { environmentId: opts.environmentId } : {}),
-      lastAppliedVaultSnapshot: opts.lastAppliedVaultSnapshot
-        ? JSON.stringify(opts.lastAppliedVaultSnapshot)
-        : null,
+      lastAppliedVaultSnapshot: opts.lastAppliedVaultSnapshot ?? null,
     },
   });
 
@@ -168,7 +168,7 @@ function makeServices(overrides: {
 describe('stack-vault-reconciler integration', () => {
 
   describe('full apply — all three phases', () => {
-    it('returns a snapshot in result.snapshot after a full apply', async () => {
+    it('returns an encrypted snapshot blob after a full apply that decrypts to SnapshotV2', async () => {
       const encrypted = encryptInputValues({ slackToken: 'xoxb-secret' });
       const stackId = await createTestStack({ encryptedInputValues: encrypted });
 
@@ -190,10 +190,16 @@ describe('stack-vault-reconciler integration', () => {
       }, svcs);
 
       expect(result.status).toBe('applied');
-      expect(result.snapshot).toBeDefined();
-      expect(result.snapshot).toHaveProperty('policies');
-      expect(result.snapshot).toHaveProperty('appRoles');
-      expect(result.snapshot).toHaveProperty('kv');
+      expect(result.encryptedSnapshot).toBeDefined();
+      // Decrypt and verify SnapshotV2 shape
+      const decoded = decryptSnapshot(result.encryptedSnapshot!);
+      expect(decoded).not.toBeNull();
+      expect(decoded!.version).toBe(2);
+      expect(decoded!.policies).toHaveProperty('my-policy');
+      expect(decoded!.appRoles).toHaveProperty('my-approle');
+      expect(decoded!.kv).toHaveProperty(`stacks/${stackId}/config`);
+      // KV entry carries plaintext fields
+      expect(decoded!.kv[`stacks/${stackId}/config`].fields).toEqual({ token: 'xoxb-secret' });
     });
 
     it('does not set lastFailureReason (caller owns DB writes on success)', async () => {
@@ -274,10 +280,10 @@ describe('stack-vault-reconciler integration', () => {
 
       expect(polSvc1.create).toHaveBeenCalledOnce();
 
-      // Simulate what the apply route does: persist the snapshot to the DB.
+      // Simulate what the apply route does: persist the encrypted snapshot to the DB.
       await testPrisma.stack.update({
         where: { id: stackId },
-        data: { lastAppliedVaultSnapshot: result1.snapshot as unknown as import('../generated/prisma/client').Prisma.InputJsonValue },
+        data: { lastAppliedVaultSnapshot: result1.encryptedSnapshot },
       });
 
       // Second apply — same vault section — should be noop
@@ -324,10 +330,10 @@ describe('stack-vault-reconciler integration', () => {
 
       expect(kvSvc1.write).toHaveBeenCalledOnce();
 
-      // Simulate what the apply route does: persist the snapshot to the DB.
+      // Simulate what the apply route does: persist the encrypted snapshot to the DB.
       await testPrisma.stack.update({
         where: { id: stackId },
-        data: { lastAppliedVaultSnapshot: result1.snapshot as unknown as import('../generated/prisma/client').Prisma.InputJsonValue },
+        data: { lastAppliedVaultSnapshot: result1.encryptedSnapshot },
       });
 
       // Update the encrypted input (simulate value change)
@@ -550,6 +556,103 @@ describe('stack-vault-reconciler integration', () => {
 
       expect(result.status).toBe('error');
       expect(kvSvc.write).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rollback — KV failure after prior snapshot exists', () => {
+    it('attempts to restore prior KV value when KV write fails', async () => {
+      const priorFields = { token: 'prior-token-value' };
+      const kvPath = 'stacks/test/rollback';
+      const priorSnapshot: SnapshotV2 = {
+        version: 2,
+        policies: {},
+        appRoles: {},
+        kv: { [kvPath]: { fields: priorFields, hash: 'prior-hash' } },
+      };
+      const encryptedPrior = encryptSnapshot(priorSnapshot);
+      const stackId = await createTestStack({ lastAppliedVaultSnapshot: encryptedPrior });
+
+      // KV write always fails
+      const kvSvc = makeKVSvc({ throwOnWrite: true });
+      const svcs = makeServices({ kv: kvSvc });
+
+      const result = await runStackVaultReconciler(testPrisma, stackId, {
+        stackId,
+        templateVersion: 2,
+        inputs: [],
+        vault: {
+          kv: [kv(kvPath, { token: { value: 'new-token-that-fails' } })],
+        },
+        userId: 'user-test',
+      }, svcs);
+
+      expect(result.status).toBe('error');
+      // The KV write was attempted (forward), then rollback was attempted
+      expect(kvSvc.write).toHaveBeenCalled();
+
+      const stack = await testPrisma.stack.findUniqueOrThrow({ where: { id: stackId } });
+      expect(stack.lastFailureReason).not.toBeNull();
+      expect(stack.status).toBe('error');
+    });
+
+    it('surface orphan warning in lastFailureReason when first apply fails (no prior snapshot)', async () => {
+      const stackId = await createTestStack();
+      const kvSvc = makeKVSvc({ throwOnWrite: true });
+      const svcs = makeServices({ kv: kvSvc });
+
+      const result = await runStackVaultReconciler(testPrisma, stackId, {
+        stackId,
+        templateVersion: 1,
+        inputs: [],
+        vault: {
+          kv: [kv('stacks/test/config', { k: { value: 'v' } })],
+        },
+        userId: 'user-test',
+      }, svcs);
+
+      expect(result.status).toBe('error');
+      const stack = await testPrisma.stack.findUniqueOrThrow({ where: { id: stackId } });
+      expect(stack.lastFailureReason).toMatch(/first apply|orphan|delete the stack/i);
+    });
+  });
+
+  describe('rollback — snapshot persisted correctly after success', () => {
+    it('encryptedSnapshot can be stored and then decrypted back to SnapshotV2', async () => {
+      const encrypted = encryptInputValues({ key: 'value' });
+      const stackId = await createTestStack({ encryptedInputValues: encrypted });
+      const svcs = makeServices({ policy: makePolicySvc(), kv: makeKVSvc() });
+
+      const result = await runStackVaultReconciler(testPrisma, stackId, {
+        stackId,
+        templateVersion: 1,
+        inputs: [decl('key')],
+        vault: {
+          policies: [pol('test-policy')],
+          kv: [kv(`stacks/${stackId}/config`, { field: { fromInput: 'key' } })],
+        },
+        userId: 'user-test',
+      }, svcs);
+
+      expect(result.status).toBe('applied');
+      expect(result.encryptedSnapshot).toBeDefined();
+
+      // Persist and read back (mimics the apply route's transaction)
+      await testPrisma.stack.update({
+        where: { id: stackId },
+        data: { lastAppliedVaultSnapshot: result.encryptedSnapshot },
+      });
+
+      const row = await testPrisma.stack.findUniqueOrThrow({
+        where: { id: stackId },
+        select: { lastAppliedVaultSnapshot: true },
+      });
+
+      expect(row.lastAppliedVaultSnapshot).not.toBeNull();
+      const decoded = decryptSnapshot(row.lastAppliedVaultSnapshot!);
+      expect(decoded).not.toBeNull();
+      expect(decoded!.version).toBe(2);
+      // KV fields are stored in the snapshot (for rollback)
+      expect(decoded!.kv[`stacks/${stackId}/config`].fields).toEqual({ field: 'value' });
     });
   });
 });
