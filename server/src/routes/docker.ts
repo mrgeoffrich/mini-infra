@@ -342,33 +342,31 @@ router.get(
       await inspectorService.initialize();
       const inspection = await inspectorService.getInspection(name);
 
-      if (!inspection) {
-        return res.status(404).json({
-          success: false,
-          message: `No inspection found for volume '${name}'`,
-        });
-      }
-
-      // Convert inspection data to API response format
-      const response: VolumeInspectionResponse = {
-        success: true,
-        data: {
-          id: inspection.id,
-          volumeName: inspection.volumeName,
-          status: inspection.status,
-          inspectedAt: inspection.inspectedAt.toISOString(),
-          completedAt: inspection.completedAt?.toISOString() || null,
-          durationMs: inspection.durationMs,
-          fileCount: inspection.fileCount,
-          totalSize: inspection.totalSize ? Number(inspection.totalSize) : null,
-          files: inspection.files,
-          stdout: inspection.stdout,
-          stderr: inspection.stderr,
-          errorMessage: inspection.errorMessage,
-          createdAt: inspection.createdAt.toISOString(),
-          updatedAt: inspection.updatedAt.toISOString(),
-        },
-      };
+      // "No inspection yet" is a valid state for any volume the user hasn't
+      // explicitly inspected, so we surface it as 200 with data: null rather
+      // than 404 — list views call this for every row and 4xx responses
+      // create persistent console noise even when the UI handles it gracefully.
+      const response: VolumeInspectionResponse = inspection
+        ? {
+            success: true,
+            data: {
+              id: inspection.id,
+              volumeName: inspection.volumeName,
+              status: inspection.status,
+              inspectedAt: inspection.inspectedAt.toISOString(),
+              completedAt: inspection.completedAt?.toISOString() || null,
+              durationMs: inspection.durationMs,
+              fileCount: inspection.fileCount,
+              totalSize: inspection.totalSize ? Number(inspection.totalSize) : null,
+              files: inspection.files,
+              stdout: inspection.stdout,
+              stderr: inspection.stderr,
+              errorMessage: inspection.errorMessage,
+              createdAt: inspection.createdAt.toISOString(),
+              updatedAt: inspection.updatedAt.toISOString(),
+            },
+          }
+        : { success: true, data: null };
 
       res.json(response);
     } catch (error) {

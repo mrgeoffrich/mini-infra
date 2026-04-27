@@ -138,7 +138,13 @@ export interface VolumeInspection {
 
 export interface VolumeInspectionResponse {
   success: boolean;
-  data: VolumeInspection;
+  /**
+   * The inspection record, or `null` when no inspection has been started for
+   * this volume yet. The route returns 200 with `data: null` rather than 404
+   * so list views that probe inspection state on every render don't generate
+   * noise.
+   */
+  data: VolumeInspection | null;
   message?: string;
 }
 
