@@ -338,7 +338,7 @@ async function runVaultPhaseIfNeeded(
   }
 
   // On noop the snapshot is already in the DB — nothing to write.
-  if (vaultResult.status === 'noop' || !vaultResult.snapshot) return;
+  if (vaultResult.status === 'noop' || !vaultResult.encryptedSnapshot) return;
 
   // Build a map from serviceName → vaultAppRoleRef using the template version's
   // service definitions. `StackService` rows do not carry vaultAppRoleRef (that
@@ -364,7 +364,7 @@ async function runVaultPhaseIfNeeded(
     prisma.stack.update({
       where: { id: stackId },
       data: {
-        lastAppliedVaultSnapshot: vaultResult.snapshot as unknown as import('../../generated/prisma/client').Prisma.InputJsonValue,
+        lastAppliedVaultSnapshot: vaultResult.encryptedSnapshot,
         lastFailureReason: null,
       },
     }),
