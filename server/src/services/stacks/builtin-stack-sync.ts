@@ -7,8 +7,6 @@ import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 import { runSystemStackMigrations } from "./system-stack-migrations";
-import { runBuiltinVaultReconcile } from "./builtin-vault-reconcile";
-
 // Resolve the templates directory relative to the server root.
 // In dev, __dirname is server/src/services/stacks/ (3 levels up to server/).
 // In prod, __dirname is server/dist/server/src/services/stacks/ (5 levels up to server/).
@@ -29,9 +27,9 @@ function findTemplatesDir(): string {
 
 const TEMPLATES_DIR = findTemplatesDir();
 
-const BUNDLES_DRIVE_BUILTIN = process.env.BUNDLES_DRIVE_BUILTIN === "true";
-
-export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
+export async function syncBuiltinStacks(
+  prisma: PrismaClient,
+): Promise<Map<string, { id: string; template: LoadedTemplate }>> {
   const log = getLogger("stacks", "builtin-stack-sync").child({ operation: "builtin-stack-sync" });
   const templateService = new StackTemplateService(prisma);
 
@@ -45,7 +43,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
     );
   } catch (error) {
     log.error({ error, dir: TEMPLATES_DIR }, "Failed to discover template files");
-    return;
+    return new Map();
   }
 
   // 1. Upsert all system template rows (host + environment scoped) so the catalog
@@ -77,17 +75,12 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   // here — that happens on explicit user action (template instantiation).
   await upgradeExistingStacksForTemplates(prisma, templateByName, log);
 
-  // 3. When the feature flag is on, run the Vault reconciler for every system
-  // stack whose template declares a non-empty vault section. This keeps Vault
-  // state in sync with the template files without requiring a full apply.
-  if (BUNDLES_DRIVE_BUILTIN) {
-    await runBuiltinVaultReconcile(prisma, templateByName, log);
-  }
-
-  // 4. Run one-time backfill migrations (e.g. EnvironmentNetwork → InfraResource).
+  // 3. Run one-time backfill migrations (e.g. EnvironmentNetwork → InfraResource).
   await runSystemStackMigrations(prisma);
 
-  log.info({ bundlesDriveBuiltin: BUNDLES_DRIVE_BUILTIN }, "Built-in stack sync complete");
+  log.info("Built-in stack sync complete");
+
+  return templateByName;
 }
 
 async function upgradeExistingStacksForTemplates(

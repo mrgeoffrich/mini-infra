@@ -10,6 +10,8 @@ import type {
   TemplateVaultPolicy,
 } from "@mini-infra/types";
 
+export const BUNDLES_DRIVE_BUILTIN = process.env.BUNDLES_DRIVE_BUILTIN === "true";
+
 /**
  * Run the Vault reconciler for every system stack whose current template
  * version declares a non-empty vault section.
