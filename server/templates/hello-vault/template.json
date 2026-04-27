@@ -1,7 +1,7 @@
 {
   "name": "hello-vault",
   "displayName": "Hello Vault (demo)",
-  "builtinVersion": 1,
+  "builtinVersion": 2,
   "scope": "environment",
   "category": "examples",
   "description": "End-to-end demo: unwraps a secret_id at boot, logs into Vault via AppRole, reads a KV secret, and echoes it. Bind a VaultAppRole in the Application settings before deploying.",
@@ -18,12 +18,34 @@
   ],
   "networks": [],
   "volumes": [],
+  "vault": {
+    "policies": [
+      {
+        "name": "hello-vault-read",
+        "description": "Allows the hello-vault demo container to read its designated KV path.",
+        "body": "path \"secret/data/hello-vault\" {\n  capabilities = [\"read\"]\n}\npath \"secret/metadata/hello-vault\" {\n  capabilities = [\"read\", \"list\"]\n}\n",
+        "scope": "environment"
+      }
+    ],
+    "appRoles": [
+      {
+        "name": "hello-vault",
+        "policy": "hello-vault-read",
+        "scope": "environment",
+        "tokenTtl": "1h",
+        "tokenMaxTtl": "4h",
+        "secretIdTtl": "10m",
+        "secretIdNumUses": 1
+      }
+    ]
+  },
   "services": [
     {
       "serviceName": "hello",
       "serviceType": "Stateful",
       "dockerImage": "alpine/curl",
       "dockerTag": "latest",
+      "vaultAppRoleRef": "hello-vault",
       "containerConfig": {
         "entrypoint": ["/bin/sh", "-c"],
         "command": [
