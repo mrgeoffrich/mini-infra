@@ -56,6 +56,7 @@ import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
+import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
@@ -238,7 +239,7 @@ const initializeServices = async () => {
 
     // Sync built-in stack definitions
     console.log("[STARTUP] Syncing built-in stack definitions...");
-    await syncBuiltinStacks(prisma);
+    const templateByName = await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
 
     // Initialize Vault services (always-on; Vault itself is optional)
@@ -273,6 +274,22 @@ const initializeServices = async () => {
         { err: err instanceof Error ? err.message : String(err) },
         "Failed to initialize Vault services (non-fatal)",
       );
+    }
+
+    // Run builtin Vault reconciler after Vault services are ready.
+    // Only active when BUNDLES_DRIVE_BUILTIN=true; non-fatal on failure.
+    if (BUNDLES_DRIVE_BUILTIN) {
+      console.log("[STARTUP] Running builtin vault reconcile (BUNDLES_DRIVE_BUILTIN)...");
+      try {
+        await runBuiltinVaultReconcile(prisma, templateByName, logger);
+        console.log("[STARTUP] ✓ Builtin vault reconcile complete");
+      } catch (err) {
+        logger.error(
+          { err: err instanceof Error ? err.message : String(err) },
+          "Builtin vault reconcile failed at boot (non-fatal)",
+        );
+        console.log("[STARTUP] ⚠ Builtin vault reconcile failed (non-fatal)");
+      }
     }
 
     // When running in Docker, connect to monitoring network (if it exists)

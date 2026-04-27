@@ -6,7 +6,7 @@ import { getLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
-
+import { runSystemStackMigrations } from "./system-stack-migrations";
 // Resolve the templates directory relative to the server root.
 // In dev, __dirname is server/src/services/stacks/ (3 levels up to server/).
 // In prod, __dirname is server/dist/server/src/services/stacks/ (5 levels up to server/).
@@ -27,7 +27,9 @@ function findTemplatesDir(): string {
 
 const TEMPLATES_DIR = findTemplatesDir();
 
-export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
+export async function syncBuiltinStacks(
+  prisma: PrismaClient,
+): Promise<Map<string, { id: string; template: LoadedTemplate }>> {
   const log = getLogger("stacks", "builtin-stack-sync").child({ operation: "builtin-stack-sync" });
   const templateService = new StackTemplateService(prisma);
 
@@ -41,7 +43,7 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
     );
   } catch (error) {
     log.error({ error, dir: TEMPLATES_DIR }, "Failed to discover template files");
-    return;
+    return new Map();
   }
 
   // 1. Upsert all system template rows (host + environment scoped) so the catalog
@@ -73,10 +75,12 @@ export async function syncBuiltinStacks(prisma: PrismaClient): Promise<void> {
   // here — that happens on explicit user action (template instantiation).
   await upgradeExistingStacksForTemplates(prisma, templateByName, log);
 
-  // 3. Backfill InfraResource records from existing EnvironmentNetwork data
-  await migrateEnvironmentNetworksToInfraResources(prisma, log);
+  // 3. Run one-time backfill migrations (e.g. EnvironmentNetwork → InfraResource).
+  await runSystemStackMigrations(prisma);
 
   log.info("Built-in stack sync complete");
+
+  return templateByName;
 }
 
 async function upgradeExistingStacksForTemplates(
@@ -214,63 +218,4 @@ async function upgradeStackFromTemplate(
       },
     });
   });
-}
-
-/**
- * Backfill InfraResource records from existing EnvironmentNetwork data.
- * Maps 'applications' networks to the haproxy stack and 'tunnel' networks to the cloudflare-tunnel stack.
- * Idempotent — upserts so it can run on every startup safely.
- */
-async function migrateEnvironmentNetworksToInfraResources(
-  prisma: PrismaClient,
-  log: ReturnType<typeof getLogger>
-): Promise<void> {
-  const envNetworks = await prisma.environmentNetwork.findMany({
-    where: { purpose: { in: ['applications', 'tunnel'] } },
-  });
-
-  if (envNetworks.length === 0) return;
-
-  let migrated = 0;
-
-  for (const en of envNetworks) {
-    // Find the owning stack: haproxy for 'applications', cloudflare-tunnel for 'tunnel'
-    const stackName = en.purpose === 'applications' ? 'haproxy' : 'cloudflare-tunnel';
-    const owningStack = await prisma.stack.findFirst({
-      where: { name: stackName, environmentId: en.environmentId, status: { not: 'removed' } },
-      select: { id: true },
-    });
-
-    try {
-      await prisma.infraResource.upsert({
-        where: {
-          type_purpose_scope_environmentId: {
-            type: 'docker-network',
-            purpose: en.purpose,
-            scope: 'environment',
-            environmentId: en.environmentId,
-          },
-        },
-        create: {
-          type: 'docker-network',
-          purpose: en.purpose,
-          scope: 'environment',
-          environmentId: en.environmentId,
-          stackId: owningStack?.id ?? null,
-          name: en.name,
-        },
-        update: {}, // Don't overwrite if already exists
-      });
-      migrated++;
-    } catch (err) {
-      log.warn(
-        { purpose: en.purpose, environmentId: en.environmentId, error: (err instanceof Error ? err.message : String(err)) },
-        'Failed to migrate EnvironmentNetwork to InfraResource'
-      );
-    }
-  }
-
-  if (migrated > 0) {
-    log.info({ migrated, total: envNetworks.length }, 'Backfilled InfraResource records from EnvironmentNetwork');
-  }
 }
