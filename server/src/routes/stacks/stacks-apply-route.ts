@@ -11,15 +11,8 @@ import { buildStackOperationServices } from '../../services/stacks/stack-operati
 import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { StackUserEvent } from '../../services/stacks/stack-user-event';
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
-import { runStackVaultReconciler } from '../../services/stacks/stack-vault-reconciler';
-import { vaultServicesReady } from '../../services/vault/vault-services';
+import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
-import type {
-  TemplateInputDeclaration,
-  TemplateVaultAppRole,
-  TemplateVaultKv,
-  TemplateVaultPolicy,
-} from '@mini-infra/types';
 import {
   emitStackApplyStarted,
   emitStackApplyServiceResult,
@@ -183,9 +176,16 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
     const totalEmitActions = allStartedActions.length;
 
     try {
-      // Pre-service Vault reconciliation phase — only when the template version
-      // declares a non-empty vault section and Vault services are ready.
-      await runVaultPhaseIfNeeded(stackId, triggeredBy);
+      // Pre-service Vault reconciliation phase — short-circuits when the
+      // template has no vault section. Throws if Vault is required but not
+      // ready, or if the reconciler returns an error result.
+      const vaultPhase = await runStackVaultApplyPhase(prisma, stackId, {
+        triggeredBy,
+        requireVaultReady: true,
+      });
+      if (vaultPhase.status === 'error') {
+        throw new Error(vaultPhase.error ?? 'Vault reconciliation phase failed');
+      }
 
       const result = await reconciler.apply(stackId, {
         ...applyArgs,
@@ -269,112 +269,6 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
   } finally {
     stackOperationLock.release(stackId);
   }
-}
-
-/**
- * Load the stack's current template version and run the Vault pre-service
- * reconciliation phase if the template has a non-empty vault section.
- *
- * After a successful vault phase, writes `StackService.vaultAppRoleId` for any
- * service whose template-declared `vaultAppRoleRef` resolves to a concrete
- * AppRole ID created by this apply. The snapshot write and service ID writes
- * are committed in a single transaction so a crash between them cannot leave
- * the snapshot recorded while services remain unbound.
- */
-async function runVaultPhaseIfNeeded(
-  stackId: string,
-  triggeredBy: string | undefined,
-): Promise<void> {
-  const stack = await prisma.stack.findUnique({
-    where: { id: stackId },
-    select: {
-      templateId: true,
-      templateVersion: true,
-      services: { select: { id: true, serviceName: true } },
-    },
-  });
-
-  if (!stack?.templateId || stack.templateVersion == null) return;
-
-  const templateVersion = await prisma.stackTemplateVersion.findFirst({
-    where: {
-      templateId: stack.templateId,
-      version: stack.templateVersion,
-    },
-    select: {
-      version: true,
-      inputs: true,
-      vaultPolicies: true,
-      vaultAppRoles: true,
-      vaultKv: true,
-      services: { select: { serviceName: true, vaultAppRoleRef: true } },
-    },
-  });
-
-  if (!templateVersion) return;
-
-  const policies = (templateVersion.vaultPolicies as TemplateVaultPolicy[] | null) ?? [];
-  const appRoles = (templateVersion.vaultAppRoles as TemplateVaultAppRole[] | null) ?? [];
-  const kv = (templateVersion.vaultKv as TemplateVaultKv[] | null) ?? [];
-  const inputs = (templateVersion.inputs as TemplateInputDeclaration[] | null) ?? [];
-
-  const hasVault = policies.length > 0 || appRoles.length > 0 || kv.length > 0;
-  if (!hasVault) return;
-
-  if (!vaultServicesReady()) {
-    throw new Error('Vault services are not initialised; cannot run vault reconciliation phase');
-  }
-
-  const vaultResult = await runStackVaultReconciler(prisma, stackId, {
-    stackId,
-    templateVersion: templateVersion.version,
-    inputs,
-    vault: { policies, appRoles, kv },
-    userId: triggeredBy,
-  });
-
-  if (vaultResult.status === 'error') {
-    throw new Error(vaultResult.error ?? 'Vault reconciliation phase failed');
-  }
-
-  // On noop the snapshot is already in the DB — nothing to write.
-  if (vaultResult.status === 'noop' || !vaultResult.encryptedSnapshot) return;
-
-  // Build a map from serviceName → vaultAppRoleRef using the template version's
-  // service definitions. `StackService` rows do not carry vaultAppRoleRef (that
-  // field lives only on StackTemplateServiceDefinition).
-  const templateRefByServiceName = new Map<string, string>(
-    templateVersion.services
-      .filter((s) => s.vaultAppRoleRef != null)
-      .map((s) => [s.serviceName, s.vaultAppRoleRef as string]),
-  );
-
-  // Pair each running StackService with the concrete AppRole ID resolved during
-  // this apply, then commit both the snapshot update and all service ID writes
-  // in a single transaction so a crash cannot leave them out of sync.
-  const serviceUpdates = (stack.services ?? [])
-    .map((svc) => {
-      const ref = templateRefByServiceName.get(svc.serviceName);
-      const concreteId = ref ? vaultResult.appliedAppRoleIdByName[ref] : undefined;
-      return concreteId ? { id: svc.id, vaultAppRoleId: concreteId } : null;
-    })
-    .filter((u): u is { id: string; vaultAppRoleId: string } => u !== null);
-
-  await prisma.$transaction([
-    prisma.stack.update({
-      where: { id: stackId },
-      data: {
-        lastAppliedVaultSnapshot: vaultResult.encryptedSnapshot,
-        lastFailureReason: null,
-      },
-    }),
-    ...serviceUpdates.map((u) =>
-      prisma.stackService.update({
-        where: { id: u.id },
-        data: { vaultAppRoleId: u.vaultAppRoleId },
-      }),
-    ),
-  ]);
 }
 
 async function maybeRestoreHAProxy(

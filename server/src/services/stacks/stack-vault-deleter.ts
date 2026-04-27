@@ -22,6 +22,7 @@ import type { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
 import { decryptSnapshot } from "./stack-vault-snapshot";
 import { UserEventService } from "../user-events/user-event-service";
+import { resolveVaultServiceFacades, type VaultServiceLoaders } from "./vault-services-loader";
 
 const log = getLogger("stacks", "stack-vault-deleter");
 
@@ -46,49 +47,19 @@ type VaultDeleteEventType =
   | "stack_vault_kv_delete";
 
 // =====================
-// Service facades (injectable for tests)
+// Service facade re-exports — kept under the legacy `*DeleteFacade` names
+// so existing imports keep resolving; canonical types live in
+// `vault-services-loader.ts`.
 // =====================
 
-export interface PolicyDeleteFacade {
-  getByName(name: string): Promise<{ id: string } | null>;
-  delete(id: string): Promise<void>;
-}
+export type {
+  VaultPolicyFacade as PolicyDeleteFacade,
+  VaultAppRoleFacade as AppRoleDeleteFacade,
+  VaultKVFacade as KVDeleteFacade,
+} from "./vault-services-loader";
 
-export interface AppRoleDeleteFacade {
-  getByName(name: string): Promise<{ id: string } | null>;
-  delete(id: string): Promise<void>;
-}
-
-export interface KVDeleteFacade {
-  delete(path: string, opts?: { permanent?: boolean }): Promise<void>;
-}
-
-export interface VaultDeleterServices {
-  getPolicyService?: (prisma: PrismaClient) => Promise<PolicyDeleteFacade>;
-  getAppRoleService?: (prisma: PrismaClient) => Promise<AppRoleDeleteFacade>;
-  getKVService?: () => Promise<KVDeleteFacade>;
-}
-
-// =====================
-// Default service loaders
-// =====================
-
-async function defaultPolicyService(prisma: PrismaClient): Promise<PolicyDeleteFacade> {
-  const { VaultPolicyService } = await import("../vault/vault-policy-service");
-  const { getVaultServices } = await import("../vault/vault-services");
-  return new VaultPolicyService(prisma, getVaultServices().admin);
-}
-
-async function defaultAppRoleService(prisma: PrismaClient): Promise<AppRoleDeleteFacade> {
-  const { VaultAppRoleService } = await import("../vault/vault-approle-service");
-  const { getVaultServices } = await import("../vault/vault-services");
-  return new VaultAppRoleService(prisma, getVaultServices().admin);
-}
-
-async function defaultKVService(): Promise<KVDeleteFacade> {
-  const { getVaultKVService } = await import("../vault/vault-kv-service");
-  return getVaultKVService();
-}
+/** Alias retained for callers that still pass `VaultDeleterServices`. */
+export type VaultDeleterServices = VaultServiceLoaders;
 
 // =====================
 // Helpers
@@ -212,21 +183,20 @@ export async function runStackVaultDeleter(
 
   const userEventSvc = new UserEventService(prisma);
 
-  const getPolicySvc = services?.getPolicyService ?? defaultPolicyService;
-  const getAppRoleSvc = services?.getAppRoleService ?? defaultAppRoleService;
-  const getKVSvc = services?.getKVService ?? defaultKVService;
-
   const kvPaths = Object.keys(snapshot.kv);
   const appRoleNames = Object.keys(snapshot.appRoles);
   const policyNames = Object.keys(snapshot.policies);
 
-  const hasKv = kvPaths.length > 0;
-  const hasAppRoles = appRoleNames.length > 0;
-  const hasPolicies = policyNames.length > 0;
-
-  const policySvc = hasPolicies ? await getPolicySvc(prisma) : null;
-  const appRoleSvc = hasAppRoles ? await getAppRoleSvc(prisma) : null;
-  const kvSvc = hasKv ? await getKVSvc() : null;
+  const { policy: policySvc, appRole: appRoleSvc, kv: kvSvc } =
+    await resolveVaultServiceFacades(
+      prisma,
+      {
+        policy: policyNames.length > 0,
+        appRole: appRoleNames.length > 0,
+        kv: kvPaths.length > 0,
+      },
+      services,
+    );
 
   // ── 1. KV ──
   for (const path of kvPaths) {

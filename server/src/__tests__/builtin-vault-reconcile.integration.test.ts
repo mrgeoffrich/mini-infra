@@ -35,6 +35,7 @@ function makePolicySvc(): PolicyServiceFacade {
     }),
     update: vi.fn().mockImplementation((id: string) => Promise.resolve({ id, displayName: 'updated' })),
     publish: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -48,11 +49,15 @@ function makeAppRoleSvc(): AppRoleServiceFacade {
     }),
     update: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
     apply: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
 function makeKVSvc(): KVServiceFacade {
-  return { write: vi.fn().mockResolvedValue(undefined) };
+  return {
+    write: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 // ─── DB fixtures ──────────────────────────────────────────────────────────────
@@ -266,12 +271,14 @@ describe('runBuiltinVaultReconcile — core reconcile loop', () => {
       create: vi.fn(),
       update: vi.fn(),
       publish: vi.fn(),
+      delete: vi.fn(),
     };
     const secondAppRoleSvc: AppRoleServiceFacade = {
       getByName: vi.fn().mockResolvedValue({ id: 'ar-1-idem-approle' }),
       create: vi.fn(),
       update: vi.fn(),
       apply: vi.fn().mockResolvedValue({ id: 'ar-1-idem-approle' }),
+      delete: vi.fn(),
     };
     const second = await runStackVaultReconciler(testPrisma, stackId, input, {
       getPolicyService: async () => secondPolicySvc,
