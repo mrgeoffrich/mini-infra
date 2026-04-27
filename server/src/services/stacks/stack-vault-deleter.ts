@@ -22,7 +22,11 @@ import type { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
 import { decryptSnapshot } from "./stack-vault-snapshot";
 import { UserEventService } from "../user-events/user-event-service";
-import { resolveVaultServiceFacades, type VaultServiceLoaders } from "./vault-services-loader";
+import {
+  resolveVaultServiceFacades,
+  type VaultServiceLoaders,
+} from "./vault-services-loader";
+import { emitVaultPhaseEvent, type VaultPhaseEventType } from "./vault-event-emitter";
 
 const log = getLogger("stacks", "stack-vault-deleter");
 
@@ -40,11 +44,6 @@ export interface StackVaultDeleteResult {
   skippedAsShared: VaultDeleteItem[];
   failed: VaultDeleteItem[];
 }
-
-type VaultDeleteEventType =
-  | "stack_vault_policy_delete"
-  | "stack_vault_approle_delete"
-  | "stack_vault_kv_delete";
 
 // =====================
 // Service facade re-exports — kept under the legacy `*DeleteFacade` names
@@ -64,41 +63,6 @@ export type VaultDeleterServices = VaultServiceLoaders;
 // =====================
 // Helpers
 // =====================
-
-/**
- * Emit a UserEvent row for an individual Vault deletion. Non-fatal on failure.
- */
-async function emitDeleteEvent(
-  svc: UserEventService,
-  eventType: VaultDeleteEventType,
-  triggeredBy: string,
-  status: "completed" | "failed" | "skipped",
-  metadata: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await svc.createEvent({
-      eventType,
-      eventCategory: "security",
-      eventName: `${eventType}: ${String(metadata.concreteName ?? "")}`,
-      triggeredBy,
-      status,
-      progress: status === "failed" ? 0 : 100,
-      resourceType: "stack",
-      description:
-        status === "failed"
-          ? `Failed — ${eventType}`
-          : status === "skipped"
-            ? `Skipped (shared) — ${eventType}`
-            : `Deleted — ${eventType}`,
-      metadata: { ...metadata, action: status },
-    });
-  } catch (err) {
-    log.warn(
-      { err: err instanceof Error ? err.message : String(err), eventType },
-      "Failed to emit vault delete audit event (non-fatal)",
-    );
-  }
-}
 
 /**
  * Check if a Vault error from a delete operation is a 404 (resource already
@@ -134,6 +98,112 @@ async function countOtherOwners(
       concreteName,
     },
   });
+}
+
+// =====================
+// Per-resource delete pipeline
+// =====================
+
+interface DeletePhaseCtx {
+  prisma: PrismaClient;
+  stackId: string;
+  triggeredBy: string;
+  userEventSvc: UserEventService;
+  result: StackVaultDeleteResult;
+}
+
+interface DeleteResourceArgs {
+  type: VaultDeleteItem["type"];
+  concreteName: string;
+  /** Metadata `phase` value — preserved verbatim from the prior per-loop emits. */
+  phase: "kv" | "appRoles" | "policies";
+  eventType: VaultPhaseEventType;
+  /** Log-line key used to identify this resource ("path", "appRole", "policy"). */
+  logKey: "path" | "appRole" | "policy";
+  /**
+   * Optional pre-flight lookup. Returning null short-circuits the delete and
+   * marks the item as already-absent. KV deletes by path and skips this step.
+   */
+  preflightLookup?: () => Promise<{ id: string } | null>;
+  /**
+   * Perform the actual delete. Receives the id resolved by `preflightLookup`,
+   * or undefined when no preflight ran.
+   */
+  attemptDelete: (preflightId: string | undefined) => Promise<void>;
+}
+
+async function processDeleteResource(
+  ctx: DeletePhaseCtx,
+  args: DeleteResourceArgs,
+): Promise<void> {
+  const { prisma, stackId, triggeredBy, userEventSvc, result } = ctx;
+  const { type, concreteName, phase, eventType, logKey, preflightLookup, attemptDelete } = args;
+  const item: VaultDeleteItem = { type, concreteName };
+
+  const otherOwners = await countOtherOwners(prisma, stackId, type, concreteName);
+  if (otherOwners > 0) {
+    log.info(
+      { [logKey]: concreteName, otherOwners },
+      `${type} shared with other stacks — skipping delete`,
+    );
+    result.skippedAsShared.push(item);
+    await emitVaultPhaseEvent(userEventSvc, eventType, triggeredBy, "skipped", {
+      stackId,
+      concreteName,
+      phase,
+      otherOwners,
+    });
+    return;
+  }
+
+  let preflightId: string | undefined;
+  if (preflightLookup) {
+    const existing = await preflightLookup();
+    if (!existing) {
+      result.deleted.push(item);
+      log.info({ [logKey]: concreteName }, `${type} not found in DB — treating as deleted`);
+      await emitVaultPhaseEvent(userEventSvc, eventType, triggeredBy, "completed", {
+        stackId,
+        concreteName,
+        phase,
+        alreadyAbsent: true,
+      });
+      return;
+    }
+    preflightId = existing.id;
+  }
+
+  try {
+    await attemptDelete(preflightId);
+    result.deleted.push(item);
+    log.info({ [logKey]: concreteName }, `${type} deleted`);
+    await emitVaultPhaseEvent(userEventSvc, eventType, triggeredBy, "completed", {
+      stackId,
+      concreteName,
+      phase,
+    });
+  } catch (err) {
+    if (isNotFoundError(err)) {
+      result.deleted.push(item);
+      log.info({ [logKey]: concreteName }, `${type} already absent — treating as deleted`);
+      await emitVaultPhaseEvent(userEventSvc, eventType, triggeredBy, "completed", {
+        stackId,
+        concreteName,
+        phase,
+        alreadyAbsent: true,
+      });
+    } else {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error({ [logKey]: concreteName, err: msg }, `${type} delete failed (non-fatal)`);
+      result.failed.push(item);
+      await emitVaultPhaseEvent(userEventSvc, eventType, triggeredBy, "failed", {
+        stackId,
+        concreteName,
+        phase,
+        error: msg,
+      });
+    }
+  }
 }
 
 // =====================
@@ -198,158 +268,44 @@ export async function runStackVaultDeleter(
       services,
     );
 
-  // ── 1. KV ──
+  const ctx: DeletePhaseCtx = { prisma, stackId, triggeredBy, userEventSvc, result };
+
+  // KV → AppRoles → Policies (reverse apply order: AppRoles unbound before policy is removed).
   for (const path of kvPaths) {
-    const item: VaultDeleteItem = { type: "kv", concreteName: path };
-    const otherOwners = await countOtherOwners(prisma, stackId, "kv", path);
-
-    if (otherOwners > 0) {
-      log.info({ path, otherOwners }, "KV path shared with other stacks — skipping delete");
-      result.skippedAsShared.push(item);
-      await emitDeleteEvent(userEventSvc, "stack_vault_kv_delete", triggeredBy, "skipped", {
-        stackId,
-        concreteName: path,
-        phase: "kv",
-        otherOwners,
-      });
-      continue;
-    }
-
-    try {
-      await kvSvc!.delete(path);
-      result.deleted.push(item);
-      log.info({ path }, "KV path soft-deleted");
-      await emitDeleteEvent(userEventSvc, "stack_vault_kv_delete", triggeredBy, "completed", {
-        stackId,
-        concreteName: path,
-        phase: "kv",
-      });
-    } catch (err) {
-      if (isNotFoundError(err)) {
-        result.deleted.push(item);
-        log.info({ path }, "KV path already absent — treating as deleted");
-        await emitDeleteEvent(userEventSvc, "stack_vault_kv_delete", triggeredBy, "completed", {
-          stackId,
-          concreteName: path,
-          phase: "kv",
-          alreadyAbsent: true,
-        });
-      } else {
-        const msg = err instanceof Error ? err.message : String(err);
-        log.error({ path, err: msg }, "KV soft-delete failed (non-fatal — stack row will still be removed)");
-        result.failed.push(item);
-        await emitDeleteEvent(userEventSvc, "stack_vault_kv_delete", triggeredBy, "failed", {
-          stackId,
-          concreteName: path,
-          phase: "kv",
-          error: msg,
-        });
-      }
-    }
+    await processDeleteResource(ctx, {
+      type: "kv",
+      concreteName: path,
+      phase: "kv",
+      eventType: "stack_vault_kv_delete",
+      logKey: "path",
+      // KV deletes by path with no pre-flight existence check; "already absent"
+      // surfaces as a 404 in the catch block.
+      attemptDelete: () => kvSvc!.delete(path),
+    });
   }
 
-  // ── 2. AppRoles ──
   for (const name of appRoleNames) {
-    const item: VaultDeleteItem = { type: "approle", concreteName: name };
-    const otherOwners = await countOtherOwners(prisma, stackId, "approle", name);
-
-    if (otherOwners > 0) {
-      log.info({ appRole: name, otherOwners }, "AppRole shared with other stacks — skipping delete");
-      result.skippedAsShared.push(item);
-      await emitDeleteEvent(userEventSvc, "stack_vault_approle_delete", triggeredBy, "skipped", {
-        stackId,
-        concreteName: name,
-        phase: "appRoles",
-        otherOwners,
-      });
-      continue;
-    }
-
-    const existing = await appRoleSvc!.getByName(name);
-    if (!existing) {
-      result.deleted.push(item);
-      log.info({ appRole: name }, "AppRole not found in DB — treating as deleted");
-      await emitDeleteEvent(userEventSvc, "stack_vault_approle_delete", triggeredBy, "completed", {
-        stackId,
-        concreteName: name,
-        phase: "appRoles",
-        alreadyAbsent: true,
-      });
-      continue;
-    }
-
-    try {
-      await appRoleSvc!.delete(existing.id);
-      result.deleted.push(item);
-      log.info({ appRole: name }, "AppRole deleted");
-      await emitDeleteEvent(userEventSvc, "stack_vault_approle_delete", triggeredBy, "completed", {
-        stackId,
-        concreteName: name,
-        phase: "appRoles",
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.error({ appRole: name, err: msg }, "AppRole delete failed (non-fatal)");
-      result.failed.push(item);
-      await emitDeleteEvent(userEventSvc, "stack_vault_approle_delete", triggeredBy, "failed", {
-        stackId,
-        concreteName: name,
-        phase: "appRoles",
-        error: msg,
-      });
-    }
+    await processDeleteResource(ctx, {
+      type: "approle",
+      concreteName: name,
+      phase: "appRoles",
+      eventType: "stack_vault_approle_delete",
+      logKey: "appRole",
+      preflightLookup: () => appRoleSvc!.getByName(name),
+      attemptDelete: (existingId) => appRoleSvc!.delete(existingId!),
+    });
   }
 
-  // ── 3. Policies ──
   for (const name of policyNames) {
-    const item: VaultDeleteItem = { type: "policy", concreteName: name };
-    const otherOwners = await countOtherOwners(prisma, stackId, "policy", name);
-
-    if (otherOwners > 0) {
-      log.info({ policy: name, otherOwners }, "Policy shared with other stacks — skipping delete");
-      result.skippedAsShared.push(item);
-      await emitDeleteEvent(userEventSvc, "stack_vault_policy_delete", triggeredBy, "skipped", {
-        stackId,
-        concreteName: name,
-        phase: "policies",
-        otherOwners,
-      });
-      continue;
-    }
-
-    const existing = await policySvc!.getByName(name);
-    if (!existing) {
-      result.deleted.push(item);
-      log.info({ policy: name }, "Policy not found in DB — treating as deleted");
-      await emitDeleteEvent(userEventSvc, "stack_vault_policy_delete", triggeredBy, "completed", {
-        stackId,
-        concreteName: name,
-        phase: "policies",
-        alreadyAbsent: true,
-      });
-      continue;
-    }
-
-    try {
-      await policySvc!.delete(existing.id);
-      result.deleted.push(item);
-      log.info({ policy: name }, "Policy deleted");
-      await emitDeleteEvent(userEventSvc, "stack_vault_policy_delete", triggeredBy, "completed", {
-        stackId,
-        concreteName: name,
-        phase: "policies",
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.error({ policy: name, err: msg }, "Policy delete failed (non-fatal)");
-      result.failed.push(item);
-      await emitDeleteEvent(userEventSvc, "stack_vault_policy_delete", triggeredBy, "failed", {
-        stackId,
-        concreteName: name,
-        phase: "policies",
-        error: msg,
-      });
-    }
+    await processDeleteResource(ctx, {
+      type: "policy",
+      concreteName: name,
+      phase: "policies",
+      eventType: "stack_vault_policy_delete",
+      logKey: "policy",
+      preflightLookup: () => policySvc!.getByName(name),
+      attemptDelete: (existingId) => policySvc!.delete(existingId!),
+    });
   }
 
   log.info(
