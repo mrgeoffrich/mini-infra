@@ -4,7 +4,7 @@ This document is a forward-looking design exploration prompted by the slackbot-a
 
 It is **not** a list of tickets. Most proposals here build on primitives that already exist; the work is mostly exposing and unifying them rather than inventing new mechanics. The header for each proposal calls out how much is genuinely new code vs. wiring of existing pieces.
 
-The bug-fix companion doc is [slackbot-installer-fixes.md](slackbot-installer-fixes.md) (issues #237–#242, shipped in #243). This doc is the next step beyond that — what should the surface look like once the bugs are gone?
+A bug-fix companion plan covered issues #237–#242 (shipped in #243); this doc is the next step beyond that — what should the surface look like once the bugs are gone?
 
 ---
 

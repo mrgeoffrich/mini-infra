@@ -10,8 +10,8 @@ Inspired by the two-stage bootstrap/up pattern in `slackbot-agent-sdk/environmen
 
 ## Out of scope (tracked separately)
 
-- OIDC / JWT federation so operators can open the Vault UI as themselves — see [vault-oidc-plan.md](vault-oidc-plan.md).
-- Docker volume → Azure Blob backups (useful for backing up the vault's data volume) — see [volume-azure-backup-plan.md](volume-azure-backup-plan.md).
+- OIDC / JWT federation so operators can open the Vault UI as themselves — see [vault-oidc-plan.md](../not-shipped/vault-oidc-plan.md).
+- Docker volume → Azure Blob backups (useful for backing up the vault's data volume) — see [volume-azure-backup-plan.md](../not-shipped/volume-azure-backup-plan.md).
 
 MVP uses OpenBao's built-in userpass/root/AppRole flows. Operators log into the Vault UI with credentials minted by Mini Infra (short-lived, userpass-backed). OIDC lands later.
 
@@ -103,7 +103,7 @@ No TLS inside this overlay — the wrapped-secret_id handshake already protects 
 
 ### 2. Users on the local network / LAN
 
-Vault UI is exposed as a first-class application in HAProxy. Reuse the `StatelessWeb` service type with a Shared frontend route (e.g. `vault.<local-domain>`). TLS terminates at HAProxy using the existing ACME cert machinery — no special case. Vault's own auth (userpass for MVP, OIDC later per [vault-oidc-plan.md](vault-oidc-plan.md)) handles identity.
+Vault UI is exposed as a first-class application in HAProxy. Reuse the `StatelessWeb` service type with a Shared frontend route (e.g. `vault.<local-domain>`). TLS terminates at HAProxy using the existing ACME cert machinery — no special case. Vault's own auth (userpass for MVP, OIDC later per [vault-oidc-plan.md](../not-shipped/vault-oidc-plan.md)) handles identity.
 
 This is identical to how any other internal app is published — Vault is just an app that happens to be system-managed.
 

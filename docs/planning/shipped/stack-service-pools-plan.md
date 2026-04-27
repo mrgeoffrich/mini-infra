@@ -5,7 +5,7 @@ A new service type (`Pool`) that lets a stack declare a container blueprint whic
 ## Related documents
 
 - [secrets-vault-plan.md](secrets-vault-plan.md) — Vault AppRole injection that pool instances rely on.
-- [stack-definition-reference.md](stack-definition-reference.md) — stack schema this feature extends.
+- [stack-definition-reference.md](../../user/stack-definition-reference.md) — stack schema this feature extends.
 
 ## Motivation
 

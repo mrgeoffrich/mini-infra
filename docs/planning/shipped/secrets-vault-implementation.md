@@ -54,7 +54,7 @@ Specify once, reuse:
 
 ### P2. Human operator access to the Vault UI for MVP
 
-OIDC is deferred to [vault-oidc-plan.md](vault-oidc-plan.md), and Phase 2 rotates the root token immediately after bootstrap. So how does a human log into the Vault UI?
+OIDC is deferred to [vault-oidc-plan.md](../not-shipped/vault-oidc-plan.md), and Phase 2 rotates the root token immediately after bootstrap. So how does a human log into the Vault UI?
 
 **Decision for MVP**: Phase 2 creates a `mini-infra-operator` userpass user with a randomly generated password, stored encrypted in `VaultState` like any other credential. Operator is shown the password once at bootstrap completion (same screen as the unseal keys). Rotation via the Vault UI banner: "Change password". This keeps human access working without OIDC and without leaking the root token.
 
@@ -401,6 +401,6 @@ The schema labels `RegistryCredential.password`, `PostgresDatabase.connectionStr
 
 - Update `CLAUDE.md` (project) with a short note about Vault being available and never on the critical path of Mini Infra itself.
 - Update `server/CLAUDE.md` with conventions for `VaultHttpClient`, `VaultAdminService`, `VaultCredentialInjector` (mirror the pattern established for Docker/Azure/GitHub services). Also correct the outdated claim that `postgres` is a supported `ConfigurationServiceFactory` category.
-- Update `docs/roadmap.md` status as phases ship.
+- Update `docs/planning/roadmap.md` status as phases ship.
 - `scripts/generate-ui-manifest.mjs` auto-picks-up `data-tour` attributes — add them to every new Vault page so the agent sidecar can highlight them.
 - Run the `api-change-check` skill before each phase's PR.
