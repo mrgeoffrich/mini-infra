@@ -18,118 +18,35 @@
 import { describe, it, expect, vi } from 'vitest';
 import { testPrisma } from './integration-test-helpers';
 import { createId } from '@paralleldrive/cuid2';
-import type { PolicyServiceFacade, AppRoleServiceFacade, KVServiceFacade } from '../services/stacks/stack-vault-reconciler';
+import type { PolicyServiceFacade, AppRoleServiceFacade } from '../services/stacks/stack-vault-reconciler';
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
 import type { LoadedTemplate } from '../services/stacks/template-file-loader';
 import { runSystemStackMigrations } from '../services/stacks/system-stack-migrations';
+import { makePolicySvc, makeAppRoleSvc, makeKVSvc, makeFakeLog } from './fixtures/vault-mocks';
+type FakeLog = ReturnType<typeof makeFakeLog>;
+import { createTestEnvironment, createTestStackTemplate, createTestStack } from './fixtures/vault-test-db';
 
-// ─── Mock helpers ─────────────────────────────────────────────────────────────
-
-function makePolicySvc(): PolicyServiceFacade {
-  let n = 0;
-  return {
-    getByName: vi.fn().mockResolvedValue(null),
-    create: vi.fn().mockImplementation((input: { name: string }) => {
-      n++;
-      return Promise.resolve({ id: `pol-${n}`, displayName: input.name });
-    }),
-    update: vi.fn().mockImplementation((id: string) => Promise.resolve({ id, displayName: 'updated' })),
-    publish: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
+// Local naming aliases retained so the existing test bodies keep reading.
+const createEnv = createTestEnvironment;
+async function createTemplateWithVault(
+  opts: { policies?: unknown[]; appRoles?: unknown[] } = {},
+): Promise<{ templateId: string; version: number }> {
+  const { templateId, version } = await createTestStackTemplate(opts);
+  return { templateId, version };
 }
-
-function makeAppRoleSvc(): AppRoleServiceFacade {
-  let n = 0;
-  return {
-    getByName: vi.fn().mockResolvedValue(null),
-    create: vi.fn().mockImplementation((input: { name: string }) => {
-      n++;
-      return Promise.resolve({ id: `ar-${n}-${input.name}` });
-    }),
-    update: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    apply: vi.fn().mockImplementation((id: string) => Promise.resolve({ id })),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeKVSvc(): KVServiceFacade {
-  return {
-    write: vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-// ─── DB fixtures ──────────────────────────────────────────────────────────────
-
-async function createEnv(): Promise<string> {
-  const env = await testPrisma.environment.create({
-    data: {
-      id: createId(),
-      name: `test-env-${createId().slice(0, 6)}`,
-      type: 'nonproduction',
-      networkType: 'local',
-    },
-  });
-  return env.id;
-}
-
-async function createTemplateWithVault(opts: {
-  policies?: unknown[];
-  appRoles?: unknown[];
-} = {}): Promise<{ templateId: string; version: number }> {
-  const templateId = createId();
-  await testPrisma.stackTemplate.create({
-    data: {
-      id: templateId,
-      name: `tmpl-${createId().slice(0, 8)}`,
-      displayName: 'Test Template',
-      source: 'system',
-      scope: 'host',
-      currentVersionId: null,
-      draftVersionId: null,
-    },
-  });
-
-  const ver = await testPrisma.stackTemplateVersion.create({
-    data: {
-      id: createId(),
-      templateId,
-      version: 1,
-      status: 'published',
-      parameters: [],
-      defaultParameterValues: {},
-      networkTypeDefaults: {},
-      networks: [],
-      volumes: [],
-      vaultPolicies: opts.policies ?? null,
-      vaultAppRoles: opts.appRoles ?? null,
-    },
-  });
-
-  return { templateId, version: ver.version };
-}
-
 async function createBuiltinStack(opts: {
   name: string;
   templateId: string;
   templateVersion: number;
   environmentId?: string;
 }): Promise<string> {
-  const id = createId();
-  await testPrisma.stack.create({
-    data: {
-      id,
-      name: opts.name,
-      networks: JSON.stringify([]),
-      volumes: JSON.stringify([]),
-      builtinVersion: 1,
-      templateId: opts.templateId,
-      templateVersion: opts.templateVersion,
-      ...(opts.environmentId ? { environmentId: opts.environmentId } : {}),
-    },
+  return createTestStack({
+    name: opts.name,
+    templateId: opts.templateId,
+    templateVersion: opts.templateVersion,
+    environmentId: opts.environmentId,
+    builtinVersion: 1,
   });
-  return id;
 }
 
 function makeLoadedTemplate(name: string, vault?: LoadedTemplate['vault']): LoadedTemplate {
@@ -142,14 +59,6 @@ function makeLoadedTemplate(name: string, vault?: LoadedTemplate['vault']): Load
     configFiles: [],
     vault,
   };
-}
-
-type FakeLog = ReturnType<typeof import('../lib/logger-factory').getLogger>;
-function makeFakeLog(): FakeLog {
-  return {
-    info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(),
-    child: vi.fn().mockReturnThis(),
-  } as unknown as FakeLog;
 }
 
 /**

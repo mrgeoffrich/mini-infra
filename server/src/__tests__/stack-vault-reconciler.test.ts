@@ -34,11 +34,16 @@ vi.mock('../services/user-events/user-event-service', () => {
 });
 
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
-import type { PolicyServiceFacade, AppRoleServiceFacade, KVServiceFacade } from '../services/stacks/stack-vault-reconciler';
 import { encryptInputValues } from '../services/stacks/stack-input-values-service';
 import { encryptSnapshot, emptySnapshotV2, decryptSnapshot, type SnapshotV2 } from '../services/stacks/stack-vault-snapshot';
 import type { TemplateInputDeclaration, TemplateVaultPolicy, TemplateVaultAppRole, TemplateVaultKv } from '@mini-infra/types';
 import type { PrismaClient } from '../lib/prisma';
+import {
+  makePolicySvc,
+  makeAppRoleSvc,
+  makeKVSvc,
+  makeVaultServiceLoaders as makeServices,
+} from './fixtures/vault-mocks';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -103,57 +108,6 @@ function makePrisma(opts: {
       findUnique: vi.fn().mockResolvedValue(null),
     },
   } as unknown as PrismaClient;
-}
-
-function makePolicySvc(opts: { existing?: { id: string; displayName: string } | null; throwOnCreate?: boolean; throwOnPublish?: boolean } = {}): PolicyServiceFacade {
-  const existing = opts.existing !== undefined ? opts.existing : null;
-  return {
-    getByName: vi.fn().mockResolvedValue(existing),
-    create: opts.throwOnCreate
-      ? vi.fn().mockRejectedValue(new Error('policy create failed'))
-      : vi.fn().mockResolvedValue({ id: 'pol-1', displayName: 'test policy' }),
-    update: vi.fn().mockResolvedValue({ id: existing?.id ?? 'pol-1', displayName: 'test policy' }),
-    publish: opts.throwOnPublish
-      ? vi.fn().mockRejectedValue(new Error('policy publish failed'))
-      : vi.fn().mockResolvedValue({ id: existing?.id ?? 'pol-1' }),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeAppRoleSvc(opts: { existing?: { id: string } | null; throwOnCreate?: boolean; throwOnApply?: boolean } = {}): AppRoleServiceFacade {
-  const existing = opts.existing !== undefined ? opts.existing : null;
-  return {
-    getByName: vi.fn().mockResolvedValue(existing),
-    create: opts.throwOnCreate
-      ? vi.fn().mockRejectedValue(new Error('approle create failed'))
-      : vi.fn().mockResolvedValue({ id: 'ar-1' }),
-    update: vi.fn().mockResolvedValue({ id: existing?.id ?? 'ar-1' }),
-    apply: opts.throwOnApply
-      ? vi.fn().mockRejectedValue(new Error('approle apply failed'))
-      : vi.fn().mockResolvedValue({ id: existing?.id ?? 'ar-1' }),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeKVSvc(opts: { throwOnWrite?: boolean } = {}): KVServiceFacade {
-  return {
-    write: opts.throwOnWrite
-      ? vi.fn().mockRejectedValue(new Error('kv write failed'))
-      : vi.fn().mockResolvedValue(undefined),
-    delete: vi.fn().mockResolvedValue(undefined),
-  };
-}
-
-function makeServices(overrides: {
-  policy?: PolicyServiceFacade;
-  appRole?: AppRoleServiceFacade;
-  kv?: KVServiceFacade;
-} = {}) {
-  return {
-    getPolicyService: vi.fn().mockResolvedValue(overrides.policy ?? makePolicySvc()),
-    getAppRoleService: vi.fn().mockResolvedValue(overrides.appRole ?? makeAppRoleSvc()),
-    getKVService: vi.fn().mockResolvedValue(overrides.kv ?? makeKVSvc()),
-  };
 }
 
 const BASE_STACK_ID = 'stack-abc123';
