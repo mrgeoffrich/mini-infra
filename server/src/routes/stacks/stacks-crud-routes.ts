@@ -26,6 +26,8 @@ import type {
   StackAdoptionCandidatesResponse,
   StackServiceDefinition,
 } from '@mini-infra/types';
+import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
+import { getUserId } from '../../lib/get-user-id';
 
 const logger = getLogger("stacks", "stacks-crud-routes");
 
@@ -414,6 +416,10 @@ router.delete(
         });
       }
     }
+
+    const userId = getUserId(req);
+    const triggeredBy = userId ? `stack-delete:${stackId}` : `stack-delete:${stackId}:api`;
+    await runStackVaultDeleter(prisma, stackId, triggeredBy);
 
     await prisma.stack.delete({ where: { id: stackId } });
     res.json({ success: true, message: 'Stack deleted' });
