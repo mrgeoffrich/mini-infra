@@ -51,6 +51,7 @@ Same as the macOS flow — see [CLAUDE.md](../../CLAUDE.md), but use the `.cmd` 
 ```powershell
 deployment\development\worktree_start.cmd --description "auth refactor"
 deployment\development\worktree_list.cmd
+deployment\development\worktree_delete.cmd <profile>
 deployment\development\worktree_cleanup.cmd --dry-run
 ```
 
@@ -109,6 +110,17 @@ localhostForwarding=true
 ## Common Tasks
 
 ### Wipe and rebuild a worktree
+
+The friendly path — `compose down -v`, unregister the distro, remove the install dir, and drop the registry entry in one shot:
+
+```powershell
+deployment\development\worktree_delete.cmd <profile>
+# add --force to skip the confirmation prompt
+# add --keep-vm to drop containers + registry entry only, leaving the distro up
+deployment\development\worktree_start.cmd --description "..."
+```
+
+The raw equivalent (skips compose-down and the registry update):
 
 ```powershell
 wsl --unregister mini-infra-<profile>
