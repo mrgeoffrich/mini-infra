@@ -5,6 +5,12 @@ Status: **planned, not implemented**. Captures items the v1 + v2 PR
 deferred. Pick any of these up independently — they don't have hard
 ordering dependencies on each other.
 
+> **Phase 3 has a live successor design.** The "SNI-aware transparent proxy"
+> section below is preserved for historical context, but the active plan is
+> [egress-gateway-v3-design.md](egress-gateway-v3-design.md) — a Go rewrite
+> with per-managed-container sidecars (Istio-style shared netns). Read that
+> doc before starting phase 3 work; it supersedes the approach sketched here.
+
 ## Context
 
 v1 + v2 shipped a per-environment DNS firewall: each env has an
@@ -21,6 +27,16 @@ What's deferred falls into three buckets: closing the DNS-only-bypass gap
 two minor server-side polish items.
 
 ## SNI-aware transparent proxy (phase 3)
+
+> **Superseded by [egress-gateway-v3-design.md](egress-gateway-v3-design.md).**
+> The approach below (transparent proxy in the gateway container's netns,
+> iptables REDIRECT from the bridge) doesn't survive Docker's networking
+> model — DNAT in one netns and the proxy listener in another means
+> `SO_ORIGINAL_DST` returns the gateway's own IP, losing the actual
+> destination. The v3 design uses per-managed-container sidecars sharing
+> a netns with their app (Istio-style) so DNAT and listener share a
+> conntrack table. Keep reading for context, but treat the v3 doc as
+> authoritative.
 
 **The biggest gap.** DNS-only filtering is bypassable. A managed container
 that ignores its `--dns` setting and queries `8.8.8.8` directly, uses DNS-
