@@ -1,7 +1,8 @@
 import type { PrismaClient } from '../../generated/prisma/client';
+import type * as runtime from '@prisma/client/runtime/client';
 import { getLogger } from '../../lib/logger-factory';
-import type { EgressArchivedReason } from '@mini-infra/types';
-import { emitEgressPolicyUpdated } from './egress-socket-emitter';
+import type { EgressArchivedReason, StackContainerConfig } from '@mini-infra/types';
+import { emitEgressPolicyUpdated, emitEgressRuleMutation } from './egress-socket-emitter';
 
 const log = getLogger('stacks', 'egress-policy-lifecycle');
 
@@ -219,6 +220,176 @@ export class EgressPolicyLifecycleService {
       log.error(
         { err, stackId },
         'refreshStackNameSnapshot: failed to refresh stack name snapshot — continuing',
+      );
+    }
+  }
+
+  /**
+   * Reconcile the EgressRule rows of source='template' for a stack so that
+   * they exactly match the union of `requiredEgress` declarations across the
+   * stack's services. Creates new rules, updates `targets` if a service set
+   * changes, and deletes rules whose pattern is no longer declared.
+   *
+   * Idempotent. Called after stack create and after stack updates that may
+   * have changed service definitions.
+   *
+   * Triggers a gateway push afterwards.
+   */
+  async reconcileTemplateRules(stackId: string, userId: string | null): Promise<void> {
+    try {
+      // 1. Load the stack's services and their requiredEgress declarations.
+      const stack = await this.prisma.stack.findUnique({
+        where: { id: stackId },
+        select: {
+          environmentId: true,
+          services: {
+            select: {
+              serviceName: true,
+              containerConfig: true,
+            },
+          },
+        },
+      });
+
+      if (!stack) {
+        log.debug({ stackId }, 'reconcileTemplateRules: stack not found, skipping');
+        return;
+      }
+
+      // Host-scoped stacks have no egress policy — skip.
+      if (!stack.environmentId) {
+        log.debug({ stackId }, 'reconcileTemplateRules: host-scoped stack, skipping');
+        return;
+      }
+
+      // 2. Build Map<pattern, Set<serviceName>> from requiredEgress declarations.
+      const desiredPatterns = new Map<string, Set<string>>();
+      for (const svc of stack.services) {
+        const config = svc.containerConfig as unknown as StackContainerConfig;
+        if (!config?.requiredEgress) continue;
+        for (const pattern of config.requiredEgress) {
+          const targets = desiredPatterns.get(pattern) ?? new Set<string>();
+          targets.add(svc.serviceName);
+          desiredPatterns.set(pattern, targets);
+        }
+      }
+
+      // 3. Load the stack's active EgressPolicy.
+      const policy = await this.prisma.egressPolicy.findFirst({
+        where: { stackId, archivedAt: null },
+      });
+
+      if (!policy) {
+        log.debug({ stackId }, 'reconcileTemplateRules: no active policy found, skipping');
+        return;
+      }
+
+      // 4. Load existing template-sourced rules for this policy.
+      const existingRules = await this.prisma.egressRule.findMany({
+        where: { policyId: policy.id, source: 'template' },
+      });
+
+      const existingByPattern = new Map(existingRules.map((r) => [r.pattern, r]));
+
+      let policyVersionBump = 0;
+
+      // 5. Diff: create / update / delete.
+      for (const [pattern, serviceSet] of desiredPatterns) {
+        const targets = Array.from(serviceSet).sort();
+        const existing = existingByPattern.get(pattern);
+
+        if (!existing) {
+          // Create
+          const rule = await this.prisma.egressRule.create({
+            data: {
+              policyId: policy.id,
+              pattern,
+              action: 'allow',
+              source: 'template',
+              targets: targets as unknown as runtime.InputJsonValue,
+              createdBy: userId,
+              updatedBy: userId,
+            },
+          });
+          policyVersionBump += 1;
+          log.debug({ stackId, policyId: policy.id, pattern }, 'reconcileTemplateRules: created rule');
+          emitEgressRuleMutation({
+            policy: { ...policy, version: policy.version + policyVersionBump },
+            ruleId: rule.id,
+            changeType: 'created',
+            rule,
+          });
+        } else {
+          // Update only if targets differ
+          const existingTargets = (Array.isArray(existing.targets)
+            ? (existing.targets as string[])
+            : []
+          ).sort();
+          if (JSON.stringify(existingTargets) !== JSON.stringify(targets)) {
+            const updated = await this.prisma.egressRule.update({
+              where: { id: existing.id },
+              data: {
+                targets: targets as unknown as runtime.InputJsonValue,
+                updatedBy: userId,
+              },
+            });
+            policyVersionBump += 1;
+            log.debug({ stackId, policyId: policy.id, pattern }, 'reconcileTemplateRules: updated rule targets');
+            emitEgressRuleMutation({
+              policy: { ...policy, version: policy.version + policyVersionBump },
+              ruleId: updated.id,
+              changeType: 'updated',
+              rule: updated,
+            });
+          }
+        }
+      }
+
+      // Delete template rules whose pattern is no longer declared.
+      for (const [pattern, existing] of existingByPattern) {
+        if (!desiredPatterns.has(pattern)) {
+          await this.prisma.egressRule.delete({ where: { id: existing.id } });
+          policyVersionBump += 1;
+          log.debug({ stackId, policyId: policy.id, pattern }, 'reconcileTemplateRules: deleted rule');
+          emitEgressRuleMutation({
+            policy: { ...policy, version: policy.version + policyVersionBump },
+            ruleId: existing.id,
+            changeType: 'deleted',
+            rule: null,
+          });
+        }
+      }
+
+      // 6. Bump policy version if anything changed.
+      if (policyVersionBump > 0) {
+        const updated = await this.prisma.egressPolicy.update({
+          where: { id: policy.id },
+          data: {
+            version: { increment: policyVersionBump },
+            updatedBy: userId,
+          },
+        });
+        log.info(
+          { stackId, policyId: policy.id, policyVersionBump },
+          'reconcileTemplateRules: policy version bumped',
+        );
+        emitEgressPolicyUpdated(updated);
+      }
+
+      // 7. Fire-and-forget gateway push.
+      void import('./index').then(async ({ getEgressRulePusher }) => {
+        try {
+          await getEgressRulePusher().pushForStack(stackId);
+        } catch (err) {
+          log.warn({ err, stackId }, 'reconcileTemplateRules: gateway push failed (non-fatal)');
+        }
+      }).catch((err) => {
+        log.warn({ err, stackId }, 'reconcileTemplateRules: egress module import failed (non-fatal)');
+      });
+    } catch (err) {
+      log.error(
+        { err, stackId },
+        'reconcileTemplateRules: failed — continuing without template rule reconciliation',
       );
     }
   }

@@ -4,12 +4,13 @@
  * Renders three sections (top-to-bottom):
  *  1. Policy summary cards — one per stack, showing mode, defaultAction,
  *     version drift, and live gateway health.
- *  2. Rules section per policy — read-only table of rules (pattern, action,
- *     source, targets, hits, lastHit).
+ *  2. Rules section per policy — table of rules (pattern, action,
+ *     source, targets, hits, lastHit) with edit/delete/add for egress:write users.
  *  3. Traffic feed — paginated EgressEvent table with filters and live prepend.
  *
- * This is the v1 read-only slice. Write actions (mode-toggle, rule CRUD)
- * require `egress:write` and will be added in the next slice.
+ * Write actions (mode-toggle, rule CRUD) require `egress:write`.
+ * In v1 browser sessions every user has full access (null permissions = full access).
+ * A prop `canWrite` is threaded through so callers can restrict to API-key users.
  */
 
 import { useState, useCallback } from "react";
@@ -26,6 +27,10 @@ import {
   IconEye,
   IconLock,
   IconLockOpen,
+  IconPlus,
+  IconPencil,
+  IconTrash,
+  IconLoader2,
 } from "@tabler/icons-react";
 import {
   useEgressPolicies,
@@ -33,6 +38,8 @@ import {
   useEgressGatewayHealth,
   useEgressEvents,
   useEgressEventFilters,
+  useDeleteEgressRule,
+  usePatchEgressPolicy,
 } from "@/hooks/use-egress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +67,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { toast } from "sonner";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
+import { useStack } from "@/hooks/use-stacks";
+import { EgressRuleDialog } from "./egress-rule-dialog";
+import { EgressPromoteWizard } from "./egress-promote-wizard";
 import type {
   EgressPolicySummary,
   EgressRuleSummary,
@@ -74,6 +99,10 @@ import type {
 
 interface EgressTabProps {
   environmentId: string;
+  /** Whether the current session has egress:write permission.
+   *  Browser sessions have full access (null permissions = true here).
+   *  Defaults to true for backward compat. */
+  canWrite?: boolean;
 }
 
 // ====================
@@ -133,7 +162,7 @@ function GatewayHealthBadge({
 }
 
 // ====================
-// Mode badge
+// Mode badge (read-only)
 // ====================
 
 function ModeBadge({ mode }: { mode: "detect" | "enforce" }) {
@@ -160,7 +189,7 @@ function ModeBadge({ mode }: { mode: "detect" | "enforce" }) {
 }
 
 // ====================
-// Default action badge
+// Default action badge (read-only)
 // ====================
 
 function DefaultActionBadge({ action }: { action: "allow" | "block" }) {
@@ -244,70 +273,337 @@ function RuleSourceBadge({ source }: { source: string }) {
 }
 
 // ====================
+// Mode toggle (write mode)
+// ====================
+
+interface ModeToggleProps {
+  policy: EgressPolicySummary;
+  onOpenPromoteWizard: () => void;
+}
+
+function ModeToggle({ policy, onOpenPromoteWizard }: ModeToggleProps) {
+  const patchPolicy = usePatchEgressPolicy();
+  const [confirmDetectOpen, setConfirmDetectOpen] = useState(false);
+
+  const handleValueChange = (value: string) => {
+    if (!value) return;
+    if (value === policy.mode) return;
+
+    if (value === "enforce") {
+      // Open wizard instead of direct PATCH
+      onOpenPromoteWizard();
+    } else {
+      // Demote to detect — show confirm
+      setConfirmDetectOpen(true);
+    }
+  };
+
+  const handleConfirmDetect = async () => {
+    try {
+      await patchPolicy.mutateAsync({
+        policyId: policy.id,
+        body: { mode: "detect" },
+      });
+      toast.success("Policy switched to Detect mode");
+      setConfirmDetectOpen(false);
+    } catch (err) {
+      toast.error(
+        `Failed to switch mode: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    }
+  };
+
+  return (
+    <>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={policy.mode}
+        onValueChange={handleValueChange}
+        disabled={patchPolicy.isPending}
+        className="h-7"
+      >
+        <ToggleGroupItem value="detect" className="h-6 text-xs px-3">
+          <IconEye className="h-3 w-3 mr-1" />
+          Detect
+        </ToggleGroupItem>
+        <ToggleGroupItem value="enforce" className="h-6 text-xs px-3">
+          <IconLock className="h-3 w-3 mr-1" />
+          Enforce
+        </ToggleGroupItem>
+      </ToggleGroup>
+
+      {/* Confirm demote dialog */}
+      <Dialog open={confirmDetectOpen} onOpenChange={setConfirmDetectOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Switch to Detect mode?</DialogTitle>
+            <DialogDescription>
+              The policy will stop blocking traffic and will only observe. You
+              can switch back to Enforce at any time.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmDetectOpen(false)}
+              disabled={patchPolicy.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmDetect}
+              disabled={patchPolicy.isPending}
+            >
+              {patchPolicy.isPending && (
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Switch to Detect
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ====================
+// Default action toggle (write mode)
+// ====================
+
+interface DefaultActionToggleProps {
+  policy: EgressPolicySummary;
+}
+
+function DefaultActionToggle({ policy }: DefaultActionToggleProps) {
+  const patchPolicy = usePatchEgressPolicy();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"allow" | "block" | null>(
+    null,
+  );
+
+  const handleValueChange = (value: string) => {
+    if (!value || value === policy.defaultAction) return;
+    setPendingAction(value as "allow" | "block");
+    setConfirmOpen(true);
+  };
+
+  const handleConfirm = async () => {
+    if (!pendingAction) return;
+    try {
+      await patchPolicy.mutateAsync({
+        policyId: policy.id,
+        body: { defaultAction: pendingAction },
+      });
+      toast.success(
+        `Default action set to ${pendingAction === "block" ? "Block" : "Allow"}`,
+      );
+      setConfirmOpen(false);
+      setPendingAction(null);
+    } catch (err) {
+      toast.error(
+        `Failed to update default action: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    }
+  };
+
+  return (
+    <>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={policy.defaultAction}
+        onValueChange={handleValueChange}
+        disabled={patchPolicy.isPending || policy.mode === "detect"}
+        className="h-7"
+      >
+        <ToggleGroupItem value="allow" className="h-6 text-xs px-3">
+          Allow
+        </ToggleGroupItem>
+        <ToggleGroupItem value="block" className="h-6 text-xs px-3">
+          Block
+        </ToggleGroupItem>
+      </ToggleGroup>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              Change default action to {pendingAction === "block" ? "Block" : "Allow"}?
+            </DialogTitle>
+            <DialogDescription>
+              {pendingAction === "block"
+                ? "Setting default to Block means traffic without an explicit allow rule will be blocked. Existing observed traffic that hasn't been added as a rule will be blocked."
+                : "Setting default to Allow means unmatched traffic will be permitted. This weakens the enforce posture."}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmOpen(false)}
+              disabled={patchPolicy.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={pendingAction === "block" ? "destructive" : "default"}
+              onClick={handleConfirm}
+              disabled={patchPolicy.isPending}
+            >
+              {patchPolicy.isPending && (
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ====================
 // Policy card with embedded rules table
 // ====================
 
 interface PolicyCardProps {
   policy: EgressPolicySummary;
   environmentId: string;
+  canWrite: boolean;
 }
 
-function PolicyCard({ policy, environmentId }: PolicyCardProps) {
+function PolicyCard({ policy, environmentId, canWrite }: PolicyCardProps) {
   const gatewayHealth = useEgressGatewayHealth(environmentId);
+  const [promoteWizardOpen, setPromoteWizardOpen] = useState(false);
 
   const hasDrift =
     policy.appliedVersion !== null &&
     policy.version !== policy.appliedVersion;
 
+  // Fetch stack to get service names for the rule dialog
+  const stackQuery = useStack(policy.stackId ?? "");
+  const serviceNames: string[] = (
+    stackQuery.data?.data?.services ?? []
+  ).map((s) => s.serviceName);
+
+  const { data } = useEgressPolicy(policy.id);
+  const rules: EgressRuleSummary[] = data?.data?.rules ?? [];
+
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2 min-w-0">
-            <IconShield className="h-4 w-4 text-muted-foreground shrink-0" />
-            <CardTitle className="text-sm font-medium truncate">
-              {policy.stackNameSnapshot}
-            </CardTitle>
+    <>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <IconShield className="h-4 w-4 text-muted-foreground shrink-0" />
+              <CardTitle className="text-sm font-medium truncate">
+                {policy.stackNameSnapshot}
+              </CardTitle>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Mode control */}
+              {canWrite ? (
+                <ModeToggle
+                  policy={policy}
+                  onOpenPromoteWizard={() => setPromoteWizardOpen(true)}
+                />
+              ) : (
+                <ModeBadge mode={policy.mode} />
+              )}
+
+              {/* Default action control */}
+              {canWrite ? (
+                <DefaultActionToggle policy={policy} />
+              ) : (
+                <DefaultActionBadge action={policy.defaultAction} />
+              )}
+
+              <GatewayHealthBadge health={gatewayHealth} />
+            </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <ModeBadge mode={policy.mode} />
-            <DefaultActionBadge action={policy.defaultAction} />
-            <GatewayHealthBadge health={gatewayHealth} />
+
+          {/* Version info */}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
+            <span>Version {policy.version}</span>
+            {hasDrift && (
+              <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                <IconAlertCircle className="h-3 w-3" />
+                Running v{policy.appliedVersion}
+              </span>
+            )}
           </div>
-        </div>
+        </CardHeader>
 
-        {/* Version info */}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-          <span>Version {policy.version}</span>
-          {hasDrift && (
-            <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
-              <IconAlertCircle className="h-3 w-3" />
-              Running v{policy.appliedVersion}
-            </span>
-          )}
-        </div>
-      </CardHeader>
+        <CardContent className="pt-0">
+          <EmbeddedRulesTable
+            policyId={policy.id}
+            serviceNames={serviceNames}
+            canWrite={canWrite}
+          />
+        </CardContent>
+      </Card>
 
-      <CardContent className="pt-0">
-        <EmbeddedRulesTable policyId={policy.id} />
-
-        {/* Next slice: Add rule-create/edit/delete buttons here (requires egress:write) */}
-      </CardContent>
-    </Card>
+      {/* Promote-to-Enforce wizard */}
+      <EgressPromoteWizard
+        open={promoteWizardOpen}
+        onOpenChange={setPromoteWizardOpen}
+        policyId={policy.id}
+        existingRules={rules}
+      />
+    </>
   );
 }
 
 // ====================
-// Embedded rules table (read-only)
+// Embedded rules table
 // ====================
 
-function EmbeddedRulesTable({ policyId }: { policyId: string }) {
+interface EmbeddedRulesTableProps {
+  policyId: string;
+  serviceNames: string[];
+  canWrite: boolean;
+}
+
+function EmbeddedRulesTable({
+  policyId,
+  serviceNames,
+  canWrite,
+}: EmbeddedRulesTableProps) {
   const { formatRelativeTime, formatDateTime } = useFormattedDate();
+  const deleteMutation = useDeleteEgressRule();
+
+  const [addRuleOpen, setAddRuleOpen] = useState(false);
+  const [editRule, setEditRule] = useState<EgressRuleSummary | null>(null);
+  const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null);
+  const [deleteRulePending, setDeleteRulePending] = useState(false);
 
   // useEgressPolicy is imported at the top of the file and cached by TanStack
   // Query — if a parent hook already fetched it, this is a free cache hit.
   const { data, isLoading, isError } = useEgressPolicy(policyId);
   const rules: EgressRuleSummary[] = data?.data?.rules ?? [];
+  const deleteTargetRule = rules.find((r) => r.id === deleteRuleId);
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteRuleId) return;
+    setDeleteRulePending(true);
+    try {
+      await deleteMutation.mutateAsync({ ruleId: deleteRuleId, policyId });
+      toast.success("Rule deleted");
+      setDeleteRuleId(null);
+    } catch (err) {
+      toast.error(
+        `Failed to delete rule: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    } finally {
+      setDeleteRulePending(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -327,80 +623,228 @@ function EmbeddedRulesTable({ policyId }: { policyId: string }) {
     );
   }
 
-  if (rules.length === 0) {
-    return (
-      <p className="text-xs text-muted-foreground italic">
-        No rules defined yet.
-      </p>
-    );
-  }
+return (
+    <>
+      {/* Add rule button */}
+      {canWrite && (
+        <div className="flex justify-end mb-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setAddRuleOpen(true)}
+          >
+            <IconPlus className="h-3 w-3 mr-1" />
+            Add rule
+          </Button>
+        </div>
+      )}
 
-  return (
-    <div className="rounded-md border overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-xs">Pattern</TableHead>
-            <TableHead className="text-xs">Action</TableHead>
-            <TableHead className="text-xs">Source</TableHead>
-            <TableHead className="text-xs">Targets</TableHead>
-            <TableHead className="text-xs text-right">Hits</TableHead>
-            <TableHead className="text-xs">Last Hit</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rules.map((rule) => (
-            <TableRow key={rule.id}>
-              <TableCell className="font-mono text-xs">{rule.pattern}</TableCell>
-              <TableCell>
-                <Badge
-                  variant="outline"
-                  className={`text-xs ${
-                    rule.action === "allow"
-                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                      : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                  }`}
-                >
-                  {rule.action}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <RuleSourceBadge source={rule.source} />
-              </TableCell>
-              <TableCell>
-                {rule.targets.length === 0 ? (
-                  <span className="text-xs text-muted-foreground italic">
-                    all services
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {rule.targets.map((t) => (
+      {rules.length === 0 ? (
+        <p className="text-xs text-muted-foreground italic">
+          No rules defined yet.
+        </p>
+      ) : (
+        <div className="rounded-md border overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="text-xs">Pattern</TableHead>
+                <TableHead className="text-xs">Action</TableHead>
+                <TableHead className="text-xs">Source</TableHead>
+                <TableHead className="text-xs">Targets</TableHead>
+                <TableHead className="text-xs text-right">Hits</TableHead>
+                <TableHead className="text-xs">Last Hit</TableHead>
+                {canWrite && (
+                  <TableHead className="text-xs w-16 text-right" />
+                )}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rules.map((rule) => {
+                const isTemplate = rule.source === "template";
+                return (
+                  <TableRow key={rule.id}>
+                    <TableCell className="font-mono text-xs">
+                      {rule.pattern}
+                    </TableCell>
+                    <TableCell>
                       <Badge
-                        key={t}
-                        variant="secondary"
-                        className="text-xs font-mono"
+                        variant="outline"
+                        className={`text-xs ${
+                          rule.action === "allow"
+                            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                            : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                        }`}
                       >
-                        {t}
+                        {rule.action}
                       </Badge>
-                    ))}
-                  </div>
-                )}
-              </TableCell>
-              <TableCell className="text-right text-xs">{rule.hits}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {rule.lastHitAt ? (
-                  <span title={formatDateTime(rule.lastHitAt)}>
-                    {formatRelativeTime(rule.lastHitAt)}
-                  </span>
-                ) : (
-                  <span className="italic">Never</span>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+                    </TableCell>
+                    <TableCell>
+                      <RuleSourceBadge source={rule.source} />
+                    </TableCell>
+                    <TableCell>
+                      {rule.targets.length === 0 ? (
+                        <span className="text-xs text-muted-foreground italic">
+                          all services
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {rule.targets.map((t) => (
+                            <Badge
+                              key={t}
+                              variant="secondary"
+                              className="text-xs font-mono"
+                            >
+                              {t}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right text-xs">
+                      {rule.hits}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {rule.lastHitAt ? (
+                        <span title={formatDateTime(rule.lastHitAt)}>
+                          {formatRelativeTime(rule.lastHitAt)}
+                        </span>
+                      ) : (
+                        <span className="italic">Never</span>
+                      )}
+                    </TableCell>
+                    {canWrite && (
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {isTemplate ? (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      disabled
+                                    >
+                                      <IconPencil className="h-3 w-3" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Managed by stack template
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6"
+                                      disabled
+                                    >
+                                      <IconTrash className="h-3 w-3" />
+                                    </Button>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Managed by stack template
+                                </TooltipContent>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => setEditRule(rule)}
+                              >
+                                <IconPencil className="h-3 w-3" />
+                                <span className="sr-only">Edit rule</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950"
+                                onClick={() => setDeleteRuleId(rule.id)}
+                              >
+                                <IconTrash className="h-3 w-3" />
+                                <span className="sr-only">Delete rule</span>
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {/* Add rule dialog */}
+      <EgressRuleDialog
+        open={addRuleOpen}
+        onOpenChange={setAddRuleOpen}
+        policyId={policyId}
+        serviceNames={serviceNames}
+      />
+
+      {/* Edit rule dialog */}
+      <EgressRuleDialog
+        open={!!editRule}
+        onOpenChange={(o) => !o && setEditRule(null)}
+        policyId={policyId}
+        serviceNames={serviceNames}
+        rule={editRule ?? undefined}
+      />
+
+      {/* Delete confirmation */}
+      <Dialog
+        open={!!deleteRuleId}
+        onOpenChange={(o) => !o && setDeleteRuleId(null)}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              Delete Rule
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete the rule for{" "}
+              <code className="text-xs bg-muted rounded px-1">
+                {deleteTargetRule?.pattern}
+              </code>
+              ? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteRuleId(null)}
+              disabled={deleteRulePending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteConfirm}
+              disabled={deleteRulePending}
+            >
+              {deleteRulePending && (
+                <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Delete Rule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+    </>
   );
 }
 
@@ -735,7 +1179,7 @@ function TrafficFeedSection({ environmentId }: { environmentId: string }) {
 // Main EgressTab export
 // ====================
 
-export function EgressTab({ environmentId }: EgressTabProps) {
+export function EgressTab({ environmentId, canWrite = true }: EgressTabProps) {
   const {
     data: policiesData,
     isLoading: policiesLoading,
@@ -796,6 +1240,7 @@ export function EgressTab({ environmentId }: EgressTabProps) {
                 key={policy.id}
                 policy={policy}
                 environmentId={environmentId}
+                canWrite={canWrite}
               />
             ))}
           </div>

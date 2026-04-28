@@ -5,7 +5,12 @@ import {
   BALANCE_ALGORITHMS,
   NETWORK_PROTOCOLS,
   MOUNT_TYPES,
+  isValidEgressPattern,
 } from '@mini-infra/types';
+// Note: isValidEgressPattern uses EGRESS_FQDN_RE + EGRESS_WILDCARD_RE from
+// lib/types/egress.ts. The egress route (server/src/routes/egress.ts) has
+// equivalent inline copies (FQDN_RE / WILDCARD_RE) that predate this constant;
+// both are intentionally tied by a comment in lib/types/egress.ts.
 
 // Template string pattern: allows a single, complete {{params.key-name}} reference.
 // Anchored so concatenation like "80; {{params.x}}" or "{{params.a}}{{params.b}}"
@@ -162,6 +167,17 @@ export const stackContainerConfigSchema = z.object({
       maxSize: z.string(),
       maxFile: z.string(),
     })
+    .optional(),
+  requiredEgress: z
+    .array(
+      z.string().refine(
+        (v) => isValidEgressPattern(v),
+        {
+          message:
+            'requiredEgress entry must be a valid FQDN (e.g. api.example.com) or wildcard (e.g. *.example.com)',
+        },
+      ),
+    )
     .optional(),
 }).superRefine((config, ctx) => {
   if (!config.env || !config.dynamicEnv) return;

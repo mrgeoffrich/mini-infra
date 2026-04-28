@@ -1009,9 +1009,11 @@ export class StackTemplateService {
       },
     });
 
-    // Ensure a default egress policy exists for env-scoped stacks
+    // Ensure a default egress policy exists for env-scoped stacks, then
+    // reconcile any template-declared requiredEgress rules.
     const egressLifecycle = new EgressPolicyLifecycleService(this.prisma);
     await egressLifecycle.ensureDefaultPolicy(stack.id, _createdById ?? null);
+    await egressLifecycle.reconcileTemplateRules(stack.id, _createdById ?? null);
 
     return serializeStack(stack);
   }

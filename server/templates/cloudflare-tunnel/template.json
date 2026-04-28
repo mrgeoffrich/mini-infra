@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 5,
+  "builtinVersion": 6,
   "scope": "environment",
   "networkType": "internet",
   "category": "infrastructure",
@@ -27,6 +27,7 @@
       "dockerTag": "latest",
       "containerConfig": {
         "command": ["tunnel", "--no-autoupdate", "run", "--token", "{{params.tunnel-token}}"],
+        "requiredEgress": ["*.cloudflare.com", "*.argotunnel.com"],
         "joinResourceNetworks": ["tunnel"],
         "restartPolicy": "unless-stopped",
         "healthcheck": {

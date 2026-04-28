@@ -238,6 +238,7 @@ router.post(
     logger.info({ stackId: stack.id, stackName: stack.name }, 'Stack created');
     const createUserId = getUserId(req);
     await egressPolicyLifecycle.ensureDefaultPolicy(stack.id, createUserId ?? null);
+    await egressPolicyLifecycle.reconcileTemplateRules(stack.id, createUserId ?? null);
     res.status(201).json({ success: true, data: serializeStack(stack) });
   }),
 );
@@ -375,6 +376,10 @@ router.put(
       if (parsed.data.name !== undefined) {
         await egressPolicyLifecycle.refreshStackNameSnapshot(stackId);
       }
+
+      // Reconcile template egress rules — service definitions may have changed
+      const updateUserId = getUserId(req);
+      await egressPolicyLifecycle.reconcileTemplateRules(stackId, updateUserId ?? null);
 
       res.json({ success: true, data: serializeStack(stack) });
     } else {

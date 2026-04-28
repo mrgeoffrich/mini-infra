@@ -152,6 +152,14 @@ export interface StackContainerConfig {
    * that must reach upstream DNS directly (e.g., the egress gateway itself).
    */
   egressBypass?: boolean;
+  /**
+   * Domains the service needs to reach. Used to auto-allow egress when the
+   * stack is deployed in an environment. Patterns follow the same shape as
+   * EgressRule — FQDN (e.g. "api.example.com") or wildcard (e.g. "*.example.com").
+   * Each entry creates an EgressRule with source='template' scoped to the
+   * declaring service's name.
+   */
+  requiredEgress?: string[];
 }
 
 export interface StackConfigFile {

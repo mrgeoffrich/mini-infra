@@ -1,5 +1,29 @@
 // Egress Firewall Types
 
+/**
+ * Regex for valid egress pattern strings: either a plain FQDN
+ * (e.g. "api.example.com") or a wildcard suffix (e.g. "*.example.com").
+ *
+ * Centralised here so `server/src/routes/egress.ts` and
+ * `server/src/services/stacks/schemas.ts` can both import it instead of
+ * duplicating the expression.
+ *
+ * The two files that independently validate patterns:
+ *   - server/src/routes/egress.ts         — uses FQDN_RE + WILDCARD_RE (inline copies)
+ *   - server/src/services/stacks/schemas.ts — imports EGRESS_PATTERN_RE from here
+ *
+ * The egress route keeps its own inline copies because it imported these
+ * patterns before this constant existed; they are intentionally tied together
+ * by this comment so a future grep finds both.
+ */
+export const EGRESS_FQDN_RE = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
+export const EGRESS_WILDCARD_RE = /^\*\.([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
+
+/** Combined test: accepts any valid FQDN or wildcard egress pattern. */
+export function isValidEgressPattern(pattern: string): boolean {
+  return EGRESS_FQDN_RE.test(pattern) || EGRESS_WILDCARD_RE.test(pattern);
+}
+
 export type EgressMode = 'detect' | 'enforce';
 export type EgressDefaultAction = 'allow' | 'block';
 export type EgressRuleAction = 'allow' | 'block';

@@ -397,8 +397,7 @@ export function useEgressEventFilters(
 }
 
 // ====================
-// Mutation hooks (v1 stubs — wired to API client but no UI yet)
-// Next slice: add rule-create/edit/delete UI and mode-toggle UI
+// Mutation hooks (v2 — with optimistic updates, cache invalidation, and egressEvents)
 // ====================
 
 export function usePatchEgressPolicy() {
@@ -412,7 +411,30 @@ export function usePatchEgressPolicy() {
       policyId: string;
       body: PatchEgressPolicyBody;
     }) => patchEgressPolicy(policyId, body),
-    onSuccess: (_, { policyId }) => {
+
+    // Optimistic update: immediately reflect mode/defaultAction changes on the
+    // policy detail cache so the UI feels instant.
+    onMutate: async ({ policyId, body }) => {
+      await queryClient.cancelQueries({ queryKey: ["egressPolicy", policyId] });
+      const previous = queryClient.getQueryData(["egressPolicy", policyId]);
+      queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        const prev = old as { data: Record<string, unknown> };
+        return { ...prev, data: { ...prev.data, ...body } };
+      });
+      return { previous, policyId };
+    },
+
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(
+          ["egressPolicy", context.policyId],
+          context.previous,
+        );
+      }
+    },
+
+    onSettled: (_, __, { policyId }) => {
       queryClient.invalidateQueries({ queryKey: ["egressPolicies"] });
       queryClient.invalidateQueries({ queryKey: ["egressPolicy", policyId] });
     },
@@ -430,9 +452,12 @@ export function useCreateEgressRule() {
       policyId: string;
       body: CreateEgressRuleBody;
     }) => createEgressRule(policyId, body),
-    onSuccess: (_, { policyId }) => {
+
+    onSettled: (_, __, { policyId }) => {
       queryClient.invalidateQueries({ queryKey: ["egressRules", policyId] });
       queryClient.invalidateQueries({ queryKey: ["egressPolicy", policyId] });
+      // A new rule can change matchedPattern on existing events
+      queryClient.invalidateQueries({ queryKey: ["egressEvents"] });
     },
   });
 }
@@ -441,11 +466,46 @@ export function usePatchEgressRule() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (args: { ruleId: string; policyId: string; body: PatchEgressRuleBody }) =>
-      patchEgressRule(args.ruleId, args.body),
-    onSuccess: (_, { policyId }) => {
+    mutationFn: (args: {
+      ruleId: string;
+      policyId: string;
+      body: PatchEgressRuleBody;
+    }) => patchEgressRule(args.ruleId, args.body),
+
+    // Optimistic update: patch the rule in-place in the policy detail cache
+    onMutate: async ({ ruleId, policyId, body }) => {
+      await queryClient.cancelQueries({ queryKey: ["egressPolicy", policyId] });
+      const previous = queryClient.getQueryData(["egressPolicy", policyId]);
+      queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        const prev = old as { data: { rules?: Array<{ id: string } & Record<string, unknown>> } };
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            rules: prev.data.rules?.map((r) =>
+              r.id === ruleId ? { ...r, ...body } : r,
+            ),
+          },
+        };
+      });
+      return { previous, policyId };
+    },
+
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(
+          ["egressPolicy", context.policyId],
+          context.previous,
+        );
+      }
+    },
+
+    onSettled: (_, __, { policyId }) => {
       queryClient.invalidateQueries({ queryKey: ["egressRules", policyId] });
       queryClient.invalidateQueries({ queryKey: ["egressPolicy", policyId] });
+      // Pattern rename can affect matchedPattern on events
+      queryClient.invalidateQueries({ queryKey: ["egressEvents"] });
     },
   });
 }
@@ -456,9 +516,38 @@ export function useDeleteEgressRule() {
   return useMutation({
     mutationFn: (args: { ruleId: string; policyId: string }) =>
       deleteEgressRule(args.ruleId),
-    onSuccess: (_, { policyId }) => {
+
+    // Optimistic update: remove the rule from the policy detail cache
+    onMutate: async ({ ruleId, policyId }) => {
+      await queryClient.cancelQueries({ queryKey: ["egressPolicy", policyId] });
+      const previous = queryClient.getQueryData(["egressPolicy", policyId]);
+      queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
+        if (!old || typeof old !== "object") return old;
+        const prev = old as { data: { rules?: Array<{ id: string }> } };
+        return {
+          ...prev,
+          data: {
+            ...prev.data,
+            rules: prev.data.rules?.filter((r) => r.id !== ruleId),
+          },
+        };
+      });
+      return { previous, policyId };
+    },
+
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        queryClient.setQueryData(
+          ["egressPolicy", context.policyId],
+          context.previous,
+        );
+      }
+    },
+
+    onSettled: (_, __, { policyId }) => {
       queryClient.invalidateQueries({ queryKey: ["egressRules", policyId] });
       queryClient.invalidateQueries({ queryKey: ["egressPolicy", policyId] });
+      queryClient.invalidateQueries({ queryKey: ["egressEvents"] });
     },
   });
 }
