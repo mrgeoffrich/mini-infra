@@ -62,8 +62,10 @@ import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-upd
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 import { initVaultServices } from "./services/vault/vault-services";
 import { seedVaultPolicies } from "./services/vault/vault-seed";
+import { startEgressBackgroundServices, type ShutdownFn as EgressShutdownFn } from "./services/egress";
 
 // Global scheduler instances
+let egressShutdown: EgressShutdownFn | null = null;
 let connectivityScheduler: ConnectivityScheduler | null = null;
 let backupScheduler: BackupSchedulerService | null = null;
 let restoreExecutorService: RestoreExecutorService | null = null;
@@ -136,6 +138,16 @@ const initializeServices = async () => {
     // Wire up HAProxy crash loop detection and auto-repair
     setupHAProxyCrashLoopWatcher();
     console.log("[STARTUP] ✓ HAProxy crash loop watcher initialized");
+
+    // Start egress firewall background services (non-fatal if they fail)
+    console.log("[STARTUP] Starting egress background services...");
+    try {
+      egressShutdown = await startEgressBackgroundServices(prisma);
+      console.log("[STARTUP] ✓ Egress background services started");
+    } catch (err) {
+      logger.warn({ err }, "Egress background services failed to start (non-fatal)");
+      console.log("[STARTUP] ⚠ Egress background services failed to start (non-fatal)");
+    }
 
     // Clean up orphaned sidecar containers from previous updates
     // and finalize any in-progress update record in the DB
@@ -522,6 +534,11 @@ startServer()
       logger.info(`${signal} received, starting graceful shutdown`);
 
       // Stop schedulers
+      if (egressShutdown) {
+        egressShutdown();
+        logger.info("Egress background services stopped");
+      }
+
       if (connectivityScheduler) {
         connectivityScheduler.stop();
         logger.info("Connectivity scheduler stopped");

@@ -78,6 +78,7 @@ import vaultRoutes from "./routes/vault";
 import vaultPolicyRoutes from "./routes/vault/policies";
 import vaultAppRoleRoutes from "./routes/vault/approles";
 import vaultKvRoutes from "./routes/vault/kv";
+import egressRoutes from "./routes/egress";
 import { listRouteMeta } from "./lib/openapi-registry";
 
 type RouteDefinition = {
@@ -169,6 +170,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "events", path: "/api/events", name: "eventsRoutes", getRouter: () => eventsRoutes },
     { id: "monitoring", path: "/api/monitoring", name: "monitoringRoutes", getRouter: () => monitoringRoutes },
     { id: "permissionPresets", path: "/api/permission-presets", name: "permissionPresetsRoutes", getRouter: () => permissionPresetsRoutes },
+    { id: "egress", path: "/api/egress", name: "egressRoutes", getRouter: () => egressRoutes },
     { id: "stacks", path: "/api/stacks", name: "stacksRoutes", getRouter: () => stacksRoutes },
     { id: "stackTemplates", path: "/api/stack-templates", name: "stackTemplatesRoutes", getRouter: () => stackTemplatesRoutes },
     { id: "selfUpdate", path: "/api/self-update", name: "selfUpdateRoutes", getRouter: () => selfUpdateRoutes },

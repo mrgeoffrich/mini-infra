@@ -42,6 +42,7 @@ import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
+import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -55,7 +56,7 @@ export class StackReconciler {
     private routingManager?: StackRoutingManager,
     private resourceReconciler?: StackResourceReconciler
   ) {
-    this.containerManager = new StackContainerManager(dockerExecutor);
+    this.containerManager = new StackContainerManager(dockerExecutor, prisma);
     this.infraManager = new StackInfraResourceManager(dockerExecutor, prisma, this.containerManager);
     this.planComputer = new StackPlanComputer(prisma, dockerExecutor, resourceReconciler);
     this.serviceHandlers = new StackServiceHandlers(
@@ -1013,7 +1014,12 @@ export class StackReconciler {
       }
     }
 
-    // 4. Delete the stack record (cascades to deployments, services, resources)
+    // 4. Archive egress policy before deleting the stack row so we can record
+    //    the reason while the stack is still resolvable.
+    const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
+    await egressPolicyLifecycle.archiveForStack(stackId, _options?.triggeredBy ?? null);
+
+    // 5. Delete the stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;
     await this.prisma.stack.delete({
       where: { id: stackId },

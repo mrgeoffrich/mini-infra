@@ -221,7 +221,12 @@ export class DockerExecutorService {
   public async createNetwork(
     networkName: string,
     projectName?: string,
-    options?: { driver?: string; labels?: Record<string, string> }
+    options?: {
+      driver?: string;
+      labels?: Record<string, string>;
+      /** Optional IPAM config for explicit subnet/gateway assignment */
+      ipam?: { subnet: string; gateway?: string };
+    }
   ): Promise<void> {
     return this.infraMgr.createNetwork(networkName, projectName, options);
   }
@@ -279,6 +284,7 @@ export class DockerExecutorService {
       user?: string;
       entrypoint?: string[];
       capAdd?: string[];
+      dnsServers?: string[];
     }
   ): Promise<Container> {
     return this.longRunningMgr.createLongRunningContainer(options);

@@ -6,6 +6,7 @@ import {
 } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
 import { groupByProperty } from './utils';
+import type { PrismaClient } from '../../generated/prisma/client';
 
 export interface CreateContainerOptions {
   projectName: string;
@@ -20,7 +21,7 @@ export interface CreateContainerOptions {
 export class StackContainerManager {
   private log = getLogger("stacks", "stack-container-manager").child({ component: 'stack-container-manager' });
 
-  constructor(private dockerExecutor: DockerExecutorService) {}
+  constructor(private dockerExecutor: DockerExecutorService, private prisma: PrismaClient) {}
 
   async pullImage(image: string, tag: string): Promise<void> {
     this.log.info({ image, tag }, 'Pulling image');
@@ -181,6 +182,8 @@ export class StackContainerManager {
 
     this.log.info({ containerName, image }, 'Creating container');
 
+    const dnsServers = await this.resolveEgressDnsServers(service, options);
+
     const container = await this.dockerExecutor.createLongRunningContainer({
       image,
       name: containerName,
@@ -199,12 +202,52 @@ export class StackContainerManager {
       healthcheck,
       logConfig,
       labels,
+      dnsServers,
     });
 
     await container.start();
     this.log.info({ containerId: container.id, containerName }, 'Container started');
 
     return container.id;
+  }
+
+  /**
+   * Resolve the DNS servers to inject into a managed container's HostConfig.
+   *
+   * Logic (in order):
+   * - Host-level stack (no environmentId) → no injection.
+   * - Service has egressBypass: true → no injection (used for the egress-gateway itself).
+   * - Environment has egressGatewayIp set → inject [egressGatewayIp].
+   * - Environment exists but egressGatewayIp is null → warn and skip (env predates
+   *   the egress feature, or the gateway stack is still being deployed for the
+   *   first time). Never throw — we must not break stack apply in this case.
+   */
+  private async resolveEgressDnsServers(
+    service: StackServiceDefinition,
+    options: CreateContainerOptions,
+  ): Promise<string[] | undefined> {
+    if (!options.environmentId) {
+      return undefined;
+    }
+
+    if (service.containerConfig.egressBypass === true) {
+      return undefined;
+    }
+
+    const environment = await this.prisma.environment.findUnique({
+      where: { id: options.environmentId },
+      select: { egressGatewayIp: true },
+    });
+
+    if (environment?.egressGatewayIp) {
+      return [environment.egressGatewayIp];
+    }
+
+    this.log.warn(
+      { environmentId: options.environmentId, stackId: options.stackId },
+      'Environment has no egressGatewayIp — skipping DNS injection (gateway not yet deployed or env predates egress feature)',
+    );
+    return undefined;
   }
 
   async connectToNetwork(containerId: string, networkName: string): Promise<void> {

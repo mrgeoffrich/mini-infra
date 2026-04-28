@@ -49,6 +49,7 @@ export class LongRunningContainerManager {
       user?: string;
       entrypoint?: string[];
       capAdd?: string[];
+      dnsServers?: string[];
     }
   ): Promise<Container> {
     try {
@@ -85,6 +86,11 @@ export class LongRunningContainerManager {
         Tty: false,
         HostConfig: {},
       };
+
+      // Inject egress-gateway DNS servers if provided
+      if (options.dnsServers && options.dnsServers.length > 0) {
+        containerOptions.HostConfig!.Dns = options.dnsServers;
+      }
 
       // Add custom command if provided
       if (options.cmd) {

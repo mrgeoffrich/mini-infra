@@ -26,9 +26,11 @@ import {
   removeStackNetworksAndVolumes,
 } from '../../services/stacks/stack-destroy-helpers';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
+import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 
 const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
+const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
 
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, DB record
 router.post(
@@ -161,7 +163,11 @@ async function runDestroyInBackground(
       volumes,
     );
 
-    // Step 6: Delete stack record (cascades to deployments, services, resources)
+    // Step 6: Archive egress policy before deleting the stack row so we can
+    // record userId on the archived record while the stack is still resolvable.
+    await egressPolicyLifecycle.archiveForStack(stackId, triggeredBy ?? null);
+
+    // Step 7: Delete stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;
     await prisma.stack.delete({ where: { id: stackId } });
 

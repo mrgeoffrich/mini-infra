@@ -27,6 +27,12 @@ import type {
   VaultPolicyAppliedEvent,
   VaultAppRoleAppliedEvent,
 } from "./vault";
+import type {
+  EgressEventBroadcast,
+  EgressPolicyUpdatedEvent,
+  EgressRuleMutationEvent,
+  EgressGatewayHealthEvent,
+} from "./egress";
 
 // ====================
 // Socket Channel Constants & Types
@@ -50,6 +56,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "self-update",
   "vault",
   "pools",
+  "egress",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -85,6 +92,7 @@ export const Channel = {
   SELF_UPDATE: "self-update",
   VAULT: "vault",
   POOLS: "pools",
+  EGRESS: "egress",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -214,6 +222,11 @@ export const ServerEvent = {
   VAULT_PASSPHRASE_LOCKED: "vault:passphrase:locked",
   VAULT_POLICY_APPLIED: "vault:policy:applied",
   VAULT_APPROLE_APPLIED: "vault:approle:applied",
+  // Egress Firewall
+  EGRESS_EVENT: "egress:event",
+  EGRESS_POLICY_UPDATED: "egress:policy:updated",
+  EGRESS_RULE_MUTATION: "egress:rule:mutation",
+  EGRESS_GATEWAY_HEALTH: "egress:gateway:health",
 } as const;
 
 /** Client → Server event names */
@@ -489,6 +502,16 @@ export interface ServerToClientEvents {
   "vault:passphrase:locked": (data: VaultPassphraseLockEvent) => void;
   "vault:policy:applied": (data: VaultPolicyAppliedEvent) => void;
   "vault:approle:applied": (data: VaultAppRoleAppliedEvent) => void;
+
+  // ── Egress Firewall ─────────────────────────────────
+  /** Single DNS query ingested into EgressEvent (live traffic feed) */
+  "egress:event": (data: EgressEventBroadcast) => void;
+  /** Policy mode/defaultAction/version/archivedAt changed */
+  "egress:policy:updated": (data: EgressPolicyUpdatedEvent) => void;
+  /** Rule created, updated, or deleted */
+  "egress:rule:mutation": (data: EgressRuleMutationEvent) => void;
+  /** Per-env gateway health snapshot — fires after each push attempt */
+  "egress:gateway:health": (data: EgressGatewayHealthEvent) => void;
 }
 
 // ====================

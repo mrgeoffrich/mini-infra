@@ -9,6 +9,7 @@ export type PermissionScope = string;
 export type PermissionDomain =
   | "containers"
   | "docker"
+  | "egress"
   | "environments"
   | "haproxy"
   | "postgres"
@@ -151,6 +152,27 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Environments",
         description:
           "Create, update, delete environments, services, networks, volumes",
+      },
+    ],
+  },
+  {
+    domain: "egress",
+    label: "Egress Firewall",
+    description: "Outbound network firewall rule management",
+    permissions: [
+      {
+        scope: "egress:read",
+        domain: "egress",
+        action: "read",
+        label: "View Egress Rules",
+        description: "List and view outbound firewall rules",
+      },
+      {
+        scope: "egress:write",
+        domain: "egress",
+        action: "write",
+        label: "Manage Egress Rules",
+        description: "Create, update, and delete outbound firewall rules",
       },
     ],
   },
@@ -578,6 +600,8 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "containers:read",
       "containers:write",
       "docker:read",
+      "egress:read",
+      "egress:write",
       "environments:read",
       "environments:write",
       "haproxy:read",

@@ -193,6 +193,22 @@ function formatNameSet(set: Set<string>): string {
 }
 
 // =====================
+// Env-var substitution
+// =====================
+
+/**
+ * Substitute ${VAR_NAME} tokens in a string using process.env.
+ * Tokens for which no env var is set are left as-is so validation
+ * errors surface clearly rather than silently producing an empty string.
+ */
+function resolveEnvVars(value: string): string {
+  return value.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (match, name: string) => {
+    const resolved = process.env[name];
+    return resolved !== undefined ? resolved : match;
+  });
+}
+
+// =====================
 // Loader
 // =====================
 
@@ -334,8 +350,8 @@ export function loadTemplateFromObject(
     return {
       serviceName: svc.serviceName,
       serviceType: svc.serviceType,
-      dockerImage: svc.dockerImage,
-      dockerTag: svc.dockerTag,
+      dockerImage: resolveEnvVars(svc.dockerImage),
+      dockerTag: resolveEnvVars(svc.dockerTag),
       containerConfig: svc.containerConfig,
       configFiles: svcConfigs.length > 0
         ? svcConfigs.map((cf) => ({

@@ -7,6 +7,7 @@ import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 import { runSystemStackMigrations } from "./system-stack-migrations";
+import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
 // Resolve the templates directory relative to the server root.
 // In dev, __dirname is server/src/services/stacks/ (3 levels up to server/).
 // In prod, __dirname is server/dist/server/src/services/stacks/ (5 levels up to server/).
@@ -218,4 +219,9 @@ async function upgradeStackFromTemplate(
       },
     });
   });
+
+  // Reconcile template-declared egress rules now that services have been updated.
+  // system upgrades run as a background process — no userId available.
+  const egressLifecycle = new EgressPolicyLifecycleService(prisma);
+  await egressLifecycle.reconcileTemplateRules(existing.id, null);
 }

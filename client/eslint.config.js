@@ -8,7 +8,27 @@ import { globalIgnores } from "eslint/config";
 export default tseslint.config([
   globalIgnores(["dist"]),
   {
+    files: ["src/__tests__/**/*.{ts,tsx}"],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.recommended,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: { ...globals.browser, ...globals.node },
+      parserOptions: {
+        project: "./tsconfig.test.json",
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+    },
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/__tests__/**"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,

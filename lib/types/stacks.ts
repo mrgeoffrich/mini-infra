@@ -146,6 +146,20 @@ export interface StackContainerConfig {
     maxSize: string;
     maxFile: string;
   };
+  /**
+   * When true, the container's HostConfig.Dns is NOT pointed at the egress
+   * gateway. Treat undefined as false. Intended for sidecar/infra containers
+   * that must reach upstream DNS directly (e.g., the egress gateway itself).
+   */
+  egressBypass?: boolean;
+  /**
+   * Domains the service needs to reach. Used to auto-allow egress when the
+   * stack is deployed in an environment. Patterns follow the same shape as
+   * EgressRule — FQDN (e.g. "api.example.com") or wildcard (e.g. "*.example.com").
+   * Each entry creates an EgressRule with source='template' scoped to the
+   * declaring service's name.
+   */
+  requiredEgress?: string[];
 }
 
 export interface StackConfigFile {

@@ -7,6 +7,7 @@ import { useUserStacks } from "@/hooks/use-applications";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
 import { RemediateHAProxyDialog } from "@/components/haproxy/remediate-haproxy-dialog";
+import { EgressTab } from "@/components/egress/egress-tab";
 import {
   Card,
   CardContent,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +38,7 @@ import {
   IconCloud,
   IconWorldWww,
   IconHome,
+  IconShield,
 } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { cn } from "@/lib/utils";
@@ -46,6 +49,9 @@ export function EnvironmentDetailPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [remediateDialogOpen, setRemediateDialogOpen] = useState(false);
+
+  // Note: regular browser sessions always have null permissions (full access).
+  // API key auth will need to plumb permissions through here in a future slice.
 
   const {
     data: environment,
@@ -65,6 +71,12 @@ export function EnvironmentDetailPage() {
   const userStacks = (userStacksData?.data ?? []).filter(
     (s) => s.environmentId === environmentId,
   );
+
+  // Gate the Egress tab behind egress:read.
+  // Browser sessions have full access (null permissions = full access).
+  // When API key auth surfaces session permissions to the client in a future
+  // slice, replace `true` with: hasPermission(session.permissions, "egress:read")
+  const canReadEgress = true;
 
   if (!environmentId) {
     return <Navigate to="/environments" replace />;
@@ -311,7 +323,27 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
-        <StacksList environmentId={environment.id} />
+        <Tabs defaultValue="overview">
+          <TabsList className="mb-4">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            {canReadEgress && (
+              <TabsTrigger value="egress" className="flex items-center gap-1.5">
+                <IconShield className="h-3.5 w-3.5" />
+                Egress
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="overview">
+            <StacksList environmentId={environment.id} />
+          </TabsContent>
+
+          {canReadEgress && (
+            <TabsContent value="egress">
+              <EgressTab environmentId={environment.id} />
+            </TabsContent>
+          )}
+        </Tabs>
       </div>
 
       {/* Dialogs */}
