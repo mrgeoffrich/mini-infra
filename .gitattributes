@@ -1,0 +1,15 @@
+# Force LF for shell scripts and Dockerfiles regardless of host OS.
+# Without this, `core.autocrlf=true` (the Git-for-Windows default) silently
+# rewrites these to CRLF on checkout — which breaks `set -e` in any script
+# COPYed into a Linux container ("set: line 2: illegal option -" because
+# the shell parses the trailing \r as part of the flag name).
+
+*.sh        text eol=lf
+*.bash      text eol=lf
+Dockerfile  text eol=lf
+Dockerfile.* text eol=lf
+
+# Windows wrappers stay CRLF — cmd.exe handles either, but consistency.
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.ps1       text eol=crlf

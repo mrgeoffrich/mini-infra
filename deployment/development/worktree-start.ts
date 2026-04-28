@@ -16,6 +16,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as readline from 'node:readline/promises';
+import { fileURLToPath } from 'node:url';
 import { stdin as input, stdout as output } from 'node:process';
 import { logInfo, logOk, logWarn, logError } from './lib/log.js';
 import {
@@ -28,15 +29,37 @@ import {
 } from './lib/registry.js';
 import { readEnvironmentDetails, writeMinimalEnvironmentDetails } from './lib/env-details.js';
 import { isColimaRunning, startColima } from './lib/colima.js';
+import {
+  assertWslAvailable,
+  defaultBaseTarballPath,
+  defaultInstallDir,
+  distroExists,
+  distroName,
+  ensureDockerReady,
+  importDistro,
+  isDistroRunning,
+  startDocker as startWslDocker,
+} from './lib/wsl.js';
 import { seed, ensureVaultUnlocked } from './lib/seeder.js';
 import { ApiClient } from './lib/api.js';
 
-const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
 const COMPOSE_FILE = path.join(SCRIPT_DIR, 'docker-compose.worktree.yaml');
 
 const COLIMA_CPUS = 2;
 const COLIMA_MEMORY_GIB = 8;
+
+type Driver = 'colima' | 'wsl';
+
+function pickDriver(): Driver {
+  const env = process.env.MINI_INFRA_DRIVER;
+  if (env === 'colima' || env === 'wsl') return env;
+  if (env) {
+    logWarn(`Unknown MINI_INFRA_DRIVER='${env}' — falling back to platform default`);
+  }
+  return process.platform === 'darwin' ? 'colima' : 'wsl';
+}
 
 function usage(): void {
   const lines = fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n');
@@ -70,9 +93,16 @@ async function waitForHttp(url: string, attempts: number, label: string): Promis
 }
 
 function commandExists(cmd: string): boolean {
-  const res = spawnSync('command', ['-v', cmd], { shell: '/bin/bash' });
-  return res.status === 0;
+  const probe = process.platform === 'win32' ? 'where' : 'command';
+  const args = process.platform === 'win32' ? [cmd] : ['-v', cmd];
+  const opts = process.platform === 'win32' ? {} : { shell: '/bin/bash' };
+  return spawnSync(probe, args, opts).status === 0;
 }
+
+// On Windows, spawnSync without `shell:true` only resolves .exe — it can't
+// find .cmd shims like corepack.cmd or pnpm.cmd. Enabling shell on Windows
+// routes through cmd.exe which respects PATHEXT.
+const NEEDS_SHELL = process.platform === 'win32';
 
 function exec(
   cmd: string,
@@ -84,6 +114,7 @@ function exec(
     env: { ...process.env, ...(opts.env || {}) },
     cwd: opts.cwd,
     stdio: opts.stdio || 'pipe',
+    shell: NEEDS_SHELL,
   });
   return {
     status: res.status ?? 1,
@@ -96,6 +127,7 @@ function compose(args: string[], env: NodeJS.ProcessEnv, stdio: 'inherit' | 'pip
   const res = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, ...args], {
     env: { ...process.env, ...env },
     stdio,
+    shell: NEEDS_SHELL,
   });
   return res.status ?? 1;
 }
@@ -158,6 +190,8 @@ async function confirm(prompt: string): Promise<boolean> {
 
 async function main(): Promise<void> {
   const args = parseCliArgs();
+  const driver = pickDriver();
+  logInfo(`VM driver: ${driver}`);
 
   let profile = args.profile;
   if (!profile) {
@@ -170,12 +204,26 @@ async function main(): Promise<void> {
   }
   logInfo(`Worktree profile: ${profile}`);
 
-  // Prereqs
-  for (const tool of ['colima', 'docker']) {
-    if (!commandExists(tool)) {
-      logError(`${tool} is not installed. Install with: brew install ${tool}`);
+  // Prereqs — driver-specific tools first, then the always-required ones.
+  if (driver === 'colima' && !commandExists('colima')) {
+    logError('colima is not installed. Install with: brew install colima');
+    process.exit(1);
+  }
+  if (driver === 'wsl') {
+    try {
+      assertWslAvailable();
+    } catch (err) {
+      logError(err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
+  }
+  if (!commandExists('docker')) {
+    const hint =
+      driver === 'wsl'
+        ? 'Install the Docker CLI: https://download.docker.com/win/static/stable/'
+        : 'Install with: brew install docker';
+    logError(`docker CLI is not installed. ${hint}`);
+    process.exit(1);
   }
   if (!commandExists('corepack')) {
     logError('corepack is not available. Install a recent Node.js (>=16.9) or run: npm install -g corepack');
@@ -242,35 +290,86 @@ async function main(): Promise<void> {
     ui_port: uiPort,
     registry_port: registryPort,
     vault_port: vaultPort,
+    docker_port: dockerPort,
+    haproxy_http_port: haproxyHttpPort,
+    haproxy_https_port: haproxyHttpsPort,
+    haproxy_stats_port: haproxyStatsPort,
+    haproxy_dataplane_port: haproxyDataplanePort,
   } = allocatePorts(profile);
   // Persist early so the entry exists even if later steps fail
   upsertEntry({
     profile,
     worktree_path: PROJECT_ROOT,
-    colima_vm: profile,
+    colima_vm: driver === 'wsl' ? distroName(profile) : profile,
     ui_port: uiPort,
     registry_port: registryPort,
     vault_port: vaultPort,
+    docker_port: dockerPort,
+    haproxy_http_port: haproxyHttpPort,
+    haproxy_https_port: haproxyHttpsPort,
+    haproxy_stats_port: haproxyStatsPort,
+    haproxy_dataplane_port: haproxyDataplanePort,
     url: `http://localhost:${uiPort}`,
     description: shortDesc,
   });
-  logInfo(`Ports: UI=${uiPort}, registry=${registryPort}, vault=${vaultPort}`);
+  logInfo(
+    `Ports: UI=${uiPort}, registry=${registryPort}, vault=${vaultPort}` +
+      (driver === 'wsl' ? `, docker=${dockerPort}` : '') +
+      `, haproxy(http/https/stats/dataplane)=${haproxyHttpPort}/${haproxyHttpsPort}/${haproxyStatsPort}/${haproxyDataplanePort}`,
+  );
 
-  // Colima
-  if (!isColimaRunning(profile)) {
-    logInfo(`Starting Colima profile '${profile}' (vz, ${COLIMA_CPUS} CPU, ${COLIMA_MEMORY_GIB}G RAM)...`);
-    startColima({ profile, cpus: COLIMA_CPUS, memoryGib: COLIMA_MEMORY_GIB });
-    logOk(`Colima profile '${profile}' started`);
+  // Bring the VM up via the selected driver. For environment-details.xml,
+  // colima exposes a host-side unix socket path; wsl exposes only TCP, so
+  // the socket field is empty there.
+  let dockerHost: string;
+  let dockerSockPath = '';
+  if (driver === 'colima') {
+    if (!isColimaRunning(profile)) {
+      logInfo(`Starting Colima profile '${profile}' (vz, ${COLIMA_CPUS} CPU, ${COLIMA_MEMORY_GIB}G RAM)...`);
+      startColima({ profile, cpus: COLIMA_CPUS, memoryGib: COLIMA_MEMORY_GIB });
+      logOk(`Colima profile '${profile}' started`);
+    } else {
+      logInfo(`Colima profile '${profile}' already running`);
+    }
+    dockerSockPath = path.join(process.env.HOME || '', '.colima', profile, 'docker.sock');
+    if (!fs.existsSync(dockerSockPath)) {
+      logError(`Expected Colima socket not found at ${dockerSockPath}`);
+      process.exit(1);
+    }
+    dockerHost = `unix://${dockerSockPath}`;
   } else {
-    logInfo(`Colima profile '${profile}' already running`);
+    const distro = distroName(profile);
+    if (!distroExists(distro)) {
+      const baseTar = defaultBaseTarballPath(MINI_INFRA_HOME);
+      if (!fs.existsSync(baseTar)) {
+        logError(`Base tarball not found at ${baseTar}.`);
+        logError('Run scripts\\build-wsl-base.ps1 from the project root first.');
+        process.exit(1);
+      }
+      logInfo(`Importing WSL distro '${distro}' from ${baseTar}...`);
+      importDistro({
+        name: distro,
+        baseTarball: baseTar,
+        installDir: defaultInstallDir(MINI_INFRA_HOME, profile),
+      });
+      logOk(`WSL distro '${distro}' imported`);
+    } else {
+      logInfo(`WSL distro '${distro}' already exists`);
+    }
+    if (!isDistroRunning(distro)) {
+      logInfo(`Starting dockerd inside '${distro}' on tcp port ${dockerPort}...`);
+    }
+    startWslDocker({ name: distro, dockerPort });
+    const ready = await ensureDockerReady(dockerPort, 60);
+    if (!ready) {
+      logError(`dockerd in '${distro}' did not become ready on port ${dockerPort} within 60s`);
+      logError(`Check the daemon log: wsl -d ${distro} -- cat /var/log/mini-infra/dockerd.log`);
+      process.exit(1);
+    }
+    logOk(`dockerd ready at tcp://localhost:${dockerPort}`);
+    dockerHost = `tcp://localhost:${dockerPort}`;
   }
 
-  const dockerSockPath = path.join(process.env.HOME || '', '.colima', profile, 'docker.sock');
-  if (!fs.existsSync(dockerSockPath)) {
-    logError(`Expected Colima socket not found at ${dockerSockPath}`);
-    process.exit(1);
-  }
-  const dockerHost = `unix://${dockerSockPath}`;
   const composeProjectName = `mini-infra-${profile}`;
   const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
 
@@ -479,6 +578,10 @@ async function main(): Promise<void> {
         uiPort,
         registryPort,
         vaultPort,
+        haproxyHttpPort,
+        haproxyHttpsPort,
+        haproxyStatsPort,
+        haproxyDataplanePort,
         profile,
         projectRoot: PROJECT_ROOT,
         dockerHost,
@@ -492,10 +595,15 @@ async function main(): Promise<void> {
       upsertEntry({
         profile,
         worktree_path: PROJECT_ROOT,
-        colima_vm: profile,
+        colima_vm: driver === 'wsl' ? distroName(profile) : profile,
         ui_port: uiPort,
         registry_port: registryPort,
         vault_port: vaultPort,
+        docker_port: dockerPort,
+        haproxy_http_port: haproxyHttpPort,
+        haproxy_https_port: haproxyHttpsPort,
+        haproxy_stats_port: haproxyStatsPort,
+        haproxy_dataplane_port: haproxyDataplanePort,
         url: `http://localhost:${uiPort}`,
         admin_email: result.adminEmail,
         admin_password: result.adminPassword,
@@ -519,10 +627,15 @@ async function main(): Promise<void> {
     upsertEntry({
       profile,
       worktree_path: PROJECT_ROOT,
-      colima_vm: profile,
+      colima_vm: driver === 'wsl' ? distroName(profile) : profile,
       ui_port: uiPort,
       registry_port: registryPort,
       vault_port: vaultPort,
+      docker_port: dockerPort,
+      haproxy_http_port: haproxyHttpPort,
+      haproxy_https_port: haproxyHttpsPort,
+      haproxy_stats_port: haproxyStatsPort,
+      haproxy_dataplane_port: haproxyDataplanePort,
       url: `http://localhost:${uiPort}`,
       seeded: details?.seeded ?? false,
       admin_email: details?.admin.email,
@@ -553,13 +666,16 @@ async function main(): Promise<void> {
   console.log(`  URL:         http://localhost:${uiPort}`);
   console.log(`  Registry:    localhost:${registryPort}`);
   console.log(`  Vault:       http://localhost:${vaultPort}`);
+  console.log(`  HAProxy:     http://localhost:${haproxyHttpPort}  (https=${haproxyHttpsPort}, stats=${haproxyStatsPort}, dataplane=${haproxyDataplanePort})`);
   console.log(`  DOCKER_HOST: ${dockerHost}`);
   console.log('');
   console.log(`  Logs:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} logs -f`);
   console.log(`  Stop:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} down`);
-  console.log(`  Re-seed: ${path.join(SCRIPT_DIR, 'worktree_start.sh')} --seed --profile ${profile}`);
-  console.log(`  Nuke:    ${path.join(SCRIPT_DIR, 'worktree_start.sh')} --reset --profile ${profile}`);
-  console.log(`  List all: ${path.join(SCRIPT_DIR, 'worktree_list.sh')}`);
+  const startWrapper = process.platform === 'win32' ? 'worktree_start.cmd' : 'worktree_start.sh';
+  const listWrapper = process.platform === 'win32' ? 'worktree_list.cmd' : 'worktree_list.sh';
+  console.log(`  Re-seed: ${path.join(SCRIPT_DIR, startWrapper)} --seed --profile ${profile}`);
+  console.log(`  Nuke:    ${path.join(SCRIPT_DIR, startWrapper)} --reset --profile ${profile}`);
+  console.log(`  List all: ${path.join(SCRIPT_DIR, listWrapper)}`);
   console.log('');
 }
 
