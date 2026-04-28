@@ -174,6 +174,16 @@ colima list
 
 ### Tear down a worktree's profile completely
 
+The friendly path — wipes the Compose project (containers + volumes), deletes the Colima VM, and removes the registry entry:
+
+```bash
+deployment/development/worktree_delete.sh <profile>
+# add --force to skip the confirmation prompt
+# add --keep-vm to drop containers + registry entry only, leaving the VM up
+```
+
+The raw equivalent (skips compose-down and the registry update):
+
 ```bash
 colima delete <profile> --data --force
 ```

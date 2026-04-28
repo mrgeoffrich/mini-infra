@@ -28,7 +28,7 @@ For parallel dev work, each git worktree runs its own fully isolated Mini Infra 
 
 6. **List everything.** Run `deployment/development/worktree_list.sh` (or `.cmd`) from anywhere to see every registered environment (URL, admin login, path, seed status) in a table. `--wide` also prints the API key and admin password; `--json` emits the raw registry.
 
-7. **Tear down.** On macOS: `colima delete <profile> --data --force`. On Windows: `wsl --unregister mini-infra-<profile>`. Either removes the entire VM/distro for that worktree. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
+7. **Tear down this worktree.** Run `deployment/development/worktree_delete.sh <profile>` (or `.cmd`) to wipe a single worktree's runtime — it runs `docker compose down -v` against the worktree's project, deletes the per-worktree VM/distro, and removes the registry entry in one shot. Pass `--force` to skip the confirmation prompt, or `--keep-vm` to drop only the containers and the registry entry while leaving the VM up. The git worktree itself is left alone; run `git worktree remove <path>` afterwards if you want it gone too. To bypass the helper entirely: `colima delete <profile> --data --force` on macOS or `wsl --unregister mini-infra-<profile>` on Windows. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
 
 Run `git` commands from inside the worktree directory, not the main checkout — mixing shells between the two is the main way commits land on the wrong branch.
 
