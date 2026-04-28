@@ -46,6 +46,37 @@ export interface AdminHealthResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Rules snapshot types (mirror egress-sidecar/src/types.ts)
+// ---------------------------------------------------------------------------
+
+export interface EgressRuleEntry {
+  id: string;
+  pattern: string;
+  action: 'allow' | 'block';
+  /** Service names within the stack this rule applies to; [] = all services */
+  targets: string[];
+}
+
+export interface StackPolicyEntry {
+  mode: 'detect' | 'enforce';
+  defaultAction: 'allow' | 'block';
+  rules: EgressRuleEntry[];
+}
+
+export interface RulesSnapshotRequest {
+  version: number;
+  /** Map of stackId -> policy */
+  stackPolicies: Record<string, StackPolicyEntry>;
+}
+
+export interface RulesSnapshotResponse {
+  version: number;
+  accepted: true;
+  ruleCount: number;
+  stackCount: number;
+}
+
+// ---------------------------------------------------------------------------
 // Error type
 // ---------------------------------------------------------------------------
 
@@ -84,6 +115,22 @@ export class EgressGatewayClient {
     const res = await this._request('POST', '/admin/container-map', req);
     const data = res as ContainerMapResponse;
     return { version: data.version, entryCount: data.entryCount };
+  }
+
+  /**
+   * Push a full rules snapshot to the gateway.
+   */
+  async pushRules(
+    req: RulesSnapshotRequest,
+  ): Promise<{ version: number; ruleCount: number; stackCount: number; accepted: boolean }> {
+    const res = await this._request('POST', '/admin/rules', req);
+    const data = res as RulesSnapshotResponse;
+    return {
+      version: data.version,
+      ruleCount: data.ruleCount,
+      stackCount: data.stackCount,
+      accepted: data.accepted,
+    };
   }
 
   /**
