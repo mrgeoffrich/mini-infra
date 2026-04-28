@@ -28,8 +28,10 @@ import type {
 } from '@mini-infra/types';
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
 import { getUserId } from '../../lib/get-user-id';
+import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 
 const logger = getLogger("stacks", "stacks-crud-routes");
+const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
 
 const router = Router();
 
@@ -234,6 +236,8 @@ router.post(
     });
 
     logger.info({ stackId: stack.id, stackName: stack.name }, 'Stack created');
+    const createUserId = getUserId(req);
+    await egressPolicyLifecycle.ensureDefaultPolicy(stack.id, createUserId ?? null);
     res.status(201).json({ success: true, data: serializeStack(stack) });
   }),
 );
@@ -367,6 +371,11 @@ router.put(
         });
       });
 
+      // Refresh egress policy stack name snapshot if name was updated
+      if (parsed.data.name !== undefined) {
+        await egressPolicyLifecycle.refreshStackNameSnapshot(stackId);
+      }
+
       res.json({ success: true, data: serializeStack(stack) });
     } else {
       const stack = await prisma.stack.update({
@@ -374,6 +383,11 @@ router.put(
         data: updateData,
         include: { services: true },
       });
+
+      // Refresh egress policy stack name snapshot if name was updated
+      if (parsed.data.name !== undefined) {
+        await egressPolicyLifecycle.refreshStackNameSnapshot(stackId);
+      }
 
       res.json({ success: true, data: serializeStack(stack) });
     }
@@ -420,6 +434,10 @@ router.delete(
     const userId = getUserId(req);
     const triggeredBy = userId ? `stack-delete:${stackId}` : `stack-delete:${stackId}:api`;
     await runStackVaultDeleter(prisma, stackId, triggeredBy);
+
+    // Archive egress policy before deleting the stack row so we can still
+    // record userId on the archived record while the stack is resolvable.
+    await egressPolicyLifecycle.archiveForStack(stackId, userId ?? null);
 
     await prisma.stack.delete({ where: { id: stackId } });
     res.json({ success: true, message: 'Stack deleted' });

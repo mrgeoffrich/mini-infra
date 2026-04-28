@@ -231,6 +231,10 @@ const mockPrisma = {
     findUniqueOrThrow: mockFindUniqueOrThrow,
     update: mockStackUpdate,
   },
+  environment: {
+    // Default: no gateway IP set — resolveEgressDnsServers will warn and return undefined
+    findUnique: vi.fn().mockResolvedValue({ egressGatewayIp: null }),
+  },
   stackDeployment: {
     create: mockStackDeploymentCreate,
   },

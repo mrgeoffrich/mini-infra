@@ -18,7 +18,12 @@ export class InfrastructureManager {
   public async createNetwork(
     networkName: string,
     projectName?: string,
-    options?: { driver?: string; labels?: Record<string, string> }
+    options?: {
+      driver?: string;
+      labels?: Record<string, string>;
+      /** Optional IPAM config for explicit subnet/gateway assignment */
+      ipam?: { subnet: string; gateway?: string };
+    }
   ): Promise<void> {
     try {
       const networks = await this.docker.listNetworks();
@@ -39,13 +44,28 @@ export class InfrastructureManager {
           Object.assign(labels, options.labels);
         }
 
-        await this.docker.createNetwork({
+        const createOptions: Docker.NetworkCreateOptions = {
           Name: networkName,
           Driver: options?.driver || 'bridge',
-          Labels: labels
-        });
+          Labels: labels,
+        };
 
-        getLogger("docker", "infrastructure-manager").info({ network: networkName, project: projectName }, 'Created network');
+        if (options?.ipam) {
+          const ipamConfig: Docker.IPAM = {
+            Driver: 'default',
+            Config: [
+              {
+                Subnet: options.ipam.subnet,
+                ...(options.ipam.gateway ? { Gateway: options.ipam.gateway } : {}),
+              },
+            ],
+          };
+          createOptions.IPAM = ipamConfig;
+        }
+
+        await this.docker.createNetwork(createOptions);
+
+        getLogger("docker", "infrastructure-manager").info({ network: networkName, project: projectName, subnet: options?.ipam?.subnet }, 'Created network');
       } else {
         getLogger("docker", "infrastructure-manager").info({ network: networkName }, 'Network already exists');
       }

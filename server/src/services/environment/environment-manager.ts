@@ -11,6 +11,10 @@ import {
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
+import { EgressNetworkAllocator } from '../egress/egress-network-allocator';
+import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
+import { StackReconciler } from '../stacks/stack-reconciler';
+import DockerService from '../docker';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
@@ -72,22 +76,29 @@ export class EnvironmentManager {
         throw new Error('Failed to retrieve created environment');
       }
 
+      // Provision egress gateway: allocate subnet + deploy the egress-gateway system stack.
+      // This is best-effort — failures are logged but don't roll back the environment row.
+      await this.provisionEgressGateway(environmentData.id, environment.name, userEvent.id, userId);
+
+      // Re-fetch so egressGatewayIp (if set) is included in the returned value.
+      const finalEnvironment = await this.getEnvironmentById(environmentData.id) ?? environment;
+
       const duration = Date.now() - startTime;
 
       this.logger.info({
-        environmentId: environment.id,
-        environmentName: environment.name,
+        environmentId: finalEnvironment.id,
+        environmentName: finalEnvironment.name,
         userEventId: userEvent.id
       }, 'Environment created successfully');
 
       // Complete the user event
       await this.userEventService.updateEvent(userEvent.id, {
         status: 'completed',
-        resultSummary: `Environment '${environment.name}' created successfully`,
+        resultSummary: `Environment '${finalEnvironment.name}' created successfully`,
         durationMs: duration
       });
 
-      return environment;
+      return finalEnvironment;
 
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -243,6 +254,13 @@ export class EnvironmentManager {
       });
 
       this.logger.info({ environmentId: id, request }, 'Environment updated successfully');
+
+      // Keep egress policy snapshot fresh on any environment update (name changes
+      // are not currently exposed via UpdateEnvironmentRequest, but future-proof
+      // by refreshing unconditionally — the call is a no-op when no policies exist).
+      const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
+      await egressPolicyLifecycle.refreshEnvironmentNameSnapshot(id);
+
       return this.mapPrismaToEnvironment(environment);
 
     } catch (error) {
@@ -375,6 +393,14 @@ export class EnvironmentManager {
         }
       }
 
+      // Archive any remaining non-archived egress policies for this environment
+      // before deleting the environment row. This is a safety net — per-stack
+      // policies should already be archived via the stack-delete hooks, but any
+      // stacks deleted by the cascade steps above (stack.deleteMany) won't have
+      // gone through those hooks.
+      const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
+      await egressPolicyLifecycle.archiveForEnvironment(id, userId ?? null);
+
       // Delete environment (cascade will handle related records)
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting environment record...`);
       await this.prisma.environment.delete({
@@ -427,6 +453,310 @@ export class EnvironmentManager {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * Provision the egress gateway for a newly-created environment.
+   *
+   * Steps:
+   * 1. Allocate a /24 subnet from the egress pool and persist it on the applications
+   *    InfraResource.metadata so the HAProxy stack's reconcileOutputs creates the
+   *    Docker network with the correct subnet.
+   * 2. Pre-allocate the gateway IP (.2 in the subnet) and persist it on
+   *    Environment.egressGatewayIp so the stack-container-manager can inject DNS.
+   * 3. Instantiate the egress-gateway system stack for this environment.
+   * 4. Apply the stack so the container comes up.
+   * 5. After apply, reconnect the container to the applications network with the
+   *    static IP so the DNS server is reachable at the pre-allocated address.
+   *
+   * All steps are wrapped in try/catch. A failure at any step leaves the env
+   * usable but logs a loud warning. The failure is appended to the UserEvent
+   * so operators can see "egress gateway failed to deploy".
+   */
+  private async provisionEgressGateway(
+    environmentId: string,
+    environmentName: string,
+    userEventId: string,
+    userId?: string,
+  ): Promise<void> {
+    try {
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Provisioning egress gateway...`);
+
+      const applicationsNetworkName = `${environmentName}-applications`;
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+
+      // Step 1: Determine subnet. If the applications network already exists (e.g. from a prior
+      // failed attempt, or external creation), use its subnet so we stay consistent with reality.
+      // Otherwise allocate a fresh /24 from the pool.
+      let subnet: string;
+      let gateway: string;
+      const networkAlreadyExists = await executor.networkExists(applicationsNetworkName);
+      if (networkAlreadyExists) {
+        const dockerClient = executor.getDockerClient();
+        const inspect = await dockerClient.getNetwork(applicationsNetworkName).inspect();
+        const ipamCfg = inspect.IPAM?.Config?.[0];
+        if (!ipamCfg?.Subnet) {
+          throw new Error(`Existing network ${applicationsNetworkName} has no IPAM subnet`);
+        }
+        subnet = ipamCfg.Subnet;
+        const subnetOctets = subnet.split('/')[0].split('.');
+        gateway = ipamCfg.Gateway ?? `${subnetOctets.slice(0, 3).join('.')}.1`;
+        this.logger.info({ environmentId, subnet, gateway, applicationsNetworkName }, 'Reusing existing applications network subnet');
+      } else {
+        const allocator = new EgressNetworkAllocator(this.prisma);
+        const allocated = await allocator.allocateSubnet();
+        subnet = allocated.subnet;
+        gateway = allocated.gateway;
+      }
+
+      // Derive the egress container IP (.2 in the subnet)
+      const subnetBase = subnet.split('/')[0].split('.');
+      subnetBase[3] = '2';
+      const egressGatewayIp = subnetBase.join('.');
+
+      this.logger.info({ environmentId, subnet, gateway, egressGatewayIp }, 'Allocated egress subnet and gateway IP');
+
+      // Step 2: Pre-create the InfraResource record with the subnet in metadata so
+      // that when the HAProxy stack (or egress-gateway stack) runs reconcileOutputs
+      // it knows to use this subnet for the applications network.
+      // Use upsert-by-findFirst since SQLite NULL uniqueness prevents true upsert.
+      const existingResource = await this.prisma.infraResource.findFirst({
+        where: { type: 'docker-network', purpose: 'applications', scope: 'environment', environmentId },
+      });
+      if (existingResource) {
+        const existingMeta = (existingResource.metadata as Record<string, unknown> | null) ?? {};
+        await this.prisma.infraResource.update({
+          where: { id: existingResource.id },
+          data: {
+            metadata: { ...existingMeta, subnet, gateway } as Prisma.InputJsonValue,
+          },
+        });
+      } else {
+        const applicationsNetworkName = `${environmentName}-applications`;
+        await this.prisma.infraResource.create({
+          data: {
+            type: 'docker-network',
+            purpose: 'applications',
+            scope: 'environment',
+            environmentId,
+            name: applicationsNetworkName,
+            metadata: { subnet, gateway } as Prisma.InputJsonValue,
+          },
+        });
+      }
+
+      // Step 3: Persist egressGatewayIp on the environment row
+      await this.prisma.environment.update({
+        where: { id: environmentId },
+        data: { egressGatewayIp },
+      });
+
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress subnet ${subnet} allocated; gateway IP ${egressGatewayIp}`);
+
+      // Step 3b: Create the applications Docker network up-front with the allocated subnet.
+      // The egress-gateway template declares it as a resourceInput, so something must own
+      // network creation. Doing it here guarantees it exists before any stack apply, works
+      // for all env types (local + internet). If networkAlreadyExists, we already discovered
+      // its subnet above and reused it — no create needed.
+      if (!networkAlreadyExists) {
+        try {
+          await executor.createNetwork(applicationsNetworkName, '', {
+            driver: 'bridge',
+            labels: {
+              'mini-infra.infra-resource': 'true',
+              'mini-infra.resource-purpose': 'applications',
+              'mini-infra.environment': environmentId,
+            },
+            ipam: { subnet, gateway },
+          });
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Applications network ${applicationsNetworkName} created (subnet ${subnet})`);
+        } catch (netErr) {
+          const msg = netErr instanceof Error ? netErr.message : String(netErr);
+          this.logger.error({ environmentId, err: msg }, 'Failed to create applications network for env');
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: applications network create failed: ${msg}`);
+          // Continue — stack apply may still succeed if something else creates the network
+        }
+      }
+
+      // Step 3c: Connect the mini-infra-server container itself to this env's applications network
+      // so the container-map-pusher and log-ingester can reach the egress-gateway's admin API.
+      // Without this, mini-infra has no route to the per-env gateway IP and the audit pipeline
+      // never starts. Inside Docker, os.hostname() returns the container ID — use that to self-attach.
+      try {
+        const { hostname } = await import('node:os');
+        const selfContainerId = hostname();
+        const dockerClient = executor.getDockerClient();
+        const network = dockerClient.getNetwork(applicationsNetworkName);
+        await network.connect({ Container: selfContainerId });
+        this.logger.info({ environmentId, applicationsNetworkName, selfContainerId }, 'Connected mini-infra-server to env applications network');
+      } catch (connErr) {
+        const msg = connErr instanceof Error ? connErr.message : String(connErr);
+        if (msg.includes('already exists') || msg.includes('already in network') || msg.includes('endpoint with name')) {
+          // Idempotent — already connected from a prior provisioning
+          this.logger.debug({ environmentId, applicationsNetworkName }, 'mini-infra-server already attached to env network');
+        } else {
+          this.logger.warn({ environmentId, applicationsNetworkName, err: msg }, 'Failed to attach mini-infra-server to env network — container-map push will be unreachable');
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: mini-infra-server could not join ${applicationsNetworkName}: ${msg}`);
+        }
+      }
+
+      // Step 4: Instantiate the egress-gateway system stack
+      const egressTemplate = await this.prisma.stackTemplate.findUnique({
+        where: { name_source: { name: 'egress-gateway', source: 'system' } },
+        include: {
+          currentVersion: {
+            include: {
+              services: { orderBy: { order: 'asc' as const } },
+              configFiles: true,
+            },
+          },
+        },
+      });
+
+      if (!egressTemplate || !egressTemplate.currentVersion) {
+        this.logger.warn({ environmentId }, 'egress-gateway system template not found or has no published version; skipping egress gateway provisioning');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: egress-gateway template not found; skipping gateway deployment`);
+        return;
+      }
+
+      const version = egressTemplate.currentVersion;
+
+      // Build the stack row from the template version
+      const { toServiceCreateInput } = await import('../stacks/utils');
+      type ServiceDef = Parameters<typeof toServiceCreateInput>[0];
+      const services: ServiceDef[] = (version.services as unknown as ServiceDef[]);
+
+      const egressStack = await this.prisma.stack.create({
+        data: {
+          name: 'egress-gateway',
+          description: egressTemplate.description ?? null,
+          environmentId,
+          version: 1,
+          status: 'undeployed',
+          templateId: egressTemplate.id,
+          templateVersion: version.version,
+          builtinVersion: version.version,
+          parameters: version.parameters as Prisma.InputJsonValue,
+          parameterValues: version.defaultParameterValues as Prisma.InputJsonValue,
+          resourceOutputs: version.resourceOutputs as Prisma.InputJsonValue ?? undefined,
+          resourceInputs: version.resourceInputs as Prisma.InputJsonValue ?? undefined,
+          networks: version.networks as Prisma.InputJsonValue,
+          volumes: version.volumes as Prisma.InputJsonValue,
+          services: {
+            create: services.map(toServiceCreateInput),
+          },
+        },
+        include: { services: true },
+      });
+
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress gateway stack created (ID: ${egressStack.id})`);
+
+      // Ensure a default egress policy exists for the egress-gateway stack.
+      // (Its services have egressBypass:true so it never generates events that
+      // need attribution, but the policy row is required for consistency.)
+      const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
+      await egressPolicyLifecycle.ensureDefaultPolicy(egressStack.id, userId ?? null);
+
+      // Step 5: Apply the stack
+      try {
+        const dockerExecutor = new DockerExecutorService();
+        await dockerExecutor.initialize();
+        const reconciler = new StackReconciler(dockerExecutor, this.prisma);
+
+        const applyResult = await reconciler.apply(egressStack.id, {
+          triggeredBy: userId ?? 'system',
+        });
+
+        if (applyResult.success) {
+          this.logger.info({ environmentId, stackId: egressStack.id, egressGatewayIp }, 'Egress gateway deployed successfully');
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress gateway deployed successfully at ${egressGatewayIp}`);
+
+          // Step 6: Reconnect egress container to the applications network with static IP
+          // so the DNS server is reachable at the pre-allocated address.
+          await this.assignStaticGatewayIp(environmentName, egressStack.id, egressGatewayIp, userEventId);
+        } else {
+          const failureMessages = applyResult.serviceResults
+            .filter(r => !r.success)
+            .map(r => r.error ?? r.serviceName)
+            .join(', ');
+          this.logger.error({ environmentId, stackId: egressStack.id, failureMessages }, 'Egress gateway stack apply failed');
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Egress gateway apply failed: ${failureMessages}`);
+        }
+      } catch (applyErr) {
+        const msg = applyErr instanceof Error ? applyErr.message : String(applyErr);
+        this.logger.error({ error: applyErr, environmentId, stackId: egressStack.id }, 'Egress gateway stack apply threw an error');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Egress gateway apply error: ${msg}`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error({ error: err, environmentId }, 'Egress gateway provisioning failed; environment is still usable without egress filtering');
+      try {
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Egress gateway provisioning failed: ${msg}`);
+      } catch { /* never let log append errors surface */ }
+    }
+  }
+
+  /**
+   * After the egress-gateway container is created by the reconciler, disconnect it
+   * from the applications network and reconnect with the pre-allocated static IP.
+   * This ensures the egress DNS server is reachable at the expected address.
+   */
+  private async assignStaticGatewayIp(
+    environmentName: string,
+    stackId: string,
+    egressGatewayIp: string,
+    userEventId: string,
+  ): Promise<void> {
+    const networkName = `${environmentName}-applications`;
+    const containerName = `${environmentName}-egress-gateway-egress-gateway`;
+
+    try {
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        this.logger.warn({ stackId }, 'Docker not connected; skipping static IP assignment for egress gateway');
+        return;
+      }
+
+      // Use docker-executor to get the raw Docker client
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const docker = executor.getDockerClient();
+
+      // Find the egress-gateway container by name
+      const containers = await docker.listContainers({ all: true, filters: JSON.stringify({ name: [containerName] }) });
+      const containerInfo = containers.find(c => c.Names?.some(n => n === `/${containerName}`));
+      if (!containerInfo) {
+        this.logger.warn({ containerName, stackId }, 'Egress gateway container not found; skipping static IP assignment');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Could not find egress gateway container for static IP assignment`);
+        return;
+      }
+
+      const network = docker.getNetwork(networkName);
+
+      // Disconnect from the network first (clears the auto-assigned IP)
+      try {
+        await network.disconnect({ Container: containerInfo.Id, Force: true });
+      } catch (disconnectErr) {
+        this.logger.debug({ error: disconnectErr, containerName, networkName }, 'Disconnect before static IP reconnect (may already be disconnected)');
+      }
+
+      // Reconnect with the pre-allocated static IP
+      await network.connect({
+        Container: containerInfo.Id,
+        EndpointConfig: {
+          IPAMConfig: { IPv4Address: egressGatewayIp },
+          Aliases: ['egress-gateway'],
+        },
+      });
+
+      this.logger.info({ containerName, networkName, egressGatewayIp }, 'Egress gateway container assigned static IP');
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress gateway container assigned static IP ${egressGatewayIp} on ${networkName}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error({ error: err, containerName, networkName, egressGatewayIp }, 'Failed to assign static IP to egress gateway container');
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Failed to assign static IP ${egressGatewayIp}: ${msg}`);
     }
   }
 

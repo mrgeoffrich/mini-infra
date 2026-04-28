@@ -72,6 +72,7 @@ export interface MinimalEnvironmentDetailsInput {
   registryPort: number;
   vaultPort: number;
   agentSidecarImageTag: string;
+  egressSidecarImageTag: string;
   shortDescription?: string;
   longDescription?: string;
 }
@@ -114,6 +115,7 @@ ${descBlock}  <seeded>false</seeded>
   </endpoints>
   <images>
     <agentSidecar>${xmlEscape(input.agentSidecarImageTag)}</agentSidecar>
+    <egressSidecar>${xmlEscape(input.egressSidecarImageTag)}</egressSidecar>
   </images>
 </environment>
 `;
@@ -143,6 +145,7 @@ export interface FullEnvironmentDetailsInput {
   registryPort: number;
   vaultPort: number;
   agentSidecarImageTag: string;
+  egressSidecarImageTag: string;
   adminEmail: string;
   adminPassword: string;
   apiKey: string;
@@ -204,6 +207,7 @@ ${descBlock}  <seeded>true</seeded>
   </endpoints>
   <images>
     <agentSidecar>${t(input.agentSidecarImageTag)}</agentSidecar>
+    <egressSidecar>${t(input.egressSidecarImageTag)}</egressSidecar>
   </images>
   <admin>
     <email>${t(input.adminEmail)}</email>

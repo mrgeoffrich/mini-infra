@@ -2,6 +2,9 @@ import { PrismaClient } from "../generated/prisma/client";
 import { EnvironmentManager } from '../services/environment';
 import { DockerExecutorService } from '../services/docker-executor';
 
+// Mock prisma module so docker-executor/index.ts doesn't try to resolve DATABASE_URL at import time
+vi.mock('../lib/prisma', () => ({ default: {} }));
+
 // Mock dependencies
 vi.mock('../services/docker-executor');
 vi.mock('../services/user-events', () => {
@@ -30,6 +33,27 @@ vi.mock('../services/haproxy', () => ({
   HAProxyFrontendManager: vi.fn(),
 }));
 
+// Mock DockerService singleton (used by EgressNetworkAllocator)
+vi.mock('../services/docker', () => ({
+  default: {
+    getInstance: vi.fn(() => ({
+      isConnected: vi.fn().mockReturnValue(false),
+      listNetworks: vi.fn().mockResolvedValue([]),
+    })),
+  },
+}));
+
+// Mock EgressNetworkAllocator
+const mockAllocateSubnet = vi.fn().mockResolvedValue({ subnet: '172.30.0.0/24', gateway: '172.30.0.1' });
+vi.mock('../services/egress/egress-network-allocator', () => ({
+  EgressNetworkAllocator: function() {
+    return {
+      allocateSubnet: mockAllocateSubnet,
+      allocateGatewayIp: vi.fn().mockResolvedValue('172.30.0.2'),
+    };
+  },
+}));
+
 const MockDockerExecutorService = DockerExecutorService as MockedClass<typeof DockerExecutorService>;
 
 describe('EnvironmentManager', () => {
@@ -56,16 +80,23 @@ describe('EnvironmentManager', () => {
         update: vi.fn(),
         create: vi.fn(),
       },
+      infraResource: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
+        create: vi.fn().mockResolvedValue({ id: 'infra-1' }),
+        update: vi.fn().mockResolvedValue({}),
+      },
       stack: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue({}),
+        create: vi.fn().mockResolvedValue({ id: 'stack-1', services: [] }),
         update: vi.fn().mockResolvedValue({}),
       },
       stackService: {
         create: vi.fn().mockResolvedValue({}),
       },
       stackTemplate: {
+        findUnique: vi.fn().mockResolvedValue(null), // No egress template by default
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({}),
       },
@@ -77,6 +108,14 @@ describe('EnvironmentManager', () => {
       volumeExists: vi.fn().mockResolvedValue(false),
       createNetwork: vi.fn().mockResolvedValue(undefined),
       createVolume: vi.fn().mockResolvedValue(undefined),
+      getDockerClient: vi.fn().mockReturnValue({
+        listContainers: vi.fn().mockResolvedValue([]),
+        getContainer: vi.fn().mockReturnValue({ id: 'c-1' }),
+        getNetwork: vi.fn().mockReturnValue({
+          connect: vi.fn().mockResolvedValue(undefined),
+          disconnect: vi.fn().mockResolvedValue(undefined),
+        }),
+      }),
     } as any;
 
     MockDockerExecutorService.mockImplementation(function() { return mockDockerExecutor; });
@@ -84,10 +123,11 @@ describe('EnvironmentManager', () => {
     // Restore reconciler mock implementations (cleared by vi.clearAllMocks)
     mockReconcilerApply.mockResolvedValue({
       success: true, stackId: 'stack-1', appliedVersion: 1,
-      serviceResults: [{ serviceName: 'haproxy', action: 'create', success: true, duration: 100 }],
+      serviceResults: [{ serviceName: 'egress-gateway', action: 'create', success: true, duration: 100 }],
       duration: 100,
     });
     mockReconcilerStopStack.mockResolvedValue({ success: true, stoppedContainers: 1 });
+    mockAllocateSubnet.mockResolvedValue({ subnet: '172.30.0.0/24', gateway: '172.30.0.1' });
 
     environmentManager = EnvironmentManager.getInstance(mockPrisma);
   });

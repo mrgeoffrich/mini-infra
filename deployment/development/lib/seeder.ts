@@ -34,6 +34,7 @@ export interface SeederInput {
   dockerHost: string;
   composeProject: string;
   agentSidecarImageTag: string;
+  egressSidecarImageTag: string;
   devEnvPath: string;
   detailsFile: string;
   shortDescription?: string;
@@ -744,6 +745,7 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     registryPort: input.registryPort,
     vaultPort: input.vaultPort,
     agentSidecarImageTag: input.agentSidecarImageTag,
+    egressSidecarImageTag: input.egressSidecarImageTag,
     adminEmail: env.ADMIN_EMAIL,
     adminPassword: env.ADMIN_PASSWORD,
     apiKey,

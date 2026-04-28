@@ -273,6 +273,10 @@ async function main(): Promise<void> {
   const dockerHost = `unix://${dockerSockPath}`;
   const composeProjectName = `mini-infra-${profile}`;
   const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
+  // EGRESS_SIDECAR_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field;
+  // the template specifies its own `dockerTag`, so this value must NOT include a `:tag` suffix.
+  const egressSidecarImageTag = `localhost:${registryPort}/mini-infra-egress-sidecar`;
+  const egressSidecarPushRef = `${egressSidecarImageTag}:latest`;
 
   const stackEnv: NodeJS.ProcessEnv = {
     DOCKER_HOST: dockerHost,
@@ -280,6 +284,7 @@ async function main(): Promise<void> {
     UI_PORT: String(uiPort),
     REGISTRY_PORT: String(registryPort),
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
+    EGRESS_SIDECAR_IMAGE_TAG: egressSidecarImageTag,
     PROJECT_ROOT,
     PROFILE: profile,
   };
@@ -351,6 +356,30 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   logOk('Agent sidecar image pushed');
+
+  // Build + push egress sidecar image
+  logInfo('Building egress sidecar image...');
+  const egressBuild = exec(
+    'docker',
+    [
+      'build',
+      '-t',
+      egressSidecarPushRef,
+      path.join(PROJECT_ROOT, 'egress-sidecar'),
+    ],
+    { env: stackEnv, stdio: 'inherit' },
+  );
+  if (egressBuild.status !== 0) {
+    logError('Egress sidecar build failed');
+    process.exit(1);
+  }
+  logInfo(`Pushing egress sidecar image to ${egressSidecarPushRef}...`);
+  const egressPush = exec('docker', ['push', egressSidecarPushRef], { env: stackEnv, stdio: 'inherit' });
+  if (egressPush.status !== 0) {
+    logError('Egress sidecar push failed');
+    process.exit(1);
+  }
+  logOk('Egress sidecar image pushed');
 
   // Capture extra networks joined at runtime (e.g. vault) so they survive rebuild
   const miniInfraContainer = `${composeProjectName}-mini-infra-1`;
@@ -458,6 +487,7 @@ async function main(): Promise<void> {
     registryPort,
     vaultPort,
     agentSidecarImageTag,
+    egressSidecarImageTag,
     shortDescription: shortDesc,
     longDescription: longDesc,
   };
@@ -484,6 +514,7 @@ async function main(): Promise<void> {
         dockerHost,
         composeProject: composeProjectName,
         agentSidecarImageTag,
+        egressSidecarImageTag,
         devEnvPath: DEV_ENV_FILE,
         detailsFile,
         shortDescription: shortDesc,

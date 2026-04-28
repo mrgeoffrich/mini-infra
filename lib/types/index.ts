@@ -83,6 +83,9 @@ export * from "./operations";
 // Vault types
 export * from "./vault";
 
+// Egress firewall types
+export * from "./egress";
+
 // ====================
 // Type Utilities
 // ====================

@@ -24,6 +24,7 @@ import type {
   StackDefinition,
 } from "@mini-infra/types";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
+import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
 import { CloudflareService } from "../cloudflare/cloudflare-service";
 import { networkUtils } from "../network-utils";
 import {
@@ -1007,6 +1008,10 @@ export class StackTemplateService {
         services: { orderBy: { order: "asc" } },
       },
     });
+
+    // Ensure a default egress policy exists for env-scoped stacks
+    const egressLifecycle = new EgressPolicyLifecycleService(this.prisma);
+    await egressLifecycle.ensureDefaultPolicy(stack.id, _createdById ?? null);
 
     return serializeStack(stack);
   }

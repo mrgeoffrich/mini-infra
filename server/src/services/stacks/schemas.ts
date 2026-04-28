@@ -107,13 +107,16 @@ export const stackContainerConfigSchema = z.object({
   entrypoint: z.array(z.string()).optional(),
   capAdd: z.array(z.string()).optional(),
   user: z.string().optional(),
+  egressBypass: z.boolean().optional(),
   env: z.record(z.string(), z.string()).optional(),
   dynamicEnv: z.record(z.string(), dynamicEnvSourceSchema).optional(),
   ports: z
     .array(
       z.object({
         containerPort: numberOrTemplate,
-        hostPort: numberOrTemplate,
+        // hostPort 0 is valid: it means no host binding (internal-only exposure).
+        // The container-manager already treats 0 this way.
+        hostPort: numberOrTemplateMin0,
         protocol: z.enum(NETWORK_PROTOCOLS),
         exposeOnHost: booleanOrTemplate.optional(),
       })

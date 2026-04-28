@@ -287,6 +287,9 @@ model Environment {
   createdAt        DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Egress firewall — populated after the egress-gateway stack first applies
+  egressGatewayIp  String?
+
   // Relations
   networks    EnvironmentNetwork[]
   haproxyFrontends HAProxyFrontend[]
@@ -294,6 +297,7 @@ model Environment {
   stacks           Stack[]
   stackTemplates   StackTemplate[]
   infraResources   InfraResource[]
+  egressPolicies   EgressPolicy[]
 
   @@index([type])
   @@index([networkType])
@@ -1109,6 +1113,7 @@ model Stack {
   poolInstances        PoolInstance[]
 
   vaultResources       StackVaultResource[]
+  egressPolicies       EgressPolicy[]
 
   @@index([environmentId])
   @@index([status])
@@ -1452,6 +1457,87 @@ model StackTemplateConfigFile {
   @@unique([versionId, serviceName, volumeName, mountPath])
   @@index([versionId])
   @@map("stack_template_config_files")
+}
+
+// Egress Firewall Models
+
+// EgressPolicy - one per environment-scoped stack; survives stack/environment deletion for audit
+model EgressPolicy {
+  id                      String       @id @default(cuid())
+
+  stackId                 String?
+  stack                   Stack?       @relation(fields: [stackId], references: [id], onDelete: SetNull)
+  stackNameSnapshot       String
+
+  environmentId           String?
+  environment             Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  environmentNameSnapshot String
+
+  mode                    String       @default("detect")  // 'detect' | 'enforce'
+  defaultAction           String       @default("allow")   // 'allow' | 'block'
+  version                 Int          @default(1)
+  appliedVersion          Int?
+
+  archivedAt              DateTime?
+  archivedReason          String?      // 'stack-deleted' | 'environment-deleted'
+
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+  createdBy               String?
+  updatedBy               String?
+
+  rules                   EgressRule[]
+  events                  EgressEvent[]
+
+  @@index([stackId])
+  @@index([environmentId])
+  @@index([archivedAt])
+  @@map("egress_policies")
+}
+
+// EgressRule - individual allow/block rule within an EgressPolicy
+model EgressRule {
+  id        String       @id @default(cuid())
+  policyId  String
+  policy    EgressPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  pattern   String       // 'api.openai.com' or '*.googleapis.com'
+  action    String       // 'allow' | 'block'
+  source    String       @default("user")   // 'user' | 'observed' | 'template'
+  targets   Json         @default("[]")     // string[] of service names within the stack; [] means all
+
+  hits      Int          @default(0)
+  lastHitAt DateTime?
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  @@index([policyId])
+  @@index([policyId, pattern])
+  @@map("egress_rules")
+}
+
+// EgressEvent - gateway-emitted DNS query log entry for a policy
+model EgressEvent {
+  id                  String       @id @default(cuid())
+  policyId            String
+  policy              EgressPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  occurredAt          DateTime     @default(now())
+  sourceContainerId   String?      // Docker container ID — plain string, no FK
+  sourceStackId       String?      // plain string, no FK (stack may be deleted)
+  sourceServiceName   String?
+  destination         String       // queried domain name
+  matchedPattern      String?      // pattern of the rule that matched, if any
+  action              String       // 'allowed' | 'blocked' | 'observed'
+  protocol            String       @default("dns")  // 'dns' | 'sni' | 'http'
+  mergedHits          Int          @default(1)      // gateway-side dedup counter
+
+  @@index([policyId, occurredAt])
+  @@index([policyId, action])
+  @@map("egress_events")
 }
 
 // Cached DNS zone from Cloudflare

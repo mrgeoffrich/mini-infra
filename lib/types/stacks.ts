@@ -146,6 +146,12 @@ export interface StackContainerConfig {
     maxSize: string;
     maxFile: string;
   };
+  /**
+   * When true, the container's HostConfig.Dns is NOT pointed at the egress
+   * gateway. Treat undefined as false. Intended for sidecar/infra containers
+   * that must reach upstream DNS directly (e.g., the egress gateway itself).
+   */
+  egressBypass?: boolean;
 }
 
 export interface StackConfigFile {
