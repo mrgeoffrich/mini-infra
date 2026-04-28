@@ -10,9 +10,9 @@ An earlier sketch of v3 took a transparent-interception approach (per-managed-co
 
 Concretely:
 
-- Outbound HTTP and HTTPS from managed containers must traverse the **per-env egress gateway**. The container's `HTTP_PROXY` / `HTTPS_PROXY` env vars are injected at create time pointing at the gateway by network alias (`egress-gateway`). The gateway parses the destination host (from the `CONNECT` request line for HTTPS, or the absolute-URI request line / `Host` header for HTTP), matches it against the stack's policy, and either splices through to the upstream or returns `403 Forbidden`.
+- Outbound HTTP and HTTPS from managed containers must traverse the **per-env egress gateway**. The container's `HTTP_PROXY` and `HTTPS_PROXY` env vars are injected at create time, both pointing at the same gateway port (`http://egress-gateway:3128`) — Smokescreen serves both methods on a single listener (this is the standard forward-proxy model; see [Hot path](#hot-path)). The gateway parses the destination host (from the `CONNECT` request line for HTTPS, or the absolute-URI request line / `Host` header for HTTP), matches it against the stack's policy, and either splices through to the upstream or returns `403 Forbidden`.
 - DNS resolution for managed containers uses **Docker's default embedded DNS** at `127.0.0.11`. The gateway alias is resolved via Docker; external FQDNs are resolved by the proxy on the app's behalf. We do not inject a custom resolver.
-- All other outbound traffic from managed containers is **dropped at the host firewall**: the only permitted egress paths from the env bridge are the proxy ports on the gateway, the env bridge itself (peer-to-peer between managed containers), and the loopback interface inside the container. Managed→bypass traffic on the same bridge is also dropped (closes the bypass-as-pivot path).
+- All other outbound traffic from managed containers is **dropped at the host firewall**: the only permitted egress paths from the env bridge are the gateway's proxy port, the env bridge itself (peer-to-peer between managed containers), and the loopback interface inside the container. Managed→bypass traffic on the same bridge is also dropped (closes the bypass-as-pivot path).
 - Bypass containers (`egressBypass: true` in their service config) are exempt from proxy injection and from the managed-container firewall rules — they egress directly via the host. They are tracked in a `bypass-<env>` ipset so the managed-container deny rule can target them.
 
 QUIC (UDP/443) is dropped by the firewall. Apps fall back to TCP/443 through the proxy.
@@ -47,7 +47,7 @@ The current `egress-sidecar/` directory becomes `egress-gateway/` — a single G
 *One container per environment. Unprivileged. Replaces today's TS `egress-sidecar`.*
 
 Responsibilities:
-- Terminate connections from managed containers on TCP/3128 (HTTP forward proxy) and TCP/3129 (HTTPS CONNECT proxy).
+- Terminate connections from managed containers on TCP/3128. The single listener serves both HTTP forward proxy requests (absolute-form request URI / `Host` header) and HTTPS CONNECT requests — Smokescreen handles both on one port via `goproxy`.
 - Parse the destination host (absolute-form request URI / `Host` header for HTTP; `CONNECT host:port` line for HTTPS).
 - Match against the env's stack-policy rule trie. Allow → splice/forward. Block → `403`.
 - Resolve external FQDNs on the app's behalf when forwarding (via the gateway container's own resolver — Docker's default).
@@ -111,7 +111,7 @@ New / extended v3 services inside the server:
 *No new code in app images.*
 
 For non-bypass services:
-- Env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (plus lowercase variants). Proxy URLs use the gateway's network alias (`http://egress-gateway:3128` / `:3129`), not an IP — Docker's embedded DNS resolves the alias.
+- Env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (plus lowercase variants). Both proxy URLs are `http://egress-gateway:3128` (single Smokescreen listener serves both methods) — Docker's embedded DNS resolves the alias.
 - DNS: Docker's default (`127.0.0.11`). No injection.
 - Firewall membership: the container's IP is added to `managed-<env>` ipset on start, removed on stop.
 
@@ -162,9 +162,9 @@ Each managed app container is configured with `HTTP_PROXY` / `HTTPS_PROXY` / `NO
   │                                                                 │
   │  ┌──────────────────┐                  ┌───────────────────────┐│
   │  │ app container    │                  │  egress-gateway       ││
-  │  │                  │   :3128 ────────▶│   HTTP forward proxy  ││
-  │  │ HTTP_PROXY=──────┼─                 │                       ││
-  │  │ HTTPS_PROXY=─────┼──  :3129 ───────▶│   HTTPS CONNECT proxy ││
+  │  │                  │                  │   single listener     ││
+  │  │ HTTP_PROXY=──────┼──  :3128 ───────▶│   • HTTP forward      ││
+  │  │ HTTPS_PROXY=─────┼─  (same port)    │   • HTTPS CONNECT     ││
   │  │ NO_PROXY=peers   │                  │   admin API           ││
   │  │ DNS=127.0.0.11   │                  │                       ││
   │  │  (Docker default)│                  │                       ││
@@ -189,14 +189,14 @@ Each managed app container is configured with `HTTP_PROXY` / `HTTPS_PROXY` / `NO
 | Bypass app | own (Docker default) | Docker default | no | yes | no | direct out via bridge → host |
 | Egress-gateway | own (Docker default) | Docker default | no | no | no | direct out via bridge → host |
 
-### Two ports — why HTTP and HTTPS are split
+### Single proxy port — both methods on 3128
 
-`HTTP_PROXY=http://gw:3128` and `HTTPS_PROXY=http://gw:3129` rather than a single port for both. Each listener handles exactly one method shape:
+`HTTP_PROXY=http://egress-gateway:3128` and `HTTPS_PROXY=http://egress-gateway:3128` resolve to the same port. Smokescreen, via the embedded `goproxy` server, dispatches per-request:
 
-- **3128**: accepts `GET`, `POST`, `PUT`, `DELETE`, etc. with **absolute-form request URI** (`GET http://example.com/path HTTP/1.1`). Rejects anything else with `400`.
-- **3129**: accepts **`CONNECT host:port HTTP/1.1`** only. Rejects anything else with `400`.
+- Absolute-form HTTP request (`GET http://example.com/path HTTP/1.1`) → handled by the HTTP forward path (`OnRequest().DoFunc`).
+- `CONNECT host:port HTTP/1.1` → handled by the CONNECT path (`OnRequest().HandleConnectFunc`).
 
-Trade is one extra port for clarity and isolation: the HTTPS port can never be coerced into serving an HTTP request, and accidental cross-protocol probes get crisp errors instead of confused responses. The two listeners share the same rule trie, container map, event emitter, and admin API — separation is at the parsing layer only.
+This is the standard forward-proxy model. Splitting into two ports would mean running two listeners that point at the same handler, which buys nothing — Smokescreen already disambiguates by method, and a malformed cross-protocol request gets the same clean error from one port as it would from two. The earlier draft of this design proposed two ports for "clarity"; verifying against the Smokescreen library showed `Config` only exposes a single `Listener`, so we're aligning with the upstream model.
 
 ### Host firewall — `DOCKER-USER` with per-env ipsets
 
@@ -259,8 +259,9 @@ The server holds the *desired state* (in DB / in-memory). The agent is stateless
 
 One container per env. Hosts:
 
-- **HTTP forward proxy** (TCP/3128) — accepts absolute-URI HTTP requests. Parses the request URI's host. Applies stack policy. Allowed → forwards via `httputil.ReverseProxy`. Blocked → `403`.
-- **HTTPS CONNECT proxy** (TCP/3129) — accepts `CONNECT host:port`. Applies stack policy on the host. Allowed → dials upstream and bidirectionally splices the sockets (TLS happens end-to-end between app and upstream; gateway never sees plaintext). Blocked → `403` before the tunnel opens.
+- **Proxy listener** (TCP/3128) — single port serving both forward-proxy methods via Smokescreen + `goproxy`:
+  - Absolute-URI HTTP requests → parses `Host`, applies stack policy, forwards. Blocked → `403`.
+  - `CONNECT host:port` → applies stack policy, dials upstream, bidirectionally splices the sockets (TLS happens end-to-end; gateway never sees plaintext). Blocked → `403` before the tunnel opens.
 - **Admin API** (private port) — `POST /admin/rules`, `POST /admin/container-map`, `GET /admin/health`. Same wire contract as today, plus listener-up booleans on health.
 
 No `cap_add`, no sysctls, no privileged operations. The gateway is a plain user-space TCP server.
@@ -297,21 +298,30 @@ Bypass containers egress directly via Docker's normal forwarding. They live on t
 
 The proxy is built on **[Stripe's Smokescreen](https://github.com/stripe/smokescreen) imported as a Go library**, with a thin wrapper for our admin API, container-map identification, and NDJSON event shape. Smokescreen handles CONNECT parsing, hop-by-hop scrubbing, splice loop, IP-range validation, DNS-rebind defence (resolve-and-dial-the-IP), policy modes, and SSRF hardening — all production-tested in Stripe's egress path. We get the security primitives for free and own only the parts that are specific to Mini Infra.
 
-Smokescreen-as-binary is configured by YAML and reloads on SIGHUP. Smokescreen-as-library exposes everything as configurable interfaces on `smokescreen.Config`, so we never touch a YAML file or a signal handler.
+Smokescreen-as-binary is configured by YAML and reloads on SIGHUP. Smokescreen-as-library exposes everything as configurable fields/interfaces on `smokescreen.Config`, so we never touch a YAML file.
 
-> ⚠️ **Spike before committing.** The library-API claims in this section (the `Config` field set, programmatic listener wiring, `StartWithConfig`, the HTTP forward-proxy mode in addition to HTTPS CONNECT, the `EgressACL` interface seam, `ConnTracker` shape) are based on Smokescreen's published documentation and the README. They have **not yet been verified against the current `pkg/smokescreen/` source**. The first day of PR 3 work is a spike: build a minimal `cmd/gateway/main.go` that imports `github.com/stripe/smokescreen`, constructs `Config` programmatically, wires an `atomic.Pointer`-backed ACL, runs both an HTTP forward-proxy listener (3128) and a CONNECT listener (3129), and demonstrates a rule swap mid-flight. If any of these capabilities are missing from the library surface, the wrapper-around-Smokescreen story changes — possible fallbacks are forking Smokescreen, running it as a separate process with our own admin sidecar, or writing the proxy ourselves on top of `httputil`. **Do not start PR 3's main implementation until the spike has demonstrated all of the above.**
+> ✅ **Verified against `github.com/stripe/smokescreen` at commit `7d45971` (post-PR #286).** The capabilities this design depends on were checked in source on 2026-04-29. Pinning expectations:
+> - `smokescreen.Config` is constructed programmatically via `NewConfig()`, with all fields exported and settable. No YAML required.
+> - `EgressACL` is `acl.Decider` — a one-method interface (`Decide(args acl.DecideArgs) (acl.Decision, error)`) called per-request, ideal for an `atomic.Pointer`-backed swap.
+> - `RoleFromRequest` is `func(*http.Request) (string, error)` — exact shape we want.
+> - `Log *logrus.Logger` is settable; we attach a hook to translate to NDJSON.
+> - `Listener net.Listener` is settable; one listener serves both HTTP forward and HTTPS CONNECT (via the embedded `goproxy.ProxyHttpServer`).
+> - `DenyRanges` is `[]smokescreen.RuleRange{Net net.IPNet, Port int}` — slightly different from the `[]net.IPNet` shape this doc previously claimed, same semantic.
+> - **We do _not_ call `smokescreen.StartWithConfig(...)`.** It installs `signal.Notify(SIGUSR2, SIGTERM, SIGHUP)` on our process. We instead call `proxy := smokescreen.BuildProxy(cfg)` and run our own `http.Server{Handler: proxy}` so we own the lifecycle and signals.
+> - **We do _not_ replace `ConnTracker`.** The `TrackerInterface` has 7 methods coupled to Smokescreen's internal `*InstrumentedConn`; re-implementing it would mean re-implementing connection tracking. Byte counts come instead from Smokescreen's existing `CANONICAL-PROXY-CN-CLOSE` / `CANONICAL-PROXY-DECISION` log entries (which include `bytes_in`/`bytes_out`), captured by our `logrus.Hook`.
 
 ### Wrapper responsibilities
 
-The Go wrapper provides Smokescreen with five things:
+The Go wrapper provides Smokescreen with four things, plus runs the listener loop itself:
 
-1. **`RoleFromRequest`** — function pointer that maps the source IP of an inbound request to `(stackId, serviceName)` via our container map. Smokescreen's role-based ACL keys off this.
-2. **`EgressACL`** — interface implementation backed by an `atomic.Pointer[acl.Decider]` for lock-free runtime swap. Admin-API rule push compiles a new ACL and atomically replaces the pointer; in-flight requests keep using the old ACL until they complete.
-3. **`Log`** — `logrus.Logger` with a custom hook that translates each log entry to our NDJSON `EgressEvent` shape on stdout. Same shape the fw-agent uses.
-4. **`ConnTracker`** — interface implementation that captures `bytesUp`/`bytesDown` per connection and emits the splice-completion event.
-5. **`DenyRanges` / `AllowRanges`** — pre-populated with RFC1918, loopback, link-local (incl. `169.254.169.254` cloud metadata), IPv6 ULA, multicast. Operator-configured custom CIDRs append to `DenyRanges`.
+1. **`RoleFromRequest`** — function pointer (`func(*http.Request) (string, error)`) that maps the source IP of an inbound request to `(stackId, serviceName)` via our container map. Smokescreen's role-based ACL keys off this.
+2. **`EgressACL`** — `acl.Decider` interface implementation backed by an `atomic.Pointer[*acl.ACL]` for lock-free runtime swap. Admin-API rule push compiles a new ACL and atomically replaces the pointer; in-flight requests keep using the old ACL until they complete.
+3. **`Log`** — `logrus.Logger` with a custom hook that translates each log entry to our NDJSON `EgressEvent` shape on stdout. The hook also extracts `bytes_in`/`bytes_out` from Smokescreen's `CANONICAL-PROXY-CN-CLOSE` entries, so we don't need to replace `ConnTracker`.
+4. **`DenyRanges`** — `[]smokescreen.RuleRange` pre-populated with RFC1918, loopback, link-local (incl. `169.254.169.254` cloud metadata), IPv6 ULA, multicast. Note `UnsafeAllowPrivateRanges` is left at its default `false`, so private/loopback are denied automatically by Smokescreen's `classifyAddr`; explicit `DenyRanges` entries cover what `classifyAddr` doesn't.
 
-We additionally run a **pre-ACL DoH denylist gate** because Smokescreen doesn't ship one and the DoH leak vector is in scope for our compliance posture.
+We additionally:
+- Run a **pre-ACL DoH denylist gate** because Smokescreen doesn't ship one and the DoH leak vector is in scope for our compliance posture.
+- Construct our own `http.Server{Handler: smokescreen.BuildProxy(cfg)}` instead of calling `StartWithConfig` (which would install signal handlers we don't want).
 
 ### `cmd/gateway/main.go` (sketch)
 
@@ -320,25 +330,36 @@ func main() {
     srv := newServer(loadConfig())
 
     sk := smokescreen.NewConfig()
-    sk.Listener = newTCPListener(":3128")            // HTTP forward proxy
-    sk.ConnectListener = newTCPListener(":3129")     // HTTPS CONNECT
     sk.RoleFromRequest = srv.roleFromRequest         // srcIP → stackId via container map
-    sk.EgressACL = srv.aclSwapper                    // atomic.Pointer indirection
-    sk.DenyRanges = builtinPrivateRanges()           // RFC1918, link-local, ULA, …
+    sk.EgressACL = srv.aclSwapper                    // acl.Decider with atomic.Pointer indirection
+    sk.DenyRanges = builtinPrivateRanges()           // []smokescreen.RuleRange — RFC1918, link-local, ULA, …
     sk.ConnectTimeout = 10 * time.Second
-    sk.ConnTracker = srv.tracker                     // → NDJSON on conn close
-    sk.Log = newLogrusToNDJSON(srv.events)           // logrus hook → our shape
+    sk.Log = newLogrusToNDJSON(srv.events)           // logrus hook → NDJSON on stdout
+                                                     // (also extracts bytes_in/out from
+                                                     //  CANONICAL-PROXY-CN-CLOSE entries)
     sk.AdditionalErrorMessageOnDeny = "egress denied by mini-infra policy; see UI"
 
-    // Pre-ACL DoH gate sits in front of smokescreen via an HTTP middleware on
-    // each listener; we wrap sk.Listener / sk.ConnectListener accordingly.
-    sk.Listener = srv.dohGateMiddleware(sk.Listener)
-    sk.ConnectListener = srv.dohGateMiddleware(sk.ConnectListener)
+    // Build the goproxy-based handler. Smokescreen serves both HTTP forward
+    // and HTTPS CONNECT on this single handler; we own the http.Server.
+    proxy := smokescreen.BuildProxy(sk)
+
+    // Pre-ACL DoH gate wraps the proxy so DoH endpoints are 403'd
+    // before they reach Smokescreen's ACL.
+    handler := srv.dohGateMiddleware(proxy)
+
+    server := &http.Server{
+        Addr:              ":3128",
+        Handler:           handler,
+        ReadHeaderTimeout: 30 * time.Second,
+    }
 
     go srv.runAdminAPI(srv.aclSwapper)               // /admin/rules → swapper.Swap(newACL)
     go srv.runHealthEndpoint()
 
-    if err := smokescreen.StartWithConfig(sk, signalCh); err != nil {
+    // Our own signal handling — not Smokescreen's.
+    go srv.gracefulShutdownOn(syscall.SIGTERM, server)
+
+    if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
         log.Fatal(err)
     }
 }
@@ -346,25 +367,27 @@ func main() {
 
 ### Atomic ACL swap
 
-Smokescreen reads `Config.EgressACL` per request. Our wrapper implements that interface with an atomic-pointer indirection:
+Smokescreen calls `config.EgressACL.Decide(args)` per request ([smokescreen.go:1384](https://github.com/stripe/smokescreen/blob/7d45971/pkg/smokescreen/smokescreen.go#L1384)). Our wrapper implements `acl.Decider` with an atomic-pointer indirection:
 
 ```go
 type ACLSwapper struct {
-    p atomic.Pointer[compiledACL]
+    p atomic.Pointer[acl.ACL]
 }
 
-// Decide implements smokescreen's ACL interface.
-func (s *ACLSwapper) Decide(role, host string, port int) (acl.Decision, error) {
-    return s.p.Load().Decide(role, host, port)
+// Decide implements acl.Decider.
+func (s *ACLSwapper) Decide(args acl.DecideArgs) (acl.Decision, error) {
+    return s.p.Load().Decide(args)
 }
 
 // Swap is called by the admin API on /admin/rules push.
-func (s *ACLSwapper) Swap(newACL *compiledACL) {
+func (s *ACLSwapper) Swap(newACL *acl.ACL) {
     s.p.Store(newACL)
 }
 ```
 
-`compiledACL` is built from our `StackPolicy` snapshot via a small compiler in `internal/proxy/compile.go` (FQDN trie → Smokescreen `acl.Decider`). Lock-free, allocation-free per-request reads; admin pushes are O(1) atomic stores.
+The wrapped `*acl.ACL` is built from our `StackPolicy` snapshot via a small compiler in `internal/proxy/compile.go` (FQDN globs + per-stack rules → `*acl.ACL`). Lock-free per-request reads; admin pushes are O(1) atomic stores.
+
+Note that `DecideArgs` carries `{Req *http.Request, Service, Host, ConnectProxyHost string}` — no port. Per-port enforcement (where we want it) lives in `Config.DenyRanges`/`AllowRanges`, which Smokescreen evaluates at dial time after the ACL allows the destination.
 
 ### Role identification
 
@@ -373,9 +396,11 @@ func (srv *Server) roleFromRequest(r *http.Request) (string, error) {
     src := remoteIP(r)
     attr := srv.containers.Lookup(src)
     if attr == nil {
-        return "", errors.New("unknown source")    // surfaces as 403 with our error message
+        return "", smokescreen.MissingRoleError("unknown source")
+        // returning a MissingRoleError lets Smokescreen produce a clean 403 with
+        // our AdditionalErrorMessageOnDeny appended.
     }
-    return attr.StackID, nil                       // role keyed by stackId; ACL has per-stack allowlists
+    return attr.StackID, nil    // role keyed by stackId; ACL has per-stack allowlists
 }
 ```
 
@@ -456,8 +481,7 @@ interface GatewayHealthResponse {
   rulesVersion: number;
   uptimeSeconds: number;
   listeners: {
-    httpProxy: boolean;     // 3128
-    httpsProxy: boolean;    // 3129
+    proxy: boolean;     // 3128 — serves both HTTP forward and HTTPS CONNECT
     admin: boolean;
   };
 }
@@ -471,14 +495,14 @@ For every managed (non-bypass) service, `stack-container-manager.ts` injects:
 
 ```
 HTTP_PROXY=http://egress-gateway:3128
-HTTPS_PROXY=http://egress-gateway:3129
+HTTPS_PROXY=http://egress-gateway:3128
 http_proxy=http://egress-gateway:3128
-https_proxy=http://egress-gateway:3129
+https_proxy=http://egress-gateway:3128
 NO_PROXY=localhost,127.0.0.0/8,<envBridgeCidr>
 no_proxy=localhost,127.0.0.0/8,<envBridgeCidr>
 ```
 
-Both upper- and lowercase variants because Node honours uppercase, Python `requests` honours lowercase, Go honours both. The `egress-gateway` hostname resolves via Docker's embedded DNS (the gateway container runs with `--network-alias=egress-gateway`), so the gateway's IP can change across recreates without rebaking app env vars. `NO_PROXY` lists the env bridge CIDR so peer-to-peer traffic doesn't loop through the proxy. No `HostConfig.Dns` is set — apps use Docker's default `127.0.0.11` resolver.
+Both env vars point at the same port — Smokescreen serves both HTTP forward and HTTPS CONNECT on a single listener. Both upper- and lowercase variants because Node honours uppercase, Python `requests` honours lowercase, Go honours both. The `egress-gateway` hostname resolves via Docker's embedded DNS (the gateway container runs with `--network-alias=egress-gateway`), so the gateway's IP can change across recreates without rebaking app env vars. `NO_PROXY` lists the env bridge CIDR so peer-to-peer traffic doesn't loop through the proxy. No `HostConfig.Dns` is set — apps use Docker's default `127.0.0.11` resolver.
 
 **Limitation: `NO_PROXY` env-var staleness.** Docker env vars are immutable on a running container. If we additionally inject peer container *names* into `NO_PROXY` (for libraries that do suffix-only matching, not CIDR), that list is baked at the container's create time. New peers added after create won't appear in existing containers' `NO_PROXY`, and their requests will be sent through the proxy. The proxy will still allow these (intra-bridge destinations match the bypass-bridge-CIDR fast-path inside the ACL), but it adds a hop and may matter for high-throughput peer comms.
 
@@ -510,12 +534,13 @@ egress-gateway/
     # gateway only — our wrapper around smokescreen
     state/         rules.go           # rule trie + version state
                    container_map.go   # srcIp → (stackId, serviceName)
-    proxy/         aclswap.go         # smokescreen ACL impl with atomic.Pointer
+    proxy/         aclswap.go         # acl.Decider impl with atomic.Pointer[*acl.ACL]
                    role.go            # RoleFromRequest impl (srcIP → stackId)
                    logadapter.go      # logrus hook → NDJSON EgressEvent
-                   tracker.go         # ConnTracker impl → byte counts + close events
-                   doh_gate.go        # pre-ACL DoH denylist middleware
-                   compile.go         # StackPolicy → smokescreen acl.Decider
+                                      #  (incl. bytes_in/out extraction from
+                                      #   CANONICAL-PROXY-CN-CLOSE entries)
+                   doh_gate.go        # pre-ACL DoH denylist http.Handler middleware
+                   compile.go         # StackPolicy → *acl.ACL
                    ipranges.go        # built-in private/loopback/link-local CIDRs
     admin/         server.go          # /admin/rules, /admin/container-map, /admin/health
                    validate.go
@@ -547,7 +572,7 @@ Three container types involved, two of them new for v3.
 - `entrypoint: ["/usr/local/bin/egress-gateway"]`
 - Joins the env's applications network with `--network-alias=egress-gateway` (no pinned IP — Docker's embedded DNS resolves the alias)
 - Labels: `mini-infra.egress.gateway=true`, `mini-infra.environment=<env>`
-- Env vars: `HTTP_PORT=3128`, `HTTPS_PORT=3129`, `LOG_LEVEL`
+- Env vars: `PROXY_PORT=3128`, `LOG_LEVEL`
 - No `cap_add`, no sysctls, no host network access
 
 ### Host-singleton `egress-fw-agent`
@@ -607,16 +632,13 @@ Three landable PRs.
 - Tests: integration tests with a temporary iptables ruleset and a real fw-agent in a Linux container, ensure rules and ipset entries are inserted/removed correctly across env churn, Docker daemon restarts, and agent restarts.
 
 ### PR 3 — `egress-gateway` deployment + env injection
-**Day-1 spike (blocker before any other PR 3 work):** verify Smokescreen-as-library supports programmatic `Config` construction, an `EgressACL` interface seam, both HTTP forward proxying and HTTPS CONNECT, and `ConnTracker` shape. If any are missing, escalate before continuing.
-
-If the spike passes:
-- Add `github.com/stripe/smokescreen` to the gateway module's `go.mod`.
-- Implement the wrapper (`internal/proxy/`): `ACLSwapper`, `roleFromRequest`, `logadapter`, `tracker`, `dohGateMiddleware`, `compile`. `cmd/gateway/main.go` wires Smokescreen's `Config` against these and the admin API.
+- Add `github.com/stripe/smokescreen` (pinned to a commit ≥ `7d45971`) to the gateway module's `go.mod`.
+- Implement the wrapper (`internal/proxy/`): `ACLSwapper` (atomic.Pointer[*acl.ACL]), `roleFromRequest`, `logadapter` (translates Smokescreen logrus entries to NDJSON, including `bytes_in`/`bytes_out` from `CANONICAL-PROXY-CN-CLOSE`), `dohGateMiddleware`, `compile`. `cmd/gateway/main.go` constructs `smokescreen.Config`, calls `BuildProxy(cfg)`, and runs the result under our own `http.Server` on `:3128` — **not** `StartWithConfig` (which would install signal handlers we don't want).
 - `EnvironmentManager` swaps the TS `egress-sidecar` for the Go `egress-gateway` image (same per-env container, just different binary in the existing slot). The gateway runs with `--network-alias=egress-gateway` on the env bridge.
-- `stack-container-manager.ts` injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (using the `egress-gateway` alias) for managed services; bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip pattern). DNS injection is removed for both managed and bypass — Docker's default applies.
-- `EgressRulePusher` continues to push to one endpoint per env. The gateway compiles the snapshot to a Smokescreen `acl.Decider` and atomically swaps via `ACLSwapper.Swap()`.
+- `stack-container-manager.ts` injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (both proxy URLs `http://egress-gateway:3128` — single port) for managed services; bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip pattern). DNS injection is removed for both managed and bypass — Docker's default applies.
+- `EgressRulePusher` continues to push to one endpoint per env. The gateway compiles the snapshot to an `*acl.ACL` and atomically swaps via `ACLSwapper.Swap()`.
 - Gateway initially runs in Smokescreen's `report` mode (allows everything, logs decisions) when the per-env flag is flipped ON.
-- Tests: integration tests against a real Smokescreen-backed gateway with stub container map, validate rule swap atomicity, validate SSRF defences against a test resolver, validate `egress-gateway` alias resolution from a peer container.
+- Tests: integration tests against a real Smokescreen-backed gateway with stub container map, validate rule swap atomicity under concurrent in-flight requests, validate SSRF defences via Smokescreen's existing `classifyAddr` path, validate `egress-gateway` alias resolution from a peer container.
 - Land behind the same per-env feature flag introduced in PR 2.
 
 ## Phasing / rollout
@@ -629,7 +651,7 @@ If the spike passes:
 
 ## Open decisions / spike items
 
-- **Smokescreen library API surface (PR 3 day-1 spike).** Verify against current `pkg/smokescreen/` source: programmatic `Config` construction (no YAML), `EgressACL` interface seam, HTTP forward-proxy mode (3128) in addition to HTTPS CONNECT (3129), `ConnTracker` interface, `Log *logrus.Logger` hook seam, `RoleFromRequest` function pointer, `DenyRanges []net.IPNet`. **Blocker:** no other PR 3 work begins until this spike has produced a runnable end-to-end skeleton with a mid-flight ACL swap.
+- **Smokescreen library API surface — verified.** ✅ Checked against `github.com/stripe/smokescreen` at commit `7d45971` (post-PR #286) on 2026-04-29. `Config` is constructed programmatically; `EgressACL` (`acl.Decider`) is a one-method interface called per-request, ideal for atomic-pointer swap; `RoleFromRequest`, `Log`, `DenyRanges` (as `[]RuleRange`), `Listener` are all settable; `BuildProxy(cfg)` returns the `goproxy.ProxyHttpServer` handler that serves both HTTP-forward and HTTPS CONNECT on a single listener. Findings rolled into [Hot path](#hot-path), [Wrapper responsibilities](#wrapper-responsibilities), and the [main.go sketch](#cmdgatewaymaingo-sketch).
 - **`ipset` / `xt_set` / `nf_log_ipv4` availability on Colima + WSL2.** Verify before PR 2 ships: `ipset` userspace tool installable, `xt_set` and `nf_log_ipv4` kernel modules loadable, on a fresh Colima VM and a fresh WSL2 distro. If unavailable out of the box, document the bootstrap step (or include it in our base image) and add a preflight check in `worktree_start.sh` / `start.sh`.
 - **Authenticated proxy?** Default to no auth — the network reachability boundary (only the env bridge can reach the gateway) is the auth. If we ever support multi-tenant envs, revisit.
 - **WebSocket through CONNECT.** WSS is HTTPS upgrade and goes through CONNECT fine. Plain WS over HTTP traverses the HTTP forward proxy, which honours `Connection: Upgrade` correctly with `httputil.ReverseProxy` — verify with a fixture during the PR 3 spike (it's a property of whichever HTTP-forward implementation we use, including Smokescreen's if it has one).
@@ -722,18 +744,18 @@ We considered running Smokescreen as a separate process configured via YAML and 
 
 ## Appendix B: Implementation detail — using Smokescreen as a library
 
-[stripe/smokescreen](https://github.com/stripe/smokescreen) is imported as a Go module. The gateway's main loop *is* `smokescreen.StartWithConfig(...)`; our code provides the configurable interfaces.
+[stripe/smokescreen](https://github.com/stripe/smokescreen) is imported as a Go module. We construct `smokescreen.Config` programmatically, call `smokescreen.BuildProxy(cfg)` to get the `goproxy.ProxyHttpServer` handler, and run that handler under our own `http.Server` so we own the lifecycle (lifecycle, shutdown, signals). We deliberately do not use `smokescreen.StartWithConfig(...)` because it installs SIGHUP/SIGTERM/SIGUSR2 handlers that we don't want owning our process.
 
 ### Why library, not fork or service
 
 Smokescreen's surface is well-shaped for embedding:
 
 - **Behaviour is configurable through interfaces on `smokescreen.Config`.** The binary's "static YAML + SIGHUP" model is a property of `cmd/smokescreen/main.go`, not of the library. Our `cmd/gateway/main.go` constructs `Config` programmatically and never touches YAML.
-- **`EgressACL`** is an interface — we plug in an atomic-pointer-backed implementation for lock-free runtime swap.
-- **`RoleFromRequest`** is a function pointer — we plug in source-IP → stackId lookup against the container map.
-- **`Log *logrus.Logger`** is settable — we attach a hook that emits our NDJSON `EgressEvent` shape.
-- **`ConnTracker`** is an interface — we plug in our event emitter for connection-close events with `bytesUp`/`bytesDown`.
-- **`DenyRanges []net.IPNet`** is settable — we pre-populate with RFC1918, loopback, link-local, ULA, multicast.
+- **`EgressACL`** is `acl.Decider`, a one-method interface (`Decide(args acl.DecideArgs) (acl.Decision, error)`) called per-request — we plug in an atomic-pointer-backed implementation for lock-free runtime swap.
+- **`RoleFromRequest`** is a `func(*http.Request) (string, error)` — we plug in source-IP → stackId lookup against the container map.
+- **`Log *logrus.Logger`** is settable — we attach a hook that emits our NDJSON `EgressEvent` shape and pulls byte counts from `CANONICAL-PROXY-CN-CLOSE` entries.
+- **`DenyRanges []smokescreen.RuleRange`** is settable — we pre-populate with RFC1918, loopback, link-local, ULA, multicast. (Smokescreen's `classifyAddr` already denies private/loopback/IPv6-embedded/CGNAT by default; `DenyRanges` is for additional operator-configured CIDRs.)
+- We do **not** replace `ConnTracker`. The default `Tracker` writes byte counts on connection close; we read them via the log hook above. The `TrackerInterface` has 7 methods coupled to Smokescreen's `*InstrumentedConn`, so substituting it would mean re-implementing connection tracking — far more code than the log-extraction approach.
 
 Total wrapper code: ~250-350 lines. We pick up Stripe's production hardening, the SSRF/DNS-rebinding defences, the splice loop, and the policy mode plumbing without re-implementing any of it. v3 has no DNS server in the gateway — apps use Docker's default `127.0.0.11` resolver and the proxy resolves external FQDNs on their behalf.
 
@@ -758,12 +780,11 @@ These behaviours come from Smokescreen and we do not re-implement them:
 
 These pieces we own:
 
-- **`ACLSwapper` (in `internal/proxy/aclswap.go`)** — implements `smokescreen.ACL` interface, backed by `atomic.Pointer[compiledACL]`. `Decide()` does a lock-free read; `Swap()` is a single atomic store called from the admin API.
-- **`compile()` (in `internal/proxy/compile.go`)** — converts `StackPolicy` snapshot from `mini-infra-server` into Smokescreen's `acl.Decider` shape. Run on each `POST /admin/rules`.
+- **`ACLSwapper` (in `internal/proxy/aclswap.go`)** — implements `acl.Decider`, backed by `atomic.Pointer[*acl.ACL]`. `Decide(DecideArgs)` does a lock-free read; `Swap()` is a single atomic store called from the admin API.
+- **`compile()` (in `internal/proxy/compile.go`)** — converts `StackPolicy` snapshot from `mini-infra-server` into a Smokescreen `*acl.ACL` (a tree of `acl.Rule` keyed by service/role). Run on each `POST /admin/rules`.
 - **`roleFromRequest` (in `internal/proxy/role.go`)** — looks up `(stackId, serviceName)` from `r.RemoteAddr` via the container map; returns `stackId` as the role.
-- **`logadapter` (in `internal/proxy/logadapter.go`)** — `logrus.Hook` that translates Smokescreen log entries to our NDJSON `EgressEvent` shape and writes them on stdout. Same shape the fw-agent uses.
-- **`ConnTracker` (in `internal/proxy/tracker.go`)** — implements Smokescreen's `ConnTracker` interface; emits the per-connection close event with byte counts.
-- **`dohGateMiddleware` (in `internal/proxy/doh_gate.go`)** — wraps the listeners with a pre-ACL gate that 403s known DoH endpoints regardless of stack rules. Smokescreen doesn't ship this; we add it for our compliance posture.
+- **`logadapter` (in `internal/proxy/logadapter.go`)** — `logrus.Hook` that translates Smokescreen log entries to our NDJSON `EgressEvent` shape and writes them on stdout. Pulls `bytes_in` / `bytes_out` from `CANONICAL-PROXY-CN-CLOSE` entries (so we don't need a custom `ConnTracker`). Same NDJSON shape the fw-agent uses.
+- **`dohGateMiddleware` (in `internal/proxy/doh_gate.go`)** — `http.Handler` middleware that wraps the proxy with a pre-ACL gate, 403'ing known DoH endpoints regardless of stack rules. Smokescreen doesn't ship this; we add it for our compliance posture.
 - **Admin API** (`internal/admin/`) — receives `POST /admin/rules` and `POST /admin/container-map`, calls `aclSwapper.Swap(...)` and `containerMap.Replace(...)`.
 
 ### What we leave behind from Smokescreen
@@ -776,6 +797,7 @@ These features exist in Smokescreen but we don't use them:
 - **HTTP/2 frontend.** Apps speak HTTP/1.1 to the proxy.
 - **Static YAML config + SIGHUP reload.** Replaced by admin API + atomic pointer swap.
 - **TLS client cert / Proxy-Authorization auth.** Replaced by source-IP container-map lookup.
+- **`smokescreen.StartWithConfig(...)` lifecycle.** It installs `signal.Notify(SIGUSR2, SIGTERM, SIGHUP)` for graceful shutdown — we don't want our process to react to SIGHUP. Instead we call `BuildProxy(cfg)` ourselves and run the resulting handler under our own `http.Server`, so we own the lifecycle and signals.
 
 ### Atomic ACL swap — why it matters
 
