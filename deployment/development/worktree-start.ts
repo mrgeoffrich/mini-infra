@@ -99,6 +99,11 @@ function commandExists(cmd: string): boolean {
   return spawnSync(probe, args, opts).status === 0;
 }
 
+// On Windows, spawnSync without `shell:true` only resolves .exe — it can't
+// find .cmd shims like corepack.cmd or pnpm.cmd. Enabling shell on Windows
+// routes through cmd.exe which respects PATHEXT.
+const NEEDS_SHELL = process.platform === 'win32';
+
 function exec(
   cmd: string,
   args: string[],
@@ -109,6 +114,7 @@ function exec(
     env: { ...process.env, ...(opts.env || {}) },
     cwd: opts.cwd,
     stdio: opts.stdio || 'pipe',
+    shell: NEEDS_SHELL,
   });
   return {
     status: res.status ?? 1,
@@ -121,6 +127,7 @@ function compose(args: string[], env: NodeJS.ProcessEnv, stdio: 'inherit' | 'pip
   const res = spawnSync('docker', ['compose', '-f', COMPOSE_FILE, ...args], {
     env: { ...process.env, ...env },
     stdio,
+    shell: NEEDS_SHELL,
   });
   return res.status ?? 1;
 }
@@ -302,8 +309,11 @@ async function main(): Promise<void> {
       (driver === 'wsl' ? `, docker=${dockerPort}` : ''),
   );
 
-  // Bring the VM up via the selected driver.
+  // Bring the VM up via the selected driver. For environment-details.xml,
+  // colima exposes a host-side unix socket path; wsl exposes only TCP, so
+  // the socket field is empty there.
   let dockerHost: string;
+  let dockerSockPath = '';
   if (driver === 'colima') {
     if (!isColimaRunning(profile)) {
       logInfo(`Starting Colima profile '${profile}' (vz, ${COLIMA_CPUS} CPU, ${COLIMA_MEMORY_GIB}G RAM)...`);
@@ -312,7 +322,7 @@ async function main(): Promise<void> {
     } else {
       logInfo(`Colima profile '${profile}' already running`);
     }
-    const dockerSockPath = path.join(process.env.HOME || '', '.colima', profile, 'docker.sock');
+    dockerSockPath = path.join(process.env.HOME || '', '.colima', profile, 'docker.sock');
     if (!fs.existsSync(dockerSockPath)) {
       logError(`Expected Colima socket not found at ${dockerSockPath}`);
       process.exit(1);
