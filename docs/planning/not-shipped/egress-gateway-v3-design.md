@@ -10,12 +10,20 @@ An earlier sketch of v3 took a transparent-interception approach (per-managed-co
 
 Concretely:
 
-- Outbound HTTP and HTTPS from managed containers must traverse the **per-env egress gateway**. The container's `HTTP_PROXY` / `HTTPS_PROXY` env vars are injected at create time pointing at the gateway. The gateway parses the destination host (from the `CONNECT` request line for HTTPS, or the absolute-URI request line / `Host` header for HTTP), matches it against the stack's policy, and either splices through to the upstream or returns `403 Forbidden`.
-- DNS from managed containers is permitted to the gateway only (UDP/53 + TCP/53). The gateway's DNS layer remains as defence in depth — see [DNS path](#dns-path-defence-in-depth).
-- All other outbound traffic from managed containers is **dropped at the host firewall**: the only permitted egress paths are the proxy ports, the DNS port, the env bridge itself (peer-to-peer), and the loopback interface.
-- Bypass containers (`egressBypass: true` in their service config) are exempt — they egress directly via the host with no proxy injection and no firewall restrictions.
+- Outbound HTTP and HTTPS from managed containers must traverse the **per-env egress gateway**. The container's `HTTP_PROXY` / `HTTPS_PROXY` env vars are injected at create time pointing at the gateway by network alias (`egress-gateway`). The gateway parses the destination host (from the `CONNECT` request line for HTTPS, or the absolute-URI request line / `Host` header for HTTP), matches it against the stack's policy, and either splices through to the upstream or returns `403 Forbidden`.
+- DNS resolution for managed containers uses **Docker's default embedded DNS** at `127.0.0.11`. The gateway alias is resolved via Docker; external FQDNs are resolved by the proxy on the app's behalf. We do not inject a custom resolver.
+- All other outbound traffic from managed containers is **dropped at the host firewall**: the only permitted egress paths from the env bridge are the proxy ports on the gateway, the env bridge itself (peer-to-peer between managed containers), and the loopback interface inside the container. Managed→bypass traffic on the same bridge is also dropped (closes the bypass-as-pivot path).
+- Bypass containers (`egressBypass: true` in their service config) are exempt from proxy injection and from the managed-container firewall rules — they egress directly via the host. They are tracked in a `bypass-<env>` ipset so the managed-container deny rule can target them.
 
 QUIC (UDP/443) is dropped by the firewall. Apps fall back to TCP/443 through the proxy.
+
+### Accepted gap: container-start race window
+
+Between the moment Docker assigns a container its IP and the moment `mini-infra-server` adds that IP to the `managed-<env>` ipset, the container is unfiltered — the `DOCKER-USER` drop rule is keyed on ipset membership and doesn't match. An app that races to egress in its first ~ms of life can reach the internet directly during that window.
+
+We accept this gap. Closing it would mean either pre-allocating IPs and adding to the ipset before `docker start` (significant orchestration churn against Docker's IPAM) or inverting the ruleset to default-deny the env bridge subnet and explicitly allow the gateway (which complicates bypass containers and adds rule-ordering coupling). Realistic apps don't egress in their first ~ms, and a compromised image deliberately racing is a deeper threat we don't claim to defeat at the network layer.
+
+The window is logged via the firewall agent once the container is in the ipset; further egress is filtered normally.
 
 ## Why explicit proxy, not transparent interception
 
@@ -42,11 +50,11 @@ Responsibilities:
 - Terminate connections from managed containers on TCP/3128 (HTTP forward proxy) and TCP/3129 (HTTPS CONNECT proxy).
 - Parse the destination host (absolute-form request URI / `Host` header for HTTP; `CONNECT host:port` line for HTTPS).
 - Match against the env's stack-policy rule trie. Allow → splice/forward. Block → `403`.
-- Run the env's DNS resolver on UDP/53 + TCP/53 (defence in depth, same role as today's TS sidecar).
+- Resolve external FQDNs on the app's behalf when forwarding (via the gateway container's own resolver — Docker's default).
 - Expose admin API for rule + container-map push from `mini-infra-server`.
-- Emit NDJSON `EgressEvent`s on stdout (`evt: "dns" | "tcp"`).
+- Emit NDJSON `EgressEvent`s on stdout (`evt: "tcp"`).
 
-Non-responsibilities: doesn't touch host firewall, doesn't manage container lifecycles, doesn't read NFLOG, doesn't know which IPs belong to which containers (that's pushed in via the container-map).
+Non-responsibilities: doesn't touch host firewall, doesn't manage container lifecycles, doesn't read NFLOG, doesn't run a DNS server (apps use Docker's embedded DNS for the gateway alias and the proxy resolves external names), doesn't know which IPs belong to which containers (that's pushed in via the container-map).
 
 ### 2. `egress-fw-agent` — host-singleton privileged firewall agent
 *One container per host. `--network=host`, `cap_add: ['NET_ADMIN', 'NET_RAW']`. New component.*
@@ -55,7 +63,7 @@ Non-responsibilities: doesn't touch host firewall, doesn't manage container life
 
 Responsibilities:
 - Maintain the per-env `DOCKER-USER` rule blocks (insert on env create, remove on env destroy, idempotent).
-- Maintain ipsets per env (`managed-<env>`); add/remove member IPs on container start/stop.
+- Maintain ipsets per env (`managed-<env>` for managed containers, `bypass-<env>` for bypass containers); add/remove member IPs on container start/stop.
 - Subscribe to NFLOG group 1, decode dropped-packet metadata, emit `evt: "fw_drop"` NDJSON on stdout.
 - Reconcile host state on boot from `mini-infra-server`'s declared inventory (in case rules / ipsets were lost across host reboot).
 
@@ -65,15 +73,26 @@ Communication: JSON-over-HTTP on a Unix socket at `/var/run/mini-infra/fw.sock`,
 
 ```ts
 POST /v1/env                          // applyEnvRules
-  { env, gatewayIp, bridgeCidr, ipsetName, mode: "observe" | "enforce" }
+  { env, bridgeCidr, mode: "observe" | "enforce" }
 DELETE /v1/env/:env                   // removeEnvRules
-POST /v1/ipset/:set/add               // addIpsetMember { ip }
-POST /v1/ipset/:set/del               // delIpsetMember { ip }
-POST /v1/ipset/:set/sync              // syncIpset { ips: string[] } — full snapshot
+POST /v1/ipset/:env/managed/add       // addManagedMember { ip }
+POST /v1/ipset/:env/managed/del       // delManagedMember { ip }
+POST /v1/ipset/:env/managed/sync      // syncManaged { ips: string[] } — full snapshot
+POST /v1/ipset/:env/bypass/add        // addBypassMember { ip }
+POST /v1/ipset/:env/bypass/del        // delBypassMember { ip }
+POST /v1/ipset/:env/bypass/sync       // syncBypass { ips: string[] } — full snapshot
 GET  /v1/health
 ```
 
 Privilege boundary: `mini-infra-server` is a web app handling untrusted HTTP input — granting it `CAP_NET_ADMIN` directly would mean any web-layer RCE rewrites host firewall. The agent's API is narrow and validated, so the web app can't ask it to do anything ad hoc. Same pattern as Docker (privileged daemon, dumb client) and Kubernetes node agents.
+
+**Input validation is a hard requirement.** The agent must:
+- Restrict `env` to `^[a-z0-9][a-z0-9-]{0,30}$` (matches Mini Infra env name shape; no path/shell metacharacters).
+- Validate `ip` against `net.ParseIP` and reject anything outside `bridgeCidr` for the named env.
+- Validate `bridgeCidr` against `net.ParseCIDR` and reject anything that overlaps host or loopback.
+- Invoke `iptables` / `ipset` via `exec.Command` with explicit argv arrays — **never** through a shell. No `sh -c`, no string interpolation into command lines.
+
+The validation rules are cheap, but they are the entire trust boundary. They get unit-tested with adversarial inputs (path traversal, shell metacharacters, CIDR-of-the-host, IPv6 in IPv4 context, etc.). See [Open decisions](#open-decisions--spike-items).
 
 ### 3. `mini-infra-server` — orchestrator (existing component, new responsibilities)
 *Runs as a Docker container on the same host it manages. Regular bridge network, no host netns, no `NET_ADMIN`. Mounts `/var/run/docker.sock` (existing) and now `/var/run/mini-infra/fw.sock` (new, for the fw-agent).*
@@ -84,19 +103,22 @@ New / extended v3 services inside the server:
 
 - `EgressRulePusher` (existing) — pushes rule snapshots to per-env gateways. Unchanged wire contract.
 - `EgressContainerMapPusher` (existing) — pushes `srcIp → (stackId, serviceName)` map to per-env gateways. Unchanged.
-- `EnvFirewallManager` (new) — owns the desired state of host firewall rules and ipsets. Calls `egress-fw-agent` over the Unix socket to apply changes. Hooked into env create/destroy and managed-container start/stop.
+- `EnvFirewallManager` (new) — owns the desired state of host firewall rules and ipsets. Calls `egress-fw-agent` over the Unix socket to apply changes. Hooked into env create/destroy and managed-container start/stop. Also subscribes to the Docker events stream and triggers a per-env reconcile on container `start` / `die` / `destroy` and on socket-reconnect after a Docker daemon restart, so the ipset state never diverges from running-container reality.
 - `EgressLogIngester` (existing, extended) — tails NDJSON from per-env gateways and from the fw-agent. New event shapes (`evt: "tcp"`, `evt: "fw_drop"`). Writes `EgressEvent` rows.
-- `stack-container-manager.ts` (existing, extended) — for managed services, additionally injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars at create time, and notifies `EnvFirewallManager` on lifecycle transitions.
+- `stack-container-manager.ts` (existing, extended) — for managed services, additionally injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars at create time, and notifies `EnvFirewallManager` on lifecycle transitions. For bypass services it notifies `EnvFirewallManager` to add/remove from the `bypass-<env>` ipset (so the managed→bypass deny rule covers them).
 
 ### 4. Managed app containers — config changes only
 *No new code in app images.*
 
 For non-bypass services:
-- Env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (plus lowercase variants).
-- DNS: `HostConfig.Dns: [gatewayIp]` (existing).
+- Env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (plus lowercase variants). Proxy URLs use the gateway's network alias (`http://egress-gateway:3128` / `:3129`), not an IP — Docker's embedded DNS resolves the alias.
+- DNS: Docker's default (`127.0.0.11`). No injection.
 - Firewall membership: the container's IP is added to `managed-<env>` ipset on start, removed on stop.
 
-For bypass services: none of the above. Container egresses normally via Docker forwarding; not in any ipset, no env vars injected.
+For bypass services:
+- No proxy env vars injected.
+- DNS: Docker's default (`127.0.0.11`). No injection (unchanged from today).
+- Firewall membership: the container's IP is added to `bypass-<env>` ipset on start, removed on stop. This isn't to filter the bypass container's outbound traffic (it has none of the managed-container restrictions) — it's to let the managed-container rules deny `managed → bypass` lateral traffic on the same bridge.
 
 ### Component interaction at a glance
 
@@ -115,7 +137,7 @@ For bypass services: none of the above. Container egresses normally via Docker f
                               tails stdout from gateway + agent ││├──▶┌────────────────────┐
                                                                 ││▼   │ egress-gateway     │
                               JSON-over-HTTP on /var/run/...sock││    │ (per env)          │
-                                                                │▼    │  proxy + DNS       │
+                                                                │▼    │  HTTP/HTTPS proxy  │
                                                        ┌────────┴────────┐ + admin API     │
                                                        │ egress-fw-agent │ NDJSON stdout   │
                                                        │ (host singleton)│                 │
@@ -132,7 +154,7 @@ For bypass services: none of the above. Container egresses normally via Docker f
 
 ### How traffic flows in v3
 
-Each managed app container is configured with `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and a DNS resolver pointing at the per-env gateway. The host firewall (in `DOCKER-USER`) ensures the only permitted destinations from a managed container are the gateway's listening ports plus the env bridge subnet.
+Each managed app container is configured with `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` pointing at the gateway by network alias. DNS uses Docker's default embedded resolver (`127.0.0.11`), which knows how to answer the `egress-gateway` alias and forwards external queries via the daemon (apps don't make external DNS queries themselves once the proxy is doing the resolving). The host firewall (in `DOCKER-USER`) ensures the only permitted destinations from a managed container are the env bridge subnet, minus a carve-out for bypass containers on the same bridge.
 
 ```
 [ env's applications bridge network ]
@@ -143,31 +165,29 @@ Each managed app container is configured with `HTTP_PROXY`, `HTTPS_PROXY`, `NO_P
   │  │                  │   :3128 ────────▶│   HTTP forward proxy  ││
   │  │ HTTP_PROXY=──────┼─                 │                       ││
   │  │ HTTPS_PROXY=─────┼──  :3129 ───────▶│   HTTPS CONNECT proxy ││
-  │  │ NO_PROXY=peers   │                  │                       ││
-  │  │ /etc/resolv.conf─┼──  :53   ───────▶│   DNS server          ││
-  │  │  → gateway-ip    │                  │                       ││
-  │  └──────────────────┘                  │   admin API           ││
-  │           │                            └───────────┬───────────┘│
+  │  │ NO_PROXY=peers   │                  │   admin API           ││
+  │  │ DNS=127.0.0.11   │                  │                       ││
+  │  │  (Docker default)│                  │                       ││
+  │  └──────────────────┘                  └───────────┬───────────┘│
   │           │                                        │            │
   └───────────┼────────────────────────────────────────┼────────────┘
               │                                        ▼
               │                           [ bridge → host → internet ]
               ▼
-   Host firewall (DOCKER-USER):
-     src ∈ ipset:managed-<env>, ct established/related   → ACCEPT
-     src ∈ ipset:managed-<env>, dst ∈ env-bridge CIDR    → ACCEPT (peers)
-     src ∈ ipset:managed-<env>, dst = gateway:{3128,3129} → ACCEPT
-     src ∈ ipset:managed-<env>, dst = gateway:53          → ACCEPT
-     src ∈ ipset:managed-<env>                            → NFLOG + DROP
+   Host firewall (DOCKER-USER), evaluated in order:
+     src ∈ managed-<env>, ct established/related        → ACCEPT
+     src ∈ managed-<env>, dst ∈ bypass-<env>            → NFLOG + DROP  (no pivot)
+     src ∈ managed-<env>, dst ∈ env-bridge CIDR         → ACCEPT        (gateway + peers)
+     src ∈ managed-<env>                                → NFLOG + DROP
 ```
 
 ### Per container kind
 
-| Kind | netns | DNS resolver | In `managed-<env>` ipset | `HTTP_PROXY` injected | TCP path |
-|---|---|---|---|---|---|
-| Managed app | own (Docker default) | `[gatewayIp]` (injected) | yes | yes | via proxy → gateway → upstream |
-| Bypass app | own (Docker default) | Docker default | no | no | direct out via bridge → host |
-| Egress-gateway | own (Docker default) | Docker default | no | no | direct out via bridge → host |
+| Kind | netns | DNS resolver | In `managed-<env>` ipset | In `bypass-<env>` ipset | `HTTP_PROXY` injected | TCP path |
+|---|---|---|---|---|---|---|
+| Managed app | own (Docker default) | Docker default (`127.0.0.11`) | yes | no | yes | via proxy → gateway → upstream |
+| Bypass app | own (Docker default) | Docker default | no | yes | no | direct out via bridge → host |
+| Egress-gateway | own (Docker default) | Docker default | no | no | no | direct out via bridge → host |
 
 ### Two ports — why HTTP and HTTPS are split
 
@@ -182,49 +202,58 @@ Trade is one extra port for clarity and isolation: the HTTPS port can never be c
 
 `mini-infra-server` declares the desired firewall state via `EnvFirewallManager`; `egress-fw-agent` applies it. The rule shape below describes what ends up on the host kernel; the next subsection covers who installs each piece.
 
-Per env, one ipset (`managed-<env>`) holds the IPs of all managed containers in that env. Bypass containers are not in the set, so the drop rule does not apply to them.
+Per env, two ipsets:
+- `managed-<env>` — IPs of all managed containers. Source-side match for the rule block.
+- `bypass-<env>` — IPs of all bypass containers. Destination-side match for the lateral deny rule.
+
+The gateway itself is in neither ipset; it's reachable via the bridge-CIDR ACCEPT rule like any other peer.
 
 ```
 # Per-env block — installed once per env, refreshed on container churn.
 # $ENV_BRIDGE_CIDR is the env applications bridge's CIDR.
-# $GATEWAY_IP is the egress-gateway container's pinned IP on that bridge.
 
+# 1. Established / related (return traffic for outbound flows the gateway opened upstream
+#    isn't covered by this rule because the upstream connection's source is the gateway,
+#    not a managed container; this rule covers in-bridge return traffic only).
 iptables -A DOCKER-USER -m set --match-set managed-<env> src \
          -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
+# 2. Block managed → bypass (closes the bypass-as-pivot path).
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -m set --match-set bypass-<env> dst \
+         -j NFLOG --nflog-group 1 --nflog-prefix "mini-infra-egress-bypass-deny "
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -m set --match-set bypass-<env> dst -j DROP
+
+# 3. Allow within the env bridge (managed → managed peers AND managed → gateway).
 iptables -A DOCKER-USER -m set --match-set managed-<env> src \
          -d $ENV_BRIDGE_CIDR -j ACCEPT
 
-iptables -A DOCKER-USER -m set --match-set managed-<env> src \
-         -d $GATEWAY_IP -p tcp -m multiport --dports 3128,3129 -j ACCEPT
-
-iptables -A DOCKER-USER -m set --match-set managed-<env> src \
-         -d $GATEWAY_IP -p tcp --dport 53 -j ACCEPT
-
-iptables -A DOCKER-USER -m set --match-set managed-<env> src \
-         -d $GATEWAY_IP -p udp --dport 53 -j ACCEPT
-
+# 4. Catch-all NFLOG + DROP for everything else from managed containers.
 iptables -A DOCKER-USER -m set --match-set managed-<env> src \
          -j NFLOG --nflog-group 1 --nflog-prefix "mini-infra-egress-drop "
-
 iptables -A DOCKER-USER -m set --match-set managed-<env> src \
          -j DROP
 ```
 
-Why `DOCKER-USER`: it's the documented Docker hook for layered host policy. Rules placed there are evaluated before Docker's NAT/forwarding chains, survive Docker daemon restarts, and don't fight Docker's own management. ipsets work uniformly under `iptables-legacy` and `iptables-nft`, which covers Linux native, Colima (VM), and WSL2.
+Why `DOCKER-USER`: it's the documented Docker hook for layered host policy. Rules placed there are evaluated before Docker's NAT/forwarding chains, survive Docker daemon restarts, and don't fight Docker's own management. ipsets work uniformly under `iptables-legacy` and `iptables-nft`, which covers Linux native, Colima (VM), and WSL2 — but availability of the `ipset` userspace tool and the `xt_set` / `nf_log_ipv4` kernel modules in those environments needs verification before implementation. **Spike**: confirm `ipset` is installable + functional and `xt_set` / `nf_log_ipv4` modules load on a fresh Colima VM and a fresh WSL2 distro. If not available out of the box, document the install step and decide if we ship a customised base image / preflight check.
 
 #### Who installs what
 
 | Action | Trigger | Server-side caller | Agent operation |
 |---|---|---|---|
-| Insert per-env rule block | env created | `EnvFirewallManager.applyEnv()` | `POST /v1/env` → `iptables -A DOCKER-USER ...` |
-| Remove per-env rule block | env destroyed | `EnvFirewallManager.removeEnv()` | `DELETE /v1/env/:env` → `iptables -D DOCKER-USER ...` |
-| Add IP to ipset | managed container started | `stack-container-manager.ts` post-start hook | `POST /v1/ipset/:set/add` → `ipset add` |
-| Remove IP from ipset | managed container stopped | `stack-container-manager.ts` post-stop hook | `POST /v1/ipset/:set/del` → `ipset del` |
-| Full ipset reconcile | server boot, host reboot | `EnvFirewallManager.reconcile()` | `POST /v1/ipset/:set/sync` → `ipset restore` |
+| Insert per-env rule block + create ipsets | env created | `EnvFirewallManager.applyEnv()` | `POST /v1/env` → `ipset create managed-<env>`, `ipset create bypass-<env>`, `iptables -A DOCKER-USER ...` |
+| Remove per-env rule block + destroy ipsets | env destroyed | `EnvFirewallManager.removeEnv()` | `DELETE /v1/env/:env` → `iptables -D DOCKER-USER ...`, `ipset destroy managed-<env>`, `ipset destroy bypass-<env>` |
+| Add IP to managed ipset | managed container started | `stack-container-manager.ts` post-start hook | `POST /v1/ipset/:env/managed/add` → `ipset add managed-<env> <ip>` |
+| Add IP to bypass ipset | bypass container started | `stack-container-manager.ts` post-start hook | `POST /v1/ipset/:env/bypass/add` → `ipset add bypass-<env> <ip>` |
+| Remove IP from ipset | container stopped | `stack-container-manager.ts` post-stop hook | `POST /v1/ipset/:env/{managed\|bypass}/del` → `ipset del` |
+| Full ipset reconcile | server boot, Docker daemon reconnect, host reboot | `EnvFirewallManager.reconcile()` | `POST /v1/ipset/:env/{managed\|bypass}/sync` → `ipset restore` |
 | Mode flip (observe ↔ enforce) | feature flag toggled | `EnvFirewallManager.setMode()` | `POST /v1/env` with new mode (atomically replaces the env's rule block) |
+| Event-driven reconcile | Docker container `start` / `die` / `destroy` events | `EnvFirewallManager` Docker-events listener | per-event ipset add/del calls, idempotent against current kernel state |
 
 The server holds the *desired state* (in DB / in-memory). The agent is stateless apart from the host kernel state it manages — on boot it accepts a full reconcile from the server. Removing a container from the ipset is sufficient to revoke its egress without modifying any iptables rule.
+
+**Docker daemon restart handling.** `EnvFirewallManager` subscribes to the Docker events stream via `dockerode`. On any `start` / `die` / `destroy` event for a container in a managed env, it computes the desired ipset delta and pushes it to the agent. On socket disconnect (daemon restart) it triggers a full reconcile across all envs once the connection is re-established — IP assignments may have changed, so a delta isn't enough. The reconcile path is the same as boot: snapshot all env containers from Docker, push full ipset state to the agent.
 
 ### The gateway
 
@@ -232,32 +261,37 @@ One container per env. Hosts:
 
 - **HTTP forward proxy** (TCP/3128) — accepts absolute-URI HTTP requests. Parses the request URI's host. Applies stack policy. Allowed → forwards via `httputil.ReverseProxy`. Blocked → `403`.
 - **HTTPS CONNECT proxy** (TCP/3129) — accepts `CONNECT host:port`. Applies stack policy on the host. Allowed → dials upstream and bidirectionally splices the sockets (TLS happens end-to-end between app and upstream; gateway never sees plaintext). Blocked → `403` before the tunnel opens.
-- **DNS server** (UDP/53 + TCP/53) — same role as today's TS sidecar. Defence in depth, see below.
 - **Admin API** (private port) — `POST /admin/rules`, `POST /admin/container-map`, `GET /admin/health`. Same wire contract as today, plus listener-up booleans on health.
 
-No `cap_add`, no sysctls, no privileged operations. The gateway is a plain user-space TCP/UDP server.
+No `cap_add`, no sysctls, no privileged operations. The gateway is a plain user-space TCP server.
 
-### DNS path (defence in depth)
+The gateway is reachable from managed apps by network alias (`egress-gateway`) — Docker's embedded DNS resolves the alias against whichever IP the gateway currently holds on the env bridge. This means the gateway's IP doesn't need to be pinned: a recreate that changes the IP is invisible to apps as long as the alias is stable.
 
-With `HTTP_PROXY` set, app DNS resolution for HTTP/HTTPS destinations doesn't happen on the app side — the gateway resolves the upstream host on the app's behalf. So why keep the DNS layer?
+**Operational contract — gateway upgrade is a per-env outage.** Replacing the gateway image (e.g. on Mini Infra self-update) tears down and recreates the per-env gateway container. During the swap (~1-5s) all proxied egress fails. We accept this as the operational contract: gateway upgrades are infrequent, the failure mode is loud and obvious to apps, and the alternative (blue/green per-env gateways with traffic handover) costs significantly more complexity for a rare event. Operators are notified in the UI when an upgrade is going to bounce per-env gateways.
 
-1. **Apps that need DNS for non-HTTP reasons.** Posture says they shouldn't, but in practice some libraries do `getaddrinfo()` even for proxy-routed requests (curl with `--resolve`, ALPN probing, etc.). Logged.
-2. **FQDN policy at DNS time.** If an app bypasses the proxy by hardcoding IPs, it usually still resolved DNS first (or it would have nothing to hardcode). The DNS layer logs the attempt against FQDN policy — gives us "the app tried to look up evil.com" even when the firewall drop only shows "the app tried to reach 1.2.3.4".
-3. **Existing implementation.** v1+v2's DNS gateway is already shipped and tested. Keeping it in the new gateway is cheap (same Go module).
+### DNS path
 
-DNS to non-gateway resolvers is dropped at the host firewall (`udp dport 53 ip daddr != $GATEWAY_IP` falls through the allow list, hits the drop rule). Logged as `fw_drop`.
+Apps use Docker's default embedded resolver at `127.0.0.11`. That resolver:
+- Knows the `egress-gateway` alias from the bridge's network metadata, so `HTTP_PROXY=http://egress-gateway:3128` resolves correctly without any custom DNS injection.
+- Knows other container names on the same bridge, so peer-to-peer DNS works for free.
+- Forwards external queries to the daemon's configured upstream resolver. Apps don't need to make their own external DNS queries because the proxy resolves external FQDNs on their behalf when forwarding requests.
 
-DoH leak (`dns.google`, `cloudflare-dns.com` over CONNECT to :443) is captured by the proxy as a `connect` event — the FQDN is on the CONNECT request line, so a built-in DoH-domains denylist applied before stack policy catches these regardless of stack rules. Same mechanism for `8.8.8.8:443` literal-IP CONNECT (the IP-literal block in the CONNECT handler covers it).
+The firewall does not allow port 53 outbound from managed containers — Docker's embedded DNS lives on container loopback and doesn't traverse the bridge, so it isn't subject to the rule block. Any app that ignores the embedded resolver and tries to reach an external resolver directly (`dig @8.8.8.8 …`) hits the catch-all DROP rule and is logged as `fw_drop`.
+
+There is no FQDN-time DNS log on the gateway any more (we removed the dedicated DNS server). FQDN attribution comes solely from the proxy's `tcp` events. **Limitation:** apps that hardcode an IP and skip DNS entirely produce `fw_drop` events with `destIp` only — no FQDN. This was already an accepted limitation in the proxy-only posture; removing the DNS layer doesn't make it worse, but it does mean the previous DNS-time "the app tried to look up evil.com" log isn't available either.
+
+DoH leak (`dns.google`, `cloudflare-dns.com` over CONNECT to :443) is still captured by the proxy as a `connect` event — the FQDN is on the CONNECT request line, so a built-in DoH-domains denylist applied before stack policy catches these regardless of stack rules. Same mechanism for `8.8.8.8:443` literal-IP CONNECT (the IP-literal block in the CONNECT handler covers it).
 
 ### Bypass services
 
-Today, `egressBypass: true` on a service skips DNS injection. Under v3:
+Under v3, `egressBypass: true` on a service:
 
-- Skip `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env injection.
-- Skip ipset membership — bypass IPs aren't in `managed-<env>`, so the firewall drop rule doesn't match them.
-- Skip DNS injection (existing behaviour).
+- Skips `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env injection.
+- Adds the container IP to **`bypass-<env>` ipset** (new in v3) — used as the destination match for the lateral deny rule against managed containers.
+- Skips `managed-<env>` ipset membership — so the catch-all drop rule doesn't apply to its outbound traffic.
+- Skips DNS injection (unchanged from today; uses Docker's default).
 
-Bypass containers egress directly via Docker's normal forwarding. They live on the same env bridge as managed containers; the difference is purely in firewall membership and env-var injection.
+Bypass containers egress directly via Docker's normal forwarding. They live on the same env bridge as managed containers, but managed→bypass lateral traffic is denied by the firewall (closes the bypass-as-pivot path described in the posture). Bypass→managed and bypass→external traffic is unrestricted, on the basis that bypass is an explicit operator opt-in and the operator is trusted to vet what they put there.
 
 ## Hot path
 
@@ -265,13 +299,15 @@ The proxy is built on **[Stripe's Smokescreen](https://github.com/stripe/smokesc
 
 Smokescreen-as-binary is configured by YAML and reloads on SIGHUP. Smokescreen-as-library exposes everything as configurable interfaces on `smokescreen.Config`, so we never touch a YAML file or a signal handler.
 
+> ⚠️ **Spike before committing.** The library-API claims in this section (the `Config` field set, programmatic listener wiring, `StartWithConfig`, the HTTP forward-proxy mode in addition to HTTPS CONNECT, the `EgressACL` interface seam, `ConnTracker` shape) are based on Smokescreen's published documentation and the README. They have **not yet been verified against the current `pkg/smokescreen/` source**. The first day of PR 3 work is a spike: build a minimal `cmd/gateway/main.go` that imports `github.com/stripe/smokescreen`, constructs `Config` programmatically, wires an `atomic.Pointer`-backed ACL, runs both an HTTP forward-proxy listener (3128) and a CONNECT listener (3129), and demonstrates a rule swap mid-flight. If any of these capabilities are missing from the library surface, the wrapper-around-Smokescreen story changes — possible fallbacks are forking Smokescreen, running it as a separate process with our own admin sidecar, or writing the proxy ourselves on top of `httputil`. **Do not start PR 3's main implementation until the spike has demonstrated all of the above.**
+
 ### Wrapper responsibilities
 
 The Go wrapper provides Smokescreen with five things:
 
 1. **`RoleFromRequest`** — function pointer that maps the source IP of an inbound request to `(stackId, serviceName)` via our container map. Smokescreen's role-based ACL keys off this.
 2. **`EgressACL`** — interface implementation backed by an `atomic.Pointer[acl.Decider]` for lock-free runtime swap. Admin-API rule push compiles a new ACL and atomically replaces the pointer; in-flight requests keep using the old ACL until they complete.
-3. **`Log`** — `logrus.Logger` with a custom hook that translates each log entry to our NDJSON `EgressEvent` shape on stdout. Same shape the DNS server and fw-agent use.
+3. **`Log`** — `logrus.Logger` with a custom hook that translates each log entry to our NDJSON `EgressEvent` shape on stdout. Same shape the fw-agent uses.
 4. **`ConnTracker`** — interface implementation that captures `bytesUp`/`bytesDown` per connection and emits the splice-completion event.
 5. **`DenyRanges` / `AllowRanges`** — pre-populated with RFC1918, loopback, link-local (incl. `169.254.169.254` cloud metadata), IPv6 ULA, multicast. Operator-configured custom CIDRs append to `DenyRanges`.
 
@@ -300,7 +336,6 @@ func main() {
     sk.ConnectListener = srv.dohGateMiddleware(sk.ConnectListener)
 
     go srv.runAdminAPI(srv.aclSwapper)               // /admin/rules → swapper.Swap(newACL)
-    go srv.runDNSServer()                            // miekg/dns, separate from smokescreen
     go srv.runHealthEndpoint()
 
     if err := smokescreen.StartWithConfig(sk, signalCh); err != nil {
@@ -360,7 +395,6 @@ For CONNECT, Smokescreen makes the same call against the synthetic `http.Request
 
 - DoH denylist gate (pre-ACL, blocks known DoH endpoints regardless of stack rules).
 - Admin API for rule + container-map push.
-- DNS server (miekg/dns) on UDP/53 + TCP/53.
 - NDJSON event shape consistent with the rest of Mini Infra.
 - Container-map identity model (srcIP-keyed instead of TLS-cert/proxy-auth).
 
@@ -370,16 +404,9 @@ The gateway needs `srcIp → (stackId, serviceName)` to attribute events per sta
 
 ## Logging — full visibility
 
-NDJSON on stdout, ingested by the existing `EgressLogIngester`. Four event shapes, three from the gateway and one from the host-side NFLOG reader:
+NDJSON on stdout, ingested by the existing `EgressLogIngester`. Three event shapes, two from the gateway and one from the host-side NFLOG reader. The DNS event shape from v1+v2 is removed in v3 (we no longer run a DNS server in the gateway).
 
 ```jsonc
-// DNS query (gateway, existing — unchanged)
-{ "evt": "dns", "protocol": "dns", "ts": "...", "srcIp": "...",
-  "qname": "api.example.com", "qtype": "A",
-  "action": "allowed|blocked|observed",
-  "matchedPattern": "*.example.com",
-  "stackId": "...", "serviceName": "...", "mergedHits": 1 }
-
 // HTTPS CONNECT (gateway, new)
 { "evt": "tcp", "protocol": "connect", "ts": "...", "srcIp": "...",
   "target": "api.example.com:443",
@@ -398,14 +425,16 @@ NDJSON on stdout, ingested by the existing `EgressLogIngester`. Four event shape
   "stackId": "...", "serviceName": "...",
   "status": 200, "bytesDown": 1234, "mergedHits": 1 }
 
-// Firewall drop (egress-fw-agent, new)
+// Firewall drop (egress-fw-agent, new). Distinguishes between
+// `non-allowed-egress` (the catch-all DROP) and `lateral-bypass-deny`
+// (managed → bypass denial) so events surface with the right context.
 { "evt": "fw_drop", "protocol": "tcp|udp|icmp", "ts": "...",
   "srcIp": "...", "destIp": "...", "destPort": 5432,
   "stackId": "...", "serviceName": "...",
-  "reason": "non-allowed-egress", "mergedHits": 1 }
+  "reason": "non-allowed-egress|lateral-bypass-deny", "mergedHits": 1 }
 ```
 
-Same dedup window (60s, key `destIp + destPort + protocol`) keeps volume sane.
+Dedup window: 60s, key `srcIp + destIp + destPort + protocol`. `srcIp` is included so two different containers hitting the same destination produce two events with correct attribution rather than collapsing into one.
 
 `fw_drop` events come from `egress-fw-agent`'s NFLOG subscriber (libnetfilter_log on group 1). It sees the source IP and looks up `(stackId, serviceName)` via a container-map snapshot pushed from `mini-infra-server` (same shape as the per-env gateway gets, but a flat union across all envs since the agent is per-host).
 
@@ -427,13 +456,10 @@ interface GatewayHealthResponse {
   rulesVersion: number;
   uptimeSeconds: number;
   listeners: {
-    dnsUdp: boolean;
-    dnsTcp: boolean;
     httpProxy: boolean;     // 3128
     httpsProxy: boolean;    // 3129
     admin: boolean;
   };
-  upstreamDns: { healthy: number; total: number };
 }
 ```
 
@@ -444,18 +470,24 @@ Discovery is unchanged from today — server finds the per-env gateway by contai
 For every managed (non-bypass) service, `stack-container-manager.ts` injects:
 
 ```
-HTTP_PROXY=http://<gatewayIp>:3128
-HTTPS_PROXY=http://<gatewayIp>:3129
-http_proxy=http://<gatewayIp>:3128
-https_proxy=http://<gatewayIp>:3129
+HTTP_PROXY=http://egress-gateway:3128
+HTTPS_PROXY=http://egress-gateway:3129
+http_proxy=http://egress-gateway:3128
+https_proxy=http://egress-gateway:3129
 NO_PROXY=localhost,127.0.0.0/8,<envBridgeCidr>
 no_proxy=localhost,127.0.0.0/8,<envBridgeCidr>
-HostConfig.Dns=[<gatewayIp>]               # existing behaviour
 ```
 
-Both upper- and lowercase variants because Node honours uppercase, Python `requests` honours lowercase, Go honours both. `NO_PROXY` lists the env bridge CIDR so peer-to-peer traffic doesn't loop through the proxy.
+Both upper- and lowercase variants because Node honours uppercase, Python `requests` honours lowercase, Go honours both. The `egress-gateway` hostname resolves via Docker's embedded DNS (the gateway container runs with `--network-alias=egress-gateway`), so the gateway's IP can change across recreates without rebaking app env vars. `NO_PROXY` lists the env bridge CIDR so peer-to-peer traffic doesn't loop through the proxy. No `HostConfig.Dns` is set — apps use Docker's default `127.0.0.11` resolver.
 
-For libraries that don't honour CIDR in `NO_PROXY` (some only do suffix matching), we additionally inject a comma-separated list of peer container *names* on the env bridge. The list is regenerated on env churn alongside the container map push.
+**Limitation: `NO_PROXY` env-var staleness.** Docker env vars are immutable on a running container. If we additionally inject peer container *names* into `NO_PROXY` (for libraries that do suffix-only matching, not CIDR), that list is baked at the container's create time. New peers added after create won't appear in existing containers' `NO_PROXY`, and their requests will be sent through the proxy. The proxy will still allow these (intra-bridge destinations match the bypass-bridge-CIDR fast-path inside the ACL), but it adds a hop and may matter for high-throughput peer comms.
+
+Mitigations we accept:
+- Document this as a known limitation.
+- For most languages we work with (Node, Go, Python `httpx`, Java 11+), CIDR matching is supported in `NO_PROXY`, so the env bridge CIDR alone is sufficient — peer-name lists are only needed for laggard libraries (older Python `requests`, some Ruby HTTP clients).
+- For envs where peer churn matters and a laggard library is in use, recommend a stack-level recreate after adding new peers, or recommend using a CIDR-aware HTTP client.
+
+We do **not** plan to dynamically update `NO_PROXY` on running containers — Docker doesn't support it, and the workaround (recreate the container) is more expensive than the limitation.
 
 ## Go module design
 
@@ -485,9 +517,6 @@ egress-gateway/
                    doh_gate.go        # pre-ACL DoH denylist middleware
                    compile.go         # StackPolicy → smokescreen acl.Decider
                    ipranges.go        # built-in private/loopback/link-local CIDRs
-    dns/           server.go          # miekg/dns combined UDP/TCP listener
-                   forward.go         # upstream pool with health
-                   handler.go         # query → match → respond/NXDOMAIN
     admin/         server.go          # /admin/rules, /admin/container-map, /admin/health
                    validate.go
 
@@ -516,9 +545,9 @@ Three container types involved, two of them new for v3.
 
 - `image: mini-infra/egress-gateway:<version>`
 - `entrypoint: ["/usr/local/bin/egress-gateway"]`
-- Joins the env's applications network with a pinned IP
+- Joins the env's applications network with `--network-alias=egress-gateway` (no pinned IP — Docker's embedded DNS resolves the alias)
 - Labels: `mini-infra.egress.gateway=true`, `mini-infra.environment=<env>`
-- Env vars: `UPSTREAM_DNS=1.1.1.1,8.8.8.8`, `HTTP_PORT=3128`, `HTTPS_PORT=3129`, `LOG_LEVEL`
+- Env vars: `HTTP_PORT=3128`, `HTTPS_PORT=3129`, `LOG_LEVEL`
 - No `cap_add`, no sysctls, no host network access
 
 ### Host-singleton `egress-fw-agent`
@@ -541,13 +570,17 @@ Three container types involved, two of them new for v3.
 - No new capabilities, no new network changes — still a regular bridge container
 
 ### App container spec changes
-*For managed (non-bypass) services only.*
 
-- Inject `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars (above)
-- Inject DNS (`HostConfig.Dns: [gatewayIp]`) — unchanged from today
-- After Docker assigns the container's IP and it transitions to `Running`, `stack-container-manager.ts` calls `EnvFirewallManager.addContainer()`, which calls the agent to add the IP to `managed-<env>`
+For **managed** (non-bypass) services:
+- Inject `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars (above) using the `egress-gateway` alias.
+- No DNS injection — Docker's default `127.0.0.11` resolver is used.
+- After Docker assigns the container's IP and it transitions to `Running`, `stack-container-manager.ts` calls `EnvFirewallManager.addManagedContainer()`, which calls the agent to add the IP to `managed-<env>`.
 
-Bypass services and the gateway itself: unaffected. No proxy injection, not in any ipset, no agent calls.
+For **bypass** services:
+- No proxy env injection, no DNS injection.
+- After Docker assigns the IP and the container transitions to `Running`, `stack-container-manager.ts` calls `EnvFirewallManager.addBypassContainer()`, which calls the agent to add the IP to `bypass-<env>` so the lateral-deny rule matches.
+
+The gateway itself: in neither ipset, no env-var injection, no `addContainer` call. It's reachable from managed containers via the bridge-CIDR ACCEPT rule.
 
 ## Server-side changes
 
@@ -563,20 +596,27 @@ Three landable PRs.
 ### PR 2 — Go module + `egress-fw-agent` deployment
 - New `egress-gateway/` Go module with both binaries (gateway + fw-agent). Initially only the fw-agent code path is exercised; gateway code lands but isn't deployed yet.
 - New deployment of `egress-fw-agent` as a host-singleton container in the Mini Infra compose definition. Volume mount for `/var/run/mini-infra/` shared with `mini-infra-server`.
-- New `EnvFirewallManager` service in `mini-infra-server`: declares desired firewall state, calls fw-agent over the Unix socket, owns reconcile loop on server boot.
-- ipset membership wired into container start/stop hooks in `stack-container-manager.ts` for managed services.
-- NFLOG reader inside the agent emits `fw_drop` NDJSON; ingester (PR 1) picks it up.
+- New `EnvFirewallManager` service in `mini-infra-server`:
+  - Declares desired firewall state, calls fw-agent over the Unix socket.
+  - Owns reconcile loop on server boot **and** on Docker daemon reconnect.
+  - Subscribes to Docker events stream for per-container `start` / `die` / `destroy` and pushes ipset deltas to the agent.
+- ipset membership wired into container start/stop hooks in `stack-container-manager.ts` for both managed and bypass services (`managed-<env>` and `bypass-<env>` respectively).
+- NFLOG reader inside the agent emits `fw_drop` NDJSON (with separate `reason` values for catch-all DROP vs lateral-bypass-deny); ingester (PR 1) picks it up.
+- Hard input validation in the agent: env names (`^[a-z0-9][a-z0-9-]{0,30}$`), IPs (within declared bridge CIDR), CIDRs (no host/loopback overlap), `iptables`/`ipset` invoked with explicit argv (no shell). Adversarial-input unit tests are required.
 - Ships behind a per-env feature flag — agent is deployed and managing rules but the `DROP` line is gated. Initial mode is **observe** (NFLOG without DROP) for opted-in envs.
 - Tests: integration tests with a temporary iptables ruleset and a real fw-agent in a Linux container, ensure rules and ipset entries are inserted/removed correctly across env churn, Docker daemon restarts, and agent restarts.
 
 ### PR 3 — `egress-gateway` deployment + env injection
+**Day-1 spike (blocker before any other PR 3 work):** verify Smokescreen-as-library supports programmatic `Config` construction, an `EgressACL` interface seam, both HTTP forward proxying and HTTPS CONNECT, and `ConnTracker` shape. If any are missing, escalate before continuing.
+
+If the spike passes:
 - Add `github.com/stripe/smokescreen` to the gateway module's `go.mod`.
-- Implement the wrapper (`internal/proxy/`): `ACLSwapper`, `roleFromRequest`, `logadapter`, `tracker`, `dohGateMiddleware`, `compile`. `cmd/gateway/main.go` wires Smokescreen's `Config` against these and the existing DNS server / admin API.
-- `EnvironmentManager` swaps the TS `egress-sidecar` for the Go `egress-gateway` image (same per-env container, just different binary in the existing slot).
-- `stack-container-manager.ts` injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for managed services; bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip for DNS injection).
+- Implement the wrapper (`internal/proxy/`): `ACLSwapper`, `roleFromRequest`, `logadapter`, `tracker`, `dohGateMiddleware`, `compile`. `cmd/gateway/main.go` wires Smokescreen's `Config` against these and the admin API.
+- `EnvironmentManager` swaps the TS `egress-sidecar` for the Go `egress-gateway` image (same per-env container, just different binary in the existing slot). The gateway runs with `--network-alias=egress-gateway` on the env bridge.
+- `stack-container-manager.ts` injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` (using the `egress-gateway` alias) for managed services; bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip pattern). DNS injection is removed for both managed and bypass — Docker's default applies.
 - `EgressRulePusher` continues to push to one endpoint per env. The gateway compiles the snapshot to a Smokescreen `acl.Decider` and atomically swaps via `ACLSwapper.Swap()`.
 - Gateway initially runs in Smokescreen's `report` mode (allows everything, logs decisions) when the per-env flag is flipped ON.
-- Tests: integration tests against a real Smokescreen-backed gateway with stub container map, validate rule swap atomicity, validate SSRF defences against a test resolver.
+- Tests: integration tests against a real Smokescreen-backed gateway with stub container map, validate rule swap atomicity, validate SSRF defences against a test resolver, validate `egress-gateway` alias resolution from a peer container.
 - Land behind the same per-env feature flag introduced in PR 2.
 
 ## Phasing / rollout
@@ -589,14 +629,27 @@ Three landable PRs.
 
 ## Open decisions / spike items
 
+- **Smokescreen library API surface (PR 3 day-1 spike).** Verify against current `pkg/smokescreen/` source: programmatic `Config` construction (no YAML), `EgressACL` interface seam, HTTP forward-proxy mode (3128) in addition to HTTPS CONNECT (3129), `ConnTracker` interface, `Log *logrus.Logger` hook seam, `RoleFromRequest` function pointer, `DenyRanges []net.IPNet`. **Blocker:** no other PR 3 work begins until this spike has produced a runnable end-to-end skeleton with a mid-flight ACL swap.
+- **`ipset` / `xt_set` / `nf_log_ipv4` availability on Colima + WSL2.** Verify before PR 2 ships: `ipset` userspace tool installable, `xt_set` and `nf_log_ipv4` kernel modules loadable, on a fresh Colima VM and a fresh WSL2 distro. If unavailable out of the box, document the bootstrap step (or include it in our base image) and add a preflight check in `worktree_start.sh` / `start.sh`.
 - **Authenticated proxy?** Default to no auth — the network reachability boundary (only the env bridge can reach the gateway) is the auth. If we ever support multi-tenant envs, revisit.
-- **WebSocket through CONNECT.** WSS is HTTPS upgrade and goes through CONNECT fine. Plain WS over HTTP traverses the HTTP forward proxy, which honours `Connection: Upgrade` correctly with `httputil.ReverseProxy` — verify with a fixture.
-- **`NO_PROXY` exhaustiveness.** Some libraries do suffix-only matching, not CIDR. We inject the env bridge CIDR plus a peer-name list; spike to confirm coverage with the languages we actually see (Node, Python, Go, Java, Ruby).
+- **WebSocket through CONNECT.** WSS is HTTPS upgrade and goes through CONNECT fine. Plain WS over HTTP traverses the HTTP forward proxy, which honours `Connection: Upgrade` correctly with `httputil.ReverseProxy` — verify with a fixture during the PR 3 spike (it's a property of whichever HTTP-forward implementation we use, including Smokescreen's if it has one).
+- **`NO_PROXY` exhaustiveness — accepted as a documented limitation.** CIDR matching covers Node, Go, Python `httpx`, Java 11+. Older Python `requests`, some Ruby clients, and a few JVM legacy stacks do suffix-only matching and won't match the env bridge CIDR. Documented in [Container env injection](#container-env-injection); operators get the limitation in the UI when an app surfaces unexpected proxy hops.
 - **Apps that don't honour `HTTP_PROXY`.** Document the failure mode in the operator UI: a service that egresses directly will produce `fw_drop` events; surface these prominently with a "mark as bypass or fix the client" call to action.
+- **`fw-agent` input validation rules — accepted as a documented requirement.** Listed in §[`egress-fw-agent`](#2-egress-fw-agent--host-singleton-privileged-firewall-agent). The whole privilege boundary depends on these checks holding; adversarial-input unit tests are part of PR 2's acceptance criteria.
 - **fw-agent ↔ server outage handling.** If the agent is down, in-flight ipset updates queue in `EnvFirewallManager` and a degraded-component banner surfaces in the UI. Existing rules are untouched (kernel state outlives the agent). On agent recovery, drain the queue and run a full reconcile. Decide the queue cap and what to do on overflow (probably: drop oldest, log loudly).
 - **Rule reload performance.** ipset membership churn during container start/stop must be sub-100ms to avoid stack-apply slowdown. ipset is in-kernel and fast; benchmark with 50 containers/env.
 - **Resource budget.** Per env: ~30 MB RSS for gateway. Per host: ~10 MB for fw-agent. So ~30 MB per env + ~10 MB host-wide — vs ~325-625 MB in the rejected sidecar design. ~10× win.
 - **IPv6.** v1+v2 are IPv4-only; v3 mirrors that. ipsets and `DOCKER-USER` work in IPv6 too; need dual-stack listeners and an ipv6 ipset when we cross that bridge.
+
+## Accepted limitations (documented, not mitigated)
+
+These are known-and-accepted in v3. They're called out so the trade-off is visible to operators and isn't mistaken for a design oversight.
+
+- **Container-start race window.** Between `docker start` (container has IP, app code may begin running) and the post-start ipset add, the container is unfiltered. Apps that race to egress in their first ~ms get out. Closing the gap requires intrusive changes to Docker's IPAM flow or an inverted ruleset; we don't pay that cost. See [Posture → Accepted gap](#accepted-gap-container-start-race-window).
+- **Literal-IP egress lacks FQDN attribution.** `fw_drop` events include `destIp` but not the FQDN the app *thought* it was reaching, because we no longer run a DNS server in the gateway and apps that hardcode IPs never asked the resolver. Acceptable for deny-by-default.
+- **`NO_PROXY` is baked at container create time.** Adding new peers later doesn't update existing containers' `NO_PROXY`; their requests go through the proxy instead of peer-direct. The proxy still allows them. See [Container env injection](#container-env-injection).
+- **Gateway upgrade is a per-env outage.** ~1-5s of failed proxied egress while the gateway container is recreated. See [The gateway](#the-gateway).
+- **Migration of existing envs is not handled by this design.** When v3 first ships, existing envs without proxy injection / ipset membership stay in their current behaviour until each app is recreated under v3. Operators redeploy at their own pace; we don't auto-recreate.
 
 ## Out of scope for v3 (explicitly deferred)
 
@@ -682,7 +735,7 @@ Smokescreen's surface is well-shaped for embedding:
 - **`ConnTracker`** is an interface — we plug in our event emitter for connection-close events with `bytesUp`/`bytesDown`.
 - **`DenyRanges []net.IPNet`** is settable — we pre-populate with RFC1918, loopback, link-local, ULA, multicast.
 
-Total wrapper code: ~250-350 lines + the existing DNS server. We pick up Stripe's production hardening, the SSRF/DNS-rebinding defences, the splice loop, and the policy mode plumbing without re-implementing any of it.
+Total wrapper code: ~250-350 lines. We pick up Stripe's production hardening, the SSRF/DNS-rebinding defences, the splice loop, and the policy mode plumbing without re-implementing any of it. v3 has no DNS server in the gateway — apps use Docker's default `127.0.0.11` resolver and the proxy resolves external FQDNs on their behalf.
 
 License: MIT. No problem.
 
@@ -708,11 +761,10 @@ These pieces we own:
 - **`ACLSwapper` (in `internal/proxy/aclswap.go`)** — implements `smokescreen.ACL` interface, backed by `atomic.Pointer[compiledACL]`. `Decide()` does a lock-free read; `Swap()` is a single atomic store called from the admin API.
 - **`compile()` (in `internal/proxy/compile.go`)** — converts `StackPolicy` snapshot from `mini-infra-server` into Smokescreen's `acl.Decider` shape. Run on each `POST /admin/rules`.
 - **`roleFromRequest` (in `internal/proxy/role.go`)** — looks up `(stackId, serviceName)` from `r.RemoteAddr` via the container map; returns `stackId` as the role.
-- **`logadapter` (in `internal/proxy/logadapter.go`)** — `logrus.Hook` that translates Smokescreen log entries to our NDJSON `EgressEvent` shape and writes them on stdout. Same shape DNS server and fw-agent use.
+- **`logadapter` (in `internal/proxy/logadapter.go`)** — `logrus.Hook` that translates Smokescreen log entries to our NDJSON `EgressEvent` shape and writes them on stdout. Same shape the fw-agent uses.
 - **`ConnTracker` (in `internal/proxy/tracker.go`)** — implements Smokescreen's `ConnTracker` interface; emits the per-connection close event with byte counts.
 - **`dohGateMiddleware` (in `internal/proxy/doh_gate.go`)** — wraps the listeners with a pre-ACL gate that 403s known DoH endpoints regardless of stack rules. Smokescreen doesn't ship this; we add it for our compliance posture.
 - **Admin API** (`internal/admin/`) — receives `POST /admin/rules` and `POST /admin/container-map`, calls `aclSwapper.Swap(...)` and `containerMap.Replace(...)`.
-- **DNS server** (`internal/dns/`) — separate from Smokescreen, runs on UDP/53 + TCP/53 with the same FQDN policy.
 
 ### What we leave behind from Smokescreen
 
