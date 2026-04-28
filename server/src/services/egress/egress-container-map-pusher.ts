@@ -15,6 +15,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { EgressGatewayClient, type ContainerMapEntry } from './egress-gateway-client';
 import { getLogger } from '../../lib/logger-factory';
+import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
 const log = getLogger('stacks', 'egress-container-map-pusher');
 
@@ -166,6 +167,23 @@ export class EgressContainerMapPusher {
         { envId: env.id, envName: env.name, version: result.version, entryCount: result.entryCount },
         'Container map pushed to gateway',
       );
+
+      // Emit gateway health — success
+      emitEgressGatewayHealth({
+        environmentId: env.id,
+        gatewayIp: env.egressGatewayIp,
+        ok: true,
+        // Rules version not known by the container-map pusher — safe defaults
+        rulesVersion: 0,
+        appliedRulesVersion: null,
+        containerMapVersion: state.version,
+        appliedContainerMapVersion: state.version,
+        upstream: {
+          servers: [],
+          lastSuccessAt: new Date().toISOString(),
+          lastFailureAt: null,
+        },
+      });
     };
 
     try {
@@ -179,12 +197,30 @@ export class EgressContainerMapPusher {
       try {
         await attempt();
       } catch (err2) {
+        const errMsg = err2 instanceof Error ? err2.message : String(err2);
         log.warn(
-          { err: err2 instanceof Error ? err2.message : String(err2), envId: env.id, envName: env.name },
+          { err: errMsg, envId: env.id, envName: env.name },
           'Container map push failed on retry — giving up until next event',
         );
         // Roll back the version bump so the next push increments from a sane baseline
         state.version -= 1;
+
+        // Emit gateway health — failure
+        emitEgressGatewayHealth({
+          environmentId: env.id,
+          gatewayIp: env.egressGatewayIp,
+          ok: false,
+          rulesVersion: 0,
+          appliedRulesVersion: null,
+          containerMapVersion: state.version,
+          appliedContainerMapVersion: null,
+          upstream: {
+            servers: [],
+            lastSuccessAt: null,
+            lastFailureAt: new Date().toISOString(),
+          },
+          errorMessage: errMsg,
+        });
       }
     }
   }

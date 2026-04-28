@@ -31,6 +31,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { DockerStreamDemuxer } from '../../lib/docker-stream';
 import { getLogger } from '../../lib/logger-factory';
+import { emitEgressEvent } from './egress-socket-emitter';
 
 const log = getLogger('stacks', 'egress-log-ingester');
 
@@ -81,6 +82,14 @@ interface DedupBucket {
 
 type DedupKey = string; // `${policyId}:${serviceNameOrEmpty}:${destination}:${action}`
 
+/** Cached policy context needed for socket emissions */
+interface PolicyContext {
+  id: string;
+  stackNameSnapshot: string;
+  environmentNameSnapshot: string;
+  environmentId: string | null;
+}
+
 function makeDedupKey(
   policyId: string,
   serviceName: string | undefined,
@@ -104,6 +113,10 @@ interface PendingRow {
   matchedPattern?: string;
   action: string;
   mergedHits: number;
+  /** Snapshot fields carried alongside so _flushBatch can emit without a DB lookup */
+  stackNameSnapshot: string;
+  environmentNameSnapshot: string;
+  environmentId: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -123,6 +136,8 @@ class GatewayTailer {
   private batchTimer: NodeJS.Timeout | null = null;
   /** Rate-limiter for "no policy" warnings: stackId → last warn time */
   private readonly warnCooldowns = new Map<string, number>();
+  /** Cache of policy context (snapshot fields + environmentId) by policyId */
+  private readonly policyContextCache = new Map<string, PolicyContext>();
 
   constructor(
     private readonly envId: string,
@@ -286,19 +301,37 @@ class GatewayTailer {
     }
 
     // Find the non-archived EgressPolicy for this stackId
-    let policyId: string | null = null;
+    let policyContext: PolicyContext | null = null;
     try {
       const policy = await this.prisma.egressPolicy.findFirst({
         where: { stackId: line.stackId, archivedAt: null },
-        select: { id: true },
+        select: {
+          id: true,
+          stackNameSnapshot: true,
+          environmentNameSnapshot: true,
+          environmentId: true,
+        },
       });
-      if (policy) policyId = policy.id;
+      if (policy) {
+        // Cache the policy context so we don't query per-row across batch loops
+        const cached: PolicyContext = {
+          id: policy.id,
+          stackNameSnapshot: policy.stackNameSnapshot,
+          environmentNameSnapshot: policy.environmentNameSnapshot,
+          environmentId: policy.environmentId,
+        };
+        this.policyContextCache.set(policy.id, cached);
+        policyContext = cached;
+      }
     } catch (err) {
       log.warn({ err, stackId: line.stackId }, 'EgressPolicy lookup failed — dropping event');
       return;
     }
 
-    if (!policyId) {
+    // Derived policyId for dedup key construction
+    const policyId = policyContext?.id ?? null;
+
+    if (!policyContext || !policyId) {
       // Rate-limited warning
       const now = Date.now();
       const lastWarn = this.warnCooldowns.get(line.stackId) ?? 0;
@@ -336,6 +369,9 @@ class GatewayTailer {
           matchedPattern: line.matchedPattern,
           action: line.action,
           mergedHits: bucket.hits,
+          stackNameSnapshot: policyContext.stackNameSnapshot,
+          environmentNameSnapshot: policyContext.environmentNameSnapshot,
+          environmentId: policyContext.environmentId,
         });
         this._maybeFlushBatch();
       }
@@ -358,6 +394,9 @@ class GatewayTailer {
       matchedPattern: line.matchedPattern,
       action: line.action,
       mergedHits: line.mergedHits,
+      stackNameSnapshot: policyContext.stackNameSnapshot,
+      environmentNameSnapshot: policyContext.environmentNameSnapshot,
+      environmentId: policyContext.environmentId,
     });
 
     this._maybeFlushBatch();
@@ -456,6 +495,30 @@ class GatewayTailer {
       });
 
       log.debug({ count: batch.length, envId: this.envId }, 'Flushed EgressEvent batch');
+
+      // Emit one egress:event per row after successful batch insert.
+      // createMany does not return IDs, so we synthesise placeholder IDs for
+      // the socket event — the frontend uses these for live-feed display only,
+      // not for lookups. We generate a stable placeholder from policyId +
+      // occurredAt. The DB row's real CUID is not available from createMany.
+      for (const row of batch) {
+        emitEgressEvent({
+          id: `${row.policyId}-${row.occurredAt.getTime()}`,
+          policyId: row.policyId,
+          occurredAt: row.occurredAt,
+          sourceContainerId: row.sourceContainerId ?? null,
+          sourceStackId: row.sourceStackId ?? null,
+          sourceServiceName: row.sourceServiceName ?? null,
+          destination: row.destination,
+          matchedPattern: row.matchedPattern ?? null,
+          action: row.action,
+          protocol: 'dns',
+          mergedHits: row.mergedHits,
+          stackNameSnapshot: row.stackNameSnapshot,
+          environmentNameSnapshot: row.environmentNameSnapshot,
+          environmentId: row.environmentId,
+        });
+      }
     } catch (err) {
       log.error(
         { err: err instanceof Error ? err.message : String(err), envId: this.envId, batchSize: batch.length },

@@ -32,3 +32,70 @@ export interface EgressRuleSummary {
   hits: number;
   lastHitAt: string | null;
 }
+
+// ====================
+// Socket.IO Event Payloads (channel: "egress")
+// ====================
+
+/**
+ * Broadcast when a single DNS query has been ingested into EgressEvent.
+ * The ingester batches DB writes; this fires per-row after a batch commits.
+ * Fields beyond the EgressEvent row are denormalized snapshots for the UI.
+ */
+export interface EgressEventBroadcast {
+  id: string;
+  policyId: string;
+  occurredAt: string;
+  sourceContainerId: string | null;
+  sourceStackId: string | null;
+  sourceServiceName: string | null;
+  destination: string;
+  matchedPattern: string | null;
+  action: EgressEventAction;
+  protocol: EgressEventProtocol;
+  mergedHits: number;
+  stackNameSnapshot: string;
+  environmentNameSnapshot: string;
+  environmentId: string | null;
+}
+
+/** Fired when an EgressPolicy mode/defaultAction/version/archivedAt changes. */
+export interface EgressPolicyUpdatedEvent {
+  policyId: string;
+  environmentId: string | null;
+  stackId: string | null;
+  version: number;
+  appliedVersion: number | null;
+  mode: EgressMode;
+  defaultAction: EgressDefaultAction;
+  archivedAt: string | null;
+}
+
+/** Fired on rule create/update/delete. `rule` is null when changeType === 'deleted'. */
+export interface EgressRuleMutationEvent {
+  policyId: string;
+  ruleId: string;
+  changeType: 'created' | 'updated' | 'deleted';
+  rule: EgressRuleSummary | null;
+}
+
+/**
+ * Per-environment gateway health snapshot. Emitted by the rule pusher and
+ * container-map pusher after each push attempt (success or failure), so
+ * the UI can show live drift between desired (DB) and applied (gateway) state.
+ */
+export interface EgressGatewayHealthEvent {
+  environmentId: string;
+  gatewayIp: string | null;
+  ok: boolean;
+  rulesVersion: number;
+  appliedRulesVersion: number | null;
+  containerMapVersion: number;
+  appliedContainerMapVersion: number | null;
+  upstream: {
+    servers: string[];
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+  };
+  errorMessage?: string;
+}

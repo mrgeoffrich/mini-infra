@@ -25,6 +25,7 @@ import {
   type StackPolicyEntry,
 } from './egress-gateway-client';
 import { getLogger } from '../../lib/logger-factory';
+import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
 const log = getLogger('stacks', 'egress-rule-pusher');
 
@@ -277,6 +278,23 @@ export class EgressRulePusher {
         },
         'Rules snapshot pushed to gateway',
       );
+
+      // Emit gateway health — success
+      emitEgressGatewayHealth({
+        environmentId: env.id,
+        gatewayIp: env.egressGatewayIp,
+        ok: true,
+        rulesVersion: state.version,
+        appliedRulesVersion: state.version,
+        // Container-map version not known by the rule pusher — null safe defaults
+        containerMapVersion: 0,
+        appliedContainerMapVersion: null,
+        upstream: {
+          servers: [],
+          lastSuccessAt: new Date().toISOString(),
+          lastFailureAt: null,
+        },
+      });
     };
 
     try {
@@ -294,9 +312,10 @@ export class EgressRulePusher {
       try {
         await attempt();
       } catch (err2) {
+        const errMsg = err2 instanceof Error ? err2.message : String(err2);
         log.warn(
           {
-            err: err2 instanceof Error ? err2.message : String(err2),
+            err: errMsg,
             envId: env.id,
             envName: env.name,
           },
@@ -304,6 +323,23 @@ export class EgressRulePusher {
         );
         // Roll back the version bump so the next push increments from a sane baseline
         state.version -= 1;
+
+        // Emit gateway health — failure
+        emitEgressGatewayHealth({
+          environmentId: env.id,
+          gatewayIp: env.egressGatewayIp,
+          ok: false,
+          rulesVersion: state.version,
+          appliedRulesVersion: null,
+          containerMapVersion: 0,
+          appliedContainerMapVersion: null,
+          upstream: {
+            servers: [],
+            lastSuccessAt: null,
+            lastFailureAt: new Date().toISOString(),
+          },
+          errorMessage: errMsg,
+        });
       }
     }
   }

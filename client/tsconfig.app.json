@@ -30,5 +30,6 @@
       "@mini-infra/types/*": ["../lib/types/*"]
     }
   },
-  "include": ["src", "../lib/types"]
+  "include": ["src", "../lib/types"],
+  "exclude": ["src/__tests__"]
 }

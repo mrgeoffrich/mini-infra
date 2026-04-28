@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client';
 import { getLogger } from '../../lib/logger-factory';
 import type { EgressArchivedReason } from '@mini-infra/types';
+import { emitEgressPolicyUpdated } from './egress-socket-emitter';
 
 const log = getLogger('stacks', 'egress-policy-lifecycle');
 
@@ -55,7 +56,7 @@ export class EgressPolicyLifecycleService {
 
       if (existing) {
         // Policy exists — only refresh snapshots and updatedBy
-        await this.prisma.egressPolicy.update({
+        const updated = await this.prisma.egressPolicy.update({
           where: { id: existing.id },
           data: {
             stackNameSnapshot,
@@ -67,6 +68,7 @@ export class EgressPolicyLifecycleService {
           { stackId, policyId: existing.id },
           'ensureDefaultPolicy: refreshed snapshots on existing policy',
         );
+        emitEgressPolicyUpdated(updated);
         return;
       }
 
@@ -88,6 +90,7 @@ export class EgressPolicyLifecycleService {
         { stackId, policyId: policy.id, environmentId: stack.environmentId },
         'ensureDefaultPolicy: created default egress policy',
       );
+      emitEgressPolicyUpdated(policy);
     } catch (err) {
       log.error(
         { err, stackId },
@@ -102,10 +105,11 @@ export class EgressPolicyLifecycleService {
    */
   async archiveForStack(stackId: string, userId: string | null): Promise<void> {
     try {
+      const archivedAt = new Date();
       const result = await this.prisma.egressPolicy.updateMany({
         where: { stackId, archivedAt: null },
         data: {
-          archivedAt: new Date(),
+          archivedAt,
           archivedReason: 'stack-deleted' satisfies EgressArchivedReason,
           updatedBy: userId,
         },
@@ -116,6 +120,15 @@ export class EgressPolicyLifecycleService {
           { stackId, updatedCount: result.count },
           'archiveForStack: archived egress policies for stack',
         );
+
+        // Emit one event per affected policy — fetch them after the update
+        // (archivedAt is now set, so query with archivedReason to narrow)
+        const policies = await this.prisma.egressPolicy.findMany({
+          where: { stackId, archivedReason: 'stack-deleted' satisfies EgressArchivedReason, archivedAt },
+        });
+        for (const policy of policies) {
+          emitEgressPolicyUpdated(policy);
+        }
       }
     } catch (err) {
       log.error(
@@ -135,10 +148,11 @@ export class EgressPolicyLifecycleService {
    */
   async archiveForEnvironment(environmentId: string, userId: string | null): Promise<void> {
     try {
+      const archivedAt = new Date();
       const result = await this.prisma.egressPolicy.updateMany({
         where: { environmentId, archivedAt: null },
         data: {
-          archivedAt: new Date(),
+          archivedAt,
           archivedReason: 'environment-deleted' satisfies EgressArchivedReason,
           updatedBy: userId,
         },
@@ -149,6 +163,14 @@ export class EgressPolicyLifecycleService {
           { environmentId, updatedCount: result.count },
           'archiveForEnvironment: archived egress policies for environment',
         );
+
+        // Emit one event per affected policy
+        const policies = await this.prisma.egressPolicy.findMany({
+          where: { environmentId, archivedReason: 'environment-deleted' satisfies EgressArchivedReason, archivedAt },
+        });
+        for (const policy of policies) {
+          emitEgressPolicyUpdated(policy);
+        }
       }
     } catch (err) {
       log.error(
@@ -184,6 +206,14 @@ export class EgressPolicyLifecycleService {
           { stackId, stackName: stack.name },
           'refreshStackNameSnapshot: updated stack name snapshot',
         );
+
+        // Emit one event per affected policy
+        const policies = await this.prisma.egressPolicy.findMany({
+          where: { stackId, archivedAt: null, stackNameSnapshot: stack.name },
+        });
+        for (const policy of policies) {
+          emitEgressPolicyUpdated(policy);
+        }
       }
     } catch (err) {
       log.error(
@@ -222,6 +252,14 @@ export class EgressPolicyLifecycleService {
           { environmentId, environmentName: environment.name },
           'refreshEnvironmentNameSnapshot: updated environment name snapshot',
         );
+
+        // Emit one event per affected policy
+        const policies = await this.prisma.egressPolicy.findMany({
+          where: { environmentId, archivedAt: null, environmentNameSnapshot: environment.name },
+        });
+        for (const policy of policies) {
+          emitEgressPolicyUpdated(policy);
+        }
       }
     } catch (err) {
       log.error(

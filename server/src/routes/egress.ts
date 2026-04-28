@@ -7,6 +7,10 @@ import { asyncHandler } from '../lib/async-handler';
 import { requirePermission } from '../middleware/auth';
 import { getUserId } from '../lib/get-user-id';
 import type { EgressPolicySummary, EgressRuleSummary } from '@mini-infra/types';
+import {
+  emitEgressPolicyUpdated,
+  emitEgressRuleMutation,
+} from '../services/egress/egress-socket-emitter';
 
 const logger = getLogger('stacks', 'egress-routes');
 
@@ -261,6 +265,7 @@ router.patch(
     });
 
     logger.info({ policyId: policy.id, userId }, 'egress policy updated');
+    emitEgressPolicyUpdated(updated);
     fireAndForgetPush(policy.id);
 
     return res.json(serializePolicy(updated));
@@ -328,7 +333,7 @@ router.post(
     const userId = getUserId(req) ?? null;
     const { pattern, action, targets } = parsed.data;
 
-    const [rule] = await prisma.$transaction([
+    const [rule, updatedPolicyAfterCreate] = await prisma.$transaction([
       prisma.egressRule.create({
         data: {
           policyId: policy.id,
@@ -350,6 +355,12 @@ router.post(
     ]);
 
     logger.info({ policyId: policy.id, ruleId: rule.id, userId }, 'egress rule created');
+    emitEgressRuleMutation({
+      policy: updatedPolicyAfterCreate,
+      ruleId: rule.id,
+      changeType: 'created',
+      rule,
+    });
     fireAndForgetPush(policy.id);
 
     return res.status(201).json(serializeRule(rule));
@@ -397,7 +408,7 @@ router.patch(
     const userId = getUserId(req) ?? null;
     const { pattern, action, targets } = parsed.data;
 
-    const [updated] = await prisma.$transaction([
+    const [updated, updatedPolicyAfterPatch] = await prisma.$transaction([
       prisma.egressRule.update({
         where: { id: ruleWithPolicy.id },
         data: {
@@ -417,6 +428,12 @@ router.patch(
     ]);
 
     logger.info({ policyId: policy.id, ruleId: ruleWithPolicy.id, userId }, 'egress rule updated');
+    emitEgressRuleMutation({
+      policy: updatedPolicyAfterPatch,
+      ruleId: updated.id,
+      changeType: 'updated',
+      rule: updated,
+    });
     fireAndForgetPush(policy.id);
 
     return res.json(serializeRule(updated));
@@ -449,7 +466,7 @@ router.delete(
 
     const userId = getUserId(req) ?? null;
 
-    await prisma.$transaction([
+    const [, updatedPolicyAfterDelete] = await prisma.$transaction([
       prisma.egressRule.delete({ where: { id: ruleWithPolicy.id } }),
       prisma.egressPolicy.update({
         where: { id: policy.id },
@@ -461,6 +478,12 @@ router.delete(
     ]);
 
     logger.info({ policyId: policy.id, ruleId: ruleWithPolicy.id, userId }, 'egress rule deleted');
+    emitEgressRuleMutation({
+      policy: updatedPolicyAfterDelete,
+      ruleId: ruleWithPolicy.id,
+      changeType: 'deleted',
+      rule: null,
+    });
     fireAndForgetPush(policy.id);
 
     return res.status(204).send();
