@@ -491,7 +491,7 @@ function PolicyCard({ policy, environmentId, canWrite }: PolicyCardProps) {
   ).map((s) => s.serviceName);
 
   const { data } = useEgressPolicy(policy.id);
-  const rules: EgressRuleSummary[] = data?.data?.rules ?? [];
+  const rules: EgressRuleSummary[] = data?.rules ?? [];
 
   return (
     <>
@@ -584,7 +584,7 @@ function EmbeddedRulesTable({
   // useEgressPolicy is imported at the top of the file and cached by TanStack
   // Query — if a parent hook already fetched it, this is a free cache hit.
   const { data, isLoading, isError } = useEgressPolicy(policyId);
-  const rules: EgressRuleSummary[] = data?.data?.rules ?? [];
+  const rules: EgressRuleSummary[] = data?.rules ?? [];
   const deleteTargetRule = rules.find((r) => r.id === deleteRuleId);
 
   const handleDeleteConfirm = async () => {
@@ -946,11 +946,8 @@ function TrafficFeedSection({ environmentId }: { environmentId: string }) {
     liveEvents,
   } = useEgressEvents({ query });
 
-  const historyEvents = data?.data ?? [];
-  const pagination = data?.pagination;
-  const totalPages = pagination
-    ? Math.ceil(pagination.totalCount / pagination.limit)
-    : 1;
+  const historyEvents = data?.events ?? [];
+  const totalPages = data?.totalPages ?? 1;
 
   // Merge live events and history, deduplicating on id
   const historyIds = new Set(historyEvents.map((e) => e.id));
@@ -1053,16 +1050,16 @@ function TrafficFeedSection({ environmentId }: { environmentId: string }) {
       </div>
 
       {/* Pagination count */}
-      {pagination && (
+      {data && (
         <div className="text-xs text-muted-foreground">
           {hasLive && (
             <span className="text-blue-600 dark:text-blue-400 mr-2">
               {filteredLive.length} new live
             </span>
           )}
-          Showing {pagination.offset + 1}–
-          {Math.min(pagination.offset + pagination.limit, pagination.totalCount)}{" "}
-          of {pagination.totalCount} events
+          Showing {(data.page - 1) * data.limit + 1}–
+          {Math.min(data.page * data.limit, data.total)}{" "}
+          of {data.total} events
         </div>
       )}
 
@@ -1146,7 +1143,7 @@ function TrafficFeedSection({ environmentId }: { environmentId: string }) {
       </div>
 
       {/* Pagination controls */}
-      {pagination && pagination.totalCount > pagination.limit && (
+      {data && data.total > data.limit && (
         <div className="flex items-center justify-between">
           <Button
             variant="outline"
@@ -1187,7 +1184,7 @@ export function EgressTab({ environmentId, canWrite = true }: EgressTabProps) {
     error: policiesErr,
   } = useEgressPolicies({ query: { environmentId } });
 
-  const policies: EgressPolicySummary[] = policiesData?.data ?? [];
+  const policies: EgressPolicySummary[] = policiesData?.policies ?? [];
 
   return (
     <div className="space-y-6">

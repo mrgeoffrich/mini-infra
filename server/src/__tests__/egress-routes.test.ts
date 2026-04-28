@@ -152,6 +152,13 @@ function makeEvent(policyId: string, overrides: Record<string, unknown> = {}) {
     action: 'observed',
     protocol: 'dns',
     mergedHits: 1,
+    // The route always uses include: { policy: { select: ... } } so the mock
+    // must return the nested policy snapshot fields that serializeEvent expects.
+    policy: {
+      stackNameSnapshot: 'my-stack',
+      environmentNameSnapshot: 'production',
+      environmentId: null,
+    },
     ...overrides,
   };
 }

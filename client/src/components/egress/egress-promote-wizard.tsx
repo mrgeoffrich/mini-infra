@@ -450,7 +450,7 @@ export function EgressPromoteWizard({
 
   // Build destination counts map
   const destinationCounts = useMemo<Map<string, number>>(() => {
-    const events = eventsQuery.data?.data ?? [];
+    const events = eventsQuery.data?.events ?? [];
     const map = new Map<string, number>();
     for (const evt of events) {
       if (!evt.destination) continue;

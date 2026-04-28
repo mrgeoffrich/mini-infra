@@ -133,6 +133,46 @@ function serializeRule(r: RuleRow): EgressRuleSummary {
   };
 }
 
+// Event row shape with the parent policy's snapshot fields included
+// so we can return EgressEventBroadcast-shaped objects to the frontend.
+type EventRowWithPolicy = {
+  id: string;
+  policyId: string;
+  occurredAt: Date;
+  sourceContainerId: string | null;
+  sourceStackId: string | null;
+  sourceServiceName: string | null;
+  destination: string;
+  matchedPattern: string | null;
+  action: string;
+  protocol: string;
+  mergedHits: number;
+  policy: {
+    stackNameSnapshot: string;
+    environmentNameSnapshot: string;
+    environmentId: string | null;
+  };
+};
+
+function serializeEvent(e: EventRowWithPolicy) {
+  return {
+    id: e.id,
+    policyId: e.policyId,
+    occurredAt: e.occurredAt.toISOString(),
+    sourceContainerId: e.sourceContainerId,
+    sourceStackId: e.sourceStackId,
+    sourceServiceName: e.sourceServiceName,
+    destination: e.destination,
+    matchedPattern: e.matchedPattern,
+    action: e.action as 'allowed' | 'blocked' | 'observed',
+    protocol: e.protocol as 'dns' | 'sni' | 'http',
+    mergedHits: e.mergedHits,
+    stackNameSnapshot: e.policy.stackNameSnapshot,
+    environmentNameSnapshot: e.policy.environmentNameSnapshot,
+    environmentId: e.policy.environmentId,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Pagination helper
 // ---------------------------------------------------------------------------
@@ -549,13 +589,18 @@ router.get(
         orderBy: { occurredAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          policy: {
+            select: { stackNameSnapshot: true, environmentNameSnapshot: true, environmentId: true },
+          },
+        },
       }),
       prisma.egressEvent.count({ where }),
     ]);
 
     return res.json({
       ...buildPaginationMeta(total, page, limit),
-      events,
+      events: events.map(serializeEvent),
     });
   }),
 );
@@ -604,13 +649,18 @@ router.get(
         orderBy: { occurredAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
+        include: {
+          policy: {
+            select: { stackNameSnapshot: true, environmentNameSnapshot: true, environmentId: true },
+          },
+        },
       }),
       prisma.egressEvent.count({ where }),
     ]);
 
     return res.json({
       ...buildPaginationMeta(total, page, limit),
-      events,
+      events: events.map(serializeEvent),
     });
   }),
 );

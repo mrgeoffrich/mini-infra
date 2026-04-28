@@ -419,8 +419,7 @@ export function usePatchEgressPolicy() {
       const previous = queryClient.getQueryData(["egressPolicy", policyId]);
       queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
         if (!old || typeof old !== "object") return old;
-        const prev = old as { data: Record<string, unknown> };
-        return { ...prev, data: { ...prev.data, ...body } };
+        return { ...(old as Record<string, unknown>), ...body };
       });
       return { previous, policyId };
     },
@@ -478,15 +477,12 @@ export function usePatchEgressRule() {
       const previous = queryClient.getQueryData(["egressPolicy", policyId]);
       queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
         if (!old || typeof old !== "object") return old;
-        const prev = old as { data: { rules?: Array<{ id: string } & Record<string, unknown>> } };
+        const prev = old as { rules?: Array<{ id: string } & Record<string, unknown>> };
         return {
           ...prev,
-          data: {
-            ...prev.data,
-            rules: prev.data.rules?.map((r) =>
-              r.id === ruleId ? { ...r, ...body } : r,
-            ),
-          },
+          rules: prev.rules?.map((r) =>
+            r.id === ruleId ? { ...r, ...body } : r,
+          ),
         };
       });
       return { previous, policyId };
@@ -523,13 +519,10 @@ export function useDeleteEgressRule() {
       const previous = queryClient.getQueryData(["egressPolicy", policyId]);
       queryClient.setQueryData(["egressPolicy", policyId], (old: unknown) => {
         if (!old || typeof old !== "object") return old;
-        const prev = old as { data: { rules?: Array<{ id: string }> } };
+        const prev = old as { rules?: Array<{ id: string }> };
         return {
           ...prev,
-          data: {
-            ...prev.data,
-            rules: prev.data.rules?.filter((r) => r.id !== ruleId),
-          },
+          rules: prev.rules?.filter((r) => r.id !== ruleId),
         };
       });
       return { previous, policyId };

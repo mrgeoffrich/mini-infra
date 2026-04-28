@@ -52,8 +52,13 @@ describe("listEgressPolicies", () => {
 
   it("fetches all policies with no filters", async () => {
     const expected: EgressPolicyListResponse = {
-      success: true,
-      data: [],
+      policies: [],
+      total: 0,
+      page: 1,
+      limit: 50,
+      totalPages: 0,
+      hasNextPage: false,
+      hasPreviousPage: false,
     };
     mockFetchOk(expected);
 
@@ -67,7 +72,7 @@ describe("listEgressPolicies", () => {
   });
 
   it("passes environmentId query param", async () => {
-    mockFetchOk({ success: true, data: [] });
+    mockFetchOk({ policies: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
     await listEgressPolicies({ environmentId: "env-123" });
 
     const [url] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -75,7 +80,7 @@ describe("listEgressPolicies", () => {
   });
 
   it("passes pagination params", async () => {
-    mockFetchOk({ success: true, data: [] });
+    mockFetchOk({ policies: [], total: 0, page: 2, limit: 10, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
     await listEgressPolicies({ page: 2, limit: 10 });
 
     const [url] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -100,21 +105,18 @@ describe("getEgressPolicy", () => {
 
   it("fetches a single policy by id", async () => {
     const expected: EgressPolicyDetailResponse = {
-      success: true,
-      data: {
-        id: "policy-1",
-        stackId: "stack-1",
-        stackNameSnapshot: "my-stack",
-        environmentId: "env-1",
-        environmentNameSnapshot: "production",
-        mode: "detect",
-        defaultAction: "allow",
-        version: 3,
-        appliedVersion: 3,
-        archivedAt: null,
-        archivedReason: null,
-        rules: [],
-      },
+      id: "policy-1",
+      stackId: "stack-1",
+      stackNameSnapshot: "my-stack",
+      environmentId: "env-1",
+      environmentNameSnapshot: "production",
+      mode: "detect",
+      defaultAction: "allow",
+      version: 3,
+      appliedVersion: 3,
+      archivedAt: null,
+      archivedReason: null,
+      rules: [],
     };
     mockFetchOk(expected);
 
@@ -143,8 +145,7 @@ describe("listEgressRules", () => {
 
   it("fetches rules for a policy", async () => {
     const expected: EgressRuleListResponse = {
-      success: true,
-      data: [
+      rules: [
         {
           id: "rule-1",
           policyId: "policy-1",
@@ -183,9 +184,13 @@ describe("listEgressEvents", () => {
 
   it("fetches events with no filters", async () => {
     const expected: EgressEventListResponse = {
-      success: true,
-      data: [],
-      pagination: { totalCount: 0, page: 1, limit: 50, offset: 0 },
+      events: [],
+      total: 0,
+      page: 1,
+      limit: 50,
+      totalPages: 0,
+      hasNextPage: false,
+      hasPreviousPage: false,
     };
     mockFetchOk(expected);
 
@@ -197,7 +202,7 @@ describe("listEgressEvents", () => {
   });
 
   it("passes all filter params", async () => {
-    mockFetchOk({ success: true, data: [] });
+    mockFetchOk({ events: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false });
     await listEgressEvents({
       environmentId: "env-1",
       action: "blocked",
@@ -223,7 +228,7 @@ describe("patchEgressPolicy", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends PATCH to the correct URL with body", async () => {
-    mockFetchOk({ success: true, data: {} });
+    mockFetchOk({ id: "policy-1", stackId: null, stackNameSnapshot: "", environmentId: null, environmentNameSnapshot: "", mode: "enforce", defaultAction: "allow", version: 2, appliedVersion: 1, archivedAt: null, archivedReason: null, rules: [] });
     await patchEgressPolicy("policy-1", { mode: "enforce" });
 
     const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -237,7 +242,7 @@ describe("createEgressRule", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends POST to the correct URL with body", async () => {
-    mockFetchOk({ success: true, data: [] });
+    mockFetchOk({ id: "rule-1", policyId: "policy-1", pattern: "*.example.com", action: "allow", source: "user", targets: [], hits: 0, lastHitAt: null });
     await createEgressRule("policy-1", {
       pattern: "*.example.com",
       action: "allow",
@@ -253,7 +258,7 @@ describe("patchEgressRule", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends PATCH to rule endpoint", async () => {
-    mockFetchOk({ success: true, data: {} });
+    mockFetchOk({ id: "rule-1", policyId: "policy-1", pattern: "*.example.com", action: "block", source: "user", targets: [], hits: 0, lastHitAt: null });
     await patchEgressRule("rule-1", { action: "block" });
 
     const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -266,7 +271,7 @@ describe("deleteEgressRule", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("sends DELETE to rule endpoint", async () => {
-    mockFetchOk({ success: true });
+    mockFetchOk(undefined);
     await deleteEgressRule("rule-1");
 
     const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];

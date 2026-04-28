@@ -21,35 +21,33 @@ function generateCorrelationId(): string {
 // Response envelope types
 // ====================
 
-export interface EgressPolicyListResponse {
-  success: boolean;
-  data: EgressPolicySummary[];
-  pagination?: {
-    totalCount: number;
-    page: number;
-    limit: number;
-  };
+// All egress list endpoints return flat envelopes matching the convention used
+// by other mini-infra collection endpoints (e.g., GET /api/environments). They
+// are NOT wrapped in `{ success, data }`.
+
+export interface PaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
 }
 
-export interface EgressPolicyDetailResponse {
-  success: boolean;
-  data: EgressPolicySummary & { rules: EgressRuleSummary[] };
+export interface EgressPolicyListResponse extends PaginationMeta {
+  policies: EgressPolicySummary[];
 }
+
+export type EgressPolicyDetailResponse = EgressPolicySummary & {
+  rules: EgressRuleSummary[];
+};
 
 export interface EgressRuleListResponse {
-  success: boolean;
-  data: EgressRuleSummary[];
+  rules: EgressRuleSummary[];
 }
 
-export interface EgressEventListResponse {
-  success: boolean;
-  data: EgressEventBroadcast[];
-  pagination?: {
-    totalCount: number;
-    page: number;
-    limit: number;
-    offset: number;
-  };
+export interface EgressEventListResponse extends PaginationMeta {
+  events: EgressEventBroadcast[];
 }
 
 // ====================
@@ -220,7 +218,7 @@ export async function patchEgressPolicy(
 export async function createEgressRule(
   policyId: string,
   body: CreateEgressRuleBody,
-): Promise<EgressRuleListResponse> {
+): Promise<EgressRuleSummary> {
   const correlationId = generateCorrelationId();
   const response = await fetch(`/api/egress/policies/${policyId}/rules`, {
     method: "POST",
@@ -242,7 +240,7 @@ export async function createEgressRule(
 export async function patchEgressRule(
   ruleId: string,
   body: PatchEgressRuleBody,
-): Promise<{ success: boolean; data: EgressRuleSummary }> {
+): Promise<EgressRuleSummary> {
   const correlationId = generateCorrelationId();
   const response = await fetch(`/api/egress/rules/${ruleId}`, {
     method: "PATCH",
@@ -261,9 +259,7 @@ export async function patchEgressRule(
   return response.json();
 }
 
-export async function deleteEgressRule(
-  ruleId: string,
-): Promise<{ success: boolean }> {
+export async function deleteEgressRule(ruleId: string): Promise<void> {
   const correlationId = generateCorrelationId();
   const response = await fetch(`/api/egress/rules/${ruleId}`, {
     method: "DELETE",
@@ -277,6 +273,5 @@ export async function deleteEgressRule(
   if (!response.ok) {
     throw new Error(`Failed to delete egress rule: ${response.statusText}`);
   }
-
-  return response.json();
+  // 204 No Content — no body to parse
 }

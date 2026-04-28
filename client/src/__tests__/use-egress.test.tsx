@@ -54,8 +54,7 @@ vi.mock("@/hooks/use-socket", () => ({
 
 vi.mock("@/api/egress", () => ({
   listEgressPolicies: vi.fn().mockResolvedValue({
-    success: true,
-    data: [
+    policies: [
       {
         id: "policy-1",
         stackId: "stack-1",
@@ -70,13 +69,23 @@ vi.mock("@/api/egress", () => ({
         archivedReason: null,
       },
     ],
+    total: 1,
+    page: 1,
+    limit: 50,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPreviousPage: false,
   }),
-  getEgressPolicy: vi.fn().mockResolvedValue({ success: true, data: {} }),
-  listEgressRules: vi.fn().mockResolvedValue({ success: true, data: [] }),
+  getEgressPolicy: vi.fn().mockResolvedValue({ id: "policy-1", stackId: null, stackNameSnapshot: "", environmentId: null, environmentNameSnapshot: "", mode: "detect", defaultAction: "allow", version: 1, appliedVersion: 1, archivedAt: null, archivedReason: null, rules: [] }),
+  listEgressRules: vi.fn().mockResolvedValue({ rules: [] }),
   listEgressEvents: vi.fn().mockResolvedValue({
-    success: true,
-    data: [],
-    pagination: { totalCount: 0, page: 1, limit: 50, offset: 0 },
+    events: [],
+    total: 0,
+    page: 1,
+    limit: 50,
+    totalPages: 0,
+    hasNextPage: false,
+    hasPreviousPage: false,
   }),
   patchEgressPolicy: vi.fn(),
   createEgressRule: vi.fn(),
@@ -84,10 +93,9 @@ vi.mock("@/api/egress", () => ({
   deleteEgressRule: vi.fn(),
 }));
 
-// Expected shape for assertions
+// Expected shape for assertions (flat, matches EgressPolicyListResponse)
 const mockPoliciesData = {
-  success: true,
-  data: [
+  policies: [
     {
       id: "policy-1",
       stackId: "stack-1",
@@ -102,6 +110,12 @@ const mockPoliciesData = {
       archivedReason: null,
     },
   ],
+  total: 1,
+  page: 1,
+  limit: 50,
+  totalPages: 1,
+  hasNextPage: false,
+  hasPreviousPage: false,
 };
 
 // ---------------------------------------------------------------------------

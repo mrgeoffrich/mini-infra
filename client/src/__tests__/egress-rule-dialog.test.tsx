@@ -103,7 +103,7 @@ describe("EgressRuleDialog — create mode", () => {
   });
 
   it("calls createEgressRule on submit with valid data", async () => {
-    mockCreateMutateAsync.mockResolvedValueOnce({ success: true, data: [] });
+    mockCreateMutateAsync.mockResolvedValueOnce({ id: "rule-new", policyId: "policy-1", pattern: "*.stripe.com", action: "allow", source: "user", targets: [], hits: 0, lastHitAt: null });
     const onOpenChange = vi.fn();
     renderDialog({ onOpenChange });
 
@@ -177,10 +177,7 @@ describe("EgressRuleDialog — edit mode", () => {
   });
 
   it("calls patchEgressRule on submit", async () => {
-    mockPatchMutateAsync.mockResolvedValueOnce({
-      success: true,
-      data: { ...existingRule, action: "block" },
-    });
+    mockPatchMutateAsync.mockResolvedValueOnce({ ...existingRule, action: "block" as const });
     const onOpenChange = vi.fn();
     renderDialog({ rule: existingRule, onOpenChange });
 

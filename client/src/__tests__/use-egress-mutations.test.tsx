@@ -38,10 +38,10 @@ const mockPatchEgressRule = vi.fn();
 const mockDeleteEgressRule = vi.fn();
 
 vi.mock("@/api/egress", () => ({
-  listEgressPolicies: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  getEgressPolicy: vi.fn().mockResolvedValue({ success: true, data: {} }),
-  listEgressRules: vi.fn().mockResolvedValue({ success: true, data: [] }),
-  listEgressEvents: vi.fn().mockResolvedValue({ success: true, data: [], pagination: { totalCount: 0, page: 1, limit: 50, offset: 0 } }),
+  listEgressPolicies: vi.fn().mockResolvedValue({ policies: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false }),
+  getEgressPolicy: vi.fn().mockResolvedValue({ id: "policy-1", stackId: null, stackNameSnapshot: "", environmentId: null, environmentNameSnapshot: "", mode: "detect", defaultAction: "allow", version: 1, appliedVersion: 1, archivedAt: null, archivedReason: null, rules: [] }),
+  listEgressRules: vi.fn().mockResolvedValue({ rules: [] }),
+  listEgressEvents: vi.fn().mockResolvedValue({ events: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false }),
   patchEgressPolicy: (...args: unknown[]) => mockPatchEgressPolicy(...args),
   createEgressRule: (...args: unknown[]) => mockCreateEgressRule(...args),
   patchEgressRule: (...args: unknown[]) => mockPatchEgressRule(...args),
@@ -100,7 +100,7 @@ describe("usePatchEgressPolicy", () => {
   });
 
   it("calls patchEgressPolicy and invalidates queries on success", async () => {
-    const successResponse = { success: true, data: { ...mockPolicy, mode: "enforce" } };
+    const successResponse = { ...mockPolicy, mode: "enforce" as const };
     mockPatchEgressPolicy.mockResolvedValueOnce(successResponse);
 
     const { wrapper, queryClient } = makeWrapper();
@@ -127,11 +127,8 @@ describe("usePatchEgressPolicy", () => {
     mockPatchEgressPolicy.mockRejectedValueOnce(new Error("Server error"));
 
     const { wrapper, queryClient } = makeWrapper();
-    // Seed the cache with the current policy state
-    queryClient.setQueryData(["egressPolicy", "policy-1"], {
-      success: true,
-      data: mockPolicy,
-    });
+    // Seed the cache with the current policy state (flat shape)
+    queryClient.setQueryData(["egressPolicy", "policy-1"], mockPolicy);
 
     const { result } = renderHook(() => usePatchEgressPolicy(), { wrapper });
 
@@ -148,9 +145,9 @@ describe("usePatchEgressPolicy", () => {
 
     await waitFor(() => {
       const cached = queryClient.getQueryData(["egressPolicy", "policy-1"]) as {
-        data: { mode: string };
+        mode: string;
       };
-      expect(cached?.data?.mode).toBe("detect");
+      expect(cached?.mode).toBe("detect");
     });
   });
 });
@@ -163,7 +160,7 @@ describe("useCreateEgressRule", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("calls createEgressRule and invalidates rules + policy + events on settle", async () => {
-    mockCreateEgressRule.mockResolvedValueOnce({ success: true, data: [] });
+    mockCreateEgressRule.mockResolvedValueOnce({ id: "rule-new", policyId: "policy-1", pattern: "*.stripe.com", action: "allow", source: "user", targets: [], hits: 0, lastHitAt: null });
 
     const { wrapper, queryClient } = makeWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
@@ -218,8 +215,7 @@ describe("usePatchEgressRule", () => {
 
   it("calls patchEgressRule and invalidates on settle", async () => {
     mockPatchEgressRule.mockResolvedValueOnce({
-      success: true,
-      data: { id: "rule-1", pattern: "*.updated.com", action: "block", source: "user", targets: [], hits: 0, lastHitAt: null, policyId: "policy-1" },
+      id: "rule-1", pattern: "*.updated.com", action: "block", source: "user", targets: [], hits: 0, lastHitAt: null, policyId: "policy-1",
     });
 
     const { wrapper, queryClient } = makeWrapper();
@@ -252,16 +248,12 @@ describe("usePatchEgressRule", () => {
 
   it("applies optimistic update: patches rule in policy detail cache", async () => {
     mockPatchEgressRule.mockResolvedValueOnce({
-      success: true,
-      data: { id: "rule-1", pattern: "*.changed.com", action: "block", source: "user", targets: [], hits: 5, lastHitAt: null, policyId: "policy-1" },
+      id: "rule-1", pattern: "*.changed.com", action: "block", source: "user", targets: [], hits: 5, lastHitAt: null, policyId: "policy-1",
     });
 
     const { wrapper, queryClient } = makeWrapper();
-    // Seed cache
-    queryClient.setQueryData(["egressPolicy", "policy-1"], {
-      success: true,
-      data: mockPolicy,
-    });
+    // Seed cache with flat shape
+    queryClient.setQueryData(["egressPolicy", "policy-1"], mockPolicy);
 
     const { result } = renderHook(() => usePatchEgressRule(), { wrapper });
 
@@ -286,10 +278,8 @@ describe("usePatchEgressRule", () => {
     mockPatchEgressRule.mockRejectedValueOnce(new Error("Not found"));
 
     const { wrapper, queryClient } = makeWrapper();
-    queryClient.setQueryData(["egressPolicy", "policy-1"], {
-      success: true,
-      data: mockPolicy,
-    });
+    // Seed cache with flat shape
+    queryClient.setQueryData(["egressPolicy", "policy-1"], mockPolicy);
 
     const { result } = renderHook(() => usePatchEgressRule(), { wrapper });
 
@@ -307,9 +297,9 @@ describe("usePatchEgressRule", () => {
 
     await waitFor(() => {
       const cached = queryClient.getQueryData(["egressPolicy", "policy-1"]) as {
-        data: { rules: Array<{ id: string; pattern: string }> };
+        rules: Array<{ id: string; pattern: string }>;
       };
-      const rule = cached?.data?.rules?.find((r) => r.id === "rule-1");
+      const rule = cached?.rules?.find((r) => r.id === "rule-1");
       expect(rule?.pattern).toBe("*.example.com"); // original, not changed
     });
   });
@@ -323,7 +313,7 @@ describe("useDeleteEgressRule", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("calls deleteEgressRule and invalidates queries on settle", async () => {
-    mockDeleteEgressRule.mockResolvedValueOnce({ success: true });
+    mockDeleteEgressRule.mockResolvedValueOnce(undefined);
 
     const { wrapper, queryClient } = makeWrapper();
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
@@ -346,13 +336,11 @@ describe("useDeleteEgressRule", () => {
   });
 
   it("applies optimistic update: removes rule from policy detail cache", async () => {
-    mockDeleteEgressRule.mockResolvedValueOnce({ success: true });
+    mockDeleteEgressRule.mockResolvedValueOnce(undefined);
 
     const { wrapper, queryClient } = makeWrapper();
-    queryClient.setQueryData(["egressPolicy", "policy-1"], {
-      success: true,
-      data: mockPolicy,
-    });
+    // Seed cache with flat shape
+    queryClient.setQueryData(["egressPolicy", "policy-1"], mockPolicy);
 
     const { result } = renderHook(() => useDeleteEgressRule(), { wrapper });
 
@@ -362,10 +350,10 @@ describe("useDeleteEgressRule", () => {
 
     // The optimistic update should remove the rule immediately
     const cached = queryClient.getQueryData(["egressPolicy", "policy-1"]) as {
-      data: { rules: Array<{ id: string }> };
+      rules: Array<{ id: string }>;
     };
     // After optimistic + settle, rule-1 should not be in the cache
-    const hasRule = cached?.data?.rules?.some((r) => r.id === "rule-1");
+    const hasRule = cached?.rules?.some((r) => r.id === "rule-1");
     // It might still be there until the async cancel completes; just verify it was called
     expect(mockDeleteEgressRule).toHaveBeenCalledWith("rule-1");
   });
@@ -374,10 +362,8 @@ describe("useDeleteEgressRule", () => {
     mockDeleteEgressRule.mockRejectedValueOnce(new Error("Server error"));
 
     const { wrapper, queryClient } = makeWrapper();
-    queryClient.setQueryData(["egressPolicy", "policy-1"], {
-      success: true,
-      data: mockPolicy,
-    });
+    // Seed cache with flat shape
+    queryClient.setQueryData(["egressPolicy", "policy-1"], mockPolicy);
 
     const { result } = renderHook(() => useDeleteEgressRule(), { wrapper });
 
@@ -391,9 +377,9 @@ describe("useDeleteEgressRule", () => {
 
     await waitFor(() => {
       const cached = queryClient.getQueryData(["egressPolicy", "policy-1"]) as {
-        data: { rules: Array<{ id: string }> };
+        rules: Array<{ id: string }>;
       };
-      const stillHasRule = cached?.data?.rules?.some((r) => r.id === "rule-1");
+      const stillHasRule = cached?.rules?.some((r) => r.id === "rule-1");
       expect(stillHasRule).toBe(true); // rule restored after rollback
     });
   });

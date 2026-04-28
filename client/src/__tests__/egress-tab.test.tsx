@@ -107,7 +107,15 @@ const mockEvents = [
 ];
 
 // Mutable policies data for per-test overrides
-let currentPoliciesData = { success: true, data: mockPolicies };
+let currentPoliciesData: { policies: typeof mockPolicies; total: number; page: number; limit: number; totalPages: number; hasNextPage: boolean; hasPreviousPage: boolean } = {
+  policies: mockPolicies,
+  total: 1,
+  page: 1,
+  limit: 50,
+  totalPages: 1,
+  hasNextPage: false,
+  hasPreviousPage: false,
+};
 
 vi.mock("@/hooks/use-egress", () => ({
   useEgressPolicies: vi.fn(() => ({
@@ -117,10 +125,7 @@ vi.mock("@/hooks/use-egress", () => ({
     error: null,
   })),
   useEgressPolicy: vi.fn(() => ({
-    data: {
-      success: true,
-      data: { ...mockPolicies[0], rules: mockRules },
-    },
+    data: { ...mockPolicies[0], rules: mockRules },
     isLoading: false,
     isError: false,
   })),
@@ -136,9 +141,13 @@ vi.mock("@/hooks/use-egress", () => ({
   })),
   useEgressEvents: vi.fn(() => ({
     data: {
-      success: true,
-      data: mockEvents,
-      pagination: { totalCount: 1, page: 1, limit: 50, offset: 0 },
+      events: mockEvents,
+      total: 1,
+      page: 1,
+      limit: 50,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false,
     },
     isLoading: false,
     isError: false,
@@ -206,7 +215,7 @@ function renderTab(canWrite = true) {
 
 describe("EgressTab", () => {
   beforeEach(() => {
-    currentPoliciesData = { success: true, data: mockPolicies };
+    currentPoliciesData = { policies: mockPolicies, total: 1, page: 1, limit: 50, totalPages: 1, hasNextPage: false, hasPreviousPage: false };
     vi.clearAllMocks();
   });
 
@@ -325,7 +334,7 @@ describe("EgressTab", () => {
   });
 
   it("renders empty state when no policies exist", () => {
-    currentPoliciesData = { success: true, data: [] };
+    currentPoliciesData = { policies: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false };
     renderTab();
     expect(screen.getByText("No egress policies")).toBeTruthy();
   });
