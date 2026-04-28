@@ -34,7 +34,7 @@ Docker Desktop is **not** required and **not** recommended — it would conflict
 
 ## Building the Base Tarball
 
-One-time, before your first `worktree_start.cmd`:
+One-time, before your first `worktree_start.ps1`:
 
 ```powershell
 .\scripts\build-wsl-base.ps1
@@ -46,13 +46,13 @@ Re-run with `-Force` to refresh after Alpine or dockerd updates. Pass `-AlpineVe
 
 ## Per-Worktree Workflow
 
-Same as the macOS flow — see [CLAUDE.md](../../CLAUDE.md), but use the `.cmd` wrappers:
+Same as the macOS flow — see [CLAUDE.md](../../CLAUDE.md), but use the `.ps1` wrappers:
 
 ```powershell
-deployment\development\worktree_start.cmd --description "auth refactor"
-deployment\development\worktree_list.cmd
-deployment\development\worktree_delete.cmd <profile>
-deployment\development\worktree_cleanup.cmd --dry-run
+deployment\development\worktree_start.ps1 --description "auth refactor"
+deployment\development\worktree_list.ps1
+deployment\development\worktree_delete.ps1 <profile>
+deployment\development\worktree_cleanup.ps1 --dry-run
 ```
 
 The orchestrator auto-detects driver: `wsl` on Windows, `colima` on macOS. Override with `MINI_INFRA_DRIVER=wsl` (or `colima`) if you need to.
@@ -114,23 +114,23 @@ localhostForwarding=true
 The friendly path — `compose down -v`, unregister the distro, remove the install dir, and drop the registry entry in one shot:
 
 ```powershell
-deployment\development\worktree_delete.cmd <profile>
+deployment\development\worktree_delete.ps1 <profile>
 # add --force to skip the confirmation prompt
 # add --keep-vm to drop containers + registry entry only, leaving the distro up
-deployment\development\worktree_start.cmd --description "..."
+deployment\development\worktree_start.ps1 --description "..."
 ```
 
 The raw equivalent (skips compose-down and the registry update):
 
 ```powershell
 wsl --unregister mini-infra-<profile>
-deployment\development\worktree_start.cmd --description "..."
+deployment\development\worktree_start.ps1 --description "..."
 ```
 
 ### Reset only data (keep distro)
 
 ```powershell
-deployment\development\worktree_start.cmd --reset --profile <profile>
+deployment\development\worktree_start.ps1 --reset --profile <profile>
 ```
 
 ### Stop everything quickly
@@ -139,7 +139,7 @@ deployment\development\worktree_start.cmd --reset --profile <profile>
 wsl --shutdown
 ```
 
-Restarts on the next `worktree_start.cmd`.
+Restarts on the next `worktree_start.ps1`.
 
 ### List all Mini Infra distros
 
@@ -171,7 +171,7 @@ Check `wsl -d mini-infra-<profile> -- cat /var/log/mini-infra/dockerd.log`. Most
 **`localhost:<port>` doesn't reach the distro.**
 Ensure `localhostForwarding=true` in `~\.wslconfig`, then `wsl --shutdown` and try again.
 
-**Distro shows status `Stopped` but `worktree_start.cmd` says it's running.**
+**Distro shows status `Stopped` but `worktree_start.ps1` says it's running.**
 The orchestrator triggers a start when needed. If it consistently misdetects state, manually `wsl --terminate` the distro and re-run.
 
 **"docker.exe is not recognized."**

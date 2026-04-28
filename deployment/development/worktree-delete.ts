@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   const entry = registry[profile];
   if (!entry) {
     logError(`No registry entry for profile '${profile}'.`);
-    logError('Run deployment/development/worktree_list.sh (or .cmd) to see registered profiles.');
+    logError('Run deployment/development/worktree_list.sh (or .ps1) to see registered profiles.');
     process.exit(1);
   }
 

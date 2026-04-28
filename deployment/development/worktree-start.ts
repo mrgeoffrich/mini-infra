@@ -702,8 +702,8 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`  Logs:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} logs -f`);
   console.log(`  Stop:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} down`);
-  const startWrapper = process.platform === 'win32' ? 'worktree_start.cmd' : 'worktree_start.sh';
-  const listWrapper = process.platform === 'win32' ? 'worktree_list.cmd' : 'worktree_list.sh';
+  const startWrapper = process.platform === 'win32' ? 'worktree_start.ps1' : 'worktree_start.sh';
+  const listWrapper = process.platform === 'win32' ? 'worktree_list.ps1' : 'worktree_list.sh';
   console.log(`  Re-seed: ${path.join(SCRIPT_DIR, startWrapper)} --seed --profile ${profile}`);
   console.log(`  Nuke:    ${path.join(SCRIPT_DIR, startWrapper)} --reset --profile ${profile}`);
   console.log(`  List all: ${path.join(SCRIPT_DIR, listWrapper)}`);
