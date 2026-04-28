@@ -76,7 +76,8 @@ function main(): void {
       'UI',
       'REG',
       'VAULT',
-      'COLIMA VM',
+      'HAPROXY',
+      'VM',
       'ADMIN EMAIL',
       'ADMIN PASSWORD',
       'API KEY',
@@ -84,6 +85,9 @@ function main(): void {
       'PATH',
     ]);
     for (const e of values) {
+      const haproxy = e.haproxy_http_port
+        ? `${e.haproxy_http_port}/${e.haproxy_https_port}`
+        : '-';
       rows.push([
         e.profile,
         dash(e.description),
@@ -91,6 +95,7 @@ function main(): void {
         e.ui_port ? String(e.ui_port) : '-',
         e.registry_port ? String(e.registry_port) : '-',
         e.vault_port ? String(e.vault_port) : '-',
+        haproxy,
         dash(e.colima_vm),
         dash(e.admin_email),
         dash(e.admin_password),

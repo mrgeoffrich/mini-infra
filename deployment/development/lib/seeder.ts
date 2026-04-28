@@ -29,6 +29,13 @@ export interface SeederInput {
   uiPort: number;
   registryPort: number;
   vaultPort: number;
+  // Per-worktree HAProxy host ports — passed as parameterValues to the
+  // haproxy stack template so two worktrees (or any other process binding
+  // 80/443) don't collide.
+  haproxyHttpPort: number;
+  haproxyHttpsPort: number;
+  haproxyStatsPort: number;
+  haproxyDataplanePort: number;
   profile: string;
   projectRoot: string;
   dockerHost: string;
@@ -403,7 +410,18 @@ async function findTemplate(
   return match?.id || null;
 }
 
-async function ensureHaproxyStack(api: ApiClient, envId: string): Promise<string | null> {
+interface HaproxyPorts {
+  http: number;
+  https: number;
+  stats: number;
+  dataplane: number;
+}
+
+async function ensureHaproxyStack(
+  api: ApiClient,
+  envId: string,
+  ports: HaproxyPorts,
+): Promise<string | null> {
   const stackName = 'haproxy-local';
   logInfo(`Looking for existing ${stackName} stack in local env`);
   const list = await api.get<unknown>(`/api/stacks?environmentId=${envId}`);
@@ -421,9 +439,22 @@ async function ensureHaproxyStack(api: ApiClient, envId: string): Promise<string
     logSkip('HAProxy template not found — skipping HAProxy setup');
     return null;
   }
+  // Override host-ports per worktree. Defaults are 80/443/8404/5555 which
+  // collide between worktrees and lose to anything else on the box already
+  // binding those (Docker Desktop on Windows, an existing HTTP server on
+  // macOS). Slot-aligned with the rest of the per-worktree port assignment.
   const res = await api.post<unknown>(
     `/api/stack-templates/${templateId}/instantiate`,
-    { environmentId: envId, name: stackName },
+    {
+      environmentId: envId,
+      name: stackName,
+      parameterValues: {
+        'http-port': ports.http,
+        'https-port': ports.https,
+        'stats-port': ports.stats,
+        'dataplane-port': ports.dataplane,
+      },
+    },
   );
   if (res.status !== 201) {
     logError(`HAProxy instantiate returned ${res.status}: ${res.bodyText}`);
@@ -435,7 +466,9 @@ async function ensureHaproxyStack(api: ApiClient, envId: string): Promise<string
     logError(`HAProxy instantiate response missing id: ${res.bodyText}`);
     return null;
   }
-  logOk(`HAProxy stack created (id=${id})`);
+  logOk(
+    `HAProxy stack created (id=${id}, ports: http=${ports.http} https=${ports.https} stats=${ports.stats} dataplane=${ports.dataplane})`,
+  );
   return id;
 }
 
@@ -720,7 +753,12 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   await configureServices(api, env);
 
   const localEnvId = await ensureLocalEnvironment(api, env);
-  const haproxyStackId = await ensureHaproxyStack(api, localEnvId);
+  const haproxyStackId = await ensureHaproxyStack(api, localEnvId, {
+    http: input.haproxyHttpPort,
+    https: input.haproxyHttpsPort,
+    stats: input.haproxyStatsPort,
+    dataplane: input.haproxyDataplanePort,
+  });
   if (haproxyStackId) {
     await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
   }
