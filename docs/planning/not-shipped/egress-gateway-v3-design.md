@@ -236,7 +236,27 @@ iptables -A DOCKER-USER -m set --match-set managed-<env> src \
          -j DROP
 ```
 
-Why `DOCKER-USER`: it's the documented Docker hook for layered host policy. Rules placed there are evaluated before Docker's NAT/forwarding chains, survive Docker daemon restarts, and don't fight Docker's own management. ipsets work uniformly under `iptables-legacy` and `iptables-nft`, which covers Linux native, Colima (VM), and WSL2 — but availability of the `ipset` userspace tool and the `xt_set` / `nf_log_ipv4` kernel modules in those environments needs verification before implementation. **Spike**: confirm `ipset` is installable + functional and `xt_set` / `nf_log_ipv4` modules load on a fresh Colima VM and a fresh WSL2 distro. If not available out of the box, document the install step and decide if we ship a customised base image / preflight check.
+Why `DOCKER-USER`: it's the documented Docker hook for layered host policy. Rules placed there are evaluated before Docker's NAT/forwarding chains, survive Docker daemon restarts, and don't fight Docker's own management. ipsets work uniformly under `iptables-legacy` and `iptables-nft`, which covers Linux native, Colima (VM), and WSL2.
+
+#### Platform availability — Colima ✅ verified, WSL2 to verify
+
+**Colima 0.10.1 (default Ubuntu 24.04 VM, kernel 6.8.0-100-generic, on macOS).** Verified on 2026-04-29:
+
+| Requirement | State |
+|---|---|
+| `xt_set` kernel module | Pre-loaded |
+| `ip_set` kernel module | Pre-loaded |
+| `nfnetlink_log` kernel module | Available; loads cleanly via `modprobe nfnetlink_log` |
+| `iptables` | v1.8.10, `nf_tables` backend |
+| `DOCKER-USER` chain | Present, hooked into `FORWARD` chain |
+| NFLOG target with `--nflog-group N --nflog-prefix "…"` | Accepted |
+| `iptables -m set --match-set <name> src/dst` | Works |
+| `ipset` userspace binary | **Not installed by default**; available via `apt install -y ipset` (Ubuntu universe `7.19-1ubuntu2`) |
+| `libnetfilter-log1` (for the agent's NFLOG subscriber) | **Not installed by default**; available via `apt install -y libnetfilter-log1` (Ubuntu universe `1.0.2-4build1`) |
+
+The two missing userspace pieces are bundled in `mini-infra/egress-gateway:<version>`'s base image (per [Container deployment](#host-singleton-egress-fw-agent)) — the agent runs `--network=host` with `NET_ADMIN`/`NET_RAW`, so its bundled `ipset` / `iptables` / `libnetfilter_log` binaries operate against the VM kernel directly. No host-side `apt install` step is required of the operator.
+
+**WSL2 — still to verify.** WSL2 distros vary by user choice (Ubuntu, Debian, Alpine, etc.) and kernel module availability has historically been thinner than on Colima. The same `apt install` (or equivalent) approach should work where the WSL2 kernel ships `xt_set`/`nfnetlink_log`, but this needs a one-off check on the canonical WSL2 base we ship — see [Open decisions](#open-decisions--spike-items).
 
 #### Who installs what
 
@@ -652,7 +672,9 @@ Three landable PRs.
 ## Open decisions / spike items
 
 - **Smokescreen library API surface — verified.** ✅ Checked against `github.com/stripe/smokescreen` at commit `7d45971` (post-PR #286) on 2026-04-29. `Config` is constructed programmatically; `EgressACL` (`acl.Decider`) is a one-method interface called per-request, ideal for atomic-pointer swap; `RoleFromRequest`, `Log`, `DenyRanges` (as `[]RuleRange`), `Listener` are all settable; `BuildProxy(cfg)` returns the `goproxy.ProxyHttpServer` handler that serves both HTTP-forward and HTTPS CONNECT on a single listener. Findings rolled into [Hot path](#hot-path), [Wrapper responsibilities](#wrapper-responsibilities), and the [main.go sketch](#cmdgatewaymaingo-sketch).
-- **`ipset` / `xt_set` / `nf_log_ipv4` availability on Colima + WSL2.** Verify before PR 2 ships: `ipset` userspace tool installable, `xt_set` and `nf_log_ipv4` kernel modules loadable, on a fresh Colima VM and a fresh WSL2 distro. If unavailable out of the box, document the bootstrap step (or include it in our base image) and add a preflight check in `worktree_start.sh` / `start.sh`.
+- **`ipset` / `xt_set` / `nfnetlink_log` availability — Colima ✅ verified (2026-04-29), WSL2 still to verify.**
+  - Colima 0.10.1 / Ubuntu 24.04 / kernel 6.8.0-100-generic: `xt_set`+`ip_set` pre-loaded, `nfnetlink_log` loadable via `modprobe`, NFLOG iptables target works, `match-set` works, `DOCKER-USER` chain present. `ipset` and `libnetfilter-log1` are not installed by default but install cleanly from the standard Ubuntu universe repo. We bundle these binaries into the fw-agent's image so no operator-side install step is needed. Findings in [Platform availability](#platform-availability--colima--verified-wsl2-to-verify).
+  - **WSL2 — still to verify.** Need to confirm the same modules + binaries are available on the WSL2 base distro we use, since WSL2 kernel surfaces have historically been thinner. One-off check during PR 2.
 - **Authenticated proxy?** Default to no auth — the network reachability boundary (only the env bridge can reach the gateway) is the auth. If we ever support multi-tenant envs, revisit.
 - **WebSocket through CONNECT.** WSS is HTTPS upgrade and goes through CONNECT fine. Plain WS over HTTP traverses the HTTP forward proxy, which honours `Connection: Upgrade` correctly with `httputil.ReverseProxy` — verify with a fixture during the PR 3 spike (it's a property of whichever HTTP-forward implementation we use, including Smokescreen's if it has one).
 - **`NO_PROXY` exhaustiveness — accepted as a documented limitation.** CIDR matching covers Node, Go, Python `httpx`, Java 11+. Older Python `requests`, some Ruby clients, and a few JVM legacy stacks do suffix-only matching and won't match the env bridge CIDR. Documented in [Container env injection](#container-env-injection); operators get the limitation in the UI when an app surfaces unexpected proxy hops.
