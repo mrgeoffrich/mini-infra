@@ -15,15 +15,23 @@ export const REGISTRY_PORT_MIN = 5100;
 export const REGISTRY_PORT_MAX = 5199;
 export const VAULT_PORT_MIN = 8200;
 export const VAULT_PORT_MAX = 8299;
+export const DOCKER_PORT_MIN = 2500;
+export const DOCKER_PORT_MAX = 2599;
 
 export interface WorktreeEntry {
   profile: string;
   worktree_path: string;
+  // VM identifier — colima profile name on macOS, WSL2 distro name on Windows.
+  // Kept named `colima_vm` for backwards compatibility with existing yaml files.
   colima_vm: string;
   url: string;
   ui_port: number;
   registry_port: number;
   vault_port: number;
+  // dockerd TCP port inside the WSL2 distro. Unused by the colima driver
+  // (dockerd is reached via a unix socket there) but allocated regardless
+  // so a registry file is portable across drivers.
+  docker_port: number;
   admin_email?: string;
   admin_password?: string;
   api_key?: string;
@@ -69,6 +77,7 @@ export function upsertEntry(
     ui_port: partial.ui_port ?? existing?.ui_port ?? 0,
     registry_port: partial.registry_port ?? existing?.registry_port ?? 0,
     vault_port: partial.vault_port ?? existing?.vault_port ?? 0,
+    docker_port: partial.docker_port ?? existing?.docker_port ?? 0,
     admin_email: partial.admin_email ?? existing?.admin_email,
     admin_password: partial.admin_password ?? existing?.admin_password,
     api_key: partial.api_key ?? existing?.api_key,
@@ -99,7 +108,7 @@ export function removeEntry(profile: string): boolean {
  */
 export function allocatePorts(
   profile: string,
-): { ui_port: number; registry_port: number; vault_port: number } {
+): { ui_port: number; registry_port: number; vault_port: number; docker_port: number } {
   const SLOT_COUNT = UI_PORT_MAX - UI_PORT_MIN + 1;
   const entries = loadRegistry();
   const existing = entries[profile];
@@ -113,6 +122,9 @@ export function allocatePorts(
     }
     if (e.vault_port && e.vault_port >= VAULT_PORT_MIN && e.vault_port <= VAULT_PORT_MAX) {
       return e.vault_port - VAULT_PORT_MIN;
+    }
+    if (e.docker_port && e.docker_port >= DOCKER_PORT_MIN && e.docker_port <= DOCKER_PORT_MAX) {
+      return e.docker_port - DOCKER_PORT_MIN;
     }
     return undefined;
   };
@@ -142,6 +154,7 @@ export function allocatePorts(
     ui_port: UI_PORT_MIN + slot,
     registry_port: REGISTRY_PORT_MIN + slot,
     vault_port: VAULT_PORT_MIN + slot,
+    docker_port: DOCKER_PORT_MIN + slot,
   };
 }
 
@@ -164,6 +177,9 @@ export function migrateFromJsonIfNeeded(): void {
   const now = new Date().toISOString();
   for (const [profile, e] of Object.entries(legacy)) {
     const uiPort = e.ui_port || 0;
+    // docker_port wasn't tracked before — derive it from the slot index of
+    // ui_port so a migrated entry stays slot-aligned.
+    const slot = uiPort >= UI_PORT_MIN && uiPort <= UI_PORT_MAX ? uiPort - UI_PORT_MIN : 0;
     entries[profile] = {
       profile,
       worktree_path: '',
@@ -172,6 +188,7 @@ export function migrateFromJsonIfNeeded(): void {
       ui_port: uiPort,
       registry_port: e.registry_port || 0,
       vault_port: e.vault_port || 0,
+      docker_port: uiPort ? DOCKER_PORT_MIN + slot : 0,
       seeded: false,
       updated_at: now,
     };

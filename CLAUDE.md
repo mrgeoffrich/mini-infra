@@ -12,25 +12,27 @@ When designing the solution make sure you pick a DRY and well though out solutio
 
 ## Worktree Development Workflow
 
-For parallel dev work, each git worktree runs its own fully isolated Mini Infra instance on its own Colima VM. This is the default flow — use it instead of fighting over a single dev daemon when you have multiple WIPs in flight.
+For parallel dev work, each git worktree runs its own fully isolated Mini Infra instance on its own VM. This is the default flow — use it instead of fighting over a single dev daemon when you have multiple WIPs in flight. The VM driver is auto-selected per platform: **Colima** on macOS, **WSL2** on Windows. Override via the `MINI_INFRA_DRIVER` env var (`colima` or `wsl`).
 
-1. **Spin up.** From the worktree root, run `deployment/development/worktree_start.sh --description "<short summary of what this worktree is for>"`. The `--description` flag (≤10 words) is required on the first run for a new worktree — without it the script drops into an interactive prompt. Optionally also pass `--long-description "<≤50 words>"`. Subsequent re-runs reuse the stored description, so the flag is only needed once. This creates (or reuses) a Colima profile named after the worktree directory, allocates stable UI/registry ports from `~/.mini-infra/worktrees.yaml`, builds + starts the stack, then seeds credentials from `~/.mini-infra/dev.env` so the onboarding wizard is skipped.
+**Windows users:** before your first run, build the cached Alpine + dockerd base tarball with `.\scripts\build-wsl-base.ps1` (one-time). Then use the `.cmd` wrappers wherever the steps below mention `.sh` (`worktree_start.cmd`, `worktree_list.cmd`, `worktree_cleanup.cmd`). See [docs/user/wsl2-reference.md](docs/user/wsl2-reference.md) for full detail.
 
-2. **Find the URL.** The script writes `environment-details.xml` at the worktree root with the UI URL, Vault URL, Docker host, seeded resource IDs, and connected-service status. Read from it instead of assuming a port (see Browser Automation below for the one-liner). Worktree-unique ports are allocated for the UI (3100-3199), local registry (5100-5199), and Vault (8200-8299) — every parallel instance gets its own slot so multiple Vaults don't collide on `localhost:8200`.
+1. **Spin up.** From the worktree root, run `deployment/development/worktree_start.sh --description "<short summary of what this worktree is for>"` (or `worktree_start.cmd` on Windows). The `--description` flag (≤10 words) is required on the first run for a new worktree — without it the script drops into an interactive prompt. Optionally also pass `--long-description "<≤50 words>"`. Subsequent re-runs reuse the stored description, so the flag is only needed once. This creates (or reuses) a Colima profile / WSL2 distro named after the worktree directory, allocates stable UI/registry/vault/docker ports from `~/.mini-infra/worktrees.yaml`, builds + starts the stack, then seeds credentials from `~/.mini-infra/dev.env` so the onboarding wizard is skipped.
+
+2. **Find the URL.** The script writes `environment-details.xml` at the worktree root with the UI URL, Vault URL, Docker host, seeded resource IDs, and connected-service status. Read from it instead of assuming a port (see Browser Automation below for the one-liner). Worktree-unique ports are allocated for the UI (3100-3199), local registry (5100-5199), Vault (8200-8299), and dockerd over TCP on the WSL2 driver (2500-2599) — every parallel instance gets its own slot so multiple Vaults don't collide on `localhost:8200`.
 
 3. **Edit code normally.** The `server/` / `client/` / `lib/` layout and workspace rules below still apply.
 
-4. **Rebuild after changes.** Re-run `deployment/development/worktree_start.sh`. It's idempotent — profile stays up, image rebuilds, container recreates, seeder skips already-seeded steps.
+4. **Rebuild after changes.** Re-run `deployment/development/worktree_start.sh` (or `.cmd`). It's idempotent — VM stays up, image rebuilds, container recreates, seeder skips already-seeded steps.
 
 5. **Test.** Use the `test-dev` or `diagnose-dev` skills; both resolve the URL from `environment-details.xml` automatically.
 
-6. **List everything.** Run `deployment/development/worktree_list.sh` from anywhere to see every registered environment (URL, admin login, path, seed status) in a table. `--wide` also prints the API key and admin password; `--json` emits the raw registry.
+6. **List everything.** Run `deployment/development/worktree_list.sh` (or `.cmd`) from anywhere to see every registered environment (URL, admin login, path, seed status) in a table. `--wide` also prints the API key and admin password; `--json` emits the raw registry.
 
-7. **Tear down.** `colima delete <profile> --data --force` removes the entire VM for that worktree. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
+7. **Tear down.** On macOS: `colima delete <profile> --data --force`. On Windows: `wsl --unregister mini-infra-<profile>`. Either removes the entire VM/distro for that worktree. The profile name is the worktree directory basename (lowercased, sanitised to `[a-z0-9-]`).
 
 Run `git` commands from inside the worktree directory, not the main checkout — mixing shells between the two is the main way commits land on the wrong branch.
 
-See [docs/user/colima-reference.md](docs/user/colima-reference.md) for Colima command/config detail and gotchas.
+See [docs/user/colima-reference.md](docs/user/colima-reference.md) for Colima detail (macOS) or [docs/user/wsl2-reference.md](docs/user/wsl2-reference.md) for WSL2 detail (Windows).
 
 ## Browser Automation & Testing
 

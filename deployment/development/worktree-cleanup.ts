@@ -16,12 +16,22 @@ import { parseArgs } from 'node:util';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { logInfo, logOk, logWarn, logSkip, logError } from './lib/log.js';
 import { colimaExists, deleteColima } from './lib/colima.js';
+import { distroExists, distroName, unregisterDistro } from './lib/wsl.js';
 import { migrateFromJsonIfNeeded, removeEntry } from './lib/registry.js';
 
-const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
+
+type Driver = 'colima' | 'wsl';
+
+function pickDriver(): Driver {
+  const env = process.env.MINI_INFRA_DRIVER;
+  if (env === 'colima' || env === 'wsl') return env;
+  return process.platform === 'darwin' ? 'colima' : 'wsl';
+}
 
 function exec(
   cmd: string,
@@ -37,6 +47,9 @@ function exec(
 }
 
 function commandExists(cmd: string): boolean {
+  if (process.platform === 'win32') {
+    return spawnSync('where', [cmd]).status === 0;
+  }
   return spawnSync('command', ['-v', cmd], { shell: '/bin/bash' }).status === 0;
 }
 
@@ -108,17 +121,25 @@ function parseCliArgs(): Args {
 
 function main(): void {
   const args = parseCliArgs();
+  const driver = pickDriver();
 
   if (args.dryRun) {
     logWarn('DRY RUN — no changes will be made');
   }
 
   if (!commandExists('gh')) {
-    logError('gh CLI is not installed. Install with: brew install gh');
+    const hint = process.platform === 'win32'
+      ? 'Install from https://cli.github.com/ or `winget install GitHub.cli`'
+      : 'Install with: brew install gh';
+    logError(`gh CLI is not installed. ${hint}`);
     process.exit(1);
   }
-  if (!commandExists('colima')) {
+  if (driver === 'colima' && !commandExists('colima')) {
     logError('colima is not installed. Install with: brew install colima');
+    process.exit(1);
+  }
+  if (driver === 'wsl' && !commandExists('wsl')) {
+    logError('wsl.exe not found on PATH — WSL2 must be enabled on this host.');
     process.exit(1);
   }
 
@@ -193,23 +214,42 @@ function main(): void {
 
     logOk(`${name} — PR merged, folder ${ageHours}h old — cleaning up`);
 
+    const distro = distroName(profile);
+
     if (args.dryRun) {
-      console.log(`  [dry-run] colima delete ${profile} --force`);
+      if (driver === 'colima') {
+        console.log(`  [dry-run] colima delete ${profile} --force`);
+      } else {
+        console.log(`  [dry-run] wsl --unregister ${distro}`);
+      }
       console.log(`  [dry-run] git worktree remove --force ${wt.path}  (${ageHours}h old)`);
       console.log(`  [dry-run] remove '${profile}' from ~/.mini-infra/worktrees.yaml`);
       cleaned++;
       continue;
     }
 
-    if (colimaExists(profile)) {
-      logInfo(`Deleting Colima VM: ${profile}`);
-      if (deleteColima(profile)) {
-        logOk('Colima VM deleted');
+    if (driver === 'colima') {
+      if (colimaExists(profile)) {
+        logInfo(`Deleting Colima VM: ${profile}`);
+        if (deleteColima(profile)) {
+          logOk('Colima VM deleted');
+        } else {
+          logWarn('Colima delete returned non-zero (continuing)');
+        }
       } else {
-        logWarn('Colima delete returned non-zero (continuing)');
+        logSkip(`No Colima VM for ${profile}`);
       }
     } else {
-      logSkip(`No Colima VM for ${profile}`);
+      if (distroExists(distro)) {
+        logInfo(`Unregistering WSL distro: ${distro}`);
+        if (unregisterDistro(distro)) {
+          logOk('WSL distro unregistered');
+        } else {
+          logWarn('wsl --unregister returned non-zero (continuing)');
+        }
+      } else {
+        logSkip(`No WSL distro for ${distro}`);
+      }
     }
 
     logInfo(`Removing git worktree: ${wt.path}`);
