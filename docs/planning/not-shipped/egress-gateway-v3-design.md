@@ -1,6 +1,8 @@
 # Egress Gateway v3 — Compliance-grade enforcement (design)
 
-Status: **planned, not implemented**. Successor to v1+v2 ([#263](https://github.com/mrgeoffrich/mini-infra/pull/263)) and the design referenced in [egress-firewall-future-work.md](egress-firewall-future-work.md) under "SNI-aware transparent proxy (phase 3)". This doc captures the concrete plan for the next phase: rewriting the gateway in Go, adding TCP-level enforcement via per-managed-container sidecars, and getting full audit visibility for denied traffic.
+Status: **planned, not implemented**. Successor to v1+v2 ([#263](https://github.com/mrgeoffrich/mini-infra/pull/263)) and the design referenced in [egress-firewall-future-work.md](egress-firewall-future-work.md) under "SNI-aware transparent proxy (phase 3)". This doc captures the concrete plan for the next phase: rewriting the gateway in Go, introducing an explicit HTTP/HTTPS forward proxy for per-stack rule enforcement, and locking down all other egress at the host firewall.
+
+An earlier sketch of v3 took a transparent-interception approach (per-managed-container sidecars sharing netns with the app, intercepting all TCP via nftables `redirect`, peeking SNI to decide). It worked but the cost was high — see [Appendix A: rejected designs](#appendix-a-rejected-designs). We're going with an explicit proxy instead.
 
 ## Posture
 
@@ -8,422 +10,730 @@ Status: **planned, not implemented**. Successor to v1+v2 ([#263](https://github.
 
 Concretely:
 
-- Outbound from managed containers: only **UDP/53 + TCP/53 to the env's DNS resolver**, **TCP/80**, and **TCP/443** are permitted by name-based policy. Everything else is blocked.
-- TCP/80 and TCP/443 are transparently redirected to a local sidecar process, which parses SNI/Host, matches the stack's policy, and either splices the connection through to the original destination or closes it.
-- All other outbound traffic (other TCP ports, non-DNS UDP, ICMP) is also redirected to the sidecar, where it's logged and dropped.
-- Bypass containers (`egressBypass: true` in their service config) are exempt from all of the above and egress directly via the host.
+- Outbound HTTP and HTTPS from managed containers must traverse the **per-env egress gateway**. The container's `HTTP_PROXY` / `HTTPS_PROXY` env vars are injected at create time pointing at the gateway. The gateway parses the destination host (from the `CONNECT` request line for HTTPS, or the absolute-URI request line / `Host` header for HTTP), matches it against the stack's policy, and either splices through to the upstream or returns `403 Forbidden`.
+- DNS from managed containers is permitted to the gateway only (UDP/53 + TCP/53). The gateway's DNS layer remains as defence in depth — see [DNS path](#dns-path-defence-in-depth).
+- All other outbound traffic from managed containers is **dropped at the host firewall**: the only permitted egress paths are the proxy ports, the DNS port, the env bridge itself (peer-to-peer), and the loopback interface.
+- Bypass containers (`egressBypass: true` in their service config) are exempt — they egress directly via the host with no proxy injection and no firewall restrictions.
 
-QUIC (UDP/443) is captured by the catchall and logged as blocked.
+QUIC (UDP/443) is dropped by the firewall. Apps fall back to TCP/443 through the proxy.
 
-## Why per-managed-container sidecars (and not a central gateway)
+## Why explicit proxy, not transparent interception
 
-The natural-feeling design is a single egress-gateway per env that intercepts all managed-container TCP. We worked through that and it doesn't survive contact with Docker's networking model.
+Mini Infra's egress posture limits managed-container traffic to HTTP and HTTPS. Modern HTTP clients (Node, Go, Python, Java, curl, wget, browsers, most gRPC stacks) honour `HTTP_PROXY`/`HTTPS_PROXY` env vars by default. Apps that don't honour them will simply fail to egress and be loudly visible in the firewall logs — which is the right compliance fail-mode.
 
-The killer constraint: when nftables in container A's netns DNATs a TCP connection to gateway B, the conntrack entry recording the rewrite lives in A's netns. By the time the connection reaches B, B's own conntrack only sees the rewritten destination. `SO_ORIGINAL_DST` in B returns B's IP — the original target the app was trying to reach is **lost**.
+Given that constraint, an explicit proxy buys three big wins over transparent interception:
 
-Istio dodges this by running its proxy in the *same* netns as the app (Pod model). Plain Docker has no Pod abstraction, but it does support `--network=container:X` for shared netns — which gives us the same property: DNAT and proxy share a conntrack table, `SO_ORIGINAL_DST` works.
+1. **Destination intent in plaintext.** The HTTPS `CONNECT host:port` request line carries the FQDN before any TLS happens. We don't need to peek TLS ClientHello for SNI — the app tells us where it wants to go. This is *strictly more reliable* than SNI peeking (some clients omit SNI; ESNI/ECH would defeat it; literal-IP CONNECTs are trivially caught and blocked).
+2. **No per-container netns work.** No sidecars, no `--network=container:`, no shared netns lifecycle, no `nftables redirect`, no `SO_ORIGINAL_DST`, no `SO_MARK` loop avoidance, no `route_localnet` sysctl. The kernel-feature surface collapses to a small `DOCKER-USER` ipset-driven rule set on the host.
+3. **Resource budget.** One ~30 MB Go process per env, vs ~300-600 MB across N sidecars in the transparent design. Roughly 10× cheaper.
 
-A survey of the official Docker docs confirms there's no L3-via-peer primitive (`--gateway` only points at the host's bridge interface; ipvlan L3 explicitly forbids peer-as-next-hop; macvlan/ipvlan bypass docker0 entirely; `--network=container:X` requires the owner to be running). So the doc-blessed options for "intercept egress through a chosen container" are:
+The single concession: an app that deliberately ignores `HTTP_PROXY` and connects directly to a hardcoded IP gets a firewall drop event with the destination IP but no FQDN attribution. For deny-by-default the attempt is logged and blocked, which is what compliance asks for. We just don't get "the app *thought* it was reaching evil.com" in that case. Acceptable.
 
-1. **Per-netns sidecar** (this design). Each managed container shares a netns with a small sidecar that handles enforcement.
-2. **Host-netns nftables + gateway in `--network=host`**. Works for `SO_ORIGINAL_DST` but breaks per-env isolation, fights Docker's own chains, and is platform-divergent (Linux native vs Colima VM vs WSL2 distro).
+## Components and responsibilities
 
-Option 1 fits Mini Infra's per-env isolation model. Option 2 doesn't. We're going with 1.
+v3 introduces two new runtime components, extends `mini-infra-server` with new services, and changes how managed app containers are configured. Listed up front so the rest of the doc has a shared vocabulary.
 
-## Component renames and binaries
+The current `egress-sidecar/` directory becomes `egress-gateway/` — a single Go module producing **two binaries** packaged in **one image** (`mini-infra-egress-gateway`): the per-env `egress-gateway` and the host-singleton `egress-fw-agent`.
 
-The current `egress-sidecar/` directory becomes `egress-gateway/` — a single Go module producing **two binaries** packaged in **one image** (`mini-infra-egress-gateway`):
+### 1. `egress-gateway` — per-env userspace proxy
+*One container per environment. Unprivileged. Replaces today's TS `egress-sidecar`.*
 
-- **`egress-gateway`** (binary): the per-env DNS resolver. One per environment. Same admin contract as today's TS sidecar. Handles DNS policy and audit. Doesn't deal with TCP at all.
-- **`egress-sidecar`** (binary): the per-managed-container TCP enforcer. One per managed app container. Owns the netns its app shares. Handles SNI/Host inspection, catchall logging, and per-stack rule enforcement.
+Responsibilities:
+- Terminate connections from managed containers on TCP/3128 (HTTP forward proxy) and TCP/3129 (HTTPS CONNECT proxy).
+- Parse the destination host (absolute-form request URI / `Host` header for HTTP; `CONNECT host:port` line for HTTPS).
+- Match against the env's stack-policy rule trie. Allow → splice/forward. Block → `403`.
+- Run the env's DNS resolver on UDP/53 + TCP/53 (defence in depth, same role as today's TS sidecar).
+- Expose admin API for rule + container-map push from `mini-infra-server`.
+- Emit NDJSON `EgressEvent`s on stdout (`evt: "dns" | "tcp"`).
 
-Two binaries, one image, same Go module — sharing the rule trie, log emitter, admin server, etc.
+Non-responsibilities: doesn't touch host firewall, doesn't manage container lifecycles, doesn't read NFLOG, doesn't know which IPs belong to which containers (that's pushed in via the container-map).
+
+### 2. `egress-fw-agent` — host-singleton privileged firewall agent
+*One container per host. `--network=host`, `cap_add: ['NET_ADMIN', 'NET_RAW']`. New component.*
+
+`mini-infra-server` runs in a regular Docker container with no host network access; it can't directly touch host iptables or ipsets. The fw-agent shares the host's network namespace, so when *it* runs `iptables` or `ipset`, the changes hit the host kernel. `mini-infra-server` calls the agent over a Unix socket; the agent translates a tiny well-defined API into iptables/ipset operations and validates inputs before executing.
+
+Responsibilities:
+- Maintain the per-env `DOCKER-USER` rule blocks (insert on env create, remove on env destroy, idempotent).
+- Maintain ipsets per env (`managed-<env>`); add/remove member IPs on container start/stop.
+- Subscribe to NFLOG group 1, decode dropped-packet metadata, emit `evt: "fw_drop"` NDJSON on stdout.
+- Reconcile host state on boot from `mini-infra-server`'s declared inventory (in case rules / ipsets were lost across host reboot).
+
+Non-responsibilities: doesn't terminate any traffic, doesn't make policy decisions, doesn't know about FQDN rules. It's a thin executor — "apply this firewall state."
+
+Communication: JSON-over-HTTP on a Unix socket at `/var/run/mini-infra/fw.sock`, mounted into both `mini-infra-server` (read/write client) and the agent (server). API:
+
+```ts
+POST /v1/env                          // applyEnvRules
+  { env, gatewayIp, bridgeCidr, ipsetName, mode: "observe" | "enforce" }
+DELETE /v1/env/:env                   // removeEnvRules
+POST /v1/ipset/:set/add               // addIpsetMember { ip }
+POST /v1/ipset/:set/del               // delIpsetMember { ip }
+POST /v1/ipset/:set/sync              // syncIpset { ips: string[] } — full snapshot
+GET  /v1/health
+```
+
+Privilege boundary: `mini-infra-server` is a web app handling untrusted HTTP input — granting it `CAP_NET_ADMIN` directly would mean any web-layer RCE rewrites host firewall. The agent's API is narrow and validated, so the web app can't ask it to do anything ad hoc. Same pattern as Docker (privileged daemon, dumb client) and Kubernetes node agents.
+
+### 3. `mini-infra-server` — orchestrator (existing component, new responsibilities)
+*Runs as a Docker container on the same host it manages. Regular bridge network, no host netns, no `NET_ADMIN`. Mounts `/var/run/docker.sock` (existing) and now `/var/run/mini-infra/fw.sock` (new, for the fw-agent).*
+
+The Mini Infra application itself — the web UI, REST API, schedulers, executors, and Socket.IO emitters. Same container that ships today; v3 just adds new services inside it. Still runs unprivileged, still talks to Docker via the socket, still doesn't directly touch host networking. Crucially it has no way to write iptables rules or ipsets on the host, which is *why* the fw-agent exists — to give the server a narrow, validated channel for the privileged operations it can't perform itself.
+
+New / extended v3 services inside the server:
+
+- `EgressRulePusher` (existing) — pushes rule snapshots to per-env gateways. Unchanged wire contract.
+- `EgressContainerMapPusher` (existing) — pushes `srcIp → (stackId, serviceName)` map to per-env gateways. Unchanged.
+- `EnvFirewallManager` (new) — owns the desired state of host firewall rules and ipsets. Calls `egress-fw-agent` over the Unix socket to apply changes. Hooked into env create/destroy and managed-container start/stop.
+- `EgressLogIngester` (existing, extended) — tails NDJSON from per-env gateways and from the fw-agent. New event shapes (`evt: "tcp"`, `evt: "fw_drop"`). Writes `EgressEvent` rows.
+- `stack-container-manager.ts` (existing, extended) — for managed services, additionally injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars at create time, and notifies `EnvFirewallManager` on lifecycle transitions.
+
+### 4. Managed app containers — config changes only
+*No new code in app images.*
+
+For non-bypass services:
+- Env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (plus lowercase variants).
+- DNS: `HostConfig.Dns: [gatewayIp]` (existing).
+- Firewall membership: the container's IP is added to `managed-<env>` ipset on start, removed on stop.
+
+For bypass services: none of the above. Container egresses normally via Docker forwarding; not in any ipset, no env vars injected.
+
+### Component interaction at a glance
+
+```
+                              ┌────────────────────────────────┐
+                              │ mini-infra-server              │
+                              │ (regular bridge container)     │
+                              │                                │
+                              │  EgressRulePusher ─────────────┼──┐
+                              │  EgressContainerMapPusher ─────┼──┤  HTTP/JSON to
+                              │  EnvFirewallManager ───────────┼┐ │  per-env gateway
+                              │  EgressLogIngester ◀───────────┼┼┐│  admin API
+                              │  stack-container-manager.ts    ││││
+                              └────────────────────────────────┘│││
+                                                                │││
+                              tails stdout from gateway + agent ││├──▶┌────────────────────┐
+                                                                ││▼   │ egress-gateway     │
+                              JSON-over-HTTP on /var/run/...sock││    │ (per env)          │
+                                                                │▼    │  proxy + DNS       │
+                                                       ┌────────┴────────┐ + admin API     │
+                                                       │ egress-fw-agent │ NDJSON stdout   │
+                                                       │ (host singleton)│                 │
+                                                       │ NET_ADMIN       │ ◀── stack apply │
+                                                       │                 │     manages app │
+                                                       │ iptables, ipset │     containers' │
+                                                       │ NFLOG reader    │     env+dns+    │
+                                                       │ NDJSON stdout   │     ipset       │
+                                                       └─────────────────┘     membership  │
+                                                                              └────────────┘
+```
 
 ## Architecture
 
 ### How traffic flows in v3
 
-Each managed app container is paired with an `egress-sidecar` container. They share a network namespace via `--network=container:<sidecar>` — the sidecar starts first, owns the netns, and the app joins it.
+Each managed app container is configured with `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, and a DNS resolver pointing at the per-env gateway. The host firewall (in `DOCKER-USER`) ensures the only permitted destinations from a managed container are the gateway's listening ports plus the env bridge subnet.
 
 ```
 [ env's applications bridge network ]
-  ┌───────────────────────────────────────────┐ ┌──────────────────────┐
-  │  shared netns (sidecar + app)             │ │  egress-gateway      │
-  │                                           │ │  (per-env DNS)       │
-  │  ┌─────────────────┐  ┌────────────────┐  │ │                      │
-  │  │ app container   │  │ sidecar        │  │ │  ┌────────────────┐  │
-  │  │                 │  │                │  │ │  │ DNS server     │  │
-  │  │ connect()  ─────┼─▶│ nft (own netns)│  │ │  │ on UDP/53      │  │
-  │  │                 │  │  ↓ REDIRECT    │  │ │  │  + TCP/53      │  │
-  │  │  resolv.conf:   │  │ proxy listener │  │ │  └────────────────┘  │
-  │  │  gateway-ip ────┼──┼────────────────┼──┼─┼─▶ admin API (rules,  │
-  │  │                 │  │  ↓ allow       │  │ │   container-map)     │
-  │  │                 │  │ dial(orig_dst) │  │ │                      │
-  │  └─────────────────┘  └────────┬───────┘  │ │                      │
-  │                                │          │ └──────────┬───────────┘
-  └────────────────────────────────┼──────────┘            │
-                                   ▼                       ▼
-                              [ bridge → host → internet ]
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                                                                 │
+  │  ┌──────────────────┐                  ┌───────────────────────┐│
+  │  │ app container    │                  │  egress-gateway       ││
+  │  │                  │   :3128 ────────▶│   HTTP forward proxy  ││
+  │  │ HTTP_PROXY=──────┼─                 │                       ││
+  │  │ HTTPS_PROXY=─────┼──  :3129 ───────▶│   HTTPS CONNECT proxy ││
+  │  │ NO_PROXY=peers   │                  │                       ││
+  │  │ /etc/resolv.conf─┼──  :53   ───────▶│   DNS server          ││
+  │  │  → gateway-ip    │                  │                       ││
+  │  └──────────────────┘                  │   admin API           ││
+  │           │                            └───────────┬───────────┘│
+  │           │                                        │            │
+  └───────────┼────────────────────────────────────────┼────────────┘
+              │                                        ▼
+              │                           [ bridge → host → internet ]
+              ▼
+   Host firewall (DOCKER-USER):
+     src ∈ ipset:managed-<env>, ct established/related   → ACCEPT
+     src ∈ ipset:managed-<env>, dst ∈ env-bridge CIDR    → ACCEPT (peers)
+     src ∈ ipset:managed-<env>, dst = gateway:{3128,3129} → ACCEPT
+     src ∈ ipset:managed-<env>, dst = gateway:53          → ACCEPT
+     src ∈ ipset:managed-<env>                            → NFLOG + DROP
 ```
 
-Per container kind:
+### Per container kind
 
-| Kind | netns | DNS resolver | nftables in netns | Sidecar paired | TCP path |
+| Kind | netns | DNS resolver | In `managed-<env>` ipset | `HTTP_PROXY` injected | TCP path |
 |---|---|---|---|---|---|
-| Managed app | shared with sidecar | `[gatewayIp]` (injected) | yes — installed by sidecar at boot | yes | DNAT → sidecar (localhost) → splice or drop |
+| Managed app | own (Docker default) | `[gatewayIp]` (injected) | yes | yes | via proxy → gateway → upstream |
 | Bypass app | own (Docker default) | Docker default | no | no | direct out via bridge → host |
-| Egress-sidecar | own (becomes shared) | Docker default | yes — its own | self | direct out via bridge → host |
-| Egress-gateway (DNS) | own (Docker default) | Docker default | no | no | direct out via bridge → host |
+| Egress-gateway | own (Docker default) | Docker default | no | no | direct out via bridge → host |
 
-### Per-container nftables rules (in the sidecar's netns)
+### Two ports — why HTTP and HTTPS are split
 
-Installed by the sidecar binary at startup (`egress-sidecar` self-initialises before opening listening sockets). Rules live in the `inet` family in the **output chain** — affecting egress from the netns, which both the sidecar's own outbound and the app's outbound traverse.
+`HTTP_PROXY=http://gw:3128` and `HTTPS_PROXY=http://gw:3129` rather than a single port for both. Each listener handles exactly one method shape:
+
+- **3128**: accepts `GET`, `POST`, `PUT`, `DELETE`, etc. with **absolute-form request URI** (`GET http://example.com/path HTTP/1.1`). Rejects anything else with `400`.
+- **3129**: accepts **`CONNECT host:port HTTP/1.1`** only. Rejects anything else with `400`.
+
+Trade is one extra port for clarity and isolation: the HTTPS port can never be coerced into serving an HTTP request, and accidental cross-protocol probes get crisp errors instead of confused responses. The two listeners share the same rule trie, container map, event emitter, and admin API — separation is at the parsing layer only.
+
+### Host firewall — `DOCKER-USER` with per-env ipsets
+
+`mini-infra-server` declares the desired firewall state via `EnvFirewallManager`; `egress-fw-agent` applies it. The rule shape below describes what ends up on the host kernel; the next subsection covers who installs each piece.
+
+Per env, one ipset (`managed-<env>`) holds the IPs of all managed containers in that env. Bypass containers are not in the set, so the drop rule does not apply to them.
 
 ```
-table inet egress {
-  chain output {
-    type nat hook output priority dstnat;
+# Per-env block — installed once per env, refreshed on container churn.
+# $ENV_BRIDGE_CIDR is the env applications bridge's CIDR.
+# $GATEWAY_IP is the egress-gateway container's pinned IP on that bridge.
 
-    # Localhost — required so the sidecar's own listeners are reachable
-    # and so its outbound proxied connections work.
-    ip daddr 127.0.0.0/8 accept
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
-    # Local network traffic (peer containers on the env bridge) — let through.
-    ip daddr $LOCAL_CIDRS accept
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -d $ENV_BRIDGE_CIDR -j ACCEPT
 
-    # DNS to gateway only — explicit allow on UDP and TCP.
-    udp dport 53 ip daddr $GATEWAY_IP accept
-    tcp dport 53 ip daddr $GATEWAY_IP accept
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -d $GATEWAY_IP -p tcp -m multiport --dports 3128,3129 -j ACCEPT
 
-    # HTTP/HTTPS to localhost listeners (sidecar binds here).
-    # REDIRECT, not DNAT — listener is in the same netns, so we just
-    # rewrite the destination to localhost on the sidecar's port.
-    tcp dport 80  redirect to :$HTTP_PORT
-    tcp dport 443 redirect to :$HTTPS_PORT
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -d $GATEWAY_IP -p tcp --dport 53 -j ACCEPT
 
-    # Catchall TCP — anything not handled above goes to a logging port.
-    tcp redirect to :$TCP_CATCHALL_PORT
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -d $GATEWAY_IP -p udp --dport 53 -j ACCEPT
 
-    # Catchall UDP — same idea.
-    udp redirect to :$UDP_CATCHALL_PORT
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -j NFLOG --nflog-group 1 --nflog-prefix "mini-infra-egress-drop "
 
-    # ICMP — drop (no useful redirect target).
-    ip protocol icmp drop
-  }
-
-  chain output_filter {
-    type filter hook output priority filter; policy drop;
-
-    # Stateful return.
-    ct state established,related accept
-
-    # Anything that survived the nat hook with an unexpected destination.
-    ip daddr 127.0.0.0/8 accept
-    ip daddr $LOCAL_CIDRS accept
-    ip daddr $GATEWAY_IP accept
-  }
-}
+iptables -A DOCKER-USER -m set --match-set managed-<env> src \
+         -j DROP
 ```
 
-`$LOCAL_CIDRS` covers the env's bridge subnet so peer-to-peer traffic isn't policed. `$GATEWAY_IP` is the per-env DNS gateway's pinned IP. Ports are configured per sidecar.
+Why `DOCKER-USER`: it's the documented Docker hook for layered host policy. Rules placed there are evaluated before Docker's NAT/forwarding chains, survive Docker daemon restarts, and don't fight Docker's own management. ipsets work uniformly under `iptables-legacy` and `iptables-nft`, which covers Linux native, Colima (VM), and WSL2.
 
-The sidecar's own outbound traffic (proxied connections that it's forwarding on behalf of the app) also traverses these rules. The flow is:
+#### Who installs what
 
-1. App calls `connect("evil.com:443")`. Kernel resolves `evil.com` (via DNS at the gateway) to some IP X.
-2. App sends SYN to `X:443`. Hits `tcp dport 443 redirect to :$HTTPS_PORT` → rewritten to `127.0.0.1:$HTTPS_PORT`. Conntrack entry created in this netns.
-3. Sidecar accepts the connection. Calls `getsockopt(SO_ORIGINAL_DST)` → returns `X:443` from this netns's conntrack. ✓
-4. Sidecar parses TLS ClientHello, extracts SNI, matches policy.
-5. Allowed → sidecar dials `X:443`. SYN goes through the same chain, hits `ct state established,related accept` (no, that's for return — actually new outbound from sidecar: `tcp dport 443 redirect to :$HTTPS_PORT` would catch its own outbound and loop it back to itself).
+| Action | Trigger | Server-side caller | Agent operation |
+|---|---|---|---|
+| Insert per-env rule block | env created | `EnvFirewallManager.applyEnv()` | `POST /v1/env` → `iptables -A DOCKER-USER ...` |
+| Remove per-env rule block | env destroyed | `EnvFirewallManager.removeEnv()` | `DELETE /v1/env/:env` → `iptables -D DOCKER-USER ...` |
+| Add IP to ipset | managed container started | `stack-container-manager.ts` post-start hook | `POST /v1/ipset/:set/add` → `ipset add` |
+| Remove IP from ipset | managed container stopped | `stack-container-manager.ts` post-stop hook | `POST /v1/ipset/:set/del` → `ipset del` |
+| Full ipset reconcile | server boot, host reboot | `EnvFirewallManager.reconcile()` | `POST /v1/ipset/:set/sync` → `ipset restore` |
+| Mode flip (observe ↔ enforce) | feature flag toggled | `EnvFirewallManager.setMode()` | `POST /v1/env` with new mode (atomically replaces the env's rule block) |
 
-The loop is real. Two options to break it:
+The server holds the *desired state* (in DB / in-memory). The agent is stateless apart from the host kernel state it manages — on boot it accepts a full reconcile from the server. Removing a container from the ipset is sufficient to revoke its egress without modifying any iptables rule.
 
-- **Mark sidecar's own sockets** with `SO_MARK` and exempt marked traffic in nftables: `meta mark 0x1234 accept` early in the chain.
-- **Run sidecar's outbound dialler in a different netns** (no — defeats the whole point).
+### The gateway
 
-Going with `SO_MARK`. The sidecar sets `SO_MARK = 0x1` on every dialled socket; the chain's first rule is `meta mark 0x1 accept`. This is the standard pattern for Linux transparent proxies.
+One container per env. Hosts:
 
-### Sidecar self-init and startup ordering
+- **HTTP forward proxy** (TCP/3128) — accepts absolute-URI HTTP requests. Parses the request URI's host. Applies stack policy. Allowed → forwards via `httputil.ReverseProxy`. Blocked → `403`.
+- **HTTPS CONNECT proxy** (TCP/3129) — accepts `CONNECT host:port`. Applies stack policy on the host. Allowed → dials upstream and bidirectionally splices the sockets (TLS happens end-to-end between app and upstream; gateway never sees plaintext). Blocked → `403` before the tunnel opens.
+- **DNS server** (UDP/53 + TCP/53) — same role as today's TS sidecar. Defence in depth, see below.
+- **Admin API** (private port) — `POST /admin/rules`, `POST /admin/container-map`, `GET /admin/health`. Same wire contract as today, plus listener-up booleans on health.
 
-`egress-sidecar` PID 1 runs:
+No `cap_add`, no sysctls, no privileged operations. The gateway is a plain user-space TCP/UDP server.
 
-1. **Parse env** (gateway IP, local CIDRs, ports, stack ID, service name, log level).
-2. **Install nftables table** via `github.com/google/nftables`. This happens *before* any network-using code runs.
-3. **Open listening sockets** on `$HTTP_PORT`, `$HTTPS_PORT`, `$TCP_CATCHALL_PORT`, `$UDP_CATCHALL_PORT`, `$ADMIN_PORT`. All bound to `0.0.0.0`.
-4. **Set `SO_MARK` on the global net.Dialer** (or use a per-call `Control` callback) so sidecar's outbound traffic is exempt from the redirect rules.
-5. **Become ready.** A health endpoint flips green; the app container can now start.
+### DNS path (defence in depth)
 
-Stack-container-manager waits for the sidecar's health endpoint to report ready before starting the paired app container.
+With `HTTP_PROXY` set, app DNS resolution for HTTP/HTTPS destinations doesn't happen on the app side — the gateway resolves the upstream host on the app's behalf. So why keep the DNS layer?
 
-Shutdown: SIGTERM stops accept loops, drains in-flight connections (5s deadline), flushes the dedup buffer, exits. The nftables table is destroyed when the netns is destroyed (when both sidecar and app stop).
+1. **Apps that need DNS for non-HTTP reasons.** Posture says they shouldn't, but in practice some libraries do `getaddrinfo()` even for proxy-routed requests (curl with `--resolve`, ALPN probing, etc.). Logged.
+2. **FQDN policy at DNS time.** If an app bypasses the proxy by hardcoding IPs, it usually still resolved DNS first (or it would have nothing to hardcode). The DNS layer logs the attempt against FQDN policy — gives us "the app tried to look up evil.com" even when the firewall drop only shows "the app tried to reach 1.2.3.4".
+3. **Existing implementation.** v1+v2's DNS gateway is already shipped and tested. Keeping it in the new gateway is cheap (same Go module).
 
-### Sidecar lifecycle coupling
+DNS to non-gateway resolvers is dropped at the host firewall (`udp dport 53 ip daddr != $GATEWAY_IP` falls through the allow list, hits the drop rule). Logged as `fw_drop`.
 
-Without K8s Pods, we manage the sidecar+app pair in `stack-container-manager.ts`:
+DoH leak (`dns.google`, `cloudflare-dns.com` over CONNECT to :443) is captured by the proxy as a `connect` event — the FQDN is on the CONNECT request line, so a built-in DoH-domains denylist applied before stack policy catches these regardless of stack rules. Same mechanism for `8.8.8.8:443` literal-IP CONNECT (the IP-literal block in the CONNECT handler covers it).
 
-- **Create order:** sidecar created → sidecar started → wait for sidecar health → app created (with `--network=container:<sidecar>`) → app started.
-- **Stop order:** app stopped → app removed → sidecar stopped → sidecar removed.
-- **Sidecar crash:** if the sidecar process dies, its container exits. Docker's restart policy on the sidecar can restart it, but the netns is destroyed when the sidecar container exits, which means **the app's network is gone too** — its `--network=container:` reference is dangling. Docker handles this differently across versions; in practice the app needs to be recreated (not just restarted) after sidecar replacement.
-- **App crash:** doesn't affect the sidecar. Docker restarts the app per its own restart policy; the existing sidecar netns is reused.
-- **Compliance fail-mode:** sidecar dying = app loses network = no traffic escapes. This is the *correct* fail-mode for a compliance posture.
+### Bypass services
 
-This is the lifecycle headache K8s solves with Pods. We're paying for it explicitly in `stack-container-manager.ts` instead.
+Today, `egressBypass: true` on a service skips DNS injection. Under v3:
 
-### The per-env DNS gateway
+- Skip `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env injection.
+- Skip ipset membership — bypass IPs aren't in `managed-<env>`, so the firewall drop rule doesn't match them.
+- Skip DNS injection (existing behaviour).
 
-The DNS gateway is conceptually unchanged from today's TS sidecar: per-env service, listens on UDP/53 + TCP/53 on a pinned IP, holds the rule trie + container map, applies stack policy to DNS queries, forwards allowed queries upstream, logs everything as `EgressEvent`s.
-
-It's a Go rewrite — same admin contract, same trie matcher, same NDJSON event shape on stdout — but no longer has any TCP-handling responsibilities. Container map is still needed here because DNS queries come from many source containers and the gateway needs `srcIp → (stackId, serviceName)` for attribution.
-
-### DNS path (end-to-end)
-
-1. **Container DNS config.** At create time, `stack-container-manager.ts` injects `HostConfig.Dns: [egressGatewayIp]` on the **app container** (existing behaviour).
-2. **App calls `getaddrinfo("api.example.com")`.** glibc reads `/etc/resolv.conf`, sends UDP/53 to `gateway_ip:53`.
-3. **Sidecar's netns rules.** Hits `udp dport 53 ip daddr $GATEWAY_IP accept` — terminal accept, no redirect. Packet leaves the netns.
-4. **Bridge → gateway netns.** Packet arrives at gateway's UDP/53 listener.
-5. **Gateway evaluates.** Looks up `srcIp` in container map → `(stackId, serviceName)`. Runs trie matcher. Allowed → forward upstream; blocked → respond NXDOMAIN; observed (detect mode) → forward and log.
-6. **Reply.** Upstream → gateway → managed container. Event line emitted on stdout.
-
-DNS to non-gateway resolvers is blocked: `udp dport 53 ip daddr $GATEWAY_IP accept` doesn't match (different daddr), packet falls through to the UDP catchall, sidecar logs `protocol: "udp"`, `destPort: 53`, `action: "blocked"`, `reason: "non-gateway-dns"`.
-
-DoH leak (`dns.google`, `cloudflare-dns.com` over :443) is unchanged from earlier discussion: known limitation, mitigate via a built-in DoH-domains denylist applied on top of stack rules.
+Bypass containers egress directly via Docker's normal forwarding. They live on the same env bridge as managed containers; the difference is purely in firewall membership and env-var injection.
 
 ## Hot path
 
-### HTTPS connection in the sidecar
+The proxy is custom Go — we want the wire formats, log shapes, and admin-API push semantics under our own control rather than retrofitting onto an existing tool. The implementation cribs heavily from [Stripe's Smokescreen](https://github.com/stripe/smokescreen) for the security primitives (see [Appendix B](#appendix-b-prior-art--what-were-cribbing-from-smokescreen)) but does not depend on it.
+
+### HTTPS CONNECT handler
 
 ```go
-// Same netns as the app — SO_ORIGINAL_DST works locally.
-func handleTLSConn(c *net.TCPConn) {
+func handleConnect(c *net.TCPConn, srv *Server) {
     defer c.Close()
-    origDst, _ := getOrigDst(c)                              // SO_ORIGINAL_DST → real (IP, port)
-
     br := bufio.NewReader(c)
-    hello, err := peekClientHello(br)
-    if err != nil { events.Block(c, "no-clienthello", origDst); return }
-    if hello.SNI == "" { events.Block(c, "no-sni", origDst); return }
 
-    decision := state.Match(hello.SNI)                       // sidecar holds only its stack's rules
-    if decision.Mode == "enforce" && decision.Action == "block" {
-        events.Block(c, "rule-deny", origDst, decision.MatchedPattern); return
+    line, err := br.ReadString('\n')
+    if err != nil || !strings.HasPrefix(line, "CONNECT ") {
+        writeStatus(c, 400, "Bad Request"); return
+    }
+    target := parseConnectTarget(line)                 // "host:port"
+    if err := drainHeaders(br); err != nil { return }
+
+    host, port := splitHostPort(target)
+    src := c.RemoteAddr().(*net.TCPAddr).IP
+    attr := srv.containers.Lookup(src)                  // (stackId, serviceName) or nil
+
+    if isIPLiteral(host) {
+        events.Block(attr, target, "ip-literal")
+        writeStatus(c, 403, "Forbidden"); return
+    }
+    if srv.dohDenylist.Has(host) {
+        events.Block(attr, target, "doh-denied")
+        writeStatus(c, 403, "Forbidden"); return
     }
 
-    upstream, err := markedDial(origDst)                     // SO_MARK = 0x1 → exempt from redirect
-    if err != nil { events.Block(c, "dial-failed", origDst); return }
+    decision := srv.match(host, attr)                   // FQDN policy
+    if decision.Action == "block" {
+        events.Block(attr, target, "rule-deny", decision)
+        writeStatus(c, 403, "Forbidden"); return
+    }
+
+    // SSRF hardening: resolve once, reject if the resolved IP is internal,
+    // dial the resolved IP (not the hostname) so DNS rebinding can't switch
+    // targets between the check and the connection.
+    ip, err := srv.resolver.SafeResolve(host)
+    if err != nil {
+        events.Block(attr, target, "internal-ip", err.Error())
+        writeStatus(c, 403, "Forbidden"); return
+    }
+
+    upstream, err := net.DialTimeout("tcp",
+        net.JoinHostPort(ip.String(), port), 10*time.Second)
+    if err != nil {
+        events.Block(attr, target, "dial-failed")
+        writeStatus(c, 502, "Bad Gateway"); return
+    }
     defer upstream.Close()
 
-    upstream.Write(br.Buffered())                            // replay peeked bytes
-    splice(c, upstream, hello.SNI, decision)                 // bidirectional io.Copy + final event
+    writeStatus(c, 200, "Connection Established")
+    splice(c, upstream, host, attr, decision)           // bidirectional io.Copy + final event
 }
 ```
 
-### Catchall
+### HTTP forward proxy handler
 
 ```go
-func handleCatchallTCP(c *net.TCPConn) {
-    defer c.Close()
-    origDst, _ := getOrigDst(c)
-    events.Block(c, "non-allowed-port", origDst)
-    // No splice — RST/close.
+func httpHandler(srv *Server) http.Handler {
+    transport := &http.Transport{
+        DialContext: srv.safeDialContext,                 // resolves + IP-validates per request
+    }
+    proxy := &httputil.ReverseProxy{
+        Director: func(r *http.Request) {
+            r.Header.Del("Proxy-Connection")
+            r.Header.Del("Proxy-Authorization")
+        },
+        Transport: transport,
+    }
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if r.Method == http.MethodConnect {
+            httpDeny(w, "use the HTTPS proxy port for CONNECT", 400); return
+        }
+        if r.URL.Host == "" {
+            httpDeny(w, "missing destination (use absolute-form URL)", 400); return
+        }
+
+        host := r.URL.Hostname()
+        attr := srv.containers.Lookup(remoteIP(r))
+
+        if isIPLiteral(host) {
+            events.BlockHTTP(r, attr, "ip-literal")
+            httpDeny(w, "literal-IP not permitted", 403); return
+        }
+        decision := srv.match(host, attr)
+        if decision.Action == "block" {
+            events.BlockHTTP(r, attr, "rule-deny", decision)
+            httpDeny(w, decision.Reason, 403); return
+        }
+
+        events.AllowHTTP(r, attr, decision)
+        proxy.ServeHTTP(w, r)                            // safeDialContext will reject internal IPs at dial time
+    })
 }
 ```
+
+### SSRF hardening — `SafeResolve` and `safeDialContext`
+
+The naive flow ("FQDN passes the allowlist → dial it") has two attack vectors that compliance regimes care about:
+
+1. **DNS-resolved internal IP.** An attacker registers `evil.example.com` (which someone allowlisted as part of `*.example.com`) with a DNS A record pointing at `169.254.169.254` (the cloud metadata service). Allowlist passes, app reaches internal infrastructure. Same vector defends against tenant infrastructure scanning where `internal-admin.our-corp.com` resolves to `10.0.0.5`.
+2. **DNS rebinding.** Attacker controls a DNS server with a low TTL. First lookup returns `1.2.3.4` (passes allowlist), second lookup (made by the dial after the check) returns `10.0.0.5`. The resolved IP changes between check and use.
+
+The fix is two complementary defences:
+
+- **`SafeResolve(host) → IP`** resolves the hostname and returns an error if any A/AAAA in the response is in:
+  - RFC1918 (`10/8`, `172.16/12`, `192.168/16`)
+  - Loopback (`127/8`, `::1`)
+  - Link-local (`169.254/16`, `fe80::/10`) — covers cloud metadata services
+  - IPv6 ULA (`fc00::/7`)
+  - Multicast / broadcast / reserved
+  - Any operator-configured custom-deny CIDRs (e.g. internal corp ranges)
+
+  We use the **first** A record from the response and pin to that single IP.
+
+- **`safeDialContext`** for the HTTP forward proxy: hooks into `http.Transport.DialContext` to do the same validation at dial time, since `httputil.ReverseProxy` does its own resolution. The dialer resolves, validates, dials the resolved IP.
+
+Both defences mean the actual TCP connection goes to a specific resolved IP that's been validated, not to a hostname that could re-resolve to something else. This is the hardening Smokescreen got right and we want to mirror.
+
+The `EgressEvent` for an SSRF-block records:
+```
+{ "evt": "tcp", "protocol": "connect", "action": "blocked",
+  "reason": "internal-ip", "target": "evil.example.com:443",
+  "resolvedIp": "169.254.169.254", "matchedPattern": "*.example.com",
+  ... }
+```
+
+Note `matchedPattern: "*.example.com"` is still recorded — that's how operators see "the FQDN policy would have allowed this; SSRF hardening saved us." High-signal alert.
+
+### Container map
+
+The gateway needs `srcIp → (stackId, serviceName)` to attribute events per stack. This is identical to today's TS DNS gateway — server pushes `POST /admin/container-map` (full snapshot) on env change. Same wire format, reused for both DNS and proxy listeners.
 
 ## Logging — full visibility
 
-NDJSON on stdout per binary. Server-side `EgressLogIngester` already tails per-container stdout — it just adds N more containers to tail (the sidecars), and recognises new event shapes.
+NDJSON on stdout, ingested by the existing `EgressLogIngester`. Four event shapes, three from the gateway and one from the host-side NFLOG reader:
 
 ```jsonc
 // DNS query (gateway, existing — unchanged)
 { "evt": "dns", "protocol": "dns", "ts": "...", "srcIp": "...",
-  "qname": "...", "qtype": "A", "action": "allowed|blocked|observed",
-  "matchedPattern": "...", "stackId": "...", "serviceName": "...",
-  "mergedHits": 1 }
-
-// TCP HTTP/HTTPS — sidecar decision
-{ "evt": "tcp", "protocol": "sni" | "http", "ts": "...",
-  "destIp": "...", "destPort": 443,
-  "sni": "api.example.com", "host": "api.example.com",
+  "qname": "api.example.com", "qtype": "A",
   "action": "allowed|blocked|observed",
+  "matchedPattern": "*.example.com",
+  "stackId": "...", "serviceName": "...", "mergedHits": 1 }
+
+// HTTPS CONNECT (gateway, new)
+{ "evt": "tcp", "protocol": "connect", "ts": "...", "srcIp": "...",
+  "target": "api.example.com:443",
+  "action": "allowed|blocked",
+  "reason": "rule-deny|ip-literal|doh-denied|dial-failed|...",
   "matchedPattern": "*.example.com",
   "stackId": "...", "serviceName": "...",
   "bytesUp": 0, "bytesDown": 0, "mergedHits": 1 }
 
-// TCP catchall — sidecar logs + drops
-{ "evt": "tcp", "protocol": "raw", "ts": "...",
-  "destIp": "...", "destPort": 5432,
-  "action": "blocked", "reason": "non-allowed-port",
-  "stackId": "...", "serviceName": "...", "mergedHits": 1 }
+// HTTP forward proxy (gateway, new)
+{ "evt": "tcp", "protocol": "http", "ts": "...", "srcIp": "...",
+  "method": "GET", "target": "example.com", "path": "/some/path",
+  "action": "allowed|blocked",
+  "reason": "rule-deny|ip-literal|...",
+  "matchedPattern": "*.example.com",
+  "stackId": "...", "serviceName": "...",
+  "status": 200, "bytesDown": 1234, "mergedHits": 1 }
 
-// UDP catchall — sidecar logs + drops
-{ "evt": "udp", "protocol": "raw", "ts": "...",
-  "destIp": "...", "destPort": 443,
-  "action": "blocked", "reason": "non-allowed-protocol",
-  "stackId": "...", "serviceName": "...", "mergedHits": 1 }
+// Firewall drop (egress-fw-agent, new)
+{ "evt": "fw_drop", "protocol": "tcp|udp|icmp", "ts": "...",
+  "srcIp": "...", "destIp": "...", "destPort": 5432,
+  "stackId": "...", "serviceName": "...",
+  "reason": "non-allowed-egress", "mergedHits": 1 }
 ```
-
-Sidecar events don't need `srcIp` — there's only one source per sidecar (the paired app), and `stackId`/`serviceName` are baked into the sidecar's config at create time.
 
 Same dedup window (60s, key `destIp + destPort + protocol`) keeps volume sane.
 
+`fw_drop` events come from `egress-fw-agent`'s NFLOG subscriber (libnetfilter_log on group 1). It sees the source IP and looks up `(stackId, serviceName)` via a container-map snapshot pushed from `mini-infra-server` (same shape as the per-env gateway gets, but a flat union across all envs since the agent is per-host).
+
 ## Wire contract
 
-### Server pushes
-
-The server now pushes to **two kinds of admin endpoints** per env:
-
-- **One DNS gateway** per env (existing). Receives `POST /admin/rules` (full snapshot) and `POST /admin/container-map` (full snapshot).
-- **N sidecars** per env (new). Each receives `POST /admin/rules` with **only the rules for its stack** (subset of the full snapshot). No container-map needed at sidecars.
-
-Both admin endpoints share the same Go code via the shared module. Same validation, same versioning, same response shape.
-
-Discovery: server finds sidecars via container labels `mini-infra.egress.sidecar=true` + `mini-infra.environment=<env>` + `mini-infra.stack=<stackId>`. The server's existing `EgressRulePusher` is extended to iterate (gateway + sidecars) when pushing.
-
-### Admin contract additions
+Server pushes to **one admin endpoint per env** (the gateway). No fanout, no per-stack subsetting — the gateway holds the full env policy and applies it per-source-IP via the container map.
 
 ```ts
-// GET /admin/health on a sidecar
-interface SidecarHealthResponse {
+POST /admin/rules           // full env policy snapshot
+POST /admin/container-map   // srcIp → (stackId, serviceName) snapshot
+GET  /admin/health
+```
+
+Health response gains listener-up booleans:
+
+```ts
+interface GatewayHealthResponse {
   ok: true;
   rulesVersion: number;
-  stackId: string;
-  serviceName: string;
   uptimeSeconds: number;
-  netfilter: { tableInstalled: boolean };
-  proxy: {
-    httpListenerUp: boolean;
-    httpsListenerUp: boolean;
-    tcpCatchallListenerUp: boolean;
-    udpCatchallListenerUp: boolean;
+  listeners: {
+    dnsUdp: boolean;
+    dnsTcp: boolean;
+    httpProxy: boolean;     // 3128
+    httpsProxy: boolean;    // 3129
+    admin: boolean;
   };
+  upstreamDns: { healthy: number; total: number };
 }
 ```
 
-Gateway health response is unchanged from today.
+Discovery is unchanged from today — server finds the per-env gateway by container label `mini-infra.egress.gateway=true` + `mini-infra.environment=<env>`.
+
+## Container env injection
+
+For every managed (non-bypass) service, `stack-container-manager.ts` injects:
+
+```
+HTTP_PROXY=http://<gatewayIp>:3128
+HTTPS_PROXY=http://<gatewayIp>:3129
+http_proxy=http://<gatewayIp>:3128
+https_proxy=http://<gatewayIp>:3129
+NO_PROXY=localhost,127.0.0.0/8,<envBridgeCidr>
+no_proxy=localhost,127.0.0.0/8,<envBridgeCidr>
+HostConfig.Dns=[<gatewayIp>]               # existing behaviour
+```
+
+Both upper- and lowercase variants because Node honours uppercase, Python `requests` honours lowercase, Go honours both. `NO_PROXY` lists the env bridge CIDR so peer-to-peer traffic doesn't loop through the proxy.
+
+For libraries that don't honour CIDR in `NO_PROXY` (some only do suffix matching), we additionally inject a comma-separated list of peer container *names* on the env bridge. The list is regenerated on env churn alongside the container map push.
 
 ## Go module design
+
+Two binaries, one image, one Go module — sharing event emitter, log wrapper, config helpers.
 
 ```
 egress-gateway/
   cmd/
-    gateway/main.go                   # gateway binary entry
-    sidecar/main.go                   # sidecar binary entry
+    gateway/main.go                   # per-env gateway binary entry
+    fw-agent/main.go                  # host-singleton fw-agent binary entry
 
   internal/
+    # shared
     config/        gateway_config.go  # gateway env-var binding
-                   sidecar_config.go  # sidecar env-var binding
-    state/         rules.go           # rule trie + version state
-                   container_map.go   # gateway-only — srcIp → (stackId, serviceName)
-    match/         trie.go            # wildcard suffix trie
-                   compile.go         # StackPolicy → compiled lookup tables
-                   lookup.go          # host → action
-
-    dns/           server.go          # miekg/dns combined UDP/TCP listener (gateway only)
-                   forward.go         # upstream pool with health
-                   handler.go         # query → match → respond/NXDOMAIN
-
-    proxy/         http_listener.go   # sidecar — peek Host, match, splice
-                   https_listener.go  # sidecar — peek SNI, match, splice
-                   tcp_catchall.go    # sidecar — log + RST
-                   udp_catchall.go    # sidecar — log + drop
-                   sniff.go           # ClientHello + HTTP request peek-and-parse
-                   splice.go          # bidirectional io.Copy
-                   origdst.go         # SO_ORIGINAL_DST
-                   marked_dial.go     # SO_MARK on outbound
-
-    nft/           rules.go           # generate sidecar's nftables ruleset
-                   apply.go           # apply via go-nftables (used by cmd/sidecar)
-
-    admin/         server.go          # /admin/rules, /admin/container-map (gateway), /admin/health
-                   validate.go        # request validation
-
+                   agent_config.go    # agent env-var binding
     events/        emitter.go         # NDJSON stdout writer
                    dedup.go           # 60s dedup window
-
     log/           log.go             # slog wrapper, JSON handler
 
-  Dockerfile                          # multi-stage; builds both binaries into one image
+    # gateway only
+    state/         rules.go           # rule trie + version state
+                   container_map.go   # srcIp → (stackId, serviceName)
+    match/         trie.go            # wildcard suffix trie
+                   compile.go         # StackPolicy → compiled lookup
+                   lookup.go          # host → action
+    dns/           server.go          # miekg/dns combined UDP/TCP listener
+                   forward.go         # upstream pool with health
+                   handler.go         # query → match → respond/NXDOMAIN
+    proxy/         http.go            # absolute-URI HTTP forward proxy (3128)
+                   connect.go         # HTTPS CONNECT handler (3129)
+                   splice.go          # bidirectional io.Copy
+                   doh_denylist.go    # built-in known-DoH-endpoint denylist
+                   safe_resolve.go    # FQDN → IP with internal-range validation
+                   safe_dial.go       # http.Transport.DialContext that resolves+validates
+                   ipranges.go        # built-in private/loopback/link-local CIDRs
+    admin/         server.go          # /admin/rules, /admin/container-map, /admin/health
+                   validate.go
+
+    # agent only
+    fw/            iptables.go        # `DOCKER-USER` rule block install/remove
+                   ipset.go           # ipset create/destroy/add/del/sync
+                   nflog.go           # libnetfilter_log subscriber → fw_drop events
+                   api.go             # unix-socket HTTP server (POST /v1/env, /v1/ipset/...)
+                   reconcile.go       # boot-time reconcile against server-declared inventory
+
+  Dockerfile                          # multi-stage; both binaries in one image
   go.mod
   go.sum
 ```
 
+Multi-stage build: `golang:1.22-alpine` builder, `alpine:3.19` runtime with `iptables`, `ipset`, and `libnetfilter_log` packages. Single image, both binaries available at `/usr/local/bin/egress-gateway` and `/usr/local/bin/egress-fw-agent`. Final image ~20 MB.
+
 ## Container deployment
 
-### Sidecar image
+Three container types involved, two of them new for v3.
 
-Single image `mini-infra-egress-gateway` with two binaries (`/usr/local/bin/egress-gateway`, `/usr/local/bin/egress-sidecar`). Multi-stage build: `golang:1.22-alpine` for build, `alpine:3.19` for runtime (need `iproute2` and `nftables` packages for diagnostics). Final image ~15 MB.
-
-### Sidecar container spec
-
-Created by `stack-container-manager.ts` for each managed (non-bypass) service:
+### Per-env `egress-gateway`
+*Lifecycle: created/destroyed by `EnvironmentManager` alongside the env. One per env.*
 
 - `image: mini-infra/egress-gateway:<version>`
-- `entrypoint: ["/usr/local/bin/egress-sidecar"]`
-- `cap_add: ['NET_ADMIN']`
-- Sysctls: `net.ipv4.conf.all.route_localnet=1` (needed for REDIRECT to localhost)
-- Joins the env's applications network with its own IP
-- Labels: `mini-infra.egress.sidecar=true`, `mini-infra.environment=<env>`, `mini-infra.stack=<stackId>`, `mini-infra.service=<serviceName>`
-- Env vars: `GATEWAY_IP`, `LOCAL_CIDRS`, `STACK_ID`, `SERVICE_NAME`, ports
+- `entrypoint: ["/usr/local/bin/egress-gateway"]`
+- Joins the env's applications network with a pinned IP
+- Labels: `mini-infra.egress.gateway=true`, `mini-infra.environment=<env>`
+- Env vars: `UPSTREAM_DNS=1.1.1.1,8.8.8.8`, `HTTP_PORT=3128`, `HTTPS_PORT=3129`, `LOG_LEVEL`
+- No `cap_add`, no sysctls, no host network access
+
+### Host-singleton `egress-fw-agent`
+*Lifecycle: brought up alongside `mini-infra-server` itself, in the same compose definition. One per host. Restart policy `unless-stopped`.*
+
+- `image: mini-infra/egress-gateway:<version>` (same image, different binary)
+- `entrypoint: ["/usr/local/bin/egress-fw-agent"]`
+- `network: host`
+- `cap_add: ['NET_ADMIN', 'NET_RAW']`
+- Volume mounts:
+  - `/var/run/mini-infra/` (host) ↔ `/var/run/mini-infra/` (container) — shared with `mini-infra-server`, agent binds the Unix socket here
+  - `/lib/modules/` (host, read-only) — for kernel module access if `nf_log_ipv4`/`xt_set` need loading
+- Labels: `mini-infra.egress.fw-agent=true`
+- Env vars: `LOG_LEVEL`
+
+### `mini-infra-server` deployment changes
+*Existing component, new mount only.*
+
+- New volume mount: `/var/run/mini-infra/` so it can connect to the agent's Unix socket
+- No new capabilities, no new network changes — still a regular bridge container
 
 ### App container spec changes
+*For managed (non-bypass) services only.*
 
-For managed (non-bypass) services, two changes:
+- Inject `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` env vars (above)
+- Inject DNS (`HostConfig.Dns: [gatewayIp]`) — unchanged from today
+- After Docker assigns the container's IP and it transitions to `Running`, `stack-container-manager.ts` calls `EnvFirewallManager.addContainer()`, which calls the agent to add the IP to `managed-<env>`
 
-- `--network=container:<sidecar-container-id>` instead of joining the bridge directly.
-- DNS injection (`HostConfig.Dns: [gatewayIp]`) — unchanged from today.
-
-Bypass services and the gateway itself are unaffected.
+Bypass services and the gateway itself: unaffected. No proxy injection, not in any ipset, no agent calls.
 
 ## Server-side changes
 
-Three landable PRs:
+Three landable PRs.
 
 ### PR 1 — Schema + ingester
-- Update `EgressLogIngester` to parse the new event shapes (`evt: "tcp"`, `evt: "udp"` with `protocol: "sni|http|raw"`).
-- Add `destIp`, `destPort`, `bytesUp`, `bytesDown`, `l4proto` columns to `EgressEvent` (Prisma migration).
-- Tail container stdout from sidecars (label-based discovery: `mini-infra.egress.sidecar=true`) in addition to the gateway.
-- Tests: extend `egress-log-ingester.test.ts` with fixtures for each new event shape and sidecar discovery.
+- Update `EgressLogIngester` to parse the new event shapes (`evt: "tcp"` with `protocol: "connect|http"`, `evt: "fw_drop"`).
+- Add `target`, `method`, `path`, `status`, `bytesUp`, `bytesDown`, `destIp`, `destPort` columns to `EgressEvent` (Prisma migration). Null on DNS-only events.
+- Tail `mini-infra.egress.fw-agent=true` containers in addition to `mini-infra.egress.gateway=true`.
+- Tests: extend `egress-log-ingester.test.ts` with fixtures for each new event shape.
 - Ships independently; new columns null on DNS-only events.
 
-### PR 2 — Sidecar pairing in stack-container-manager
-- New `EgressSidecarManager` service: creates the sidecar container, waits for its health endpoint, returns its container ID.
-- `stack-container-manager.ts` calls it before creating the app container for managed services. App's network config switches to `--network=container:<sidecarId>`.
-- Bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip for DNS injection).
-- Stop/remove ordering: app first, sidecar second.
-- Failure → fail the stack apply with a clear error.
-- Tests: integration tests in `stack-container-manager-egress.test.ts` covering the sidecar+app pairing, bypass path, and crash/restart edges.
+### PR 2 — Go module + `egress-fw-agent` deployment
+- New `egress-gateway/` Go module with both binaries (gateway + fw-agent). Initially only the fw-agent code path is exercised; gateway code lands but isn't deployed yet.
+- New deployment of `egress-fw-agent` as a host-singleton container in the Mini Infra compose definition. Volume mount for `/var/run/mini-infra/` shared with `mini-infra-server`.
+- New `EnvFirewallManager` service in `mini-infra-server`: declares desired firewall state, calls fw-agent over the Unix socket, owns reconcile loop on server boot.
+- ipset membership wired into container start/stop hooks in `stack-container-manager.ts` for managed services.
+- NFLOG reader inside the agent emits `fw_drop` NDJSON; ingester (PR 1) picks it up.
+- Ships behind a per-env feature flag — agent is deployed and managing rules but the `DROP` line is gated. Initial mode is **observe** (NFLOG without DROP) for opted-in envs.
+- Tests: integration tests with a temporary iptables ruleset and a real fw-agent in a Linux container, ensure rules and ipset entries are inserted/removed correctly across env churn, Docker daemon restarts, and agent restarts.
 
-### PR 3 — Build pipeline + binary swap
-- New `egress-gateway/` Go module with both binaries.
-- Replace `egress-sidecar/` Dockerfile and pnpm script.
-- Extend `EgressRulePusher` to push to N sidecars per env in addition to the gateway. Container map pusher remains gateway-only.
-- The pushers, socket emitter, lifecycle service, and frontend rules UI are otherwise untouched.
-- Land behind a per-environment feature flag for dark launch.
+### PR 3 — `egress-gateway` deployment + env injection
+- `EnvironmentManager` swaps the TS `egress-sidecar` for the Go `egress-gateway` image (same per-env container, just different binary in the existing slot).
+- `stack-container-manager.ts` injects `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` for managed services; bypass + host-level + non-environment stacks skip this entirely (mirrors the existing `egressBypass` skip for DNS injection).
+- `EgressRulePusher` continues to push to one endpoint per env. Container-map pusher unchanged.
+- Gateway initially runs in **detect mode forced** (allows everything, logs decisions) when the per-env flag is flipped ON.
+- Land behind the same per-env feature flag introduced in PR 2.
 
 ## Phasing / rollout
 
-1. **PR 1** (server-side prep) — lands independently, no behaviour change.
-2. **Spike** the sidecar lifecycle on Mini Infra's supported Docker version range. Confirm:
-   - `--network=container:<sidecar>` works reliably when sidecar is up
-   - Sidecar restart-after-crash story (does the app container still work, or need recreation?)
-   - Cold-start ordering (sidecar health-ready before app starts)
-3. **PR 2** lands sidecar pairing **behind a per-env feature flag**. Default off — no behaviour change for existing envs.
-4. **PR 3** ships the Go gateway + sidecar binaries in **detect mode forced**. Userland always splices through (catchall accepts and drops with `wouldHaveBeen` set). Validates every code path without breaking traffic.
-5. **Per-env enforce promotion.** Flip the env feature flag; catchall starts dropping; per-stack rules become authoritative. The promote-to-Enforce wizard from v2 handles per-stack progression.
-6. **Phase out the TS sidecar.** Once all envs run v3, delete `egress-sidecar/`.
+1. **PR 1** (schema + ingester) — lands independently, no behaviour change.
+2. **PR 2** (Go module + fw-agent + firewall manager) — fw-agent deployed, rules and ipsets managed for opted-in envs. Default OFF per env; opted-in envs in **observe mode** (NFLOG, no DROP). Validates ipset membership tracking, agent reconcile, NFLOG event flow.
+3. **PR 3** (gateway + env injection) — when the per-env flag is flipped ON: gateway image deployed in place of the TS sidecar, `HTTP_PROXY`/`HTTPS_PROXY` injected on next container recreate, gateway in **detect mode forced** (allows everything, logs decisions).
+4. **Per-env enforce promotion.** Flip enforce mode on the gateway → 403s on rule-deny. Flip the firewall agent to enforce mode → drops direct egress. Both flips are independent so we can stage. The promote-to-Enforce wizard from v2 handles per-stack progression.
+5. **Phase out the TS sidecar.** Once all envs run v3, delete `egress-sidecar/`.
 
 ## Open decisions / spike items
 
-- **Sidecar restart-after-crash UX.** What does Docker do to an app container whose `--network=container:` target has died and been replaced? If the answer is "app needs recreation", `EgressSidecarManager` needs to coordinate that. Spike.
-- **Health-ready signalling.** Sidecar exposes a health endpoint; stack-container-manager waits on it. Decide between Docker healthcheck (slower, polls) or a direct HTTP poll from server during create. Probably the latter for tighter ordering.
-- **Catchall UDP rate-limiting.** UDP is connectionless; a misbehaving app can flood the listener. 60s dedup window covers logging volume; need to also cap socket reads to avoid CPU starvation. Bound at e.g. 10k pkt/s per sidecar.
-- **`SO_MARK` value.** Pick a fixed value (e.g. `0x1`) and document. Make sure no host-side process uses the same mark for something incompatible — should be safe per-netns but worth noting.
-- **DoH denylist.** Built into the gateway as a hardcoded list of known DoH endpoints, applied as implicit blocks before stack-policy evaluation. Or operators add explicit blocks. Probably both — built-in default with override capability.
-- **IPv6.** v1+v2 are IPv4-only; v3 mirrors that. nftables `inet` family is ready; need IPv6 config for `$LOCAL_CIDRS` and gateway IPv6 if/when we cross that bridge.
-- **Resource budget.** Per sidecar: ~15 MB RSS idle, ~30 MB under load. 20 services per env ≈ 300-600 MB across sidecars. Per-env DNS gateway ≈ 15-25 MB. Total per env: ~325-625 MB. Up from current TS sidecar's ~50-80 MB per env, but the sidecar count is the trade for `SO_ORIGINAL_DST` working.
+- **Authenticated proxy?** Default to no auth — the network reachability boundary (only the env bridge can reach the gateway) is the auth. If we ever support multi-tenant envs, revisit.
+- **WebSocket through CONNECT.** WSS is HTTPS upgrade and goes through CONNECT fine. Plain WS over HTTP traverses the HTTP forward proxy, which honours `Connection: Upgrade` correctly with `httputil.ReverseProxy` — verify with a fixture.
+- **`NO_PROXY` exhaustiveness.** Some libraries do suffix-only matching, not CIDR. We inject the env bridge CIDR plus a peer-name list; spike to confirm coverage with the languages we actually see (Node, Python, Go, Java, Ruby).
+- **Apps that don't honour `HTTP_PROXY`.** Document the failure mode in the operator UI: a service that egresses directly will produce `fw_drop` events; surface these prominently with a "mark as bypass or fix the client" call to action.
+- **fw-agent ↔ server outage handling.** If the agent is down, in-flight ipset updates queue in `EnvFirewallManager` and a degraded-component banner surfaces in the UI. Existing rules are untouched (kernel state outlives the agent). On agent recovery, drain the queue and run a full reconcile. Decide the queue cap and what to do on overflow (probably: drop oldest, log loudly).
+- **Rule reload performance.** ipset membership churn during container start/stop must be sub-100ms to avoid stack-apply slowdown. ipset is in-kernel and fast; benchmark with 50 containers/env.
+- **Resource budget.** Per env: ~30 MB RSS for gateway. Per host: ~10 MB for fw-agent. So ~30 MB per env + ~10 MB host-wide — vs ~325-625 MB in the rejected sidecar design. ~10× win.
+- **IPv6.** v1+v2 are IPv4-only; v3 mirrors that. ipsets and `DOCKER-USER` work in IPv6 too; need dual-stack listeners and an ipv6 ipset when we cross that bridge.
 
 ## Out of scope for v3 (explicitly deferred)
 
-- **Arbitrary TCP allowlists** (e.g. "allow this stack to reach `pg.example.com:5432`"). Compliance posture says no — only :80/:443 with name-based rules. Could be a v4 feature with explicit `tcp-allow` rule type.
+- **Arbitrary TCP allowlists** (e.g. "allow this stack to reach `pg.example.com:5432` directly, not via HTTP). Posture says no — only HTTP/HTTPS via proxy. Bypass is the escape hatch for the rare cases this is genuinely needed.
+- **TLS interception (SSL bump).** We see destinations via CONNECT; we do not see inside the tunnel. No plans to change this.
 - **Per-environment default policies.** Still per-stack only; see [egress-firewall-future-work.md](egress-firewall-future-work.md) "What's not on this list".
 - **Egress proxy for the host itself** (mini-infra-server's own outbound calls to Cloudflare, Azure, ACME). Out of scope; host is trusted.
-- **HTTP/3 with full handshake completion.** Captured at catchall as a blocked attempt; no inspection of QUIC payload.
-- **K8s-style Pod abstraction in Mini Infra.** We're managing the sidecar+app pair manually in `stack-container-manager.ts` rather than building a generalised pod primitive. If we ever add other "must travel together" service types (e.g. Vault Agent, log shippers), revisit.
+- **HTTP/3 / QUIC.** Blocked at firewall (UDP/443 dropped). No QUIC support.
+- **Deep request body inspection.** Headers and request line only. Bodies stream through unchanged.
+
+## Trade-offs summary
+
+| Property | Transparent sidecar (rejected — Appendix A) | Explicit proxy (this design) |
+|---|---|---|
+| Apps that ignore `HTTP_PROXY` | transparently captured | blocked at firewall (loud, correct fail-mode) |
+| TLS destination signal | SNI peek (some clients omit SNI) | CONNECT request line (always present, plaintext) |
+| Literal-IP egress | observable via `SO_ORIGINAL_DST` | blocked outright by IP-literal check; raw IP visible in `fw_drop` |
+| Resource per env | ~325-625 MB | ~30 MB |
+| Per-app lifecycle coupling | sidecar+app pair | none — app is unmodified |
+| Kernel feature surface | nftables, conntrack, `SO_MARK`, `SO_ORIGINAL_DST`, `route_localnet` | iptables `DOCKER-USER` + ipset only |
+| Implementation surface | ~3000 lines Go + lifecycle plumbing | ~800 lines Go + firewall manager |
+| Failure mode (gateway down) | per-app sidecar still blocks | firewall still drops; envs lose all egress until gateway recovers |
+
+The single posture concession is "literal-IP egress lacks FQDN attribution in the log" — for deny-by-default this is acceptable.
+
+---
+
+## Appendix A: rejected designs
+
+We considered several alternatives before settling on the explicit proxy.
+
+### A.1 Per-managed-container sidecars sharing netns
+
+The earlier sketch of v3. Each managed container is paired with a small sidecar that shares its netns via `--network=container:<sidecar>`. The sidecar installs nftables rules in the shared netns to redirect TCP/80 and TCP/443 to local listeners that peek SNI/Host and apply policy. Other ports redirect to a logging catchall.
+
+Why we walked back from it:
+
+- **Lifecycle coupling without K8s Pods.** The sidecar+app pair has to be created in order, the app's network depends on the sidecar's netns, and a sidecar crash invalidates the app's network reference (Docker behaviour varies by version — sometimes the app needs full recreation, not just restart). This is the lifecycle problem K8s Pods solve; without Pods we'd be paying for it explicitly in `stack-container-manager.ts`.
+- **Kernel-feature surface.** nftables in each container's netns + `SO_ORIGINAL_DST` + `SO_MARK` to break the redirect loop on the sidecar's own outbound + `route_localnet=1` sysctl. Each is well-understood in isolation but the combination has many edges.
+- **Resource cost.** ~15-30 MB per sidecar × N services per env = hundreds of MB before the env carries any actual workload.
+- **The destination-intent problem it solves doesn't exist for HTTP_PROXY-respecting apps.** SNI peek extracts the same information the app would write into a CONNECT request line. Once we accept that posture-permitted egress is HTTP/HTTPS only, transparent capture buys us nothing the app wouldn't tell us via an explicit proxy.
+
+### A.2 Central gateway with DNAT from every container's nftables
+
+Naturally appealing: one gateway, all containers DNAT-redirect TCP to it, gateway peeks SNI/Host. Doesn't survive contact with Docker's networking model: the conntrack entry recording the DNAT lives in the source container's netns. By the time the connection reaches the gateway, the gateway's own conntrack only sees the rewritten destination — `SO_ORIGINAL_DST` returns the gateway's own IP, and the original target the app was trying to reach is **lost**.
+
+Istio dodges this by running its proxy in the *same* netns as the app (Pod model). Plain Docker has no Pod abstraction.
+
+### A.3 Host-netns nftables + gateway in `--network=host`
+
+Works for `SO_ORIGINAL_DST` (DNAT and proxy share a conntrack table), but breaks per-env isolation, fights Docker's own iptables/nftables chains, and is platform-divergent (Linux native vs Colima VM vs WSL2 distro). Rejected.
+
+### A.4 eBPF cgroup/connect
+
+Compelling: hook `cgroup/connect4` per-container, decide allow/deny at the `connect()` syscall before any networking happens. No netns games, no sidecars. This is what Cilium does. The catch: at `connect()` time there's no TLS yet, so no SNI — you'd be enforcing on resolved IP only, which is weaker than this design's CONNECT-line FQDN match. We'd need a userspace L7 proxy on top to reach the same posture, at which point we're back to "explicit proxy plus a kernel feature" rather than just "explicit proxy". Not worth the kernel-version dependency.
+
+### A.5 TPROXY transparent interception
+
+Cleaner than DNAT + REDIRECT for transparent interception (no packet rewriting, original destination preserved naturally). Would have been the right choice if we'd stuck with transparent interception. Doesn't change the calculus — once we adopted explicit proxy, transparent-interception primitives are moot.
+
+### A.6 Squid
+
+Mature, battle-tested forward proxy with SSL-bump and peek-and-splice. Considered, rejected for this scope: its ACL configuration language is its own domain, hot-reload of rules is awkward (SIGHUP + reload), log format is custom, and we don't need 90% of its features (caching, content filtering, SSL bump, ICAP). A custom Go proxy is a few hundred lines and integrates directly with the rule trie, container map, and admin API we already need for the DNS layer. Sharing one Go module across DNS + HTTP + HTTPS is simpler than running Squid plus our DNS gateway plus a translation layer between StackPolicy and Squid ACLs.
+
+### A.7 Stripe Smokescreen (as a library or service)
+
+The closest off-the-shelf match — Go-based egress-focused HTTP CONNECT proxy with FQDN ACLs, three-mode policy (`open`/`report`/`enforce`), built-in SSRF defences. We considered importing it as a library and writing a thin `main.go`. Rejected because:
+
+- **Static YAML config, no admin push API.** Smokescreen reloads ACLs by re-reading a YAML file on SIGHUP. Our model pushes rule snapshots over HTTP at high frequency as stack policies change in the UI; bridging the impedance mismatch (write file, signal, wait for reload, verify) would create a control loop full of edge cases. Cleaner to own the rule-receipt path end-to-end.
+- **Identity model is wrong shape.** Smokescreen identifies clients via TLS client certs or `Proxy-Authorization`. Our containers don't have client certs and we don't want to plumb them in. Mini Infra identifies stacks by *source IP on the env bridge*, looked up against a server-pushed container map. We can plug into Smokescreen's `RoleFromRequest` hook to do this, but then our integration is "fork the relevant code path" rather than "use the library."
+- **Logging shape lock-in.** Smokescreen logs via logrus key/value fields. Our `EgressLogIngester` consumes structured NDJSON in a specific shape we control across DNS + proxy + firewall events. Either we translate or we replace the logger — which is most of what we'd be importing.
+
+The conclusion: we want what Smokescreen *teaches*, not what it *builds*. Take the security primitives (SSRF resolve-and-check, dial-the-resolved-IP, three-mode policy, hostname globbing semantics, blocking literal-IP CONNECT by default, TLS deny ranges for IPv6 ULA / link-local) and implement them in our gateway directly. See [Appendix B](#appendix-b-prior-art--what-were-cribbing-from-smokescreen).
+
+---
+
+## Appendix B: Prior art — what we're cribbing from Smokescreen
+
+[stripe/smokescreen](https://github.com/stripe/smokescreen) is the cleanest production-grade reference for this exact problem. We're not using it as a dependency, but we are deliberately matching its security model where it makes sense. Listing what we take, what we change, and what we leave behind.
+
+### What we take
+
+- **SSRF resolve-and-check.** Resolve the FQDN, fail closed if the resolved IP is in a private/loopback/link-local range. Smokescreen's `egressacl` does this; our `SafeResolve` mirrors the behaviour.
+- **Dial the resolved IP, not the hostname.** Defeats DNS rebinding. Smokescreen passes the resolved IP to the dial; our `safeDialContext` does the same for HTTP and the explicit resolve-then-dial flow does it for CONNECT.
+- **Built-in private-range list.** RFC1918, loopback, link-local (incl. `169.254.169.254` for cloud metadata), IPv6 ULA, multicast. Smokescreen ships a default list and lets operators extend; we'll do the same.
+- **Three policy modes per stack.** `open` / `report` (= our "observe") / `enforce`. Smokescreen validated this shape in production; we mirror it directly.
+- **Globbing semantics for hostnames.** `*.example.com` matches `api.example.com` and `foo.bar.example.com`; bare `example.com` matches only the apex. Standard suffix-glob; Smokescreen's matching rules are well-defined and we'll match them so operators familiar with the pattern aren't surprised.
+- **Block literal-IP CONNECT by default.** Smokescreen treats this as "deny unless explicitly permitted." We do the same — `isIPLiteral(host)` short-circuits to deny.
+- **DoH denylist as defence in depth.** Built-in list of known DoH endpoints (`dns.google`, `cloudflare-dns.com`, `mozilla.cloudflare-dns.com`, etc.) blocked regardless of stack rules. Smokescreen doesn't ship this specifically; we're adding it because the DoH leak vector is in scope for our compliance posture.
+
+### What we change
+
+- **Identity by source IP, not TLS cert / proxy auth.** Container map (pushed by `mini-infra-server`) maps `srcIp → (stackId, serviceName)`. Lookup happens at request time; same role-resolution shape, different identification mechanism.
+- **Rule push over admin API, not file reload.** `POST /admin/rules` with a full snapshot. Atomic swap of the compiled trie; no SIGHUP.
+- **NDJSON event shape consistent across DNS / HTTP / HTTPS / firewall.** Single ingester pipeline, one column schema. Smokescreen logs via logrus; we use a single dedicated emitter with the `EgressEvent` shape defined in this doc.
+- **No client TLS termination.** Smokescreen supports MITM with a generated CA. We don't — CONNECT splices through end-to-end. The CONNECT request line gives us all the destination signal we need.
+
+### What we leave behind
+
+- **MITM / SSL-bump.** Out of scope per the posture.
+- **Statsd / Datadog metrics integration.** Use whatever mini-infra-server uses today.
+- **Per-tenant TLS CRL / cert pinning.** Single-tenant envs; not needed.
+- **HTTP/2 frontend.** Apps speak HTTP/1.1 to the proxy; the upstream side (after CONNECT) can do whatever it wants end-to-end.
+
+### Reading list (for the implementer)
+
+When building the proxy package, the following Smokescreen files are worth reading:
+
+- `pkg/smokescreen/smokescreen.go` — top-level proxy plumbing, CONNECT handling
+- `pkg/smokescreen/safe_resolver.go` — the resolve-and-check pattern in production form
+- `pkg/smokescreen/acl/v1/acl.go` — the role/policy ACL data model
+- `pkg/smokescreen/conntrack/` — connection tracking patterns useful for our event emission
+
+Read these, then implement our equivalents. Don't import.
