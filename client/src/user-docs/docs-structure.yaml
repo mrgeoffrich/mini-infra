@@ -156,6 +156,9 @@ sections:
           - Environment detail page — deployed applications and stacks
           - Deleting an environment — does not stop running containers
           - Color-coded environment badges
+          - Egress firewall toggle — kernel-level enforcement in observe mode
+          - Observe mode — log outbound connections without dropping traffic
+          - Best-effort firewall agent reconciliation when offline
 
   - slug: postgres-backups
     label: PostgreSQL Backups

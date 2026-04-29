@@ -1,5 +1,5 @@
 {
-  "generated": "2026-04-07",
+  "generated": "2026-04-29",
   "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
   "routes": {
     "/applications/new": {
@@ -9,19 +9,19 @@
           "id": "new-app-display-name-input",
           "label": "New App Display Name Input",
           "elementType": "FormItem",
-          "file": "client/src/app/applications/new/page.tsx"
+          "file": "client/src/app/applications/new/components/basics-step.tsx"
         },
         {
           "id": "new-app-environment-select",
           "label": "New App Environment Select",
           "elementType": "FormItem",
-          "file": "client/src/app/applications/new/page.tsx"
+          "file": "client/src/app/applications/new/components/basics-step.tsx"
         },
         {
           "id": "new-app-docker-image-input",
           "label": "New App Docker Image Input",
-          "elementType": "FormItem",
-          "file": "client/src/app/applications/new/page.tsx"
+          "elementType": "Input",
+          "file": "client/src/app/applications/new/components/image-step.tsx"
         },
         {
           "id": "new-app-create-button",
@@ -89,6 +89,18 @@
         {
           "id": "azure-default-container-selector",
           "label": "Azure Default Container Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        },
+        {
+          "id": "azure-self-backup-container-selector",
+          "label": "Azure Self Backup Container Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity/azure/page.tsx"
+        },
+        {
+          "id": "azure-tls-container-selector",
+          "label": "Azure Tls Container Selector",
           "elementType": "div",
           "file": "client/src/app/connectivity/azure/page.tsx"
         }
@@ -240,12 +252,6 @@
       "title": "Self-Backup Settings",
       "elements": [
         {
-          "id": "backup-container-selector",
-          "label": "Backup Container Selector",
-          "elementType": "FormItem",
-          "file": "client/src/app/settings/self-backup/page.tsx"
-        },
-        {
           "id": "backup-schedule-input",
           "label": "Backup Schedule Input",
           "elementType": "FormItem",
@@ -281,18 +287,6 @@
       "title": "TLS Settings",
       "elements": [
         {
-          "id": "tls-container-selector",
-          "label": "Tls Container Selector",
-          "elementType": "div",
-          "file": "client/src/app/settings/tls/page.tsx"
-        },
-        {
-          "id": "tls-test-connection",
-          "label": "Tls Test Connection",
-          "elementType": "Button",
-          "file": "client/src/app/settings/tls/page.tsx"
-        },
-        {
           "id": "tls-acme-provider",
           "label": "Tls Acme Provider",
           "elementType": "div",
@@ -322,6 +316,123 @@
           "file": "client/src/app/tunnels/page.tsx"
         }
       ]
+    },
+    "/vault/approles": {
+      "title": "/vault/approles",
+      "elements": [
+        {
+          "id": "vault-approle-new",
+          "label": "Vault Approle New",
+          "elementType": "Button",
+          "file": "client/src/app/vault/approles/page.tsx"
+        },
+        {
+          "id": "vault-approles-list",
+          "label": "Vault Approles List",
+          "elementType": "Card",
+          "file": "client/src/app/vault/approles/page.tsx"
+        }
+      ]
+    },
+    "/vault": {
+      "title": "Vault",
+      "elements": [
+        {
+          "id": "vault-bootstrap-address",
+          "label": "Vault Bootstrap Address",
+          "elementType": "Input",
+          "file": "client/src/app/vault/components/BootstrapDialog.tsx"
+        },
+        {
+          "id": "vault-bootstrap-passphrase",
+          "label": "Vault Bootstrap Passphrase",
+          "elementType": "Input",
+          "file": "client/src/app/vault/components/BootstrapDialog.tsx"
+        },
+        {
+          "id": "vault-bootstrap-submit",
+          "label": "Vault Bootstrap Submit",
+          "elementType": "Button",
+          "file": "client/src/app/vault/components/BootstrapDialog.tsx"
+        },
+        {
+          "id": "vault-passphrase-input",
+          "label": "Vault Passphrase Input",
+          "elementType": "Input",
+          "file": "client/src/app/vault/components/PassphraseUnlockDialog.tsx"
+        },
+        {
+          "id": "vault-passphrase-submit",
+          "label": "Vault Passphrase Submit",
+          "elementType": "Button",
+          "file": "client/src/app/vault/components/PassphraseUnlockDialog.tsx"
+        },
+        {
+          "id": "vault-refresh",
+          "label": "Vault Refresh",
+          "elementType": "Button",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-status-card",
+          "label": "Vault Status Card",
+          "elementType": "Card",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-bootstrap",
+          "label": "Vault Bootstrap",
+          "elementType": "Button",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-unlock",
+          "label": "Vault Unlock",
+          "elementType": "Button",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-lock",
+          "label": "Vault Lock",
+          "elementType": "Button",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-unseal",
+          "label": "Vault Unseal",
+          "elementType": "Button",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-policies-link",
+          "label": "Vault Policies Link",
+          "elementType": "Link",
+          "file": "client/src/app/vault/page.tsx"
+        },
+        {
+          "id": "vault-approles-link",
+          "label": "Vault Approles Link",
+          "elementType": "Link",
+          "file": "client/src/app/vault/page.tsx"
+        }
+      ]
+    },
+    "/vault/policies": {
+      "title": "/vault/policies",
+      "elements": [
+        {
+          "id": "vault-policy-new",
+          "label": "Vault Policy New",
+          "elementType": "Button",
+          "file": "client/src/app/vault/policies/page.tsx"
+        },
+        {
+          "id": "vault-policies-list",
+          "label": "Vault Policies List",
+          "elementType": "Card",
+          "file": "client/src/app/vault/policies/page.tsx"
+        }
+      ]
     }
   },
   "global": [
@@ -338,6 +449,12 @@
       "file": "client/src/components/app-sidebar.tsx"
     },
     {
+      "id": "environment-egress-firewall-toggle",
+      "label": "Environment Egress Firewall Toggle",
+      "elementType": "Switch",
+      "file": "client/src/components/egress/egress-tab.tsx"
+    },
+    {
       "id": "header-backup-health",
       "label": "Header Backup Health",
       "elementType": "Link",
@@ -351,7 +468,7 @@
     },
     {
       "id": "header-assisted-setup",
-      "label": "Header Guided Setup",
+      "label": "Header Assisted Setup",
       "elementType": "div",
       "file": "client/src/components/site-header.tsx"
     },
