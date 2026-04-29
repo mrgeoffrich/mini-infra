@@ -1,6 +1,6 @@
 module github.com/mrgeoffrich/mini-infra/egress-fw-agent
 
-go 1.22
+go 1.23.0
 
 require (
 	github.com/florianl/go-nflog/v2 v2.0.1
@@ -15,6 +15,6 @@ require (
 	github.com/josharian/native v0.0.0-20200817173448-b6b71def0850 // indirect
 	github.com/mdlayher/netlink v1.4.1 // indirect
 	github.com/mdlayher/socket v0.0.0-20210307095302-262dc9984e00 // indirect
-	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/sys v0.31.0 // indirect
 )
