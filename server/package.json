@@ -72,7 +72,7 @@
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.6",
         "cron-parser": "^5.5.0",
-        "dockerode": "^4.0.10",
+        "dockerode": "^5.0.0",
         "dotenv": "^17.4.1",
         "express": "^5.2.1",
         "express-list-endpoints": "^7.1.1",
