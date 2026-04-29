@@ -11,6 +11,8 @@ overrides:
   defu: ^6.1.5
   path-to-regexp: ^8.4.0
   js-yaml: ^4.1.1
+  '@azure/msal-node': ^5.1.5
+  '@hono/node-server': ^1.19.14
 
 # pnpm 10 blocks postinstall scripts by default. Native modules and
 # Prisma tooling need their install scripts to run, so allow them.
