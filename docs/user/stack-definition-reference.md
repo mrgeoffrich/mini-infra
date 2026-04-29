@@ -161,6 +161,7 @@ Important note about `dependsOn`:
 | `entrypoint` | No | Container entrypoint override. | Array of strings. |
 | `capAdd` | No | Linux capabilities to add to the container. | Array of strings, e.g. `["NET_ADMIN"]`. |
 | `user` | No | User the container should run as. | String. |
+| `egressBypass` | No | Skip egress-firewall DNS redirection for this container. | Boolean. Treat omitted as `false`. See runtime notes below. |
 | `env` | No | Static environment variables. | Mapping of string keys to string values. |
 | `dynamicEnv` | No | Apply-time env values resolved by Mini Infra. | Mapping of env var name to a supported dynamic source. Keys must not overlap with `env`. |
 | `ports` | No | Port exposure definitions. | Array of port objects. |
@@ -171,6 +172,12 @@ Important note about `dependsOn`:
 | `restartPolicy` | No | Docker restart policy. | `no`, `always`, `unless-stopped`, or `on-failure`. |
 | `healthcheck` | No | Docker healthcheck config. | Mapping described below. |
 | `logConfig` | No | Docker log driver config. | Mapping described below. |
+| `requiredEgress` | No | Domains the service needs to reach when the egress firewall is enabled. | Array of FQDN or wildcard patterns. See runtime notes below. |
+
+Runtime meaning of egress fields:
+
+- `requiredEgress` entries must match either a plain FQDN (e.g. `api.example.com`) or a wildcard suffix (e.g. `*.example.com`). Each entry is auto-promoted to an `EgressRule` with `source='template'`, scoped to the declaring service. Rules only take effect in environments where `egressFirewallEnabled` is on; otherwise the entries are stored but inert.
+- `egressBypass: true` tells Mini Infra to leave the container's `HostConfig.Dns` alone instead of pointing it at the per-environment egress gateway. Reserve this for sidecar/infra containers that must reach upstream DNS directly (e.g. the egress gateway itself). Most services should leave it unset.
 
 ## `services[].containerConfig.ports[]`
 
