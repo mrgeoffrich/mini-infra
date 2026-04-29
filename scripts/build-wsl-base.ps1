@@ -99,7 +99,7 @@ try {
 set -eu
 
 apk update
-apk add --no-cache docker iptables ip6tables ca-certificates procps util-linux
+apk add --no-cache docker iptables ip6tables ipset ca-certificates procps util-linux
 
 # Alpine 3.18+ ships nf_tables-backed iptables by default; dockerd's bridge
 # networking needs the legacy backend. Symlink it as the default iptables.
