@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/mrgeoffrich/mini-infra/egress-shared v0.0.0
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.1
 	github.com/stripe/smokescreen v0.0.5-0.20260409081830-7d45971c8968
 )
 
