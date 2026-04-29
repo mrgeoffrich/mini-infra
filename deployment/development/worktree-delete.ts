@@ -20,9 +20,13 @@ import { stdin as input, stdout as output } from 'node:process';
 import { logInfo, logOk, logWarn, logSkip, logError } from './lib/log.js';
 import { colimaExists, deleteColima } from './lib/colima.js';
 import {
+  cleanupOrphanBridges,
   defaultInstallDir,
   distroExists,
   distroName,
+  forceDockerCleanup,
+  isDistroRunning,
+  listRunningDistros,
   unregisterDistro,
 } from './lib/wsl.js';
 import {
@@ -239,6 +243,40 @@ async function main(): Promise<void> {
     } else {
       const distro = distroName(profile);
       if (commandExists('wsl') && distroExists(distro)) {
+        // WSL2's default NAT-mode networking shares one kernel netns across every
+        // running distro, so dockerd-created bridges (`br-<id12>`) outlive their
+        // owning daemon if the daemon dies before the kernel cleans them up. Two
+        // bridges with the same subnet then race in the FIB and silently drop
+        // traffic. Tear them down explicitly while we still have a hand on the
+        // daemon, falling back to `ip link delete` for any that don't go quietly.
+        if (isDistroRunning(distro)) {
+          logInfo(`Forcing Docker cleanup inside '${distro}' before unregister...`);
+          const fc = forceDockerCleanup(distro);
+          if (fc.containersRemoved > 0) {
+            logOk(`Removed ${fc.containersRemoved} container(s).`);
+          }
+          if (fc.networksPruned > 0) {
+            logOk(`Pruned ${fc.networksPruned} unused network(s).`);
+          }
+          for (const e of fc.errors) logWarn(`docker cleanup: ${e}`);
+
+          // Sibling running distros' bridges must be preserved — sweep is keyed
+          // off "no live mini-infra distro claims this bridge id".
+          const siblings = listRunningDistros().filter((d) => d !== distro);
+          logInfo('Sweeping orphan bridges from shared WSL2 kernel netns...');
+          const sweep = cleanupOrphanBridges(distro, siblings);
+          if (sweep.deleted.length > 0) {
+            logOk(`Deleted ${sweep.deleted.length} orphan bridge(s): ${sweep.deleted.join(', ')}`);
+          } else {
+            logSkip('No orphan bridges found.');
+          }
+          for (const e of sweep.errors) {
+            logWarn(`ip link delete ${e.bridge}: ${e.reason}`);
+          }
+        } else {
+          logSkip(`Distro '${distro}' is not running — skipping bridge sweep.`);
+        }
+
         logInfo(`Unregistering WSL distro '${distro}'...`);
         if (unregisterDistro(distro)) {
           logOk('WSL distro unregistered.');

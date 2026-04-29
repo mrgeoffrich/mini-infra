@@ -19,7 +19,15 @@ import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logInfo, logOk, logWarn, logSkip, logError } from './lib/log.js';
 import { colimaExists, deleteColima } from './lib/colima.js';
-import { distroExists, distroName, unregisterDistro } from './lib/wsl.js';
+import {
+  cleanupOrphanBridges,
+  distroExists,
+  distroName,
+  forceDockerCleanup,
+  isDistroRunning,
+  listRunningDistros,
+  unregisterDistro,
+} from './lib/wsl.js';
 import { migrateFromJsonIfNeeded, removeEntry } from './lib/registry.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -220,6 +228,8 @@ function main(): void {
       if (driver === 'colima') {
         console.log(`  [dry-run] colima delete ${profile} --force`);
       } else {
+        console.log(`  [dry-run] docker rm -f / network prune inside ${distro} (if running)`);
+        console.log(`  [dry-run] sweep orphan bridges from ${distro}`);
         console.log(`  [dry-run] wsl --unregister ${distro}`);
       }
       console.log(`  [dry-run] git worktree remove --force ${wt.path}  (${ageHours}h old)`);
@@ -241,6 +251,32 @@ function main(): void {
       }
     } else {
       if (distroExists(distro)) {
+        // Same orphan-bridge problem as worktree-delete: WSL2 distros share
+        // one kernel netns, so leftover `br-<id>` interfaces from a previous
+        // dockerd survive the unregister and collide with new daemons'
+        // bridges in the FIB. Sweep before unregister; preserve any bridge
+        // claimed by another running mini-infra distro.
+        if (isDistroRunning(distro)) {
+          logInfo(`Forcing Docker cleanup inside ${distro} before unregister`);
+          const fc = forceDockerCleanup(distro);
+          if (fc.containersRemoved > 0) {
+            logOk(`Removed ${fc.containersRemoved} container(s)`);
+          }
+          if (fc.networksPruned > 0) {
+            logOk(`Pruned ${fc.networksPruned} unused network(s)`);
+          }
+          for (const e of fc.errors) logWarn(`docker cleanup: ${e}`);
+
+          const siblings = listRunningDistros().filter((d) => d !== distro);
+          const sweep = cleanupOrphanBridges(distro, siblings);
+          if (sweep.deleted.length > 0) {
+            logOk(`Deleted ${sweep.deleted.length} orphan bridge(s): ${sweep.deleted.join(', ')}`);
+          }
+          for (const e of sweep.errors) {
+            logWarn(`ip link delete ${e.bridge}: ${e.reason}`);
+          }
+        }
+
         logInfo(`Unregistering WSL distro: ${distro}`);
         if (unregisterDistro(distro)) {
           logOk('WSL distro unregistered');
