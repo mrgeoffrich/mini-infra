@@ -54,6 +54,17 @@ vi.mock('../services/egress/egress-network-allocator', () => ({
   },
 }));
 
+// Mock EnvFirewallManager singleton accessor
+const mockApplyEnv = vi.fn().mockResolvedValue(undefined);
+const mockRemoveEnv = vi.fn().mockResolvedValue(undefined);
+const mockGetEnvFirewallManager = vi.fn(() => ({
+  applyEnv: mockApplyEnv,
+  removeEnv: mockRemoveEnv,
+}));
+vi.mock('../services/egress', () => ({
+  getEnvFirewallManager: () => mockGetEnvFirewallManager(),
+}));
+
 const MockDockerExecutorService = DockerExecutorService as MockedClass<typeof DockerExecutorService>;
 
 describe('EnvironmentManager', () => {
@@ -355,11 +366,13 @@ describe('EnvironmentManager', () => {
         description: 'Updated description',
         type: 'production',
         networkType: 'local',
+        egressFirewallEnabled: false,
         networks: [],
         createdAt: new Date(),
         updatedAt: new Date()
       };
 
+      mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'updated-env' } as any);
       mockPrisma.environment.update.mockResolvedValue(mockUpdatedEnvironment as any);
 
       const request = {
@@ -380,6 +393,7 @@ describe('EnvironmentManager', () => {
           networkType: undefined,
           tunnelId: undefined,
           tunnelServiceUrl: undefined,
+          egressFirewallEnabled: undefined,
         },
         include: {
           networks: true,
@@ -393,6 +407,81 @@ describe('EnvironmentManager', () => {
             select: { id: true },
           },
         }
+      });
+    });
+
+    describe('egressFirewallEnabled transitions', () => {
+      const baseEnvRow = {
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        networkType: 'local',
+        networks: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      it('should call applyEnv with observe mode when toggled false→true', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: true } as any);
+
+        await environmentManager.updateEnvironment('env-1', { egressFirewallEnabled: true });
+
+        expect(mockApplyEnv).toHaveBeenCalledWith('env-1', 'observe');
+        expect(mockRemoveEnv).not.toHaveBeenCalled();
+      });
+
+      it('should call removeEnv when toggled true→false', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: true, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: false } as any);
+
+        await environmentManager.updateEnvironment('env-1', { egressFirewallEnabled: false });
+
+        expect(mockRemoveEnv).toHaveBeenCalledWith('env-1', 'test-env');
+        expect(mockApplyEnv).not.toHaveBeenCalled();
+      });
+
+      it('should not call applyEnv or removeEnv when value is unchanged (true→true)', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: true, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: true } as any);
+
+        await environmentManager.updateEnvironment('env-1', { egressFirewallEnabled: true });
+
+        expect(mockApplyEnv).not.toHaveBeenCalled();
+        expect(mockRemoveEnv).not.toHaveBeenCalled();
+      });
+
+      it('should not call applyEnv or removeEnv when egressFirewallEnabled is omitted from the request', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: false } as any);
+
+        await environmentManager.updateEnvironment('env-1', { description: 'just changing desc' });
+
+        expect(mockApplyEnv).not.toHaveBeenCalled();
+        expect(mockRemoveEnv).not.toHaveBeenCalled();
+      });
+
+      it('should not throw when applyEnv fails (best-effort, DB is authoritative)', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: true } as any);
+        mockApplyEnv.mockRejectedValueOnce(new Error('fw-agent unreachable'));
+
+        const result = await environmentManager.updateEnvironment('env-1', { egressFirewallEnabled: true });
+
+        expect(result).not.toBeNull();
+        expect(mockApplyEnv).toHaveBeenCalledWith('env-1', 'observe');
+      });
+
+      it('should skip the agent call gracefully when EnvFirewallManager is not initialised', async () => {
+        mockGetEnvFirewallManager.mockReturnValueOnce(null as any);
+        mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'test-env' } as any);
+        mockPrisma.environment.update.mockResolvedValue({ ...baseEnvRow, egressFirewallEnabled: true } as any);
+
+        const result = await environmentManager.updateEnvironment('env-1', { egressFirewallEnabled: true });
+
+        expect(result).not.toBeNull();
+        expect(mockApplyEnv).not.toHaveBeenCalled();
+        expect(mockRemoveEnv).not.toHaveBeenCalled();
       });
     });
   });

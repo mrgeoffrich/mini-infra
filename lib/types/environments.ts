@@ -12,6 +12,7 @@ export interface Environment {
   networkType: EnvironmentNetworkType;
   tunnelId?: string;
   tunnelServiceUrl?: string;
+  egressFirewallEnabled: boolean;
   networks: EnvironmentNetwork[];
   stackCount: number;
   systemStackCount: number;
@@ -44,6 +45,7 @@ export interface UpdateEnvironmentRequest {
   networkType?: EnvironmentNetworkType;
   tunnelId?: string;
   tunnelServiceUrl?: string;
+  egressFirewallEnabled?: boolean;
 }
 
 // Operation result types

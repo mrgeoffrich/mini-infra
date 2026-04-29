@@ -13,6 +13,7 @@ import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
 import { EgressNetworkAllocator } from '../egress/egress-network-allocator';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
+import { getEnvFirewallManager } from '../egress';
 import { StackReconciler } from '../stacks/stack-reconciler';
 import DockerService from '../docker';
 
@@ -230,6 +231,12 @@ export class EnvironmentManager {
 
   public async updateEnvironment(id: string, request: UpdateEnvironmentRequest): Promise<Environment | null> {
     try {
+      // Read prior firewall state so we can detect transitions after the update.
+      const prior = await this.prisma.environment.findUnique({
+        where: { id },
+        select: { egressFirewallEnabled: true, name: true },
+      });
+
       const environment = await this.prisma.environment.update({
         where: { id },
         data: {
@@ -238,6 +245,7 @@ export class EnvironmentManager {
           networkType: request.networkType,
           tunnelId: request.tunnelId,
           tunnelServiceUrl: request.tunnelServiceUrl,
+          egressFirewallEnabled: request.egressFirewallEnabled,
         },
         include: {
           networks: true,
@@ -261,11 +269,38 @@ export class EnvironmentManager {
       const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
       await egressPolicyLifecycle.refreshEnvironmentNameSnapshot(id);
 
+      // If egressFirewallEnabled transitioned, push the change to the fw-agent.
+      // Best-effort: failures are logged but don't fail the request — the DB row
+      // is the source of truth and the agent will reconcile on next boot.
+      if (prior && request.egressFirewallEnabled !== undefined && request.egressFirewallEnabled !== prior.egressFirewallEnabled) {
+        await this.applyFirewallTransition(id, prior.name, request.egressFirewallEnabled);
+      }
+
       return this.mapPrismaToEnvironment(environment);
 
     } catch (error) {
       this.logger.error({ error, environmentId: id, request }, 'Failed to update environment');
       throw error;
+    }
+  }
+
+  private async applyFirewallTransition(envId: string, envName: string, enabled: boolean): Promise<void> {
+    const manager = getEnvFirewallManager();
+    if (!manager) {
+      this.logger.warn({ envId, enabled }, 'EnvFirewallManager not initialised; firewall transition skipped (will reconcile on next boot)');
+      return;
+    }
+    try {
+      if (enabled) {
+        await manager.applyEnv(envId, 'observe');
+      } else {
+        await manager.removeEnv(envId, envName);
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err: err instanceof Error ? err.message : String(err), envId, enabled },
+        'fw-agent transition failed (non-fatal — DB state is authoritative)',
+      );
     }
   }
 
@@ -787,6 +822,7 @@ export class EnvironmentManager {
       systemStackCount: prismaEnv.stacks?.length ?? 0,
       tunnelId: prismaEnv.tunnelId ?? undefined,
       tunnelServiceUrl: prismaEnv.tunnelServiceUrl ?? undefined,
+      egressFirewallEnabled: prismaEnv.egressFirewallEnabled ?? false,
       createdAt: prismaEnv.createdAt,
       updatedAt: prismaEnv.updatedAt
     };
