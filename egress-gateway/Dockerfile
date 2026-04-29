@@ -19,11 +19,16 @@ RUN go mod download
 # Copy source.
 COPY . .
 
+# TARGETARCH is set automatically by buildx (and by classic `docker build`
+# from the host arch). Targets the runtime image's arch by default; override
+# with `docker buildx build --platform=linux/amd64` etc. for cross-builds.
+ARG TARGETARCH
+
 # Build both binaries (CGO disabled — go-nflog uses pure Go netlink).
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /out/egress-gateway ./cmd/gateway
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
     go build -ldflags="-s -w" -o /out/egress-fw-agent ./cmd/fw-agent
 
 # ============================================================
