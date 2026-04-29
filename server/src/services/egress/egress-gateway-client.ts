@@ -12,7 +12,7 @@ import { getLogger } from '../../lib/logger-factory';
 const log = getLogger('stacks', 'egress-gateway-client');
 
 // ---------------------------------------------------------------------------
-// Types (mirror egress-sidecar/src/types.ts — only what the client sends/receives)
+// Types (mirror egress-gateway/internal/admin/server.go — only what the client sends/receives)
 // ---------------------------------------------------------------------------
 
 export interface ContainerMapEntry {
@@ -45,7 +45,7 @@ export interface AdminHealthResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Rules snapshot types (mirror egress-sidecar/src/types.ts)
+// Rules snapshot types (mirror egress-gateway/internal/admin/server.go)
 // ---------------------------------------------------------------------------
 
 export interface EgressRuleEntry {

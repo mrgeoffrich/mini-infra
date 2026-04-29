@@ -375,14 +375,9 @@ async function main(): Promise<void> {
 
   const composeProjectName = `mini-infra-${profile}`;
   const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
-  // EGRESS_SIDECAR_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field;
-  // the template specifies its own `dockerTag`, so this value must NOT include a `:tag` suffix.
-  const egressSidecarImageTag = `localhost:${registryPort}/mini-infra-egress-sidecar`;
-  const egressSidecarPushRef = `${egressSidecarImageTag}:latest`;
   // EGRESS_GATEWAY_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field
   // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
-  // Same convention as EGRESS_SIDECAR_IMAGE_TAG above. The fw-agent compose service appends
-  // `:latest` itself.
+  // The fw-agent compose service appends `:latest` itself.
   const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
   const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
 
@@ -392,7 +387,6 @@ async function main(): Promise<void> {
     UI_PORT: String(uiPort),
     REGISTRY_PORT: String(registryPort),
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
-    EGRESS_SIDECAR_IMAGE_TAG: egressSidecarImageTag,
     EGRESS_GATEWAY_IMAGE_TAG: egressGatewayImageTag,
     EGRESS_POOL_CIDR: egressPoolCidr,
     PROJECT_ROOT,
@@ -466,30 +460,6 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   logOk('Agent sidecar image pushed');
-
-  // Build + push egress sidecar image
-  logInfo('Building egress sidecar image...');
-  const egressBuild = exec(
-    'docker',
-    [
-      'build',
-      '-t',
-      egressSidecarPushRef,
-      path.join(PROJECT_ROOT, 'egress-sidecar'),
-    ],
-    { env: stackEnv, stdio: 'inherit' },
-  );
-  if (egressBuild.status !== 0) {
-    logError('Egress sidecar build failed');
-    process.exit(1);
-  }
-  logInfo(`Pushing egress sidecar image to ${egressSidecarPushRef}...`);
-  const egressPush = exec('docker', ['push', egressSidecarPushRef], { env: stackEnv, stdio: 'inherit' });
-  if (egressPush.status !== 0) {
-    logError('Egress sidecar push failed');
-    process.exit(1);
-  }
-  logOk('Egress sidecar image pushed');
 
   // Build + push egress-gateway image (fw-agent + gateway binaries)
   logInfo('Building egress-gateway image...');
@@ -622,7 +592,6 @@ async function main(): Promise<void> {
     vaultPort,
     egressPool: egressPoolCidr,
     agentSidecarImageTag,
-    egressSidecarImageTag,
     shortDescription: shortDesc,
     longDescription: longDesc,
   };
@@ -653,7 +622,6 @@ async function main(): Promise<void> {
         dockerHost,
         composeProject: composeProjectName,
         agentSidecarImageTag,
-        egressSidecarImageTag,
         egressPoolCidr,
         devEnvPath: DEV_ENV_FILE,
         detailsFile,
