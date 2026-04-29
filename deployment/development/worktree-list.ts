@@ -9,8 +9,27 @@
 //   --json   Emit the registry as JSON instead of a table
 
 import { parseArgs } from 'node:util';
-import { loadRegistry, REGISTRY_YAML } from './lib/registry.js';
+import {
+  DEFAULT_EGRESS_POOL_CIDR,
+  EGRESS_PER_WORKTREE_PREFIX,
+  EGRESS_PER_WORKTREE_SLOT_COUNT,
+  loadRegistry,
+  REGISTRY_YAML,
+  slotOf,
+  type WorktreeEntry,
+} from './lib/registry.js';
 import { logError } from './lib/log.js';
+
+// Resolve the egress pool for an entry without triggering the warn side-effect
+// in egressPoolForSlot (which we don't want spamming the listing output).
+// Prefer the persisted field; otherwise compute from slot; otherwise show '-'.
+function egressPoolFor(e: WorktreeEntry): string {
+  if (e.egress_pool_cidr) return e.egress_pool_cidr;
+  const slot = slotOf(e);
+  if (slot === undefined) return '-';
+  if (slot < 0 || slot >= EGRESS_PER_WORKTREE_SLOT_COUNT) return DEFAULT_EGRESS_POOL_CIDR;
+  return `172.30.${slot * 4}.0/${EGRESS_PER_WORKTREE_PREFIX}`;
+}
 
 interface Args {
   wide: boolean;
@@ -77,6 +96,7 @@ function main(): void {
       'REG',
       'VAULT',
       'HAPROXY',
+      'EGRESS POOL',
       'VM',
       'ADMIN EMAIL',
       'ADMIN PASSWORD',
@@ -96,6 +116,7 @@ function main(): void {
         e.registry_port ? String(e.registry_port) : '-',
         e.vault_port ? String(e.vault_port) : '-',
         haproxy,
+        egressPoolFor(e),
         dash(e.colima_vm),
         dash(e.admin_email),
         dash(e.admin_password),

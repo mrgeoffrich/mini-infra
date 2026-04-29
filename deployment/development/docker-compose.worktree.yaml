@@ -42,6 +42,7 @@ services:
       - ALLOW_INSECURE=true
       - ENABLE_DEV_API_KEY_ENDPOINT=true
       - BUNDLES_DRIVE_BUILTIN=true
+      - MINI_INFRA_EGRESS_POOL_CIDR=${EGRESS_POOL_CIDR}
     healthcheck:
       test:
         [
