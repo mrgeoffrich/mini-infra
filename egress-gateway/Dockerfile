@@ -1,57 +1,41 @@
-# Multi-stage Dockerfile — builds both egress-gateway and egress-fw-agent binaries.
-# Builder: golang:1.22-alpine (matches the plan specification).
-# Runtime: alpine:3.19 with iptables, ipset, and libnetfilter_log.
+# egress-gateway image — Smokescreen-based HTTP/HTTPS forward proxy.
+#
+# Build context is the repo root so we can pull in the egress-shared/ module
+# alongside egress-gateway/. The replace directive in egress-gateway/go.mod
+# resolves egress-shared via a relative path inside the build container.
 
 # ============================================================
 # Stage 1: Builder
 # ============================================================
 FROM golang:1.22-alpine AS builder
 
-# Install build dependencies for CGO-free Go modules.
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /build
 
-# Copy go module files first for layer caching.
-COPY go.mod go.sum ./
+# Copy both modules so the relative `replace ../egress-shared` resolves.
+COPY egress-shared/   /build/egress-shared/
+COPY egress-gateway/  /build/egress-gateway/
+
+WORKDIR /build/egress-gateway
+
+# Disable workspace mode in the build — replace directives in go.mod are authoritative.
+ENV GOWORK=off
+
 RUN go mod download
 
-# Copy source.
-COPY . .
-
-# TARGETARCH is set automatically by buildx (and by classic `docker build`
-# from the host arch). Targets the runtime image's arch by default; override
-# with `docker buildx build --platform=linux/amd64` etc. for cross-builds.
 ARG TARGETARCH
-
-# Build both binaries (CGO disabled — go-nflog uses pure Go netlink).
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w" -o /out/egress-gateway ./cmd/gateway
-
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w" -o /out/egress-fw-agent ./cmd/fw-agent
+    go build -ldflags="-s -w" -o /out/egress-gateway ./cmd
 
 # ============================================================
 # Stage 2: Runtime
 # ============================================================
 FROM alpine:3.19
 
-# Install iptables, ipset, and libnetfilter_log at runtime.
-# nftables-compat wraps iptables calls through the nf_tables backend on modern kernels.
-RUN apk add --no-cache \
-    iptables \
-    ip6tables \
-    ipset \
-    libnetfilter_log \
-    ca-certificates
+RUN apk add --no-cache ca-certificates
 
-# Copy compiled binaries from builder stage.
-COPY --from=builder /out/egress-gateway  /usr/local/bin/egress-gateway
-COPY --from=builder /out/egress-fw-agent /usr/local/bin/egress-fw-agent
+COPY --from=builder /out/egress-gateway /usr/local/bin/egress-gateway
 
-# Default ENTRYPOINT is the per-env gateway. The fw-agent host-singleton
-# overrides this in its compose service via `entrypoint: ["/usr/local/bin/egress-fw-agent"]`.
-# This default is what stack-deployed gateway containers (egress-gateway template) use,
-# since the stack template currently does not specify an entrypoint.
 ENTRYPOINT ["/usr/local/bin/egress-gateway"]
 # Healthcheck is handled by the admin API at /admin/health.

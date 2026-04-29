@@ -13,7 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/proxy"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	rulesstate "github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 // ContainerMapRequest mirrors ContainerMapRequest in egress-gateway-client.ts.
@@ -63,7 +64,7 @@ type ListenerStatus struct {
 type Server struct {
 	aclSwapper    *proxy.ACLSwapper
 	containers    *state.ContainerMap
-	rulesState    *state.RulesState
+	rulesState    *rulesstate.RulesState
 	log           *logrus.Logger
 	startTime     time.Time
 	proxyUp       atomic.Bool
@@ -74,7 +75,7 @@ type Server struct {
 func New(
 	swapper *proxy.ACLSwapper,
 	containers *state.ContainerMap,
-	rulesState *state.RulesState,
+	rulesState *rulesstate.RulesState,
 	log *logrus.Logger,
 ) *Server {
 	return &Server{

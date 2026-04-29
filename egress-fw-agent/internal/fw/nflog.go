@@ -14,8 +14,8 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/events"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-fw-agent/internal/events"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 const (

@@ -18,7 +18,8 @@ import (
 	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/admin"
 	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/config"
 	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/proxy"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	rulesstate "github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 func main() {
@@ -39,7 +40,7 @@ func main() {
 
 	// Shared state.
 	containers := state.NewContainerMap()
-	rulesState := state.NewRulesState()
+	rulesState := rulesstate.NewRulesState()
 	aclSwapper := proxy.NewACLSwapper()
 
 	// Admin server (manages health flags for proxy + admin listeners).
