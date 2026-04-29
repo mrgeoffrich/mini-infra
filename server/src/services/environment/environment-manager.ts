@@ -565,12 +565,16 @@ export class EnvironmentManager {
    * 1. Allocate a /24 subnet from the egress pool and persist it on the applications
    *    InfraResource.metadata so the HAProxy stack's reconcileOutputs creates the
    *    Docker network with the correct subnet.
-   * 2. Pre-allocate the gateway IP (.2 in the subnet) and persist it on
-   *    Environment.egressGatewayIp so the stack-container-manager can inject DNS.
-   * 3. Instantiate the egress-gateway system stack for this environment.
-   * 4. Apply the stack so the container comes up.
+   * 2. Create the applications Docker network and attach the mini-infra-server
+   *    so the container-map-pusher can reach the gateway later.
+   * 3. Allocate the gateway IP via EgressNetworkAllocator.allocateGatewayIp() —
+   *    inspects connected containers and picks the first free address. Done
+   *    after the server has joined so we don't collide with whatever IP Docker
+   *    auto-assigned to it. Persist on Environment.egressGatewayIp.
+   * 4. Instantiate the egress-gateway system stack for this environment and
+   *    apply it so the container comes up.
    * 5. After apply, reconnect the container to the applications network with the
-   *    static IP so the DNS server is reachable at the pre-allocated address.
+   *    static IP so the gateway is reachable at the pre-allocated address.
    *
    * All steps are wrapped in try/catch. A failure at any step leaves the env
    * usable but logs a loud warning. The failure is appended to the UserEvent
@@ -588,6 +592,7 @@ export class EnvironmentManager {
       const applicationsNetworkName = `${environmentName}-applications`;
       const executor = new DockerExecutorService();
       await executor.initialize();
+      const allocator = new EgressNetworkAllocator(this.prisma);
 
       // Step 1: Determine subnet. If the applications network already exists (e.g. from a prior
       // failed attempt, or external creation), use its subnet so we stay consistent with reality.
@@ -607,18 +612,14 @@ export class EnvironmentManager {
         gateway = ipamCfg.Gateway ?? `${subnetOctets.slice(0, 3).join('.')}.1`;
         this.logger.info({ environmentId, subnet, gateway, applicationsNetworkName }, 'Reusing existing applications network subnet');
       } else {
-        const allocator = new EgressNetworkAllocator(this.prisma);
         const allocated = await allocator.allocateSubnet();
         subnet = allocated.subnet;
         gateway = allocated.gateway;
       }
 
-      // Derive the egress container IP (.2 in the subnet)
-      const subnetBase = subnet.split('/')[0].split('.');
-      subnetBase[3] = '2';
-      const egressGatewayIp = subnetBase.join('.');
-
-      this.logger.info({ environmentId, subnet, gateway, egressGatewayIp }, 'Allocated egress subnet and gateway IP');
+      // Note: egressGatewayIp is allocated after the network exists and the
+      // mini-infra-server has joined, so we can pick the first IP that isn't
+      // already taken. See "Step 3c" below.
 
       // Step 2: Pre-create the InfraResource record with the subnet in metadata so
       // that when the HAProxy stack (or egress-gateway stack) runs reconcileOutputs
@@ -649,15 +650,7 @@ export class EnvironmentManager {
         });
       }
 
-      // Step 3: Persist egressGatewayIp on the environment row
-      await this.prisma.environment.update({
-        where: { id: environmentId },
-        data: { egressGatewayIp },
-      });
-
-      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress subnet ${subnet} allocated; gateway IP ${egressGatewayIp}`);
-
-      // Step 3b: Create the applications Docker network up-front with the allocated subnet.
+      // Step 3a: Create the applications Docker network up-front with the allocated subnet.
       // The egress-gateway template declares it as a resourceInput, so something must own
       // network creation. Doing it here guarantees it exists before any stack apply, works
       // for all env types (local + internet). If networkAlreadyExists, we already discovered
@@ -682,7 +675,7 @@ export class EnvironmentManager {
         }
       }
 
-      // Step 3c: Connect the mini-infra-server container itself to this env's applications network
+      // Step 3b: Connect the mini-infra-server container itself to this env's applications network
       // so the container-map-pusher and log-ingester can reach the egress-gateway's admin API.
       // Without this, mini-infra has no route to the per-env gateway IP and the audit pipeline
       // never starts. Inside Docker, os.hostname() returns the container ID — use that to self-attach.
@@ -703,6 +696,29 @@ export class EnvironmentManager {
           await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: mini-infra-server could not join ${applicationsNetworkName}: ${msg}`);
         }
       }
+
+      // Step 3c: Pick the egress gateway IP. Done now (after the network exists
+      // and the mini-infra-server has joined) so allocateGatewayIp inspects the
+      // live network and skips IPs already claimed — Docker auto-assigns from
+      // .2 upward, so a hardcoded .2 collides with whichever container joined
+      // the network first.
+      let egressGatewayIp: string;
+      try {
+        egressGatewayIp = await allocator.allocateGatewayIp(applicationsNetworkName);
+      } catch (allocErr) {
+        const msg = allocErr instanceof Error ? allocErr.message : String(allocErr);
+        this.logger.error({ environmentId, applicationsNetworkName, err: msg }, 'Failed to allocate egress gateway IP — skipping gateway deployment');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: Failed to allocate egress gateway IP: ${msg}`);
+        return;
+      }
+
+      this.logger.info({ environmentId, subnet, gateway, egressGatewayIp }, 'Allocated egress subnet and gateway IP');
+
+      await this.prisma.environment.update({
+        where: { id: environmentId },
+        data: { egressGatewayIp },
+      });
+      await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress subnet ${subnet} allocated; gateway IP ${egressGatewayIp}`);
 
       // Step 4: Instantiate the egress-gateway system stack
       const egressTemplate = await this.prisma.stackTemplate.findUnique({
