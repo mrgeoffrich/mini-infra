@@ -35,7 +35,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCreateEgressRule, usePatchEgressPolicy } from "@/hooks/use-egress";
-import { listEgressEvents } from "@/api/egress";
+import { listEgressEventsForPolicy } from "@/api/egress";
 import {
   computeWildcardSuggestions,
   type WildcardSuggestion,
@@ -439,11 +439,14 @@ export function EgressPromoteWizard({
   const createRule = useCreateEgressRule();
   const patchPolicy = usePatchEgressPolicy();
 
-  // Fetch last 7 days of events for this policy
+  // Fetch last 7 days of events for this policy. 200 is the server's
+  // hard cap on `limit`; events are deduplicated server-side per
+  // (destination, pattern) with mergedHits, so 200 rows comfortably
+  // covers the unique destinations a wizard run needs to consider.
   const eventsQuery = useQuery({
     queryKey: ["egressEvents", "wizard", policyId],
     queryFn: () =>
-      listEgressEvents({ policyId, since: since7d(), limit: 500 }),
+      listEgressEventsForPolicy(policyId, { since: since7d(), limit: 200 }),
     enabled: open,
     staleTime: 30000,
   });
