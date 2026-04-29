@@ -540,6 +540,7 @@ const eventQuerySchema = z.object({
   until: z.string().datetime({ offset: true }).optional(),
   environmentId: z.string().optional(),
   stackId: z.string().optional(),
+  sourceServiceName: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -568,11 +569,12 @@ router.get(
       });
     }
 
-    const { action, since, until, page, limit } = parsed.data;
+    const { action, since, until, sourceServiceName, page, limit } = parsed.data;
 
     const where = {
       policyId: policy.id,
       ...(action ? { action } : {}),
+      ...(sourceServiceName ? { sourceServiceName } : {}),
       ...(since || until
         ? {
             occurredAt: {
@@ -621,7 +623,8 @@ router.get(
       });
     }
 
-    const { action, since, until, environmentId, stackId, page, limit } = parsed.data;
+    const { action, since, until, environmentId, stackId, sourceServiceName, page, limit } =
+      parsed.data;
 
     // If filtering by environmentId or stackId, filter via the nested policy
     const hasPolicyFilter = !!(environmentId || stackId);
@@ -633,6 +636,7 @@ router.get(
     const where = {
       ...(hasPolicyFilter ? { policy: policyWhere } : {}),
       ...(action ? { action } : {}),
+      ...(sourceServiceName ? { sourceServiceName } : {}),
       ...(since || until
         ? {
             occurredAt: {

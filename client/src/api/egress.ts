@@ -66,6 +66,7 @@ export interface ListEgressEventsQuery {
   environmentId?: string;
   stackId?: string;
   policyId?: string;
+  sourceServiceName?: string;
   action?: "allowed" | "blocked" | "observed";
   since?: string;
   until?: string;
@@ -151,6 +152,8 @@ export async function listEgressEvents(
   if (query.environmentId) url.searchParams.set("environmentId", query.environmentId);
   if (query.stackId) url.searchParams.set("stackId", query.stackId);
   if (query.policyId) url.searchParams.set("policyId", query.policyId);
+  if (query.sourceServiceName)
+    url.searchParams.set("sourceServiceName", query.sourceServiceName);
   if (query.action) url.searchParams.set("action", query.action);
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
@@ -193,6 +196,8 @@ export async function listEgressEventsForPolicy(
   );
 
   if (query.action) url.searchParams.set("action", query.action);
+  if (query.sourceServiceName)
+    url.searchParams.set("sourceServiceName", query.sourceServiceName);
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
   if (query.page !== undefined) url.searchParams.set("page", String(query.page));

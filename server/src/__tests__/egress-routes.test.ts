@@ -705,6 +705,23 @@ describe('Egress Routes', () => {
       expect(res.status).toBe(400);
     });
 
+    it('applies sourceServiceName filter', async () => {
+      const policy = makePolicy();
+      mockPrisma.egressPolicy.findUnique.mockResolvedValue(policy);
+      mockPrisma.egressEvent.findMany.mockResolvedValue([]);
+      mockPrisma.egressEvent.count.mockResolvedValue(0);
+
+      await request(app).get(
+        `/api/egress/policies/${policy.id}/events?sourceServiceName=api`,
+      );
+
+      expect(mockPrisma.egressEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sourceServiceName: 'api' }),
+        }),
+      );
+    });
+
     it('returns 404 when policy not found', async () => {
       mockPrisma.egressPolicy.findUnique.mockResolvedValue(null);
 
@@ -758,6 +775,38 @@ describe('Egress Routes', () => {
         expect.objectContaining({
           where: expect.objectContaining({
             policy: { stackId },
+          }),
+        }),
+      );
+    });
+
+    it('filters by sourceServiceName as a top-level where clause', async () => {
+      mockPrisma.egressEvent.findMany.mockResolvedValue([]);
+      mockPrisma.egressEvent.count.mockResolvedValue(0);
+
+      await request(app).get('/api/egress/events?sourceServiceName=worker');
+
+      expect(mockPrisma.egressEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ sourceServiceName: 'worker' }),
+        }),
+      );
+    });
+
+    it('combines stackId and sourceServiceName filters', async () => {
+      const stackId = createId();
+      mockPrisma.egressEvent.findMany.mockResolvedValue([]);
+      mockPrisma.egressEvent.count.mockResolvedValue(0);
+
+      await request(app).get(
+        `/api/egress/events?stackId=${stackId}&sourceServiceName=api`,
+      );
+
+      expect(mockPrisma.egressEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            policy: { stackId },
+            sourceServiceName: 'api',
           }),
         }),
       );
