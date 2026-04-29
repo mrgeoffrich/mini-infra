@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"net"
 	"net/http"
 
@@ -24,6 +25,30 @@ func RoleFromRequest(containers *state.ContainerMap) func(*http.Request) (string
 		}
 		return attr.StackID, nil
 	}
+}
+
+// UnknownIPDenyHandler wraps next with a pre-ACL check that fast-fails
+// requests from source IPs not found in the container map with an HTTP 403
+// and a JSON body. This runs before Smokescreen so unmapped IPs receive a
+// deterministic deny response rather than relying on Smokescreen's error path
+// (which may vary across versions and CONNECT vs HTTP proxy modes).
+func UnknownIPDenyHandler(next http.Handler, containers *state.ContainerMap) http.Handler {
+	type denyBody struct {
+		Error string `json:"error"`
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		src := remoteIP(r)
+		if containers.Lookup(src) == nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			body, _ := json.Marshal(denyBody{
+				Error: "egress denied: source IP " + src + " is not mapped to a managed stack",
+			})
+			_, _ = w.Write(body)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // remoteIP extracts just the IP portion from r.RemoteAddr ("ip:port").

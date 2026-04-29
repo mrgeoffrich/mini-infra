@@ -51,20 +51,53 @@ func emitEgressEvent(evt EgressEvent) {
 	stdoutMu.Unlock()
 }
 
+// toInt64 safely converts numeric logrus field values to int64.
+// Logrus may store numeric values as int64, int, float64 (*uint64 for conntrack
+// byte counters), or *uint64 pointer depending on the subsystem.
+func toInt64(v any) (int64, bool) {
+	switch x := v.(type) {
+	case int64:
+		return x, true
+	case int:
+		return int64(x), true
+	case float64:
+		return int64(x), true
+	case uint64:
+		return int64(x), true
+	case *uint64:
+		if x != nil {
+			return int64(*x), true
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
 // NDJSONLogHook is a logrus.Hook that intercepts Smokescreen's canonical log
 // entries and re-emits them as EgressEvent NDJSON on stdout for the ingester.
 //
-// Smokescreen emits one "CANONICAL-PROXY-DECISION" log entry per request at
-// the Info level (or Warn on deny). The hook maps this to our EgressEvent shape.
+// Smokescreen emits two canonical log messages:
+//   - "CANONICAL-PROXY-DECISION" — one per request at Info (allow) or Warn (deny).
+//     For HTTP forward proxying this carries the content-length of the response.
+//   - "CANONICAL-PROXY-CN-CLOSE" — one per HTTPS CONNECT tunnel at close time.
+//     Carries bytes_in / bytes_out byte counts for the tunnel lifetime.
 //
-// Fields read from the logrus entry (see smokescreen.go LogField* constants):
+// Fields read from CANONICAL-PROXY-DECISION (smokescreen.LogField* constants):
 //   - "inbound_remote_addr"  → SrcIp
 //   - "requested_host"       → Target
 //   - "allow"                → Action (bool → "allowed"/"blocked")
 //   - "decision_reason"      → Reason
 //   - "role"                 → StackId
 //   - "proxy_type"           → Protocol ("http" vs "connect")
-//   - "content_length"       → BytesDown (approximate for HTTP forward)
+//   - "content_length"       → BytesDown (http.Response.ContentLength, int64)
+//
+// Fields read from CANONICAL-PROXY-CN-CLOSE (conntrack.LogField* constants):
+//   - "bytes_in"             → BytesUp   (*uint64 pointer)
+//   - "bytes_out"            → BytesDown (*uint64 pointer)
+//   - "inbound_remote_addr"  → SrcIp
+//   - "requested_host"       → Target
+//   - "role"                 → StackId
 type NDJSONLogHook struct{}
 
 // Levels returns the logrus levels that should trigger this hook.
@@ -75,10 +108,19 @@ func (h *NDJSONLogHook) Levels() []logrus.Level {
 
 // Fire is called by logrus for each matching log entry.
 func (h *NDJSONLogHook) Fire(entry *logrus.Entry) error {
-	if entry.Message != "CANONICAL-PROXY-DECISION" {
-		return nil
+	switch entry.Message {
+	case "CANONICAL-PROXY-DECISION":
+		h.handleDecision(entry)
+	case "CANONICAL-PROXY-CN-CLOSE":
+		h.handleConnClose(entry)
 	}
+	return nil
+}
 
+// handleDecision handles CANONICAL-PROXY-DECISION log entries (HTTP forward
+// and CONNECT decision events). This fires once per request at decision time
+// and carries response content-length for HTTP forward proxying.
+func (h *NDJSONLogHook) handleDecision(entry *logrus.Entry) {
 	evt := EgressEvent{
 		Evt:        "tcp",
 		MergedHits: 1,
@@ -122,13 +164,55 @@ func (h *NDJSONLogHook) Fire(entry *logrus.Entry) error {
 		evt.StackId = &s
 	}
 
-	// Byte counts — smokescreen logs content_length on HTTP forward proxy responses
-	if v, ok := entry.Data["content_length"].(int64); ok && v > 0 {
+	// Byte counts — smokescreen logs content_length (http.Response.ContentLength,
+	// type int64) on HTTP forward proxy responses.
+	if v, ok := toInt64(entry.Data["content_length"]); ok && v > 0 {
 		evt.BytesDown = v
 	}
 
 	emitEgressEvent(evt)
-	return nil
+}
+
+// handleConnClose handles CANONICAL-PROXY-CN-CLOSE log entries. This fires
+// when an HTTPS CONNECT tunnel closes and carries the total bytes transferred
+// through the tunnel in both directions.
+func (h *NDJSONLogHook) handleConnClose(entry *logrus.Entry) {
+	evt := EgressEvent{
+		Evt:        "tcp",
+		Protocol:   "connect",
+		MergedHits: 1,
+	}
+
+	// Source IP
+	if v, ok := entry.Data["inbound_remote_addr"].(string); ok {
+		evt.SrcIp = v
+	}
+
+	// Target host
+	if v, ok := entry.Data["requested_host"].(string); ok {
+		evt.Target = v
+	}
+
+	// Stack identity
+	if v, ok := entry.Data["role"].(string); ok && v != "" {
+		s := v
+		evt.StackId = &s
+	}
+
+	// Action — CN-CLOSE only fires for established (allowed) tunnels.
+	evt.Action = "allowed"
+
+	// Byte counts — conntrack stores *uint64 pointers for bytes_in / bytes_out.
+	// bytes_in  = bytes read from the client (upstream direction)
+	// bytes_out = bytes written to the client (downstream direction)
+	if v, ok := toInt64(entry.Data["bytes_in"]); ok {
+		evt.BytesUp = v
+	}
+	if v, ok := toInt64(entry.Data["bytes_out"]); ok {
+		evt.BytesDown = v
+	}
+
+	emitEgressEvent(evt)
 }
 
 // NewNDJSONLogHook constructs the hook.

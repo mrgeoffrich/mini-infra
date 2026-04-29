@@ -36,12 +36,11 @@ export interface ContainerMapResponse {
 export interface AdminHealthResponse {
   ok: true;
   rulesVersion: number;
-  containerMapVersion: number;
   uptimeSeconds: number;
-  upstream: {
-    servers: string[];
-    lastSuccessAt: string | null;
-    lastFailureAt: string | null;
+  /** Whether each listener is accepting connections (as reported by the Go admin server). */
+  listeners: {
+    proxy: boolean;
+    admin: boolean;
   };
 }
 

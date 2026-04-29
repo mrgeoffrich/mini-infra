@@ -8,15 +8,26 @@ import (
 // dohHosts is the denylist of known DNS-over-HTTPS (DoH) endpoints.
 // Checked case-insensitively against the CONNECT target host or HTTP Host header.
 // This gate runs before the Smokescreen ACL — it cannot be overridden by stack rules.
+//
+// Both hostnames AND raw IP literals are listed so that an app that pre-resolves
+// a DoH provider hostname externally and then connects to the raw IP directly
+// (e.g., https://8.8.8.8/dns-query) is also blocked.
 var dohHosts = []string{
+	// Google DNS
 	"dns.google",
 	"dns.google.com",
+	"8.8.8.8",
+	"8.8.4.4",
+	// Cloudflare DNS
 	"cloudflare-dns.com",
 	"1.1.1.1",
 	"1.0.0.1",
+	// Quad9
 	"quad9.net",
 	"dns.quad9.net",
 	"9.9.9.9",
+	"149.112.112.112",
+	// Other
 	"dns.adguard-dns.com",
 	"doh.opendns.com",
 }
@@ -38,10 +49,12 @@ func DoHGate(next http.Handler) http.Handler {
 // connectTarget extracts the target hostname from both CONNECT and regular HTTP requests.
 func connectTarget(r *http.Request) string {
 	if r.Method == http.MethodConnect {
-		// CONNECT target is "host:port" in the request URL
-		host := r.URL.Host
+		// For CONNECT requests the request-target is authority-form ("host:port").
+		// Prefer r.Host which is reliably set; r.URL.Host may be parsed incorrectly
+		// when httptest or a reverse proxy reconstructs the URL with a full scheme.
+		host := r.Host
 		if host == "" {
-			host = r.Host
+			host = r.URL.Host
 		}
 		// Strip port — we only care about hostname for the denylist.
 		if idx := strings.LastIndex(host, ":"); idx >= 0 {

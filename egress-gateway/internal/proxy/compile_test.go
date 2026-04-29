@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -89,6 +90,59 @@ func TestCompileACL_EnforceMode(t *testing.T) {
 	}
 	if rule.DomainGlobs[0] != "api.safe.io" {
 		t.Errorf("expected glob 'api.safe.io', got %q", rule.DomainGlobs[0])
+	}
+}
+
+// TestCompileACL_DetectModeWithBlockRules verifies that block rules in detect
+// mode result in a warning (via logger) but still produce a valid acl.Rule with
+// the allow glob and Report policy. Block rules are advisory-only in detect mode
+// because Smokescreen's acl.Rule has no per-role explicit deny list.
+func TestCompileACL_DetectModeWithBlockRules(t *testing.T) {
+	snap := &RulesSnapshot{
+		Version: 4,
+		StackPolicies: map[string]StackPolicyEntry{
+			"stack-mixed": {
+				Mode:          "detect",
+				DefaultAction: "allow",
+				Rules: []EgressRuleEntry{
+					{ID: "r1", Pattern: "*.allowed.io", Action: "allow", Targets: []string{}},
+					{ID: "r2", Pattern: "blocked1.com", Action: "block", Targets: []string{}},
+					{ID: "r3", Pattern: "blocked2.com", Action: "block", Targets: []string{}},
+				},
+			},
+		},
+	}
+
+	// Use a logger that captures output so we can verify the warning was emitted.
+	logger := logrus.New()
+	var logBuf bytes.Buffer
+	logger.SetOutput(&logBuf)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	compiled, err := CompileACL(logger, snap)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	rule, ok := compiled.Rules["stack-mixed"]
+	if !ok {
+		t.Fatal("expected rule for stack-mixed")
+	}
+
+	// detect mode → Report policy
+	if rule.Policy != acl.Report {
+		t.Errorf("expected Report policy for detect mode, got %v", rule.Policy)
+	}
+
+	// Only the allow glob should be in DomainGlobs.
+	if len(rule.DomainGlobs) != 1 || rule.DomainGlobs[0] != "*.allowed.io" {
+		t.Errorf("expected 1 allow glob '*.allowed.io', got %v", rule.DomainGlobs)
+	}
+
+	// A warning should have been emitted mentioning the dropped block count.
+	logOutput := logBuf.String()
+	if logOutput == "" {
+		t.Error("expected warning log for detect-mode block rules, got no output")
 	}
 }
 

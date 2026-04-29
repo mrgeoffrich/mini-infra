@@ -12,14 +12,21 @@ func TestDoHGate_BlocksKnownDoHHosts(t *testing.T) {
 		host   string
 		desc   string
 	}{
+		// Google DNS hostnames and IP literals
 		{http.MethodConnect, "dns.google:443", "dns.google CONNECT"},
 		{http.MethodConnect, "dns.google.com:443", "dns.google.com CONNECT"},
+		{http.MethodConnect, "8.8.8.8:443", "8.8.8.8 IP literal CONNECT"},
+		{http.MethodConnect, "8.8.4.4:443", "8.8.4.4 IP literal CONNECT"},
+		// Cloudflare DNS
 		{http.MethodConnect, "cloudflare-dns.com:443", "cloudflare-dns.com CONNECT"},
 		{http.MethodConnect, "1.1.1.1:443", "1.1.1.1 CONNECT"},
 		{http.MethodConnect, "1.0.0.1:443", "1.0.0.1 CONNECT"},
+		// Quad9
 		{http.MethodConnect, "quad9.net:443", "quad9.net CONNECT"},
 		{http.MethodConnect, "dns.quad9.net:443", "dns.quad9.net CONNECT"},
 		{http.MethodConnect, "9.9.9.9:443", "9.9.9.9 CONNECT"},
+		{http.MethodConnect, "149.112.112.112:443", "149.112.112.112 Quad9 alternate CONNECT"},
+		// Others
 		{http.MethodConnect, "dns.adguard-dns.com:443", "dns.adguard-dns.com CONNECT"},
 		{http.MethodConnect, "doh.opendns.com:443", "doh.opendns.com CONNECT"},
 		// Case-insensitive
@@ -65,7 +72,6 @@ func TestDoHGate_AllowsNonDoHHosts(t *testing.T) {
 		method string
 	}{
 		{"api.example.com", http.MethodConnect},
-		{"8.8.8.8", http.MethodConnect}, // Google Public DNS — not in denylist
 		{"example.org", http.MethodGet},
 	}
 

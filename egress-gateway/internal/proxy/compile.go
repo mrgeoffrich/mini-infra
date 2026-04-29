@@ -48,12 +48,18 @@ func CompileACL(logger *logrus.Logger, snapshot *RulesSnapshot) (*acl.ACL, error
 		compiled.Logger = logrus.New()
 	}
 
+	totalDroppedBlocks := 0
 	for stackID, policy := range snapshot.StackPolicies {
-		rule, err := compileRule(stackID, policy)
+		rule, dropped, err := compileRule(logger, stackID, policy)
 		if err != nil {
 			return nil, fmt.Errorf("compile rule for stack %q: %w", stackID, err)
 		}
 		compiled.Rules[stackID] = rule
+		totalDroppedBlocks += dropped
+	}
+	if totalDroppedBlocks > 0 {
+		logger.WithField("totalDroppedBlockCount", totalDroppedBlocks).
+			Warn("compile: some block rules were silently dropped in detect mode (see per-stack warnings above)")
 	}
 
 	return compiled, nil
@@ -69,7 +75,13 @@ func ParseRulesSnapshot(data []byte) (*RulesSnapshot, error) {
 }
 
 // compileRule converts one StackPolicyEntry into an acl.Rule.
-func compileRule(stackID string, policy StackPolicyEntry) (acl.Rule, error) {
+// Block rules in detect mode are advisory-only: Smokescreen's acl.Rule has no
+// per-role explicit deny list (DomainGlobs is an allow list; GlobalDenyList on
+// the ACL applies across all roles and cannot be used per-stack). In detect
+// (Report) mode, any explicit block rules are logged as a warning so operators
+// can see them in gateway logs, but they do not affect traffic until the stack
+// switches to enforce mode.
+func compileRule(logger *logrus.Logger, stackID string, policy StackPolicyEntry) (acl.Rule, int, error) {
 	var enfPolicy acl.EnforcementPolicy
 	switch policy.Mode {
 	case "enforce":
@@ -85,9 +97,30 @@ func compileRule(stackID string, policy StackPolicyEntry) (acl.Rule, error) {
 	// anything not in DomainGlobs.
 	// For Report mode, DomainGlobs drives "enforce_would_deny" logging.
 	var allowGlobs []string
+	var blockPatterns []string
 	for _, r := range policy.Rules {
-		if r.Action == "allow" && r.Pattern != "" {
+		if r.Pattern == "" {
+			continue
+		}
+		if r.Action == "allow" {
 			allowGlobs = append(allowGlobs, r.Pattern)
+		} else if r.Action == "block" {
+			blockPatterns = append(blockPatterns, r.Pattern)
+		}
+	}
+
+	// Warn when detect mode has explicit block rules — they are silently
+	// advisory-only because the acl.Rule struct has no per-role deny list.
+	droppedBlockCount := 0
+	if enfPolicy == acl.Report && len(blockPatterns) > 0 {
+		droppedBlockCount = len(blockPatterns)
+		if logger != nil {
+			logger.WithFields(logrus.Fields{
+				"stackId":           stackID,
+				"droppedBlockCount": droppedBlockCount,
+				"blockPatterns":     blockPatterns,
+			}).Warn("compile: detect-mode stack has block rules; they are advisory-only " +
+				"(no per-role deny list in Smokescreen acl.Rule) — switch stack to enforce mode to activate")
 		}
 	}
 
@@ -95,5 +128,5 @@ func compileRule(stackID string, policy StackPolicyEntry) (acl.Rule, error) {
 		Project:     stackID,
 		Policy:      enfPolicy,
 		DomainGlobs: allowGlobs,
-	}, nil
+	}, droppedBlockCount, nil
 }

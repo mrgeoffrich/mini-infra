@@ -54,12 +54,26 @@ func main() {
 	sk.DenyRanges = proxy.BuiltinPrivateRanges()
 	sk.ConnectTimeout = 10 * time.Second
 	sk.Log = logger
+	// Security posture: only known managed containers (those present in the
+	// container map) may use the proxy. Unmapped source IPs must be denied
+	// deterministically. Setting AllowMissingRole=false makes this explicit —
+	// Smokescreen's default is already false, but we document it here so the
+	// intent is clear and a future config change can't accidentally allow it.
+	sk.AllowMissingRole = false
 
 	// Build the proxy handler.
 	proxyHandler := smokescreen.BuildProxy(sk)
 
+	// Wrap with a fast-fail check for unknown source IPs before handing off to
+	// Smokescreen. When RoleFromRequest returns MissingRoleError, Smokescreen
+	// logs an error and then returns an HTTP 503, but the timing is not
+	// guaranteed for all code paths. This pre-handler ensures unknown IPs
+	// receive a deterministic HTTP 403 JSON response within the request
+	// read-header timeout, never silently timing out.
+	authenticatedHandler := proxy.UnknownIPDenyHandler(proxyHandler, containers)
+
 	// Wrap with DoH gate — runs before Smokescreen ACL.
-	gatewayHandler := proxy.DoHGate(proxyHandler)
+	gatewayHandler := proxy.DoHGate(authenticatedHandler)
 
 	// Determine ports.
 	proxyPort := cfg.ProxyPort

@@ -105,10 +105,9 @@ describe('EgressGatewayClient', () => {
     it('sends GET /admin/health and returns parsed response', async () => {
       const healthResponse = {
         ok: true,
-        rulesVersion: 0,
-        containerMapVersion: 5,
+        rulesVersion: 3,
         uptimeSeconds: 120,
-        upstream: { servers: ['8.8.8.8:53'], lastSuccessAt: null, lastFailureAt: null },
+        listeners: { proxy: true, admin: true },
       };
       vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce({
         ok: true,
@@ -118,8 +117,10 @@ describe('EgressGatewayClient', () => {
       const client = makeClient();
       const result = await client.health();
 
-      expect(result.containerMapVersion).toBe(5);
+      expect(result.rulesVersion).toBe(3);
       expect(result.uptimeSeconds).toBe(120);
+      expect(result.listeners.proxy).toBe(true);
+      expect(result.listeners.admin).toBe(true);
     });
   });
 
