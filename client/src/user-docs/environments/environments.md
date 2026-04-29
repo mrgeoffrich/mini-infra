@@ -41,3 +41,13 @@ Open the dropdown menu on the environment details page and select **Edit Environ
 ## Deleting an Environment
 
 Open the dropdown menu and select **Delete Environment**. A confirmation dialog will appear. Deleting an environment removes its configuration but does not automatically stop running containers.
+
+## Egress Firewall
+
+The **Egress** tab on the environment details page has an **Egress Firewall** toggle at the top. Turning it on installs kernel-level egress rules (via the firewall agent) for stacks in this environment and starts logging outbound connections in **observe mode** --- no traffic is blocked, only recorded. Turning it off tears those rules down.
+
+Observe mode lets you see what your egress policies *would have* blocked without disrupting traffic --- useful for tuning policies before committing to enforcement. Actually dropping traffic (enforcement) is a future feature.
+
+A confirmation dialog is shown when you turn the firewall **off**, since disabling stops the event stream for this environment until you turn it back on.
+
+If the firewall agent is offline when you toggle, the change is saved immediately and the agent reconciles when it next reconnects.

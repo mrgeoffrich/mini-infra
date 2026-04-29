@@ -41,6 +41,10 @@ import {
   useDeleteEgressRule,
   usePatchEgressPolicy,
 } from "@/hooks/use-egress";
+import {
+  useEnvironment,
+  useUpdateEnvironment,
+} from "@/hooks/use-environments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,6 +79,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Tooltip,
@@ -269,6 +284,142 @@ function RuleSourceBadge({ source }: { source: string }) {
     >
       {source}
     </Badge>
+  );
+}
+
+// ====================
+// Egress firewall toggle (env-level master switch)
+// ====================
+
+interface EgressFirewallCardProps {
+  environmentId: string;
+  enabled: boolean;
+  isLoading: boolean;
+  canWrite: boolean;
+}
+
+// NOTE: server-side, the egressFirewallEnabled PUT is best-effort with
+// respect to the fw-agent push — the route returns 200 once the DB write
+// succeeds, even if the agent is unreachable. So today this UI cannot
+// distinguish "DB updated + agent notified" from "DB updated + agent down".
+// If/when the server adds an agentNotified flag (or a follow-up Socket.IO
+// event), surface a "pending agent reconnect" badge here.
+// See server/src/routes/environments.ts.
+function EgressFirewallCard({
+  environmentId,
+  enabled,
+  isLoading,
+  canWrite,
+}: EgressFirewallCardProps) {
+  const updateEnvironment = useUpdateEnvironment();
+  const [confirmDisableOpen, setConfirmDisableOpen] = useState(false);
+
+  const applyToggle = async (nextValue: boolean) => {
+    try {
+      await updateEnvironment.mutateAsync({
+        id: environmentId,
+        request: { egressFirewallEnabled: nextValue },
+      });
+      toast.success(
+        nextValue
+          ? "Egress firewall enabled — applying to running stacks"
+          : "Egress firewall disabled",
+      );
+    } catch (err) {
+      toast.error(
+        `Failed to update egress firewall: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    }
+  };
+
+  const handleSwitchChange = (next: boolean) => {
+    if (!next && enabled) {
+      setConfirmDisableOpen(true);
+      return;
+    }
+    void applyToggle(next);
+  };
+
+  const handleConfirmDisable = async () => {
+    setConfirmDisableOpen(false);
+    await applyToggle(false);
+  };
+
+  const switchControl = (
+    <Switch
+      checked={enabled}
+      onCheckedChange={handleSwitchChange}
+      disabled={!canWrite || updateEnvironment.isPending || isLoading}
+      data-tour="environment-egress-firewall-toggle"
+      aria-label="Egress firewall"
+    />
+  );
+
+  return (
+    <>
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between space-y-0 gap-4">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+              <IconShield className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Egress Firewall</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Kernel-level enforcement for outbound traffic. Currently runs
+                in observe mode — events are logged, no traffic is dropped.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center pt-1">
+            {isLoading ? (
+              <Skeleton className="h-5 w-9" />
+            ) : !canWrite ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>{switchControl}</span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Requires environments:write permission
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              switchControl
+            )}
+          </div>
+        </CardHeader>
+      </Card>
+
+      <AlertDialog
+        open={confirmDisableOpen}
+        onOpenChange={setConfirmDisableOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disable egress firewall?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The kernel-level enforcement layer will be torn down. Egress
+              events will stop being logged for this environment until you
+              re-enable it. This change is best-effort if the firewall agent
+              is offline.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={updateEnvironment.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDisable}
+              disabled={updateEnvironment.isPending}
+            >
+              Disable firewall
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -1184,10 +1335,23 @@ export function EgressTab({ environmentId, canWrite = true }: EgressTabProps) {
     error: policiesErr,
   } = useEgressPolicies({ query: { environmentId } });
 
+  const {
+    data: environment,
+    isLoading: environmentLoading,
+  } = useEnvironment(environmentId, { enabled: !!environmentId });
+
   const policies: EgressPolicySummary[] = policiesData?.policies ?? [];
 
   return (
     <div className="space-y-6">
+      {/* Section: Egress firewall master switch */}
+      <EgressFirewallCard
+        environmentId={environmentId}
+        enabled={environment?.egressFirewallEnabled ?? false}
+        isLoading={environmentLoading}
+        canWrite={canWrite}
+      />
+
       {/* Section: Policy summary cards */}
       <div>
         <div className="flex items-center gap-2 mb-4">

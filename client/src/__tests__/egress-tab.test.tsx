@@ -45,6 +45,48 @@ vi.mock("@/hooks/use-stacks", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// useEnvironment / useUpdateEnvironment mocks (firewall card)
+// ---------------------------------------------------------------------------
+
+let currentEnvironmentData: { egressFirewallEnabled: boolean } & Record<string, unknown> = {
+  id: "env-1",
+  name: "production",
+  type: "production",
+  networkType: "internet",
+  egressFirewallEnabled: false,
+  networks: [],
+  stackCount: 0,
+  systemStackCount: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+const mockUpdateEnvironmentMutateAsync = vi.fn();
+let mockUpdateEnvironmentIsPending = false;
+
+vi.mock("@/hooks/use-environments", () => ({
+  useEnvironment: vi.fn(() => ({
+    data: currentEnvironmentData,
+    isLoading: false,
+    isError: false,
+  })),
+  useUpdateEnvironment: vi.fn(() => ({
+    mutateAsync: mockUpdateEnvironmentMutateAsync,
+    isPending: mockUpdateEnvironmentIsPending,
+  })),
+}));
+
+// ---------------------------------------------------------------------------
+// sonner toast mock — needed so we can assert on success/error notifications
+// ---------------------------------------------------------------------------
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+// ---------------------------------------------------------------------------
 // Mock data
 // ---------------------------------------------------------------------------
 
@@ -216,6 +258,21 @@ function renderTab(canWrite = true) {
 describe("EgressTab", () => {
   beforeEach(() => {
     currentPoliciesData = { policies: mockPolicies, total: 1, page: 1, limit: 50, totalPages: 1, hasNextPage: false, hasPreviousPage: false };
+    currentEnvironmentData = {
+      id: "env-1",
+      name: "production",
+      type: "production",
+      networkType: "internet",
+      egressFirewallEnabled: false,
+      networks: [],
+      stackCount: 0,
+      systemStackCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    mockUpdateEnvironmentIsPending = false;
+    mockUpdateEnvironmentMutateAsync.mockReset();
+    mockUpdateEnvironmentMutateAsync.mockResolvedValue(currentEnvironmentData);
     vi.clearAllMocks();
   });
 
@@ -337,5 +394,101 @@ describe("EgressTab", () => {
     currentPoliciesData = { policies: [], total: 0, page: 1, limit: 50, totalPages: 0, hasNextPage: false, hasPreviousPage: false };
     renderTab();
     expect(screen.getByText("No egress policies")).toBeTruthy();
+  });
+
+  // ---- Egress firewall card ----
+
+  describe("Egress firewall card", () => {
+    it("renders the firewall header and unchecked switch when egressFirewallEnabled=false", async () => {
+      renderTab(true);
+      await waitFor(() => {
+        expect(screen.getByText("Egress Firewall")).toBeTruthy();
+      });
+      const toggle = screen.getByLabelText("Egress firewall") as HTMLButtonElement;
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+    });
+
+    it("renders the switch as checked when egressFirewallEnabled=true", async () => {
+      currentEnvironmentData = { ...currentEnvironmentData, egressFirewallEnabled: true };
+      renderTab(true);
+      await waitFor(() => {
+        const toggle = screen.getByLabelText("Egress firewall") as HTMLButtonElement;
+        expect(toggle.getAttribute("aria-checked")).toBe("true");
+      });
+    });
+
+    it("calls mutateAsync directly when enabling (no confirm dialog)", async () => {
+      const { toast } = await import("sonner");
+      renderTab(true);
+      const toggle = await screen.findByLabelText("Egress firewall");
+      fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(mockUpdateEnvironmentMutateAsync).toHaveBeenCalledWith({
+          id: "env-1",
+          request: { egressFirewallEnabled: true },
+        });
+      });
+      expect(toast.success).toHaveBeenCalledWith(
+        "Egress firewall enabled — applying to running stacks",
+      );
+      // No confirm dialog rendered
+      expect(screen.queryByText("Disable egress firewall?")).toBeNull();
+    });
+
+    it("opens the confirm dialog when disabling, calls mutateAsync only after confirm", async () => {
+      currentEnvironmentData = { ...currentEnvironmentData, egressFirewallEnabled: true };
+      const { toast } = await import("sonner");
+      renderTab(true);
+      const toggle = await screen.findByLabelText("Egress firewall");
+      fireEvent.click(toggle);
+      // Dialog opens; mutate not yet called
+      await waitFor(() => {
+        expect(screen.getByText("Disable egress firewall?")).toBeTruthy();
+      });
+      expect(mockUpdateEnvironmentMutateAsync).not.toHaveBeenCalled();
+      // Click the confirm action
+      fireEvent.click(screen.getByText("Disable firewall"));
+      await waitFor(() => {
+        expect(mockUpdateEnvironmentMutateAsync).toHaveBeenCalledWith({
+          id: "env-1",
+          request: { egressFirewallEnabled: false },
+        });
+      });
+      expect(toast.success).toHaveBeenCalledWith("Egress firewall disabled");
+    });
+
+    it("does not call mutateAsync when the disable confirm is cancelled", async () => {
+      currentEnvironmentData = { ...currentEnvironmentData, egressFirewallEnabled: true };
+      renderTab(true);
+      const toggle = await screen.findByLabelText("Egress firewall");
+      fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(screen.getByText("Disable egress firewall?")).toBeTruthy();
+      });
+      fireEvent.click(screen.getByText("Cancel"));
+      expect(mockUpdateEnvironmentMutateAsync).not.toHaveBeenCalled();
+    });
+
+    it("disables the switch when canWrite=false", async () => {
+      renderTab(false);
+      await waitFor(() => {
+        expect(screen.getByText("Egress Firewall")).toBeTruthy();
+      });
+      const toggle = screen.getByLabelText("Egress firewall") as HTMLButtonElement;
+      expect(toggle.disabled).toBe(true);
+    });
+
+    it("shows toast.error when mutateAsync rejects", async () => {
+      mockUpdateEnvironmentMutateAsync.mockRejectedValueOnce(new Error("boom"));
+      const { toast } = await import("sonner");
+      renderTab(true);
+      const toggle = await screen.findByLabelText("Egress firewall");
+      fireEvent.click(toggle);
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith(
+          "Failed to update egress firewall: boom",
+        );
+      });
+    });
   });
 });
