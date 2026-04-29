@@ -5,13 +5,38 @@ go 1.22
 require (
 	github.com/florianl/go-nflog/v2 v2.0.1
 	github.com/google/gopacket v1.1.19
+	github.com/sirupsen/logrus v1.9.0
+	github.com/stripe/smokescreen v0.0.5-0.20260409081830-7d45971c8968
 )
 
 require (
-	github.com/google/go-cmp v0.5.6 // indirect
+	github.com/DataDog/datadog-go v4.5.1+incompatible // indirect
+	github.com/Microsoft/go-winio v0.6.1 // indirect
+	github.com/armon/go-proxyproto v0.0.0-20210323213023-7e956b284f0a // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
+	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
 	github.com/josharian/native v0.0.0-20200817173448-b6b71def0850 // indirect
+	github.com/jsimonetti/rtnetlink v0.0.0-20210525051524-4cc836578190 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
+	github.com/mdlayher/ethtool v0.0.0-20210210192532-2b88debcdd43 // indirect
+	github.com/mdlayher/genetlink v1.0.0 // indirect
 	github.com/mdlayher/netlink v1.4.1 // indirect
 	github.com/mdlayher/socket v0.0.0-20210307095302-262dc9984e00 // indirect
-	golang.org/x/net v0.0.0-20210525063256-abc453219eb5 // indirect
-	golang.org/x/sys v0.0.0-20210525143221-35b2ab0089ea // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
+	github.com/prometheus/client_golang v1.13.0 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/common v0.37.0 // indirect
+	github.com/prometheus/procfs v0.8.0 // indirect
+	github.com/rs/xid v1.2.1 // indirect
+	github.com/stripe/goproxy v0.0.0-20251009123132-ee3e713dae03 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
+	gopkg.in/urfave/cli.v1 v1.20.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
