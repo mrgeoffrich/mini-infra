@@ -1,7 +1,7 @@
-go 1.22
+go 1.25.0
 
 use (
-	./egress-shared
-	./egress-gateway
 	./egress-fw-agent
+	./egress-gateway
+	./egress-shared
 )
