@@ -186,3 +186,62 @@ describe('StackContainerManager — egress DNS injection', () => {
     expect(secondCallArgs.dnsServers).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Tests for Phase 2 egress bypass label
+// ---------------------------------------------------------------------------
+
+describe('StackContainerManager — egress bypass label', () => {
+  let mockPrisma: any;
+  let manager: StackContainerManager;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreateLongRunningContainer.mockResolvedValue({
+      id: 'container-new',
+      start: mockContainerStart,
+    });
+  });
+
+  function buildManager(envResult: { egressGatewayIp: string | null } | null) {
+    mockPrisma = {
+      environment: {
+        findUnique: vi.fn().mockResolvedValue(envResult),
+      },
+    };
+    return new StackContainerManager(mockDockerExecutor, mockPrisma);
+  }
+
+  it('sets mini-infra.egress.bypass=true label for bypass services', async () => {
+    manager = buildManager({ egressGatewayIp: null });
+    const bypassService = makeService({ egressBypass: true });
+    const options = makeOptions('env-1');
+
+    await manager.createAndStartContainer('gw', bypassService, options);
+
+    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
+    expect(callArgs.labels?.['mini-infra.egress.bypass']).toBe('true');
+  });
+
+  it('does NOT set mini-infra.egress.bypass label for normal services', async () => {
+    manager = buildManager({ egressGatewayIp: null });
+    const normalService = makeService({ egressBypass: false });
+    const options = makeOptions('env-1');
+
+    await manager.createAndStartContainer('app', normalService, options);
+
+    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
+    expect(callArgs.labels?.['mini-infra.egress.bypass']).toBeUndefined();
+  });
+
+  it('does NOT set mini-infra.egress.bypass label when egressBypass is unset', async () => {
+    manager = buildManager({ egressGatewayIp: null });
+    const service = makeService({}); // no egressBypass field
+    const options = makeOptions('env-1');
+
+    await manager.createAndStartContainer('app', service, options);
+
+    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
+    expect(callArgs.labels?.['mini-infra.egress.bypass']).toBeUndefined();
+  });
+});

@@ -177,6 +177,12 @@ export class StackContainerManager {
       ...(options.environmentId ? { 'mini-infra.environment': options.environmentId } : {}),
       'mini-infra.definition-hash': options.definitionHash,
       'mini-infra.stack-version': options.stackVersion.toString(),
+      // Phase 2 egress: mark bypass services so EnvFirewallManager can filter
+      // them out via Docker events (avoids adding them to the managed ipset).
+      // Note: we do NOT imperatively call EnvFirewallManager.addManagedContainer()
+      // here — the manager subscribes to Docker events instead, which is more
+      // robust (catches restarts and manual docker start/stop operations).
+      ...(config.egressBypass === true ? { 'mini-infra.egress.bypass': 'true' } : {}),
       ...(config.labels ?? {}),
     };
 

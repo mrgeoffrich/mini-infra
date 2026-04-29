@@ -290,6 +290,10 @@ model Environment {
   // Egress firewall — populated after the egress-gateway stack first applies
   egressGatewayIp  String?
 
+  // Phase 2: per-env egress firewall flag (default OFF).
+  // When true, EnvFirewallManager calls the fw-agent for this environment.
+  egressFirewallEnabled Boolean @default(false)
+
   // Relations
   networks    EnvironmentNetwork[]
   haproxyFrontends HAProxyFrontend[]

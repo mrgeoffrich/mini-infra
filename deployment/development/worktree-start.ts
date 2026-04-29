@@ -376,6 +376,8 @@ async function main(): Promise<void> {
   // the template specifies its own `dockerTag`, so this value must NOT include a `:tag` suffix.
   const egressSidecarImageTag = `localhost:${registryPort}/mini-infra-egress-sidecar`;
   const egressSidecarPushRef = `${egressSidecarImageTag}:latest`;
+  // EGRESS_GATEWAY_IMAGE_TAG is the host-singleton fw-agent / gateway image built from egress-gateway/.
+  const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway:latest`;
 
   const stackEnv: NodeJS.ProcessEnv = {
     DOCKER_HOST: dockerHost,
@@ -384,6 +386,7 @@ async function main(): Promise<void> {
     REGISTRY_PORT: String(registryPort),
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
     EGRESS_SIDECAR_IMAGE_TAG: egressSidecarImageTag,
+    EGRESS_GATEWAY_IMAGE_TAG: egressGatewayImageTag,
     PROJECT_ROOT,
     PROFILE: profile,
   };
@@ -479,6 +482,30 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   logOk('Egress sidecar image pushed');
+
+  // Build + push egress-gateway image (fw-agent + gateway binaries)
+  logInfo('Building egress-gateway image...');
+  const egressGwBuild = exec(
+    'docker',
+    [
+      'build',
+      '-t',
+      egressGatewayImageTag,
+      path.join(PROJECT_ROOT, 'egress-gateway'),
+    ],
+    { env: stackEnv, stdio: 'inherit' },
+  );
+  if (egressGwBuild.status !== 0) {
+    logError('Egress-gateway build failed');
+    process.exit(1);
+  }
+  logInfo(`Pushing egress-gateway image to ${egressGatewayImageTag}...`);
+  const egressGwPush = exec('docker', ['push', egressGatewayImageTag], { env: stackEnv, stdio: 'inherit' });
+  if (egressGwPush.status !== 0) {
+    logError('Egress-gateway push failed');
+    process.exit(1);
+  }
+  logOk('Egress-gateway image pushed');
 
   // Capture extra networks joined at runtime (e.g. vault) so they survive rebuild
   const miniInfraContainer = `${composeProjectName}-mini-infra-1`;
