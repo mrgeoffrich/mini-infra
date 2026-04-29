@@ -29,8 +29,21 @@ export type EgressDefaultAction = 'allow' | 'block';
 export type EgressRuleAction = 'allow' | 'block';
 export type EgressRuleSource = 'user' | 'observed' | 'template';
 export type EgressEventAction = 'allowed' | 'blocked' | 'observed';
-export type EgressEventProtocol = 'dns' | 'sni' | 'http';
+export type EgressEventProtocol = 'dns' | 'sni' | 'http' | 'connect' | 'tcp' | 'udp' | 'icmp';
 export type EgressArchivedReason = 'stack-deleted' | 'environment-deleted';
+
+/**
+ * Reason strings for egress denial or firewall drop events.
+ * The union is intentionally open (| string) to avoid tight coordination
+ * with every reason string emitted by the gateway and fw-agent.
+ */
+export type EgressEventReason =
+  | 'rule-deny'
+  | 'ip-literal'
+  | 'doh-denied'
+  | 'dial-failed'
+  | 'non-allowed-egress'
+  | string;
 
 export interface EgressPolicySummary {
   id: string;
@@ -81,6 +94,16 @@ export interface EgressEventBroadcast {
   stackNameSnapshot: string;
   environmentNameSnapshot: string;
   environmentId: string | null;
+  // v3 egress gateway fields — null for dns.query events
+  target: string | null;
+  method: string | null;
+  path: string | null;
+  status: number | null;
+  bytesUp: number | null;    // BigInt from DB converted to number for JSON serialisation
+  bytesDown: number | null;  // BigInt from DB converted to number for JSON serialisation
+  destIp: string | null;
+  destPort: number | null;
+  reason: string | null;
 }
 
 /** Fired when an EgressPolicy mode/defaultAction/version/archivedAt changes. */

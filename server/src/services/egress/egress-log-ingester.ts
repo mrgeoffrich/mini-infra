@@ -1,29 +1,42 @@
 /**
  * EgressLogIngester
  *
- * Tails each egress-gateway container's stdout and ingests structured
- * DNS-query log lines as EgressEvent rows.
+ * Tails each egress-gateway container's stdout AND the host-singleton
+ * fw-agent container's stdout, and ingests structured log lines as
+ * EgressEvent rows.
  *
  * Architecture
  * ─────────────
  * • One GatewayTailer per environment. Tails stdout of the container
  *   named `{envName}-egress-gateway-egress-gateway`.
- * • Lines are parsed as NDJSON. Only lines with evt === 'dns.query' are
- *   ingested; all others are silently skipped.
+ * • One FwAgentTailer (host singleton). Tails stdout of the container
+ *   labelled `mini-infra.egress.fw-agent=true`.
+ * • Lines are parsed as NDJSON. Handled event types:
+ *   - evt === 'dns.query'  — existing DNS-query events
+ *   - evt === 'tcp'        — HTTPS CONNECT (protocol: "connect") and HTTP forward
+ *                            proxy (protocol: "http") events from the gateway
+ *   - evt === 'fw_drop'    — firewall drop events from the fw-agent
+ *   All other evt values are silently skipped.
  * • Policy lookup: each line carries a stackId; we find the EgressPolicy
  *   whose stack.id matches. Lines without a stackId, or where no policy
  *   is found, are dropped (single rate-limited warn).
- * • Server-side dedup window (60 s) collapses repeated (policyId, service,
- *   destination, action) tuples into one row per window.
+ * • Server-side dedup window (60 s) collapses repeated events.
+ *   Dedup keys:
+ *   - dns:     policyId:service:destination:action
+ *   - tcp:     policyId:service:target:action
+ *   - fw_drop: policyId:service:destIp:destPort:protocol
  * • EgressEvent rows are batch-inserted every ~1 s or when the batch hits
  *   100 rows.
  * • EgressRule.hits is bumped when a matchedPattern maps to an existing rule.
  *
- * Log line format (from egress-sidecar/src/logging.ts):
- *   { ts, level, evt, srcIp, qname, qtype, action, matchedPattern?,
- *     wouldHaveBeen?, stackId?, serviceName?, reason?, mergedHits }
- * The sidecar writes via process.stdout.write(JSON.stringify(entry) + "\n")
- * so lines are plain JSON — no pino envelope.
+ * Log line formats:
+ *   dns.query: { ts, level, evt, srcIp, qname, qtype, action, matchedPattern?,
+ *                wouldHaveBeen?, stackId?, serviceName?, reason?, mergedHits }
+ *   tcp:       { ts, evt, protocol, srcIp, target, action, reason?, matchedPattern?,
+ *                stackId?, serviceName?, bytesUp?, bytesDown?, method?, path?,
+ *                status?, mergedHits }
+ *   fw_drop:   { ts, evt, protocol, srcIp, destIp, destPort, stackId?,
+ *                serviceName?, reason?, mergedHits }
  */
 
 import { Readable } from 'stream';
@@ -47,20 +60,69 @@ const RECONNECT_MAX_DELAY_MS = 60_000;
 /** Rate-limit "no policy for stack" warnings to at most once per minute per stackId */
 const WARN_COOL_DOWN_MS = 60_000;
 
+const FW_AGENT_LABEL = 'mini-infra.egress.fw-agent=true';
+
 // ---------------------------------------------------------------------------
-// Parsed log-line shape
+// Parsed log-line shapes
 // ---------------------------------------------------------------------------
 
 interface DnsQueryLine {
   ts: string;
   level: string;
-  evt: string;
+  evt: 'dns.query';
   srcIp: string;
   qname: string;
   qtype: string;
   action: 'allowed' | 'blocked' | 'observed';
   matchedPattern?: string;
   wouldHaveBeen?: 'allowed' | 'blocked';
+  stackId?: string;
+  serviceName?: string;
+  reason?: string;
+  mergedHits: number;
+}
+
+interface TcpConnectLine {
+  ts: string;
+  evt: 'tcp';
+  protocol: 'connect';
+  srcIp: string;
+  target: string;
+  action: 'allowed' | 'blocked';
+  reason?: string;
+  matchedPattern?: string;
+  stackId?: string;
+  serviceName?: string;
+  bytesUp?: number;
+  bytesDown?: number;
+  mergedHits: number;
+}
+
+interface TcpHttpLine {
+  ts: string;
+  evt: 'tcp';
+  protocol: 'http';
+  srcIp: string;
+  target: string;
+  method: string;
+  path: string;
+  action: 'allowed' | 'blocked';
+  reason?: string;
+  matchedPattern?: string;
+  stackId?: string;
+  serviceName?: string;
+  status?: number;
+  bytesDown?: number;
+  mergedHits: number;
+}
+
+interface FwDropLine {
+  ts: string;
+  evt: 'fw_drop';
+  protocol: 'tcp' | 'udp' | 'icmp';
+  srcIp: string;
+  destIp: string;
+  destPort?: number;
   stackId?: string;
   serviceName?: string;
   reason?: string;
@@ -80,7 +142,7 @@ interface DedupBucket {
   initialRowFlushed: boolean;
 }
 
-type DedupKey = string; // `${policyId}:${serviceNameOrEmpty}:${destination}:${action}`
+type DedupKey = string;
 
 /** Cached policy context needed for socket emissions */
 interface PolicyContext {
@@ -99,6 +161,16 @@ function makeDedupKey(
   return `${policyId}:${serviceName ?? ''}:${destination}:${action}`;
 }
 
+function makeFwDropDedupKey(
+  policyId: string,
+  serviceName: string | undefined,
+  destIp: string,
+  destPort: number | undefined,
+  protocol: string,
+): DedupKey {
+  return `${policyId}:${serviceName ?? ''}:${destIp}:${destPort ?? ''}:${protocol}`;
+}
+
 // ---------------------------------------------------------------------------
 // Row to insert
 // ---------------------------------------------------------------------------
@@ -112,44 +184,45 @@ interface PendingRow {
   destination: string;
   matchedPattern?: string;
   action: string;
+  protocol: string;
   mergedHits: number;
   /** Snapshot fields carried alongside so _flushBatch can emit without a DB lookup */
   stackNameSnapshot: string;
   environmentNameSnapshot: string;
   environmentId: string | null;
+  // v3 egress gateway fields
+  target?: string;
+  method?: string;
+  path?: string;
+  status?: number;
+  bytesUp?: bigint;
+  bytesDown?: bigint;
+  destIp?: string;
+  destPort?: number;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
-// GatewayTailer — one per environment
+// Shared tailer logic — base class
 // ---------------------------------------------------------------------------
 
-class GatewayTailer {
-  private stream: Readable | null = null;
-  private stopped = false;
-  private reconnectDelay = RECONNECT_BASE_DELAY_MS;
+abstract class BaseTailer {
+  protected stream: Readable | null = null;
+  protected stopped = false;
+  protected reconnectDelay = RECONNECT_BASE_DELAY_MS;
 
   /** In-memory dedup: key → bucket */
-  private readonly dedupBuckets = new Map<DedupKey, DedupBucket>();
+  protected readonly dedupBuckets = new Map<DedupKey, DedupBucket>();
   /** Pending rows waiting to be inserted */
-  private readonly pendingRows: PendingRow[] = [];
+  protected readonly pendingRows: PendingRow[] = [];
   /** Timer for dedup-window rolls and batch flush */
-  private batchTimer: NodeJS.Timeout | null = null;
+  protected batchTimer: NodeJS.Timeout | null = null;
   /** Rate-limiter for "no policy" warnings: stackId → last warn time */
-  private readonly warnCooldowns = new Map<string, number>();
+  protected readonly warnCooldowns = new Map<string, number>();
   /** Cache of policy context (snapshot fields + environmentId) by policyId */
-  private readonly policyContextCache = new Map<string, PolicyContext>();
+  protected readonly policyContextCache = new Map<string, PolicyContext>();
 
-  constructor(
-    private readonly envId: string,
-    private readonly envName: string,
-    private readonly prisma: PrismaClient,
-  ) {}
-
-  start(): void {
-    void this._connect();
-    this._startBatchTimer();
-    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer started');
-  }
+  constructor(protected readonly prisma: PrismaClient) {}
 
   stop(): void {
     this.stopped = true;
@@ -160,151 +233,120 @@ class GatewayTailer {
     }
     // Flush remaining batched rows (best-effort, fire-and-forget)
     void this._flushBatch();
-    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer stopped');
   }
 
   // -------------------------------------------------------------------------
   // Stream lifecycle
   // -------------------------------------------------------------------------
 
-  private async _connect(): Promise<void> {
-    if (this.stopped) return;
-
-    const containerName = `${this.envName}-egress-gateway-egress-gateway`;
-
-    const dockerService = DockerService.getInstance();
-    if (!dockerService.isConnected()) {
-      log.warn({ containerName }, 'Docker not connected — will retry');
-      this._scheduleReconnect();
-      return;
-    }
-
-    try {
-      const docker = await dockerService.getDockerInstance();
-
-      // Find the container by name
-      const containers = await docker.listContainers({
-        all: false,
-        filters: JSON.stringify({ name: [containerName] }),
-      });
-      const match = containers.find((c) =>
-        c.Names?.some((n) => n === `/${containerName}`),
-      );
-
-      if (!match) {
-        log.debug({ containerName }, 'Gateway container not found — will retry');
-        this._scheduleReconnect();
-        return;
-      }
-
-      const dockerContainer = docker.getContainer(match.Id);
-      const rawStream = (await dockerContainer.logs({
-        follow: true as const,
-        stdout: true,
-        stderr: false,
-        tail: 0, // Only new lines — don't replay history
-      })) as unknown as Readable;
-
-      this.stream = rawStream;
-      this.reconnectDelay = RECONNECT_BASE_DELAY_MS; // reset on success
-
-      const demuxer = new DockerStreamDemuxer();
-      let lineBuffer = '';
-
-      rawStream.on('data', (chunk: Buffer) => {
-        for (const frame of demuxer.push(chunk)) {
-          // Only care about stdout
-          if (frame.stream !== 'stdout') continue;
-          // Accumulate and split on newlines
-          lineBuffer += frame.data.toString('utf-8');
-          const lines = lineBuffer.split('\n');
-          lineBuffer = lines.pop() ?? ''; // last segment may be incomplete
-          for (const line of lines) {
-            if (line.trim()) {
-              this._handleLine(line.trim());
-            }
-          }
-        }
-      });
-
-      rawStream.on('end', () => {
-        log.debug({ containerName }, 'Gateway log stream ended — reconnecting');
-        this._destroyStream();
-        this._scheduleReconnect();
-      });
-
-      rawStream.on('error', (err: Error) => {
-        log.warn({ err: err.message, containerName }, 'Gateway log stream error — reconnecting');
-        this._destroyStream();
-        this._scheduleReconnect();
-      });
-
-      log.info({ containerName, containerId: match.Id }, 'Tailing gateway container logs');
-    } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err.message : String(err), containerName },
-        'Failed to attach to gateway log stream — reconnecting',
-      );
-      this._scheduleReconnect();
-    }
-  }
-
-  private _destroyStream(): void {
+  protected _destroyStream(): void {
     if (this.stream) {
       this.stream.destroy();
       this.stream = null;
     }
   }
 
-  private _scheduleReconnect(): void {
+  protected _scheduleReconnect(contextLabel: string): void {
     if (this.stopped) return;
     const delay = this.reconnectDelay;
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_DELAY_MS);
-    log.debug({ envId: this.envId, delayMs: delay }, 'Scheduling gateway log reconnect');
+    log.debug({ contextLabel, delayMs: delay }, 'Scheduling log reconnect');
     setTimeout(() => void this._connect(), delay);
   }
 
+  protected abstract _connect(): Promise<void>;
+
   // -------------------------------------------------------------------------
-  // Line parsing and ingestion
+  // Stream setup helper — shared between gateway and fw-agent tailers
   // -------------------------------------------------------------------------
 
-  private _handleLine(raw: string): void {
+  protected _attachStream(rawStream: Readable, contextLabel: string): void {
+    this.stream = rawStream;
+    this.reconnectDelay = RECONNECT_BASE_DELAY_MS; // reset on success
+
+    const demuxer = new DockerStreamDemuxer();
+    let lineBuffer = '';
+
+    rawStream.on('data', (chunk: Buffer) => {
+      for (const frame of demuxer.push(chunk)) {
+        if (frame.stream !== 'stdout') continue;
+        lineBuffer += frame.data.toString('utf-8');
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (line.trim()) {
+            this._handleLine(line.trim());
+          }
+        }
+      }
+    });
+
+    rawStream.on('end', () => {
+      log.debug({ contextLabel }, 'Log stream ended — reconnecting');
+      this._destroyStream();
+      this._scheduleReconnect(contextLabel);
+    });
+
+    rawStream.on('error', (err: Error) => {
+      log.warn({ err: err.message, contextLabel }, 'Log stream error — reconnecting');
+      this._destroyStream();
+      this._scheduleReconnect(contextLabel);
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // Line parsing
+  // -------------------------------------------------------------------------
+
+  protected _handleLine(raw: string): void {
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch {
-      // Not valid JSON — ignore (could be startup/operational text)
       return;
     }
 
-    if (
-      typeof parsed !== 'object' ||
-      parsed === null ||
-      (parsed as DnsQueryLine).evt !== 'dns.query'
-    ) {
-      return;
+    if (typeof parsed !== 'object' || parsed === null) return;
+
+    const evt = (parsed as Record<string, unknown>).evt as string | undefined;
+
+    if (evt === 'dns.query') {
+      const line = parsed as DnsQueryLine;
+      if (!line.srcIp || !line.qname || !line.action) return;
+      void this._ingestDnsQuery(line);
+    } else if (evt === 'tcp') {
+      const line = parsed as TcpConnectLine | TcpHttpLine;
+      if (!line.srcIp || !line.target || !line.action) return;
+      if (line.protocol === 'connect') {
+        void this._ingestTcpConnect(line as TcpConnectLine);
+      } else if (line.protocol === 'http') {
+        void this._ingestTcpHttp(line as TcpHttpLine);
+      }
+      // Other protocol values are silently skipped
+    } else if (evt === 'fw_drop') {
+      const line = parsed as FwDropLine;
+      if (!line.srcIp || !line.destIp || !line.protocol) return;
+      void this._ingestFwDrop(line);
     }
-
-    const line = parsed as DnsQueryLine;
-
-    // Validate required fields
-    if (!line.srcIp || !line.qname || !line.action) return;
-
-    void this._ingestLine(line);
+    // All other evt values are silently skipped
   }
 
-  private async _ingestLine(line: DnsQueryLine): Promise<void> {
-    // Policy lookup — requires stackId from the gateway's container-map
-    if (!line.stackId) {
-      // No stack context — can't attribute; skip
-      return;
+  // -------------------------------------------------------------------------
+  // Policy lookup helper
+  // -------------------------------------------------------------------------
+
+  protected async _lookupPolicy(stackId: string): Promise<PolicyContext | null> {
+    // Check cache first
+    for (const ctx of this.policyContextCache.values()) {
+      if (ctx.id) {
+        // Cache is keyed by policyId, not stackId — do a full lookup
+        break;
+      }
     }
 
-    // Find the non-archived EgressPolicy for this stackId
-    let policyContext: PolicyContext | null = null;
     try {
       const policy = await this.prisma.egressPolicy.findFirst({
-        where: { stackId: line.stackId, archivedAt: null },
+        where: { stackId, archivedAt: null },
         select: {
           id: true,
           stackNameSnapshot: true,
@@ -312,159 +354,228 @@ class GatewayTailer {
           environmentId: true,
         },
       });
-      if (policy) {
-        // Cache the policy context so we don't query per-row across batch loops
-        const cached: PolicyContext = {
-          id: policy.id,
-          stackNameSnapshot: policy.stackNameSnapshot,
-          environmentNameSnapshot: policy.environmentNameSnapshot,
-          environmentId: policy.environmentId,
-        };
-        this.policyContextCache.set(policy.id, cached);
-        policyContext = cached;
-      }
+      if (!policy) return null;
+
+      const cached: PolicyContext = {
+        id: policy.id,
+        stackNameSnapshot: policy.stackNameSnapshot,
+        environmentNameSnapshot: policy.environmentNameSnapshot,
+        environmentId: policy.environmentId,
+      };
+      this.policyContextCache.set(policy.id, cached);
+      return cached;
     } catch (err) {
-      log.warn({ err, stackId: line.stackId }, 'EgressPolicy lookup failed — dropping event');
-      return;
+      log.warn({ err, stackId }, 'EgressPolicy lookup failed — dropping event');
+      return null;
     }
+  }
 
-    // Derived policyId for dedup key construction
-    const policyId = policyContext?.id ?? null;
-
-    if (!policyContext || !policyId) {
-      // Rate-limited warning
-      const now = Date.now();
-      const lastWarn = this.warnCooldowns.get(line.stackId) ?? 0;
-      if (now - lastWarn > WARN_COOL_DOWN_MS) {
-        log.warn(
-          { stackId: line.stackId, srcIp: line.srcIp },
-          'No active EgressPolicy for stackId — dropping DNS query event',
-        );
-        this.warnCooldowns.set(line.stackId, now);
-      }
-      return;
-    }
-
-    // Server-side dedup
-    const dedupKey = makeDedupKey(policyId, line.serviceName, line.qname, line.action);
+  protected _warnNoPolicyIfNeeded(stackId: string, evtType: string, srcIp: string): void {
     const now = Date.now();
-    const bucket = this.dedupBuckets.get(dedupKey);
+    const lastWarn = this.warnCooldowns.get(stackId) ?? 0;
+    if (now - lastWarn > WARN_COOL_DOWN_MS) {
+      log.warn(
+        { stackId, srcIp, evtType },
+        'No active EgressPolicy for stackId — dropping event',
+      );
+      this.warnCooldowns.set(stackId, now);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Dedup helpers
+  // -------------------------------------------------------------------------
+
+  /**
+   * Returns true if this event should be suppressed (within dedup window).
+   * Also updates bucket state and pushes the rolled-up row if the window expired.
+   */
+  protected _checkDedup(
+    key: DedupKey,
+    mergedHits: number,
+    rowFactory: () => PendingRow,
+  ): boolean {
+    const now = Date.now();
+    const bucket = this.dedupBuckets.get(key);
 
     if (bucket && now - bucket.windowStart < DEDUP_WINDOW_MS) {
-      // Within window — accumulate, don't write a new row
-      bucket.hits += line.mergedHits;
-      return;
+      // Within window — accumulate, suppress new row
+      bucket.hits += mergedHits;
+      return true;
     }
 
-    if (bucket) {
-      // Window expired — flush accumulated hits as a summary row, then start fresh
-      if (bucket.hits > 0 && bucket.initialRowFlushed) {
-        // Write a rolled-up summary row for the previous window's accumulated hits
-        this.pendingRows.push({
-          policyId,
-          occurredAt: new Date(),
-          sourceStackId: line.stackId,
-          sourceServiceName: line.serviceName,
-          destination: line.qname,
-          matchedPattern: line.matchedPattern,
-          action: line.action,
-          mergedHits: bucket.hits,
-          stackNameSnapshot: policyContext.stackNameSnapshot,
-          environmentNameSnapshot: policyContext.environmentNameSnapshot,
-          environmentId: policyContext.environmentId,
-        });
-        this._maybeFlushBatch();
-      }
+    if (bucket && now - bucket.windowStart >= DEDUP_WINDOW_MS) {
+      // Window expired — we could write a roll-up; for v1 simplicity we just clear
+      log.debug({ key, hits: bucket.hits }, 'Dedup window expired — bucket cleared');
     }
 
-    // Start a new window — write the initial row immediately
-    this.dedupBuckets.set(dedupKey, {
-      hits: line.mergedHits,
+    // Start new window
+    this.dedupBuckets.set(key, {
+      hits: mergedHits,
       windowStart: now,
       initialRowFlushed: true,
     });
 
     // Queue the initial row
-    this.pendingRows.push({
-      policyId,
+    this.pendingRows.push(rowFactory());
+    this._maybeFlushBatch();
+    return false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Ingestion methods — one per event type
+  // -------------------------------------------------------------------------
+
+  private async _ingestDnsQuery(line: DnsQueryLine): Promise<void> {
+    if (!line.stackId) return;
+
+    const policyContext = await this._lookupPolicy(line.stackId);
+    if (!policyContext) {
+      this._warnNoPolicyIfNeeded(line.stackId, 'dns.query', line.srcIp);
+      return;
+    }
+
+    const key = makeDedupKey(policyContext.id, line.serviceName, line.qname, line.action);
+    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
+      policyId: policyContext.id,
       occurredAt: line.ts ? new Date(line.ts) : new Date(),
       sourceStackId: line.stackId,
       sourceServiceName: line.serviceName,
       destination: line.qname,
       matchedPattern: line.matchedPattern,
       action: line.action,
+      protocol: 'dns',
       mergedHits: line.mergedHits,
       stackNameSnapshot: policyContext.stackNameSnapshot,
       environmentNameSnapshot: policyContext.environmentNameSnapshot,
       environmentId: policyContext.environmentId,
-    });
+    }));
 
-    this._maybeFlushBatch();
-
-    // Bump EgressRule.hits if a matching pattern exists
-    if (line.matchedPattern && policyId) {
-      void this._bumpRuleHits(policyId, line.matchedPattern);
+    if (!suppressed && line.matchedPattern) {
+      void this._bumpRuleHits(policyContext.id, line.matchedPattern);
     }
   }
 
-  // -------------------------------------------------------------------------
-  // Dedup window rolls (called on batch timer tick)
-  // -------------------------------------------------------------------------
+  private async _ingestTcpConnect(line: TcpConnectLine): Promise<void> {
+    if (!line.stackId) return;
 
-  private _rollExpiredDedupWindows(): void {
-    const now = Date.now();
-    for (const [key, bucket] of this.dedupBuckets.entries()) {
-      if (now - bucket.windowStart >= DEDUP_WINDOW_MS) {
-        // Emit a rolled-up row if there were suppressed hits beyond the initial row
-        // The hits counter tracks total hits; the initial row already had the first batch.
-        // We only need to flush extra accumulated hits.
-        const parts = key.split(':');
-        // key format: policyId:serviceNameOrEmpty:destination:action
-        // Reconstruct from the bucket's accumulated data
-        if (bucket.hits > 0 && bucket.initialRowFlushed) {
-          // The initial row is already in DB. We only write more rows if additional
-          // hits came in during the window (bucket.hits > first batch mergedHits).
-          // Since we don't track the initial mergedHits separately, we store the
-          // full accumulated count in a new row only if anything accumulated after
-          // the initial row was written.
-          //
-          // To keep things simple and correct: on window expiry, if hits are tracked
-          // in the bucket, that means hits accumulated after the initial row was flushed.
-          // We don't write a second row for the original batch.
-          void this._flushRolledBucket(parts[0], parts[2], parts[3], bucket);
-        }
-        this.dedupBuckets.delete(key);
-      }
+    const policyContext = await this._lookupPolicy(line.stackId);
+    if (!policyContext) {
+      this._warnNoPolicyIfNeeded(line.stackId, 'tcp/connect', line.srcIp);
+      return;
+    }
+
+    const key = makeDedupKey(policyContext.id, line.serviceName, line.target, line.action);
+    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
+      policyId: policyContext.id,
+      occurredAt: line.ts ? new Date(line.ts) : new Date(),
+      sourceStackId: line.stackId,
+      sourceServiceName: line.serviceName,
+      destination: line.target, // use target as destination for list/filter UI
+      target: line.target,
+      matchedPattern: line.matchedPattern,
+      action: line.action,
+      protocol: 'connect',
+      mergedHits: line.mergedHits,
+      bytesUp: line.bytesUp !== undefined ? BigInt(line.bytesUp) : undefined,
+      bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
+      reason: line.reason,
+      stackNameSnapshot: policyContext.stackNameSnapshot,
+      environmentNameSnapshot: policyContext.environmentNameSnapshot,
+      environmentId: policyContext.environmentId,
+    }));
+
+    if (!suppressed && line.matchedPattern) {
+      void this._bumpRuleHits(policyContext.id, line.matchedPattern);
     }
   }
 
-  private async _flushRolledBucket(
-    policyId: string,
-    destination: string,
-    action: string,
-    bucket: DedupBucket,
-  ): Promise<void> {
-    // Only write a summary if subsequent hits (beyond the initial row) accumulated
-    // We can't easily distinguish, so we skip the extra row to avoid double-counting.
-    // The server-side dedup is a "best effort" second layer — the sidecar's own dedup
-    // is the primary protection. For v1 simplicity: just delete the bucket on expiry.
-    log.debug(
-      { policyId, destination, action, hits: bucket.hits },
-      'Dedup window expired — bucket cleared',
+  private async _ingestTcpHttp(line: TcpHttpLine): Promise<void> {
+    if (!line.stackId) return;
+
+    const policyContext = await this._lookupPolicy(line.stackId);
+    if (!policyContext) {
+      this._warnNoPolicyIfNeeded(line.stackId, 'tcp/http', line.srcIp);
+      return;
+    }
+
+    const key = makeDedupKey(policyContext.id, line.serviceName, line.target, line.action);
+    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
+      policyId: policyContext.id,
+      occurredAt: line.ts ? new Date(line.ts) : new Date(),
+      sourceStackId: line.stackId,
+      sourceServiceName: line.serviceName,
+      destination: line.target, // use target as destination for list/filter UI
+      target: line.target,
+      method: line.method,
+      path: line.path,
+      status: line.status,
+      bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
+      matchedPattern: line.matchedPattern,
+      action: line.action,
+      protocol: 'http',
+      mergedHits: line.mergedHits,
+      reason: line.reason,
+      stackNameSnapshot: policyContext.stackNameSnapshot,
+      environmentNameSnapshot: policyContext.environmentNameSnapshot,
+      environmentId: policyContext.environmentId,
+    }));
+
+    if (!suppressed && line.matchedPattern) {
+      void this._bumpRuleHits(policyContext.id, line.matchedPattern);
+    }
+  }
+
+  private async _ingestFwDrop(line: FwDropLine): Promise<void> {
+    if (!line.stackId) {
+      // fw_drop without stackId cannot be attributed — drop it
+      return;
+    }
+
+    const policyContext = await this._lookupPolicy(line.stackId);
+    if (!policyContext) {
+      this._warnNoPolicyIfNeeded(line.stackId, 'fw_drop', line.srcIp);
+      return;
+    }
+
+    const destLabel = line.destPort ? `${line.destIp}:${line.destPort}` : line.destIp;
+    const key = makeFwDropDedupKey(
+      policyContext.id,
+      line.serviceName,
+      line.destIp,
+      line.destPort,
+      line.protocol,
     );
+    this._checkDedup(key, line.mergedHits, () => ({
+      policyId: policyContext.id,
+      occurredAt: line.ts ? new Date(line.ts) : new Date(),
+      sourceStackId: line.stackId,
+      sourceServiceName: line.serviceName,
+      destination: destLabel, // destIp:destPort for list/filter UI
+      destIp: line.destIp,
+      destPort: line.destPort,
+      action: 'blocked',
+      protocol: line.protocol,
+      mergedHits: line.mergedHits,
+      reason: line.reason,
+      stackNameSnapshot: policyContext.stackNameSnapshot,
+      environmentNameSnapshot: policyContext.environmentNameSnapshot,
+      environmentId: policyContext.environmentId,
+    }));
+    // fw_drop has no matchedPattern — no rule hit bump
   }
 
   // -------------------------------------------------------------------------
   // Batch flush
   // -------------------------------------------------------------------------
 
-  private _maybeFlushBatch(): void {
+  protected _maybeFlushBatch(): void {
     if (this.pendingRows.length >= BATCH_MAX_ROWS) {
       void this._flushBatch();
     }
   }
 
-  private _startBatchTimer(): void {
+  protected _startBatchTimer(): void {
     this.batchTimer = setInterval(() => {
       this._rollExpiredDedupWindows();
       if (this.pendingRows.length > 0) {
@@ -473,7 +584,20 @@ class GatewayTailer {
     }, BATCH_FLUSH_INTERVAL_MS);
   }
 
-  private async _flushBatch(): Promise<void> {
+  private _rollExpiredDedupWindows(): void {
+    const now = Date.now();
+    for (const [key, bucket] of this.dedupBuckets.entries()) {
+      if (now - bucket.windowStart >= DEDUP_WINDOW_MS) {
+        log.debug(
+          { key, hits: bucket.hits },
+          'Dedup window expired — bucket cleared',
+        );
+        this.dedupBuckets.delete(key);
+      }
+    }
+  }
+
+  protected async _flushBatch(): Promise<void> {
     if (this.pendingRows.length === 0) return;
 
     const batch = this.pendingRows.splice(0, BATCH_MAX_ROWS);
@@ -489,39 +613,62 @@ class GatewayTailer {
           destination: row.destination,
           matchedPattern: row.matchedPattern ?? null,
           action: row.action,
-          protocol: 'dns',
+          protocol: row.protocol,
           mergedHits: row.mergedHits,
+          target: row.target ?? null,
+          method: row.method ?? null,
+          path: row.path ?? null,
+          status: row.status ?? null,
+          bytesUp: row.bytesUp ?? null,
+          bytesDown: row.bytesDown ?? null,
+          destIp: row.destIp ?? null,
+          destPort: row.destPort ?? null,
+          reason: row.reason ?? null,
         })),
       });
 
-      log.debug({ count: batch.length, envId: this.envId }, 'Flushed EgressEvent batch');
+      log.debug({ count: batch.length }, 'Flushed EgressEvent batch');
 
       // Emit one egress:event per row after successful batch insert.
       // createMany does not return IDs, so we synthesise placeholder IDs for
-      // the socket event — the frontend uses these for live-feed display only,
-      // not for lookups. We generate a stable placeholder from policyId +
-      // occurredAt. The DB row's real CUID is not available from createMany.
+      // the socket event — the frontend uses these for live-feed display only.
       for (const row of batch) {
-        emitEgressEvent({
-          id: `${row.policyId}-${row.occurredAt.getTime()}`,
-          policyId: row.policyId,
-          occurredAt: row.occurredAt,
-          sourceContainerId: row.sourceContainerId ?? null,
-          sourceStackId: row.sourceStackId ?? null,
-          sourceServiceName: row.sourceServiceName ?? null,
-          destination: row.destination,
-          matchedPattern: row.matchedPattern ?? null,
-          action: row.action,
-          protocol: 'dns',
-          mergedHits: row.mergedHits,
-          stackNameSnapshot: row.stackNameSnapshot,
-          environmentNameSnapshot: row.environmentNameSnapshot,
-          environmentId: row.environmentId,
-        });
+        try {
+          emitEgressEvent({
+            id: `${row.policyId}-${row.occurredAt.getTime()}`,
+            policyId: row.policyId,
+            occurredAt: row.occurredAt,
+            sourceContainerId: row.sourceContainerId ?? null,
+            sourceStackId: row.sourceStackId ?? null,
+            sourceServiceName: row.sourceServiceName ?? null,
+            destination: row.destination,
+            matchedPattern: row.matchedPattern ?? null,
+            action: row.action,
+            protocol: row.protocol,
+            mergedHits: row.mergedHits,
+            stackNameSnapshot: row.stackNameSnapshot,
+            environmentNameSnapshot: row.environmentNameSnapshot,
+            environmentId: row.environmentId,
+            target: row.target ?? null,
+            method: row.method ?? null,
+            path: row.path ?? null,
+            status: row.status ?? null,
+            bytesUp: row.bytesUp !== undefined ? Number(row.bytesUp) : null,
+            bytesDown: row.bytesDown !== undefined ? Number(row.bytesDown) : null,
+            destIp: row.destIp ?? null,
+            destPort: row.destPort ?? null,
+            reason: row.reason ?? null,
+          });
+        } catch (err) {
+          log.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'Failed to emit egress socket event — continuing',
+          );
+        }
       }
     } catch (err) {
       log.error(
-        { err: err instanceof Error ? err.message : String(err), envId: this.envId, batchSize: batch.length },
+        { err: err instanceof Error ? err.message : String(err), batchSize: batch.length },
         'Failed to flush EgressEvent batch — events dropped',
       );
     }
@@ -531,14 +678,13 @@ class GatewayTailer {
   // EgressRule hit counter
   // -------------------------------------------------------------------------
 
-  private async _bumpRuleHits(policyId: string, pattern: string): Promise<void> {
+  protected async _bumpRuleHits(policyId: string, pattern: string): Promise<void> {
     try {
       await this.prisma.egressRule.updateMany({
         where: { policyId, pattern },
         data: { hits: { increment: 1 }, lastHitAt: new Date() },
       });
     } catch (err) {
-      // Don't fail ingestion if the rule was deleted between log emission and now
       log.debug(
         { err: err instanceof Error ? err.message : String(err), policyId, pattern },
         'Failed to bump EgressRule.hits (rule may have been deleted)',
@@ -548,7 +694,146 @@ class GatewayTailer {
 }
 
 // ---------------------------------------------------------------------------
-// EgressLogIngester — orchestrates GatewayTailers
+// GatewayTailer — one per environment
+// ---------------------------------------------------------------------------
+
+class GatewayTailer extends BaseTailer {
+  constructor(
+    private readonly envId: string,
+    private readonly envName: string,
+    prisma: PrismaClient,
+  ) {
+    super(prisma);
+  }
+
+  start(): void {
+    void this._connect();
+    this._startBatchTimer();
+    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer started');
+  }
+
+  stop(): void {
+    super.stop();
+    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer stopped');
+  }
+
+  protected async _connect(): Promise<void> {
+    if (this.stopped) return;
+
+    const containerName = `${this.envName}-egress-gateway-egress-gateway`;
+
+    const dockerService = DockerService.getInstance();
+    if (!dockerService.isConnected()) {
+      log.warn({ containerName }, 'Docker not connected — will retry');
+      this._scheduleReconnect(containerName);
+      return;
+    }
+
+    try {
+      const docker = await dockerService.getDockerInstance();
+
+      const containers = await docker.listContainers({
+        all: false,
+        filters: JSON.stringify({ name: [containerName] }),
+      });
+      const match = containers.find((c) =>
+        c.Names?.some((n) => n === `/${containerName}`),
+      );
+
+      if (!match) {
+        log.debug({ containerName }, 'Gateway container not found — will retry');
+        this._scheduleReconnect(containerName);
+        return;
+      }
+
+      const dockerContainer = docker.getContainer(match.Id);
+      const rawStream = (await dockerContainer.logs({
+        follow: true as const,
+        stdout: true,
+        stderr: false,
+        tail: 0,
+      })) as unknown as Readable;
+
+      this._attachStream(rawStream, containerName);
+      log.info({ containerName, containerId: match.Id }, 'Tailing gateway container logs');
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), containerName },
+        'Failed to attach to gateway log stream — reconnecting',
+      );
+      this._scheduleReconnect(containerName);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FwAgentTailer — host singleton
+// ---------------------------------------------------------------------------
+
+class FwAgentTailer extends BaseTailer {
+  constructor(prisma: PrismaClient) {
+    super(prisma);
+  }
+
+  start(): void {
+    void this._connect();
+    this._startBatchTimer();
+    log.info('Fw-agent tailer started');
+  }
+
+  stop(): void {
+    super.stop();
+    log.info('Fw-agent tailer stopped');
+  }
+
+  protected async _connect(): Promise<void> {
+    if (this.stopped) return;
+
+    const dockerService = DockerService.getInstance();
+    if (!dockerService.isConnected()) {
+      log.debug('Docker not connected — fw-agent tailer will retry');
+      this._scheduleReconnect('fw-agent');
+      return;
+    }
+
+    try {
+      const docker = await dockerService.getDockerInstance();
+
+      const containers = await docker.listContainers({
+        all: false,
+        filters: JSON.stringify({ label: [FW_AGENT_LABEL] }),
+      });
+
+      if (containers.length === 0) {
+        // fw-agent container doesn't exist yet (Phase 2 hasn't shipped) — retry quietly
+        log.debug('Fw-agent container not found — will retry (Phase 2 not yet deployed)');
+        this._scheduleReconnect('fw-agent');
+        return;
+      }
+
+      const match = containers[0];
+      const dockerContainer = docker.getContainer(match.Id);
+      const rawStream = (await dockerContainer.logs({
+        follow: true as const,
+        stdout: true,
+        stderr: false,
+        tail: 0,
+      })) as unknown as Readable;
+
+      this._attachStream(rawStream, 'fw-agent');
+      log.info({ containerId: match.Id }, 'Tailing fw-agent container logs');
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'Failed to attach to fw-agent log stream — reconnecting',
+      );
+      this._scheduleReconnect('fw-agent');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// EgressLogIngester — orchestrates GatewayTailers + FwAgentTailer
 // ---------------------------------------------------------------------------
 
 interface EnvRow {
@@ -559,38 +844,59 @@ interface EnvRow {
 
 export class EgressLogIngester {
   private readonly tailers = new Map<string, GatewayTailer>();
+  private fwAgentTailer: FwAgentTailer | null = null;
   private stopped = false;
 
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
-   * Start tailing all currently known gateway environments, and subscribe to
-   * Docker events so we reconnect when containers restart.
+   * Start tailing all currently known gateway environments and the fw-agent
+   * singleton, and subscribe to Docker events so we reconnect when containers
+   * restart.
    */
   async start(): Promise<void> {
-    // Initial scan
+    // Initial scan — per-env gateway tailers
     const envs = await this._getEnvsWithGateway();
     for (const env of envs) {
       this._ensureTailer(env);
     }
 
-    // Subscribe to Docker container events to react to gateway restarts.
-    // onContainerEvent fires with action + labels — we use it to detect
-    // start/die events for any container whose name matches the gateway pattern.
+    // Host-singleton fw-agent tailer
+    this.fwAgentTailer = new FwAgentTailer(this.prisma);
+    this.fwAgentTailer.start();
+
+    // Subscribe to Docker container events to react to restarts.
     const dockerService = DockerService.getInstance();
     dockerService.onContainerEvent((event) => {
       if (this.stopped) return;
-      // Reconnect if any egress-gateway container starts or dies
+
       const name = event.containerName ?? '';
+      const labels = (event as { labels?: Record<string, string> }).labels ?? {};
+
+      // Gateway containers — name-based match
       if (name.endsWith('-egress-gateway-egress-gateway')) {
         if (event.action === 'start' || event.action === 'die' || event.action === 'stop') {
-          // Re-scan and reconcile tailers
           void this._reconcileTailers();
+        }
+      }
+
+      // Fw-agent container — label-based match
+      if (labels['mini-infra.egress.fw-agent'] === 'true') {
+        if (event.action === 'start' || event.action === 'die' || event.action === 'stop') {
+          // Restart the fw-agent tailer so it picks up the new container
+          if (this.fwAgentTailer) {
+            this.fwAgentTailer.stop();
+          }
+          this.fwAgentTailer = new FwAgentTailer(this.prisma);
+          this.fwAgentTailer.start();
         }
       }
     });
 
-    log.info({ tailerCount: this.tailers.size }, 'EgressLogIngester started');
+    log.info(
+      { tailerCount: this.tailers.size, fwAgentTailer: true },
+      'EgressLogIngester started',
+    );
   }
 
   /**
@@ -602,6 +908,10 @@ export class EgressLogIngester {
       tailer.stop();
     }
     this.tailers.clear();
+    if (this.fwAgentTailer) {
+      this.fwAgentTailer.stop();
+      this.fwAgentTailer = null;
+    }
     log.info('EgressLogIngester stopped');
   }
 

@@ -1532,8 +1532,19 @@ model EgressEvent {
   destination         String       // queried domain name
   matchedPattern      String?      // pattern of the rule that matched, if any
   action              String       // 'allowed' | 'blocked' | 'observed'
-  protocol            String       @default("dns")  // 'dns' | 'sni' | 'http'
+  protocol            String       @default("dns")  // 'dns' | 'sni' | 'http' | 'connect' | 'tcp' | 'udp' | 'icmp'
   mergedHits          Int          @default(1)      // gateway-side dedup counter
+
+  // v3 egress gateway fields — null for existing dns.query events
+  target              String?      // CONNECT target or HTTP Host (e.g. "api.example.com:443")
+  method              String?      // HTTP method (e.g. "GET")
+  path                String?      // HTTP request path
+  status              Int?         // HTTP response status code
+  bytesUp             BigInt?      // bytes sent upstream (CONNECT events)
+  bytesDown           BigInt?      // bytes received downstream
+  destIp              String?      // destination IP (fw_drop events)
+  destPort            Int?         // destination port (fw_drop events)
+  reason              String?      // denial/drop reason (e.g. "rule-deny", "non-allowed-egress")
 
   @@index([policyId, occurredAt])
   @@index([policyId, action])
