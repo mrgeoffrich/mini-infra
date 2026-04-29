@@ -18,6 +18,7 @@ class DockerService {
   private dockerConfigService: DockerConfigService;
   private containerChangeCallbacks: Array<() => void> = [];
   private containerEventCallbacks: Array<(event: DockerContainerEvent) => void> = [];
+  private connectCallbacks: Array<() => void | Promise<void>> = [];
 
   private constructor() {
     // Initialize cache with 3-second TTL
@@ -155,11 +156,18 @@ class DockerService {
       await this.docker.ping();
       const responseTimeMs = Date.now() - startTime;
 
+      const wasConnected = this.connected;
       this.connected = true;
       getLogger("docker", "docker").info(
         { responseTimeMs },
         "Docker service connected successfully",
       );
+
+      // Fire onConnect callbacks only on transitions from disconnected to
+      // connected — not on every ping in scheduleReconnect's poll loop.
+      if (!wasConnected) {
+        await this.fireConnectCallbacks();
+      }
 
       // Record successful connection
       try {
@@ -796,6 +804,32 @@ class DockerService {
    */
   public onContainerEvent(callback: (event: DockerContainerEvent) => void): void {
     this.containerEventCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback to be invoked once each time DockerService transitions
+   * from disconnected to connected. Used by boot-time consumers (e.g. the
+   * agent sidecar and egress fw-agent) that need to retry their auto-start
+   * path after Docker reconnects on a fresh-boot worktree where the host
+   * setting wasn't in the DB at server startup.
+   *
+   * Callbacks must not throw — exceptions are caught and logged.
+   */
+  public onConnect(callback: () => void | Promise<void>): void {
+    this.connectCallbacks.push(callback);
+  }
+
+  private async fireConnectCallbacks(): Promise<void> {
+    for (const cb of this.connectCallbacks) {
+      try {
+        await cb();
+      } catch (err) {
+        getLogger("docker", "docker").error(
+          { error: err },
+          "Docker onConnect callback failed",
+        );
+      }
+    }
   }
 
   /**
