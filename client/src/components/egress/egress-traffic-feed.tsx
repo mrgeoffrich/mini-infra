@@ -30,9 +30,13 @@ import {
 import {
   useEgressEvents,
   useEgressEventFilters,
+  useEgressPolicies,
 } from "@/hooks/use-egress";
+import { useStack } from "@/hooks/use-stacks";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import type { EgressEventBroadcast } from "@mini-infra/types";
+
+const ALL_VALUE = "__all__";
 
 function EventActionBadge({ action }: { action: string }) {
   if (action === "blocked") {
@@ -154,20 +158,61 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
 
   const { filters, updateFilter, resetFilters } = useEgressEventFilters();
 
-  // Reset pagination when the env filter flips so we don't request a page that no longer exists.
+  // Stack dropdown source — same query the parent Egress page already issues, so
+  // TanStack Query dedupes by key (no extra HTTP request).
+  const policiesQuery = useEgressPolicies({
+    query: { environmentId, page: 1, limit: 200 },
+  });
+
+  // Service dropdown source — only enabled when a stack is selected.
+  const stackQuery = useStack(filters.stackId ?? "");
+
+  const stackOptions = useMemo(() => {
+    const seen = new Map<string, string>(); // stackId -> stackName
+    for (const p of policiesQuery.data?.policies ?? []) {
+      if (p.stackId && !seen.has(p.stackId)) {
+        seen.set(p.stackId, p.stackNameSnapshot);
+      }
+    }
+    return Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }, [policiesQuery.data?.policies]);
+
+  const serviceOptions = useMemo(
+    () => (stackQuery.data?.data?.services ?? []).map((s) => s.serviceName),
+    [stackQuery.data?.data?.services],
+  );
+
+  // Switching environments invalidates any stack/service filter (a stack from
+  // another env wouldn't match anything). The stack→service cascade is handled
+  // inline in the Stack dropdown's onValueChange so both updates batch into a
+  // single render — no wasted fetch with a stale service filter.
+  // updateFilter resets page to 1 on every call, so pagination is implicit.
   useEffect(() => {
-    updateFilter("page", 1);
+    updateFilter("stackId", undefined);
+    updateFilter("sourceServiceName", undefined);
   }, [environmentId, updateFilter]);
 
   const query = useMemo(
     () => ({
       environmentId,
+      stackId: filters.stackId,
+      sourceServiceName: filters.sourceServiceName,
       action: filters.action,
       since: sinceFromRange(timeRange),
       page: filters.page,
       limit: filters.limit,
     }),
-    [environmentId, filters.action, timeRange, filters.page, filters.limit],
+    [
+      environmentId,
+      filters.stackId,
+      filters.sourceServiceName,
+      filters.action,
+      timeRange,
+      filters.page,
+      filters.limit,
+    ],
   );
 
   const { data, isLoading, isError, error, liveEvents } = useEgressEvents({
@@ -236,6 +281,59 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
             <SelectItem value="observed">Observed</SelectItem>
           </SelectContent>
         </Select>
+
+        {stackOptions.length > 0 && (
+          <Select
+            value={filters.stackId ?? ALL_VALUE}
+            onValueChange={(v) => {
+              updateFilter("stackId", v === ALL_VALUE ? undefined : v);
+              // Service names aren't unique across stacks, so clear the service
+              // filter whenever the stack selection changes.
+              updateFilter("sourceServiceName", undefined);
+            }}
+            disabled={policiesQuery.isLoading}
+          >
+            <SelectTrigger className="w-44 h-8 text-xs">
+              <SelectValue placeholder="Stack" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>All stacks</SelectItem>
+              {stackOptions.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {filters.stackId && (
+          <Select
+            value={filters.sourceServiceName ?? ALL_VALUE}
+            onValueChange={(v) =>
+              updateFilter("sourceServiceName", v === ALL_VALUE ? undefined : v)
+            }
+            disabled={stackQuery.isLoading}
+          >
+            <SelectTrigger className="w-40 h-8 text-xs">
+              <SelectValue placeholder="Service" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>All services</SelectItem>
+              {serviceOptions.length === 0 ? (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground italic">
+                  No services found
+                </div>
+              ) : (
+                serviceOptions.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select
           value={timeRange}

@@ -273,6 +273,12 @@ export function useEgressEvents(options: UseEgressEventsOptions = {}) {
     ServerEvent.EGRESS_EVENT,
     (data) => {
       if (query.environmentId && data.environmentId !== query.environmentId) return;
+      if (query.stackId && data.sourceStackId !== query.stackId) return;
+      if (
+        query.sourceServiceName &&
+        data.sourceServiceName !== query.sourceServiceName
+      )
+        return;
       if (query.policyId && data.policyId !== query.policyId) return;
       if (query.action && data.action !== query.action) return;
 
@@ -358,6 +364,8 @@ export function useEgressGatewayHealth(environmentId: string | null | undefined)
 
 export interface EgressEventFiltersState {
   action?: "allowed" | "blocked" | "observed";
+  stackId?: string;
+  sourceServiceName?: string;
   since?: string; // ISO string
   until?: string; // ISO string
   destination?: string; // free-text search
