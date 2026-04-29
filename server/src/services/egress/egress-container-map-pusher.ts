@@ -280,15 +280,16 @@ export class EgressContainerMapPusher {
 
     const entries: ContainerMapEntry[] = [];
 
+    // Project name matches StackContainerManager: `${env.name}-${stack.name}` for env-scoped stacks.
+    // Container name: `${projectName}-${serviceName}` → `${env.name}-${stack.name}-${serviceName}`.
     for (const stack of stacks) {
+      const projectName = `${env.name}-${stack.name}`;
       for (const service of stack.services) {
         // Skip services with egressBypass (e.g. the egress-gateway itself)
         const cfg = service.containerConfig as Record<string, unknown> | null;
         if (cfg?.egressBypass === true) continue;
 
-        // Container name convention matches what StackContainerManager creates:
-        // {stackName}-{serviceName}
-        const containerName = `${stack.name}-${service.serviceName}`;
+        const containerName = `${projectName}-${service.serviceName}`;
         const ip = ipByName.get(containerName);
         if (!ip) continue; // Container not running or not on this network
 

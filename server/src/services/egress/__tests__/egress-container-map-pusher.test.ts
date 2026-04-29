@@ -143,18 +143,19 @@ describe('EgressContainerMapPusher', () => {
       ],
     });
 
-    // Docker has both containers running on the applications network
+    // Docker has both containers running on the applications network.
+    // Names follow `${env}-${stack}-${service}` (StackContainerManager convention).
     mockDockerInstance.listContainers.mockResolvedValue([
       {
         Id: 'c1',
-        Names: ['/myapp-web'],
+        Names: ['/staging-myapp-web'],
         NetworkSettings: {
           Networks: { 'staging-applications': { IPAddress: '172.30.0.10' } },
         },
       },
       {
         Id: 'c2',
-        Names: ['/myapp-egress-gateway'],
+        Names: ['/staging-myapp-egress-gateway'],
         NetworkSettings: {
           Networks: { 'staging-applications': { IPAddress: '172.30.0.2' } },
         },
@@ -171,6 +172,51 @@ describe('EgressContainerMapPusher', () => {
     // egressBypass service should NOT appear
     expect(entryServiceNames).not.toContain('egress-gateway');
     expect(entryServiceNames).toContain('web');
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Map computation: looks up containers by env-prefixed name
+  // -------------------------------------------------------------------------
+
+  it('matches containers using ${env.name}-${stack.name}-${serviceName}', async () => {
+    const prisma = makePrisma({
+      environments: [{ id: 'env-local', name: 'local', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-egress-test',
+          name: 'egress-test',
+          services: [{ serviceName: 'alpine', containerConfig: {} }],
+        },
+      ],
+    });
+
+    // StackContainerManager names this `local-egress-test-alpine` (env + stack + service).
+    // The pusher must look up that exact name — not `egress-test-alpine`.
+    mockDockerInstance.listContainers.mockResolvedValue([
+      {
+        Id: 'c-alpine',
+        Names: ['/local-egress-test-alpine'],
+        NetworkSettings: {
+          Networks: { 'local-applications': { IPAddress: '172.30.0.10' } },
+        },
+      },
+    ]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+    await vi.runAllTimersAsync();
+
+    expect(pushCalls.length).toBeGreaterThan(0);
+    const { entries } = pushCalls[pushCalls.length - 1];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toEqual({
+      ip: '172.30.0.10',
+      stackId: 'stk-egress-test',
+      serviceName: 'alpine',
+      containerId: 'c-alpine',
+    });
 
     pusher.stop();
   });
