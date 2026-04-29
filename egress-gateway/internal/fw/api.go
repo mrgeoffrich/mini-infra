@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 )
@@ -84,6 +85,24 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("mkdir %s: %w", dirOf(s.socketPath), err)
 	}
 
+	// Set umask to 0077 before Listen so the socket file is created with mode
+	// 0600 from the start, closing the TOCTOU window between Listen and Chmod.
+	// setUmask / restoreUmask are defined in platform-specific files.
+	if runtime.GOOS == "linux" {
+		prev := setUmask(0o077)
+		ln, err := net.Listen("unix", s.socketPath)
+		restoreUmask(prev)
+		if err != nil {
+			return fmt.Errorf("listen unix %s: %w", s.socketPath, err)
+		}
+		defer ln.Close()
+		// Chmod as defence-in-depth (in case umask was overridden by parent process).
+		if err := os.Chmod(s.socketPath, 0o600); err != nil {
+			return fmt.Errorf("chmod %s: %w", s.socketPath, err)
+		}
+		return s.serveHTTP(ctx, ln)
+	}
+
 	ln, err := net.Listen("unix", s.socketPath)
 	if err != nil {
 		return fmt.Errorf("listen unix %s: %w", s.socketPath, err)
@@ -95,6 +114,11 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("chmod %s: %w", s.socketPath, err)
 	}
 
+	return s.serveHTTP(ctx, ln)
+}
+
+// serveHTTP registers the mux and serves on the given listener until ctx is done.
+func (s *Server) serveHTTP(ctx context.Context, ln net.Listener) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.handleHealth)
 	mux.HandleFunc("POST /v1/env", s.handleApplyEnv)
@@ -168,11 +192,6 @@ func (s *Server) handleApplyEnv(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemoveEnv(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
 	// Path: /v1/env/<env>
 	env := strings.TrimPrefix(r.URL.Path, "/v1/env/")
 	if err := validateEnvName(env); err != nil {

@@ -136,11 +136,23 @@ export class EnvFirewallManager {
     const env = await this._getEnabledEnv(envId);
     if (!env) return;
 
+    // Resolve the real bridge CIDR from the applications network InfraResource.
+    // The subnet is stored in InfraResource.metadata.subnet for the docker-network
+    // resource with purpose "applications" in this environment.
+    const bridgeCidr = await this._getBridgeCidr(envId, env.name);
+    if (!bridgeCidr) {
+      log.error(
+        { envId, envName: env.name },
+        'fw-agent: applyEnv: cannot resolve bridge CIDR — env has no applications network yet; skipping',
+      );
+      return;
+    }
+
     try {
       const resp = await this.fetcher({
         method: 'POST',
         path: '/v1/env',
-        body: { env: env.name, bridgeCidr: env.egressGatewayIp ?? '10.0.0.0/24', mode },
+        body: { env: env.name, bridgeCidr, mode },
       });
       if (resp.status !== 200) {
         log.warn({ envId, status: resp.status, body: resp.body }, 'fw-agent: applyEnv failed');
@@ -157,10 +169,36 @@ export class EnvFirewallManager {
 
   /**
    * Called when an environment is destroyed.
-   * No-op if egressFirewallEnabled is false on the env.
+   *
+   * Checks egressFirewallEnabled before calling the agent (consistent with
+   * applyEnv). If the env row is already gone from the DB (deleted), attempts
+   * the removal anyway as a best-effort cleanup.
    */
   async removeEnv(envId: string, envName: string): Promise<void> {
-    // Fetch the flag — even if already deleted from DB we still want to clean up.
+    // Look up the flag. If the env is already deleted from DB, proceed with
+    // cleanup anyway (best-effort) rather than silently dropping the call.
+    try {
+      const env = await this.prisma.environment.findUnique({
+        where: { id: envId },
+        select: { egressFirewallEnabled: true },
+      });
+
+      if (env !== null && !env.egressFirewallEnabled) {
+        // Env exists but firewall is disabled — skip agent call (consistent with applyEnv).
+        return;
+      }
+
+      if (env === null) {
+        // Env already deleted from DB — attempt cleanup at best-effort.
+        log.info({ envId, envName }, 'fw-agent: removeEnv: env not found in DB — attempting cleanup anyway');
+      }
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), envId },
+        'fw-agent: removeEnv: DB lookup failed — attempting cleanup anyway',
+      );
+    }
+
     try {
       const resp = await this.fetcher({ method: 'DELETE', path: `/v1/env/${envName}` });
       if (resp.status !== 200 && resp.status !== 404) {
@@ -259,22 +297,45 @@ export class EnvFirewallManager {
         return;
       }
 
-      const allContainers = await dockerService.listContainers(false);
+      // Re-register each env with the agent first (High 2 fix: the agent's
+      // in-memory EnvStore is empty on every restart, so we must re-send the
+      // POST /v1/env call before any ipset sync for that env).
+      const modeResults = await this._reconcileEnvRegistrations(envs);
+
+      // Fetch raw container list for IP extraction (High 1 fix: use the raw
+      // Docker API to get per-network IPs, matching egress-container-map-pusher).
+      const docker = await dockerService.getDockerInstance();
+      const rawContainers = await docker.listContainers({ all: false });
 
       for (const env of envs) {
+        // Only sync if env registration succeeded (agent knows the CIDR).
+        if (!modeResults.has(env.id)) continue;
+
         try {
+          const applicationsNetwork = `${env.name}-applications`;
           // Collect IPs of managed running containers in this env.
           const ips: string[] = [];
-          for (const c of allContainers) {
-            const envLabel = c.labels['mini-infra.environment'];
+          for (const c of rawContainers) {
+            const labels = c.Labels ?? {};
+            const envLabel = labels['mini-infra.environment'];
             if (envLabel !== env.id) continue;
-            if (c.labels['mini-infra.egress.bypass'] === 'true') continue;
-            if (c.labels['mini-infra.egress.gateway'] === 'true') continue;
-            if (c.labels['mini-infra.egress.fw-agent'] === 'true') continue;
+            if (labels['mini-infra.egress.bypass'] === 'true') continue;
+            if (labels['mini-infra.egress.gateway'] === 'true') continue;
+            if (labels['mini-infra.egress.fw-agent'] === 'true') continue;
 
-            // Extract IP from the container's networks.
-            const ip = this._extractIpFromNetworkSummary(c, env.name);
-            if (ip) ips.push(ip);
+            // Extract IP from the env's applications network (same pattern as
+            // egress-container-map-pusher).
+            const networks = c.NetworkSettings?.Networks ?? {};
+            const networkInfo = networks[applicationsNetwork];
+            const ip = networkInfo?.IPAddress;
+            if (ip) {
+              ips.push(ip);
+            } else {
+              log.debug(
+                { containerId: c.Id, envName: env.name, applicationsNetwork },
+                'EnvFirewallManager reconcile: container not on env applications network — skipping',
+              );
+            }
           }
 
           await this._syncManaged(env.name, ips);
@@ -296,6 +357,52 @@ export class EnvFirewallManager {
         'EnvFirewallManager reconcile failed',
       );
     }
+  }
+
+  /**
+   * Re-register each enabled env with the fw-agent (POST /v1/env).
+   * Returns a Set of env IDs that were successfully registered (or already up).
+   * Envs whose bridge CIDR can't be resolved are skipped and excluded from the set.
+   */
+  private async _reconcileEnvRegistrations(
+    envs: Array<{ id: string; name: string; egressGatewayIp: string | null }>,
+  ): Promise<Set<string>> {
+    const registered = new Set<string>();
+    for (const env of envs) {
+      try {
+        const bridgeCidr = await this._getBridgeCidr(env.id, env.name);
+        if (!bridgeCidr) {
+          log.warn(
+            { envId: env.id, envName: env.name },
+            'EnvFirewallManager reconcile: no bridge CIDR for env — skipping env registration',
+          );
+          continue;
+        }
+        // All envs in the outer list already have egressFirewallEnabled: true.
+        // Default to observe mode for reconcile — the mode is not persisted
+        // separately, and observe is the safe default (no packets dropped).
+        const resp = await this.fetcher({
+          method: 'POST',
+          path: '/v1/env',
+          body: { env: env.name, bridgeCidr, mode: 'observe' as FirewallMode },
+        });
+        if (resp.status === 200) {
+          this.agentUp = true;
+          registered.add(env.id);
+        } else {
+          log.warn(
+            { envId: env.id, envName: env.name, status: resp.status },
+            'EnvFirewallManager reconcile: applyEnv failed for env',
+          );
+        }
+      } catch (err) {
+        log.warn(
+          { err: err instanceof Error ? err.message : String(err), envId: env.id },
+          'EnvFirewallManager reconcile: applyEnv threw for env',
+        );
+      }
+    }
+    return registered;
   }
 
   // -------------------------------------------------------------------------
@@ -450,13 +557,35 @@ export class EnvFirewallManager {
     return null;
   }
 
-  private _extractIpFromNetworkSummary(
-    _container: { networkNames?: string[]; labels: Record<string, string> },
-    _envName: string,
-  ): string | null {
-    // DockerService.listContainers() returns a simplified view; we don't get IPs
-    // directly from it. Return null here — reconcile will skip containers whose
-    // IP cannot be resolved. A follow-on PR can extend listContainers() with IPs.
+  /**
+   * Resolve the bridge CIDR (e.g. "172.30.5.0/24") for an env's applications
+   * network by reading the subnet stored in the InfraResource row.
+   *
+   * Returns null if no subnet is recorded yet (env not fully provisioned).
+   */
+  private async _getBridgeCidr(envId: string, envName: string): Promise<string | null> {
+    try {
+      const resource = await this.prisma.infraResource.findFirst({
+        where: {
+          type: 'docker-network',
+          purpose: 'applications',
+          scope: 'environment',
+          environmentId: envId,
+        },
+        select: { metadata: true },
+      });
+      if (!resource) return null;
+      const meta = resource.metadata as Record<string, unknown> | null;
+      const subnet = meta?.['subnet'];
+      if (typeof subnet === 'string' && subnet) {
+        return subnet;
+      }
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), envId, envName },
+        'EnvFirewallManager: _getBridgeCidr DB lookup failed',
+      );
+    }
     return null;
   }
 

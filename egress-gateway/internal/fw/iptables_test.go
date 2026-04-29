@@ -1,7 +1,10 @@
 package fw
 
 import (
+	"bytes"
+	"fmt"
 	"os/exec"
+	"strings"
 	"testing"
 )
 
@@ -122,5 +125,90 @@ func TestApplyEnvRules_NoShellInterpolation(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// deleteOneIptablesRuleBySet — line-number validation (Critical 1)
+// ---------------------------------------------------------------------------
+
+// TestDeleteOneIptablesRuleBySet_MalformedLineNum verifies that non-numeric or
+// non-positive first fields in iptables -L output do NOT produce an iptables -D call.
+func TestDeleteOneIptablesRuleBySet_MalformedLineNum(t *testing.T) {
+	const set = "managed-prod"
+
+	// Build a fake iptables -L output where the matching line has a non-numeric
+	// first field ("foo"), a blank first field (" "), and a header-like line.
+	fakeOutput := strings.Join([]string{
+		"Chain DOCKER-USER (policy ACCEPT)",
+		"num  target     prot opt source               destination",
+		"foo  bar  match-set " + set + " src",                 // non-numeric — must be skipped
+		"   match-set " + set + " src baz",                    // leading space / blank first field
+		"  0  ACCEPT  all  --  0.0.0.0/0  0.0.0.0/0  match-set " + set + " src", // first field "0" — non-positive
+		"",
+	}, "\n")
+
+	var deleteCalled bool
+	orig := execCommand
+	t.Cleanup(func() { execCommand = orig })
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		// Intercept iptables -L: return the fake output.
+		if name == "iptables" && len(args) > 0 && args[0] == "-L" {
+			cmd := exec.Command("cat")
+			cmd.Stdin = bytes.NewBufferString(fakeOutput)
+			return cmd
+		}
+		// Any -D call must not happen.
+		if name == "iptables" && len(args) > 0 && args[0] == "-D" {
+			deleteCalled = true
+		}
+		return exec.Command("true")
+	}
+
+	removed, err := deleteOneIptablesRuleBySet(set)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if removed {
+		t.Error("expected removed=false (no valid line number found), got true")
+	}
+	if deleteCalled {
+		t.Error("iptables -D must NOT be called when no valid positive integer line number is found")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// removeEnvRules — iteration cap (Critical 3)
+// ---------------------------------------------------------------------------
+
+// TestRemoveEnvRules_IterationCap verifies that removeEnvRules returns an error
+// when the same matching rule keeps appearing (simulating an unbounded delete loop).
+func TestRemoveEnvRules_IterationCap(t *testing.T) {
+	const env = "prod"
+	set := ipsetName(env)
+
+	// Build a fake iptables -L output that always shows the rule — the mock never
+	// removes it, so the loop would be infinite without the cap.
+	fakeOutput := fmt.Sprintf("Chain DOCKER-USER (policy ACCEPT)\nnum  target  prot  opt  source  destination\n1  ACCEPT  all  --  0.0.0.0/0  0.0.0.0/0  match-set %s src\n", set)
+
+	orig := execCommand
+	t.Cleanup(func() { execCommand = orig })
+	execCommand = func(name string, args ...string) *exec.Cmd {
+		if name == "iptables" && len(args) > 0 && args[0] == "-L" {
+			cmd := exec.Command("cat")
+			cmd.Stdin = bytes.NewBufferString(fakeOutput)
+			return cmd
+		}
+		// -D calls succeed (exit 0) but the rule is never actually removed from
+		// the fake output — it re-appears on the next -L call.
+		return exec.Command("true")
+	}
+
+	err := removeEnvRules(env)
+	if err == nil {
+		t.Fatal("expected an error when iteration cap is exceeded, got nil")
+	}
+	if !strings.Contains(err.Error(), "too many iterations") {
+		t.Errorf("expected 'too many iterations' in error, got: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	nflog "github.com/florianl/go-nflog/v2"
@@ -23,11 +24,30 @@ const (
 	nflogReasonDrop = "non-allowed-egress"
 )
 
+// nonIPv4RateLimit implements a simple once-per-minute rate limiter for the
+// non-IPv4 packet log line so it doesn't spam when IPv6 traffic is present.
+type nonIPv4RateLimit struct {
+	mu      sync.Mutex
+	lastLog time.Time
+}
+
+func (r *nonIPv4RateLimit) shouldLog() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	if now.Sub(r.lastLog) >= time.Minute {
+		r.lastLog = now
+		return true
+	}
+	return false
+}
+
 // NflogReader subscribes to NFLOG group 1 and emits fw_drop events.
 type NflogReader struct {
-	containerMap *state.ContainerMap
-	dedup        *events.Deduplicator
-	log          *slog.Logger
+	containerMap  *state.ContainerMap
+	dedup         *events.Deduplicator
+	log           *slog.Logger
+	nonIPv4Limiter nonIPv4RateLimit
 }
 
 // NewNflogReader creates a new NflogReader.
@@ -114,7 +134,21 @@ func (r *NflogReader) handlePacket(attrs nflog.Attribute) {
 	// Decode IP header.
 	srcIP, dstIP, dstPort, proto, err := decodeL3L4(payload)
 	if err != nil {
-		r.log.Debug("Failed to decode packet", "err", err)
+		// Log non-IPv4 packets at Info (once per minute) so operators can see
+		// that IPv6 traffic is hitting the rule without spamming the log.
+		// IPv6 is documented out-of-scope for this implementation.
+		version := uint8(0)
+		if len(payload) > 0 {
+			version = payload[0] >> 4
+		}
+		if version != 4 && r.nonIPv4Limiter.shouldLog() {
+			r.log.Info("NFLOG: non-IPv4 packet silently dropped (IPv6 out of scope)",
+				"srcAddrFamily", fmt.Sprintf("ip_version=%d", version),
+				"err", err,
+			)
+		} else {
+			r.log.Debug("Failed to decode packet", "err", err)
+		}
 		return
 	}
 

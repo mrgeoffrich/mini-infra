@@ -59,6 +59,9 @@ describe('EnvFirewallManager', () => {
         findUnique: vi.fn(),
         findMany: vi.fn().mockResolvedValue([]),
       },
+      infraResource: {
+        findFirst: vi.fn().mockResolvedValue(null),
+      },
     };
   });
 
@@ -69,6 +72,9 @@ describe('EnvFirewallManager', () => {
   describe('applyEnv', () => {
     it('calls POST /v1/env when egressFirewallEnabled is true', async () => {
       mockPrisma.environment.findUnique.mockResolvedValue(makeEnvironmentRecord());
+      mockPrisma.infraResource.findFirst.mockResolvedValue({
+        metadata: { subnet: '172.30.0.0/24' },
+      });
       const { fetcher, calls } = makeFetcher();
       const manager = new EnvFirewallManager(mockPrisma, fetcher);
 
@@ -79,6 +85,7 @@ describe('EnvFirewallManager', () => {
       expect(calls[0].path).toBe('/v1/env');
       expect((calls[0].body as any).env).toBe('prod');
       expect((calls[0].body as any).mode).toBe('observe');
+      expect((calls[0].body as any).bridgeCidr).toBe('172.30.0.0/24');
     });
 
     it('skips socket call when egressFirewallEnabled is false', async () => {
@@ -101,6 +108,32 @@ describe('EnvFirewallManager', () => {
       await manager.applyEnv('env-999', 'observe');
 
       expect(calls).toHaveLength(0);
+    });
+
+    it('skips socket call when bridge CIDR cannot be resolved', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(makeEnvironmentRecord());
+      // No InfraResource row — bridge CIDR not yet allocated.
+      mockPrisma.infraResource.findFirst.mockResolvedValue(null);
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      await manager.applyEnv('env-1', 'observe');
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('uses the real bridge CIDR from InfraResource (not a hardcoded default)', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(makeEnvironmentRecord());
+      mockPrisma.infraResource.findFirst.mockResolvedValue({
+        metadata: { subnet: '172.30.5.0/24' },
+      });
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      await manager.applyEnv('env-1', 'observe');
+
+      expect(calls).toHaveLength(1);
+      expect((calls[0].body as any).bridgeCidr).toBe('172.30.5.0/24');
     });
   });
 
@@ -249,7 +282,7 @@ describe('EnvFirewallManager', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Reconcile
+  // Reconcile — High 2: re-registers envs with agent on boot
   // -------------------------------------------------------------------------
 
   describe('reconcile', () => {
@@ -278,19 +311,89 @@ describe('EnvFirewallManager', () => {
 
       expect(calls).toHaveLength(0);
     });
+
+    it('calls POST /v1/env for each enabled env during reconcile (High 2)', async () => {
+      const envs = [
+        makeEnvironmentRecord({ id: 'env-1', name: 'prod' }),
+        makeEnvironmentRecord({ id: 'env-2', name: 'staging' }),
+      ];
+      mockPrisma.environment.findMany.mockResolvedValue(envs);
+      // Both envs have bridge CIDRs.
+      mockPrisma.infraResource.findFirst
+        .mockResolvedValueOnce({ metadata: { subnet: '172.30.0.0/24' } })
+        .mockResolvedValueOnce({ metadata: { subnet: '172.30.1.0/24' } });
+
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      // Directly call _reconcileEnvRegistrations to test the High 2 fix without
+      // needing a live Docker connection.
+      const registered = await (manager as any)._reconcileEnvRegistrations(envs);
+
+      // Should have called POST /v1/env once per env.
+      const applyEnvCalls = calls.filter((c: any) => c.method === 'POST' && c.path === '/v1/env');
+      expect(applyEnvCalls).toHaveLength(2);
+      expect(applyEnvCalls[0]).toMatchObject({ body: { env: 'prod', bridgeCidr: '172.30.0.0/24' } });
+      expect(applyEnvCalls[1]).toMatchObject({ body: { env: 'staging', bridgeCidr: '172.30.1.0/24' } });
+      expect(registered.size).toBe(2);
+    });
+
+    it('reconcile skips env registration when bridge CIDR is missing', async () => {
+      const envs = [makeEnvironmentRecord({ id: 'env-1', name: 'prod' })];
+      mockPrisma.environment.findMany.mockResolvedValue(envs);
+      // No subnet recorded.
+      mockPrisma.infraResource.findFirst.mockResolvedValue(null);
+
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      const registered = await (manager as any)._reconcileEnvRegistrations(envs);
+
+      expect(calls).toHaveLength(0);
+      expect(registered.size).toBe(0);
+    });
   });
 
   // -------------------------------------------------------------------------
-  // removeEnv
+  // removeEnv — flag check + env-gone path (Critical 2)
   // -------------------------------------------------------------------------
 
   describe('removeEnv', () => {
-    it('calls DELETE /v1/env/:name', async () => {
+    it('calls DELETE /v1/env/:name when egressFirewallEnabled is true', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(
+        makeEnvironmentRecord({ egressFirewallEnabled: true }),
+      );
       const { fetcher, calls } = makeFetcher();
       const manager = new EnvFirewallManager(mockPrisma, fetcher);
 
       await manager.removeEnv('env-1', 'prod');
 
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('DELETE');
+      expect(calls[0].path).toBe('/v1/env/prod');
+    });
+
+    it('skips DELETE when egressFirewallEnabled is false', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(
+        makeEnvironmentRecord({ egressFirewallEnabled: false }),
+      );
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      await manager.removeEnv('env-1', 'prod');
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('still calls DELETE when env is not found in DB (best-effort cleanup)', async () => {
+      // Env row already deleted from DB.
+      mockPrisma.environment.findUnique.mockResolvedValue(null);
+      const { fetcher, calls } = makeFetcher();
+      const manager = new EnvFirewallManager(mockPrisma, fetcher);
+
+      await manager.removeEnv('env-1', 'prod');
+
+      // Best-effort cleanup should still invoke the agent.
       expect(calls).toHaveLength(1);
       expect(calls[0].method).toBe('DELETE');
       expect(calls[0].path).toBe('/v1/env/prod');

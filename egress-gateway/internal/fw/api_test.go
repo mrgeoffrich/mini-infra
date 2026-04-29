@@ -3,6 +3,7 @@ package fw
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -351,3 +352,94 @@ func TestHandleWrongMethod(t *testing.T) {
 		t.Errorf("expected non-200, got %d", rr.Code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// URL-encoded path traversal for DELETE /v1/env/<env> (High 3)
+// ---------------------------------------------------------------------------
+
+func TestHandleRemoveEnv_URLEncodedPathTraversal(t *testing.T) {
+	srv := newTestServer(t)
+	cases := []struct {
+		name string
+		path string
+	}{
+		{
+			// %2f decodes to "/" — validateEnvName rejects "/" via path traversal check
+			name: "percent-2f slash",
+			path: "/v1/env/%2fetc%2fpasswd",
+		},
+		{
+			// %25 decodes to "%" — validateEnvName rejects "%" via path traversal check
+			name: "double-encoded percent",
+			path: "/v1/env/%252fetc%252fpasswd",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := deleteReq(srv, tc.path)
+			if rr.Code >= 200 && rr.Code < 300 {
+				t.Errorf("expected 4xx for %q, got %d", tc.path, rr.Code)
+			}
+		})
+	}
+}
+
+func TestHandleRemoveEnv_ExtraPathSegments(t *testing.T) {
+	// DELETE /v1/env/foo/bar — the mux pattern "DELETE /v1/env/" is a prefix
+	// pattern, so Go's mux will route it here. The handler sees env="foo/bar"
+	// which is rejected by validateEnvName because it contains "/".
+	srv := newTestServer(t)
+	rr := deleteReq(srv, "/v1/env/foo/bar")
+	if rr.Code >= 200 && rr.Code < 300 {
+		t.Errorf("expected 4xx for /v1/env/foo/bar, got %d", rr.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Oversized sync body is rejected (Medium 4)
+// ---------------------------------------------------------------------------
+
+func TestHandleIpset_SyncOversizedBody(t *testing.T) {
+	// The 64 KB body limit means a request with ~1400+ IPs will exceed it.
+	// Build a raw body well over 64 KB by including 5000 IPs — each one padded
+	// to ensure the total clearly exceeds the limit even after JSON overhead.
+	// We inject the raw bytes directly (not via json.Marshal) so the size is
+	// predictable. The body starts valid JSON but exceeds MaxBytesReader at read.
+	const numIPs = 5000
+	var buf bytes.Buffer
+	buf.WriteString(`{"ips":[`)
+	for i := 0; i < numIPs; i++ {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		// "10.N.M.1" — all within 10.0.0.0/8 so they'd pass IP validation
+		// if the body were small enough to decode.
+		ip := fmt.Sprintf(`"10.%d.%d.1"`, i/256, i%256)
+		buf.WriteString(ip)
+	}
+	buf.WriteString("]}")
+
+	if buf.Len() <= 64*1024 {
+		t.Skipf("generated body is %d bytes, not large enough to test 64 KB limit", buf.Len())
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/ipset/test-env/managed/sync", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	buildMux(srv_oversized).ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("expected 400 or 413 for oversized sync, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// srv_oversized is a package-level server for the oversized body test.
+// Defined separately so the test can reference it without t.Helper patterns.
+var srv_oversized = func() *Server {
+	store := NewEnvStore()
+	store.Set("test-env", EnvState{BridgeCIDR: "10.0.0.0/8", Mode: ModeObserve})
+	return &Server{
+		socketPath: "/tmp/test-fw-oversized.sock",
+		store:      store,
+		log:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+}()

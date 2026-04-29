@@ -4,6 +4,7 @@ package fw
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -86,22 +87,33 @@ func applyEnvRules(env, bridgeCidr string, mode Mode) error {
 	return nil
 }
 
+// maxRemoveIterations caps the loop in removeEnvRules to prevent an infinite
+// loop if the kernel state is corrupted or a concurrent insert race occurs.
+const maxRemoveIterations = 100
+
 // removeEnvRules removes all iptables rules matching this env's ipset.
 // Errors are accumulated but do not halt removal of remaining rules.
 func removeEnvRules(env string) error {
 	set := ipsetName(env)
 	var errs []string
+	capExceeded := true
 
-	// Keep deleting matching rules until none remain.
-	for {
+	// Keep deleting matching rules until none remain, with an upper bound.
+	for i := 0; i < maxRemoveIterations; i++ {
 		removed, err := deleteOneIptablesRuleBySet(set)
 		if err != nil {
 			errs = append(errs, err.Error())
+			capExceeded = false
 			break
 		}
 		if !removed {
+			capExceeded = false
 			break
 		}
+	}
+
+	if capExceeded {
+		return fmt.Errorf("removeEnvRules: too many iterations removing rules for env=%s", env)
 	}
 
 	if len(errs) > 0 {
@@ -145,6 +157,12 @@ func deleteOneIptablesRuleBySet(set string) (bool, error) {
 		if strings.Contains(line, "match-set "+set) {
 			fields := strings.Fields(line)
 			if len(fields) > 0 {
+				n, parseErr := strconv.Atoi(fields[0])
+				if parseErr != nil || n <= 0 {
+					// Non-numeric or non-positive first field — skip (header line,
+					// blank line, or iptables version formatting difference).
+					continue
+				}
 				lineNum = fields[0]
 				break
 			}
