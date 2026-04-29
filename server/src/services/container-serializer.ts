@@ -28,6 +28,10 @@ function getSelfRole(container: DockerContainerInfo): ContainerInfo['selfRole'] 
   if (container.labels['mini-infra.agent-sidecar']) {
     return 'agent-sidecar';
   }
+  // Egress firewall agent: labeled with mini-infra.egress.fw-agent
+  if (container.labels['mini-infra.egress.fw-agent'] === 'true') {
+    return 'fw-agent';
+  }
   // Main container: matches our own container ID
   const ownId = getOwnContainerId();
   if (ownId && container.id.startsWith(ownId)) {
