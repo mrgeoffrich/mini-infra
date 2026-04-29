@@ -132,7 +132,7 @@ function EnvironmentSection({
 
       <EgressFirewallCard
         environmentId={environment.id}
-        environmentName={showHeader ? undefined : environment.name}
+        environmentName={environment.name}
         enabled={environment.egressFirewallEnabled ?? false}
         isLoading={false}
         canWrite={canWrite}

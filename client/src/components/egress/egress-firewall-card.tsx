@@ -115,9 +115,7 @@ export function EgressFirewallCard({
               <IconShield className="h-5 w-5" />
             </div>
             <div>
-              <CardTitle className="text-base">
-                {environmentName ?? "Egress Firewall"}
-              </CardTitle>
+              <CardTitle className="text-base">Egress Firewall</CardTitle>
               {!compact && (
                 <p className="text-sm text-muted-foreground mt-1">
                   Kernel-level enforcement for outbound traffic. Currently
@@ -125,9 +123,9 @@ export function EgressFirewallCard({
                   dropped.
                 </p>
               )}
-              {compact && environmentName && (
+              {compact && (
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {enabled ? "Firewall enabled" : "Firewall disabled"}
+                  {enabled ? "Enabled" : "Disabled"}
                 </p>
               )}
             </div>
