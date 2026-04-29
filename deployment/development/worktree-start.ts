@@ -377,9 +377,12 @@ async function main(): Promise<void> {
   const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
   // EGRESS_GATEWAY_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field
   // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
-  // The fw-agent compose service appends `:latest` itself.
   const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
   const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
+  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the egress-fw-agent compose service.
+  // The compose service appends `:latest` itself, so this value must NOT include a `:tag` suffix.
+  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent`;
+  const egressFwAgentPushRef = `${egressFwAgentImageTag}:latest`;
 
   const stackEnv: NodeJS.ProcessEnv = {
     DOCKER_HOST: dockerHost,
@@ -388,6 +391,7 @@ async function main(): Promise<void> {
     REGISTRY_PORT: String(registryPort),
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
     EGRESS_GATEWAY_IMAGE_TAG: egressGatewayImageTag,
+    EGRESS_FW_AGENT_IMAGE_TAG: egressFwAgentImageTag,
     EGRESS_POOL_CIDR: egressPoolCidr,
     PROJECT_ROOT,
     PROFILE: profile,
@@ -461,7 +465,7 @@ async function main(): Promise<void> {
   }
   logOk('Agent sidecar image pushed');
 
-  // Build + push egress-gateway image (fw-agent + gateway binaries)
+  // Build + push egress-gateway image (Smokescreen forward proxy)
   logInfo('Building egress-gateway image...');
   const egressGwBuild = exec(
     'docker',
@@ -469,7 +473,9 @@ async function main(): Promise<void> {
       'build',
       '-t',
       egressGatewayPushRef,
-      path.join(PROJECT_ROOT, 'egress-gateway'),
+      '-f',
+      path.join(PROJECT_ROOT, 'egress-gateway', 'Dockerfile'),
+      PROJECT_ROOT,
     ],
     { env: stackEnv, stdio: 'inherit' },
   );
@@ -484,6 +490,32 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   logOk('Egress-gateway image pushed');
+
+  // Build + push egress-fw-agent image (host firewall agent — iptables/ipset/NFLOG)
+  logInfo('Building egress-fw-agent image...');
+  const egressFwAgentBuild = exec(
+    'docker',
+    [
+      'build',
+      '-t',
+      egressFwAgentPushRef,
+      '-f',
+      path.join(PROJECT_ROOT, 'egress-fw-agent', 'Dockerfile'),
+      PROJECT_ROOT,
+    ],
+    { env: stackEnv, stdio: 'inherit' },
+  );
+  if (egressFwAgentBuild.status !== 0) {
+    logError('Egress-fw-agent build failed');
+    process.exit(1);
+  }
+  logInfo(`Pushing egress-fw-agent image to ${egressFwAgentPushRef}...`);
+  const egressFwAgentPush = exec('docker', ['push', egressFwAgentPushRef], { env: stackEnv, stdio: 'inherit' });
+  if (egressFwAgentPush.status !== 0) {
+    logError('Egress-fw-agent push failed');
+    process.exit(1);
+  }
+  logOk('Egress-fw-agent image pushed');
 
   // Capture extra networks joined at runtime (e.g. vault) so they survive rebuild
   const miniInfraContainer = `${composeProjectName}-mini-infra-1`;

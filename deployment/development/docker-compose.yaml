@@ -54,12 +54,11 @@ services:
       retries: 3
 
   egress-fw-agent:
-    # EGRESS_GATEWAY_IMAGE_TAG is set without a `:tag` suffix (the egress-gateway
-    # stack template appends its own tag), so this compose service appends `:latest`
-    # explicitly. The default fallback already includes a tag for local-only runs.
-    image: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway}:latest
+    # EGRESS_FW_AGENT_IMAGE_TAG is set without a `:tag` suffix, so this
+    # compose service appends `:latest` explicitly. The default fallback
+    # already includes a tag for local-only runs.
+    image: ${EGRESS_FW_AGENT_IMAGE_TAG:-mini-infra/egress-fw-agent}:latest
     container_name: mini-infra-dev-egress-fw-agent
-    entrypoint: ["/usr/local/bin/egress-fw-agent"]
     network_mode: host
     cap_add:
       - NET_ADMIN
