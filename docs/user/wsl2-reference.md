@@ -178,9 +178,15 @@ The orchestrator triggers a start when needed. If it consistently misdetects sta
 Install the static Docker CLI binary (see [Installation](#installation)). Don't install Docker Desktop unless you've intentionally chosen that path — it'll fight with the per-worktree daemon.
 
 **Containers on the same env's applications network can't reach each other.**
-Symptom: TCP connects time out and ICMP fails between two containers that `docker network inspect <env>-applications` confirms are on the same network. `iptables -L DOCKER-USER` is just `RETURN` and doesn't drop anything. Likely cause: an orphaned `br-<id>` bridge is shadowing the real one in the kernel's FIB. Because every WSL2 distro shares one network namespace, a previous worktree's leftover bridge (or a sibling distro's live bridge) can win the route lookup for the same subnet, sending packets out via empty veths.
+Symptom: TCP connects time out and ICMP fails between two containers that `docker network inspect <env>-applications` confirms are on the same network. `iptables -L DOCKER-USER` is just `RETURN` and doesn't drop anything. Likely cause: an orphaned `br-<id>` bridge is shadowing the real one in the kernel's FIB. Because every WSL2 distro shares one network namespace, a previous worktree's leftover bridge can win the route lookup for the same subnet, sending packets out via empty veths.
 
-Diagnose:
+This used to happen routinely between *running* sibling worktrees because two daemons could independently pick the same `/24` for their `local-applications` network. That class of collision is now prevented by construction: each worktree is given its own `/22` slice of `172.30.0.0/16`, keyed off the same slot as its ports. Slot 0 → `172.30.0.0/22`, slot 1 → `172.30.4.0/22`, …, slot 63 → `172.30.252.0/22`. The slice is passed into the container as `MINI_INFRA_EGRESS_POOL_CIDR` and the server allocates `/24`s only from inside it. You can verify the assignment with `worktree_list.ps1 --wide` (look at the `EGRESS POOL` column) or `xmllint --xpath 'string(//environment/egressPool)' environment-details.xml`.
+
+If a worktree ends up at slot ≥ 64 (more than 64 lifetime worktrees in `~/.mini-infra/worktrees.yaml`), the start-up script logs a `Worktree slot N exceeds per-worktree egress pool capacity` warning and falls back to the shared `172.30.0.0/16` default — collisions with siblings become possible again. Run `worktree_cleanup.ps1` to reclaim old slots and clear the warning.
+
+Migration corner case: existing worktrees keep their already-allocated `local-applications` subnets across restarts (the server reuses the network's IPAM config rather than reallocating). If an old subnet sits *outside* the new pool for that worktree's slot, the worktree itself keeps working but a *different* worktree may later pick the same `/24` for a fresh env. Re-run `worktree_start.ps1 --reset` for a clean cutover.
+
+Diagnose a suspected orphan-bridge case:
 
 ```powershell
 # 1. Two routes for the same subnet = orphan bridge problem
@@ -198,7 +204,7 @@ wsl -l -v | findstr mini-infra-
 wsl -d mini-infra-<other> -- docker network ls -q --no-trunc | cut -c1-12
 ```
 
-`worktree_delete.ps1` and `worktree_cleanup.ps1` now sweep these orphans automatically before unregistering. To clean an orphan that survived a previous failed teardown without losing the distro:
+`worktree_delete.ps1` and `worktree_cleanup.ps1` already sweep orphans automatically before unregistering. As a last-resort manual recovery for a bridge that survived a partial teardown:
 
 ```powershell
 wsl -d mini-infra-<profile> -- ip link delete br-<id>

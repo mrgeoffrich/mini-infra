@@ -295,6 +295,7 @@ async function main(): Promise<void> {
     haproxy_https_port: haproxyHttpsPort,
     haproxy_stats_port: haproxyStatsPort,
     haproxy_dataplane_port: haproxyDataplanePort,
+    egress_pool_cidr: egressPoolCidr,
   } = allocatePorts(profile);
   // Persist early so the entry exists even if later steps fail
   upsertEntry({
@@ -309,6 +310,7 @@ async function main(): Promise<void> {
     haproxy_https_port: haproxyHttpsPort,
     haproxy_stats_port: haproxyStatsPort,
     haproxy_dataplane_port: haproxyDataplanePort,
+    egress_pool_cidr: egressPoolCidr,
     url: `http://localhost:${uiPort}`,
     description: shortDesc,
   });
@@ -317,6 +319,7 @@ async function main(): Promise<void> {
       (driver === 'wsl' ? `, docker=${dockerPort}` : '') +
       `, haproxy(http/https/stats/dataplane)=${haproxyHttpPort}/${haproxyHttpsPort}/${haproxyStatsPort}/${haproxyDataplanePort}`,
   );
+  logInfo(`Egress pool: ${egressPoolCidr}`);
 
   // Bring the VM up via the selected driver. For environment-details.xml,
   // colima exposes a host-side unix socket path; wsl exposes only TCP, so
@@ -391,6 +394,7 @@ async function main(): Promise<void> {
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
     EGRESS_SIDECAR_IMAGE_TAG: egressSidecarImageTag,
     EGRESS_GATEWAY_IMAGE_TAG: egressGatewayImageTag,
+    EGRESS_POOL_CIDR: egressPoolCidr,
     PROJECT_ROOT,
     PROFILE: profile,
   };
@@ -616,6 +620,7 @@ async function main(): Promise<void> {
     uiPort,
     registryPort,
     vaultPort,
+    egressPool: egressPoolCidr,
     agentSidecarImageTag,
     egressSidecarImageTag,
     shortDescription: shortDesc,
@@ -649,6 +654,7 @@ async function main(): Promise<void> {
         composeProject: composeProjectName,
         agentSidecarImageTag,
         egressSidecarImageTag,
+        egressPoolCidr,
         devEnvPath: DEV_ENV_FILE,
         detailsFile,
         shortDescription: shortDesc,

@@ -30,6 +30,17 @@ export const HAPROXY_STATS_PORT_MAX = 8499;
 export const HAPROXY_DATAPLANE_PORT_MIN = 5500;
 export const HAPROXY_DATAPLANE_PORT_MAX = 5599;
 
+// Per-worktree egress pool slicing: each worktree gets a /22 carved out of
+// 172.30.0.0/16, keyed off the same slot the port allocator already uses.
+// Slot 0 → 172.30.0.0/22, slot 1 → 172.30.4.0/22, …, slot 63 → 172.30.252.0/22.
+// Slots ≥ 64 fall back to the shared default pool with a warning. The server's
+// egress-network-allocator reads MINI_INFRA_EGRESS_POOL_CIDR and is size-agnostic,
+// so handing it a /22 produces 4 /24 slots; two worktrees in different slots
+// reach disjoint /24s by construction with no coordination.
+export const DEFAULT_EGRESS_POOL_CIDR = '172.30.0.0/16';
+export const EGRESS_PER_WORKTREE_PREFIX = 22;
+export const EGRESS_PER_WORKTREE_SLOT_COUNT = 64;
+
 export interface WorktreeEntry {
   profile: string;
   worktree_path: string;
@@ -54,6 +65,11 @@ export interface WorktreeEntry {
   admin_password?: string;
   api_key?: string;
   description?: string;
+  // Per-worktree egress pool slice (e.g. "172.30.12.0/22" for slot 3).
+  // Stored for visibility in worktree_list output and forensics — the source
+  // of truth at runtime is the slot, not this field. Optional so legacy
+  // entries written before this rolled out continue to load.
+  egress_pool_cidr?: string;
   seeded: boolean;
   updated_at: string;
 }
@@ -104,6 +120,7 @@ export function upsertEntry(
     admin_password: partial.admin_password ?? existing?.admin_password,
     api_key: partial.api_key ?? existing?.api_key,
     description: partial.description ?? existing?.description,
+    egress_pool_cidr: partial.egress_pool_cidr ?? existing?.egress_pool_cidr,
     seeded: partial.seeded ?? existing?.seeded ?? false,
     updated_at: new Date().toISOString(),
   };
@@ -137,35 +154,67 @@ export interface PortAllocation {
   haproxy_https_port: number;
   haproxy_stats_port: number;
   haproxy_dataplane_port: number;
+  egress_pool_cidr: string;
+}
+
+/**
+ * Compute the per-worktree egress pool CIDR for a given slot. Each worktree
+ * gets a /22 (4 contiguous /24s) carved out of 172.30.0.0/16:
+ *   slot 0  → 172.30.0.0/22
+ *   slot 1  → 172.30.4.0/22
+ *   slot 63 → 172.30.252.0/22
+ *
+ * Slot ≥ EGRESS_PER_WORKTREE_SLOT_COUNT (or < 0) falls back to the shared
+ * default pool with a console warning. This keeps the existing 100-slot
+ * port ceiling working for slots 64–99 at the cost of reintroducing the
+ * original cross-worktree /24 collision risk for that case only — clean up
+ * old worktrees with worktree_cleanup if you see this warning.
+ */
+export function egressPoolForSlot(slot: number): string {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= EGRESS_PER_WORKTREE_SLOT_COUNT) {
+    console.warn(
+      `Worktree slot ${slot} exceeds per-worktree egress pool capacity ` +
+        `(0–${EGRESS_PER_WORKTREE_SLOT_COUNT - 1}); falling back to shared ` +
+        `${DEFAULT_EGRESS_POOL_CIDR}. Two concurrent worktrees in this state ` +
+        `can collide on /24s — clean up old worktrees with worktree_cleanup.`,
+    );
+    return DEFAULT_EGRESS_POOL_CIDR;
+  }
+  return `172.30.${slot * 4}.0/${EGRESS_PER_WORKTREE_PREFIX}`;
+}
+
+/**
+ * Derive the slot index of a worktree entry by inspecting whichever known
+ * port field falls inside its allocator range. Returns undefined for legacy
+ * entries with no recognisable port.
+ */
+export function slotOf(e: WorktreeEntry): number | undefined {
+  if (e.ui_port && e.ui_port >= UI_PORT_MIN && e.ui_port <= UI_PORT_MAX) {
+    return e.ui_port - UI_PORT_MIN;
+  }
+  if (e.registry_port && e.registry_port >= REGISTRY_PORT_MIN && e.registry_port <= REGISTRY_PORT_MAX) {
+    return e.registry_port - REGISTRY_PORT_MIN;
+  }
+  if (e.vault_port && e.vault_port >= VAULT_PORT_MIN && e.vault_port <= VAULT_PORT_MAX) {
+    return e.vault_port - VAULT_PORT_MIN;
+  }
+  if (e.docker_port && e.docker_port >= DOCKER_PORT_MIN && e.docker_port <= DOCKER_PORT_MAX) {
+    return e.docker_port - DOCKER_PORT_MIN;
+  }
+  if (
+    e.haproxy_http_port &&
+    e.haproxy_http_port >= HAPROXY_HTTP_PORT_MIN &&
+    e.haproxy_http_port <= HAPROXY_HTTP_PORT_MAX
+  ) {
+    return e.haproxy_http_port - HAPROXY_HTTP_PORT_MIN;
+  }
+  return undefined;
 }
 
 export function allocatePorts(profile: string): PortAllocation {
   const SLOT_COUNT = UI_PORT_MAX - UI_PORT_MIN + 1;
   const entries = loadRegistry();
   const existing = entries[profile];
-
-  const slotOf = (e: WorktreeEntry): number | undefined => {
-    if (e.ui_port && e.ui_port >= UI_PORT_MIN && e.ui_port <= UI_PORT_MAX) {
-      return e.ui_port - UI_PORT_MIN;
-    }
-    if (e.registry_port && e.registry_port >= REGISTRY_PORT_MIN && e.registry_port <= REGISTRY_PORT_MAX) {
-      return e.registry_port - REGISTRY_PORT_MIN;
-    }
-    if (e.vault_port && e.vault_port >= VAULT_PORT_MIN && e.vault_port <= VAULT_PORT_MAX) {
-      return e.vault_port - VAULT_PORT_MIN;
-    }
-    if (e.docker_port && e.docker_port >= DOCKER_PORT_MIN && e.docker_port <= DOCKER_PORT_MAX) {
-      return e.docker_port - DOCKER_PORT_MIN;
-    }
-    if (
-      e.haproxy_http_port &&
-      e.haproxy_http_port >= HAPROXY_HTTP_PORT_MIN &&
-      e.haproxy_http_port <= HAPROXY_HTTP_PORT_MAX
-    ) {
-      return e.haproxy_http_port - HAPROXY_HTTP_PORT_MIN;
-    }
-    return undefined;
-  };
 
   const usedSlots = new Set<number>();
   for (const e of Object.values(entries)) {
@@ -197,6 +246,7 @@ export function allocatePorts(profile: string): PortAllocation {
     haproxy_https_port: HAPROXY_HTTPS_PORT_MIN + slot,
     haproxy_stats_port: HAPROXY_STATS_PORT_MIN + slot,
     haproxy_dataplane_port: HAPROXY_DATAPLANE_PORT_MIN + slot,
+    egress_pool_cidr: egressPoolForSlot(slot),
   };
 }
 

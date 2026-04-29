@@ -1,0 +1,16 @@
+{
+  "name": "mini-infra-dev-scripts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.12.2",
+    "js-yaml": "^4.1.1",
+    "vitest": "^4.1.3"
+  }
+}
