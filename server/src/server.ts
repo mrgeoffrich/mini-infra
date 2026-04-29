@@ -136,6 +136,32 @@ const initializeServices = async () => {
     await dockerService.initialize();
     console.log("[STARTUP] ✓ Docker service initialized");
 
+    // Re-provision sidecars after Docker reconnects. On a fresh-boot worktree
+    // the DB has no docker host yet, so initialize() lands in degraded mode
+    // and the inline ensureXxx calls below fail. Once the seeder posts the
+    // docker host and DockerConfigService.set triggers refreshConnection(),
+    // this callback fires and the sidecars come up without manual restart.
+    // Both ensureXxx are idempotent — safe if they already succeeded inline.
+    dockerService.onConnect(async () => {
+      logger.info("Docker connected, re-provisioning sidecars");
+      try {
+        await ensureFwAgent({ checkAutoStart: true });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Egress fw-agent re-provisioning after Docker reconnect failed (non-fatal)",
+        );
+      }
+      try {
+        await ensureAgentSidecar({ checkAutoStart: true });
+      } catch (err) {
+        logger.warn(
+          { err },
+          "Agent sidecar re-provisioning after Docker reconnect failed (non-fatal)",
+        );
+      }
+    });
+
     // Wire up container state changes to Socket.IO
     setupContainerSocketEmitter();
     console.log("[STARTUP] ✓ Container socket emitter initialized");
