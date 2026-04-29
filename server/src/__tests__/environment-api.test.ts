@@ -335,6 +335,21 @@ describe('Environment API', () => {
       expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
     });
 
+    it('should pass egressFirewallEnabled through to updateEnvironment', async () => {
+      const updatedEnvironment = { ...mockEnvironment, egressFirewallEnabled: true };
+      mockEnvironmentManager.updateEnvironment.mockResolvedValue(updatedEnvironment);
+
+      const updateRequest = { egressFirewallEnabled: true };
+
+      const response = await request(app)
+        .put('/api/environments/env-1')
+        .send(updateRequest)
+        .expect(200);
+
+      expect(response.body.egressFirewallEnabled).toBe(true);
+      expect(mockEnvironmentManager.updateEnvironment).toHaveBeenCalledWith('env-1', updateRequest);
+    });
+
     it('should return 404 for non-existent environment', async () => {
       mockEnvironmentManager.updateEnvironment.mockResolvedValue(null);
 
