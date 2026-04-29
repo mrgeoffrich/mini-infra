@@ -11,6 +11,12 @@ export interface ApiResponse<T = unknown> {
   status: number;
   body: T | null;
   bodyText: string;
+  /**
+   * Response headers, normalised to lowercase keys. Used by the seeder to
+   * read e.g. `X-User-Event-Id` from POST /api/environments so it can poll
+   * for background egress-gateway provisioning to finish.
+   */
+  headers: Record<string, string>;
 }
 
 // Retry only when fetch() itself throws. Backoff is short — the typical cause is
@@ -75,7 +81,11 @@ export class ApiClient {
             parsed = null;
           }
         }
-        return { status: res.status, body: parsed, bodyText };
+        const headers: Record<string, string> = {};
+        res.headers.forEach((value, key) => {
+          headers[key.toLowerCase()] = value;
+        });
+        return { status: res.status, body: parsed, bodyText, headers };
       } catch (err) {
         lastError = err;
         const delay = NETWORK_RETRY_DELAYS_MS[attempt];
@@ -88,6 +98,7 @@ export class ApiClient {
       status: 0,
       body: null,
       bodyText: lastError instanceof Error ? lastError.message : String(lastError),
+      headers: {},
     };
   }
 }

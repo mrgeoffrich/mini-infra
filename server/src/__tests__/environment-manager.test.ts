@@ -111,6 +111,9 @@ describe('EnvironmentManager', () => {
         findMany: vi.fn().mockResolvedValue([]),
         updateMany: vi.fn().mockResolvedValue({}),
       },
+      userEvent: {
+        update: vi.fn().mockResolvedValue({}),
+      },
     } as any;
 
     mockDockerExecutor = {
@@ -185,7 +188,9 @@ describe('EnvironmentManager', () => {
       const result = await environmentManager.createEnvironment(request);
 
       expect(result).toBeDefined();
-      expect(result.name).toBe('test-env');
+      expect(result.environment.name).toBe('test-env');
+      expect(result.userEventId).toBe('user-event-1');
+      expect(result.provisioning).toBeInstanceOf(Promise);
       expect(mockPrisma.environment.create).toHaveBeenCalledWith({
         data: {
           name: 'test-env',
@@ -194,6 +199,8 @@ describe('EnvironmentManager', () => {
           networkType: 'local',
         },
       });
+      // Wait for background provisioning to settle so it doesn't bleed into other tests.
+      await result.provisioning;
     });
 
     it('should create environment with specified networkType', async () => {
@@ -222,7 +229,7 @@ describe('EnvironmentManager', () => {
         networkType: 'internet' as const
       };
 
-      await environmentManager.createEnvironment(request);
+      const result = await environmentManager.createEnvironment(request);
 
       expect(mockPrisma.environment.create).toHaveBeenCalledWith({
         data: {
@@ -232,6 +239,7 @@ describe('EnvironmentManager', () => {
           networkType: 'internet',
         },
       });
+      await result.provisioning;
     });
 
     it('should default networkType to local if not specified', async () => {
@@ -258,7 +266,7 @@ describe('EnvironmentManager', () => {
         // networkType is omitted, should default to 'local'
       };
 
-      await environmentManager.createEnvironment(request);
+      const result = await environmentManager.createEnvironment(request);
 
       expect(mockPrisma.environment.create).toHaveBeenCalledWith({
         data: {
@@ -268,6 +276,82 @@ describe('EnvironmentManager', () => {
           networkType: 'local',
         },
       });
+      await result.provisioning;
+    });
+
+    it('should return before background provisioning completes', async () => {
+      const createdEnvData = {
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        networkType: 'local',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const fetchedEnvData = { ...createdEnvData, networks: [] };
+
+      mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
+      mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
+
+      // Make the egress provisioning step (network create) hang for a long time
+      // — long enough that any sync `await` would time out the test.
+      let resolveCreateNetwork!: () => void;
+      const blockingNetwork = new Promise<void>((resolve) => { resolveCreateNetwork = resolve; });
+      mockDockerExecutor.createNetwork.mockReturnValue(blockingNetwork as any);
+
+      const request = { name: 'test-env', type: 'nonproduction' as const };
+
+      // If createEnvironment awaited provisioning, this would hang. The
+      // 1-second timeout ensures the test fails fast if provisioning blocks.
+      const racePromise = Promise.race([
+        environmentManager.createEnvironment(request),
+        new Promise((_resolve, reject) => setTimeout(() => reject(new Error('createEnvironment did not return promptly')), 1000)),
+      ]);
+
+      const result = await racePromise as Awaited<ReturnType<typeof environmentManager.createEnvironment>>;
+
+      expect(result.environment.name).toBe('test-env');
+      expect(result.userEventId).toBe('user-event-1');
+
+      // Release the blocked provisioning so the background work can settle.
+      resolveCreateNetwork();
+      await result.provisioning;
+    });
+
+    it('should surface async provisioning failure on the UserEvent, not the HTTP response', async () => {
+      const createdEnvData = {
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        networkType: 'local',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      const fetchedEnvData = { ...createdEnvData, networks: [] };
+
+      mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
+      mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
+
+      // Make egress subnet allocation throw — provisionEgressGateway swallows
+      // it, but the UserEvent should still finalise as `completed` (env is
+      // usable) with a warning entry in the logs. The HTTP response is unaffected.
+      mockAllocateSubnet.mockRejectedValueOnce(new Error('allocator unavailable'));
+
+      const request = { name: 'test-env', type: 'nonproduction' as const };
+
+      // createEnvironment must not throw even though provisioning will fail.
+      const result = await environmentManager.createEnvironment(request);
+      expect(result.environment.name).toBe('test-env');
+
+      // Background provisioning resolves (provisionEgressGateway swallows internal errors).
+      await result.provisioning;
+
+      // The UserEvent should have received warning logs about the failure.
+      const userEventService = (environmentManager as any).userEventService;
+      expect(userEventService.appendLogs).toHaveBeenCalledWith(
+        'user-event-1',
+        expect.stringContaining('Egress gateway provisioning failed'),
+      );
     });
   });
 

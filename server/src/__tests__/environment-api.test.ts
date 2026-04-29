@@ -156,8 +156,18 @@ describe('Environment API', () => {
   });
 
   describe('POST /api/environments', () => {
+    // Helper: simulate the new createEnvironment return shape ({ environment,
+    // userEventId, provisioning }). Provisioning is fire-and-forget.
+    const mockSuccessfulCreate = (env: typeof mockEnvironment, userEventId = 'user-event-1') => {
+      mockEnvironmentManager.createEnvironment.mockResolvedValue({
+        environment: env,
+        userEventId,
+        provisioning: Promise.resolve(),
+      });
+    };
+
     it('should create environment successfully', async () => {
-      mockEnvironmentManager.createEnvironment.mockResolvedValue(mockEnvironment);
+      mockSuccessfulCreate(mockEnvironment);
 
       const createRequest = {
         name: 'new-environment',
@@ -176,7 +186,49 @@ describe('Environment API', () => {
         name: 'test-environment'
       }));
 
+      // The provisioning UserEvent ID is exposed via response header so non-socket
+      // callers (e.g. the dev seeder) can poll for completion.
+      expect(response.headers['x-user-event-id']).toBe('user-event-1');
+
       expect(mockEnvironmentManager.createEnvironment).toHaveBeenCalledWith(createRequest, 'test-user');
+    });
+
+    it('should return 201 before egress provisioning completes', async () => {
+      // Construct a provisioning promise that never resolves within the test
+      // window. If the route awaited it, supertest would time out instead of
+      // receiving 201. Reaching the assertion below proves the response is
+      // sent without waiting on the background work.
+      const neverResolving = new Promise<void>(() => {});
+      mockEnvironmentManager.createEnvironment.mockResolvedValue({
+        environment: mockEnvironment,
+        userEventId: 'user-event-1',
+        provisioning: neverResolving,
+      });
+
+      const response = await request(app)
+        .post('/api/environments')
+        .send({ name: 'new-environment', type: 'nonproduction' })
+        .expect(201);
+
+      expect(response.headers['x-user-event-id']).toBe('user-event-1');
+      expect(response.body).toEqual(expect.objectContaining({ id: 'env-1' }));
+    });
+
+    it('should not surface async provisioning failures on the HTTP response', async () => {
+      // The route receives the env + a provisioning promise that later rejects.
+      // The response must still be 201 — failures are reported on the UserEvent.
+      mockEnvironmentManager.createEnvironment.mockResolvedValue({
+        environment: mockEnvironment,
+        userEventId: 'user-event-1',
+        provisioning: Promise.reject(new Error('docker daemon unreachable')).catch(() => {}),
+      });
+
+      const response = await request(app)
+        .post('/api/environments')
+        .send({ name: 'new-environment', type: 'nonproduction' })
+        .expect(201);
+
+      expect(response.headers['x-user-event-id']).toBe('user-event-1');
     });
 
     it('should handle duplicate environment name', async () => {
@@ -199,7 +251,7 @@ describe('Environment API', () => {
     });
 
     it('should create environment with default local network type', async () => {
-      mockEnvironmentManager.createEnvironment.mockResolvedValue(mockEnvironment);
+      mockSuccessfulCreate(mockEnvironment);
 
       const createRequest = {
         name: 'new-environment',
@@ -222,7 +274,7 @@ describe('Environment API', () => {
     });
 
     it('should pass through networkType to createEnvironment', async () => {
-      mockEnvironmentManager.createEnvironment.mockResolvedValue(mockEnvironment);
+      mockSuccessfulCreate(mockEnvironment);
 
       const createRequest = {
         name: 'new-environment',
@@ -239,7 +291,7 @@ describe('Environment API', () => {
     });
 
     it('should accept valid networkType values', async () => {
-      mockEnvironmentManager.createEnvironment.mockResolvedValue({...mockEnvironment, networkType: 'internet'});
+      mockSuccessfulCreate({...mockEnvironment, networkType: 'internet'});
 
       const createRequest = {
         name: 'internet-environment',

@@ -93,14 +93,19 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
       });
     }
 
-    const environment = await environmentManager.createEnvironment(request, userId);
+    const { environment, userEventId } = await environmentManager.createEnvironment(request, userId);
 
     logger.debug({
       environmentId: environment.id,
       environmentName: environment.name,
-      userId
-    }, 'Environment created via API');
+      userId,
+      userEventId,
+    }, 'Environment created via API; egress provisioning scheduled');
 
+    // Expose the provisioning UserEvent ID so non-socket callers (e.g. the dev
+    // seeder) can poll GET /api/events/:id until the background work finishes.
+    // UI callers can subscribe to the EVENTS Socket.IO channel instead.
+    res.setHeader('X-User-Event-Id', userEventId);
     res.status(201).json(environment);
 
   } catch (error) {

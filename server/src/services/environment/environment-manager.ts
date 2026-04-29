@@ -35,20 +35,38 @@ export class EnvironmentManager {
     return EnvironmentManager.instance;
   }
 
-  public async createEnvironment(request: CreateEnvironmentRequest, userId?: string): Promise<Environment> {
+  /**
+   * Create an environment and schedule egress-gateway provisioning to run in
+   * the background. The returned promise resolves as soon as the environment
+   * row is committed — egress subnet allocation, network creation, and the
+   * egress-gateway system stack apply continue asynchronously and report
+   * their status via the returned `userEventId` (a UserEvent emitted on the
+   * EVENTS Socket.IO channel).
+   *
+   * Callers that need the gateway provisioned before deploying further stacks
+   * (e.g. the dev seeder) should poll GET /api/events/:userEventId until the
+   * event reaches a terminal status (`completed` or `failed`). UI users see
+   * progress on the Events page automatically.
+   */
+  public async createEnvironment(
+    request: CreateEnvironmentRequest,
+    userId?: string,
+  ): Promise<{ environment: Environment; userEventId: string; provisioning: Promise<void> }> {
     const startTime = Date.now();
     let userEvent: UserEventInfo | null = null;
 
     this.logger.info({ request }, 'Creating new environment');
 
     try {
-      // Create user event for tracking
+      // Create user event for tracking. Stays in `running` state until the
+      // background provisioning task finalises it.
       userEvent = await this.userEventService.createEvent({
         eventType: 'environment_create',
         eventCategory: 'infrastructure',
         eventName: `Create Environment: ${request.name}`,
         userId: userId || undefined,
         triggeredBy: userId ? 'manual' : 'api',
+        status: 'running',
         resourceType: 'environment',
         resourceName: request.name,
         description: `Creating ${request.type} environment`,
@@ -77,29 +95,33 @@ export class EnvironmentManager {
         throw new Error('Failed to retrieve created environment');
       }
 
-      // Provision egress gateway: allocate subnet + deploy the egress-gateway system stack.
-      // This is best-effort — failures are logged but don't roll back the environment row.
-      await this.provisionEgressGateway(environmentData.id, environment.name, userEvent.id, userId);
-
-      // Re-fetch so egressGatewayIp (if set) is included in the returned value.
-      const finalEnvironment = await this.getEnvironmentById(environmentData.id) ?? environment;
-
-      const duration = Date.now() - startTime;
-
-      this.logger.info({
-        environmentId: finalEnvironment.id,
-        environmentName: finalEnvironment.name,
-        userEventId: userEvent.id
-      }, 'Environment created successfully');
-
-      // Complete the user event
-      await this.userEventService.updateEvent(userEvent.id, {
-        status: 'completed',
-        resultSummary: `Environment '${finalEnvironment.name}' created successfully`,
-        durationMs: duration
+      // Backfill resourceId on the UserEvent now that the row exists
+      await this.prisma.userEvent.update({
+        where: { id: userEvent.id },
+        data: { resourceId: environmentData.id },
       });
 
-      return finalEnvironment;
+      // Schedule egress provisioning to run in the background. The HTTP caller
+      // gets a fast response; status is observable via the UserEvent.
+      // The returned `provisioning` promise lets callers (tests, graceful
+      // shutdown) await completion if they need to. `runProvisioningInBackground`
+      // owns its own try/catch and never rejects.
+      const userEventId = userEvent.id;
+      const provisioning = this.runProvisioningInBackground(
+        environmentData.id,
+        environment.name,
+        userEventId,
+        userId,
+        startTime,
+      );
+
+      this.logger.info({
+        environmentId: environment.id,
+        environmentName: environment.name,
+        userEventId,
+      }, 'Environment row created; egress provisioning running in background');
+
+      return { environment, userEventId, provisioning };
 
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -124,6 +146,51 @@ export class EnvironmentManager {
       }
 
       throw error;
+    }
+  }
+
+  /**
+   * Wrapper that drives `provisionEgressGateway` to completion and finalises
+   * the UserEvent. Always swallows errors so the unhandled-rejection handler
+   * never sees them — failures are surfaced via the UserEvent status instead.
+   */
+  private async runProvisioningInBackground(
+    environmentId: string,
+    environmentName: string,
+    userEventId: string,
+    userId: string | undefined,
+    startTime: number,
+  ): Promise<void> {
+    try {
+      await this.provisionEgressGateway(environmentId, environmentName, userEventId, userId);
+
+      const duration = Date.now() - startTime;
+      await this.userEventService.updateEvent(userEventId, {
+        status: 'completed',
+        resultSummary: `Environment '${environmentName}' created successfully`,
+        durationMs: duration,
+      });
+      this.logger.info({ environmentId, userEventId, duration }, 'Background environment provisioning completed');
+    } catch (err) {
+      // provisionEgressGateway is defensive and shouldn't throw, but guard anyway.
+      const duration = Date.now() - startTime;
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error({ error: err, environmentId, userEventId }, 'Background environment provisioning threw unexpectedly');
+      try {
+        await this.userEventService.updateEvent(userEventId, {
+          status: 'failed',
+          errorMessage: `Egress gateway provisioning failed: ${msg}`,
+          errorDetails: {
+            type: err instanceof Error ? err.constructor.name : 'Unknown',
+            message: msg,
+            stack: err instanceof Error ? err.stack : undefined,
+            environmentId,
+          },
+          durationMs: duration,
+        });
+      } catch (updateErr) {
+        this.logger.error({ error: updateErr, userEventId }, 'Failed to mark UserEvent as failed during async provisioning');
+      }
     }
   }
 

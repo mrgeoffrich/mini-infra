@@ -367,6 +367,47 @@ async function configureServices(api: ApiClient, env: DevEnv): Promise<void> {
   }
 }
 
+interface UserEventSummary {
+  id?: string;
+  status?: string;
+  resultSummary?: string | null;
+  errorMessage?: string | null;
+}
+
+/**
+ * Poll a UserEvent until it reaches a terminal status. POST /api/environments
+ * now returns immediately and runs egress-gateway provisioning in the
+ * background — the gateway must be applied (and the per-env applications
+ * Docker network created) before any other stack is deployed into the env,
+ * so the seeder explicitly waits here.
+ */
+async function waitForUserEventComplete(
+  api: ApiClient,
+  userEventId: string,
+  label: string,
+  timeoutMs = 180_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await api.get<UserEventSummary>(`/api/events/${userEventId}`);
+    if (res.status === 200) {
+      const event = pickObject<UserEventSummary>(res.body);
+      const status = event?.status;
+      if (status === 'completed') {
+        logOk(`${label} ready (event ${userEventId})`);
+        return;
+      }
+      if (status === 'failed' || status === 'cancelled') {
+        throw new Error(
+          `${label} provisioning ${status}: ${event?.errorMessage ?? 'no error message'}`,
+        );
+      }
+    }
+    await sleep(2000);
+  }
+  throw new Error(`${label} provisioning did not complete within ${timeoutMs}ms (event ${userEventId})`);
+}
+
 async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<string> {
   logInfo('Creating local environment');
   const list = await api.get<unknown>('/api/environments');
@@ -393,6 +434,18 @@ async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<stri
     throw new Error(`POST /api/environments response missing id: ${res.bodyText}`);
   }
   logOk(`Local environment created (id=${id})`);
+
+  // POST returns immediately; egress-gateway provisioning (subnet allocation,
+  // applications-network creation, gateway stack apply) runs in the background.
+  // The HAProxy stack we deploy next joins the applications network, so we
+  // must wait for that work to finish.
+  const userEventId = res.headers['x-user-event-id'];
+  if (userEventId) {
+    logInfo(`Waiting for egress-gateway provisioning to complete (event ${userEventId})`);
+    await waitForUserEventComplete(api, userEventId, 'Local environment');
+  } else {
+    logSkip('No X-User-Event-Id header on environment response — skipping provisioning wait (older server?)');
+  }
   return id;
 }
 
