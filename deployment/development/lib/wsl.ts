@@ -59,6 +59,17 @@ export function isDistroRunning(name: string): boolean {
   return entry?.state === 'Running';
 }
 
+/**
+ * Names of every running WSL distro. Used by the orphan-bridge sweep so we
+ * know which other Docker daemons might still be claiming bridges that
+ * appear (in the shared netns) inside the distro we're about to unregister.
+ */
+export function listRunningDistros(): string[] {
+  return listDistros()
+    .filter((d) => d.state === 'Running')
+    .map((d) => d.name);
+}
+
 export interface WslImportOpts {
   name: string;
   baseTarball: string;
@@ -186,4 +197,167 @@ export function defaultBaseTarballPath(miniInfraHome: string): string {
  */
 export function defaultInstallDir(miniInfraHome: string, profile: string): string {
   return path.join(miniInfraHome, 'wsl', profile);
+}
+
+/**
+ * Run a single command inside a WSL distro and capture its UTF-8 stdout.
+ *
+ * Linux processes write UTF-8; only the `wsl -l/-v` family emits UTF-16
+ * (those are Windows-side outputs from the wsl.exe wrapper). Anything we
+ * launch with `wsl -d <distro> -- <cmd>` goes straight to the Linux pipe.
+ */
+function execInDistro(
+  distro: string,
+  cmd: string[],
+): { status: number; stdout: string; stderr: string } {
+  const res = spawnSync(WSL, ['-d', distro, '--', ...cmd], { encoding: 'utf8' });
+  return {
+    status: res.status ?? 1,
+    stdout: res.stdout ?? '',
+    stderr: res.stderr ?? '',
+  };
+}
+
+/**
+ * The 12-char hex network IDs that Docker uses as bridge name suffixes.
+ * Returns an empty set if the daemon isn't reachable (distro stopped, no
+ * dockerd, etc.) — callers should treat that as "claims nothing".
+ */
+export function listDockerNetworkIds(distro: string): Set<string> {
+  const res = execInDistro(distro, ['docker', 'network', 'ls', '-q', '--no-trunc']);
+  if (res.status !== 0) return new Set();
+  const ids = new Set<string>();
+  for (const line of res.stdout.split('\n')) {
+    const id = line.trim();
+    if (id.length >= 12) ids.add(id.slice(0, 12));
+  }
+  return ids;
+}
+
+/**
+ * Lists `br-XXXXXXXXXXXX` bridge interfaces visible from inside `distro`.
+ *
+ * NOTE: WSL2's default NAT-mode networking puts every running distro in
+ * the same kernel network namespace (verifiable via `readlink /proc/self/ns/net`
+ * — they all return the same id). So this returns bridges created by any
+ * distro's dockerd, not just the target's.
+ *
+ * The Alpine base image ships BusyBox `ip`, which doesn't accept
+ * `show type bridge`, so we use plain `ip link` and grep the names
+ * ourselves. The Docker bridge naming convention is rigid enough
+ * (`br-` + first 12 chars of the network ID) that the regex is safe.
+ */
+export function listKernelBridges(distro: string): string[] {
+  const res = execInDistro(distro, ['ip', '-o', 'link']);
+  if (res.status !== 0) return [];
+  const out: string[] = [];
+  for (const line of res.stdout.split('\n')) {
+    // `ip -o link` rows look like: `4: br-effde9cded84: <BROADCAST,...> mtu 1500 ...`
+    const m = line.match(/^\d+:\s+(br-[a-f0-9]{12}):/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+export interface OrphanBridgeSweep {
+  deleted: string[];
+  preserved: string[];
+  errors: { bridge: string; reason: string }[];
+}
+
+/**
+ * Sweep orphaned `br-XXXXXXXXXXXX` interfaces from the shared WSL2 kernel
+ * netns by running `ip link delete` from inside `targetDistro`. A bridge
+ * is preserved if its 12-char id appears in any `liveDistros[i]`'s
+ * `docker network ls -q` output; otherwise it is deleted.
+ *
+ * Background: dockerd creates each bridge as `br-` + first 12 chars of
+ * the network ID. When a Docker network is left over from a partial
+ * shutdown — the daemon DB lost track of it but the kernel still has
+ * the interface — the bridge becomes an "orphan" with a phantom subnet
+ * route that beats the legitimate route in the FIB. That's the bug
+ * `fix(worktree): clean up orphaned Linux bridges on worktree delete`
+ * is targeting.
+ *
+ * Two intended call sites:
+ *  - Pre-unregister cleanup (`worktree-delete`, `worktree-cleanup`):
+ *    pass every running mini-infra distro EXCEPT the doomed one. The
+ *    doomed distro's networks become "not live" and are swept, while
+ *    sibling worktrees' bridges are preserved.
+ *  - Defensive pre-start sweep: pass every running mini-infra distro
+ *    INCLUDING the target. Only true orphans (no dockerd claims them)
+ *    are removed.
+ *
+ * Caveat: deleting a bridge here removes it for every distro because
+ * the netns is shared. Get the `liveDistros` list right or you'll yank
+ * an active bridge out from under another worktree's daemon.
+ */
+export function cleanupOrphanBridges(
+  targetDistro: string,
+  liveDistros: string[],
+): OrphanBridgeSweep {
+  const protectedIds = new Set<string>();
+  for (const d of liveDistros) {
+    for (const id of listDockerNetworkIds(d)) protectedIds.add(id);
+  }
+
+  const result: OrphanBridgeSweep = { deleted: [], preserved: [], errors: [] };
+  for (const bridge of listKernelBridges(targetDistro)) {
+    const id = bridge.slice(3); // strip "br-"
+    if (protectedIds.has(id)) {
+      result.preserved.push(bridge);
+      continue;
+    }
+    const res = execInDistro(targetDistro, ['ip', 'link', 'delete', bridge]);
+    if (res.status === 0) {
+      result.deleted.push(bridge);
+    } else {
+      result.errors.push({ bridge, reason: res.stderr.trim() || `exit ${res.status}` });
+    }
+  }
+  return result;
+}
+
+/**
+ * Force-stop every container, then prune unused networks, in `distro`'s
+ * Docker daemon. Used as a pre-unregister cleanup so dockerd can normally
+ * remove the bridges it created — leaving `cleanupOrphanBridges` as a
+ * safety net for any that don't go quietly.
+ *
+ * Best-effort and tolerant of partial failure.
+ */
+export function forceDockerCleanup(distro: string): {
+  containersRemoved: number;
+  networksPruned: number;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  // Force-remove every container (running or stopped) so no network has
+  // attached endpoints when we prune.
+  const ps = execInDistro(distro, ['docker', 'ps', '-aq']);
+  const containerIds = ps.status === 0
+    ? ps.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
+    : [];
+  let containersRemoved = 0;
+  if (containerIds.length > 0) {
+    const rm = execInDistro(distro, ['docker', 'rm', '-f', ...containerIds]);
+    if (rm.status === 0) {
+      containersRemoved = rm.stdout.split('\n').filter(Boolean).length;
+    } else {
+      errors.push(`docker rm -f: ${rm.stderr.trim() || `exit ${rm.status}`}`);
+    }
+  }
+
+  // Prune unused networks. Counts the lines after the "Deleted Networks:" header.
+  const prune = execInDistro(distro, ['docker', 'network', 'prune', '-f']);
+  let networksPruned = 0;
+  if (prune.status === 0) {
+    const m = prune.stdout.match(/Deleted Networks:\s*\n([\s\S]*)/);
+    if (m) networksPruned = m[1].split('\n').map((s) => s.trim()).filter(Boolean).length;
+  } else {
+    errors.push(`docker network prune: ${prune.stderr.trim() || `exit ${prune.status}`}`);
+  }
+
+  return { containersRemoved, networksPruned, errors };
 }
