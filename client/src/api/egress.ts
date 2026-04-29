@@ -172,6 +172,47 @@ export async function listEgressEvents(
   return response.json();
 }
 
+/**
+ * Per-policy events list. Use this instead of listEgressEvents() when you
+ * want events for one specific policy — the cross-policy /events endpoint
+ * silently ignores its policyId param.
+ */
+export type ListEgressEventsForPolicyQuery = Omit<
+  ListEgressEventsQuery,
+  "environmentId" | "stackId" | "policyId"
+>;
+
+export async function listEgressEventsForPolicy(
+  policyId: string,
+  query: ListEgressEventsForPolicyQuery = {},
+): Promise<EgressEventListResponse> {
+  const correlationId = generateCorrelationId();
+  const url = new URL(
+    `/api/egress/policies/${policyId}/events`,
+    window.location.origin,
+  );
+
+  if (query.action) url.searchParams.set("action", query.action);
+  if (query.since) url.searchParams.set("since", query.since);
+  if (query.until) url.searchParams.set("until", query.until);
+  if (query.page !== undefined) url.searchParams.set("page", String(query.page));
+  if (query.limit !== undefined) url.searchParams.set("limit", String(query.limit));
+
+  const response = await fetch(url.toString(), {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch egress events for policy: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 // ====================
 // Mutation endpoint stubs (UI not wired in v1 — next slice)
 // ====================
