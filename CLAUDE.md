@@ -88,8 +88,12 @@ mini-infra/
 ├── client/                # Vite + React 19 frontend application
 ├── server/                # Express.js 5 + Prisma backend
 ├── lib/                   # Shared TypeScript types (@mini-infra/types)
+├── acme/                  # ACME / Let's Encrypt client library
 ├── update-sidecar/        # Self-update sidecar container (mini-infra-sidecar)
 ├── agent-sidecar/         # AI agent sidecar container (mini-infra-agent-sidecar)
+├── egress-gateway/        # Egress firewall gateway container
+├── egress-fw-agent/       # Egress firewall agent container
+├── egress-shared/         # Shared code for egress gateway/agent
 ├── pg-az-backup/          # PostgreSQL Azure backup container
 ├── deployment/            # Deployment configurations
 ├── scripts/               # Utility scripts (see below)
