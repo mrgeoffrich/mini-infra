@@ -141,7 +141,10 @@ ENV AGENT_SIDECAR_IMAGE_TAG=${AGENT_SIDECAR_IMAGE_TAG}
 ARG EGRESS_SIDECAR_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-sidecar
 ENV EGRESS_SIDECAR_IMAGE_TAG=${EGRESS_SIDECAR_IMAGE_TAG}
 
-ARG EGRESS_GATEWAY_IMAGE_TAG=mini-infra/egress-gateway:dev
+# EGRESS_GATEWAY_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage`
+# field (which appends its own `:tag`), so this value must NOT include a `:tag` suffix.
+# Same convention as EGRESS_SIDECAR_IMAGE_TAG above.
+ARG EGRESS_GATEWAY_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-gateway
 ENV EGRESS_GATEWAY_IMAGE_TAG=${EGRESS_GATEWAY_IMAGE_TAG}
 
 ARG PG_BACKUP_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev

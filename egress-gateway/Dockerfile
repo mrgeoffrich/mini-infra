@@ -44,5 +44,9 @@ RUN apk add --no-cache \
 COPY --from=builder /out/egress-gateway  /usr/local/bin/egress-gateway
 COPY --from=builder /out/egress-fw-agent /usr/local/bin/egress-fw-agent
 
-# No default ENTRYPOINT — docker-compose sets it per service.
-# Healthcheck is handled by the admin API at /v1/health.
+# Default ENTRYPOINT is the per-env gateway. The fw-agent host-singleton
+# overrides this in its compose service via `entrypoint: ["/usr/local/bin/egress-fw-agent"]`.
+# This default is what stack-deployed gateway containers (egress-gateway template) use,
+# since the stack template currently does not specify an entrypoint.
+ENTRYPOINT ["/usr/local/bin/egress-gateway"]
+# Healthcheck is handled by the admin API at /admin/health.

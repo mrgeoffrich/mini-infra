@@ -20,6 +20,7 @@ services:
       args:
         AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG}
         EGRESS_SIDECAR_IMAGE_TAG: ${EGRESS_SIDECAR_IMAGE_TAG}
+        EGRESS_GATEWAY_IMAGE_TAG: ${EGRESS_GATEWAY_IMAGE_TAG}
     user: root
     restart: unless-stopped
     depends_on:
@@ -55,7 +56,7 @@ services:
       retries: 10
 
   egress-fw-agent:
-    image: ${EGRESS_GATEWAY_IMAGE_TAG}
+    image: ${EGRESS_GATEWAY_IMAGE_TAG}:latest
     entrypoint: ["/usr/local/bin/egress-fw-agent"]
     network_mode: host
     cap_add:

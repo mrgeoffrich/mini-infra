@@ -14,6 +14,7 @@ services:
       dockerfile: Dockerfile
       args:
         AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG:-localhost:5051/mini-infra-agent-sidecar:latest}
+        EGRESS_GATEWAY_IMAGE_TAG: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway}
     container_name: mini-infra-dev
     user: root
     restart: unless-stopped
@@ -53,7 +54,10 @@ services:
       retries: 3
 
   egress-fw-agent:
-    image: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway:dev}
+    # EGRESS_GATEWAY_IMAGE_TAG is set without a `:tag` suffix (the egress-gateway
+    # stack template appends its own tag), so this compose service appends `:latest`
+    # explicitly. The default fallback already includes a tag for local-only runs.
+    image: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway}:latest
     container_name: mini-infra-dev-egress-fw-agent
     entrypoint: ["/usr/local/bin/egress-fw-agent"]
     network_mode: host
