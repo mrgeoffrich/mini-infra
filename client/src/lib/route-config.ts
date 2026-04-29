@@ -16,6 +16,7 @@ import {
   IconRocket,
   IconServer,
   IconSettings,
+  IconShield,
   IconShieldLock,
   IconTemplate,
   IconHistory,
@@ -358,6 +359,17 @@ export const routeConfig: Record<string, RouteConfig> = {
         showInNav: false,
       },
     },
+  },
+
+  "/egress": {
+    path: "/egress",
+    title: "Egress",
+    icon: IconShield,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "networking",
+    description: "Outbound traffic control across all environments",
+    helpDoc: "settings/egress-fw-agent",
   },
 
   "/dns": {
