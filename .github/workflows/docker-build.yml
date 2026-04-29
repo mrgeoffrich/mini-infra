@@ -22,6 +22,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   SIDECAR_IMAGE_NAME: ${{ github.repository }}-sidecar
   AGENT_SIDECAR_IMAGE_NAME: ${{ github.repository }}-agent-sidecar
+  EGRESS_FW_AGENT_IMAGE_NAME: ${{ github.repository }}-egress-fw-agent
   PG_BACKUP_IMAGE_NAME: ${{ github.repository }}-pg-backup
 
 jobs:
@@ -132,6 +133,46 @@ jobs:
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
+      # ---- Egress firewall agent image metadata & build ----
+
+      - name: Extract egress fw-agent metadata (tags, labels)
+        id: egress-fw-agent-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.EGRESS_FW_AGENT_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push egress fw-agent image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: egress-fw-agent/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.egress-fw-agent-meta.outputs.tags }}
+          labels: ${{ steps.egress-fw-agent-meta.outputs.labels }}
+          cache-from: type=gha,scope=egress-fw-agent
+          cache-to: type=gha,mode=max,scope=egress-fw-agent
+          platforms: linux/amd64
+
+      - name: Determine egress fw-agent image tag
+        id: egress-fw-agent-tag
+        run: |
+          TAGS="${{ steps.egress-fw-agent-meta.outputs.tags }}"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          else
+            TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
+          fi
+          TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
       # ---- PG backup image metadata & build ----
 
       - name: Extract pg-backup metadata (tags, labels)
@@ -203,6 +244,7 @@ jobs:
           build-args: |
             SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
             AGENT_SIDECAR_IMAGE_TAG=${{ steps.agent-sidecar-tag.outputs.tag }}
+            EGRESS_FW_AGENT_IMAGE_TAG=${{ steps.egress-fw-agent-tag.outputs.tag }}
             PG_BACKUP_IMAGE_TAG=${{ steps.pg-backup-tag.outputs.tag }}
             BUILD_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
           cache-from: type=gha
@@ -215,4 +257,5 @@ jobs:
           echo "Main image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           echo "Sidecar image pushed to ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}"
           echo "Agent sidecar image pushed to ${{ env.REGISTRY }}/${{ env.AGENT_SIDECAR_IMAGE_NAME }}"
+          echo "Egress fw-agent image pushed to ${{ env.REGISTRY }}/${{ env.EGRESS_FW_AGENT_IMAGE_NAME }}"
           echo "PG backup image pushed to ${{ env.REGISTRY }}/${{ env.PG_BACKUP_IMAGE_NAME }}"

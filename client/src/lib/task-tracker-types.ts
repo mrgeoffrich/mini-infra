@@ -16,6 +16,7 @@ export type TaskType =
   | "stack-update"
   | "migration"
   | "sidecar-startup"
+  | "egress-fw-agent-startup"
   | "self-update-launch"
   | "vault-bootstrap"
   | "vault-unseal"

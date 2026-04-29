@@ -20,6 +20,7 @@ services:
       args:
         AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG}
         EGRESS_GATEWAY_IMAGE_TAG: ${EGRESS_GATEWAY_IMAGE_TAG}
+        EGRESS_FW_AGENT_IMAGE_TAG: ${EGRESS_FW_AGENT_IMAGE_TAG}
     user: root
     restart: unless-stopped
     depends_on:
@@ -34,7 +35,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/app/data
       - logs:/app/server/logs
-      # Shared socket dir for fw-agent communication
+      # Shared socket dir for fw-agent communication. Both the server and the
+      # fw-agent container (managed by the server, not compose) mount this same
+      # host path so HTTP-over-Unix-socket admin calls work.
       - /var/run/mini-infra:/var/run/mini-infra
     environment:
       - LOG_LEVEL=debug
@@ -54,23 +57,6 @@ services:
       timeout: 3s
       start_period: 40s
       retries: 10
-
-  egress-fw-agent:
-    image: ${EGRESS_FW_AGENT_IMAGE_TAG}:latest
-    network_mode: host
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    restart: unless-stopped
-    volumes:
-      # Shared socket dir for admin API
-      - /var/run/mini-infra:/var/run/mini-infra
-      # Kernel module access (read-only)
-      - /lib/modules:/lib/modules:ro
-    environment:
-      - LOG_LEVEL=debug
-    labels:
-      mini-infra.egress.fw-agent: "true"
 
 volumes:
   data:

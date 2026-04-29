@@ -57,6 +57,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "vault",
   "pools",
   "egress",
+  "egress-fw-agent",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -93,6 +94,7 @@ export const Channel = {
   VAULT: "vault",
   POOLS: "pools",
   EGRESS: "egress",
+  EGRESS_FW_AGENT: "egress-fw-agent",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -227,6 +229,10 @@ export const ServerEvent = {
   EGRESS_POLICY_UPDATED: "egress:policy:updated",
   EGRESS_RULE_MUTATION: "egress:rule:mutation",
   EGRESS_GATEWAY_HEALTH: "egress:gateway:health",
+  // Egress Firewall Agent (sidecar lifecycle)
+  EGRESS_FW_AGENT_STARTUP_STARTED: "egress-fw-agent:startup:started",
+  EGRESS_FW_AGENT_STARTUP_STEP: "egress-fw-agent:startup:step",
+  EGRESS_FW_AGENT_STARTUP_COMPLETED: "egress-fw-agent:startup:completed",
 } as const;
 
 /** Client → Server event names */
@@ -512,6 +518,28 @@ export interface ServerToClientEvents {
   "egress:rule:mutation": (data: EgressRuleMutationEvent) => void;
   /** Per-env gateway health snapshot — fires after each push attempt */
   "egress:gateway:health": (data: EgressGatewayHealthEvent) => void;
+
+  // ── Egress Firewall Agent (sidecar lifecycle) ──────
+  /** Egress fw-agent startup started */
+  "egress-fw-agent:startup:started": (data: {
+    operationId: string;
+    totalSteps: number;
+    stepNames?: string[];
+  }) => void;
+  /** Egress fw-agent startup step completed */
+  "egress-fw-agent:startup:step": (data: {
+    operationId: string;
+    step: OperationStep;
+    completedCount: number;
+    totalSteps: number;
+  }) => void;
+  /** Egress fw-agent startup completed (success or failure) */
+  "egress-fw-agent:startup:completed": (data: {
+    operationId: string;
+    success: boolean;
+    steps: OperationStep[];
+    errors: string[];
+  }) => void;
 }
 
 // ====================

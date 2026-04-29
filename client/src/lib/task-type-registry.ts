@@ -374,6 +374,29 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
     ],
   }),
 
+  "egress-fw-agent-startup": defineTaskTypeConfig({
+    channel: Channel.EGRESS_FW_AGENT,
+    startedEvent: ServerEvent.EGRESS_FW_AGENT_STARTUP_STARTED,
+    stepEvent: ServerEvent.EGRESS_FW_AGENT_STARTUP_STEP,
+    completedEvent: ServerEvent.EGRESS_FW_AGENT_STARTUP_COMPLETED,
+    getId: (p) => p.operationId,
+    normalizeStarted: (p) => ({
+      totalSteps: p.totalSteps,
+      plannedStepNames: p.stepNames ?? [],
+    }),
+    normalizeStep: (p) => p.step,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: p.steps.map((s) => ({
+        step: s.step,
+        status: s.status,
+        detail: s.detail,
+      })),
+      errors: p.errors,
+    }),
+    invalidateKeys: () => [["egress-fw-agent", "status"]],
+  }),
+
   "self-update-launch": defineTaskTypeConfig({
     channel: Channel.SELF_UPDATE,
     startedEvent: ServerEvent.SELF_UPDATE_LAUNCH_STARTED,

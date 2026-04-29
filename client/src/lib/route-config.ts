@@ -475,6 +475,18 @@ export const routeConfig: Record<string, RouteConfig> = {
     helpDoc: "settings/ai-assistant",
   },
 
+  "/settings-egress-fw-agent": {
+    path: "/settings-egress-fw-agent",
+    title: "Egress Firewall Agent",
+    breadcrumbLabel: "Egress FW Agent",
+    icon: IconShieldLock,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Host-singleton firewall agent that enforces L3/L4 egress rules",
+    helpDoc: "settings/egress-fw-agent",
+  },
+
   "/system-diagnostics": {
     path: "/system-diagnostics",
     title: "System Diagnostics",
