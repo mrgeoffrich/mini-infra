@@ -13,7 +13,7 @@
  * A prop `canWrite` is threaded through so callers can restrict to API-key users.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import {
   IconShield,
   IconChevronLeft,
@@ -1081,13 +1081,20 @@ function TrafficFeedSection({ environmentId }: { environmentId: string }) {
 
   const { filters, updateFilter, resetFilters } = useEgressEventFilters();
 
-  const query = {
-    environmentId,
-    action: filters.action,
-    since: sinceFromRange(timeRange),
-    page: filters.page,
-    limit: filters.limit,
-  };
+  // Memoise the query so `since` is only recomputed when `timeRange` flips —
+  // otherwise `sinceFromRange()` returns a fresh ISO string on every render,
+  // the TanStack Query key churns, and the events endpoint is hammered in a
+  // re-render loop.
+  const query = useMemo(
+    () => ({
+      environmentId,
+      action: filters.action,
+      since: sinceFromRange(timeRange),
+      page: filters.page,
+      limit: filters.limit,
+    }),
+    [environmentId, filters.action, timeRange, filters.page, filters.limit],
+  );
 
   const {
     data,
