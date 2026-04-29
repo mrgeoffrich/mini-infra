@@ -9,10 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/config"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/fw"
-	applog "github.com/mrgeoffrich/mini-infra/egress-gateway/internal/log"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-fw-agent/internal/config"
+	"github.com/mrgeoffrich/mini-infra/egress-fw-agent/internal/fw"
+	applog "github.com/mrgeoffrich/mini-infra/egress-shared/log"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 func main() {

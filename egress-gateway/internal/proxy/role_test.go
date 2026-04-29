@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 // TestUnknownIPDenyHandler_FastFail verifies that a request from an IP not in

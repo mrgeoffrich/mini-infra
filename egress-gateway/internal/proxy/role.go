@@ -7,7 +7,7 @@ import (
 
 	smokescreen "github.com/stripe/smokescreen/pkg/smokescreen"
 
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 // RoleFromRequest returns the Smokescreen role (== stackId) for the connection.

@@ -10,7 +10,8 @@ import (
 	"github.com/sirupsen/logrus"
 
 	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/proxy"
-	"github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	rulesstate "github.com/mrgeoffrich/mini-infra/egress-gateway/internal/state"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
 func makeServer() *Server {
@@ -19,7 +20,7 @@ func makeServer() *Server {
 	return New(
 		proxy.NewACLSwapper(),
 		state.NewContainerMap(),
-		state.NewRulesState(),
+		rulesstate.NewRulesState(),
 		logger,
 	)
 }
