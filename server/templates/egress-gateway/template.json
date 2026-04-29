@@ -1,7 +1,7 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 6,
+  "builtinVersion": 7,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control",
