@@ -42,6 +42,7 @@ projectmanagement/
 *.db
 *.db-shm
 *.db-wal
+*.db.migrations-sha256
 
 # TLS/SSL key material
 *.pem

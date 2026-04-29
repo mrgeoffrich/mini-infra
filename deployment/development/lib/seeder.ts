@@ -408,16 +408,29 @@ async function waitForUserEventComplete(
   throw new Error(`${label} provisioning did not complete within ${timeoutMs}ms (event ${userEventId})`);
 }
 
+async function findLocalEnvironment(api: ApiClient): Promise<Environment | null> {
+  const list = await api.get<unknown>('/api/environments');
+  if (list.status !== 200) {
+    debug(`GET /api/environments → status=${list.status} body=${list.bodyText.slice(0, 200)}`);
+    return null;
+  }
+  const items = pickItems<Environment>(list.body);
+  const existing = items.find((e) => e.networkType === 'local');
+  if (!existing) {
+    debug(
+      `GET /api/environments → 200, ${items.length} item(s), none with networkType=local; body=${list.bodyText.slice(0, 200)}`,
+    );
+    return null;
+  }
+  return existing;
+}
+
 async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<string> {
   logInfo('Creating local environment');
-  const list = await api.get<unknown>('/api/environments');
-  if (list.status === 200) {
-    const items = pickItems<Environment>(list.body);
-    const existing = items.find((e) => e.networkType === 'local');
-    if (existing?.id) {
-      logSkip(`Local environment already exists (id=${existing.id})`);
-      return existing.id;
-    }
+  const existing = await findLocalEnvironment(api);
+  if (existing?.id) {
+    logSkip(`Local environment already exists (id=${existing.id})`);
+    return existing.id;
   }
   const res = await api.post<Environment>('/api/environments', {
     name: env.LOCAL_ENV_NAME,
@@ -425,6 +438,20 @@ async function ensureLocalEnvironment(api: ApiClient, env: DevEnv): Promise<stri
     type: 'nonproduction',
     networkType: 'local',
   });
+  if (res.status === 409) {
+    // Another caller (or a previous fetch retry that succeeded server-side after
+    // its connection dropped — egress provisioning can stretch the request past
+    // undici's headersTimeout) already created the local env. Re-list and adopt it.
+    debug(`POST /api/environments → 409: ${res.bodyText.slice(0, 200)}`);
+    const recovered = await findLocalEnvironment(api);
+    if (recovered?.id) {
+      logSkip(`Local environment was created concurrently — adopting (id=${recovered.id})`);
+      return recovered.id;
+    }
+    throw new Error(
+      `POST /api/environments returned 409 but no local environment found on re-list: ${res.bodyText}`,
+    );
+  }
   if (res.status !== 201) {
     throw new Error(`POST /api/environments returned ${res.status}: ${res.bodyText}`);
   }
