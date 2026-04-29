@@ -46,7 +46,7 @@ export interface ContainerInfo {
     type: string; // 'production' | 'nonproduction'
   };
   // Self-identification: set when this container is part of Mini Infra itself
-  selfRole?: 'main' | 'agent-sidecar' | 'update-sidecar';
+  selfRole?: 'main' | 'agent-sidecar' | 'update-sidecar' | 'fw-agent';
 }
 
 // ====================

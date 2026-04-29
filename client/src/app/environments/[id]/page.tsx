@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link, Navigate } from "react-router-dom";
+import { useParams, Link, Navigate, useSearchParams } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment } from "@/hooks/use-environments";
 import { StacksList } from "@/components/environments";
@@ -45,6 +45,8 @@ import { cn } from "@/lib/utils";
 
 export function EnvironmentDetailPage() {
   const { id: environmentId } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab") === "egress" ? "egress" : "overview";
 
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -323,7 +325,7 @@ export function EnvironmentDetailPage() {
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">
-        <Tabs defaultValue="overview">
+        <Tabs defaultValue={initialTab}>
           <TabsList className="mb-4">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             {canReadEgress && (

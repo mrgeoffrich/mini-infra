@@ -40,6 +40,7 @@ const SELF_ROLE_LABELS: Record<string, string> = {
   main: "Mini Infra",
   "agent-sidecar": "Agent Sidecar",
   "update-sidecar": "Update Sidecar",
+  "fw-agent": "Egress FW Agent",
 };
 
 const ContainerNameCell = React.memo(
