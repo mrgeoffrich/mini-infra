@@ -379,10 +379,12 @@ async function main(): Promise<void> {
   // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
   const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
   const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
-  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the egress-fw-agent compose service.
-  // The compose service appends `:latest` itself, so this value must NOT include a `:tag` suffix.
-  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent`;
-  const egressFwAgentPushRef = `${egressFwAgentImageTag}:latest`;
+  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the FwAgentSidecar service inside
+  // mini-infra-server (which calls docker pull/create directly), so this value
+  // MUST include a `:tag` suffix that the server can pull from the local
+  // registry at runtime.
+  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent:latest`;
+  const egressFwAgentPushRef = egressFwAgentImageTag;
 
   const stackEnv: NodeJS.ProcessEnv = {
     DOCKER_HOST: dockerHost,

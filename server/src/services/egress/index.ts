@@ -44,6 +44,17 @@ export { EgressEventPruner } from './egress-event-pruner';
 export { EgressGatewayClient, EgressGatewayError } from './egress-gateway-client';
 export { EgressRulePusher } from './egress-rule-pusher';
 export { EnvFirewallManager } from './env-firewall-manager';
+export {
+  ensureFwAgent,
+  removeFwAgent,
+  restartFwAgent,
+  findFwAgent,
+  isFwAgentHealthy,
+  getFwAgentConfig,
+  stopHealthChecks as stopFwAgentHealthChecks,
+  FW_AGENT_STARTUP_STEPS,
+  type FwAgentProgressCallback,
+} from './fw-agent-sidecar';
 
 export type ShutdownFn = () => void;
 

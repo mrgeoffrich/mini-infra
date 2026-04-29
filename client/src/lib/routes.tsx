@@ -44,6 +44,7 @@ import CertificateDetailsPage from "@/app/certificates/[id]/page";
 import DnsPage from "@/app/dns/page";
 import TlsSettingsPage from "@/app/settings/tls/page";
 import AiAssistantSettingsPage from "@/app/settings/ai-assistant/page";
+import EgressFwAgentSettingsPage from "@/app/settings/egress-fw-agent/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
 import FrontendsListPage from "@/app/haproxy/frontends/page";
 import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
@@ -307,6 +308,10 @@ export const router = createBrowserRouter([
       {
         path: "settings-ai-assistant",
         element: <AiAssistantSettingsPage />,
+      },
+      {
+        path: "settings-egress-fw-agent",
+        element: <EgressFwAgentSettingsPage />,
       },
       {
         path: "settings-self-update",

@@ -56,6 +56,7 @@ export interface TriggerUpdateOptions {
   sidecarImage: string; // Target-tagged sidecar image to pull (e.g. "...-sidecar:v2.1.0")
   sidecarRunImage?: string; // Current-version sidecar image to run (e.g. "...-sidecar:v2.0.0")
   agentSidecarImage?: string; // Pre-pull so it's available after update
+  egressFwAgentImage?: string; // Pre-pull so it's available after update
   gracefulStopSeconds?: number;
   onProgress?: UpdateProgressCallback;
 }
@@ -65,6 +66,7 @@ export const SELF_UPDATE_LAUNCH_STEPS = [
   "Pull sidecar image",
   "Pull target image",
   "Pull agent sidecar image",
+  "Pull egress fw-agent image",
   "Create sidecar container",
   "Start sidecar container",
 ] as const;
@@ -259,6 +261,22 @@ export async function launchSidecar(
       }
     } else {
       reportStep("Pull agent sidecar image", "skipped", "No agent sidecar image configured");
+    }
+
+    // Step 3b: Pull the egress fw-agent image (pre-pull so it's available after update)
+    if (options.egressFwAgentImage) {
+      try {
+        const registryManager = new RegistryManager(docker, registryCredentialService);
+        await registryManager.pullImageWithAutoAuth(options.egressFwAgentImage);
+        logger.info({ egressFwAgentImage: options.egressFwAgentImage }, "Egress fw-agent image pulled");
+        reportStep("Pull egress fw-agent image", "completed", options.egressFwAgentImage);
+      } catch (pullErr) {
+        logger.error({ err: pullErr, egressFwAgentImage: options.egressFwAgentImage }, "Failed to pull egress fw-agent image");
+        reportStep("Pull egress fw-agent image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
+        throw new Error(`Failed to pull egress fw-agent image "${options.egressFwAgentImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
+      }
+    } else {
+      reportStep("Pull egress fw-agent image", "skipped", "No egress fw-agent image configured");
     }
 
     // Step 4: Create sidecar container

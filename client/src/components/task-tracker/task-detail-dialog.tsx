@@ -113,6 +113,8 @@ function getTaskTitle(type: TaskType): string {
       return "HAProxy Migration";
     case "sidecar-startup":
       return "Agent Sidecar Startup";
+    case "egress-fw-agent-startup":
+      return "Egress Firewall Agent Startup";
     case "self-update-launch":
       return "Self-Update Launch";
     case "vault-bootstrap":
@@ -140,6 +142,8 @@ function getTaskIcon(type: TaskType) {
       return <IconArrowsShuffle className="h-5 w-5" />;
     case "sidecar-startup":
       return <IconRocket className="h-5 w-5" />;
+    case "egress-fw-agent-startup":
+      return <IconShieldLock className="h-5 w-5" />;
     case "self-update-launch":
       return <IconRefresh className="h-5 w-5" />;
     case "vault-bootstrap":

@@ -28,10 +28,18 @@
  *   dependency from stack-container-manager on EnvFirewallManager.
  */
 
-import { createConnection } from 'net';
 import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { getLogger } from '../../lib/logger-factory';
+import {
+  createUnixSocketFetcher,
+  getFwAgentSocketPath,
+  type Fetcher,
+  type FwAgentRequest,
+  type FwAgentResponse,
+} from './fw-agent-transport';
+
+export type { Fetcher, FwAgentRequest, FwAgentResponse };
 
 const log = getLogger('stacks', 'env-firewall-manager');
 
@@ -39,27 +47,9 @@ const log = getLogger('stacks', 'env-firewall-manager');
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_SOCKET_PATH = '/var/run/mini-infra/fw.sock';
 const QUEUE_CAP = 1000;
 
 export type FirewallMode = 'observe' | 'enforce';
-
-// ---------------------------------------------------------------------------
-// Fetcher interface — injectable for tests
-// ---------------------------------------------------------------------------
-
-export interface FwAgentRequest {
-  method: 'GET' | 'POST' | 'DELETE';
-  path: string;
-  body?: unknown;
-}
-
-export interface FwAgentResponse {
-  status: number;
-  body: unknown;
-}
-
-export type Fetcher = (req: FwAgentRequest) => Promise<FwAgentResponse>;
 
 // ---------------------------------------------------------------------------
 // Queued delta — applied when the agent recovers from an outage
@@ -89,8 +79,8 @@ export class EnvFirewallManager {
     private readonly prisma: PrismaClient,
     fetcher?: Fetcher,
   ) {
-    this.socketPath = process.env.FW_AGENT_SOCKET_PATH ?? DEFAULT_SOCKET_PATH;
-    this.fetcher = fetcher ?? this._defaultFetcher.bind(this);
+    this.socketPath = getFwAgentSocketPath();
+    this.fetcher = fetcher ?? createUnixSocketFetcher(this.socketPath);
   }
 
   // -------------------------------------------------------------------------
@@ -589,64 +579,4 @@ export class EnvFirewallManager {
     return null;
   }
 
-  // -------------------------------------------------------------------------
-  // Default fetcher — HTTP over Unix socket
-  // -------------------------------------------------------------------------
-
-  private _defaultFetcher(req: FwAgentRequest): Promise<FwAgentResponse> {
-    return new Promise((resolve, reject) => {
-      const bodyStr = req.body ? JSON.stringify(req.body) : '';
-      const headers: string[] = [
-        `${req.method} ${req.path} HTTP/1.1`,
-        'Host: localhost',
-        'Content-Type: application/json',
-        `Content-Length: ${Buffer.byteLength(bodyStr)}`,
-        'Connection: close',
-        '',
-        bodyStr,
-      ];
-      const rawRequest = headers.join('\r\n');
-
-      const socket = createConnection(this.socketPath);
-      let rawResponse = '';
-
-      socket.setTimeout(5000);
-      socket.on('timeout', () => {
-        socket.destroy();
-        reject(new Error(`fw-agent socket timeout: ${this.socketPath}`));
-      });
-
-      socket.on('error', (err) => {
-        reject(new Error(`fw-agent socket error: ${err.message}`));
-      });
-
-      socket.on('data', (chunk) => {
-        rawResponse += chunk.toString('utf-8');
-      });
-
-      socket.on('end', () => {
-        try {
-          const lines = rawResponse.split('\r\n');
-          const statusLine = lines[0] ?? '';
-          const statusMatch = statusLine.match(/HTTP\/1\.[01] (\d+)/);
-          const status = statusMatch ? parseInt(statusMatch[1], 10) : 500;
-
-          // Body is after the blank line separator.
-          const bodyStart = rawResponse.indexOf('\r\n\r\n');
-          const rawBody = bodyStart >= 0 ? rawResponse.slice(bodyStart + 4) : '';
-          let body: unknown;
-          try {
-            body = rawBody ? JSON.parse(rawBody) : null;
-          } catch {
-            body = rawBody;
-          }
-          resolve({ status, body });
-        } catch (err) {
-          reject(err);
-        }
-      });
-
-      socket.write(rawRequest);
-    });
-  }
 }

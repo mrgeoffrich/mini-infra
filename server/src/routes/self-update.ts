@@ -194,6 +194,7 @@ router.post(
         const fullImageRef = `${IMAGE_BASE}:${targetTag}`;
         const sidecarImage = `${IMAGE_BASE}-sidecar:${targetTag}`;
         const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
+        const egressFwAgentImage = `${IMAGE_BASE}-egress-fw-agent:${targetTag}`;
 
         // Run the sidecar using the current (known-good) version rather than
         // the target version, so a broken sidecar in a new release can't
@@ -213,6 +214,7 @@ router.post(
             sidecarImage,
             sidecarRunImage: sidecarRunImage ?? sidecarImage,
             agentSidecarImage,
+            egressFwAgentImage,
             containerId,
           },
           "Self-update triggered",
@@ -260,6 +262,7 @@ router.post(
               sidecarImage,
               sidecarRunImage,
               agentSidecarImage,
+              egressFwAgentImage,
               gracefulStopSeconds: GRACEFUL_STOP_SECONDS,
               onProgress: (step, completedCount, total) => {
                 steps.push(step);

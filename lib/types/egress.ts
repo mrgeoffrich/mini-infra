@@ -166,3 +166,31 @@ export interface EgressGatewayHealthEvent {
   };
   errorMessage?: string;
 }
+
+// ----------------------------------------------------------------------------
+// Egress firewall agent (host-singleton sidecar managed by mini-infra-server)
+// ----------------------------------------------------------------------------
+
+/** Snapshot of the fw-agent container + its admin socket health. */
+export interface EgressFwAgentStatus {
+  /** Whether mini-infra-server can reach the agent's admin socket. */
+  available: boolean;
+  /** Whether a labelled fw-agent container is currently running. */
+  containerRunning: boolean;
+  /** Short ID (12 chars) of the running fw-agent container, if any. */
+  containerId: string | null;
+  /** Reason the agent is unavailable (e.g. server not in Docker, image unset). */
+  reason?: string;
+  /** Health response from the agent's admin socket, if reachable. */
+  health: {
+    status: "ok";
+  } | null;
+}
+
+export interface EgressFwAgentConfig {
+  /** Container image reference (settings override → baked-in env var). */
+  image: string | null;
+  /** Whether the agent is started automatically at server boot. */
+  autoStart: boolean;
+}
+

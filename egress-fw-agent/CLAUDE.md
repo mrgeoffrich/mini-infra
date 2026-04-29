@@ -35,6 +35,18 @@ cd egress-fw-agent && go test ./...
 
 The agent must run on the Docker host with `NET_ADMIN` and access to the host network namespace — it manipulates nftables and reads NFLOG groups.
 
+## Lifecycle
+
+The fw-agent is **managed by mini-infra-server as a host-singleton sidecar**, not by docker-compose. On boot, `server/src/services/egress/fw-agent-sidecar.ts → ensureFwAgent()` does the standard find-or-create dance: reuse a running container, recreate a stopped one, or pull-and-launch a fresh one. The image tag comes from settings (`egress-fw-agent.image`) or the `EGRESS_FW_AGENT_IMAGE_TAG` env var baked into the main image at build time.
+
+Container spec the server applies (matches what compose used to do):
+- `network_mode: host`, `cap_add: [NET_ADMIN, NET_RAW]`
+- Binds: `/var/run/mini-infra` (shared admin-socket dir) + `/lib/modules:ro`
+- Labels: `mini-infra.egress.fw-agent=true`, `mini-infra.managed=true`
+- Restart: `unless-stopped`
+
+Restart / status / config endpoints live at `/api/egress-fw-agent/*` and surface in the **AI Assistant > Egress Firewall Agent** settings card.
+
 ## Architecture Notes
 
 - **Unix socket, not TCP.** The admin API is a Unix socket so only processes on the host (the server) can push rules. The socket path is configurable via env.

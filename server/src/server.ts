@@ -62,7 +62,12 @@ import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-upd
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 import { initVaultServices } from "./services/vault/vault-services";
 import { seedVaultPolicies } from "./services/vault/vault-seed";
-import { startEgressBackgroundServices, type ShutdownFn as EgressShutdownFn } from "./services/egress";
+import {
+  startEgressBackgroundServices,
+  ensureFwAgent,
+  removeFwAgent,
+  type ShutdownFn as EgressShutdownFn,
+} from "./services/egress";
 
 // Global scheduler instances
 let egressShutdown: EgressShutdownFn | null = null;
@@ -138,6 +143,25 @@ const initializeServices = async () => {
     // Wire up HAProxy crash loop detection and auto-repair
     setupHAProxyCrashLoopWatcher();
     console.log("[STARTUP] ✓ HAProxy crash loop watcher initialized");
+
+    // Provision the egress fw-agent host-singleton sidecar BEFORE the egress
+    // background services start, so EnvFirewallManager.start() can reach the
+    // admin socket during its boot reconcile pass.
+    console.log("[STARTUP] Checking egress fw-agent...");
+    try {
+      const fwAgentResult = await ensureFwAgent({ checkAutoStart: true });
+      if (fwAgentResult) {
+        logger.info({ containerId: fwAgentResult.containerId }, "Egress fw-agent provisioned");
+        console.log("[STARTUP] ✓ Egress fw-agent provisioned");
+      } else {
+        console.log(
+          "[STARTUP] Egress fw-agent not started (disabled, no image, or not in Docker)",
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "Egress fw-agent provisioning failed (non-fatal)");
+      console.log("[STARTUP] ⚠ Egress fw-agent provisioning failed (non-fatal)");
+    }
 
     // Start egress firewall background services (non-fatal if they fail)
     console.log("[STARTUP] Starting egress background services...");
@@ -604,6 +628,18 @@ startServer()
         logger.info("Agent sidecar stopped and removed");
       } catch (err) {
         logger.warn({ err }, "Failed to remove agent sidecar during shutdown (non-fatal)");
+      }
+
+      // Stop and remove the egress fw-agent container. nftables rules and the
+      // persisted env store survive container removal (kernel + shared volume),
+      // so the next boot's ensureFwAgent → boot reconcile re-attaches without
+      // dropping rules. Recreating on boot also lets self-update pick up a new
+      // fw-agent image cleanly.
+      try {
+        await removeFwAgent();
+        logger.info("Egress fw-agent stopped and removed");
+      } catch (err) {
+        logger.warn({ err }, "Failed to remove egress fw-agent during shutdown (non-fatal)");
       }
 
       // Shut down Socket.IO before closing the HTTP server
