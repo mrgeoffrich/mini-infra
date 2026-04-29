@@ -145,12 +145,11 @@ Note: Socket IO is not required for the self patching or updating feature.
 - `pnpm install` - Install all workspace dependencies (replaces `npm install`)
 - `pnpm dev` - Start all services: lib watch + acme watch + server + client
 - `pnpm build` - Build server, then client (production build for frontend)
-- `pnpm build:all` - Build lib, acme, then client, server, sidecar, agent-sidecar, and egress-sidecar in parallel
+- `pnpm build:all` - Build lib, acme, then client, server, sidecar, agent-sidecar, and egress-gateway in parallel
 - `pnpm build:lib` - Build shared types package only
 - `pnpm build:server` - Build lib + acme + server
 - `pnpm build:sidecar` - Build self-update sidecar (npm under the hood — sidecars are standalone)
 - `pnpm build:agent-sidecar` - Build AI agent sidecar (npm under the hood — sidecars are standalone)
-- `pnpm build:egress-sidecar` - Build egress gateway sidecar (npm under the hood — sidecars are standalone)
 
 ### Frontend (client/) — run from project root
 - `pnpm --filter mini-infra-client dev` - Start development server (Vite)
@@ -178,10 +177,6 @@ Note: Socket IO is not required for the self patching or updating feature.
 ### Agent Sidecar (agent-sidecar/) — standalone, uses npm
 - `cd agent-sidecar && npm install && npm run build`
 - `cd agent-sidecar && npm test`
-
-### Egress Sidecar (egress-sidecar/) — standalone, uses npm
-- `cd egress-sidecar && npm install && npm run build`
-- `cd egress-sidecar && npm test`
 
 ### Shared Types (lib/) — run from project root
 - `pnpm --filter @mini-infra/types dev` - TypeScript watch mode (auto-recompile on changes)

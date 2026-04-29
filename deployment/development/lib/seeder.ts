@@ -41,7 +41,6 @@ export interface SeederInput {
   dockerHost: string;
   composeProject: string;
   agentSidecarImageTag: string;
-  egressSidecarImageTag: string;
   // /22 slice of 172.30.0.0/16 allocated for this worktree's slot.
   egressPoolCidr: string;
   devEnvPath: string;
@@ -786,7 +785,6 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     vaultPort: input.vaultPort,
     egressPool: input.egressPoolCidr,
     agentSidecarImageTag: input.agentSidecarImageTag,
-    egressSidecarImageTag: input.egressSidecarImageTag,
     adminEmail: env.ADMIN_EMAIL,
     adminPassword: env.ADMIN_PASSWORD,
     apiKey,
