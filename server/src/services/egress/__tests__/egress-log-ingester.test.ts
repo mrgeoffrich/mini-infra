@@ -15,8 +15,10 @@
  *  6. tcp/connect events persist target/bytes/matchedPattern.
  *  7. tcp/http events persist method/path/status/bytesDown.
  *  8. fw_drop events persist destIp/destPort/protocol/reason.
- *  9. fw_drop dedup collapses repeated (policyId, service, destIp, destPort, protocol).
+ *  9. fw_drop dedup collapses repeated (policyId, service, srcIp, destIp, destPort, protocol).
  * 10. fw_drop without stackId is dropped.
+ * 11. fw_drop dedup window expiry starts a fresh window.
+ * 12. fw_drop with no matching EgressPolicy is dropped.
  */
 
 import { EgressLogIngester } from '../egress-log-ingester';
@@ -42,10 +44,18 @@ vi.mock('../../../lib/logging-context', () => ({
 
 // We'll set up Docker mock per test
 let capturedContainerEventCallback: ((event: { action: string; containerName?: string; labels?: Record<string, string> }) => void) | null = null;
+
+/** Raw dockerode mock — used by GatewayTailer for name-based container lookup + log streaming */
 const mockDockerInstance = {
   listContainers: vi.fn(),
   getContainer: vi.fn(),
 };
+
+/**
+ * DockerService wrapper mock — FwAgentTailer calls dockerService.listContainers()
+ * (the wrapper) which returns DockerContainerInfo[] with a `labels` field.
+ */
+const mockDockerServiceListContainers = vi.fn();
 
 vi.mock('../../docker', () => ({
   default: {
@@ -55,6 +65,7 @@ vi.mock('../../docker', () => ({
         capturedContainerEventCallback = cb;
       }),
       getDockerInstance: vi.fn().mockResolvedValue(mockDockerInstance),
+      listContainers: mockDockerServiceListContainers,
     })),
   },
 }));
@@ -185,34 +196,49 @@ function makeFwDropLine(overrides: object = {}): object {
 // Setup: gateway container is the default; fw-agent is added per test
 // ---------------------------------------------------------------------------
 
-/** Returns listContainers mock that serves gateway + optionally fw-agent */
-function makeListContainersMock(includeFwAgent = false) {
-  return vi.fn().mockImplementation((opts: { filters?: string }) => {
+/**
+ * Set up the raw docker mock for GatewayTailer (name-based container lookup).
+ * GatewayTailer still calls docker.listContainers() with a name filter.
+ */
+function setupGatewayContainerMock() {
+  mockDockerInstance.listContainers.mockImplementation((opts: { filters?: string }) => {
     const filters = opts?.filters ? (JSON.parse(opts.filters) as Record<string, string[]>) : {};
-
-    if (filters['label']?.includes('mini-infra.egress.fw-agent=true')) {
-      if (includeFwAgent) {
-        return Promise.resolve([
-          {
-            Id: 'fw-agent-container-1',
-            Names: ['/egress-fw-agent'],
-            Labels: { 'mini-infra.egress.fw-agent': 'true' },
-            NetworkSettings: { Networks: {} },
-          },
-        ]);
-      }
-      return Promise.resolve([]);
-    }
-
     // Gateway container lookup (by name)
-    return Promise.resolve([
+    if (filters['name']) {
+      return Promise.resolve([
+        {
+          Id: 'gw-container-1',
+          Names: ['/staging-egress-gateway-egress-gateway'],
+          NetworkSettings: { Networks: {} },
+        },
+      ]);
+    }
+    return Promise.resolve([]);
+  });
+}
+
+/**
+ * Set up the DockerService.listContainers() wrapper mock for FwAgentTailer.
+ * Returns DockerContainerInfo[] with a `labels` field.
+ */
+function setupFwAgentServiceMock(includeFwAgent = false) {
+  if (includeFwAgent) {
+    mockDockerServiceListContainers.mockResolvedValue([
       {
-        Id: 'gw-container-1',
-        Names: ['/staging-egress-gateway-egress-gateway'],
-        NetworkSettings: { Networks: {} },
+        id: 'fw-agent-container-1',
+        name: 'egress-fw-agent',
+        labels: { 'mini-infra.egress.fw-agent': 'true' },
+        status: 'running',
+        image: 'fw-agent',
+        imageTag: 'latest',
+        ports: [],
+        volumes: [],
+        createdAt: new Date(),
       },
     ]);
-  });
+  } else {
+    mockDockerServiceListContainers.mockResolvedValue([]);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +249,9 @@ describe('EgressLogIngester', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     capturedContainerEventCallback = null;
-    mockDockerInstance.listContainers.mockImplementation(makeListContainersMock(false));
+    // Default: gateway container present, no fw-agent
+    setupGatewayContainerMock();
+    setupFwAgentServiceMock(false);
   });
 
   afterEach(() => {
@@ -597,7 +625,7 @@ describe('EgressLogIngester', () => {
     const gatewayStream = new Readable({ read() {} }); // idle gateway
     const { stream: fwAgentStream, pushLine } = makeLogStream();
 
-    mockDockerInstance.listContainers.mockImplementation(makeListContainersMock(true));
+    setupFwAgentServiceMock(true);
     mockDockerInstance.getContainer.mockImplementation((id: string) => ({
       logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
     }));
@@ -632,11 +660,11 @@ describe('EgressLogIngester', () => {
     ingester.stop();
   });
 
-  it('fw_drop dedup: collapses repeated (policyId, service, destIp, destPort, protocol) within 60 s', async () => {
+  it('fw_drop dedup: collapses repeated (policyId, service, srcIp, destIp, destPort, protocol) within 60 s', async () => {
     const gatewayStream = new Readable({ read() {} });
     const { stream: fwAgentStream, pushLine } = makeLogStream();
 
-    mockDockerInstance.listContainers.mockImplementation(makeListContainersMock(true));
+    setupFwAgentServiceMock(true);
     mockDockerInstance.getContainer.mockImplementation((id: string) => ({
       logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
     }));
@@ -671,7 +699,7 @@ describe('EgressLogIngester', () => {
     const gatewayStream = new Readable({ read() {} });
     const { stream: fwAgentStream, pushLine } = makeLogStream();
 
-    mockDockerInstance.listContainers.mockImplementation(makeListContainersMock(true));
+    setupFwAgentServiceMock(true);
     mockDockerInstance.getContainer.mockImplementation((id: string) => ({
       logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
     }));
@@ -682,6 +710,67 @@ describe('EgressLogIngester', () => {
 
     // fw_drop without stackId — cannot attribute, must be dropped
     pushLine(makeFwDropLine({ stackId: undefined }));
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
+    expect(createMany).not.toHaveBeenCalled();
+
+    ingester.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // High 2: fw_drop dedup window expiry starts a fresh window
+  // -------------------------------------------------------------------------
+
+  it('fw_drop: starts a fresh window after the dedup window expires', async () => {
+    const gatewayStream = new Readable({ read() {} });
+    const { stream: fwAgentStream, pushLine } = makeLogStream();
+
+    setupFwAgentServiceMock(true);
+    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
+      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
+    }));
+
+    const prisma = makePrisma();
+    const ingester = new EgressLogIngester(prisma);
+    await ingester.start();
+
+    // First occurrence
+    pushLine(makeFwDropLine({ destIp: '10.20.30.40', destPort: 5432, protocol: 'tcp' }));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    // Advance past 60-second dedup window
+    await vi.advanceTimersByTimeAsync(61_000);
+
+    // Second occurrence after window expiry — should produce a new row
+    pushLine(makeFwDropLine({ destIp: '10.20.30.40', destPort: 5432, protocol: 'tcp' }));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
+    expect(createMany).toHaveBeenCalledTimes(2);
+
+    ingester.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // High 3: fw_drop with no matching EgressPolicy is dropped
+  // -------------------------------------------------------------------------
+
+  it('fw_drop: drops events when stackId has no matching EgressPolicy', async () => {
+    const gatewayStream = new Readable({ read() {} });
+    const { stream: fwAgentStream, pushLine } = makeLogStream();
+
+    setupFwAgentServiceMock(true);
+    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
+      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
+    }));
+
+    const prisma = makePrisma({ policy: null }); // no policy found
+    const ingester = new EgressLogIngester(prisma);
+    await ingester.start();
+
+    pushLine(makeFwDropLine({ stackId: 'unknown-stack' }));
 
     await vi.advanceTimersByTimeAsync(1500);
 

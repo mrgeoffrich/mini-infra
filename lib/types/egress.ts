@@ -29,6 +29,26 @@ export type EgressDefaultAction = 'allow' | 'block';
 export type EgressRuleAction = 'allow' | 'block';
 export type EgressRuleSource = 'user' | 'observed' | 'template';
 export type EgressEventAction = 'allowed' | 'blocked' | 'observed';
+/**
+ * Protocol values for EgressEvent rows.
+ *
+ * v1 TS sidecar (legacy):
+ *   - `'dns'`   — DNS query events
+ *   - `'sni'`   — TLS SNI-based events (observed hostname from ClientHello)
+ *   - `'http'`  — HTTP forward-proxy events (v1 sidecar meaning)
+ *
+ * v3 Smokescreen gateway:
+ *   - `'connect'` — HTTPS CONNECT tunnel (CONNECT method)
+ *   - `'http'`    — HTTP forward proxy (non-CONNECT)
+ *
+ * v3 fw-agent (firewall drop events):
+ *   - `'tcp'`   — TCP packet dropped by the host firewall
+ *   - `'udp'`   — UDP packet dropped by the host firewall
+ *   - `'icmp'`  — ICMP packet dropped by the host firewall
+ *
+ * Note: `'http'` is overloaded — v1 sidecar used it for SNI-style detection;
+ * v3 gateway uses it for explicit HTTP forward proxy. Context disambiguates.
+ */
 export type EgressEventProtocol = 'dns' | 'sni' | 'http' | 'connect' | 'tcp' | 'udp' | 'icmp';
 export type EgressArchivedReason = 'stack-deleted' | 'environment-deleted';
 

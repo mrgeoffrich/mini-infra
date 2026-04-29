@@ -60,7 +60,6 @@ const RECONNECT_MAX_DELAY_MS = 60_000;
 /** Rate-limit "no policy for stack" warnings to at most once per minute per stackId */
 const WARN_COOL_DOWN_MS = 60_000;
 
-const FW_AGENT_LABEL = 'mini-infra.egress.fw-agent=true';
 
 // ---------------------------------------------------------------------------
 // Parsed log-line shapes
@@ -164,11 +163,12 @@ function makeDedupKey(
 function makeFwDropDedupKey(
   policyId: string,
   serviceName: string | undefined,
+  srcIp: string,
   destIp: string,
   destPort: number | undefined,
   protocol: string,
 ): DedupKey {
-  return `${policyId}:${serviceName ?? ''}:${destIp}:${destPort ?? ''}:${protocol}`;
+  return `${policyId}:${serviceName ?? ''}:${srcIp}:${destIp}:${destPort ?? ''}:${protocol}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +219,11 @@ abstract class BaseTailer {
   protected batchTimer: NodeJS.Timeout | null = null;
   /** Rate-limiter for "no policy" warnings: stackId → last warn time */
   protected readonly warnCooldowns = new Map<string, number>();
-  /** Cache of policy context (snapshot fields + environmentId) by policyId */
+  /**
+   * Cache of policy context (snapshot fields + environmentId) keyed by stackId.
+   * Keyed by stackId so that _lookupPolicy can hit the cache before knowing policyId.
+   * Stack count is bounded by realistic deployment size — no eviction needed for v1.
+   */
   protected readonly policyContextCache = new Map<string, PolicyContext>();
 
   constructor(protected readonly prisma: PrismaClient) {}
@@ -336,13 +340,9 @@ abstract class BaseTailer {
   // -------------------------------------------------------------------------
 
   protected async _lookupPolicy(stackId: string): Promise<PolicyContext | null> {
-    // Check cache first
-    for (const ctx of this.policyContextCache.values()) {
-      if (ctx.id) {
-        // Cache is keyed by policyId, not stackId — do a full lookup
-        break;
-      }
-    }
+    // Cache is keyed by stackId — O(1) lookup with no fallthrough to DB on hit
+    const cached = this.policyContextCache.get(stackId);
+    if (cached) return cached;
 
     try {
       const policy = await this.prisma.egressPolicy.findFirst({
@@ -356,14 +356,14 @@ abstract class BaseTailer {
       });
       if (!policy) return null;
 
-      const cached: PolicyContext = {
+      const ctx: PolicyContext = {
         id: policy.id,
         stackNameSnapshot: policy.stackNameSnapshot,
         environmentNameSnapshot: policy.environmentNameSnapshot,
         environmentId: policy.environmentId,
       };
-      this.policyContextCache.set(policy.id, cached);
-      return cached;
+      this.policyContextCache.set(stackId, ctx);
+      return ctx;
     } catch (err) {
       log.warn({ err, stackId }, 'EgressPolicy lookup failed — dropping event');
       return null;
@@ -405,8 +405,9 @@ abstract class BaseTailer {
     }
 
     if (bucket && now - bucket.windowStart >= DEDUP_WINDOW_MS) {
-      // Window expired — we could write a roll-up; for v1 simplicity we just clear
-      log.debug({ key, hits: bucket.hits }, 'Dedup window expired — bucket cleared');
+      // Window expired — we could write a roll-up; for v1 simplicity we just clear.
+      // Log safe fields only — the raw key may contain HTTP paths with sensitive data.
+      log.debug({ hits: bucket.hits }, 'Dedup window expired — bucket cleared');
     }
 
     // Start new window
@@ -542,11 +543,12 @@ abstract class BaseTailer {
     const key = makeFwDropDedupKey(
       policyContext.id,
       line.serviceName,
+      line.srcIp,
       line.destIp,
       line.destPort,
       line.protocol,
     );
-    this._checkDedup(key, line.mergedHits, () => ({
+    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
       policyId: policyContext.id,
       occurredAt: line.ts ? new Date(line.ts) : new Date(),
       sourceStackId: line.stackId,
@@ -562,6 +564,7 @@ abstract class BaseTailer {
       environmentNameSnapshot: policyContext.environmentNameSnapshot,
       environmentId: policyContext.environmentId,
     }));
+    if (suppressed) return;
     // fw_drop has no matchedPattern — no rule hit bump
   }
 
@@ -588,9 +591,10 @@ abstract class BaseTailer {
     const now = Date.now();
     for (const [key, bucket] of this.dedupBuckets.entries()) {
       if (now - bucket.windowStart >= DEDUP_WINDOW_MS) {
+        // Log safe fields only — the raw key may contain HTTP paths with sensitive data.
         log.debug(
-          { key, hits: bucket.hits },
-          'Dedup window expired — bucket cleared',
+          { hits: bucket.hits },
+          'Dedup window expired — bucket cleared (timer roll)',
         );
         this.dedupBuckets.delete(key);
       }
@@ -797,22 +801,23 @@ class FwAgentTailer extends BaseTailer {
     }
 
     try {
-      const docker = await dockerService.getDockerInstance();
+      // Use DockerService.listContainers() wrapper (adds caching, redaction, timeout).
+      // The wrapper fetches all running containers; we filter by label client-side.
+      // This is safe — the host singleton is one container so no perf concern.
+      const allContainers = await dockerService.listContainers(false);
+      const matchInfo = allContainers.find(
+        (c) => c.labels['mini-infra.egress.fw-agent'] === 'true',
+      );
 
-      const containers = await docker.listContainers({
-        all: false,
-        filters: JSON.stringify({ label: [FW_AGENT_LABEL] }),
-      });
-
-      if (containers.length === 0) {
+      if (!matchInfo) {
         // fw-agent container doesn't exist yet (Phase 2 hasn't shipped) — retry quietly
         log.debug('Fw-agent container not found — will retry (Phase 2 not yet deployed)');
         this._scheduleReconnect('fw-agent');
         return;
       }
 
-      const match = containers[0];
-      const dockerContainer = docker.getContainer(match.Id);
+      const docker = await dockerService.getDockerInstance();
+      const dockerContainer = docker.getContainer(matchInfo.id);
       const rawStream = (await dockerContainer.logs({
         follow: true as const,
         stdout: true,
@@ -821,7 +826,7 @@ class FwAgentTailer extends BaseTailer {
       })) as unknown as Readable;
 
       this._attachStream(rawStream, 'fw-agent');
-      log.info({ containerId: match.Id }, 'Tailing fw-agent container logs');
+      log.info({ containerId: matchInfo.id }, 'Tailing fw-agent container logs');
     } catch (err) {
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },
