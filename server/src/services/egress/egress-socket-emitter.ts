@@ -46,12 +46,22 @@ export interface EgressEventRowWithSnapshots {
   destination: string;
   matchedPattern: string | null;
   action: string; // 'allowed' | 'blocked' | 'observed'
-  protocol: string; // 'dns' | 'sni' | 'http'
+  protocol: string; // 'dns' | 'sni' | 'http' | 'connect' | 'tcp' | 'udp' | 'icmp'
   mergedHits: number;
   /** Denormalized from the parent EgressPolicy — caller provides these */
   stackNameSnapshot: string;
   environmentNameSnapshot: string;
   environmentId: string | null;
+  // v3 egress gateway fields — null for dns.query events
+  target: string | null;
+  method: string | null;
+  path: string | null;
+  status: number | null;
+  bytesUp: number | null;    // already converted from BigInt by the ingester
+  bytesDown: number | null;  // already converted from BigInt by the ingester
+  destIp: string | null;
+  destPort: number | null;
+  reason: string | null;
 }
 
 /** The EgressPolicy row as returned by Prisma */
@@ -103,6 +113,15 @@ export function emitEgressEvent(row: EgressEventRowWithSnapshots): void {
       stackNameSnapshot: row.stackNameSnapshot,
       environmentNameSnapshot: row.environmentNameSnapshot,
       environmentId: row.environmentId,
+      target: row.target,
+      method: row.method,
+      path: row.path,
+      status: row.status,
+      bytesUp: row.bytesUp,
+      bytesDown: row.bytesDown,
+      destIp: row.destIp,
+      destPort: row.destPort,
+      reason: row.reason,
     };
 
     emitToChannel(Channel.EGRESS, ServerEvent.EGRESS_EVENT, payload);

@@ -180,8 +180,13 @@ export class StackInfraResourceManager {
       const netName = infraNetworkMap.get(purpose);
       if (!netName) continue;
       try {
-        await this.containerManager.connectToNetwork(containerId, netName);
-        log.info({ service: serviceDef.serviceName, network: netName, purpose }, 'Joined infra resource network');
+        // For egressBypass services joining the applications resource network,
+        // add the service name as a DNS alias so managed containers can resolve
+        // `egress-gateway:3128` regardless of which IP the container gets on recreate.
+        const aliases =
+          serviceDef.containerConfig.egressBypass === true ? [serviceDef.serviceName] : undefined;
+        await this.containerManager.connectToNetwork(containerId, netName, aliases);
+        log.info({ service: serviceDef.serviceName, network: netName, purpose, aliases }, 'Joined infra resource network');
       } catch (err) {
         // Ignore "already connected" errors
         const e = err as { message?: string; statusCode?: number };

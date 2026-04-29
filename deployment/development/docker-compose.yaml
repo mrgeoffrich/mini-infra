@@ -14,6 +14,7 @@ services:
       dockerfile: Dockerfile
       args:
         AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG:-localhost:5051/mini-infra-agent-sidecar:latest}
+        EGRESS_GATEWAY_IMAGE_TAG: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway}
     container_name: mini-infra-dev
     user: root
     restart: unless-stopped
@@ -29,6 +30,8 @@ services:
       - mini-infra-dev-data:/app/data
       # Log files
       - mini-infra-dev-logs:/app/server/logs
+      # Shared socket dir for fw-agent communication
+      - /var/run/mini-infra:/var/run/mini-infra
     environment:
       # PUBLIC_URL is now a database setting configured via Settings UI
       - LOG_LEVEL=debug
@@ -49,6 +52,28 @@ services:
       timeout: 3s
       start_period: 40s
       retries: 3
+
+  egress-fw-agent:
+    # EGRESS_GATEWAY_IMAGE_TAG is set without a `:tag` suffix (the egress-gateway
+    # stack template appends its own tag), so this compose service appends `:latest`
+    # explicitly. The default fallback already includes a tag for local-only runs.
+    image: ${EGRESS_GATEWAY_IMAGE_TAG:-mini-infra/egress-gateway}:latest
+    container_name: mini-infra-dev-egress-fw-agent
+    entrypoint: ["/usr/local/bin/egress-fw-agent"]
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    volumes:
+      # Shared socket dir for admin API
+      - /var/run/mini-infra:/var/run/mini-infra
+      # Kernel module access (read-only)
+      - /lib/modules:/lib/modules:ro
+    environment:
+      - LOG_LEVEL=debug
+    labels:
+      mini-infra.egress.fw-agent: "true"
 
 volumes:
   mini-infra-dev-data:

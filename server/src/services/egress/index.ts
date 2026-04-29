@@ -33,6 +33,7 @@ import { EgressContainerMapPusher } from './egress-container-map-pusher';
 import { EgressLogIngester } from './egress-log-ingester';
 import { EgressEventPruner } from './egress-event-pruner';
 import { EgressRulePusher } from './egress-rule-pusher';
+import { EnvFirewallManager } from './env-firewall-manager';
 import { getLogger } from '../../lib/logger-factory';
 
 const log = getLogger('stacks', 'egress-services');
@@ -42,6 +43,7 @@ export { EgressLogIngester } from './egress-log-ingester';
 export { EgressEventPruner } from './egress-event-pruner';
 export { EgressGatewayClient, EgressGatewayError } from './egress-gateway-client';
 export { EgressRulePusher } from './egress-rule-pusher';
+export { EnvFirewallManager } from './env-firewall-manager';
 
 export type ShutdownFn = () => void;
 
@@ -51,6 +53,15 @@ export type ShutdownFn = () => void;
 // ---------------------------------------------------------------------------
 
 let _rulePusher: EgressRulePusher | null = null;
+let _firewallManager: EnvFirewallManager | null = null;
+
+/**
+ * Return the singleton EnvFirewallManager.
+ * Returns null if not yet started (e.g. in environments without the agent).
+ */
+export function getEnvFirewallManager(): EnvFirewallManager | null {
+  return _firewallManager;
+}
 
 /**
  * Return the singleton EgressRulePusher.
@@ -94,6 +105,21 @@ export async function startEgressBackgroundServices(
   const pruner = new EgressEventPruner(prisma);
   pruner.start();
 
+  // EnvFirewallManager — drives fw-agent over Unix socket (Phase 2)
+  // Non-fatal: agent may not be deployed yet (Phase 2 optional).
+  let firewallManager: EnvFirewallManager | null = null;
+  try {
+    firewallManager = new EnvFirewallManager(prisma);
+    await firewallManager.start();
+    _firewallManager = firewallManager;
+    log.info('EnvFirewallManager started');
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'EnvFirewallManager failed to start (non-fatal — fw-agent may not be deployed)',
+    );
+  }
+
   log.info('Egress background services started');
 
   return () => {
@@ -102,6 +128,10 @@ export async function startEgressBackgroundServices(
     rulePusher.stop();
     ingester.stop();
     pruner.stop();
+    if (firewallManager) {
+      firewallManager.stop();
+      _firewallManager = null;
+    }
     log.info('Egress background services shut down');
   };
 }

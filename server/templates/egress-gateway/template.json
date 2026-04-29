@@ -1,17 +1,11 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 2,
+  "builtinVersion": 7,
   "scope": "environment",
   "category": "infrastructure",
-  "description": "DNS-based egress firewall gateway for environment traffic control",
+  "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control",
   "parameters": [
-    {
-      "name": "upstream-dns",
-      "type": "string",
-      "default": "1.1.1.1,8.8.8.8",
-      "description": "Comma-separated upstream DNS resolvers"
-    },
     {
       "name": "log-level",
       "type": "string",
@@ -28,19 +22,17 @@
     {
       "serviceName": "egress-gateway",
       "serviceType": "Stateful",
-      "dockerImage": "${EGRESS_SIDECAR_IMAGE_TAG}",
+      "dockerImage": "${EGRESS_GATEWAY_IMAGE_TAG}",
       "dockerTag": "latest",
       "containerConfig": {
         "egressBypass": true,
         "env": {
           "LOG_LEVEL": "{{params.log-level}}",
-          "UPSTREAM_DNS": "{{params.upstream-dns}}",
-          "DNS_PORT": "53",
+          "PROXY_PORT": "3128",
           "ADMIN_PORT": "8054"
         },
         "ports": [
-          { "containerPort": 53, "hostPort": 0, "protocol": "udp", "exposeOnHost": false },
-          { "containerPort": 53, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false },
+          { "containerPort": 3128, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false },
           { "containerPort": 8054, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false }
         ],
         "restartPolicy": "unless-stopped",
