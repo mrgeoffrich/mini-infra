@@ -1,0 +1,84 @@
+services:
+  # Generates a self-signed CA + multi-SAN server cert into the `certs`
+  # volume on first run, then exits. tls-front + test-client both wait for
+  # this to complete before starting.
+  cert-init:
+    image: alpine:3.20
+    command: /scripts/gen-certs.sh
+    volumes:
+      - certs:/certs
+      - ./tls-front/gen-certs.sh:/scripts/gen-certs.sh:ro
+
+  # Echoes any HTTP request as JSON (offline phase 1 upstream).
+  mock-upstream:
+    build: ./mock-upstream
+    networks: [proxy-net]
+
+  # The auth-proxy. Lives only on proxy-net so its outbound DNS resolution
+  # for api.anthropic.com / api.github.com / *.googleapis.com goes to the
+  # real internet, NOT to tls-front (otherwise: infinite loop).
+  auth-proxy:
+    build: .
+    environment:
+      ANTHROPIC_API_KEY:    ${ANTHROPIC_API_KEY:-fake-anthropic-key}
+      GITHUB_PAT:           ${GITHUB_PAT:-fake-github-pat}
+      ANTHROPIC_UPSTREAM:   ${ANTHROPIC_UPSTREAM:-http://mock-upstream:8081}
+      GITHUB_UPSTREAM:      ${GITHUB_UPSTREAM:-http://mock-upstream:8081}
+      GOOGLE_CLIENT_ID:     ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+      GOOGLE_UPSTREAM:      ${GOOGLE_UPSTREAM:-https://www.googleapis.com}
+      GOOGLE_TOKEN_URL:     ${GOOGLE_TOKEN_URL:-https://oauth2.googleapis.com/token}
+    depends_on: [mock-upstream]
+    ports:
+      - "8080:8080"
+    networks: [proxy-net]
+
+  # TLS-terminating sidecar. Holds the self-signed cert and forwards plain
+  # HTTP to auth-proxy. Lives on BOTH networks: client-net (where its DNS
+  # aliases impersonate the upstream hostnames) and proxy-net (where it
+  # talks to auth-proxy by container name).
+  tls-front:
+    image: caddy:2-alpine
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      auth-proxy:
+        condition: service_started
+    volumes:
+      - certs:/certs:ro
+      - ./tls-front/Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      proxy-net:
+      client-net:
+        aliases:
+          - api.anthropic.com
+          - api.github.com
+          - www.googleapis.com
+          - drive.googleapis.com
+          - admin.googleapis.com
+          - gmail.googleapis.com
+          - people.googleapis.com
+
+  # The test client. Dual-homed: on proxy-net for direct curl-to-auth-proxy
+  # (used by the offline phase), on client-net so the upstream hostnames
+  # resolve to tls-front (used by the live phase).
+  test-client:
+    build: ./client
+    environment:
+      PROXY_URL: http://auth-proxy:8080
+    depends_on:
+      cert-init:
+        condition: service_completed_successfully
+      auth-proxy:
+        condition: service_started
+    volumes:
+      - certs:/certs:ro
+    networks: [proxy-net, client-net]
+
+networks:
+  proxy-net:
+  client-net:
+
+volumes:
+  certs:

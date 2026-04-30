@@ -1,0 +1,52 @@
+# auth-proxy config — copy to /etc/auth-proxy/config.yaml (or point
+# AUTH_PROXY_CONFIG / --config at it) and supply the referenced env vars.
+#
+# Hard rules:
+#   - Every ${VAR} reference must be set in the environment, or startup fails.
+#   - Tenant names must match [a-z0-9][a-z0-9-]* (DNS-label-ish).
+#   - Two provider types are supported: static_header, oauth2_refresh.
+
+listen: ":8080"
+
+providers:
+
+  # ---- static_header providers (Anthropic, GitHub PATs) -------------------
+
+  anthropic:
+    type: static_header
+    upstream: https://api.anthropic.com
+    tenants:
+      team-foo:
+        headers:
+          x-api-key: ${ANTHROPIC_KEY_TEAM_FOO}
+      team-bar:
+        headers:
+          x-api-key: ${ANTHROPIC_KEY_TEAM_BAR}
+
+  github:
+    type: static_header
+    upstream: https://api.github.com
+    tenants:
+      org-acme:
+        headers:
+          Authorization: "Bearer ${GITHUB_PAT_ORG_ACME}"
+      personal:
+        headers:
+          Authorization: "Bearer ${GITHUB_PAT_PERSONAL}"
+
+  # ---- oauth2_refresh provider (Google Workspace) -------------------------
+  #
+  # The proxy mints access tokens on demand from the long-lived refresh token
+  # and caches them in memory. Single-flight refresh prevents thundering-herd
+  # token calls when many requests arrive at once.
+
+  gws:
+    type: oauth2_refresh
+    upstream: https://www.googleapis.com
+    oauth:
+      token_url: https://oauth2.googleapis.com/token
+    tenants:
+      default:
+        client_id:     ${GWS_CLIENT_ID}
+        client_secret: ${GWS_CLIENT_SECRET}
+        refresh_token: ${GWS_REFRESH_TOKEN}
