@@ -7,6 +7,18 @@ import { emitEgressPolicyUpdated, emitEgressRuleMutation } from './egress-socket
 const log = getLogger('stacks', 'egress-policy-lifecycle');
 
 /**
+ * Built-in templates whose stacks are firewall infrastructure themselves
+ * (haproxy is the in-environment router; egress-gateway IS the firewall).
+ * Egress policies for these stacks are nonsensical — circular for
+ * egress-gateway and breaks east-west routing for haproxy — so we never
+ * create them and archive any that already exist.
+ */
+const EGRESS_EXCLUDED_TEMPLATE_NAMES: ReadonlySet<string> = new Set([
+  'haproxy',
+  'egress-gateway',
+]);
+
+/**
  * Manages the lifecycle of EgressPolicy rows in lockstep with Stack and
  * Environment lifecycle events.
  *
@@ -33,7 +45,7 @@ export class EgressPolicyLifecycleService {
     try {
       const stack = await this.prisma.stack.findUnique({
         where: { id: stackId },
-        include: { environment: true },
+        include: { environment: true, template: { select: { name: true } } },
       });
 
       if (!stack) {
@@ -44,6 +56,18 @@ export class EgressPolicyLifecycleService {
       // Host-scoped stacks are not firewalled in v1
       if (!stack.environmentId || !stack.environment) {
         log.debug({ stackId }, 'ensureDefaultPolicy: host-scoped stack, skipping');
+        return;
+      }
+
+      // Skip firewall infrastructure stacks (haproxy, egress-gateway). Archive
+      // any policy that may already exist from a previous deployment so it
+      // disappears from the egress UI.
+      if (stack.template?.name && EGRESS_EXCLUDED_TEMPLATE_NAMES.has(stack.template.name)) {
+        await this.archiveExcludedPolicyForStack(stackId, userId);
+        log.debug(
+          { stackId, templateName: stack.template.name },
+          'ensureDefaultPolicy: skipping excluded infrastructure stack',
+        );
         return;
       }
 
@@ -96,6 +120,76 @@ export class EgressPolicyLifecycleService {
       log.error(
         { err, stackId },
         'ensureDefaultPolicy: failed to ensure default egress policy — continuing without it',
+      );
+    }
+  }
+
+  /**
+   * Archive any non-archived policy for an infrastructure stack that should
+   * never be firewalled (haproxy, egress-gateway). Caller is responsible for
+   * deciding the stack qualifies — this just performs the write.
+   */
+  private async archiveExcludedPolicyForStack(
+    stackId: string,
+    userId: string | null,
+  ): Promise<void> {
+    const archivedAt = new Date();
+    const result = await this.prisma.egressPolicy.updateMany({
+      where: { stackId, archivedAt: null },
+      data: {
+        archivedAt,
+        archivedReason: 'system-infrastructure-stack' satisfies EgressArchivedReason,
+        updatedBy: userId,
+      },
+    });
+
+    if (result.count > 0) {
+      const policies = await this.prisma.egressPolicy.findMany({
+        where: {
+          stackId,
+          archivedReason: 'system-infrastructure-stack' satisfies EgressArchivedReason,
+          archivedAt,
+        },
+      });
+      for (const policy of policies) {
+        emitEgressPolicyUpdated(policy);
+      }
+      log.info(
+        { stackId, archivedCount: result.count },
+        'archiveExcludedPolicyForStack: archived policy on excluded infrastructure stack',
+      );
+    }
+  }
+
+  /**
+   * One-shot startup cleanup. Finds policies whose stack is one of the
+   * firewall-excluded built-in templates (haproxy, egress-gateway) and
+   * archives them so older deployments stop showing them on the egress page.
+   * Idempotent.
+   */
+  async archiveExcludedStackPolicies(): Promise<void> {
+    try {
+      const policies = await this.prisma.egressPolicy.findMany({
+        where: {
+          archivedAt: null,
+          stack: {
+            template: { name: { in: Array.from(EGRESS_EXCLUDED_TEMPLATE_NAMES) } },
+          },
+        },
+        select: { stackId: true },
+      });
+
+      const stackIds = Array.from(
+        new Set(policies.map((p) => p.stackId).filter((id): id is string => id !== null)),
+      );
+
+      for (const stackId of stackIds) {
+        await this.archiveExcludedPolicyForStack(stackId, null);
+      }
+    } catch (err) {
+      log.error(
+        { err },
+        'archiveExcludedStackPolicies: failed to clean up excluded-stack policies — continuing',
       );
     }
   }

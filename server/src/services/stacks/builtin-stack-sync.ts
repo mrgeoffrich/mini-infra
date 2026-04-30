@@ -79,6 +79,11 @@ export async function syncBuiltinStacks(
   // 3. Run one-time backfill migrations (e.g. EnvironmentNetwork → InfraResource).
   await runSystemStackMigrations(prisma);
 
+  // 4. Archive any egress policies that were created for firewall infra stacks
+  // (haproxy, egress-gateway) by older versions of the policy lifecycle. Newer
+  // deployments skip these at create-time; this catches existing rows.
+  await new EgressPolicyLifecycleService(prisma).archiveExcludedStackPolicies();
+
   log.info("Built-in stack sync complete");
 
   return templateByName;

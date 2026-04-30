@@ -195,6 +195,42 @@ describe('EgressPolicyLifecycleService.ensureDefaultPolicy', () => {
       service.ensureDefaultPolicy('stack-1', 'user-1'),
     ).resolves.toBeUndefined();
   });
+
+  it.each(['haproxy', 'egress-gateway'])(
+    'skips policy creation for excluded infrastructure template %s',
+    async (templateName) => {
+      prisma.stack.findUnique.mockResolvedValue(
+        makeStack({ template: { name: templateName } }),
+      );
+      prisma.egressPolicy.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.ensureDefaultPolicy('stack-1', 'user-1');
+
+      expect(prisma.egressPolicy.create).not.toHaveBeenCalled();
+      expect(prisma.egressPolicy.findFirst).not.toHaveBeenCalled();
+    },
+  );
+
+  it('archives an existing policy on an excluded infrastructure stack', async () => {
+    prisma.stack.findUnique.mockResolvedValue(
+      makeStack({ template: { name: 'haproxy' } }),
+    );
+    prisma.egressPolicy.updateMany.mockResolvedValue({ count: 1 });
+    prisma.egressPolicy.findMany.mockResolvedValue([
+      makePolicy({ archivedAt: new Date(), archivedReason: 'system-infrastructure-stack' }),
+    ]);
+
+    await service.ensureDefaultPolicy('stack-1', 'user-1');
+
+    expect(prisma.egressPolicy.updateMany).toHaveBeenCalledWith({
+      where: { stackId: 'stack-1', archivedAt: null },
+      data: expect.objectContaining({
+        archivedReason: 'system-infrastructure-stack',
+        updatedBy: 'user-1',
+      }),
+    });
+    expect(prisma.egressPolicy.create).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
