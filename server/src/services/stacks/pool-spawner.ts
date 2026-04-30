@@ -246,9 +246,15 @@ export async function spawnPoolInstance(
       }
     : undefined;
 
+  // Create the container BEFORE starting it so we can attach all required
+  // networks (joinNetworks + joinResourceNetworks) up front. Starting first
+  // races the container's bootstrap (e.g. vault unwrap) against late-attached
+  // networks like `mini-infra-vault` — see createContainer/startContainer in
+  // StackContainerManager for the same pattern on the static service path.
   let containerId: string;
+  let createdContainer: Awaited<ReturnType<typeof dockerExecutor.createLongRunningContainer>>;
   try {
-    const container = await dockerExecutor.createLongRunningContainer({
+    createdContainer = await dockerExecutor.createLongRunningContainer({
       image: `${dockerImage}:${dockerTag}`,
       name: containerName,
       projectName,
@@ -267,12 +273,11 @@ export async function spawnPoolInstance(
       logConfig,
       labels,
     });
-    await container.start();
-    containerId = container.id;
+    containerId = createdContainer.id;
   } catch (err) {
     return {
       success: false,
-      error: `Container create/start failed: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Container create failed: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
 
@@ -356,6 +361,18 @@ export async function spawnPoolInstance(
         }
       }
     }
+  }
+
+  // All required networks are attached — start the container now so its
+  // bootstrap code sees them on first instruction.
+  try {
+    await createdContainer.start();
+  } catch (err) {
+    return {
+      success: false,
+      containerId,
+      error: `Container start failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 
   // Poll for running state (up to 30s).
