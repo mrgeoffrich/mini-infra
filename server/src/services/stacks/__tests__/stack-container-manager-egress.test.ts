@@ -121,7 +121,7 @@ describe('StackContainerManager — egress env injection', () => {
 
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
     expect(callArgs.env['HTTP_PROXY']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['NO_PROXY']).toBe('localhost,127.0.0.0/8');
+    expect(callArgs.env['NO_PROXY']).toBe('localhost,127.0.0.1,::1,127.0.0.0/8');
   });
 
   it('skips injection when service has egressBypass=true (gateway service itself)', async () => {

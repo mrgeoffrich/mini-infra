@@ -91,11 +91,19 @@ async function upgradeExistingStacksForTemplates(
 ): Promise<void> {
   const builtinStacks = await prisma.stack.findMany({
     where: { builtinVersion: { not: null } },
-    select: { id: true, name: true, environmentId: true },
+    select: { id: true, name: true, environmentId: true, templateId: true },
   });
 
+  // Index templates by id for stack lookup. Built-in stacks reference their
+  // source template via templateId — name-based matching breaks for any
+  // user-named instance (e.g. stack "haproxy-local" from template "haproxy").
+  const templateById = new Map<string, { id: string; template: LoadedTemplate }>();
+  for (const entry of templateByName.values()) {
+    templateById.set(entry.id, entry);
+  }
+
   for (const s of builtinStacks) {
-    const entry = templateByName.get(s.name);
+    const entry = s.templateId ? templateById.get(s.templateId) : undefined;
     if (!entry) continue;
 
     let networkType = "local";

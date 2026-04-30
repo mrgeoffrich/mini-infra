@@ -1,7 +1,7 @@
 {
   "name": "haproxy",
   "displayName": "HAProxy Load Balancer",
-  "builtinVersion": 9,
+  "builtinVersion": 10,
   "scope": "environment",
   "category": "infrastructure",
   "description": "HAProxy load balancer with DataPlane API",
@@ -59,7 +59,7 @@
         ],
         "restartPolicy": "unless-stopped",
         "healthcheck": {
-          "test": ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://admin:admin@127.0.0.1:8404/stats"],
+          "test": ["CMD-SHELL", "unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; wget --no-verbose --tries=1 --spider http://admin:admin@127.0.0.1:8404/stats"],
           "interval": 30,
           "timeout": 5,
           "retries": 3,

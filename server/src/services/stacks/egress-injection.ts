@@ -74,7 +74,13 @@ async function resolveEgressContext(
 const PROXY_URL = 'http://egress-gateway:3128';
 
 function buildProxyEnv(subnet: string | undefined): Record<string, string> {
-  const noProxy = ['localhost', '127.0.0.0/8', ...(subnet ? [subnet] : [])].join(',');
+  // BusyBox wget (used by alpine healthchecks) doesn't grok CIDR — it only
+  // matches literal hostnames/IPs. Include explicit loopback literals so
+  // localhost healthchecks bypass the proxy on minimal HTTP clients, and
+  // keep the CIDR for libcurl/curl-style tools that do support it.
+  const noProxy = ['localhost', '127.0.0.1', '::1', '127.0.0.0/8', ...(subnet ? [subnet] : [])].join(
+    ',',
+  );
   return {
     HTTP_PROXY: PROXY_URL,
     HTTPS_PROXY: PROXY_URL,
