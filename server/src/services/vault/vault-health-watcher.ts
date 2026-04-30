@@ -1,6 +1,7 @@
 import { OperatorPassphraseService } from "../../lib/operator-passphrase-service";
 import { VaultAdminService, UNSEAL_STEP_NAMES } from "./vault-admin-service";
 import { VaultStateService } from "./vault-state-service";
+import { getNatsBootstrapService } from "../nats/nats-bootstrap-service";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { VaultStatus } from "@mini-infra/types";
@@ -176,6 +177,18 @@ export class VaultHealthWatcher {
         }
       });
       log.info("Auto-unseal succeeded");
+      // Vault is now usable — make sure NATS KV state is current. Requires
+      // an authenticated admin token; re-auth first since unseal alone does
+      // not refresh it. Non-fatal so a NATS hiccup never blocks Vault.
+      try {
+        await this.admin.authenticateAsAdmin();
+        await getNatsBootstrapService().bootstrap();
+      } catch (natsErr) {
+        log.warn(
+          { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },
+          "NATS bootstrap after auto-unseal failed (non-fatal)",
+        );
+      }
     } catch (err) {
       success = false;
       const msg = err instanceof Error ? err.message : String(err);

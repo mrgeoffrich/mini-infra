@@ -62,6 +62,7 @@ import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-upd
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 import { initVaultServices } from "./services/vault/vault-services";
 import { seedVaultPolicies } from "./services/vault/vault-seed";
+import { getNatsBootstrapService } from "./services/nats/nats-bootstrap-service";
 import {
   startEgressBackgroundServices,
   ensureFwAgent,
@@ -319,6 +320,17 @@ const initializeServices = async () => {
         if (vaultServices.passphrase.isUnlocked() && meta.bootstrappedAt) {
           try {
             await vaultServices.admin.authenticateAsAdmin();
+            // Idempotent — refreshes operator/account JWTs and the rendered
+            // nats.conf in Vault KV. Safe to skip if no vault-nats stack is
+            // installed; the conf will simply sit unread in the KV.
+            try {
+              await getNatsBootstrapService().bootstrap();
+            } catch (natsErr) {
+              logger.warn(
+                { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },
+                "NATS bootstrap at server boot failed (non-fatal)",
+              );
+            }
           } catch (err) {
             logger.warn(
               { err: err instanceof Error ? err.message : String(err) },

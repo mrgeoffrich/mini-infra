@@ -29,6 +29,13 @@ export const HAPROXY_STATS_PORT_MIN = 8400;
 export const HAPROXY_STATS_PORT_MAX = 8499;
 export const HAPROXY_DATAPLANE_PORT_MIN = 5500;
 export const HAPROXY_DATAPLANE_PORT_MAX = 5599;
+// NATS host ports are exposed by the vault-nats template. Keep these outside
+// the Vault 8200–8299 range and HAProxy ranges so optional host infrastructure
+// stacks can run in parallel worktrees without colliding.
+export const NATS_CLIENT_PORT_MIN = 4300;
+export const NATS_CLIENT_PORT_MAX = 4399;
+export const NATS_MONITOR_PORT_MIN = 8600;
+export const NATS_MONITOR_PORT_MAX = 8699;
 
 // Per-worktree egress pool slicing: each worktree gets a /22 carved out of
 // 172.30.0.0/16, keyed off the same slot the port allocator already uses.
@@ -61,6 +68,10 @@ export interface WorktreeEntry {
   haproxy_https_port: number;
   haproxy_stats_port: number;
   haproxy_dataplane_port: number;
+  // Per-worktree NATS host ports — surfaced in environment-details.xml for
+  // the vault-nats stack template's nats-host-port/nats-monitor-port params.
+  nats_client_port: number;
+  nats_monitor_port: number;
   admin_email?: string;
   admin_password?: string;
   api_key?: string;
@@ -116,6 +127,8 @@ export function upsertEntry(
     haproxy_https_port: partial.haproxy_https_port ?? existing?.haproxy_https_port ?? 0,
     haproxy_stats_port: partial.haproxy_stats_port ?? existing?.haproxy_stats_port ?? 0,
     haproxy_dataplane_port: partial.haproxy_dataplane_port ?? existing?.haproxy_dataplane_port ?? 0,
+    nats_client_port: partial.nats_client_port ?? existing?.nats_client_port ?? 0,
+    nats_monitor_port: partial.nats_monitor_port ?? existing?.nats_monitor_port ?? 0,
     admin_email: partial.admin_email ?? existing?.admin_email,
     admin_password: partial.admin_password ?? existing?.admin_password,
     api_key: partial.api_key ?? existing?.api_key,
@@ -154,6 +167,8 @@ export interface PortAllocation {
   haproxy_https_port: number;
   haproxy_stats_port: number;
   haproxy_dataplane_port: number;
+  nats_client_port: number;
+  nats_monitor_port: number;
   egress_pool_cidr: string;
 }
 
@@ -208,6 +223,20 @@ export function slotOf(e: WorktreeEntry): number | undefined {
   ) {
     return e.haproxy_http_port - HAPROXY_HTTP_PORT_MIN;
   }
+  if (
+    e.nats_client_port &&
+    e.nats_client_port >= NATS_CLIENT_PORT_MIN &&
+    e.nats_client_port <= NATS_CLIENT_PORT_MAX
+  ) {
+    return e.nats_client_port - NATS_CLIENT_PORT_MIN;
+  }
+  if (
+    e.nats_monitor_port &&
+    e.nats_monitor_port >= NATS_MONITOR_PORT_MIN &&
+    e.nats_monitor_port <= NATS_MONITOR_PORT_MAX
+  ) {
+    return e.nats_monitor_port - NATS_MONITOR_PORT_MIN;
+  }
   return undefined;
 }
 
@@ -246,6 +275,8 @@ export function allocatePorts(profile: string): PortAllocation {
     haproxy_https_port: HAPROXY_HTTPS_PORT_MIN + slot,
     haproxy_stats_port: HAPROXY_STATS_PORT_MIN + slot,
     haproxy_dataplane_port: HAPROXY_DATAPLANE_PORT_MIN + slot,
+    nats_client_port: NATS_CLIENT_PORT_MIN + slot,
+    nats_monitor_port: NATS_MONITOR_PORT_MIN + slot,
     egress_pool_cidr: egressPoolForSlot(slot),
   };
 }
@@ -285,6 +316,8 @@ export function migrateFromJsonIfNeeded(): void {
       haproxy_https_port: uiPort ? HAPROXY_HTTPS_PORT_MIN + slot : 0,
       haproxy_stats_port: uiPort ? HAPROXY_STATS_PORT_MIN + slot : 0,
       haproxy_dataplane_port: uiPort ? HAPROXY_DATAPLANE_PORT_MIN + slot : 0,
+      nats_client_port: uiPort ? NATS_CLIENT_PORT_MIN + slot : 0,
+      nats_monitor_port: uiPort ? NATS_MONITOR_PORT_MIN + slot : 0,
       seeded: false,
       updated_at: now,
     };

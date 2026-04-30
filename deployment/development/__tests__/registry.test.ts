@@ -16,6 +16,8 @@ import {
   HAPROXY_HTTPS_PORT_MIN,
   HAPROXY_STATS_PORT_MIN,
   HAPROXY_DATAPLANE_PORT_MIN,
+  NATS_CLIENT_PORT_MIN,
+  NATS_MONITOR_PORT_MIN,
 } from '../lib/registry.js';
 
 describe('egressPoolForSlot', () => {
@@ -79,6 +81,8 @@ describe('allocatePorts (egress_pool_cidr wiring)', () => {
   it('first profile lands in slot 0 with 172.30.0.0/22', () => {
     const alloc = allocatePorts('first');
     expect(alloc.ui_port).toBe(UI_PORT_MIN);
+    expect(alloc.nats_client_port).toBe(NATS_CLIENT_PORT_MIN);
+    expect(alloc.nats_monitor_port).toBe(NATS_MONITOR_PORT_MIN);
     expect(alloc.egress_pool_cidr).toBe('172.30.0.0/22');
   });
 
@@ -98,6 +102,8 @@ describe('allocatePorts (egress_pool_cidr wiring)', () => {
       haproxy_https_port: HAPROXY_HTTPS_PORT_MIN,
       haproxy_stats_port: HAPROXY_STATS_PORT_MIN,
       haproxy_dataplane_port: HAPROXY_DATAPLANE_PORT_MIN,
+      nats_client_port: NATS_CLIENT_PORT_MIN,
+      nats_monitor_port: NATS_MONITOR_PORT_MIN,
       seeded: false,
       updated_at: new Date().toISOString(),
     };
@@ -105,6 +111,8 @@ describe('allocatePorts (egress_pool_cidr wiring)', () => {
 
     const alloc = allocatePorts('second');
     expect(alloc.ui_port).toBe(UI_PORT_MIN + 1);
+    expect(alloc.nats_client_port).toBe(NATS_CLIENT_PORT_MIN + 1);
+    expect(alloc.nats_monitor_port).toBe(NATS_MONITOR_PORT_MIN + 1);
     expect(alloc.egress_pool_cidr).toBe('172.30.4.0/22');
   });
 
