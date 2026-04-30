@@ -411,29 +411,36 @@ router.delete(
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    if (stack.status !== 'undeployed' && stack.status !== 'pending') {
-      try {
-        const dockerExecutor = new DockerExecutorService();
-        await dockerExecutor.initialize();
-        const docker = dockerExecutor.getDockerClient();
-        const containers = await docker.listContainers({
-          filters: { label: [`mini-infra.stack-id=${stackId}`] },
-        });
+    // Always verify there are no labelled containers before tombstoning the
+    // DB row — the `status` field can lie. A partial /destroy (or any failure
+    // that flipped status to `undeployed` but left containers up) would
+    // otherwise let DELETE silently succeed and leave orphaned Docker
+    // resources running. Confirmed regression: customer repro showed two
+    // back-to-back DELETEs where the second returned 200 because status was
+    // `undeployed`, even though the containers from the first reject were
+    // still up.
+    try {
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+      const docker = dockerExecutor.getDockerClient();
+      const containers = await docker.listContainers({
+        all: true,
+        filters: { label: [`mini-infra.stack-id=${stackId}`] },
+      });
 
-        if (containers.length > 0) {
-          return res.status(400).json({
-            success: false,
-            message:
-              'Cannot delete stack with running containers. Remove containers first or set status to undeployed.',
-          });
-        }
-      } catch {
+      if (containers.length > 0) {
         return res.status(400).json({
           success: false,
           message:
-            'Cannot verify container state. Stack status must be "undeployed" to delete without Docker access.',
+            'Cannot delete stack while Docker still has containers labelled with this stack ID. Run /destroy to remove them first, or remove the containers manually.',
         });
       }
+    } catch {
+      return res.status(400).json({
+        success: false,
+        message:
+          'Cannot verify container state — Docker is unreachable. Restore Docker connectivity and retry, or remove the containers manually before deleting.',
+      });
     }
 
     const userId = getUserId(req);
