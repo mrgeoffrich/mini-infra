@@ -23,6 +23,14 @@ export class PolicyInUseError extends Error {
   }
 }
 
+/** Thrown when a caller tries to mutate a system-managed policy. */
+export class SystemPolicyError extends Error {
+  constructor(action: string) {
+    super(`Cannot ${action} a system-managed Vault policy`);
+    this.name = "SystemPolicyError";
+  }
+}
+
 export class VaultPolicyService {
   constructor(
     private readonly prisma: PrismaClient,
@@ -70,6 +78,10 @@ export class VaultPolicyService {
     input: UpdateVaultPolicyRequest,
     userId: string,
   ): Promise<VaultPolicyInfo> {
+    const existing = await this.prisma.vaultPolicy.findUnique({ where: { id } });
+    if (existing?.isSystem) {
+      throw new SystemPolicyError("edit");
+    }
     const row = await this.prisma.vaultPolicy.update({
       where: { id },
       data: {
@@ -92,6 +104,9 @@ export class VaultPolicyService {
     }
     const policy = await this.prisma.vaultPolicy.findUnique({ where: { id } });
     if (!policy) return;
+    if (policy.isSystem) {
+      throw new SystemPolicyError("delete");
+    }
 
     // Best-effort remove from Vault; continue on any failure. Use the
     // authenticated-client getter so we lazily re-login if the cached admin
