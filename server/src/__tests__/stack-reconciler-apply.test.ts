@@ -470,6 +470,64 @@ describe('StackReconciler.apply', () => {
         data: expect.objectContaining({ status: 'error' }),
       })
     );
+
+    // Regression for customer feedback #5: lastFailureReason must be populated
+    // on service apply failure so operators can diagnose at the API level
+    // without `docker ps` / `docker logs`. Previously stayed null.
+    const errorUpdate = mockStackUpdate.mock.calls.find(
+      (call) => call[0]?.data?.status === 'error',
+    );
+    expect(errorUpdate).toBeDefined();
+    expect(errorUpdate![0].data.lastFailureReason).toMatch(/prometheus.*Port conflict/);
+  });
+
+  it('catches a service that crashes immediately after start (no healthcheck)', async () => {
+    // The service has no healthcheck. Container is "running" at the inspect
+    // moment used by the conflict detector, but the very first poll inside
+    // observeStableRunning sees running=false → service fails. Before this
+    // landed, apply marked success because the inspect happened to catch the
+    // container in a momentarily-running state.
+    const stack = makeStackRow([{
+      serviceName: 'crashy',
+      configFiles: [],
+      initCommands: [],
+    }]);
+    mockFindUniqueOrThrow.mockResolvedValue(stack);
+    mockListContainers.mockResolvedValue([]);
+
+    // No healthcheck → triggers observeStableRunning path.
+    mockContainerInspect.mockResolvedValue({
+      Config: { Healthcheck: null },
+      State: { Status: 'exited', Health: null },
+    });
+
+    // captureContainerFailureInfo (called after waitForHealthy returns false)
+    // looks up the exit code so it can be surfaced into lastFailureReason.
+    mockGetContainerStatus.mockResolvedValue({ status: 'exited', running: false, exitCode: 1 });
+
+    // captureContainerLogs is consulted to enrich the error message.
+    const mockCaptureContainerLogs = vi.fn().mockResolvedValue({
+      stdout: '',
+      stderr: 'auth.test failed: invalid_auth\n',
+    });
+    mockDockerExecutor.captureContainerLogs = mockCaptureContainerLogs;
+
+    const result = await reconciler.apply('stack-1');
+
+    expect(result.success).toBe(false);
+    expect(result.serviceResults[0]).toMatchObject({
+      serviceName: 'crashy',
+      success: false,
+    });
+    expect(result.serviceResults[0].error).toContain('Container exited with code 1');
+    expect(result.serviceResults[0].error).toContain('auth.test failed: invalid_auth');
+
+    const errorUpdate = mockStackUpdate.mock.calls.find(
+      (call) => call[0]?.data?.status === 'error',
+    );
+    expect(errorUpdate).toBeDefined();
+    expect(errorUpdate![0].data.lastFailureReason).toContain('crashy');
+    expect(errorUpdate![0].data.lastFailureReason).toContain('exited with code 1');
   });
 
   it('runs init commands via alpine container with volume mount', async () => {
