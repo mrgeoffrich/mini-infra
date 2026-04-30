@@ -66,7 +66,7 @@ export interface WorktreeEntry {
   api_key?: string;
   description?: string;
   // Per-worktree egress pool slice (e.g. "172.30.12.0/22" for slot 3).
-  // Stored for visibility in worktree_list output and forensics — the source
+  // Stored for visibility in `worktree-env list` output and forensics — the source
   // of truth at runtime is the slot, not this field. Optional so legacy
   // entries written before this rolled out continue to load.
   egress_pool_cidr?: string;
@@ -168,7 +168,7 @@ export interface PortAllocation {
  * default pool with a console warning. This keeps the existing 100-slot
  * port ceiling working for slots 64–99 at the cost of reintroducing the
  * original cross-worktree /24 collision risk for that case only — clean up
- * old worktrees with worktree_cleanup if you see this warning.
+ * old worktrees with `pnpm worktree-env cleanup` if you see this warning.
  */
 export function egressPoolForSlot(slot: number): string {
   if (!Number.isInteger(slot) || slot < 0 || slot >= EGRESS_PER_WORKTREE_SLOT_COUNT) {
@@ -176,7 +176,7 @@ export function egressPoolForSlot(slot: number): string {
       `Worktree slot ${slot} exceeds per-worktree egress pool capacity ` +
         `(0–${EGRESS_PER_WORKTREE_SLOT_COUNT - 1}); falling back to shared ` +
         `${DEFAULT_EGRESS_POOL_CIDR}. Two concurrent worktrees in this state ` +
-        `can collide on /24s — clean up old worktrees with worktree_cleanup.`,
+        `can collide on /24s — clean up old worktrees with \`pnpm worktree-env cleanup\`.`,
     );
     return DEFAULT_EGRESS_POOL_CIDR;
   }

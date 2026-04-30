@@ -34,7 +34,7 @@ describe('egressPoolForSlot', () => {
     expect(egressPoolForSlot(EGRESS_PER_WORKTREE_SLOT_COUNT)).toBe(DEFAULT_EGRESS_POOL_CIDR);
     expect(warn).toHaveBeenCalledOnce();
     expect(warn.mock.calls[0][0]).toContain('exceeds per-worktree egress pool capacity');
-    expect(warn.mock.calls[0][0]).toContain('worktree_cleanup');
+    expect(warn.mock.calls[0][0]).toContain('worktree-env cleanup');
     warn.mockRestore();
   });
 

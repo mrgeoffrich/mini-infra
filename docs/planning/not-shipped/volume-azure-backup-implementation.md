@@ -423,7 +423,7 @@ Redact stdout/stderr in logs for `app-aware` runs (commands may contain credenti
 
 ### Manual / dev-loop
 
-After each backend change, `deployment/development/worktree_start.sh` then use the `test-dev` skill to drive the UI. Specifically exercise:
+After each backend change, `pnpm worktree-env start` then use the `test-dev` skill to drive the UI. Specifically exercise:
 
 1. Create a policy with each quiesce mode; verify validation messages.
 2. Trigger a manual backup; watch the task tracker stream all steps.

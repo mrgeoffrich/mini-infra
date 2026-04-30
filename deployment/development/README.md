@@ -6,15 +6,13 @@ The legacy single-instance flow (`start.sh`/`docker-compose.yaml`) has been remo
 
 ## Quick Start
 
-From the worktree root:
+From the worktree root (works on macOS, Linux, and Windows — same command everywhere):
 
 ```bash
-# macOS / Linux (auto-selects Colima)
-./deployment/development/worktree_start.sh --description "<short summary>"
-
-# Windows (auto-selects WSL2; first run also needs scripts/build-wsl-base.ps1)
-./deployment/development/worktree_start.ps1 -Description "<short summary>"
+pnpm worktree-env start --description "<short summary>"
 ```
+
+On macOS this auto-selects Colima; on Windows it auto-selects WSL2 (first run also needs `scripts/build-wsl-base.ps1`).
 
 `--description` is required on the first run; later re-runs reuse the stored description.
 
@@ -47,21 +45,30 @@ Both runtime sidecars are managed end-to-end by `mini-infra-server`: pull image,
 
 ## Common Commands
 
-All commands run from the worktree root.
+All commands run from the worktree root via the unified `worktree-env` CLI.
 
 ```bash
 # Bring up / rebuild
-./deployment/development/worktree_start.sh
+pnpm worktree-env start
 
 # List all worktree environments (URL, admin login, seed status)
-./deployment/development/worktree_list.sh
+pnpm worktree-env list
 
 # Tear down (containers + VM + registry entry)
-./deployment/development/worktree_delete.sh <profile>
+pnpm worktree-env delete <profile>
+
+# Sweep merged-PR worktrees (also runs hourly via launchd on macOS)
+pnpm worktree-env cleanup --dry-run
+
+# Install/uninstall the macOS launchd cleanup agent
+pnpm worktree-env install-cleanup-agent
+pnpm worktree-env install-cleanup-agent --remove
 
 # Resolve the dev URL from the generated environment manifest
 MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
 ```
+
+Run `pnpm worktree-env <command> --help` for command-specific options.
 
 ## When to use this vs `pnpm dev`
 
