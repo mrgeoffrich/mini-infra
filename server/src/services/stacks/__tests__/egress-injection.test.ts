@@ -41,8 +41,8 @@ describe('resolveEgressEnv', () => {
       HTTPS_PROXY: 'http://egress-gateway:3128',
       http_proxy: 'http://egress-gateway:3128',
       https_proxy: 'http://egress-gateway:3128',
-      NO_PROXY: 'localhost,127.0.0.0/8,172.30.16.0/24',
-      no_proxy: 'localhost,127.0.0.0/8,172.30.16.0/24',
+      NO_PROXY: 'localhost,127.0.0.1,::1,127.0.0.0/8,172.30.16.0/24',
+      no_proxy: 'localhost,127.0.0.1,::1,127.0.0.0/8,172.30.16.0/24',
     });
   });
 
@@ -52,7 +52,7 @@ describe('resolveEgressEnv', () => {
       { name: 'env1-egress', metadata: null },
     );
     const env = await resolveEgressEnv(prisma, 'env-1', false);
-    expect(env.NO_PROXY).toBe('localhost,127.0.0.0/8');
+    expect(env.NO_PROXY).toBe('localhost,127.0.0.1,::1,127.0.0.0/8');
   });
 
   it('returns empty when egressBypass is true (gateway service itself)', async () => {
