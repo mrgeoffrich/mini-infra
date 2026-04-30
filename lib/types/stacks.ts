@@ -361,6 +361,9 @@ export interface StackServiceDefinition {
   adoptedContainer?: AdoptedContainerRef;
   poolConfig?: PoolConfig;
   vaultAppRoleId?: string | null;
+  /** Symbolic reference to a vault.appRoles[].name in the owning template draft.
+   *  Resolved to a concrete vaultAppRoleId at apply time. */
+  vaultAppRoleRef?: string | null;
 }
 
 export interface StackDefinition {
