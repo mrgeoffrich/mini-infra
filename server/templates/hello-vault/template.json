@@ -1,7 +1,7 @@
 {
   "name": "hello-vault",
   "displayName": "Hello Vault (demo)",
-  "builtinVersion": 2,
+  "builtinVersion": 3,
   "scope": "environment",
   "category": "examples",
   "description": "End-to-end demo: unwraps a secret_id at boot, logs into Vault via AppRole, reads a KV secret, and echoes it. Bind a VaultAppRole in the Application settings before deploying.",
@@ -57,7 +57,7 @@
           "VAULT_ROLE_ID": { "kind": "vault-role-id" },
           "VAULT_WRAPPED_SECRET_ID": { "kind": "vault-wrapped-secret-id", "ttlSeconds": 300 }
         },
-        "restartPolicy": "unless-stopped",
+        "restartPolicy": "no",
         "joinResourceNetworks": ["vault"],
         "logConfig": {
           "type": "json-file",
