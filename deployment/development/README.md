@@ -70,6 +70,16 @@ MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environmen
 
 Run `pnpm worktree-env <command> --help` for command-specific options.
 
+### Logging
+
+The console shows status-only output: completed milestones, warnings, and errors. The full progress chatter (every step the seeder is about to take, every "already done" skip) is appended to `deployment/development/worktree-env.log` (capped at ~200 KB, trimmed in place). Tail it when you want detail:
+
+```bash
+tail -f deployment/development/worktree-env.log
+```
+
+Set `WORKTREE_ENV_VERBOSE=1` in front of any `pnpm worktree-env` invocation to mirror the verbose chatter to the console.
+
 ## When to use this vs `pnpm dev`
 
 | Scenario | Worktree flow | `pnpm dev` |
