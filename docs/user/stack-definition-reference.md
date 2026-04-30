@@ -2,7 +2,21 @@
 
 This reference is checked against the current stack types, validation schema, and apply-time behavior in Mini Infra.
 
-A stack definition is a YAML mapping with this shape:
+## What this document covers
+
+This document describes the **resolved stack definition** shape — the canonical model used by:
+
+- Built-in template files on disk (`templates/*/template.json`)
+- The `definition` field returned by `GET /api/stacks/:id`
+- Internal apply-time reconciliation
+
+It is **not** the HTTP template draft input shape. The `POST /api/stack-templates/:id/draft` endpoint accepts a different (looser) shape — most notably for `configFiles[]`, which is a top-level array on the draft body but is embedded under each service in the resolved definition. See [`services[].configFiles[]` — note about HTTP input shape](#servicesconfigfiles) below for the specific divergence.
+
+If you are programmatically posting drafts, the source of truth is the Zod schemas in `server/src/services/stacks/stack-template-schemas.ts` (HTTP) and `server/src/services/stacks/template-file-loader.ts` (file).
+
+## Definition shape
+
+A stack definition is a YAML/JSON mapping with this shape:
 
 ```yaml
 name: my-stack
@@ -246,6 +260,8 @@ Runtime meaning:
 
 Mini Infra writes these files into the target volume before the main service container starts.
 
+> **Heads-up — different shape on the HTTP template draft endpoint.** The fields below describe the *resolved* configFiles model, embedded inside each service. The HTTP template draft input takes `configFiles[]` as a **top-level** array (sibling of `services[]`), with `serviceName` referencing which service owns it and slightly different field names (`fileName`, `mountPath`, `owner`). See [Template draft HTTP input — `configFiles[]`](#template-draft-http-input--configfiles) below if you are posting drafts via the API.
+
 | Field | Required | Meaning | Constraints |
 | --- | --- | --- | --- |
 | `volumeName` | Yes | Stack volume to write into. | Non-empty string. |
@@ -254,6 +270,43 @@ Mini Infra writes these files into the target volume before the main service con
 | `permissions` | No | File mode. | 3 or 4 octal digits, for example `644` or `0644`. |
 | `ownerUid` | No | File owner UID. | Integer `>= 0`. |
 | `ownerGid` | No | File owner GID. | Integer `>= 0`. |
+
+## Template draft HTTP input — `configFiles[]`
+
+This section documents the alternate shape accepted by `POST /api/stack-templates/:id/draft` (and the equivalent `POST /api/stack-templates` create endpoint). It is the same logical concept — pre-start files written into a volume — but normalised into a top-level array so a single draft can describe files for multiple services without nesting.
+
+```jsonc
+{
+  "networks": [...],
+  "volumes":  [...],
+  "services": [
+    { "serviceName": "web", "serviceType": "Stateful", "...": "..." }
+  ],
+  "configFiles": [
+    {
+      "serviceName": "web",
+      "fileName": "nginx.conf",
+      "volumeName": "web-config",
+      "mountPath": "/etc/nginx/nginx.conf",
+      "content": "server { listen 80; }",
+      "permissions": "0644",
+      "owner": "33:33"
+    }
+  ]
+}
+```
+
+| Field | Required | Meaning | Constraints |
+| --- | --- | --- | --- |
+| `serviceName` | Yes | The service this file belongs to. Must match a `services[].serviceName` in the same draft. | 1-100 chars, `a-z`, `A-Z`, `0-9`, `_`, `-` only. |
+| `fileName` | Yes | Display name used in error messages and tracking. | Non-empty string. |
+| `volumeName` | Yes | Stack volume to write into. | Non-empty string. |
+| `mountPath` | Yes | Absolute destination path inside the volume (becomes `path` in the resolved model). | Must match `^/[a-zA-Z0-9_./-]*$` — leading slash required, no `..` traversal. |
+| `content` | Yes | File contents. | String. |
+| `permissions` | No | File mode. | 3 or 4 octal digits, for example `644` or `0644`. |
+| `owner` | No | Combined UID:GID string (becomes `ownerUid`/`ownerGid` in the resolved model). | Format `<uid>` or `<uid>:<gid>`, e.g. `33` or `33:33`. |
+
+The template loader merges these top-level entries into each service's `configFiles[]` at apply time. After load, the resolved snapshot uses the embedded shape documented above (with `path`, `ownerUid`, `ownerGid`).
 
 ## `services[].initCommands[]`
 
