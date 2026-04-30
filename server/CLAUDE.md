@@ -256,6 +256,42 @@ Per-component levels live in `config/logging.json` under `development` / `produc
 
 Console output is reserved for pre-logger boot (`server.ts`, `app-factory.ts`, `prisma.ts`, `config-new.ts`, `logging-config.ts` fallback) plus scripts and tests. Don't add new `console.*` calls outside those sites.
 
+## Test Conventions
+
+### Field-persistence regression tests must go through the HTTP route
+
+If you're testing that a field set on a request body lands on the correct DB column, write the test against the HTTP route via **supertest** — do NOT seed the DB with `prisma.<model>.create({ data: {...} })` and assert what comes back.
+
+**Why:** Mini Infra hit a real bug where `services[].vaultAppRoleRef` was silently stripped by Zod's default unknown-key behaviour at the HTTP boundary. Existing integration tests for the apply pipeline wrote rows directly via `testPrisma.stackTemplateService.create({...})` — those tests passed because they bypassed the validation layer entirely. The field never made it from a real POST body to the DB column, but no test caught that the public API surface was broken.
+
+```ts
+// ❌ Tests the apply orchestrator, NOT the HTTP contract.
+//    Will pass even if the route's Zod schema strips the field.
+await testPrisma.stackTemplateService.create({
+  data: { /* ... */, vaultAppRoleRef: 'my-approle' },
+});
+const apply = await runApply(stackId);
+expect(apply.serviceResults[0].vaultAppRoleRef).toBe('my-approle');
+
+// ✅ Posts a real body and asserts the column is set after the route handler runs.
+//    Catches Zod-strip bugs and any future schema drift.
+await supertest(app)
+  .post(`/api/stack-templates/${tmplId}/draft`)
+  .send({ services: [{ /* ... */, vaultAppRoleRef: 'my-approle' }], /* ... */ });
+const row = await testPrisma.stackTemplateService.findFirst({ where: { versionId } });
+expect(row?.vaultAppRoleRef).toBe('my-approle');
+```
+
+Direct Prisma fixture inserts are still the right tool for testing the orchestrator/reconciler in isolation (e.g., "given a row with X, the apply pipeline does Y") — just don't rely on them as a contract test for the public API.
+
+References:
+- [`server/src/__tests__/stack-templates-draft-route.integration.test.ts`](src/__tests__/stack-templates-draft-route.integration.test.ts) — example of the supertest-over-fixtures pattern.
+- [`server/src/__tests__/service-schema-drift.test.ts`](src/__tests__/service-schema-drift.test.ts) — structural pin so the two service schemas can't drift on the common base again.
+
+### Schemas that share a field set should share a base
+
+When two schemas describe the same logical entity at different layers (e.g. a service in a file-loaded template vs in an HTTP draft body), put the shared fields on a single `z.object({...})` and have each leaf `.extend({...})` it. Refines stay on the leaves; the base is field-only. See `stackServiceCommonFieldsSchema` in [`server/src/services/stacks/schemas.ts`](src/services/stacks/schemas.ts) and how `stackServiceDefinitionSchema` and `templateServiceSchema` build on it. A literal `z.object({...})` per layer is what produced the original `vaultAppRoleRef` drift.
+
 ## General Rules
 
 1. **Always use service wrappers over raw SDK calls** — they add caching, auth, retries, circuit breakers, error mapping, and audit logging

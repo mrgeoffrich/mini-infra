@@ -280,25 +280,56 @@ const stackNameSchema = z
   .max(100)
   .regex(nameRegex, "Stack name can only contain letters, numbers, hyphens, and underscores");
 
-export const stackServiceDefinitionSchema = z
-  .object({
-    serviceName: z
-      .string()
-      .min(1)
-      .max(100)
-      .regex(
-        nameRegex,
-        "Service name can only contain letters, numbers, hyphens, and underscores"
-      ),
-    serviceType: z.enum(STACK_SERVICE_TYPES),
-    dockerImage: z.string().min(1),
-    dockerTag: z.string().min(1),
-    containerConfig: stackContainerConfigSchema,
+/**
+ * Shared field set for "a service" — common to both the HTTP/DB shape
+ * (`stackServiceDefinitionSchema` below) and the file-loaded template shape
+ * (`templateServiceSchema` in `template-file-loader.ts`). Each leaf schema
+ * extends this with its own additions and applies its own `.refine()`s.
+ *
+ * Why a shared base: previously these two schemas were independent
+ * `z.object({...})` literals. They drifted (vaultAppRoleRef was added to the
+ * file loader but not the HTTP schema), and Zod's strip-unknown-keys default
+ * made the gap silent — POST /draft would parse successfully but lose the
+ * field before it reached Prisma, and apply-time bound nothing. Customer
+ * feedback #1 from the slackbot installer review.
+ *
+ * Adding a new common field here makes it appear in BOTH schemas with no
+ * further work, which is the structural property the bug needed. If a field
+ * is intentionally specific to one shape (e.g. `configFiles` is only the
+ * resolved/embedded form, `vaultAppRoleId` is only set after apply), keep
+ * it on the leaf schema's `.extend({...})`.
+ *
+ * Pure ZodObject (no refines) so leaves can `.extend()` and then `.refine()`
+ * without losing extensibility.
+ */
+export const stackServiceCommonFieldsSchema = z.object({
+  serviceName: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(
+      nameRegex,
+      "Service name can only contain letters, numbers, hyphens, and underscores"
+    ),
+  serviceType: z.enum(STACK_SERVICE_TYPES),
+  dockerImage: z.string().min(1),
+  dockerTag: z.string().min(1),
+  containerConfig: stackContainerConfigSchema,
+  initCommands: z.array(stackInitCommandSchema).optional(),
+  dependsOn: z.array(z.string()),
+  order: z.number().int().min(0),
+  routing: stackServiceRoutingSchema.optional(),
+  // Symbolic reference to a vault.appRoles[].name declared in the same draft
+  // / template. Resolved to a concrete vaultAppRoleId at apply time.
+  vaultAppRoleRef: z.string().min(1).optional(),
+});
+
+export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
+  .extend({
+    // Resolved-only fields (post-loader / post-apply): these don't appear in
+    // the file-loaded template shape because they are either materialised by
+    // the loader (configFiles) or set at apply time (vaultAppRoleId).
     configFiles: z.array(stackConfigFileSchema).optional(),
-    initCommands: z.array(stackInitCommandSchema).optional(),
-    dependsOn: z.array(z.string()),
-    order: z.number().int().min(0),
-    routing: stackServiceRoutingSchema.optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
     poolConfig: poolConfigSchema.optional(),
     vaultAppRoleId: z.string().min(1).nullable().optional(),

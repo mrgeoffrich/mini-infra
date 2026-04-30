@@ -10,6 +10,7 @@ import {
   stackVolumeSchema,
   stackResourceOutputSchema,
   stackResourceInputSchema,
+  stackServiceCommonFieldsSchema,
 } from "./schemas";
 import {
   templateInputDeclSchema,
@@ -41,20 +42,11 @@ const templateConfigFileSchema = z.object({
   { message: "Either 'content' or 'contentFile' must be provided" }
 );
 
-const templateServiceSchema = z.object({
-  serviceName: z.string().min(1).max(100).regex(nameRegex, "Service name can only contain letters, numbers, hyphens, and underscores"),
-  serviceType: z.enum(STACK_SERVICE_TYPES),
-  dockerImage: z.string().min(1),
-  dockerTag: z.string().min(1),
-  containerConfig: stackContainerConfigSchema,
-  initCommands: z.array(stackInitCommandSchema).optional(),
-  dependsOn: z.array(z.string()),
-  order: z.number().int().min(0),
-  routing: stackServiceRoutingSchema.optional(),
-  // Symbolic reference to a vault.appRoles[].name declared in this template;
-  // resolved to a concrete vaultAppRoleId at apply time in PR 2.
-  vaultAppRoleRef: z.string().min(1).optional(),
-}).refine(
+// Shares its field set with `stackServiceDefinitionSchema` via
+// `stackServiceCommonFieldsSchema` so adding a new common field can't drift
+// silently (customer feedback #1). Leaf-specific fields and the
+// stricter-than-HTTP refine (Stateful must not have routing) stay here.
+const templateServiceSchema = stackServiceCommonFieldsSchema.refine(
   (data) => {
     if (data.serviceType === "StatelessWeb" && !data.routing) return false;
     if (data.serviceType === "AdoptedWeb" && !data.routing) return false;
