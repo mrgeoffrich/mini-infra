@@ -9,6 +9,7 @@ import type {
 import type { HAProxyDataPlaneClient } from '../haproxy';
 import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
 import type { StackRoutingManager, StackRoutingContext } from './stack-routing-manager';
+import { resolveEgressEnv } from './egress-injection';
 
 export interface StackWithReconcilerContext {
   id: string;
@@ -43,7 +44,39 @@ export async function buildStateMachineContext(
   }
 
   const dockerImage = `${serviceDef.dockerImage}:${serviceDef.dockerTag}`;
-  const envRecord = serviceDef.containerConfig.env ?? {};
+
+  // Egress proxy env — injected for non-bypass services in env-scoped stacks
+  // when the env has a provisioned gateway. Same gates as the static service
+  // path (StackContainerManager) and pool-spawner. See egress-injection.ts.
+  const egressEnv = await resolveEgressEnv(
+    prisma,
+    stack.environmentId,
+    serviceDef.containerConfig.egressBypass === true,
+  );
+  // Service-defined env wins over injected egress env so explicit overrides hold.
+  const envRecord = { ...egressEnv, ...(serviceDef.containerConfig.env ?? {}) };
+
+  // Resolve the per-env egress network so the container can reach the proxy
+  // hostname. Looked up directly off InfraResource because StatelessWeb stacks
+  // don't declare `egress` as a resource input (auto-attach is implicit).
+  // Never throws — failures here must not block stack apply.
+  let egressNetworkName: string | null = null;
+  if (stack.environmentId && serviceDef.containerConfig.egressBypass !== true) {
+    try {
+      const egressResource = await prisma.infraResource.findFirst({
+        where: {
+          type: 'docker-network',
+          purpose: 'egress',
+          scope: 'environment',
+          environmentId: stack.environmentId,
+        },
+        select: { name: true },
+      });
+      egressNetworkName = egressResource?.name ?? null;
+    } catch {
+      egressNetworkName = null;
+    }
+  }
 
   // Resolve TLS from stack-level resource if referenced
   let enableSsl = false;
@@ -76,6 +109,10 @@ export async function buildStateMachineContext(
         containerNetworks.push(netName);
       }
     }
+  }
+  // Auto-attach to per-env egress network so the proxy hostname resolves.
+  if (egressNetworkName && !containerNetworks.includes(egressNetworkName)) {
+    containerNetworks.push(egressNetworkName);
   }
 
   return {

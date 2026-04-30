@@ -157,6 +157,7 @@ const mockCreateContainer = vi.fn().mockResolvedValue({
 });
 
 const mockGetContainer = vi.fn().mockReturnValue({
+  start: mockContainerStart,
   stop: mockContainerStop,
   remove: mockContainerRemove,
   inspect: mockContainerInspect,
@@ -182,8 +183,12 @@ const mockPrisma = {
     update: mockStackUpdate,
   },
   environment: {
-    // Default: no gateway IP set — resolveEgressDnsServers will warn and return undefined
+    // Default: no gateway IP set — egress injection short-circuits.
     findUnique: vi.fn().mockResolvedValue({ egressGatewayIp: null }),
+  },
+  infraResource: {
+    // Default: no egress InfraResource. Auto-attach is a no-op.
+    findFirst: vi.fn().mockResolvedValue(null),
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,
@@ -251,9 +256,12 @@ describe('StackReconciler.apply', () => {
     // Verify pull was called
     expect(mockPullImageWithAutoAuth).toHaveBeenCalledWith('grafana/loki:2.9.0');
 
-    // Verify container was created and started
+    // Verify container was created and started. Since 4bc803e, the static
+    // service path uses createContainer + startContainer (with start coming
+    // from docker.getContainer(id).start() — i.e. mockContainerStart) rather
+    // than the start method on the createLongRunningContainer return value.
     expect(mockCreateLongRunningContainer).toHaveBeenCalledTimes(1);
-    expect(mockLongRunningContainer.start).toHaveBeenCalled();
+    expect(mockContainerStart).toHaveBeenCalled();
 
     // Verify init commands were run (alpine container created)
     expect(mockCreateContainer).toHaveBeenCalled();

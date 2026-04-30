@@ -17,6 +17,7 @@ import {
   resolveServiceConfigs,
   synthesiseDefaultNetworkIfNeeded,
 } from './utils';
+import { resolveEgressEnv, attachEgressNetworkIfNeeded } from './egress-injection';
 
 const log = getLogger('stacks', 'pool-spawner');
 
@@ -164,8 +165,20 @@ export async function spawnPoolInstance(
     }
   }
 
-  // Caller env wins over base/Vault env; VAULT_* is stripped.
+  // Egress proxy env — injected for non-bypass services in env-scoped stacks
+  // when the env has a provisioned gateway. Pool workers need this on the
+  // same gates as the static service path so outbound calls flow through the
+  // gateway. See egress-injection.ts.
+  const egressEnv = await resolveEgressEnv(
+    prisma,
+    stack.environmentId,
+    containerConfig.egressBypass === true,
+  );
+
+  // Caller env wins over base/Vault env; VAULT_* is stripped. Egress proxy
+  // env goes first so service-defined env or caller env can still override.
   const finalEnv: Record<string, string> = {
+    ...egressEnv,
     ...(containerConfig.env ?? {}),
     ...vaultEnv,
     ...sanitiseCallerEnv(ctx.callerEnv),
@@ -361,6 +374,25 @@ export async function spawnPoolInstance(
         }
       }
     }
+  }
+
+  // Auto-attach to the per-env egress network so the proxy env injected
+  // above (HTTP_PROXY=http://egress-gateway:3128) can resolve the DNS alias.
+  // Same gates as resolveEgressEnv: non-bypass + env has gateway provisioned.
+  {
+    const egressDocker = dockerExecutor.getDockerClient();
+    await attachEgressNetworkIfNeeded(
+      prisma,
+      {
+        connectToNetwork: async (id, name) => {
+          await egressDocker.getNetwork(name).connect({ Container: id });
+        },
+      },
+      containerId,
+      stack.environmentId,
+      containerConfig.egressBypass === true,
+      log,
+    );
   }
 
   // All required networks are attached — start the container now so its

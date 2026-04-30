@@ -105,7 +105,8 @@ function parseCidrNetworkAddress(cidr: string): number[] | null {
 
 /**
  * EgressNetworkAllocator picks deterministic, non-conflicting /24 subnets
- * and gateway IPs from the egress pool for environment applications networks.
+ * and gateway IPs from the egress pool for the per-env egress network
+ * (where the egress-gateway container and managed app containers live).
  */
 export class EgressNetworkAllocator {
   constructor(private readonly prisma: PrismaClient) {}
@@ -124,9 +125,11 @@ export class EgressNetworkAllocator {
     const totalSlots = poolSlotCount(poolMask, subnetMask);
 
     // Collect subnets already in use from the DB.
-    // Subnets are persisted on InfraResource.metadata.subnet for docker-network/applications resources.
+    // Subnets are persisted on InfraResource.metadata.subnet for the per-env
+    // egress network. The Docker scan below catches anything else that lives
+    // in the pool (e.g. an applications network deployed elsewhere).
     const dbResources = await this.prisma.infraResource.findMany({
-      where: { type: 'docker-network', purpose: 'applications', scope: 'environment' },
+      where: { type: 'docker-network', purpose: 'egress', scope: 'environment' },
       select: { metadata: true },
     });
 
@@ -179,9 +182,10 @@ export class EgressNetworkAllocator {
   }
 
   /**
-   * For an applications network already created with a known subnet, pick the gateway
-   * container IP (lowest unused host address >= .2 in that subnet).
-   * Validates against currently connected containers on that network via Docker inspect.
+   * For the per-env egress network already created with a known subnet, pick
+   * the gateway container IP (lowest unused host address >= .2 in that
+   * subnet). Validates against currently connected containers on that
+   * network via Docker inspect.
    *
    * @param networkName - Docker network name to inspect
    * @returns The IPv4 address the egress container should use
@@ -216,7 +220,7 @@ export class EgressNetworkAllocator {
     if (!subnet) {
       // Fallback: look in InfraResource.metadata.subnet
       const resource = await this.prisma.infraResource.findFirst({
-        where: { type: 'docker-network', purpose: 'applications', scope: 'environment', name: networkName },
+        where: { type: 'docker-network', purpose: 'egress', scope: 'environment', name: networkName },
         select: { metadata: true },
       });
       const meta = resource?.metadata as Record<string, unknown> | null;

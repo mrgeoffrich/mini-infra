@@ -139,7 +139,7 @@ describe('EgressNetworkAllocator', () => {
         isConnected: vi.fn().mockReturnValue(true),
         listNetworks: vi.fn().mockResolvedValue([
           {
-            name: 'staging-applications',
+            name: 'staging-egress',
             ipam: { config: [{ subnet: '172.30.5.0/24' }] },
             containers: [],
           },
@@ -149,7 +149,7 @@ describe('EgressNetworkAllocator', () => {
       const prisma = makeMockPrisma();
       const allocator = new EgressNetworkAllocator(prisma);
 
-      const ip = await allocator.allocateGatewayIp('staging-applications');
+      const ip = await allocator.allocateGatewayIp('staging-egress');
 
       expect(ip).toBe('172.30.5.2');
     });
@@ -160,7 +160,7 @@ describe('EgressNetworkAllocator', () => {
         isConnected: vi.fn().mockReturnValue(true),
         listNetworks: vi.fn().mockResolvedValue([
           {
-            name: 'staging-applications',
+            name: 'staging-egress',
             ipam: { config: [{ subnet: '172.30.5.0/24' }] },
             containers: [
               { ipv4Address: '172.30.5.2' },
@@ -172,7 +172,7 @@ describe('EgressNetworkAllocator', () => {
       const prisma = makeMockPrisma();
       const allocator = new EgressNetworkAllocator(prisma);
 
-      const ip = await allocator.allocateGatewayIp('staging-applications');
+      const ip = await allocator.allocateGatewayIp('staging-egress');
 
       expect(ip).toBe('172.30.5.3');
     });
@@ -190,7 +190,7 @@ describe('EgressNetworkAllocator', () => {
       });
       const allocator = new EgressNetworkAllocator(prisma);
 
-      const ip = await allocator.allocateGatewayIp('staging-applications');
+      const ip = await allocator.allocateGatewayIp('staging-egress');
 
       expect(ip).toBe('172.30.7.2');
     });

@@ -126,14 +126,14 @@ export class EnvFirewallManager {
     const env = await this._getEnabledEnv(envId);
     if (!env) return;
 
-    // Resolve the real bridge CIDR from the applications network InfraResource.
-    // The subnet is stored in InfraResource.metadata.subnet for the docker-network
-    // resource with purpose "applications" in this environment.
+    // Resolve the real bridge CIDR from the egress network InfraResource. The
+    // subnet is stored in InfraResource.metadata.subnet for the docker-network
+    // resource with purpose "egress" in this environment.
     const bridgeCidr = await this._getBridgeCidr(envId, env.name);
     if (!bridgeCidr) {
       log.error(
         { envId, envName: env.name },
-        'fw-agent: applyEnv: cannot resolve bridge CIDR — env has no applications network yet; skipping',
+        'fw-agent: applyEnv: cannot resolve bridge CIDR — env has no egress network yet; skipping',
       );
       return;
     }
@@ -302,7 +302,7 @@ export class EnvFirewallManager {
         if (!modeResults.has(env.id)) continue;
 
         try {
-          const applicationsNetwork = `${env.name}-applications`;
+          const egressNetwork = `${env.name}-egress`;
           // Collect IPs of managed running containers in this env.
           const ips: string[] = [];
           for (const c of rawContainers) {
@@ -313,17 +313,17 @@ export class EnvFirewallManager {
             if (labels['mini-infra.egress.gateway'] === 'true') continue;
             if (labels['mini-infra.egress.fw-agent'] === 'true') continue;
 
-            // Extract IP from the env's applications network (same pattern as
+            // Extract IP from the env's egress network (same pattern as
             // egress-container-map-pusher).
             const networks = c.NetworkSettings?.Networks ?? {};
-            const networkInfo = networks[applicationsNetwork];
+            const networkInfo = networks[egressNetwork];
             const ip = networkInfo?.IPAddress;
             if (ip) {
               ips.push(ip);
             } else {
               log.debug(
-                { containerId: c.Id, envName: env.name, applicationsNetwork },
-                'EnvFirewallManager reconcile: container not on env applications network — skipping',
+                { containerId: c.Id, envName: env.name, egressNetwork },
+                'EnvFirewallManager reconcile: container not on env egress network — skipping',
               );
             }
           }
@@ -548,7 +548,7 @@ export class EnvFirewallManager {
   }
 
   /**
-   * Resolve the bridge CIDR (e.g. "172.30.5.0/24") for an env's applications
+   * Resolve the bridge CIDR (e.g. "172.30.5.0/24") for an env's egress
    * network by reading the subnet stored in the InfraResource row.
    *
    * Returns null if no subnet is recorded yet (env not fully provisioned).
@@ -558,7 +558,7 @@ export class EnvFirewallManager {
       const resource = await this.prisma.infraResource.findFirst({
         where: {
           type: 'docker-network',
-          purpose: 'applications',
+          purpose: 'egress',
           scope: 'environment',
           environmentId: envId,
         },
