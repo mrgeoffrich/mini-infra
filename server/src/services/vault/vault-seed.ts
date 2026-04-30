@@ -1,13 +1,17 @@
 import type { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
-import { MINI_INFRA_ADMIN_HCL } from "./vault-policy-bodies";
+import {
+  MINI_INFRA_ADMIN_HCL,
+  MINI_INFRA_OPERATOR_HCL,
+} from "./vault-policy-bodies";
 
 const log = getLogger("platform", "vault-seed");
 
 /**
- * Seed system Vault policies. Called once at server boot — idempotent upsert.
- * Only writes rows into the DB; actual write-to-Vault happens when an operator
- * presses "Publish" in the UI, or on first bootstrap for `mini-infra-admin`.
+ * Seed built-in Vault policies. Called once at server boot — idempotent upsert.
+ * System policies (`isSystem: true`) are auto-published to Vault during the
+ * vault-nats stack bootstrap; user/example policies stay as drafts until an
+ * operator edits and publishes them via the UI.
  */
 export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
   const policies: {
@@ -15,6 +19,7 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
     displayName: string;
     description: string;
     draftHclBody: string;
+    isSystem: boolean;
   }[] = [
     {
       name: "mini-infra-admin",
@@ -22,6 +27,7 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
       description:
         "Admin policy Mini Infra uses for platform-level Vault operations. Managed automatically — do not edit.",
       draftHclBody: MINI_INFRA_ADMIN_HCL,
+      isSystem: true,
     },
     {
       name: "mini-infra-operator",
@@ -29,6 +35,7 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
       description:
         "Policy for the userpass `mini-infra-operator` account used for human Vault UI access.",
       draftHclBody: MINI_INFRA_OPERATOR_HCL,
+      isSystem: true,
     },
     {
       name: "user-self-service",
@@ -36,6 +43,7 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
       description:
         "Example policy: lets a named user read/write their own secrets under secret/users/{{identity.entity.aliases.userpass.name}}/*.",
       draftHclBody: USER_SELF_SERVICE_HCL,
+      isSystem: false,
     },
     {
       name: "read-only-example",
@@ -43,6 +51,7 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
       description:
         "Example read-only policy scoped to secret/shared/*. Copy, rename, and customise.",
       draftHclBody: READ_ONLY_EXAMPLE_HCL,
+      isSystem: false,
     },
   ];
 
@@ -55,13 +64,22 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
           displayName: p.displayName,
           description: p.description,
           draftHclBody: p.draftHclBody,
-          isSystem: true,
+          isSystem: p.isSystem,
         },
         update: {
           displayName: p.displayName,
           description: p.description,
-          isSystem: true,
-          // Do NOT overwrite draftHclBody on upgrade — operators may have edited it
+          // Re-assert isSystem on every boot so previously mis-flagged rows
+          // (the two examples were originally seeded as isSystem: true) get
+          // corrected on upgrade.
+          isSystem: p.isSystem,
+          // For system policies, keep draftHclBody pinned to the codebase
+          // constant so capability changes (e.g. adding KV `patch`) flow
+          // through to Vault on the next bootstrap. The HCL header tells
+          // operators not to edit; update() in vault-policy-service also
+          // blocks edits via the API. For user/example policies, preserve
+          // any operator edits.
+          ...(p.isSystem ? { draftHclBody: p.draftHclBody } : {}),
         },
       });
     } catch (err) {
@@ -73,42 +91,6 @@ export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {
   }
   log.info({ count: policies.length }, "Vault policies seeded");
 }
-
-// MINI_INFRA_ADMIN_HCL imported from ./vault-policy-bodies — single source of
-// truth shared with vault-admin-service.ts (bootstrap + per-login self-heal).
-
-const MINI_INFRA_OPERATOR_HCL = `# mini-infra-operator — userpass human-operator access.
-# Read-only visibility + secret management + change own password. Keep in sync
-# with the policy installed during bootstrap in vault-admin-service.ts.
-
-path "sys/health" { capabilities = ["read", "list"] }
-path "sys/seal-status" { capabilities = ["read", "list"] }
-path "sys/mounts" { capabilities = ["read", "list"] }
-path "sys/mounts/*" { capabilities = ["read", "list"] }
-path "sys/auth" { capabilities = ["read", "list"] }
-path "sys/auth/*" { capabilities = ["read", "list"] }
-path "sys/policies/acl" { capabilities = ["read", "list"] }
-path "sys/policies/acl/*" { capabilities = ["read", "list"] }
-path "sys/capabilities-self" { capabilities = ["update"] }
-
-path "auth/approle/role" { capabilities = ["read", "list"] }
-path "auth/approle/role/*" { capabilities = ["read", "list"] }
-
-path "auth/userpass/users/mini-infra-operator/password" {
-  capabilities = ["update"]
-}
-
-path "secret/data/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-path "secret/metadata/*" {
-  capabilities = ["read", "list", "delete"]
-}
-
-path "auth/token/lookup-self" { capabilities = ["read"] }
-path "auth/token/renew-self" { capabilities = ["update"] }
-path "auth/token/revoke-self" { capabilities = ["update"] }
-`;
 
 const USER_SELF_SERVICE_HCL = `# User self-service — each authenticated user can manage their own secrets
 # under secret/users/<username>/*.

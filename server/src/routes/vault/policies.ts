@@ -10,6 +10,7 @@ import { getLogger } from "../../lib/logger-factory";
 import {
   VaultPolicyService,
   PolicyInUseError,
+  SystemPolicyError,
 } from "../../services/vault/vault-policy-service";
 import { getVaultServices } from "../../services/vault/vault-services";
 import { emitToChannel } from "../../lib/socket";
@@ -105,6 +106,9 @@ router.put(
       );
       res.json({ success: true, data: policy });
     } catch (err) {
+      if (err instanceof SystemPolicyError) {
+        return res.status(409).json({ success: false, message: err.message });
+      }
       next(err);
     }
   }) as RequestHandler,
@@ -146,6 +150,9 @@ router.delete(
           message: err.message,
           details: { appRoles: err.appRoleNames },
         });
+      }
+      if (err instanceof SystemPolicyError) {
+        return res.status(409).json({ success: false, message: err.message });
       }
       next(err);
     }
