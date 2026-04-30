@@ -5,7 +5,7 @@ import { VaultHttpClient } from "./vault-http-client";
 import type { VaultAuthResponse } from "./vault-http-client";
 import { VaultStateService } from "./vault-state-service";
 import { getLogger } from "../../lib/logger-factory";
-import { getNatsBootstrapService } from "../nats/nats-bootstrap-service";
+import { getNatsControlPlaneService } from "../nats/nats-control-plane-service";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
@@ -313,7 +313,7 @@ export class VaultAdminService {
     // means the vault-nats stack's NATS service won't apply until a future
     // bootstrap call succeeds. Re-runs at boot via authenticateAsAdmin.
     try {
-      await getNatsBootstrapService().bootstrap();
+      await getNatsControlPlaneService().applyConfig();
     } catch (err) {
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },

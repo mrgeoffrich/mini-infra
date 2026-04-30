@@ -1,8 +1,27 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { IconCloud, IconRefresh, IconPlus, IconKey, IconMessages, IconUsers } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useApplyNats,
   useCreateNatsAccount,
@@ -17,6 +36,10 @@ import {
   useNatsStreams,
 } from "@/hooks/use-nats";
 import { toast } from "sonner";
+import type {
+  NatsAccountInfo,
+  NatsStreamInfo,
+} from "@mini-infra/types";
 
 type NatsView = "overview" | "accounts" | "credentials" | "streams" | "consumers";
 
@@ -111,84 +134,74 @@ function Metric({ title, value, tone = "default" }: { title: string; value: stri
 
 function AccountsView() {
   const accounts = useNatsAccounts();
-  const create = useCreateNatsAccount();
+  const [open, setOpen] = useState(false);
   return (
-    <ResourceSection
-      title="Accounts"
-      onCreate={() => {
-        const name = prompt("Account name");
-        if (!name) return;
-        create.mutate({ name, displayName: name });
-      }}
-      rows={(accounts.data ?? []).map((a) => [a.name, a.displayName, a.publicKey ?? "not applied", a.isSystem ? "system" : "user"])}
-    />
+    <>
+      <ResourceSection
+        title="Accounts"
+        onCreate={() => setOpen(true)}
+        rows={(accounts.data ?? []).map((a) => [a.name, a.displayName, a.publicKey ?? "not applied", a.isSystem ? "system" : "user"])}
+      />
+      <CreateAccountDialog open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
 function CredentialsView() {
   const credentials = useNatsCredentials();
-  const accounts = useNatsAccounts();
-  const create = useCreateNatsCredential();
   const mint = useMintNatsCredential();
+  const [open, setOpen] = useState(false);
   return (
-    <ResourceSection
-      title="Credential Profiles"
-      onCreate={() => {
-        const accountId = accounts.data?.[0]?.id;
-        const name = prompt("Credential profile name");
-        if (!name || !accountId) return;
-        create.mutate({ name, displayName: name, accountId, publishAllow: [">"], subscribeAllow: [">"], ttlSeconds: 3600 });
-      }}
-      rows={(credentials.data ?? []).map((c) => [c.name, c.accountName, c.publishAllow.join(", "), c.subscribeAllow.join(", ")])}
-      action={(idx) => {
-        const credential = credentials.data?.[idx];
-        if (!credential) return;
-        mint.mutate(credential.id, {
-          onSuccess: (data) => {
-            navigator.clipboard.writeText(data.creds).catch(() => undefined);
-            toast.success("Credentials minted and copied");
-          },
-        });
-      }}
-      actionLabel="Mint"
-    />
+    <>
+      <ResourceSection
+        title="Credential Profiles"
+        onCreate={() => setOpen(true)}
+        rows={(credentials.data ?? []).map((c) => [c.name, c.accountName, c.publishAllow.join(", "), c.subscribeAllow.join(", ")])}
+        action={(idx) => {
+          const credential = credentials.data?.[idx];
+          if (!credential) return;
+          mint.mutate(credential.id, {
+            onSuccess: (data) => {
+              navigator.clipboard.writeText(data.creds).catch(() => undefined);
+              toast.success("Credentials minted and copied");
+            },
+            onError: (err) => toast.error(err instanceof Error ? err.message : "Mint failed"),
+          });
+        }}
+        actionLabel="Mint"
+      />
+      <CreateCredentialDialog open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
 function StreamsView() {
   const streams = useNatsStreams();
-  const accounts = useNatsAccounts();
-  const create = useCreateNatsStream();
+  const [open, setOpen] = useState(false);
   return (
-    <ResourceSection
-      title="Streams"
-      onCreate={() => {
-        const accountId = accounts.data?.[0]?.id;
-        const name = prompt("Stream name");
-        const subject = prompt("Subject", `${name ?? "events"}.>`);
-        if (!name || !subject || !accountId) return;
-        create.mutate({ name, accountId, subjects: [subject], retention: "limits", storage: "file" });
-      }}
-      rows={(streams.data ?? []).map((s) => [s.name, s.accountName, s.subjects.join(", "), `${s.retention}/${s.storage}`])}
-    />
+    <>
+      <ResourceSection
+        title="Streams"
+        onCreate={() => setOpen(true)}
+        rows={(streams.data ?? []).map((s) => [s.name, s.accountName, s.subjects.join(", "), `${s.retention}/${s.storage}`])}
+      />
+      <CreateStreamDialog open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
 function ConsumersView() {
   const consumers = useNatsConsumers();
-  const streams = useNatsStreams();
-  const create = useCreateNatsConsumer();
+  const [open, setOpen] = useState(false);
   return (
-    <ResourceSection
-      title="Consumers"
-      onCreate={() => {
-        const streamId = streams.data?.[0]?.id;
-        const name = prompt("Consumer name");
-        if (!name || !streamId) return;
-        create.mutate({ name, streamId, durableName: name, deliverPolicy: "all", ackPolicy: "explicit" });
-      }}
-      rows={(consumers.data ?? []).map((c) => [c.name, c.streamName, c.durableName ?? "", `${c.deliverPolicy}/${c.ackPolicy}`])}
-    />
+    <>
+      <ResourceSection
+        title="Consumers"
+        onCreate={() => setOpen(true)}
+        rows={(consumers.data ?? []).map((c) => [c.name, c.streamName, c.durableName ?? "", `${c.deliverPolicy}/${c.ackPolicy}`])}
+      />
+      <CreateConsumerDialog open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
@@ -238,4 +251,393 @@ function ResourceSection({
       </CardContent>
     </Card>
   );
+}
+
+function CreateAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const [name, setName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [description, setDescription] = useState("");
+  const create = useCreateNatsAccount();
+
+  const reset = () => {
+    setName("");
+    setDisplayName("");
+    setDescription("");
+  };
+
+  const submit = async () => {
+    try {
+      await create.mutateAsync({
+        name,
+        displayName: displayName || name,
+        description: description || undefined,
+      });
+      onOpenChange(false);
+      reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create account failed");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New NATS account</DialogTitle>
+          <DialogDescription>
+            Accounts are signed by the operator NKey and isolate subjects from each other.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="account-name">Name (lowercase, alphanum + hyphen/underscore)</Label>
+            <Input id="account-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="my-team" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="account-display">Display name</Label>
+            <Input id="account-display" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="My Team" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="account-desc">Description (optional)</Label>
+            <Input id="account-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!name.trim() || create.isPending}>Create</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateCredentialDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const accounts = useNatsAccounts();
+  const create = useCreateNatsCredential();
+  const [name, setName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [accountId, setAccountId] = useState<string>("");
+  const [publishAllow, setPublishAllow] = useState(">");
+  const [subscribeAllow, setSubscribeAllow] = useState(">");
+  const [ttl, setTtl] = useState("3600");
+
+  const reset = () => {
+    setName("");
+    setDisplayName("");
+    setAccountId("");
+    setPublishAllow(">");
+    setSubscribeAllow(">");
+    setTtl("3600");
+  };
+
+  const submit = async () => {
+    const resolvedAccount = accountId || accounts.data?.[0]?.id;
+    if (!resolvedAccount) {
+      toast.error("Create an account first");
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        name,
+        displayName: displayName || name,
+        accountId: resolvedAccount,
+        publishAllow: splitSubjects(publishAllow),
+        subscribeAllow: splitSubjects(subscribeAllow),
+        ttlSeconds: Number(ttl) || 3600,
+      });
+      onOpenChange(false);
+      reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create credential failed");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New credential profile</DialogTitle>
+          <DialogDescription>
+            A reusable bundle of publish/subscribe permissions. Mint a `.creds` from it on demand.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="cred-name">Name</Label>
+            <Input id="cred-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="manager-creds" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="cred-display">Display name</Label>
+            <Input id="cred-display" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+          </div>
+          <AccountSelector accounts={accounts.data ?? []} value={accountId} onChange={setAccountId} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="cred-pub">Publish allow (comma or newline separated)</Label>
+            <Textarea id="cred-pub" rows={2} value={publishAllow} onChange={(e) => setPublishAllow(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="cred-sub">Subscribe allow</Label>
+            <Textarea id="cred-sub" rows={2} value={subscribeAllow} onChange={(e) => setSubscribeAllow(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="cred-ttl">Default TTL (seconds, 0 = no expiry)</Label>
+            <Input id="cred-ttl" type="number" min={0} value={ttl} onChange={(e) => setTtl(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!name.trim() || create.isPending}>Create</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateStreamDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const accounts = useNatsAccounts();
+  const create = useCreateNatsStream();
+  const [name, setName] = useState("");
+  const [accountId, setAccountId] = useState<string>("");
+  const [subjects, setSubjects] = useState("");
+  const [retention, setRetention] = useState<"limits" | "interest" | "workqueue">("limits");
+  const [storage, setStorage] = useState<"file" | "memory">("file");
+
+  const reset = () => {
+    setName("");
+    setAccountId("");
+    setSubjects("");
+    setRetention("limits");
+    setStorage("file");
+  };
+
+  const submit = async () => {
+    const resolvedAccount = accountId || accounts.data?.[0]?.id;
+    if (!resolvedAccount) {
+      toast.error("Create an account first");
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        name,
+        accountId: resolvedAccount,
+        subjects: splitSubjects(subjects || `${name}.>`),
+        retention,
+        storage,
+      });
+      onOpenChange(false);
+      reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create stream failed");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New JetStream stream</DialogTitle>
+          <DialogDescription>
+            Subjects, retention, and storage type are applied to the live NATS server on Apply.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="stream-name">Name</Label>
+            <Input id="stream-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="orders" />
+          </div>
+          <AccountSelector accounts={accounts.data ?? []} value={accountId} onChange={setAccountId} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="stream-subjects">Subjects (comma or newline separated)</Label>
+            <Textarea
+              id="stream-subjects"
+              rows={2}
+              value={subjects}
+              onChange={(e) => setSubjects(e.target.value)}
+              placeholder={`${name || "orders"}.>`}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label>Retention</Label>
+              <Select value={retention} onValueChange={(v) => setRetention(v as typeof retention)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="limits">limits</SelectItem>
+                  <SelectItem value="interest">interest</SelectItem>
+                  <SelectItem value="workqueue">workqueue</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Storage</Label>
+              <Select value={storage} onValueChange={(v) => setStorage(v as typeof storage)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="file">file</SelectItem>
+                  <SelectItem value="memory">memory</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!name.trim() || create.isPending}>Create</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreateConsumerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const streams = useNatsStreams();
+  const create = useCreateNatsConsumer();
+  const [name, setName] = useState("");
+  const [streamId, setStreamId] = useState<string>("");
+  const [durableName, setDurableName] = useState("");
+  const [filterSubject, setFilterSubject] = useState("");
+  const [deliverPolicy, setDeliverPolicy] = useState<"all" | "last" | "new">("all");
+  const [ackPolicy, setAckPolicy] = useState<"explicit" | "all" | "none">("explicit");
+
+  const reset = () => {
+    setName("");
+    setStreamId("");
+    setDurableName("");
+    setFilterSubject("");
+    setDeliverPolicy("all");
+    setAckPolicy("explicit");
+  };
+
+  const submit = async () => {
+    const resolvedStream = streamId || streams.data?.[0]?.id;
+    if (!resolvedStream) {
+      toast.error("Create a stream first");
+      return;
+    }
+    try {
+      await create.mutateAsync({
+        name,
+        streamId: resolvedStream,
+        durableName: durableName || name,
+        filterSubject: filterSubject || undefined,
+        deliverPolicy,
+        ackPolicy,
+      });
+      onOpenChange(false);
+      reset();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create consumer failed");
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>New JetStream consumer</DialogTitle>
+          <DialogDescription>
+            Pulls messages from a stream with the given delivery and ack policy.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="consumer-name">Name</Label>
+            <Input id="consumer-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="orders-worker" />
+          </div>
+          <StreamSelector streams={streams.data ?? []} value={streamId} onChange={setStreamId} />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="consumer-durable">Durable name (defaults to name)</Label>
+            <Input id="consumer-durable" value={durableName} onChange={(e) => setDurableName(e.target.value)} />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="consumer-filter">Filter subject (optional)</Label>
+            <Input id="consumer-filter" value={filterSubject} onChange={(e) => setFilterSubject(e.target.value)} placeholder="orders.created" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-2">
+              <Label>Deliver policy</Label>
+              <Select value={deliverPolicy} onValueChange={(v) => setDeliverPolicy(v as typeof deliverPolicy)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">all</SelectItem>
+                  <SelectItem value="last">last</SelectItem>
+                  <SelectItem value="new">new</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label>Ack policy</Label>
+              <Select value={ackPolicy} onValueChange={(v) => setAckPolicy(v as typeof ackPolicy)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="explicit">explicit</SelectItem>
+                  <SelectItem value="all">all</SelectItem>
+                  <SelectItem value="none">none</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!name.trim() || create.isPending}>Create</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AccountSelector({
+  accounts,
+  value,
+  onChange,
+}: {
+  accounts: NatsAccountInfo[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>Account</Label>
+      <Select value={value || accounts[0]?.id || ""} onValueChange={onChange}>
+        <SelectTrigger><SelectValue placeholder="Select account" /></SelectTrigger>
+        <SelectContent>
+          {accounts.map((a) => (
+            <SelectItem key={a.id} value={a.id}>{a.displayName} ({a.name})</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function StreamSelector({
+  streams,
+  value,
+  onChange,
+}: {
+  streams: NatsStreamInfo[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>Stream</Label>
+      <Select value={value || streams[0]?.id || ""} onValueChange={onChange}>
+        <SelectTrigger><SelectValue placeholder="Select stream" /></SelectTrigger>
+        <SelectContent>
+          {streams.map((s) => (
+            <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function splitSubjects(input: string): string[] {
+  return input
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

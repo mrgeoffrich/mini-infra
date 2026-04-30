@@ -360,12 +360,10 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     configFiles: z.array(stackConfigFileSchema).optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
     poolConfig: poolConfigSchema.optional(),
+    // Resolved concrete IDs — set at apply time only, never present in
+    // template/draft input. Symbolic *Ref siblings live on the common base.
     vaultAppRoleId: z.string().min(1).nullable().optional(),
-    // Symbolic reference to a vault.appRoles[].name declared in the same draft.
-    // Resolved to a concrete vaultAppRoleId at apply time by the vault apply orchestrator.
-    vaultAppRoleRef: z.string().min(1).optional(),
     natsCredentialId: z.string().min(1).nullable().optional(),
-    natsCredentialRef: z.string().min(1).optional(),
   })
   .refine(
     (data) => {

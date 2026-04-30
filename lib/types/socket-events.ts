@@ -229,7 +229,6 @@ export const ServerEvent = {
   VAULT_APPROLE_APPLIED: "vault:approle:applied",
   // NATS
   NATS_APPLIED: "nats:applied",
-  NATS_STATUS_CHANGED: "nats:status:changed",
   // Egress Firewall
   EGRESS_EVENT: "egress:event",
   EGRESS_POLICY_UPDATED: "egress:policy:updated",
@@ -517,7 +516,6 @@ export interface ServerToClientEvents {
 
   // ── NATS ───────────────────────────────────────────
   "nats:applied": (data: NatsAppliedEvent) => void;
-  "nats:status:changed": (data: NatsAppliedEvent) => void;
 
   // ── Egress Firewall ─────────────────────────────────
   /** Single DNS query ingested into EgressEvent (live traffic feed) */

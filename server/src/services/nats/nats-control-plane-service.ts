@@ -63,10 +63,6 @@ export interface NatsApplyConfigResult {
   systemAccountPublic: string | null;
 }
 
-type AccountWithProfiles = Prisma.NatsAccountGetPayload<{
-  include: { credentialProfiles: true };
-}>;
-
 type CredentialWithAccount = Prisma.NatsCredentialProfileGetPayload<{
   include: { account: true };
 }>;
@@ -80,7 +76,18 @@ type ConsumerWithStream = Prisma.NatsConsumerGetPayload<{
 }>;
 
 export class NatsControlPlaneService {
+  // Serialises applyConfig + applyJetStreamResources so concurrent triggers
+  // (manual POST /api/nats/apply and the stack-apply NATS phase) cannot race
+  // on Vault KV writes or the NatsState upsert.
+  private applyChain: Promise<unknown> = Promise.resolve();
+
   constructor(private readonly db: PrismaClient = prisma) {}
+
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.applyChain.then(fn, fn);
+    this.applyChain = next.catch(() => undefined);
+    return next;
+  }
 
   async getStatus(): Promise<NatsStatus> {
     const [state, accounts, credentialProfiles, streams, consumers] = await Promise.all([
@@ -160,7 +167,6 @@ export class NatsControlPlaneService {
   }
 
   async listAccounts(): Promise<NatsAccountInfo[]> {
-    await this.ensureDefaultAccount();
     const rows = await this.db.natsAccount.findMany({ orderBy: [{ isSystem: "desc" }, { name: "asc" }] });
     return rows.map(serializeAccount);
   }
@@ -284,6 +290,10 @@ export class NatsControlPlaneService {
   }
 
   async applyConfig(): Promise<NatsApplyConfigResult> {
+    return this.serialize(() => this.applyConfigInner());
+  }
+
+  private async applyConfigInner(): Promise<NatsApplyConfigResult> {
     await this.ensureDefaultAccount();
     const kv = getVaultKVService();
 
@@ -449,6 +459,10 @@ export class NatsControlPlaneService {
   }
 
   async applyJetStreamResources(): Promise<void> {
+    return this.serialize(() => this.applyJetStreamResourcesInner());
+  }
+
+  private async applyJetStreamResourcesInner(): Promise<void> {
     const streams = await this.db.natsStream.findMany({ include: { account: { include: { credentialProfiles: true } } } });
     const consumers = await this.db.natsConsumer.findMany({ include: { stream: { include: { account: true } } } });
     const streamsByAccount = groupBy(streams, (s) => s.accountId);
