@@ -26,6 +26,7 @@
     "start": "pnpm --filter mini-infra-server start",
     "install:all": "pnpm install",
     "generate:ui-manifest": "node scripts/generate-ui-manifest.mjs",
+    "worktree-env": "tsx deployment/development/worktree-env.ts",
     "format": "pnpm --filter mini-infra-server format",
     "format:check": "pnpm --filter mini-infra-server format:check"
   },

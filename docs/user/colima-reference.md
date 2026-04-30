@@ -177,7 +177,7 @@ colima list
 The friendly path — wipes the Compose project (containers + volumes), deletes the Colima VM, and removes the registry entry:
 
 ```bash
-deployment/development/worktree_delete.sh <profile>
+pnpm worktree-env delete <profile>
 # add --force to skip the confirmation prompt
 # add --keep-vm to drop containers + registry entry only, leaving the VM up
 ```

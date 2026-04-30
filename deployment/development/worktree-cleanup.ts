@@ -1,4 +1,3 @@
-#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Worktree Cleanup (TypeScript)
 //
 // Runs from the main repo checkout (not a worktree). Scans all git worktrees,
@@ -8,7 +7,7 @@
 //   2. Removes the git worktree
 //   3. Removes the entry from ~/.mini-infra/worktrees.yaml
 //
-// Usage: tsx worktree-cleanup.ts [--dry-run] [--repo <owner/repo>]
+// Invoked via: pnpm worktree-env cleanup [--dry-run] [--repo <owner/repo>]
 //
 // Designed to be run as a launchd agent (see worktree_cleanup.plist).
 
@@ -103,9 +102,10 @@ interface Args {
   repo?: string;
 }
 
-function parseCliArgs(): Args {
+function parseCliArgs(argv: string[]): Args {
   try {
     const { values } = parseArgs({
+      args: argv,
       options: {
         'dry-run': { type: 'boolean', default: false },
         repo: { type: 'string' },
@@ -114,7 +114,7 @@ function parseCliArgs(): Args {
       allowPositionals: false,
     });
     if (values.help) {
-      console.log('Usage: worktree-cleanup.ts [--dry-run] [--repo <owner/repo>]');
+      console.log('Usage: pnpm worktree-env cleanup [--dry-run] [--repo <owner/repo>]');
       process.exit(0);
     }
     return {
@@ -127,8 +127,8 @@ function parseCliArgs(): Args {
   }
 }
 
-function main(): void {
-  const args = parseCliArgs();
+export function run(argv: string[]): void {
+  const args = parseCliArgs(argv);
   const driver = pickDriver();
 
   if (args.dryRun) {
@@ -309,11 +309,4 @@ function main(): void {
 
   console.log('');
   logInfo(`Done — cleaned: ${cleaned}, skipped: ${skipped}`);
-}
-
-try {
-  main();
-} catch (err) {
-  logError(err instanceof Error ? err.message : String(err));
-  process.exit(1);
 }

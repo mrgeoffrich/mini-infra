@@ -192,4 +192,4 @@ finally {
     }
 }
 
-Write-Ok 'Done. Run deployment\development\worktree_start.ps1 next.'
+Write-Ok 'Done. Run `pnpm worktree-env start` next.'

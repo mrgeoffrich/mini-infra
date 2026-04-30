@@ -10,7 +10,7 @@ You're running UI tests against a live instance of Mini Infra — a Docker host 
 ## Environment
 
 - Look for the existence of `environment-details.xml`.
-- If absent run `deployment/development/worktree_start.sh` to start the environment and when its complete it will generate a `environment-details.xml` file with all the details required.
+- If absent run `pnpm worktree-env start` to start the environment and when its complete it will generate a `environment-details.xml` file with all the details required.
 - Read from `environment-details.xml` at the project root — each worktree instance uses its own host port. Grab it once up front:
 
   ```bash

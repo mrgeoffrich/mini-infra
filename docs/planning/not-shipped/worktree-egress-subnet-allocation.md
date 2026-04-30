@@ -52,8 +52,8 @@ If we ever do need more than 64 concurrent worktrees with > 4 envs each, expand 
 
 ### Why slot-keyed, not random
 
-- **Stable across re-runs.** A worktree keeps the same slot across `worktree_start.ps1` re-runs (the registry already enforces this for ports), so it keeps the same subnet pool. No DB migration churn each run.
-- **Trivial to reason about.** "Slot 3 → ports 3103/5103/8203/2503 → subnet `172.30.12.0/22`" is mechanical. Operators can spot-check from `worktree_list.ps1` output.
+- **Stable across re-runs.** A worktree keeps the same slot across `pnpm worktree-env start` re-runs (the registry already enforces this for ports), so it keeps the same subnet pool. No DB migration churn each run.
+- **Trivial to reason about.** "Slot 3 → ports 3103/5103/8203/2503 → subnet `172.30.12.0/22`" is mechanical. Operators can spot-check from `pnpm worktree-env list` output.
 - **No global allocator state needed.** The slot is already in `~/.mini-infra/worktrees.yaml`. We just compute the CIDR from it on each start.
 
 ### Worktree registry
@@ -74,7 +74,7 @@ export interface WorktreeEntry {
 }
 ```
 
-It's stored for visibility (operator can see "this worktree owns 172.30.12.0/22" in `worktree_list`) and forensics, not as the source of truth. The source of truth is the slot.
+It's stored for visibility (operator can see "this worktree owns 172.30.12.0/22" in `pnpm worktree-env list`) and forensics, not as the source of truth. The source of truth is the slot.
 
 ### Allocator behavior
 
@@ -145,7 +145,7 @@ Add an `<egressPool>` field to the generated XML so test/CI scripts can read the
 
 - Worktrees existing at upgrade time keep running on their already-allocated app networks. The next time they're started, they'll get a `MINI_INFRA_EGRESS_POOL_CIDR` set to their slot's slice.
 - The server-side allocator reuses the existing `local-applications` subnet if the network already exists (see `provisionEgressGateway` step 1 in `environment-manager.ts`). So an already-provisioned env won't churn its subnet — the new pool only governs *new* envs the worktree creates after the upgrade.
-- For a clean cutover, a user can `worktree_start.ps1 --reset` to wipe the DB and let the env be re-created in the new pool. Optional, not required.
+- For a clean cutover, a user can `pnpm worktree-env start --reset` to wipe the DB and let the env be re-created in the new pool. Optional, not required.
 
 ## Future expansion
 
@@ -192,7 +192,7 @@ Allocator picks a random /24 not already in `docker network ls`, retries up to N
 
 ## Risks
 
-- **Slot ≥ 64 panic.** A user with > 64 lifetime worktrees in `worktrees.yaml` (even if mostly inactive) could hit the throw. The existing port allocator caps at 100 slots, so the registry already grows to that ceiling. Mitigation: in `allocatePorts`, when computing the egress CIDR, if slot >= 64 fall back to the default pool *and* log a loud warning ("worktree N at slot ≥ 64 falls back to shared default pool — collision risk; clean up old worktrees with `worktree_cleanup`"). Deferred; document for now.
+- **Slot ≥ 64 panic.** A user with > 64 lifetime worktrees in `worktrees.yaml` (even if mostly inactive) could hit the throw. The existing port allocator caps at 100 slots, so the registry already grows to that ceiling. Mitigation: in `allocatePorts`, when computing the egress CIDR, if slot >= 64 fall back to the default pool *and* log a loud warning ("worktree N at slot ≥ 64 falls back to shared default pool — collision risk; clean up old worktrees with `pnpm worktree-env cleanup`"). Deferred; document for now.
 - **Dev users with VPN/LAN on `172.30.0.0/16`.** If their corporate VPN allocates from `172.30.x.x`, all dev worktrees will collide with the VPN regardless of slicing. Mitigation: doc the `MINI_INFRA_EGRESS_POOL_CIDR` override; same as today.
 - **The /22 size assumption.** If a single dev needs >4 envs in one worktree, they hit `Egress subnet pool exhausted` from the per-worktree allocator. Realistic? Unclear. Mitigation: revisit when it bites; meanwhile a user can override via `MINI_INFRA_EGRESS_POOL_CIDR` to a wider slice.
 
@@ -200,5 +200,5 @@ Allocator picks a random /24 not already in `docker network ls`, retries up to N
 
 - Unit: slot N → CIDR mapping. `n=0 → 172.30.0.0/22`, `n=3 → 172.30.12.0/22`, `n=63 → 172.30.252.0/22`, `n=64 → throws`.
 - Integration: spin two worktrees in parallel, verify `local-applications` networks have non-overlapping subnets via `wsl -d <distro> -- docker network inspect local-applications`.
-- Regression: existing worktree at slot 0 with already-provisioned `172.30.0.0/24` keeps working — re-running `worktree_start.ps1` doesn't migrate it, and inter-container connectivity is intact.
+- Regression: existing worktree at slot 0 with already-provisioned `172.30.0.0/24` keeps working — re-running `pnpm worktree-env start` doesn't migrate it, and inter-container connectivity is intact.
 - Cross-test against #275 sweep: with two worktrees up and disjoint subnets, deleting one should sweep only its own bridges and leave the other's intact (the sweep already does this; this just confirms the math).

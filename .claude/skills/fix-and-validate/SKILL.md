@@ -80,7 +80,7 @@ ls environment-details.xml 2>/dev/null || echo "MISSING"
 If **missing**, start it (this takes a few minutes — it's idempotent):
 
 ```bash
-bash deployment/development/worktree_start.sh
+pnpm worktree-env start
 ```
 
 Once complete, read the URL and credentials:
@@ -101,7 +101,7 @@ xmllint --xpath 'string(//environment/description/long)'  environment-details.xm
 If the environment **already exists**, rebuild the containers to pick up your code changes:
 
 ```bash
-bash deployment/development/worktree_start.sh
+pnpm worktree-env start
 ```
 
 The script is idempotent — it rebuilds the image and recreates the container without wiping data.

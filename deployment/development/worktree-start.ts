@@ -1,11 +1,13 @@
-#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Per-Worktree Development Startup (TypeScript)
 //
 // Runs one fully isolated Mini Infra instance per worktree by giving each a
 // dedicated Colima VM (its own Docker daemon) and a namespaced Compose project.
 // Ports are allocated from ~/.mini-infra/worktrees.yaml so re-runs are stable.
 //
-// Usage: tsx worktree-start.ts [--profile <name>] [--description <short>] [--long-description <long>] [--reset] [--skip-seed] [--seed]
+// Invoked via the worktree-env CLI:
+//   pnpm worktree-env start [--profile <name>] [--description <short>]
+//                           [--long-description <long>] [--reset]
+//                           [--skip-seed] [--seed]
 //
 // After the app is healthy, this script calls the in-process seeder (POST
 // /setup, issue an admin API key, seed service configs, apply HAProxy stack)
@@ -62,8 +64,17 @@ function pickDriver(): Driver {
 }
 
 function usage(): void {
-  const lines = fs.readFileSync(new URL(import.meta.url), 'utf8').split('\n');
-  console.log(lines.slice(1, 12).join('\n'));
+  console.log('Usage: worktree-env start [--profile <name>] [--description <short>]');
+  console.log('                          [--long-description <long>] [--reset]');
+  console.log('                          [--skip-seed] [--seed]');
+  console.log('');
+  console.log('  --profile          Override the auto-derived worktree profile name.');
+  console.log('  --description      Short (≤10 word) summary of this worktree.');
+  console.log('  --long-description Optional long (≤50 word) description.');
+  console.log('  --reset            Tear down volumes before bringing the stack back up.');
+  console.log('  --seed             Force the seeder to run again.');
+  console.log('  --skip-seed        Skip the seeder entirely.');
+  console.log('  -h, --help         Show this help and exit.');
 }
 
 function normaliseProfile(raw: string): string {
@@ -141,9 +152,10 @@ interface Args {
   longDescription?: string;
 }
 
-function parseCliArgs(): Args {
+function parseCliArgs(argv: string[]): Args {
   try {
     const { values } = parseArgs({
+      args: argv,
       options: {
         profile: { type: 'string' },
         reset: { type: 'boolean', default: false },
@@ -188,8 +200,8 @@ async function confirm(prompt: string): Promise<boolean> {
   }
 }
 
-async function main(): Promise<void> {
-  const args = parseCliArgs();
+export async function run(argv: string[]): Promise<void> {
+  const args = parseCliArgs(argv);
   const driver = pickDriver();
   logInfo(`VM driver: ${driver}`);
 
@@ -741,18 +753,8 @@ async function main(): Promise<void> {
   console.log('');
   console.log(`  Logs:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} logs -f`);
   console.log(`  Stop:   DOCKER_HOST=${dockerHost} docker compose -f ${COMPOSE_FILE} -p ${composeProjectName} down`);
-  const startWrapper = process.platform === 'win32' ? 'worktree_start.ps1' : 'worktree_start.sh';
-  const listWrapper = process.platform === 'win32' ? 'worktree_list.ps1' : 'worktree_list.sh';
-  console.log(`  Re-seed: ${path.join(SCRIPT_DIR, startWrapper)} --seed --profile ${profile}`);
-  console.log(`  Nuke:    ${path.join(SCRIPT_DIR, startWrapper)} --reset --profile ${profile}`);
-  console.log(`  List all: ${path.join(SCRIPT_DIR, listWrapper)}`);
+  console.log(`  Re-seed:  pnpm worktree-env start --seed --profile ${profile}`);
+  console.log(`  Nuke:     pnpm worktree-env start --reset --profile ${profile}`);
+  console.log(`  List all: pnpm worktree-env list`);
   console.log('');
 }
-
-main().catch((err) => {
-  logError(err instanceof Error ? err.message : String(err));
-  if (err instanceof Error && err.stack) {
-    console.error(err.stack);
-  }
-  process.exit(1);
-});

@@ -19,7 +19,7 @@ When you open the repo cold, these are the files to read first.
 - **Client boot** — [client/src/main.tsx](client/src/main.tsx) → [client/src/App.tsx](client/src/App.tsx) → [client/src/lib/routes.tsx](client/src/lib/routes.tsx). The router is statically defined; that file is the source of truth for what URLs exist.
 - **The cross-process contract** — [lib/types/socket-events.ts](lib/types/socket-events.ts) (channels and events) and [lib/types/permissions.ts](lib/types/permissions.ts) (RBAC scopes). When client and server need to agree on something, it lives here.
 - **Stack reconciliation** — [server/src/services/stacks/stack-reconciler.ts](server/src/services/stacks/stack-reconciler.ts). The chokepoint that brings every stack — built-in or user-defined — to its desired state.
-- **Dev workflow** — [deployment/development/worktree_start.sh](deployment/development/worktree_start.sh) (`.ps1` on Windows). Spins up a per-worktree Mini Infra instance.
+- **Dev workflow** — `pnpm worktree-env start`, dispatched through [deployment/development/worktree-env.ts](deployment/development/worktree-env.ts). Spins up a per-worktree Mini Infra instance (works the same on macOS, Linux, and Windows).
 
 ## Code map
 
@@ -73,7 +73,7 @@ Container image (Alpine + shell) that performs a single PostgreSQL backup to Azu
 
 ### `deployment/`
 
-Operator-facing scripts and compose files. The main entry point for development is [deployment/development/worktree_start.sh](deployment/development/worktree_start.sh), which spins up a per-worktree isolated VM. Production deployment artifacts also live here.
+Operator-facing scripts and compose files. The main entry point for development is `pnpm worktree-env start` (dispatched through [deployment/development/worktree-env.ts](deployment/development/worktree-env.ts)), which spins up a per-worktree isolated VM. Production deployment artifacts also live here.
 
 ### `scripts/`
 
@@ -195,7 +195,7 @@ Settings for Docker, Cloudflare, Azure, Postgres, and TLS aren't environment var
 
 ### Development
 
-Each git worktree gets its own isolated Mini Infra instance running on its own VM (Colima on macOS, WSL2 on Windows), with its own ports allocated from `~/.mini-infra/worktrees.yaml`. Spin up via [deployment/development/worktree_start.sh](deployment/development/worktree_start.sh). The worktree's URL, vault URL, and seeded credentials are written to `environment-details.xml` at the worktree root — read from there instead of hard-coding ports. See the root [CLAUDE.md](CLAUDE.md) for the worktree workflow.
+Each git worktree gets its own isolated Mini Infra instance running on its own VM (Colima on macOS, WSL2 on Windows), with its own ports allocated from `~/.mini-infra/worktrees.yaml`. Spin up via `pnpm worktree-env start`. The worktree's URL, vault URL, and seeded credentials are written to `environment-details.xml` at the worktree root — read from there instead of hard-coding ports. See the root [CLAUDE.md](CLAUDE.md) for the worktree workflow.
 
 In dev, Vite serves the client and proxies `/api`, `/auth`, and `/socket.io` to the backend. In production, Express serves the pre-built client bundle out of `server/public/`.
 

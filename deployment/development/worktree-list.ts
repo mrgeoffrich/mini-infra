@@ -1,10 +1,9 @@
-#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Worktree List
 //
 // Prints every worktree environment recorded in ~/.mini-infra/worktrees.yaml
 // as a table — URL, admin login, path, seed status.
 //
-// Usage: tsx worktree-list.ts [--wide] [--json]
+// Invoked via: pnpm worktree-env list [--wide] [--json]
 //   --wide   Also show api_key, admin password, colima VM, ports
 //   --json   Emit the registry as JSON instead of a table
 
@@ -36,9 +35,10 @@ interface Args {
   json: boolean;
 }
 
-function parseCliArgs(): Args {
+function parseCliArgs(argv: string[]): Args {
   try {
     const { values } = parseArgs({
+      args: argv,
       options: {
         wide: { type: 'boolean', default: false },
         json: { type: 'boolean', default: false },
@@ -47,7 +47,7 @@ function parseCliArgs(): Args {
       allowPositionals: false,
     });
     if (values.help) {
-      console.log('Usage: worktree_list.sh [--wide] [--json]');
+      console.log('Usage: pnpm worktree-env list [--wide] [--json]');
       process.exit(0);
     }
     return { wide: Boolean(values.wide), json: Boolean(values.json) };
@@ -68,8 +68,8 @@ function printTable(rows: string[][]): void {
   }
 }
 
-function main(): void {
-  const args = parseCliArgs();
+export function run(argv: string[]): void {
+  const args = parseCliArgs(argv);
   const entries = loadRegistry();
   const values = Object.values(entries).sort((a, b) => a.profile.localeCompare(b.profile));
 
@@ -80,7 +80,7 @@ function main(): void {
 
   if (values.length === 0) {
     console.log(`No worktree environments registered in ${REGISTRY_YAML}`);
-    console.log('Run deployment/development/worktree_start.sh to create one.');
+    console.log('Run `pnpm worktree-env start --description "<short>"` to create one.');
     return;
   }
 
@@ -145,11 +145,4 @@ function main(): void {
     console.log('');
     console.log(`(${values.length} environment${values.length === 1 ? '' : 's'} — pass --wide for credentials, --json for machine-readable output)`);
   }
-}
-
-try {
-  main();
-} catch (err) {
-  logError(err instanceof Error ? err.message : String(err));
-  process.exit(1);
 }

@@ -1,4 +1,3 @@
-#!/usr/bin/env -S pnpm dlx tsx@^4.21.0
 // Mini Infra Per-Worktree Teardown (TypeScript)
 //
 // Removes a single worktree's runtime — `docker compose down -v` for its
@@ -6,7 +5,7 @@
 // distro), then drops its entry from ~/.mini-infra/worktrees.yaml. The git
 // worktree itself is left alone (use `git worktree remove` separately).
 //
-// Usage: tsx worktree-delete.ts <profile> [--force] [--keep-vm]
+// Invoked via: pnpm worktree-env delete <profile> [--force] [--keep-vm]
 //   --force     Skip the confirmation prompt
 //   --keep-vm   Run compose-down + registry-remove only; leave the VM up
 
@@ -87,17 +86,18 @@ interface Args {
 }
 
 function usage(): void {
-  console.log('Usage: worktree-delete <profile> [--force] [--keep-vm]');
+  console.log('Usage: pnpm worktree-env delete <profile> [--force] [--keep-vm]');
   console.log('');
-  console.log('  <profile>    The worktree profile name (see worktree_list).');
+  console.log('  <profile>    The worktree profile name (see `pnpm worktree-env list`).');
   console.log('  --force      Skip the confirmation prompt.');
   console.log('  --keep-vm    Run compose-down + registry-remove only; leave the VM up.');
   console.log('  -h, --help   Show this help and exit.');
 }
 
-function parseCliArgs(): Args {
+function parseCliArgs(argv: string[]): Args {
   try {
     const { values, positionals } = parseArgs({
+      args: argv,
       options: {
         force: { type: 'boolean', default: false },
         'keep-vm': { type: 'boolean', default: false },
@@ -151,8 +151,8 @@ function buildDockerHost(driver: Driver, entry: WorktreeEntry): string | null {
   return `tcp://localhost:${entry.docker_port}`;
 }
 
-async function main(): Promise<void> {
-  const args = parseCliArgs();
+export async function run(argv: string[]): Promise<void> {
+  const args = parseCliArgs(argv);
   const driver = pickDriver();
   const profile = normaliseProfile(args.profile);
 
@@ -166,7 +166,7 @@ async function main(): Promise<void> {
   const entry = registry[profile];
   if (!entry) {
     logError(`No registry entry for profile '${profile}'.`);
-    logError('Run deployment/development/worktree_list.sh (or .ps1) to see registered profiles.');
+    logError('Run `pnpm worktree-env list` to see registered profiles.');
     process.exit(1);
   }
 
@@ -317,11 +317,3 @@ async function main(): Promise<void> {
     console.log(`    git worktree remove ${entry.worktree_path}`);
   }
 }
-
-main().catch((err) => {
-  logError(err instanceof Error ? err.message : String(err));
-  if (err instanceof Error && err.stack) {
-    console.error(err.stack);
-  }
-  process.exit(1);
-});
