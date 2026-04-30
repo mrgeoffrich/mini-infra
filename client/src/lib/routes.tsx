@@ -46,6 +46,7 @@ import TlsSettingsPage from "@/app/settings/tls/page";
 import AiAssistantSettingsPage from "@/app/settings/ai-assistant/page";
 import EgressFwAgentSettingsPage from "@/app/settings/egress-fw-agent/page";
 import EgressPage from "@/app/egress/page";
+import EgressPolicyDetailPage from "@/app/egress/[policyId]/page";
 import { IconShowcasePage } from "@/app/design/icons/page";
 import FrontendsListPage from "@/app/haproxy/frontends/page";
 import FrontendDetailsPage from "@/app/haproxy/frontends/[frontendName]/page";
@@ -317,6 +318,10 @@ export const router = createBrowserRouter([
       {
         path: "egress",
         element: <EgressPage />,
+      },
+      {
+        path: "egress/:policyId",
+        element: <EgressPolicyDetailPage />,
       },
       {
         path: "settings-self-update",
