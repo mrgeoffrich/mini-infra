@@ -104,6 +104,17 @@ router.get('/:templateId/versions/:versionId', requirePermission('stacks:read'),
 // POST / — Create user template (with initial draft)
 router.post('/', requirePermission('stacks:write'), async (req, res) => {
   try {
+    // Same gate as POST /:templateId/draft: a vault section in the body
+    // requires the elevated template-vault:write scope on top of stacks:write.
+    // Session users always pass.
+    if (draftHasVaultSection(req.body) && !callerHasScope(req, 'template-vault:write')) {
+      return res.status(403).json({
+        success: false,
+        message: 'The vault section requires the template-vault:write scope',
+        code: 'template_vault_scope_required',
+      });
+    }
+
     const parsed = createTemplateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });

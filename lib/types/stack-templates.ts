@@ -246,6 +246,13 @@ export interface CreateStackTemplateRequest {
   volumes: StackVolume[];
   services: StackServiceDefinition[];
   configFiles?: StackTemplateConfigFileInput[];
+  /** Optional input declarations persisted on the initial v0 draft. Matches
+   *  DraftVersionInput.inputs — submit a complete spec in one request. */
+  inputs?: TemplateInputDeclaration[];
+  /** Optional vault section persisted on the initial v0 draft. Matches
+   *  DraftVersionInput.vault. Triggers the template-vault:write permission
+   *  gate at the route layer when non-empty. */
+  vault?: TemplateVaultSection;
 }
 
 export interface StackTemplateConfigFileInput {
