@@ -98,7 +98,39 @@ describe('EgressContainerMapPusher', () => {
   // -------------------------------------------------------------------------
 
   it('collapses rapid container-change events into a single push per env', async () => {
-    const prisma = makePrisma();
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [{ serviceName: 'web', containerConfig: {} }],
+        },
+      ],
+    });
+
+    // First listContainers call (initial push) sees one container.
+    // Second call (after the burst of events) sees a different container.
+    // We have to vary the content so the no-op-skip path doesn't suppress
+    // the debounced push — that's tested separately below.
+    mockDockerInstance.listContainers
+      .mockResolvedValueOnce([
+        {
+          Id: 'c1',
+          Names: ['/staging-app-web'],
+          Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+          NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+        },
+      ])
+      .mockResolvedValue([
+        {
+          Id: 'c1',
+          Names: ['/staging-app-web'],
+          Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+          NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.11' } } },
+        },
+      ]);
+
     const pusher = new EgressContainerMapPusher(prisma);
     pusher.start();
 
@@ -125,6 +157,118 @@ describe('EgressContainerMapPusher', () => {
   });
 
   // -------------------------------------------------------------------------
+  // No-op suppression: skip pushes when entries haven't changed
+  // -------------------------------------------------------------------------
+
+  it('skips the push when the entries fingerprint matches the last successful push', async () => {
+    // Idle env: same single container reported for every Docker poll, so
+    // every container-change event produces an identical map snapshot.
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [{ serviceName: 'web', containerConfig: {} }],
+        },
+      ],
+    });
+    mockDockerInstance.listContainers.mockResolvedValue([
+      {
+        Id: 'c1',
+        Names: ['/staging-app-web'],
+        Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+        NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+      },
+    ]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+
+    // Initial push lands.
+    await vi.runAllTimersAsync();
+    const seedCount = pushCalls.length;
+    expect(seedCount).toBeGreaterThan(0);
+
+    // Fire 10 separate debounced bursts of container events. Each one
+    // would result in a push under the old behaviour — under the new
+    // behaviour the gateway should not be hit again because the snapshot
+    // is identical.
+    for (let burst = 0; burst < 10; burst++) {
+      capturedContainerChangeCallback?.();
+      await vi.advanceTimersByTimeAsync(600);
+    }
+
+    expect(pushCalls.length).toBe(seedCount);
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // No-op suppression: a real change still produces a push
+  // -------------------------------------------------------------------------
+
+  it('pushes again when entries change after a stretch of identical snapshots', async () => {
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [
+            { serviceName: 'web', containerConfig: {} },
+            { serviceName: 'api', containerConfig: {} },
+          ],
+        },
+      ],
+    });
+
+    const baseContainer = {
+      Id: 'c-web',
+      Names: ['/staging-app-web'],
+      Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+      NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+    };
+    const apiContainer = {
+      Id: 'c-api',
+      Names: ['/staging-app-api'],
+      Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'api' },
+      NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.11' } } },
+    };
+
+    // Initial push: just web. Three idle bursts: still just web (skipped).
+    // Then a real change: api joins. Push must fire.
+    mockDockerInstance.listContainers
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValue([baseContainer, apiContainer]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+    await vi.runAllTimersAsync();
+    const seedCount = pushCalls.length;
+
+    // Three idle bursts — all suppressed.
+    for (let i = 0; i < 3; i++) {
+      capturedContainerChangeCallback?.();
+      await vi.advanceTimersByTimeAsync(600);
+    }
+    expect(pushCalls.length).toBe(seedCount);
+
+    // Real change: api appeared. Push should fire on the next event.
+    capturedContainerChangeCallback?.();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(pushCalls.length).toBe(seedCount + 1);
+
+    const last = pushCalls[pushCalls.length - 1];
+    expect(last.entries).toHaveLength(2);
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
   // Map computation: skips egressBypass services
   // -------------------------------------------------------------------------
 
@@ -143,12 +287,15 @@ describe('EgressContainerMapPusher', () => {
       ],
     });
 
-    // Docker has both containers running on the egress network.
-    // Names follow `${env}-${stack}-${service}` (StackContainerManager convention).
+    // Both containers are running on the egress network. Discovery is
+    // label-driven: stackId + serviceName come from container labels, not
+    // names. The bypassed service should still be skipped because its
+    // service definition has egressBypass=true in Prisma.
     mockDockerInstance.listContainers.mockResolvedValue([
       {
         Id: 'c1',
         Names: ['/staging-myapp-web'],
+        Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
         NetworkSettings: {
           Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } },
         },
@@ -156,6 +303,10 @@ describe('EgressContainerMapPusher', () => {
       {
         Id: 'c2',
         Names: ['/staging-myapp-egress-gateway'],
+        Labels: {
+          'mini-infra.stack-id': 'stk-1',
+          'mini-infra.service': 'egress-gateway',
+        },
         NetworkSettings: {
           Networks: { 'staging-egress': { IPAddress: '172.30.0.2' } },
         },
@@ -177,10 +328,10 @@ describe('EgressContainerMapPusher', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Map computation: looks up containers by env-prefixed name
+  // Map computation: discovery is label-driven (works regardless of name)
   // -------------------------------------------------------------------------
 
-  it('matches containers using ${env.name}-${stack.name}-${serviceName}', async () => {
+  it('discovers containers via mini-infra.stack-id / mini-infra.service labels', async () => {
     const prisma = makePrisma({
       environments: [{ id: 'env-local', name: 'local', egressGatewayIp: '172.30.0.2' }],
       stacks: [
@@ -192,12 +343,16 @@ describe('EgressContainerMapPusher', () => {
       ],
     });
 
-    // StackContainerManager names this `local-egress-test-alpine` (env + stack + service).
-    // The pusher must look up that exact name — not `egress-test-alpine`.
+    // Container name is whatever the spawner chose — discovery doesn't care
+    // about the name, only about the labels.
     mockDockerInstance.listContainers.mockResolvedValue([
       {
         Id: 'c-alpine',
-        Names: ['/local-egress-test-alpine'],
+        Names: ['/some-arbitrary-name'],
+        Labels: {
+          'mini-infra.stack-id': 'stk-egress-test',
+          'mini-infra.service': 'alpine',
+        },
         NetworkSettings: {
           Networks: { 'local-egress': { IPAddress: '172.30.0.10' } },
         },
@@ -217,6 +372,123 @@ describe('EgressContainerMapPusher', () => {
       serviceName: 'alpine',
       containerId: 'c-alpine',
     });
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Map computation: pool instances are included even though their names
+  // don't match the static `${env}-${stack}-${service}` pattern
+  // -------------------------------------------------------------------------
+
+  it('includes pool instance containers (multiple per service)', async () => {
+    const prisma = makePrisma({
+      environments: [{ id: 'env-local', name: 'local', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-slackbot',
+          name: 'slackbot',
+          services: [{ serviceName: 'worker', containerConfig: {} }],
+        },
+      ],
+    });
+
+    // Pool instance names follow `${env}-${stack}-pool-${service}-${instanceId}`
+    // (pool-spawner.ts), so a name-based lookup would miss them entirely.
+    mockDockerInstance.listContainers.mockResolvedValue([
+      {
+        Id: 'c-worker-1',
+        Names: ['/local-slackbot-pool-worker-slack-user-u0at5jhr7d3'],
+        Labels: {
+          'mini-infra.stack-id': 'stk-slackbot',
+          'mini-infra.service': 'worker',
+          'mini-infra.pool-instance': 'true',
+          'mini-infra.pool-instance-id': 'slack-user-u0at5jhr7d3',
+        },
+        NetworkSettings: {
+          Networks: { 'local-egress': { IPAddress: '172.30.0.20' } },
+        },
+      },
+      {
+        Id: 'c-worker-2',
+        Names: ['/local-slackbot-pool-worker-slack-user-u0at5jhr7d4'],
+        Labels: {
+          'mini-infra.stack-id': 'stk-slackbot',
+          'mini-infra.service': 'worker',
+          'mini-infra.pool-instance': 'true',
+          'mini-infra.pool-instance-id': 'slack-user-u0at5jhr7d4',
+        },
+        NetworkSettings: {
+          Networks: { 'local-egress': { IPAddress: '172.30.0.21' } },
+        },
+      },
+    ]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+    await vi.runAllTimersAsync();
+
+    expect(pushCalls.length).toBeGreaterThan(0);
+    const { entries } = pushCalls[pushCalls.length - 1];
+    expect(entries).toHaveLength(2);
+    const ips = (entries as { ip: string }[]).map((e) => e.ip).sort();
+    expect(ips).toEqual(['172.30.0.20', '172.30.0.21']);
+    // Both should map to the same stack/service, distinct container IDs.
+    expect(new Set((entries as { stackId: string }[]).map((e) => e.stackId))).toEqual(
+      new Set(['stk-slackbot']),
+    );
+    expect(new Set((entries as { containerId: string }[]).map((e) => e.containerId))).toEqual(
+      new Set(['c-worker-1', 'c-worker-2']),
+    );
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // Map computation: foreign / unknown labels are dropped
+  // -------------------------------------------------------------------------
+
+  it('skips containers whose stack-id label does not belong to this env', async () => {
+    const prisma = makePrisma({
+      environments: [{ id: 'env-local', name: 'local', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-known',
+          name: 'known',
+          services: [{ serviceName: 'web', containerConfig: {} }],
+        },
+      ],
+    });
+
+    mockDockerInstance.listContainers.mockResolvedValue([
+      {
+        Id: 'c-known',
+        Names: ['/local-known-web'],
+        Labels: { 'mini-infra.stack-id': 'stk-known', 'mini-infra.service': 'web' },
+        NetworkSettings: { Networks: { 'local-egress': { IPAddress: '172.30.0.10' } } },
+      },
+      {
+        Id: 'c-unknown-stack',
+        Names: ['/foreign-app-svc'],
+        Labels: { 'mini-infra.stack-id': 'stk-other-env', 'mini-infra.service': 'svc' },
+        NetworkSettings: { Networks: { 'local-egress': { IPAddress: '172.30.0.99' } } },
+      },
+      {
+        Id: 'c-unlabeled',
+        Names: ['/random-container'],
+        Labels: {},
+        NetworkSettings: { Networks: { 'local-egress': { IPAddress: '172.30.0.50' } } },
+      },
+    ]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+    await vi.runAllTimersAsync();
+
+    expect(pushCalls.length).toBeGreaterThan(0);
+    const { entries } = pushCalls[pushCalls.length - 1];
+    expect(entries).toHaveLength(1);
+    expect((entries as { containerId: string }[])[0].containerId).toBe('c-known');
 
     pusher.stop();
   });
