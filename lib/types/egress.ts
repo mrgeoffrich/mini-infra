@@ -50,7 +50,10 @@ export type EgressEventAction = 'allowed' | 'blocked' | 'observed';
  * v3 gateway uses it for explicit HTTP forward proxy. Context disambiguates.
  */
 export type EgressEventProtocol = 'dns' | 'sni' | 'http' | 'connect' | 'tcp' | 'udp' | 'icmp';
-export type EgressArchivedReason = 'stack-deleted' | 'environment-deleted';
+export type EgressArchivedReason =
+  | 'stack-deleted'
+  | 'environment-deleted'
+  | 'system-infrastructure-stack';
 
 /**
  * Reason strings for egress denial or firewall drop events.
