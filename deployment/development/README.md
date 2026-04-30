@@ -19,7 +19,7 @@ On macOS this auto-selects Colima; on Windows it auto-selects WSL2 (first run al
 The script:
 
 1. Picks a per-worktree VM driver (Colima on macOS, WSL2 on Windows) and creates the VM if needed.
-2. Allocates per-worktree UI / registry / Vault / Docker ports from `~/.mini-infra/worktrees.yaml`.
+2. Allocates per-worktree UI / registry / Vault / Docker / HAProxy / NATS ports from `~/.mini-infra/worktrees.yaml`.
 3. Builds and pushes the **agent sidecar**, **egress gateway**, and **egress firewall agent** images to the per-worktree local Docker registry.
 4. Builds the **main app** image with those image tags baked in as build args.
 5. Runs `docker compose up` against `docker-compose.worktree.yaml` to bring up `registry` and `mini-infra`. The agent sidecar and the egress firewall agent are launched at runtime by the `mini-infra` server itself (not by compose), so they do not appear as compose services.
@@ -66,6 +66,8 @@ pnpm worktree-env install-cleanup-agent --remove
 
 # Resolve the dev URL from the generated environment manifest
 MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
+NATS_CLIENT_URL=$(xmllint --xpath 'string(//environment/endpoints/natsClient)' environment-details.xml)
+NATS_MONITOR_URL=$(xmllint --xpath 'string(//environment/endpoints/natsMonitor)' environment-details.xml)
 ```
 
 Run `pnpm worktree-env <command> --help` for command-specific options.

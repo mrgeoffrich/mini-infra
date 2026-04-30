@@ -13,10 +13,11 @@ describe("renderNatsConfig", () => {
     expect(conf).toContain("operator: OP_JWT_PLACEHOLDER");
     expect(conf).toContain("resolver: MEMORY");
     expect(conf).toContain("ACCT_PUBLIC: ACCT_JWT_PLACEHOLDER");
+    expect(conf).not.toContain("system_account:");
     expect(conf).not.toContain("jetstream");
   });
 
-  it("includes a jetstream block with the default store_dir when enabled", () => {
+  it("includes system_account and a jetstream block with the default store_dir when enabled", () => {
     const conf = renderNatsConfig({
       operatorJwt: "OP",
       accountPublicKey: "AP",
@@ -24,6 +25,7 @@ describe("renderNatsConfig", () => {
       jetStream: true,
     });
 
+    expect(conf).toContain("system_account: AP");
     expect(conf).toContain("jetstream {");
     expect(conf).toContain('store_dir: "/data/jetstream"');
   });

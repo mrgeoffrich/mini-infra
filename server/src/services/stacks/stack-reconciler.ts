@@ -271,8 +271,16 @@ export class StackReconciler {
       // conceptually complete (handled inside prepareServiceContainer) and
       // before any container is created, so wrapped secret_ids have the
       // tightest possible lifetime around container start.
+      const activeServiceNames = new Set(actions.map((a) => a.serviceName));
       const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordApply } =
-        await this.resolveVaultEnv(stack, stack.services, resolvedDefinitions, poolTokens, log);
+        await this.resolveVaultEnv(
+          stack,
+          stack.services,
+          resolvedDefinitions,
+          poolTokens,
+          activeServiceNames,
+          log,
+        );
 
       for (const action of actions) {
         const actionStart = Date.now();
@@ -527,8 +535,16 @@ export class StackReconciler {
         stackId,
         recreatedCallers,
       );
+      const activeServiceNames = new Set(actions.map((a) => a.serviceName));
       const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordUpdate } =
-        await this.resolveVaultEnv(stack, stack.services, resolvedDefinitions, poolTokens, log);
+        await this.resolveVaultEnv(
+          stack,
+          stack.services,
+          resolvedDefinitions,
+          poolTokens,
+          activeServiceNames,
+          log,
+        );
 
       for (const action of actions) {
         const svc = serviceMap.get(action.serviceName);
@@ -650,6 +666,7 @@ export class StackReconciler {
     }>,
     resolvedDefinitions: Map<string, StackServiceDefinition>,
     poolTokens: Record<string, string>,
+    activeServiceNames: Set<string>,
     log: Logger,
   ): Promise<{
     overrides: Map<string, Record<string, string>>;
@@ -663,6 +680,7 @@ export class StackReconciler {
     const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
+      if (!activeServiceNames.has(serviceName)) continue;
       // Pool services never get a container at apply time — skip resolution
       // entirely so we don't waste a Vault mint on something we won't use.
       if (serviceDef.serviceType === 'Pool') continue;

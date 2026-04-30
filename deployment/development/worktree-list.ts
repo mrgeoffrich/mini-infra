@@ -13,6 +13,8 @@ import {
   EGRESS_PER_WORKTREE_PREFIX,
   EGRESS_PER_WORKTREE_SLOT_COUNT,
   loadRegistry,
+  NATS_CLIENT_PORT_MIN,
+  NATS_MONITOR_PORT_MIN,
   REGISTRY_YAML,
   slotOf,
   type WorktreeEntry,
@@ -28,6 +30,13 @@ function egressPoolFor(e: WorktreeEntry): string {
   if (slot === undefined) return '-';
   if (slot < 0 || slot >= EGRESS_PER_WORKTREE_SLOT_COUNT) return DEFAULT_EGRESS_POOL_CIDR;
   return `172.30.${slot * 4}.0/${EGRESS_PER_WORKTREE_PREFIX}`;
+}
+
+function natsPortsFor(e: WorktreeEntry): string {
+  if (e.nats_client_port) return `${e.nats_client_port}/${e.nats_monitor_port}`;
+  const slot = slotOf(e);
+  if (slot === undefined) return '-';
+  return `${NATS_CLIENT_PORT_MIN + slot}/${NATS_MONITOR_PORT_MIN + slot}`;
 }
 
 interface Args {
@@ -96,6 +105,7 @@ export function run(argv: string[]): void {
       'REG',
       'VAULT',
       'HAPROXY',
+      'NATS',
       'EGRESS POOL',
       'VM',
       'ADMIN EMAIL',
@@ -108,6 +118,7 @@ export function run(argv: string[]): void {
       const haproxy = e.haproxy_http_port
         ? `${e.haproxy_http_port}/${e.haproxy_https_port}`
         : '-';
+      const nats = natsPortsFor(e);
       rows.push([
         e.profile,
         dash(e.description),
@@ -116,6 +127,7 @@ export function run(argv: string[]): void {
         e.registry_port ? String(e.registry_port) : '-',
         e.vault_port ? String(e.vault_port) : '-',
         haproxy,
+        nats,
         egressPoolFor(e),
         dash(e.colima_vm),
         dash(e.admin_email),

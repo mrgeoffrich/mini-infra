@@ -307,6 +307,8 @@ export async function run(argv: string[]): Promise<void> {
     haproxy_https_port: haproxyHttpsPort,
     haproxy_stats_port: haproxyStatsPort,
     haproxy_dataplane_port: haproxyDataplanePort,
+    nats_client_port: natsClientPort,
+    nats_monitor_port: natsMonitorPort,
     egress_pool_cidr: egressPoolCidr,
   } = allocatePorts(profile);
   // Persist early so the entry exists even if later steps fail
@@ -322,6 +324,8 @@ export async function run(argv: string[]): Promise<void> {
     haproxy_https_port: haproxyHttpsPort,
     haproxy_stats_port: haproxyStatsPort,
     haproxy_dataplane_port: haproxyDataplanePort,
+    nats_client_port: natsClientPort,
+    nats_monitor_port: natsMonitorPort,
     egress_pool_cidr: egressPoolCidr,
     url: `http://localhost:${uiPort}`,
     description: shortDesc,
@@ -329,7 +333,8 @@ export async function run(argv: string[]): Promise<void> {
   logInfo(
     `Ports: UI=${uiPort}, registry=${registryPort}, vault=${vaultPort}` +
       (driver === 'wsl' ? `, docker=${dockerPort}` : '') +
-      `, haproxy(http/https/stats/dataplane)=${haproxyHttpPort}/${haproxyHttpsPort}/${haproxyStatsPort}/${haproxyDataplanePort}`,
+      `, haproxy(http/https/stats/dataplane)=${haproxyHttpPort}/${haproxyHttpsPort}/${haproxyStatsPort}/${haproxyDataplanePort}` +
+      `, nats(client/monitor)=${natsClientPort}/${natsMonitorPort}`,
   );
   logInfo(`Egress pool: ${egressPoolCidr}`);
 
@@ -636,6 +641,8 @@ export async function run(argv: string[]): Promise<void> {
     uiPort,
     registryPort,
     vaultPort,
+    natsClientPort,
+    natsMonitorPort,
     egressPool: egressPoolCidr,
     agentSidecarImageTag,
     shortDescription: shortDesc,
@@ -659,6 +666,8 @@ export async function run(argv: string[]): Promise<void> {
         uiPort,
         registryPort,
         vaultPort,
+        natsClientPort,
+        natsMonitorPort,
         haproxyHttpPort,
         haproxyHttpsPort,
         haproxyStatsPort,
@@ -686,6 +695,8 @@ export async function run(argv: string[]): Promise<void> {
         haproxy_https_port: haproxyHttpsPort,
         haproxy_stats_port: haproxyStatsPort,
         haproxy_dataplane_port: haproxyDataplanePort,
+        nats_client_port: natsClientPort,
+        nats_monitor_port: natsMonitorPort,
         url: `http://localhost:${uiPort}`,
         admin_email: result.adminEmail,
         admin_password: result.adminPassword,
@@ -718,6 +729,8 @@ export async function run(argv: string[]): Promise<void> {
       haproxy_https_port: haproxyHttpsPort,
       haproxy_stats_port: haproxyStatsPort,
       haproxy_dataplane_port: haproxyDataplanePort,
+      nats_client_port: natsClientPort,
+      nats_monitor_port: natsMonitorPort,
       url: `http://localhost:${uiPort}`,
       seeded: details?.seeded ?? false,
       admin_email: details?.admin.email,
@@ -748,6 +761,8 @@ export async function run(argv: string[]): Promise<void> {
   console.log(`  URL:         http://localhost:${uiPort}`);
   console.log(`  Registry:    localhost:${registryPort}`);
   console.log(`  Vault:       http://localhost:${vaultPort}`);
+  console.log(`  NATS:        nats://localhost:${natsClientPort}`);
+  console.log(`  NATS monitor: http://localhost:${natsMonitorPort}`);
   console.log(`  HAProxy:     http://localhost:${haproxyHttpPort}  (https=${haproxyHttpsPort}, stats=${haproxyStatsPort}, dataplane=${haproxyDataplanePort})`);
   console.log(`  DOCKER_HOST: ${dockerHost}`);
   console.log('');

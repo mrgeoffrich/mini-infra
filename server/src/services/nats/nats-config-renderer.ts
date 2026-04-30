@@ -24,6 +24,9 @@ export function renderNatsConfig(inputs: NatsConfigInputs): string {
   const lines: string[] = [];
   lines.push("# Managed by mini-infra — regenerated on every NATS bootstrap.");
   lines.push(`operator: ${inputs.operatorJwt}`);
+  if (inputs.jetStream) {
+    lines.push(`system_account: ${inputs.accountPublicKey}`);
+  }
   lines.push("");
   lines.push("resolver: MEMORY");
   lines.push("");

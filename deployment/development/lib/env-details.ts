@@ -71,6 +71,8 @@ export interface MinimalEnvironmentDetailsInput {
   uiPort: number;
   registryPort: number;
   vaultPort: number;
+  natsClientPort: number;
+  natsMonitorPort: number;
   egressPool: string;
   agentSidecarImageTag: string;
   shortDescription?: string;
@@ -112,6 +114,8 @@ ${descBlock}  <seeded>false</seeded>
     <ui>http://localhost:${input.uiPort}</ui>
     <registry>localhost:${input.registryPort}</registry>
     <vault>http://localhost:${input.vaultPort}</vault>
+    <natsClient>nats://localhost:${input.natsClientPort}</natsClient>
+    <natsMonitor>http://localhost:${input.natsMonitorPort}</natsMonitor>
   </endpoints>
   <egressPool>${xmlEscape(input.egressPool)}</egressPool>
   <images>
@@ -144,6 +148,8 @@ export interface FullEnvironmentDetailsInput {
   uiPort: number;
   registryPort: number;
   vaultPort: number;
+  natsClientPort: number;
+  natsMonitorPort: number;
   egressPool: string;
   agentSidecarImageTag: string;
   adminEmail: string;
@@ -204,6 +210,8 @@ ${descBlock}  <seeded>true</seeded>
     <ui>http://localhost:${input.uiPort}</ui>
     <registry>localhost:${input.registryPort}</registry>
     <vault>http://localhost:${input.vaultPort}</vault>
+    <natsClient>nats://localhost:${input.natsClientPort}</natsClient>
+    <natsMonitor>http://localhost:${input.natsMonitorPort}</natsMonitor>
   </endpoints>
   <egressPool>${t(input.egressPool)}</egressPool>
   <images>

@@ -9,8 +9,10 @@
 //   4. Upsert Azure / Cloudflare / GitHub credentials
 //   5. Create a local environment
 //   6. Instantiate + apply the built-in HAProxy stack template
-//   7. Mark onboarding complete
-//   8. Write environment-details.xml at the project root.
+//   7. Instantiate + apply the built-in Vault + NATS stack template
+//   8. Bootstrap/unlock Vault and publish system policies
+//   9. Mark onboarding complete
+//   10. Write environment-details.xml at the project root.
 //
 // Each step is idempotent-ish: already-configured state is skipped, but the
 // seeder does not back out partial state on failure — fix the env file and re-run.
@@ -29,6 +31,8 @@ export interface SeederInput {
   uiPort: number;
   registryPort: number;
   vaultPort: number;
+  natsClientPort: number;
+  natsMonitorPort: number;
   // Per-worktree HAProxy host ports — passed as parameterValues to the
   // haproxy stack template so two worktrees (or any other process binding
   // 80/443) don't collide.
@@ -558,6 +562,7 @@ async function applyAndWaitForSynced(
   api: ApiClient,
   stackId: string,
   label: string,
+  options: { serviceNames?: string[]; allowDrifted?: boolean; force?: boolean } = {},
 ): Promise<void> {
   // Snapshot pre-apply status + lastAppliedAt. The status field may still read
   // "error" (or whatever) from a prior run until the reconciler finishes this
@@ -572,13 +577,15 @@ async function applyAndWaitForSynced(
     prevLastAppliedAt = s?.lastAppliedAt || '';
   }
 
-  if (prevStatus.toLowerCase() === 'synced') {
+  if (!options.force && prevStatus.toLowerCase() === 'synced') {
     logSkip(`${label} stack is already Synced — skipping apply`);
     return;
   }
 
   logInfo(`Applying ${label} stack (current status: ${prevStatus || 'unknown'})`);
-  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {});
+  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {
+    ...(options.serviceNames ? { serviceNames: options.serviceNames } : {}),
+  });
   if (applyRes.status !== 200 && applyRes.status !== 202) {
     logError(`Apply returned ${applyRes.status}: ${applyRes.bodyText}`);
     return;
@@ -605,12 +612,22 @@ async function applyAndWaitForSynced(
       logError(`${label} stack apply failed (status=error)`);
       return;
     }
+    if (options.allowDrifted) {
+      logOk(`${label} stack apply completed (status=${lower || 'unknown'})`);
+      return;
+    }
   }
   logSkip(`Timed out waiting for ${label} to sync (last status: ${lastStatus || 'unknown'})`);
 }
 
-async function ensureVaultStack(api: ApiClient, vaultPort: number): Promise<string | null> {
-  const stackName = 'vault';
+interface VaultNatsPorts {
+  vault: number;
+  natsClient: number;
+  natsMonitor: number;
+}
+
+async function ensureVaultNatsStack(api: ApiClient, ports: VaultNatsPorts): Promise<string | null> {
+  const stackName = 'vault-nats';
   logInfo(`Looking for existing ${stackName} host stack`);
   // Vault is host-scoped — no environmentId filter, but the listing returns
   // all stacks the caller can see, so we still match by name.
@@ -623,34 +640,38 @@ async function ensureVaultStack(api: ApiClient, vaultPort: number): Promise<stri
       return existing.id;
     }
   }
-  logInfo('Locating Vault stack template');
-  // Exact-name match: there's also a `hello-vault` template in the catalog
-  // which is environment-scoped, so a substring match would land on the wrong
-  // one and reject our host-scoped instantiate.
-  const templateId = await findTemplate(api, 'vault', { exact: true });
+  logInfo('Locating Vault + NATS stack template');
+  const templateId = await findTemplate(api, 'vault-nats', { exact: true });
   if (!templateId) {
-    logSkip('Vault template not found — skipping Vault setup');
+    logSkip('Vault + NATS template not found — skipping Vault/NATS setup');
     return null;
   }
-  // Host-scoped instantiate: no environmentId. Override host-port so each
-  // worktree's Vault binds a unique macOS host port — the colima VMs all
-  // publish on their VM's :8200 internally, but only one wins host:8200 via
-  // colima's port forwarder, so distinct host ports are essential.
+  // Host-scoped instantiate: no environmentId. Override every exposed port so
+  // each worktree can run Vault + NATS without colliding with sibling VMs.
   const res = await api.post<unknown>(
     `/api/stack-templates/${templateId}/instantiate`,
-    { name: stackName, parameterValues: { 'host-port': vaultPort } },
+    {
+      name: stackName,
+      parameterValues: {
+        'vault-host-port': ports.vault,
+        'nats-host-port': ports.natsClient,
+        'nats-monitor-port': ports.natsMonitor,
+      },
+    },
   );
   if (res.status !== 201) {
-    logError(`Vault instantiate returned ${res.status}: ${res.bodyText}`);
+    logError(`Vault + NATS instantiate returned ${res.status}: ${res.bodyText}`);
     return null;
   }
   const created = pickObject<Stack>(res.body);
   const id = created?.id || '';
   if (!id) {
-    logError(`Vault instantiate response missing id: ${res.bodyText}`);
+    logError(`Vault + NATS instantiate response missing id: ${res.bodyText}`);
     return null;
   }
-  logOk(`Vault stack created (id=${id})`);
+  logOk(
+    `Vault + NATS stack created (id=${id}, ports: vault=${ports.vault} nats=${ports.natsClient} monitor=${ports.natsMonitor})`,
+  );
   return id;
 }
 
@@ -844,12 +865,28 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   if (haproxyStackId) {
     await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
   }
-  const vaultStackId = await ensureVaultStack(api, input.vaultPort);
-  if (vaultStackId) {
-    await applyAndWaitForSynced(api, vaultStackId, 'Vault');
+  const vaultNatsStackId = await ensureVaultNatsStack(api, {
+    vault: input.vaultPort,
+    natsClient: input.natsClientPort,
+    natsMonitor: input.natsMonitorPort,
+  });
+  if (vaultNatsStackId) {
+    // NATS reads its nats.conf from Vault KV. Bring up Vault first, bootstrap it
+    // so NatsBootstrapService writes shared/nats-config, then apply the whole
+    // stack so NATS can resolve NATS_CONF on first container start.
+    await applyAndWaitForSynced(api, vaultNatsStackId, 'Vault service', {
+      serviceNames: ['vault'],
+      allowDrifted: true,
+    });
   }
   await ensureVaultUnlocked(api);
   await publishSystemVaultPolicies(api);
+  if (vaultNatsStackId) {
+    await applyAndWaitForSynced(api, vaultNatsStackId, 'NATS service', {
+      serviceNames: ['nats'],
+      force: true,
+    });
+  }
   await markOnboardingComplete(api);
 
   logInfo(`Writing ${input.detailsFile}`);
@@ -863,6 +900,8 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     uiPort: input.uiPort,
     registryPort: input.registryPort,
     vaultPort: input.vaultPort,
+    natsClientPort: input.natsClientPort,
+    natsMonitorPort: input.natsMonitorPort,
     egressPool: input.egressPoolCidr,
     agentSidecarImageTag: input.agentSidecarImageTag,
     adminEmail: env.ADMIN_EMAIL,

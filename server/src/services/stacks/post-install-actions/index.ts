@@ -14,6 +14,7 @@ type ActionHandler = (ctx: PostInstallContext) => Promise<void>;
 const templateHandlers: Record<string, ActionHandler[]> = {
   postgres: [registerPostgresServer],
   vault: [registerVaultAddress],
+  'vault-nats': [registerVaultAddress],
 };
 
 /**
