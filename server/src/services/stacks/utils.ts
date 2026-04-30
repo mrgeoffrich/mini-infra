@@ -131,7 +131,6 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
       : Prisma.DbNull,
     poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
-    vaultAppRoleRef: s.vaultAppRoleRef ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
     natsCredentialRef: s.natsCredentialRef ?? null,
   };
