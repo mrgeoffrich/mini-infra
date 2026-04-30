@@ -30,6 +30,22 @@ interface EnvState {
   timer: NodeJS.Timeout | null;
   version: number;
   lastPushedAt: Date | null;
+  // Fingerprint of the last successfully-pushed entries. Used to suppress
+  // no-op pushes when Docker fires container events that don't change the
+  // map (most events are healthcheck exec_create/exec_start/exec_die churn,
+  // which produces identical entries). Null until the first successful push.
+  lastPushedFingerprint: string | null;
+}
+
+/**
+ * Build a deterministic fingerprint for a set of entries. Entries are
+ * already sorted by _buildContainerMap, so this is just a JSON
+ * serialisation of the fields the gateway cares about.
+ */
+function fingerprintEntries(entries: ContainerMapEntry[]): string {
+  return JSON.stringify(
+    entries.map((e) => [e.ip, e.stackId, e.serviceName, e.containerId ?? '']),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +132,7 @@ export class EgressContainerMapPusher {
   private _scheduleEnv(envId: string, env: EnvRow): void {
     let state = this.states.get(envId);
     if (!state) {
-      state = { timer: null, version: 0, lastPushedAt: null };
+      state = { timer: null, version: 0, lastPushedAt: null, lastPushedFingerprint: null };
       this.states.set(envId, state);
     }
 
@@ -145,7 +161,7 @@ export class EgressContainerMapPusher {
       envs.map((env) => {
         let state = this.states.get(env.id);
         if (!state) {
-          state = { timer: null, version: 0, lastPushedAt: null };
+          state = { timer: null, version: 0, lastPushedAt: null, lastPushedFingerprint: null };
           this.states.set(env.id, state);
         }
         return this._pushEnv(env, state);
@@ -156,6 +172,20 @@ export class EgressContainerMapPusher {
   private async _pushEnv(env: EnvRow, state: EnvState): Promise<void> {
     const attempt = async (): Promise<void> => {
       const entries = await this._buildContainerMap(env);
+
+      // Most container events Docker emits (healthcheck exec_create /
+      // exec_start / exec_die, etc.) don't change the map — without this
+      // check the pusher hits the gateway ~once per second on an idle
+      // env. Skip when the snapshot is identical to what we last pushed.
+      const fingerprint = fingerprintEntries(entries);
+      if (state.lastPushedFingerprint === fingerprint) {
+        log.debug(
+          { envId: env.id, envName: env.name, entryCount: entries.length },
+          'Container map unchanged since last push — skipping',
+        );
+        return;
+      }
+
       const client = new EgressGatewayClient(env.egressGatewayIp);
       state.version += 1;
       const result = await client.pushContainerMap({
@@ -163,6 +193,7 @@ export class EgressContainerMapPusher {
         entries,
       });
       state.lastPushedAt = new Date();
+      state.lastPushedFingerprint = fingerprint;
       log.info(
         { envId: env.id, envName: env.name, version: result.version, entryCount: result.entryCount },
         'Container map pushed to gateway',

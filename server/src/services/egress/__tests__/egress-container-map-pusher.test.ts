@@ -98,7 +98,39 @@ describe('EgressContainerMapPusher', () => {
   // -------------------------------------------------------------------------
 
   it('collapses rapid container-change events into a single push per env', async () => {
-    const prisma = makePrisma();
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [{ serviceName: 'web', containerConfig: {} }],
+        },
+      ],
+    });
+
+    // First listContainers call (initial push) sees one container.
+    // Second call (after the burst of events) sees a different container.
+    // We have to vary the content so the no-op-skip path doesn't suppress
+    // the debounced push — that's tested separately below.
+    mockDockerInstance.listContainers
+      .mockResolvedValueOnce([
+        {
+          Id: 'c1',
+          Names: ['/staging-app-web'],
+          Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+          NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+        },
+      ])
+      .mockResolvedValue([
+        {
+          Id: 'c1',
+          Names: ['/staging-app-web'],
+          Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+          NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.11' } } },
+        },
+      ]);
+
     const pusher = new EgressContainerMapPusher(prisma);
     pusher.start();
 
@@ -120,6 +152,118 @@ describe('EgressContainerMapPusher', () => {
 
     // Only 1 additional push despite 5 events
     expect(pushCalls.length).toBe(callCountAfterInit + 1);
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // No-op suppression: skip pushes when entries haven't changed
+  // -------------------------------------------------------------------------
+
+  it('skips the push when the entries fingerprint matches the last successful push', async () => {
+    // Idle env: same single container reported for every Docker poll, so
+    // every container-change event produces an identical map snapshot.
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [{ serviceName: 'web', containerConfig: {} }],
+        },
+      ],
+    });
+    mockDockerInstance.listContainers.mockResolvedValue([
+      {
+        Id: 'c1',
+        Names: ['/staging-app-web'],
+        Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+        NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+      },
+    ]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+
+    // Initial push lands.
+    await vi.runAllTimersAsync();
+    const seedCount = pushCalls.length;
+    expect(seedCount).toBeGreaterThan(0);
+
+    // Fire 10 separate debounced bursts of container events. Each one
+    // would result in a push under the old behaviour — under the new
+    // behaviour the gateway should not be hit again because the snapshot
+    // is identical.
+    for (let burst = 0; burst < 10; burst++) {
+      capturedContainerChangeCallback?.();
+      await vi.advanceTimersByTimeAsync(600);
+    }
+
+    expect(pushCalls.length).toBe(seedCount);
+
+    pusher.stop();
+  });
+
+  // -------------------------------------------------------------------------
+  // No-op suppression: a real change still produces a push
+  // -------------------------------------------------------------------------
+
+  it('pushes again when entries change after a stretch of identical snapshots', async () => {
+    const prisma = makePrisma({
+      environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
+      stacks: [
+        {
+          id: 'stk-1',
+          name: 'app',
+          services: [
+            { serviceName: 'web', containerConfig: {} },
+            { serviceName: 'api', containerConfig: {} },
+          ],
+        },
+      ],
+    });
+
+    const baseContainer = {
+      Id: 'c-web',
+      Names: ['/staging-app-web'],
+      Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'web' },
+      NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } } },
+    };
+    const apiContainer = {
+      Id: 'c-api',
+      Names: ['/staging-app-api'],
+      Labels: { 'mini-infra.stack-id': 'stk-1', 'mini-infra.service': 'api' },
+      NetworkSettings: { Networks: { 'staging-egress': { IPAddress: '172.30.0.11' } } },
+    };
+
+    // Initial push: just web. Three idle bursts: still just web (skipped).
+    // Then a real change: api joins. Push must fire.
+    mockDockerInstance.listContainers
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValueOnce([baseContainer])
+      .mockResolvedValue([baseContainer, apiContainer]);
+
+    const pusher = new EgressContainerMapPusher(prisma);
+    pusher.start();
+    await vi.runAllTimersAsync();
+    const seedCount = pushCalls.length;
+
+    // Three idle bursts — all suppressed.
+    for (let i = 0; i < 3; i++) {
+      capturedContainerChangeCallback?.();
+      await vi.advanceTimersByTimeAsync(600);
+    }
+    expect(pushCalls.length).toBe(seedCount);
+
+    // Real change: api appeared. Push should fire on the next event.
+    capturedContainerChangeCallback?.();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(pushCalls.length).toBe(seedCount + 1);
+
+    const last = pushCalls[pushCalls.length - 1];
+    expect(last.entries).toHaveLength(2);
 
     pusher.stop();
   });
