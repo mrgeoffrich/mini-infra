@@ -1,0 +1,133 @@
+{
+  "name": "vault-nats",
+  "displayName": "Vault + NATS",
+  "builtinVersion": 1,
+  "scope": "host",
+  "category": "infrastructure",
+  "description": "OpenBao vault paired with a NATS messaging server. NATS uses Vault-managed NKey/JWT auth and JetStream persistence. Cannot coexist with the standalone 'vault' template — install one or the other.",
+  "parameters": [
+    {
+      "name": "vault-host-port",
+      "type": "number",
+      "default": 8200,
+      "description": "Bind the Vault API on the host at this port."
+    },
+    {
+      "name": "nats-host-port",
+      "type": "number",
+      "default": 4222,
+      "description": "Bind the NATS client port on the host."
+    },
+    {
+      "name": "nats-monitor-port",
+      "type": "number",
+      "default": 8222,
+      "description": "Bind the NATS HTTP monitoring port on the host."
+    }
+  ],
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "vault", "joinSelf": true },
+    { "type": "docker-network", "purpose": "nats", "joinSelf": true }
+  ],
+  "networks": [],
+  "volumes": [
+    { "name": "openbao_data" },
+    { "name": "nats_data" }
+  ],
+  "services": [
+    {
+      "serviceName": "vault",
+      "serviceType": "Stateful",
+      "dockerImage": "openbao/openbao",
+      "dockerTag": "2.5.2",
+      "containerConfig": {
+        "command": ["server"],
+        "capAdd": ["IPC_LOCK"],
+        "env": {
+          "BAO_LOCAL_CONFIG": "{\"storage\":{\"file\":{\"path\":\"/openbao/file\"}},\"listener\":[{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}}],\"ui\":true,\"api_addr\":\"http://mini-infra-vault-nats-vault:8200\"}"
+        },
+        "ports": [
+          {
+            "containerPort": 8200,
+            "hostPort": "{{params.vault-host-port}}",
+            "protocol": "tcp",
+            "exposeOnHost": true
+          }
+        ],
+        "mounts": [
+          {
+            "source": "openbao_data",
+            "target": "/openbao/file",
+            "type": "volume"
+          }
+        ],
+        "restartPolicy": "unless-stopped",
+        "joinResourceNetworks": ["vault"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    },
+    {
+      "serviceName": "nats",
+      "serviceType": "Stateful",
+      "dockerImage": "nats",
+      "dockerTag": "2.12.8-alpine",
+      "containerConfig": {
+        "entrypoint": [
+          "sh",
+          "-c",
+          "mkdir -p /etc/nats && printf '%s' \"$NATS_CONF\" > /etc/nats/nats.conf && exec nats-server -c /etc/nats/nats.conf -m 8222"
+        ],
+        "dynamicEnv": {
+          "NATS_CONF": {
+            "kind": "vault-kv",
+            "path": "shared/nats-config",
+            "field": "conf"
+          }
+        },
+        "ports": [
+          {
+            "containerPort": 4222,
+            "hostPort": "{{params.nats-host-port}}",
+            "protocol": "tcp",
+            "exposeOnHost": true
+          },
+          {
+            "containerPort": 8222,
+            "hostPort": "{{params.nats-monitor-port}}",
+            "protocol": "tcp",
+            "exposeOnHost": true
+          }
+        ],
+        "mounts": [
+          {
+            "source": "nats_data",
+            "target": "/data",
+            "type": "volume"
+          }
+        ],
+        "restartPolicy": "unless-stopped",
+        "joinResourceNetworks": ["vault", "nats"],
+        "healthcheck": {
+          "test": ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"],
+          "interval": 10,
+          "timeout": 3,
+          "retries": 5,
+          "startPeriod": 10
+        },
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": ["vault"],
+      "order": 2
+    }
+  ]
+}

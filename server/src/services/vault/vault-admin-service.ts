@@ -5,6 +5,7 @@ import { VaultHttpClient } from "./vault-http-client";
 import type { VaultAuthResponse } from "./vault-http-client";
 import { VaultStateService } from "./vault-state-service";
 import { getLogger } from "../../lib/logger-factory";
+import { getNatsBootstrapService } from "../nats/nats-bootstrap-service";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
@@ -306,6 +307,19 @@ export class VaultAdminService {
     );
 
     await this.stateService.markBootstrapped();
+
+    // Provision NATS NKey material in Vault now that the admin token is live.
+    // Non-fatal: NATS is optional and a missing nats-config KV path just
+    // means the vault-nats stack's NATS service won't apply until a future
+    // bootstrap call succeeds. Re-runs at boot via authenticateAsAdmin.
+    try {
+      await getNatsBootstrapService().bootstrap();
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "NATS bootstrap after Vault init failed (non-fatal)",
+      );
+    }
 
     return {
       unsealKeys,
