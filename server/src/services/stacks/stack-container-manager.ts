@@ -115,6 +115,25 @@ export class StackContainerManager {
     service: StackServiceDefinition,
     options: CreateContainerOptions
   ): Promise<string> {
+    const containerId = await this.createContainer(serviceName, service, options);
+    await this.startContainer(containerId);
+    return containerId;
+  }
+
+  /**
+   * Create a container without starting it. Use this when you need to attach
+   * additional networks (e.g. joinNetworks, joinResourceNetworks) BEFORE the
+   * container's PID 1 starts running — otherwise the container's bootstrap
+   * code can race a synchronous DNS lookup against networks that haven't
+   * been hot-attached yet (e.g. vault, applications).
+   *
+   * Pair with {@link startContainer} once all networks are joined.
+   */
+  async createContainer(
+    serviceName: string,
+    service: StackServiceDefinition,
+    options: CreateContainerOptions
+  ): Promise<string> {
     const containerName = `${options.projectName}-${serviceName}`;
     const image = `${service.dockerImage}:${service.dockerTag}`;
     const config = service.containerConfig;
@@ -189,7 +208,6 @@ export class StackContainerManager {
     this.log.info({ containerName, image }, 'Creating container');
 
     const egressResult = await this.resolveEgressInjection(service, options);
-    const dnsServers = egressResult.type === 'dns' ? egressResult.dnsServers : undefined;
     const egressEnv = egressResult.type === 'proxy' ? egressResult.env : {};
 
     const container = await this.dockerExecutor.createLongRunningContainer({
@@ -210,13 +228,19 @@ export class StackContainerManager {
       healthcheck,
       logConfig,
       labels,
-      dnsServers,
     });
 
-    await container.start();
-    this.log.info({ containerId: container.id, containerName }, 'Container started');
-
     return container.id;
+  }
+
+  /**
+   * Start a previously-created container. Pair with {@link createContainer}
+   * after all required networks are attached.
+   */
+  async startContainer(containerId: string): Promise<void> {
+    const docker = this.dockerExecutor.getDockerClient();
+    await docker.getContainer(containerId).start();
+    this.log.info({ containerId }, 'Container started');
   }
 
   /**
@@ -225,29 +249,24 @@ export class StackContainerManager {
    * Gates (in order):
    * - Host-level stack (no environmentId) → no injection.
    * - Service has egressBypass === true → no injection (egress-gateway itself, fw-agent, etc.)
+   * - Environment has no egressGatewayIp → no injection (gateway not provisioned).
    *
-   * Then, based on the per-env feature flag `egressFirewallEnabled`:
+   * When the env has been provisioned with an egress-gateway, inject
+   * HTTP_PROXY / HTTPS_PROXY / NO_PROXY env vars pointing at the
+   * egress-gateway container via Docker DNS alias `egress-gateway:3128`.
+   * Docker's default 127.0.0.11 resolver remains in place for DNS.
    *
-   * - FLAG ON  (Phase 3 / v3 Go gateway):
-   *   Injects HTTP_PROXY / HTTPS_PROXY / NO_PROXY env vars pointing at the
-   *   egress-gateway container resolved via Docker DNS alias `egress-gateway:3128`.
-   *   DNS injection is skipped (Docker's default 127.0.0.11 applies).
-   *
-   * - FLAG OFF (legacy / v1 TS sidecar):
-   *   Injects the gateway's IP as a custom DNS server so managed containers
-   *   resolve external FQDNs via the TS sidecar's DNS filter.
-   *   This keeps the TS sidecar fully functional during Phase 4 rollout.
+   * Note: `egressFirewallEnabled` is intentionally not consulted here. That
+   * flag gates whether the fw-agent actively enforces policies, not which
+   * gateway is provisioned. `egressGatewayIp` (set once at env creation by
+   * provisionEgressGateway) is the canonical "gateway exists" signal.
    *
    * Never throws — egress injection failure must not break stack apply.
    */
   private async resolveEgressInjection(
     service: StackServiceDefinition,
     options: CreateContainerOptions,
-  ): Promise<
-    | { type: 'none' }
-    | { type: 'dns'; dnsServers: string[] }
-    | { type: 'proxy'; env: Record<string, string> }
-  > {
+  ): Promise<{ type: 'none' } | { type: 'proxy'; env: Record<string, string> }> {
     if (!options.environmentId) {
       return { type: 'none' };
     }
@@ -259,39 +278,32 @@ export class StackContainerManager {
     try {
       const environment = await this.prisma.environment.findUnique({
         where: { id: options.environmentId },
-        select: { egressFirewallEnabled: true, egressGatewayIp: true },
+        select: { egressGatewayIp: true },
       });
 
-      // --- Phase 3 path: v3 Go gateway with HTTP_PROXY injection ---
-      if (environment?.egressFirewallEnabled === true) {
-        const proxyUrl = 'http://egress-gateway:3128';
-        // Resolve the environment's applications bridge CIDR for NO_PROXY.
-        const bridgeCidr = await this.resolveApplicationsBridgeCidr(options.environmentId);
-        const noProxy = ['localhost', '127.0.0.0/8', ...(bridgeCidr ? [bridgeCidr] : [])].join(',');
-
-        return {
-          type: 'proxy',
-          env: {
-            HTTP_PROXY: proxyUrl,
-            HTTPS_PROXY: proxyUrl,
-            http_proxy: proxyUrl,
-            https_proxy: proxyUrl,
-            NO_PROXY: noProxy,
-            no_proxy: noProxy,
-          },
-        };
+      if (!environment?.egressGatewayIp) {
+        this.log.warn(
+          { environmentId: options.environmentId, stackId: options.stackId },
+          'Environment has no egressGatewayIp — skipping egress injection',
+        );
+        return { type: 'none' };
       }
 
-      // --- Legacy path: v1 TS sidecar DNS injection ---
-      if (environment?.egressGatewayIp) {
-        return { type: 'dns', dnsServers: [environment.egressGatewayIp] };
-      }
+      const proxyUrl = 'http://egress-gateway:3128';
+      const bridgeCidr = await this.resolveApplicationsBridgeCidr(options.environmentId);
+      const noProxy = ['localhost', '127.0.0.0/8', ...(bridgeCidr ? [bridgeCidr] : [])].join(',');
 
-      this.log.warn(
-        { environmentId: options.environmentId, stackId: options.stackId },
-        'Environment has no egressGatewayIp and egressFirewallEnabled is OFF — skipping egress injection',
-      );
-      return { type: 'none' };
+      return {
+        type: 'proxy',
+        env: {
+          HTTP_PROXY: proxyUrl,
+          HTTPS_PROXY: proxyUrl,
+          http_proxy: proxyUrl,
+          https_proxy: proxyUrl,
+          NO_PROXY: noProxy,
+          no_proxy: noProxy,
+        },
+      };
     } catch (err) {
       this.log.warn(
         { environmentId: options.environmentId, stackId: options.stackId, error: err },

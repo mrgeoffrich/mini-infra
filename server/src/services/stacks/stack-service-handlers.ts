@@ -104,7 +104,11 @@ export class StackServiceHandlers {
 
         await prepareServiceContainer(this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
-        const containerId = await this.containerManager.createAndStartContainer(
+        // Create the container BEFORE starting it so we can attach all
+        // required networks (joinNetworks + joinResourceNetworks) up front.
+        // Starting first races the container's bootstrap (e.g. vault unwrap)
+        // against late-attached networks like `mini-infra-vault`.
+        const containerId = await this.containerManager.createContainer(
           action.serviceName,
           effectiveServiceDef,
           {
@@ -120,6 +124,8 @@ export class StackServiceHandlers {
 
         await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
         await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
+
+        await this.containerManager.startContainer(containerId);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
@@ -148,7 +154,8 @@ export class StackServiceHandlers {
 
         await prepareServiceContainer(this.containerManager, effectiveServiceDef, resolvedConfigsMap.get(action.serviceName) ?? [], projectName);
 
-        const containerId = await this.containerManager.createAndStartContainer(
+        // Same ordering as the create case: create → attach all networks → start.
+        const containerId = await this.containerManager.createContainer(
           action.serviceName,
           effectiveServiceDef,
           {
@@ -164,6 +171,8 @@ export class StackServiceHandlers {
 
         await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
         await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
+
+        await this.containerManager.startContainer(containerId);
 
         const healthy = await this.containerManager.waitForHealthy(containerId);
 
