@@ -12,6 +12,10 @@
  *   E. Stack with running containers → 400 (existing behaviour preserved)
  *   F. Vault cascade failure → stack row still removed (non-fatal)
  *   G. Idempotent re-DELETE (already-deleted stack) → 404
+ *   H. status=undeployed but containers still labelled → 400 (regression
+ *      guard: status field used to short-circuit the docker check, leading
+ *      to silent partial-deletes that orphaned the Docker resources)
+ *   I. Docker unreachable → 400 (cannot verify container state)
  */
 
 import supertest from 'supertest';
@@ -270,5 +274,35 @@ describe('DELETE /api/stacks/:stackId — Vault cascade', () => {
 
     const res = await supertest(makeApp()).delete(`/api/stacks/${stackId}`);
     expect(res.status).toBe(404);
+  });
+
+  it('H. status=undeployed but containers still labelled → 400 (no silent orphan)', async () => {
+    // Regression: a partial /destroy can flip status to "undeployed" while
+    // leaving labelled containers behind. The DELETE handler used to skip
+    // the docker check whenever status was "undeployed" or "pending", so
+    // this exact state would tombstone the DB row and orphan the containers.
+    const stackId = await createStack({ status: 'undeployed' });
+    mockDockerClient.listContainers.mockResolvedValue([{ Id: 'orphan-1' }]);
+
+    const res = await supertest(makeApp()).delete(`/api/stacks/${stackId}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toMatch(/labelled with this stack ID|containers/i);
+    // The stack row must still exist — silent partial delete was the bug.
+    const still = await testPrisma.stack.findUnique({ where: { id: stackId } });
+    expect(still).not.toBeNull();
+  });
+
+  it('I. Docker unreachable → 400 (cannot verify, even for undeployed stacks)', async () => {
+    const stackId = await createStack({ status: 'undeployed' });
+    mockDockerClient.listContainers.mockRejectedValue(new Error('ECONNREFUSED'));
+
+    const res = await supertest(makeApp()).delete(`/api/stacks/${stackId}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Cannot verify|Docker/i);
+    const still = await testPrisma.stack.findUnique({ where: { id: stackId } });
+    expect(still).not.toBeNull();
   });
 });
