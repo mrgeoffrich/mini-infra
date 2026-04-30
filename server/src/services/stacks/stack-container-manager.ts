@@ -378,9 +378,17 @@ export class StackContainerManager {
 
     const hcTest = info.Config?.Healthcheck?.Test;
     if (!hcTest || hcTest.length === 0 || (hcTest.length === 1 && hcTest[0] === 'NONE')) {
-      // No healthcheck or HEALTHCHECK NONE — just verify the container is running
-      const status = await this.dockerExecutor.getContainerStatus(containerId);
-      return status.running;
+      // No healthcheck — observe the container for a short window to catch
+      // "started, then immediately crashed" cases (e.g. invalid Slack token
+      // → auth.test fails → container exits non-zero within seconds). The
+      // previous one-shot inspect would return true if the container hadn't
+      // exited yet, leaving the stack as `synced` with a dead service.
+      // First, the initial inspect already tells us if the container has
+      // exited fast enough that the apply itself was racing it; short-circuit.
+      if (info.State?.Status === 'exited' || info.State?.Status === 'dead') {
+        return false;
+      }
+      return this.observeStableRunning(containerId, NO_HEALTHCHECK_OBSERVE_MS);
     }
 
     // Poll for healthy status
@@ -395,10 +403,93 @@ export class StackContainerManager {
       if (healthStatus === 'unhealthy') {
         return false;
       }
+      // If the container exited mid-startup (before the healthcheck could
+      // finish), don't keep polling for a state that will never come.
+      if (inspectResult.State?.Status === 'exited' || inspectResult.State?.Status === 'dead') {
+        return false;
+      }
 
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     return false;
   }
+
+  /**
+   * Watch a just-started container for a short window and confirm it stays
+   * running. Returns false if the container is no longer running at any
+   * point during the window. Used when a container has no Docker
+   * healthcheck — without this, a service that crashes seconds after start
+   * looks "applied successfully" because Docker briefly reports it as
+   * `running` before the exit.
+   */
+  private async observeStableRunning(containerId: string, observeMs: number): Promise<boolean> {
+    const start = Date.now();
+    // Initial check — if it's not running at t=0, no point polling.
+    const initial = await this.dockerExecutor.getContainerStatus(containerId);
+    if (!initial.running) return false;
+
+    while (Date.now() - start < observeMs) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const status = await this.dockerExecutor.getContainerStatus(containerId);
+      if (!status.running) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Capture exit info + recent logs for a container that just failed its
+   * apply-time health/stability check. Designed to enrich the
+   * ServiceApplyResult error and the Stack.lastFailureReason summary so the
+   * operator can see why apply rejected the service without `docker logs`.
+   * All lookups are best-effort — failures here must never break the apply
+   * pipeline.
+   */
+  async captureContainerFailureInfo(
+    containerId: string,
+  ): Promise<{ exitCode?: number; status?: string; tailLogs?: string }> {
+    let exitCode: number | undefined;
+    let status: string | undefined;
+    let tailLogs: string | undefined;
+
+    try {
+      const s = await this.dockerExecutor.getContainerStatus(containerId);
+      status = s.status;
+      // exitCode === 0 with status === 'exited' is unusual but valid; only
+      // surface non-zero codes since 0 is the success signal.
+      if (s.exitCode !== undefined && s.exitCode !== 0) {
+        exitCode = s.exitCode;
+      }
+    } catch {
+      // status lookup failed — fall through, still try logs
+    }
+
+    try {
+      const logs = await this.dockerExecutor.captureContainerLogs(containerId, { tail: 10 });
+      const merged = [logs.stderr, logs.stdout]
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .join('\n');
+      if (merged.length > 0) {
+        tailLogs = merged;
+      }
+    } catch {
+      // log capture failed — that's fine, we'll just omit it
+    }
+
+    return { exitCode, status, tailLogs };
+  }
 }
+
+/**
+ * How long we observe a container without a Docker healthcheck before
+ * declaring it "started successfully". Long enough to catch the typical
+ * "crashed within a few seconds of unwrapping a vault token / failing
+ * auth.test" pattern; short enough not to noticeably slow apply.
+ *
+ * Skipped under NODE_ENV=test so the unit suite isn't paying 5s per apply
+ * — tests that need to exercise the observation path do so explicitly via
+ * the integration suite (real Docker daemon) or by mocking
+ * `getContainerStatus` to return a non-running state on first poll.
+ */
+const NO_HEALTHCHECK_OBSERVE_MS = process.env.NODE_ENV === 'test' ? 0 : 5000;

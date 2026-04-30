@@ -35,6 +35,7 @@ import {
 import { runPostInstallActions } from './post-install-actions';
 import { buildAppliedSnapshot } from './stack-applied-snapshot';
 import { recordDeploymentFailure } from './stack-deployment-logger';
+import { summariseServiceFailures } from './stack-failure-summary';
 import { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackPlanComputer } from './stack-plan-computer';
 import { StackServiceHandlers, type ServiceHandlerContext } from './stack-service-handlers';
@@ -343,7 +344,12 @@ export class StackReconciler {
           // credential injector can detect binding changes on future re-applies.
           ...(allSucceeded
             ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null, lastFailureReason: null }
-            : {}),
+            // Surface the failure into Stack.lastFailureReason so operators
+            // can diagnose at the API level without `docker ps` + `docker logs`.
+            // Previously this only got set by the vault reconciler — service
+            // apply failures (image pull, port conflict, crash on startup,
+            // healthcheck timeout) silently left the field stale or null.
+            : { lastFailureReason: summariseServiceFailures(serviceResults) }),
           status: resultStatus,
           removedAt: null,
         },
@@ -565,7 +571,8 @@ export class StackReconciler {
           lastAppliedSnapshot: buildAppliedSnapshot(stack),
           ...(allSucceeded
             ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null, lastFailureReason: null }
-            : {}),
+            // Same surfacing as in `apply` above — see that branch for context.
+            : { lastFailureReason: summariseServiceFailures(serviceResults) }),
         },
       });
 
@@ -1036,3 +1043,4 @@ export class StackReconciler {
     };
   }
 }
+

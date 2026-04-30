@@ -129,7 +129,9 @@ export class StackServiceHandlers {
           success: healthy,
           duration: Date.now() - actionStart,
           containerId,
-          error: healthy ? undefined : 'Healthcheck timeout',
+          error: healthy
+            ? undefined
+            : await buildPostStartFailureMessage(this.containerManager, containerId, log),
         };
       }
 
@@ -175,7 +177,9 @@ export class StackServiceHandlers {
           success: healthy,
           duration: Date.now() - actionStart,
           containerId,
-          error: healthy ? undefined : 'Healthcheck timeout',
+          error: healthy
+            ? undefined
+            : await buildPostStartFailureMessage(this.containerManager, containerId, log),
         };
       }
 
@@ -562,3 +566,48 @@ export class StackServiceHandlers {
     }
   }
 }
+
+/**
+ * Compose a failure message for a service whose container failed the
+ * post-start health/stability check. Pulls exit code + tail logs from
+ * the failed container so the apply error carries enough context to
+ * diagnose without a separate `docker logs` round-trip. Best-effort —
+ * if log capture or status lookup fails, returns a generic message.
+ */
+async function buildPostStartFailureMessage(
+  containerManager: StackContainerManager,
+  containerId: string,
+  log: Logger,
+): Promise<string> {
+  try {
+    const info = await containerManager.captureContainerFailureInfo(containerId);
+    const parts: string[] = [];
+    if (info.exitCode !== undefined) {
+      parts.push(`Container exited with code ${info.exitCode}`);
+    } else if (info.status === 'exited' || info.status === 'dead') {
+      parts.push(`Container is ${info.status}`);
+    } else {
+      parts.push('Healthcheck timeout');
+    }
+    if (info.tailLogs) {
+      // Truncate the tail so a chatty container doesn't blow up the apply
+      // error column / event log.
+      const tail = info.tailLogs.slice(-FAILURE_LOG_TAIL_BUDGET);
+      parts.push(`last logs:\n${tail}`);
+    }
+    return parts.join('. ');
+  } catch (err: unknown) {
+    log.warn(
+      { containerId, error: err instanceof Error ? err.message : String(err) },
+      'Failed to capture post-start failure info',
+    );
+    return 'Healthcheck timeout (failed to capture container exit info)';
+  }
+}
+
+/**
+ * Hard cap on tail logs included in a single ServiceApplyResult error.
+ * The full logs are still available via `docker logs` and the events feed;
+ * this is just enough for an at-a-glance diagnosis in `lastFailureReason`.
+ */
+const FAILURE_LOG_TAIL_BUDGET = 1500;
