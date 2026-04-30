@@ -228,16 +228,23 @@ export class EgressContainerMapPusher {
   /**
    * Build the container-map entries for an environment.
    *
-   * - Query active stacks (not removed, not archived) in the env.
-   * - Skip stacks that belong to the egress-gateway itself (egressBypass).
-   * - For each service in each stack, find a running container by name and
-   *   get its IPv4 address on the env's egress network (where every
-   *   non-bypass managed container lives — see egress-injection.ts).
+   * Discovery is label-driven: we walk every container with an IP on the
+   * env's egress network and key off the `mini-infra.stack-id` /
+   * `mini-infra.service` labels that both StackContainerManager and the
+   * pool-spawner stamp on every managed container. The stack list from
+   * Prisma is used purely to validate membership and read each service's
+   * `egressBypass` flag — not to construct expected names.
+   *
+   * Doing it by name was wrong because pool instances follow the
+   * `${env}-${stack}-pool-${service}-${instanceId}` pattern from
+   * pool-spawner.ts, not the static `${env}-${stack}-${service}` pattern,
+   * so they were silently dropped from the map and got 403'd at the
+   * gateway's UnknownIPDenyHandler before any ACL eval.
    */
   private async _buildContainerMap(env: EnvRow): Promise<ContainerMapEntry[]> {
     const egressNetwork = `${env.name}-egress`;
 
-    // Stacks in this environment that are not removed
+    // Stacks in this environment that are not removed.
     const stacks = await this.prisma.stack.findMany({
       where: {
         environmentId: env.id,
@@ -256,7 +263,19 @@ export class EgressContainerMapPusher {
       },
     }) as StackRow[];
 
-    // Fetch live container list from Docker (raw API gives per-network IPs)
+    // Index: stackId → service map, so a container's labels can be looked
+    // up in O(1) and validated against this env's stack list.
+    const serviceConfigByKey = new Map<string, Record<string, unknown> | null>();
+    for (const stack of stacks) {
+      for (const service of stack.services) {
+        serviceConfigByKey.set(
+          `${stack.id}:${service.serviceName}`,
+          service.containerConfig as Record<string, unknown> | null,
+        );
+      }
+    }
+
+    // Fetch live container list from Docker (raw API gives per-network IPs and labels).
     const dockerService = DockerService.getInstance();
     if (!dockerService.isConnected()) {
       log.warn({ envId: env.id }, 'Docker not connected — returning empty container map');
@@ -266,42 +285,44 @@ export class EgressContainerMapPusher {
     const docker = await dockerService.getDockerInstance();
     const rawContainers = await docker.listContainers({ all: false });
 
-    // Build a lookup: containerName → IP on the egress network
-    const ipByName = new Map<string, string>();
-    const idByName = new Map<string, string>();
-    for (const c of rawContainers) {
-      const networks = c.NetworkSettings?.Networks ?? {};
-      const networkInfo = networks[egressNetwork];
-      if (networkInfo?.IPAddress) {
-        const name = (c.Names?.[0] ?? '').replace(/^\//, '');
-        ipByName.set(name, networkInfo.IPAddress);
-        idByName.set(name, c.Id);
-      }
-    }
-
     const entries: ContainerMapEntry[] = [];
 
-    // Project name matches StackContainerManager: `${env.name}-${stack.name}` for env-scoped stacks.
-    // Container name: `${projectName}-${serviceName}` → `${env.name}-${stack.name}-${serviceName}`.
-    for (const stack of stacks) {
-      const projectName = `${env.name}-${stack.name}`;
-      for (const service of stack.services) {
-        // Skip services with egressBypass (e.g. the egress-gateway itself)
-        const cfg = service.containerConfig as Record<string, unknown> | null;
-        if (cfg?.egressBypass === true) continue;
+    for (const c of rawContainers) {
+      const ip = c.NetworkSettings?.Networks?.[egressNetwork]?.IPAddress;
+      if (!ip) continue;
 
-        const containerName = `${projectName}-${service.serviceName}`;
-        const ip = ipByName.get(containerName);
-        if (!ip) continue; // Container not running or not on this network
+      const labels = c.Labels ?? {};
+      const stackId = labels['mini-infra.stack-id'];
+      const serviceName = labels['mini-infra.service'];
+      if (!stackId || !serviceName) continue;
 
-        entries.push({
-          ip,
-          stackId: stack.id,
-          serviceName: service.serviceName,
-          containerId: idByName.get(containerName),
-        });
+      const key = `${stackId}:${serviceName}`;
+      if (!serviceConfigByKey.has(key)) {
+        // Container is on this egress network but the stack/service is
+        // unknown to this env (foreign stack, deleted service, or a stale
+        // container that survived a stack rebuild). Skip — don't trust
+        // labels alone for membership.
+        continue;
       }
+
+      const cfg = serviceConfigByKey.get(key);
+      if (cfg?.egressBypass === true) continue;
+
+      entries.push({
+        ip,
+        stackId,
+        serviceName,
+        containerId: c.Id,
+      });
     }
+
+    // Stable ordering keeps log output and downstream snapshot diffs
+    // deterministic across pushes that don't change membership.
+    entries.sort((a, b) => {
+      if (a.stackId !== b.stackId) return a.stackId < b.stackId ? -1 : 1;
+      if (a.serviceName !== b.serviceName) return a.serviceName < b.serviceName ? -1 : 1;
+      return a.ip < b.ip ? -1 : a.ip > b.ip ? 1 : 0;
+    });
 
     log.debug(
       { envId: env.id, envName: env.name, egressNetwork, entryCount: entries.length },
