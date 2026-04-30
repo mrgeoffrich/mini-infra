@@ -67,6 +67,12 @@ Go sidecar. Runs alongside the gateway and applies firewall rules at the host le
 
 Shared Go module imported by both `egress-gateway/` and `egress-fw-agent/`. Wired into the workspace via [go.work](go.work). Not part of the pnpm workspace.
 
+### `auth-proxy/`
+
+Standalone Go service. Per-environment reverse proxy that holds API credentials (Anthropic keys, GitHub PATs, Google Workspace OAuth refresh tokens) on behalf of application containers. Apps point their SDK at `http://auth-proxy:8080/<provider>/<tenant>/...`; the proxy strips any inbound auth headers, injects the right credential from its config, and forwards to the upstream. Built on `net/http` + `httputil.ReverseProxy` so streaming, SSE, and large bodies pass through natively. Stack-template integration and Vault-backed secrets are planned follow-ups; v1 reads `${ENV_VAR}` from a mounted YAML config. See [auth-proxy/CLAUDE.md](auth-proxy/CLAUDE.md).
+
+**Invariant:** application containers never carry the upstream credentials — they only know the proxy URL.
+
 ### `pg-az-backup/`
 
 Container image (Alpine + shell) that performs a single PostgreSQL backup to Azure Blob Storage. Invoked by the server's backup scheduler as a one-shot container.
