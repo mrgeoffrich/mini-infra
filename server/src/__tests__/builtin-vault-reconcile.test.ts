@@ -6,7 +6,7 @@
  *
  * Covers:
  *   - hello-vault template parses correctly and has the expected vault section
- *   - builtinVersion on hello-vault is 2
+ *   - builtinVersion on hello-vault is 3
  *   - Service vaultAppRoleRef matches declared appRole
  *   - All 7 system templates parse without errors
  *   - Cross-references in vault sections are valid for every system template
@@ -40,8 +40,8 @@ describe('hello-vault template.json', () => {
     expect(() => loadTemplate('hello-vault')).not.toThrow();
   });
 
-  it('has builtinVersion 2', () => {
-    expect(loadTemplate('hello-vault').builtinVersion).toBe(2);
+  it('has builtinVersion 3', () => {
+    expect(loadTemplate('hello-vault').builtinVersion).toBe(3);
   });
 
   it('declares exactly one policy and one appRole', () => {

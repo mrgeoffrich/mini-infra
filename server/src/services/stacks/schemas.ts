@@ -180,14 +180,37 @@ export const stackContainerConfigSchema = z.object({
     )
     .optional(),
 }).superRefine((config, ctx) => {
-  if (!config.env || !config.dynamicEnv) return;
-  const overlap = Object.keys(config.env).filter((k) => k in config.dynamicEnv!);
-  if (overlap.length > 0) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["dynamicEnv"],
-      message: `env and dynamicEnv share key(s): ${overlap.join(", ")}. Dynamic keys must be disjoint from static env.`,
-    });
+  if (config.env && config.dynamicEnv) {
+    const overlap = Object.keys(config.env).filter((k) => k in config.dynamicEnv!);
+    if (overlap.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["dynamicEnv"],
+        message: `env and dynamicEnv share key(s): ${overlap.join(", ")}. Dynamic keys must be disjoint from static env.`,
+      });
+    }
+  }
+
+  // Single-use credentials must not be paired with a restart policy that
+  // retries forever. A wrapped secret_id is consumed by the unwrap call on
+  // first boot; subsequent restarts spam "wrapping token is not valid",
+  // which buries the original first-boot error (e.g. invalid Slack token).
+  // For these services, restartPolicy must be 'no' or 'on-failure' so the
+  // operator sees the real failure and can redeploy to mint a fresh token.
+  if (config.dynamicEnv && (config.restartPolicy === 'always' || config.restartPolicy === 'unless-stopped')) {
+    const wrappedKeys = Object.entries(config.dynamicEnv)
+      .filter(([, src]) => src.kind === 'vault-wrapped-secret-id')
+      .map(([k]) => k);
+    if (wrappedKeys.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["restartPolicy"],
+        message:
+          `restartPolicy="${config.restartPolicy}" cannot be combined with vault-wrapped-secret-id (${wrappedKeys.join(', ')}). ` +
+          `Wrapped secret IDs are single-use; auto-restart will retry the unwrap forever and bury the original first-boot error. ` +
+          `Use restartPolicy="no" (preferred) or "on-failure" so the original failure stays visible — redeploy the stack to mint a fresh wrapped token.`,
+      });
+    }
   }
 });
 

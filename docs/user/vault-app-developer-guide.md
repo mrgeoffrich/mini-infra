@@ -268,7 +268,7 @@ This is the built-in `hello-vault` example template ([server/templates/hello-vau
           "VAULT_WRAPPED_SECRET_ID": { "kind": "vault-wrapped-secret-id", "ttlSeconds": 300 }
         },
         "joinResourceNetworks": ["vault"],
-        "restartPolicy": "unless-stopped"
+        "restartPolicy": "no"
       },
       "order": 1
     }
@@ -321,12 +321,17 @@ Most apps can simply retry: catch the startup failure, sleep, and try again. On 
 
 ### Handling container restarts
 
-The wrapped secret_id is only valid for its TTL window (default 300s). If your container crashes and Docker restarts it **after** the TTL has elapsed, the env var is stale — unwrap will fail. This is expected. Either:
+A wrapped secret_id is **single-use**. The unwrap call on first boot consumes it. Any later restart of the same container (Docker auto-restart, host reboot, manual `docker restart`) hits a Vault that no longer recognises the token, and unwrap fails with `wrapping token is not valid or does not exist`.
 
-- Let the container crash-loop until the next apply (simplest).
-- If you have a persistent volume, cache the unwrapped client_token there and renew it instead of re-logging in. Be aware this makes the volume sensitive.
+If your container is on `restartPolicy: "always"` or `"unless-stopped"`, that error will spam the logs every few seconds — burying the *original* failure (e.g. an invalid Slack token or a misconfigured AppRole policy) under a wall of misleading wrapper-token errors. Mini Infra rejects this combo at template/draft validation time so you can't accidentally ship it.
 
-For most apps, the "just re-apply the stack" approach is fine — restarts after a crash are rare, and if your container is crashing more than every 5 minutes you have bigger problems.
+Pick one of these instead:
+
+- **`restartPolicy: "no"`** *(recommended)* — if first boot fails, the container stays dead and the original error is the last thing in `docker logs`. Redeploy the stack to mint a fresh wrapped token and try again.
+- **`restartPolicy: "on-failure"`** — Docker retries on non-zero exit. Same caveat applies (each retry will see the consumed token and fail), but the operator has explicitly opted into the retry semantics. Useful if your entrypoint persists the unwrapped credential to a tmpfs or volume on first success.
+- **Cache the unwrapped client_token on a persistent volume** and renew via `POST /v1/auth/token/renew-self` rather than re-logging in. Only the first boot ever calls unwrap. Be aware this makes the volume sensitive.
+
+The TTL (default 300s) is a separate concern: even with the right restartPolicy, if the wrapped token expires before your entrypoint reaches the unwrap call, you'll need a redeploy.
 
 ## Secrets engine and paths
 
