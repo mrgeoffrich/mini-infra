@@ -368,8 +368,18 @@ export const routeConfig: Record<string, RouteConfig> = {
     showInNav: true,
     navGroup: "main",
     navSection: "networking",
-    description: "Outbound traffic control across all environments",
+    description: "Outbound traffic control across all stacks",
     helpDoc: "settings/egress-fw-agent",
+    children: {
+      detail: {
+        path: "/egress/:policyId",
+        title: "Stack Egress",
+        breadcrumbLabel: "Stack",
+        parent: "/egress",
+        showInNav: false,
+        helpDoc: "settings/egress-fw-agent",
+      },
+    },
   },
 
   "/dns": {

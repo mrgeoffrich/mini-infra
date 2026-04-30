@@ -74,11 +74,15 @@ function TrafficFeedRow({
   formatRelativeTime,
   formatDateTime,
   showEnvironment,
+  showStack,
+  onAllow,
 }: {
   event: EgressEventBroadcast;
   formatRelativeTime: (date: string) => string;
   formatDateTime: (date: string) => string;
   showEnvironment: boolean;
+  showStack: boolean;
+  onAllow?: (event: EgressEventBroadcast) => void;
 }) {
   return (
     <TableRow>
@@ -97,19 +101,42 @@ function TrafficFeedRow({
           </div>
         </TableCell>
       )}
-      <TableCell className="text-xs">
-        <div className="truncate max-w-[140px]" title={event.stackNameSnapshot}>
-          {event.stackNameSnapshot}
-        </div>
-        {event.sourceServiceName && (
+      {showStack ? (
+        <TableCell className="text-xs">
           <div
-            className="text-muted-foreground truncate max-w-[140px] font-mono"
-            title={event.sourceServiceName}
+            className="truncate max-w-[140px]"
+            title={event.stackNameSnapshot}
           >
-            {event.sourceServiceName}
+            {event.stackNameSnapshot}
           </div>
-        )}
-      </TableCell>
+          {event.sourceServiceName && (
+            <div
+              className="text-muted-foreground truncate max-w-[140px] font-mono"
+              title={event.sourceServiceName}
+            >
+              {event.sourceServiceName}
+            </div>
+          )}
+        </TableCell>
+      ) : (
+        event.sourceServiceName && (
+          <TableCell className="text-xs">
+            <span
+              className="text-muted-foreground font-mono truncate max-w-[140px] inline-block"
+              title={event.sourceServiceName}
+            >
+              {event.sourceServiceName}
+            </span>
+          </TableCell>
+        )
+      )}
+      {/* When showStack is false but no service name exists, render an empty
+          cell to keep column counts consistent. */}
+      {!showStack && !event.sourceServiceName && (
+        <TableCell className="text-xs">
+          <span className="text-muted-foreground italic">—</span>
+        </TableCell>
+      )}
       <TableCell className="font-mono text-xs truncate max-w-[200px]">
         {event.destination}
       </TableCell>
@@ -120,6 +147,21 @@ function TrafficFeedRow({
         {event.matchedPattern ?? <span className="italic">none</span>}
       </TableCell>
       <TableCell className="text-xs text-right">{event.mergedHits}</TableCell>
+      {onAllow && (
+        <TableCell className="text-right">
+          {event.action === "blocked" ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-xs"
+              onClick={() => onAllow(event)}
+              data-tour="egress-allow-blocked"
+            >
+              Allow
+            </Button>
+          ) : null}
+        </TableCell>
+      )}
     </TableRow>
   );
 }
@@ -146,11 +188,29 @@ function sinceFromRange(range: string | undefined): string | undefined {
 }
 
 export interface EgressTrafficFeedProps {
-  /** When undefined, the feed shows events across every environment and adds an Environment column. */
+  /** When undefined and policyId is also undefined, the feed shows events across every environment and adds an Environment column. */
   environmentId?: string;
+  /**
+   * Scope to a single policy (i.e. a single stack). When set:
+   *  - the stack/service filter dropdowns are hidden (already implied by the policy)
+   *  - the Stack column is hidden
+   *  - stale stackId/sourceServiceName from useEgressEventFilters are NOT
+   *    merged into the events query
+   */
+  policyId?: string;
+  /**
+   * Optional callback to render an inline "Allow" button on rows whose action
+   * is "blocked". The detail page wires this to open EgressRuleDialog with
+   * the destination + service pre-filled.
+   */
+  onAllowEvent?: (event: EgressEventBroadcast) => void;
 }
 
-export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
+export function EgressTrafficFeed({
+  environmentId,
+  policyId,
+  onAllowEvent,
+}: EgressTrafficFeedProps) {
   const { formatRelativeTime, formatDateTime } = useFormattedDate();
 
   const [timeRange, setTimeRange] = useState<string>("24h");
@@ -158,10 +218,15 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
 
   const { filters, updateFilter, resetFilters } = useEgressEventFilters();
 
+  // When scoped to a policy, the stack and service filters are pre-implied —
+  // hide their UI and never merge their (stale) state into the query.
+  const isPolicyScoped = !!policyId;
+
   // Stack dropdown source — same query the parent Egress page already issues, so
   // TanStack Query dedupes by key (no extra HTTP request).
   const policiesQuery = useEgressPolicies({
     query: { environmentId, page: 1, limit: 200 },
+    enabled: !isPolicyScoped,
   });
 
   // Service dropdown source — only enabled when a stack is selected.
@@ -197,8 +262,11 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
   const query = useMemo(
     () => ({
       environmentId,
-      stackId: filters.stackId,
-      sourceServiceName: filters.sourceServiceName,
+      policyId,
+      // Skip stack/service filters when policy-scoped — the stale filter state
+      // belongs to a different view and would over-narrow the result set.
+      stackId: isPolicyScoped ? undefined : filters.stackId,
+      sourceServiceName: isPolicyScoped ? undefined : filters.sourceServiceName,
       action: filters.action,
       since: sinceFromRange(timeRange),
       page: filters.page,
@@ -206,6 +274,8 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
     }),
     [
       environmentId,
+      policyId,
+      isPolicyScoped,
       filters.stackId,
       filters.sourceServiceName,
       filters.action,
@@ -219,7 +289,8 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
     query,
   });
 
-  const showEnvironment = !environmentId;
+  const showEnvironment = !environmentId && !isPolicyScoped;
+  const showStack = !isPolicyScoped;
 
   const historyEvents = data?.events ?? [];
   const totalPages = data?.totalPages ?? 1;
@@ -242,7 +313,18 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
     : historyEvents;
 
   const hasLive = filteredLive.length > 0;
-  const colCount = showEnvironment ? 7 : 6;
+  // Columns: Time + (Environment?) + Stack/Service + Destination + Action +
+  // Matched + Hits + (Actions?) — Stack/Service is always one cell whose
+  // content differs based on `showStack`.
+  const colCount =
+    1 +
+    (showEnvironment ? 1 : 0) +
+    1 +
+    1 +
+    1 +
+    1 +
+    1 +
+    (onAllowEvent ? 1 : 0);
 
   const handlePreviousPage = useCallback(() => {
     if (filters.page > 1) updateFilter("page", filters.page - 1);
@@ -282,7 +364,7 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
           </SelectContent>
         </Select>
 
-        {stackOptions.length > 0 && (
+        {!isPolicyScoped && stackOptions.length > 0 && (
           <Select
             value={filters.stackId ?? ALL_VALUE}
             onValueChange={(v) => {
@@ -307,7 +389,7 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
           </Select>
         )}
 
-        {filters.stackId && (
+        {!isPolicyScoped && filters.stackId && (
           <Select
             value={filters.sourceServiceName ?? ALL_VALUE}
             onValueChange={(v) =>
@@ -411,11 +493,16 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
               {showEnvironment && (
                 <TableHead className="text-xs">Environment</TableHead>
               )}
-              <TableHead className="text-xs">Stack / Service</TableHead>
+              <TableHead className="text-xs">
+                {showStack ? "Stack / Service" : "Service"}
+              </TableHead>
               <TableHead className="text-xs">Destination</TableHead>
               <TableHead className="text-xs">Action</TableHead>
               <TableHead className="text-xs">Matched Pattern</TableHead>
               <TableHead className="text-xs text-right">Hits</TableHead>
+              {onAllowEvent && (
+                <TableHead className="text-xs text-right">Actions</TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -438,6 +525,8 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
                     formatRelativeTime={formatRelativeTime}
                     formatDateTime={formatDateTime}
                     showEnvironment={showEnvironment}
+                    showStack={showStack}
+                    onAllow={onAllowEvent}
                   />
                 ))}
 
@@ -448,6 +537,8 @@ export function EgressTrafficFeed({ environmentId }: EgressTrafficFeedProps) {
                     formatRelativeTime={formatRelativeTime}
                     formatDateTime={formatDateTime}
                     showEnvironment={showEnvironment}
+                    showStack={showStack}
+                    onAllow={onAllowEvent}
                   />
                 ))}
 

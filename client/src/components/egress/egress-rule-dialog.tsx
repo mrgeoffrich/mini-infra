@@ -74,6 +74,17 @@ const egressRuleSchema = z.object({
 
 type EgressRuleFormData = z.infer<typeof egressRuleSchema>;
 
+/**
+ * Pre-fill values for the create flow (e.g. when promoting a blocked traffic
+ * event into an allow rule). Ignored when `rule` is also passed (edit wins).
+ */
+export interface EgressRuleDialogInitialValues {
+  pattern?: string;
+  action?: "allow" | "block";
+  /** When non-empty, defaults "Apply to all services" to false. */
+  targets?: string[];
+}
+
 interface EgressRuleDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -81,7 +92,30 @@ interface EgressRuleDialogProps {
   serviceNames: string[];
   /** Provide when editing an existing rule. */
   rule?: EgressRuleSummary;
+  /** Pre-fill values when CREATING. Ignored if `rule` is provided. */
+  initialValues?: EgressRuleDialogInitialValues;
   onSuccess?: () => void;
+}
+
+function computeDefaults(
+  rule: EgressRuleSummary | undefined,
+  initialValues: EgressRuleDialogInitialValues | undefined,
+): EgressRuleFormData {
+  if (rule) {
+    return {
+      pattern: rule.pattern,
+      action: rule.action,
+      allServices: rule.targets.length === 0,
+      targets: rule.targets,
+    };
+  }
+  const targets = initialValues?.targets ?? [];
+  return {
+    pattern: initialValues?.pattern ?? "",
+    action: initialValues?.action ?? "allow",
+    allServices: targets.length === 0,
+    targets,
+  };
 }
 
 export function EgressRuleDialog({
@@ -90,6 +124,7 @@ export function EgressRuleDialog({
   policyId,
   serviceNames,
   rule,
+  initialValues,
   onSuccess,
 }: EgressRuleDialogProps) {
   const isEdit = !!rule;
@@ -99,29 +134,19 @@ export function EgressRuleDialog({
 
   const form = useForm<EgressRuleFormData>({
     resolver: zodResolver(egressRuleSchema),
-    defaultValues: {
-      pattern: rule?.pattern ?? "",
-      action: rule?.action ?? "allow",
-      allServices: !rule || rule.targets.length === 0,
-      targets: rule?.targets ?? [],
-    },
+    defaultValues: computeDefaults(rule, initialValues),
   });
 
   const allServices = useWatch({ control: form.control, name: "allServices" });
   const patternValue = useWatch({ control: form.control, name: "pattern" });
   const patternValid = patternValue ? isValidPattern(patternValue) : null;
 
-  // Reset form when dialog opens / rule changes
+  // Reset form when dialog opens / rule / initialValues change
   useEffect(() => {
     if (open) {
-      form.reset({
-        pattern: rule?.pattern ?? "",
-        action: rule?.action ?? "allow",
-        allServices: !rule || rule.targets.length === 0,
-        targets: rule?.targets ?? [],
-      });
+      form.reset(computeDefaults(rule, initialValues));
     }
-  }, [open, rule, form]);
+  }, [open, rule, initialValues, form]);
 
   const onSubmit = async (data: EgressRuleFormData) => {
     const targets = data.allServices ? [] : data.targets;

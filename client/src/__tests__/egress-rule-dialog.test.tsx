@@ -197,6 +197,92 @@ describe("EgressRuleDialog — edit mode", () => {
   });
 });
 
+describe("EgressRuleDialog — initialValues prefill", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("prefills the pattern from initialValues", () => {
+    renderDialog({
+      initialValues: { pattern: "telemetry.evil.com", action: "allow" },
+    });
+    const input = screen.getByPlaceholderText(
+      "api.example.com or *.example.com",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("telemetry.evil.com");
+  });
+
+  it("unchecks 'Apply to all services' when initialValues.targets is non-empty", () => {
+    renderDialog({
+      initialValues: {
+        pattern: "api.example.com",
+        action: "allow",
+        targets: ["api-service"],
+      },
+    });
+    const checkbox = screen.getByLabelText("Apply to all services");
+    expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByLabelText("api-service")).toBeTruthy();
+  });
+
+  it("submits a create with the prefilled targets", async () => {
+    mockCreateMutateAsync.mockResolvedValueOnce({
+      id: "rule-new",
+      policyId: "policy-1",
+      pattern: "telemetry.evil.com",
+      action: "allow",
+      source: "user",
+      targets: ["api-service"],
+      hits: 0,
+      lastHitAt: null,
+    });
+    renderDialog({
+      initialValues: {
+        pattern: "telemetry.evil.com",
+        action: "allow",
+        targets: ["api-service"],
+      },
+    });
+
+    const submitBtn = screen.getByRole("button", { name: /Add Rule/i });
+    await act(async () => {
+      fireEvent.click(submitBtn);
+    });
+
+    await waitFor(() => {
+      expect(mockCreateMutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          policyId: "policy-1",
+          body: expect.objectContaining({
+            pattern: "telemetry.evil.com",
+            action: "allow",
+            targets: ["api-service"],
+          }),
+        }),
+      );
+    });
+  });
+
+  it("rule prop wins over initialValues (edit precedence)", () => {
+    const existingRule = {
+      id: "rule-1",
+      policyId: "policy-1",
+      pattern: "*.googleapis.com",
+      action: "allow" as const,
+      source: "user" as const,
+      targets: [],
+      hits: 50,
+      lastHitAt: null,
+    };
+    renderDialog({
+      rule: existingRule,
+      initialValues: { pattern: "should-be-ignored.example.com" },
+    });
+    const input = screen.getByPlaceholderText(
+      "api.example.com or *.example.com",
+    ) as HTMLInputElement;
+    expect(input.value).toBe("*.googleapis.com");
+  });
+});
+
 describe("EgressRuleDialog — template rule protection", () => {
   it("is not opened for template rules (dialog is only opened from the table which gates on source)", () => {
     // The dialog itself doesn't know about source; it's the table that gates
