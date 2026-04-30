@@ -124,6 +124,12 @@ export const createTemplateSchema = z.object({
   // at publish time, so users can create a template and fill it in gradually.
   services: z.array(stackServiceDefinitionSchema),
   configFiles: z.array(configFileInputSchema).optional(),
+  // inputs + vault accepted directly on create so installers can submit a
+  // complete spec in one request rather than create → draft → publish.
+  // Same shapes as draftVersionSchema; the v0 draft persists them on the
+  // initial StackTemplateVersion row.
+  inputs: z.array(templateInputDeclSchema).optional(),
+  vault: templateVaultSectionSchema.optional(),
 });
 
 export const updateTemplateMetaSchema = z.object({

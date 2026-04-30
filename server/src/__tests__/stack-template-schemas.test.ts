@@ -92,6 +92,68 @@ describe('createTemplateSchema — empty services', () => {
   });
 });
 
+describe('createTemplateSchema — inputs and vault (single-call create)', () => {
+  it('accepts inputs[] alongside services and round-trips defaults', () => {
+    const r = createTemplateSchema.safeParse({
+      ...baseCreate,
+      inputs: [{ name: 'apiKey' }, { name: 'dbPassword', sensitive: true, required: false }],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.inputs).toHaveLength(2);
+      // Default sensitive=true, required=true, rotateOnUpgrade=false
+      expect(r.data.inputs![0].sensitive).toBe(true);
+      expect(r.data.inputs![0].required).toBe(true);
+      expect(r.data.inputs![0].rotateOnUpgrade).toBe(false);
+    }
+  });
+
+  it('accepts a complete vault section with policies, appRoles, and kv', () => {
+    const r = createTemplateSchema.safeParse({
+      ...baseCreate,
+      inputs: [{ name: 'token' }],
+      vault: {
+        policies: [{ name: 'p1', body: 'path "secret/*" { capabilities = ["read"] }' }],
+        appRoles: [{ name: 'r1', policy: 'p1' }],
+        kv: [{ path: 'shared/cfg', fields: { token: { fromInput: 'token' } } }],
+      },
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.vault?.policies).toHaveLength(1);
+      expect(r.data.vault?.appRoles).toHaveLength(1);
+      expect(r.data.vault?.kv).toHaveLength(1);
+    }
+  });
+
+  it('accepts an empty vault object (treated as no vault section)', () => {
+    const r = createTemplateSchema.safeParse({ ...baseCreate, vault: {} });
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects an invalid vault.kv path', () => {
+    const r = createTemplateSchema.safeParse({
+      ...baseCreate,
+      vault: {
+        kv: [{ path: '/leading-slash', fields: { k: { value: 'v' } } }],
+      },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('rejects duplicate input names via Zod default uniqueness — schema accepts dupes; cross-validator catches them at the loader level', () => {
+    // The Zod schema itself does NOT enforce input-name uniqueness at the
+    // create-template layer (mirrors draftVersionSchema). Loader/runtime
+    // catches duplicates. This test pins that contract so a future
+    // refactor that adds uniqueness here is intentional.
+    const r = createTemplateSchema.safeParse({
+      ...baseCreate,
+      inputs: [{ name: 'dup' }, { name: 'dup' }],
+    });
+    expect(r.success).toBe(true);
+  });
+});
+
 describe('draftVersionSchema', () => {
   const baseDraft = { networks: [], volumes: [], services: [baseService] };
 

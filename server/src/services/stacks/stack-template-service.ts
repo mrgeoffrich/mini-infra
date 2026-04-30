@@ -270,6 +270,38 @@ export class StackTemplateService {
       );
     }
 
+    // Catch substitution typos (e.g. {{stak.id}}, {{environment.foo}}) at
+    // create time so the operator sees them immediately — same behaviour
+    // as createOrUpdateDraft. Only meaningful when inputs/vault are present;
+    // for back-compat creates (no vault, no inputs) the validator is a no-op
+    // beyond what other layers already check.
+    const inputNamesForValidation = new Set((input.inputs ?? []).map((i) => i.name));
+    const issues = validateTemplateSubstitutions({
+      scope: input.scope,
+      parameterNames: parameterNamesFromDefinitions(input.parameters),
+      inputNames: inputNamesForValidation,
+      services: input.services,
+      configFiles: input.configFiles,
+      networks: input.networks,
+      volumes: input.volumes,
+      resourceInputs: input.resourceInputs,
+      resourceOutputs: input.resourceOutputs,
+      vaultPolicies: input.vault?.policies,
+      vaultAppRoles: input.vault?.appRoles,
+      vaultKvPaths: (input.vault?.kv ?? []).map((k) => k.path),
+    });
+    if (issues.length > 0) {
+      const summary = issues
+        .slice(0, 5)
+        .map((i) => `${i.path}: ${i.message}`)
+        .join('; ');
+      const suffix = issues.length > 5 ? ` (+${issues.length - 5} more)` : '';
+      throw new TemplateError(
+        `Template substitution validation failed: ${summary}${suffix}`,
+        400,
+      );
+    }
+
     // Extract config files from services (they come embedded in StackServiceDefinition.configFiles)
     // and also accept top-level configFiles input
     const configFileInputs = input.configFiles ?? [];
@@ -321,6 +353,10 @@ export class StackTemplateService {
           resourceInputs: input.resourceInputs ? (input.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
           networks: input.networks as unknown as Prisma.InputJsonValue,
           volumes: input.volumes as unknown as Prisma.InputJsonValue,
+          inputs: input.inputs ? (input.inputs as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultPolicies: input.vault?.policies ? (input.vault.policies as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
