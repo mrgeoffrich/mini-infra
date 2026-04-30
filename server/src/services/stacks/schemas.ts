@@ -302,6 +302,9 @@ export const stackServiceDefinitionSchema = z
     adoptedContainer: adoptedContainerSchema.optional(),
     poolConfig: poolConfigSchema.optional(),
     vaultAppRoleId: z.string().min(1).nullable().optional(),
+    // Symbolic reference to a vault.appRoles[].name declared in the same draft.
+    // Resolved to a concrete vaultAppRoleId at apply time by the vault apply orchestrator.
+    vaultAppRoleRef: z.string().min(1).optional(),
   })
   .refine(
     (data) => {

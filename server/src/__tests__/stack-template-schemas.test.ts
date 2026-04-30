@@ -115,6 +115,52 @@ describe('draftVersionSchema', () => {
   });
 });
 
+describe('draftVersionSchema — vaultAppRoleRef on services', () => {
+  const draftWithVaultAndRef = {
+    networks: [],
+    volumes: [],
+    services: [{ ...baseService, vaultAppRoleRef: 'my-approle' }],
+    vault: {
+      policies: [{ name: 'my-policy', body: 'path "x" { capabilities = ["read"] }' }],
+      appRoles: [{ name: 'my-approle', policy: 'my-policy' }],
+    },
+  };
+
+  it('preserves vaultAppRoleRef on parsed services (regression: was silently stripped)', () => {
+    const r = draftVersionSchema.safeParse(draftWithVaultAndRef);
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.services[0].vaultAppRoleRef).toBe('my-approle');
+    }
+  });
+
+  it('rejects vaultAppRoleRef pointing at an undeclared appRole', () => {
+    const r = draftVersionSchema.safeParse({
+      ...draftWithVaultAndRef,
+      services: [{ ...baseService, vaultAppRoleRef: 'nonexistent-role' }],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const messages = r.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.includes('nonexistent-role'))).toBe(true);
+      expect(messages.some((m) => m.includes("Service 'web'"))).toBe(true);
+    }
+  });
+
+  it('rejects vaultAppRoleRef when the draft has no vault section at all', () => {
+    const r = draftVersionSchema.safeParse({
+      networks: [],
+      volumes: [],
+      services: [{ ...baseService, vaultAppRoleRef: 'my-approle' }],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const messages = r.error.issues.map((i) => i.message);
+      expect(messages.some((m) => m.includes('none defined'))).toBe(true);
+    }
+  });
+});
+
 describe('config-file mountPath safety', () => {
   const configFile = {
     serviceName: 'web',

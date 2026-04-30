@@ -1165,7 +1165,7 @@ function serializeTemplateConfigFile(cf: Prisma.StackTemplateConfigFileGetPayloa
  * Convert a StackServiceDefinition to a Prisma create input for StackTemplateService.
  */
 function toTemplateServiceCreate(
-  s: StackServiceDefinition & { vaultAppRoleRef?: string },
+  s: StackServiceDefinition,
   fallbackOrder: number
 ) {
   return {
@@ -1320,6 +1320,7 @@ function buildServiceDefinitionsFromVersion(version: {
       adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
       poolConfig: (svc.poolConfig as unknown as StackServiceDefinition['poolConfig']) ?? undefined,
       vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
+      vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
     };
   });
 }

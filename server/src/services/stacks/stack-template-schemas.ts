@@ -147,7 +147,30 @@ export const draftVersionSchema = z.object({
   notes: z.string().max(1000).optional(),
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
+}).superRefine((data, ctx) => {
+  // Mirror templateFileSchema: every services[].vaultAppRoleRef must resolve
+  // to a vault.appRoles[].name declared in this same draft body. Otherwise
+  // the field would persist as a dangling reference and the apply-time vault
+  // orchestrator would silently fail to bind the service to any AppRole.
+  const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
+  for (let i = 0; i < data.services.length; i++) {
+    const svc = data.services[i];
+    if (svc.vaultAppRoleRef !== undefined && !appRoleNames.has(svc.vaultAppRoleRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
+        path: ['services', i, 'vaultAppRoleRef'],
+      });
+    }
+  }
 });
+
+function formatNameSet(set: Set<string>): string {
+  if (set.size === 0) return 'none defined';
+  return Array.from(set)
+    .map((n) => `'${n}'`)
+    .join(', ');
+}
 
 export const publishDraftSchema = z.object({
   notes: z.string().max(1000).optional(),
