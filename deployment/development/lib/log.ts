@@ -61,8 +61,14 @@ function ts(): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+// Console output is kept to status-only by default — milestones (logOk),
+// warnings, and errors. The progress chatter (logInfo / logSkip) goes to
+// the rolling worktree-env.log only so the file stays verbose. Set
+// WORKTREE_ENV_VERBOSE=1 to mirror the chatter to the console too.
+const VERBOSE = process.env.WORKTREE_ENV_VERBOSE === '1';
+
 export function logInfo(msg: string): void {
-  console.log(`${CYAN}[${ts()}] ${msg}${NC}`);
+  if (VERBOSE) console.log(`${CYAN}[${ts()}] ${msg}${NC}`);
   appendToFile('INFO', msg);
 }
 export function logOk(msg: string): void {
@@ -78,6 +84,6 @@ export function logError(msg: string): void {
   appendToFile('ERR ', msg);
 }
 export function logSkip(msg: string): void {
-  console.log(`${GRAY}[${ts()}] · ${msg}${NC}`);
+  if (VERBOSE) console.log(`${GRAY}[${ts()}] · ${msg}${NC}`);
   appendToFile('SKIP', msg);
 }
