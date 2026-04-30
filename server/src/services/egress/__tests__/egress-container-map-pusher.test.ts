@@ -143,21 +143,21 @@ describe('EgressContainerMapPusher', () => {
       ],
     });
 
-    // Docker has both containers running on the applications network.
+    // Docker has both containers running on the egress network.
     // Names follow `${env}-${stack}-${service}` (StackContainerManager convention).
     mockDockerInstance.listContainers.mockResolvedValue([
       {
         Id: 'c1',
         Names: ['/staging-myapp-web'],
         NetworkSettings: {
-          Networks: { 'staging-applications': { IPAddress: '172.30.0.10' } },
+          Networks: { 'staging-egress': { IPAddress: '172.30.0.10' } },
         },
       },
       {
         Id: 'c2',
         Names: ['/staging-myapp-egress-gateway'],
         NetworkSettings: {
-          Networks: { 'staging-applications': { IPAddress: '172.30.0.2' } },
+          Networks: { 'staging-egress': { IPAddress: '172.30.0.2' } },
         },
       },
     ]);
@@ -199,7 +199,7 @@ describe('EgressContainerMapPusher', () => {
         Id: 'c-alpine',
         Names: ['/local-egress-test-alpine'],
         NetworkSettings: {
-          Networks: { 'local-applications': { IPAddress: '172.30.0.10' } },
+          Networks: { 'local-egress': { IPAddress: '172.30.0.10' } },
         },
       },
     ]);

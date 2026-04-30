@@ -231,10 +231,11 @@ export class EgressContainerMapPusher {
    * - Query active stacks (not removed, not archived) in the env.
    * - Skip stacks that belong to the egress-gateway itself (egressBypass).
    * - For each service in each stack, find a running container by name and
-   *   get its IPv4 address on the env's applications network.
+   *   get its IPv4 address on the env's egress network (where every
+   *   non-bypass managed container lives — see egress-injection.ts).
    */
   private async _buildContainerMap(env: EnvRow): Promise<ContainerMapEntry[]> {
-    const applicationsNetwork = `${env.name}-applications`;
+    const egressNetwork = `${env.name}-egress`;
 
     // Stacks in this environment that are not removed
     const stacks = await this.prisma.stack.findMany({
@@ -265,12 +266,12 @@ export class EgressContainerMapPusher {
     const docker = await dockerService.getDockerInstance();
     const rawContainers = await docker.listContainers({ all: false });
 
-    // Build a lookup: containerName → IP on the applications network
+    // Build a lookup: containerName → IP on the egress network
     const ipByName = new Map<string, string>();
     const idByName = new Map<string, string>();
     for (const c of rawContainers) {
       const networks = c.NetworkSettings?.Networks ?? {};
-      const networkInfo = networks[applicationsNetwork];
+      const networkInfo = networks[egressNetwork];
       if (networkInfo?.IPAddress) {
         const name = (c.Names?.[0] ?? '').replace(/^\//, '');
         ipByName.set(name, networkInfo.IPAddress);
@@ -303,7 +304,7 @@ export class EgressContainerMapPusher {
     }
 
     log.debug(
-      { envId: env.id, envName: env.name, applicationsNetwork, entryCount: entries.length },
+      { envId: env.id, envName: env.name, egressNetwork, entryCount: entries.length },
       'Built container map',
     );
 

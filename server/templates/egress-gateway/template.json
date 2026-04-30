@@ -1,7 +1,7 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 7,
+  "builtinVersion": 8,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control",
@@ -13,8 +13,8 @@
       "description": "Log level for the egress gateway (debug, info, warn, error)"
     }
   ],
-  "resourceInputs": [
-    { "type": "docker-network", "purpose": "applications" }
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "egress", "joinSelf": true }
   ],
   "networks": [],
   "volumes": [],
@@ -36,7 +36,7 @@
           { "containerPort": 8054, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false }
         ],
         "restartPolicy": "unless-stopped",
-        "joinResourceNetworks": ["applications"],
+        "joinResourceNetworks": ["egress"],
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
       "dependsOn": [],

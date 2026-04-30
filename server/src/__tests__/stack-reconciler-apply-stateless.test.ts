@@ -201,6 +201,7 @@ const mockCreateContainer = vi.fn().mockResolvedValue({
 });
 
 const mockGetContainer = vi.fn().mockReturnValue({
+  start: mockContainerStart,
   stop: mockContainerStop,
   remove: mockContainerRemove,
   inspect: mockContainerInspect,
@@ -232,8 +233,12 @@ const mockPrisma = {
     update: mockStackUpdate,
   },
   environment: {
-    // Default: no gateway IP set — resolveEgressDnsServers will warn and return undefined
+    // Default: no gateway IP set — egress injection short-circuits.
     findUnique: vi.fn().mockResolvedValue({ egressGatewayIp: null }),
+  },
+  infraResource: {
+    // Default: no egress InfraResource. Auto-attach to egress network is a no-op.
+    findFirst: vi.fn().mockResolvedValue(null),
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,

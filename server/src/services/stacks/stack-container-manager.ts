@@ -6,6 +6,7 @@ import {
 } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
 import { groupByProperty } from './utils';
+import { resolveEgressEnv } from './egress-injection';
 import type { PrismaClient } from '../../generated/prisma/client';
 
 export interface CreateContainerOptions {
@@ -207,8 +208,11 @@ export class StackContainerManager {
 
     this.log.info({ containerName, image }, 'Creating container');
 
-    const egressResult = await this.resolveEgressInjection(service, options);
-    const egressEnv = egressResult.type === 'proxy' ? egressResult.env : {};
+    const egressEnv = await resolveEgressEnv(
+      this.prisma,
+      options.environmentId,
+      config.egressBypass === true,
+    );
 
     const container = await this.dockerExecutor.createLongRunningContainer({
       image,
@@ -241,109 +245,6 @@ export class StackContainerManager {
     const docker = this.dockerExecutor.getDockerClient();
     await docker.getContainer(containerId).start();
     this.log.info({ containerId }, 'Container started');
-  }
-
-  /**
-   * Resolve what egress injection to apply for a managed container.
-   *
-   * Gates (in order):
-   * - Host-level stack (no environmentId) → no injection.
-   * - Service has egressBypass === true → no injection (egress-gateway itself, fw-agent, etc.)
-   * - Environment has no egressGatewayIp → no injection (gateway not provisioned).
-   *
-   * When the env has been provisioned with an egress-gateway, inject
-   * HTTP_PROXY / HTTPS_PROXY / NO_PROXY env vars pointing at the
-   * egress-gateway container via Docker DNS alias `egress-gateway:3128`.
-   * Docker's default 127.0.0.11 resolver remains in place for DNS.
-   *
-   * Note: `egressFirewallEnabled` is intentionally not consulted here. That
-   * flag gates whether the fw-agent actively enforces policies, not which
-   * gateway is provisioned. `egressGatewayIp` (set once at env creation by
-   * provisionEgressGateway) is the canonical "gateway exists" signal.
-   *
-   * Never throws — egress injection failure must not break stack apply.
-   */
-  private async resolveEgressInjection(
-    service: StackServiceDefinition,
-    options: CreateContainerOptions,
-  ): Promise<{ type: 'none' } | { type: 'proxy'; env: Record<string, string> }> {
-    if (!options.environmentId) {
-      return { type: 'none' };
-    }
-
-    if (service.containerConfig.egressBypass === true) {
-      return { type: 'none' };
-    }
-
-    try {
-      const environment = await this.prisma.environment.findUnique({
-        where: { id: options.environmentId },
-        select: { egressGatewayIp: true },
-      });
-
-      if (!environment?.egressGatewayIp) {
-        this.log.warn(
-          { environmentId: options.environmentId, stackId: options.stackId },
-          'Environment has no egressGatewayIp — skipping egress injection',
-        );
-        return { type: 'none' };
-      }
-
-      const proxyUrl = 'http://egress-gateway:3128';
-      const bridgeCidr = await this.resolveApplicationsBridgeCidr(options.environmentId);
-      const noProxy = ['localhost', '127.0.0.0/8', ...(bridgeCidr ? [bridgeCidr] : [])].join(',');
-
-      return {
-        type: 'proxy',
-        env: {
-          HTTP_PROXY: proxyUrl,
-          HTTPS_PROXY: proxyUrl,
-          http_proxy: proxyUrl,
-          https_proxy: proxyUrl,
-          NO_PROXY: noProxy,
-          no_proxy: noProxy,
-        },
-      };
-    } catch (err) {
-      this.log.warn(
-        { environmentId: options.environmentId, stackId: options.stackId, error: err },
-        'Error resolving egress injection — skipping to not block stack apply',
-      );
-      return { type: 'none' };
-    }
-  }
-
-  /**
-   * Resolve the CIDR of the applications bridge for the given environment.
-   * Used to populate NO_PROXY so managed containers bypass the proxy for
-   * intra-env traffic (e.g., container-to-container, container-to-gateway).
-   *
-   * Returns null when the bridge CIDR is not yet known (e.g., network not yet
-   * created). The caller omits it from NO_PROXY in that case.
-   */
-  private async resolveApplicationsBridgeCidr(environmentId: string): Promise<string | null> {
-    try {
-      const resource = await this.prisma.infraResource.findFirst({
-        where: {
-          type: 'docker-network',
-          purpose: 'applications',
-          scope: 'environment',
-          environmentId,
-        },
-        select: { metadata: true },
-      });
-      const meta = resource?.metadata as Record<string, unknown> | null;
-      const subnet = meta?.['subnet'];
-      if (typeof subnet === 'string') {
-        return subnet;
-      }
-    } catch (err) {
-      this.log.warn(
-        { environmentId, error: err },
-        'Could not resolve applications bridge CIDR for NO_PROXY',
-      );
-    }
-    return null;
   }
 
   async connectToNetwork(containerId: string, networkName: string, aliases?: string[]): Promise<void> {

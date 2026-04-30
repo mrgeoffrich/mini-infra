@@ -53,16 +53,16 @@ export class StackInfraResourceManager {
           labels['mini-infra.environment'] = stack.environmentId;
         }
 
-        // For environment-scoped applications networks, use the subnet pre-allocated
+        // For environment-scoped egress networks, use the subnet pre-allocated
         // by EgressNetworkAllocator and persisted on InfraResource.metadata.subnet.
         // This gives the egress gateway a stable, known network segment.
         let ipamConfig: { subnet: string; gateway?: string } | undefined;
-        if (output.purpose === 'applications' && stack.environmentId) {
+        if (output.purpose === 'egress' && stack.environmentId) {
           // Check for an existing InfraResource record that may carry a pre-allocated subnet
           const existingResource = await this.prisma.infraResource.findFirst({
             where: {
               type: 'docker-network',
-              purpose: 'applications',
+              purpose: 'egress',
               scope: 'environment',
               environmentId: stack.environmentId,
             },
@@ -76,7 +76,7 @@ export class StackInfraResourceManager {
               subnet,
               ...(typeof gateway === 'string' ? { gateway } : {}),
             };
-            log.info({ network: name, subnet, gateway }, 'Using pre-allocated subnet for applications network');
+            log.info({ network: name, subnet, gateway }, 'Using pre-allocated subnet for egress network');
           }
         }
 
@@ -180,9 +180,12 @@ export class StackInfraResourceManager {
       const netName = infraNetworkMap.get(purpose);
       if (!netName) continue;
       try {
-        // For egressBypass services joining the applications resource network,
+        // For egressBypass services (the egress-gateway itself, fw-agent, etc.),
         // add the service name as a DNS alias so managed containers can resolve
-        // `egress-gateway:3128` regardless of which IP the container gets on recreate.
+        // `egress-gateway:3128` regardless of which IP the container gets on
+        // recreate. The egress-gateway service joins the per-env `egress`
+        // network with this alias; non-bypass containers are auto-attached to
+        // the same network via attachEgressNetworkIfNeeded.
         const aliases =
           serviceDef.containerConfig.egressBypass === true ? [serviceDef.serviceName] : undefined;
         await this.containerManager.connectToNetwork(containerId, netName, aliases);

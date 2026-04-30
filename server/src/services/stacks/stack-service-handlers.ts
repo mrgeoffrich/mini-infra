@@ -15,6 +15,7 @@ import { removalDeploymentMachine, type RemovalDeploymentContext } from '../hapr
 import { runStateMachineToCompletion } from './state-machine-runner';
 import { prepareServiceContainer } from './utils';
 import { removeConflictingContainer } from './stack-conflict-detector';
+import { attachEgressNetworkIfNeeded } from './egress-injection';
 import type { StackContainerManager } from './stack-container-manager';
 import type { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
@@ -124,6 +125,14 @@ export class StackServiceHandlers {
 
         await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
         await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
+        await attachEgressNetworkIfNeeded(
+          this.prisma,
+          this.containerManager,
+          containerId,
+          stack.environmentId,
+          effectiveServiceDef.containerConfig.egressBypass === true,
+          log,
+        );
 
         await this.containerManager.startContainer(containerId);
 
@@ -171,6 +180,14 @@ export class StackServiceHandlers {
 
         await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
         await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
+        await attachEgressNetworkIfNeeded(
+          this.prisma,
+          this.containerManager,
+          containerId,
+          stack.environmentId,
+          effectiveServiceDef.containerConfig.egressBypass === true,
+          log,
+        );
 
         await this.containerManager.startContainer(containerId);
 

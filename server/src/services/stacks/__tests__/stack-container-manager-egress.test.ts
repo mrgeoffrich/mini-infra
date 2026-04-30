@@ -42,8 +42,6 @@ function makeOptions(environmentId: string | null | undefined) {
 const mockCreateLongRunningContainer = vi.fn();
 const mockContainerStart = vi.fn().mockResolvedValue(undefined);
 
-// startContainer now goes through getDockerClient().getContainer(id).start(),
-// not container.start() on the dockerode object returned at create time.
 const mockGetDockerClient = vi.fn(() => ({
   getContainer: vi.fn(() => ({ start: mockContainerStart })),
 }));
@@ -55,12 +53,13 @@ const mockDockerExecutor = {
 } as any;
 
 // ---------------------------------------------------------------------------
-// Tests for HTTP_PROXY injection — fires whenever the env has been provisioned
-// with an egress-gateway (egressGatewayIp non-null), regardless of the
-// egressFirewallEnabled flag (which only gates fw-agent policy enforcement).
+// HTTP_PROXY env injection — fires when env has a provisioned egress gateway
+// AND an `egress` InfraResource exists for that env. The helper that decides
+// is exercised in egress-injection.test.ts; here we verify the StackContainer-
+// Manager wires it through to createLongRunningContainer correctly.
 // ---------------------------------------------------------------------------
 
-describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, flag ON)', () => {
+describe('StackContainerManager — egress env injection', () => {
   let mockPrisma: any;
   let manager: StackContainerManager;
 
@@ -73,24 +72,24 @@ describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, f
   });
 
   function buildManager(
-    envResult: { egressFirewallEnabled: boolean; egressGatewayIp: string | null } | null,
-    infraResourceResult: { metadata: unknown } | null = null,
+    envResult: { egressGatewayIp: string | null } | null,
+    egressResource: { name: string; metadata: unknown } | null = null,
   ) {
     mockPrisma = {
       environment: {
         findUnique: vi.fn().mockResolvedValue(envResult),
       },
       infraResource: {
-        findFirst: vi.fn().mockResolvedValue(infraResourceResult),
+        findFirst: vi.fn().mockResolvedValue(egressResource),
       },
     };
     return new StackContainerManager(mockDockerExecutor, mockPrisma);
   }
 
-  it('injects HTTP_PROXY env vars when egressGatewayIp is set (flag ON)', async () => {
+  it('injects HTTP_PROXY env vars when egress gateway and egress InfraResource exist', async () => {
     manager = buildManager(
-      { egressFirewallEnabled: true, egressGatewayIp: '172.30.16.3' },
-      { metadata: { subnet: '172.30.5.0/24' } },
+      { egressGatewayIp: '172.30.16.3' },
+      { name: 'env1-egress', metadata: { subnet: '172.30.16.0/24' } },
     );
     const service = makeService();
     const options = makeOptions('env-1');
@@ -102,19 +101,18 @@ describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, f
     expect(callArgs.env['HTTPS_PROXY']).toBe('http://egress-gateway:3128');
     expect(callArgs.env['http_proxy']).toBe('http://egress-gateway:3128');
     expect(callArgs.env['https_proxy']).toBe('http://egress-gateway:3128');
-    // NO_PROXY includes localhost, loopback block, and bridge CIDR
     expect(callArgs.env['NO_PROXY']).toContain('localhost');
     expect(callArgs.env['NO_PROXY']).toContain('127.0.0.0/8');
-    expect(callArgs.env['NO_PROXY']).toContain('172.30.5.0/24');
+    expect(callArgs.env['NO_PROXY']).toContain('172.30.16.0/24');
     expect(callArgs.env['no_proxy']).toBe(callArgs.env['NO_PROXY']);
-    // DNS injection must NOT be present (we use Docker's default resolver)
+    // No legacy DNS injection — Docker's default resolver remains.
     expect(callArgs.dnsServers).toBeUndefined();
   });
 
-  it('includes NO_PROXY without bridge CIDR when subnet not found', async () => {
+  it('omits the bridge CIDR from NO_PROXY when egress InfraResource has no subnet metadata', async () => {
     manager = buildManager(
-      { egressFirewallEnabled: true, egressGatewayIp: '172.30.16.3' },
-      null, // no infra resource → no subnet
+      { egressGatewayIp: '172.30.16.3' },
+      { name: 'env1-egress', metadata: null },
     );
     const service = makeService();
     const options = makeOptions('env-1');
@@ -123,16 +121,11 @@ describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, f
 
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
     expect(callArgs.env['HTTP_PROXY']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['NO_PROXY']).toContain('localhost');
-    expect(callArgs.env['NO_PROXY']).toContain('127.0.0.0/8');
-    // Should not crash, just omit the bridge CIDR
-    expect(callArgs.dnsServers).toBeUndefined();
+    expect(callArgs.env['NO_PROXY']).toBe('localhost,127.0.0.0/8');
   });
 
-  it('skips HTTP_PROXY injection when egressBypass=true (v3 gateway service)', async () => {
-    manager = buildManager(
-      { egressFirewallEnabled: true, egressGatewayIp: '172.30.16.3' },
-    );
+  it('skips injection when service has egressBypass=true (gateway service itself)', async () => {
+    manager = buildManager({ egressGatewayIp: '172.30.16.3' });
     const service = makeService({ egressBypass: true });
     const options = makeOptions('env-1');
 
@@ -141,12 +134,11 @@ describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, f
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
     expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
     expect(callArgs.env['HTTPS_PROXY']).toBeUndefined();
-    expect(callArgs.dnsServers).toBeUndefined();
-    // Prisma must not be called (bypass short-circuits before DB lookup)
+    // Bypass short-circuits before any DB lookup.
     expect(mockPrisma.environment.findUnique).not.toHaveBeenCalled();
   });
 
-  it('skips HTTP_PROXY injection for host-level stacks (no environmentId)', async () => {
+  it('skips injection for host-level stacks (no environmentId)', async () => {
     manager = buildManager(null);
     const service = makeService();
     const options = makeOptions(null);
@@ -155,147 +147,54 @@ describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, f
 
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
     expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
-    expect(callArgs.dnsServers).toBeUndefined();
     expect(mockPrisma.environment.findUnique).not.toHaveBeenCalled();
   });
 
-  it('merges injected proxy env vars with static service env vars (service vars take precedence)', async () => {
+  it('skips injection when env has no egressGatewayIp (gateway not provisioned)', async () => {
+    manager = buildManager({ egressGatewayIp: null });
+    const service = makeService();
+    const options = makeOptions('env-1');
+
+    await manager.createAndStartContainer('web', service, options);
+
+    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
+    expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
+  });
+
+  it('skips injection when egress InfraResource is missing (gateway provisioning incomplete)', async () => {
     manager = buildManager(
-      { egressFirewallEnabled: true, egressGatewayIp: '172.30.16.3' },
-      { metadata: { subnet: '172.30.1.0/24' } },
+      { egressGatewayIp: '172.30.16.3' },
+      null,
     );
-    // Service explicitly sets its own HTTP_PROXY (override)
+    const service = makeService();
+    const options = makeOptions('env-1');
+
+    await manager.createAndStartContainer('web', service, options);
+
+    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
+    expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
+  });
+
+  it('lets static service env override injected proxy env', async () => {
+    manager = buildManager(
+      { egressGatewayIp: '172.30.16.3' },
+      { name: 'env1-egress', metadata: { subnet: '172.30.1.0/24' } },
+    );
     const service = makeService({ env: { HTTP_PROXY: 'http://custom-proxy:9090', APP_VAR: 'hello' } });
     const options = makeOptions('env-1');
 
     await manager.createAndStartContainer('web', service, options);
 
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    // Service env takes precedence over injected env
     expect(callArgs.env['HTTP_PROXY']).toBe('http://custom-proxy:9090');
     expect(callArgs.env['APP_VAR']).toBe('hello');
-    // Other proxy vars are still injected
+    // Other proxy vars are still injected.
     expect(callArgs.env['HTTPS_PROXY']).toBe('http://egress-gateway:3128');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Tests for HTTP_PROXY injection with egressFirewallEnabled = false.
-// Same behavior as flag ON: gateway presence (egressGatewayIp) drives the
-// injection, not the flag. Also covers the no-gateway short-circuit.
-// ---------------------------------------------------------------------------
-
-describe('StackContainerManager — HTTP_PROXY injection (egressGatewayIp set, flag OFF)', () => {
-  let mockPrisma: any;
-  let manager: StackContainerManager;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockCreateLongRunningContainer.mockResolvedValue({
-      id: 'container-new',
-      start: mockContainerStart,
-    });
-  });
-
-  function buildManager(
-    envResult: { egressFirewallEnabled: boolean; egressGatewayIp: string | null } | null,
-    infraResourceResult: { metadata: unknown } | null = null,
-  ) {
-    mockPrisma = {
-      environment: {
-        findUnique: vi.fn().mockResolvedValue(envResult),
-      },
-      infraResource: {
-        findFirst: vi.fn().mockResolvedValue(infraResourceResult),
-      },
-    };
-    return new StackContainerManager(mockDockerExecutor, mockPrisma);
-  }
-
-  it('injects HTTP_PROXY env vars when egressGatewayIp is set even though flag is OFF', async () => {
-    manager = buildManager(
-      { egressFirewallEnabled: false, egressGatewayIp: '172.30.16.3' },
-      { metadata: { subnet: '172.30.16.0/22' } },
-    );
-    const service = makeService();
-    const options = makeOptions('env-1');
-
-    await manager.createAndStartContainer('web', service, options);
-
-    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    expect(callArgs.env['HTTP_PROXY']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['HTTPS_PROXY']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['http_proxy']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['https_proxy']).toBe('http://egress-gateway:3128');
-    expect(callArgs.env['NO_PROXY']).toContain('172.30.16.0/22');
-    // No legacy DNS injection — Docker's default resolver remains.
-    expect(callArgs.dnsServers).toBeUndefined();
-  });
-
-  it('skips injection entirely when egressGatewayIp is null', async () => {
-    manager = buildManager({ egressFirewallEnabled: false, egressGatewayIp: null });
-    const service = makeService();
-    const options = makeOptions('env-1');
-
-    await expect(manager.createAndStartContainer('web', service, options)).resolves.toBeDefined();
-
-    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    expect(callArgs.dnsServers).toBeUndefined();
-    expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
-  });
-
-  it('skips injection when egressBypass=true', async () => {
-    manager = buildManager({ egressFirewallEnabled: false, egressGatewayIp: '172.30.16.3' });
-    const service = makeService({ egressBypass: true });
-    const options = makeOptions('env-1');
-
-    await manager.createAndStartContainer('egress-gw', service, options);
-
-    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    expect(callArgs.dnsServers).toBeUndefined();
-    expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
-    // Prisma must not be called
-    expect(mockPrisma.environment.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('skips injection for host-level stack (no environmentId)', async () => {
-    manager = buildManager(null);
-    const service = makeService();
-    const options = makeOptions(null);
-
-    await manager.createAndStartContainer('web', service, options);
-
-    const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    expect(callArgs.dnsServers).toBeUndefined();
-    expect(callArgs.env['HTTP_PROXY']).toBeUndefined();
-    expect(mockPrisma.environment.findUnique).not.toHaveBeenCalled();
-  });
-
-  it('injects HTTP_PROXY only for non-bypass services in the same stack', async () => {
-    manager = buildManager(
-      { egressFirewallEnabled: false, egressGatewayIp: '172.30.16.3' },
-      { metadata: { subnet: '172.30.16.0/22' } },
-    );
-    const options = makeOptions('env-1');
-
-    const normalService = makeService({ egressBypass: false });
-    const bypassService = makeService({ egressBypass: true });
-
-    await manager.createAndStartContainer('app', normalService, options);
-    await manager.createAndStartContainer('gw', bypassService, options);
-
-    const firstCallArgs = mockCreateLongRunningContainer.mock.calls[0][0];
-    const secondCallArgs = mockCreateLongRunningContainer.mock.calls[1][0];
-
-    expect(firstCallArgs.env['HTTP_PROXY']).toBe('http://egress-gateway:3128');
-    expect(secondCallArgs.env['HTTP_PROXY']).toBeUndefined();
-    expect(firstCallArgs.dnsServers).toBeUndefined();
-    expect(secondCallArgs.dnsServers).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Tests for Phase 2 egress bypass label (unchanged)
+// Phase 2 egress bypass label (unchanged contract, retained here for sanity).
 // ---------------------------------------------------------------------------
 
 describe('StackContainerManager — egress bypass label', () => {
@@ -310,7 +209,7 @@ describe('StackContainerManager — egress bypass label', () => {
     });
   });
 
-  function buildManager(envResult: { egressFirewallEnabled: boolean; egressGatewayIp: string | null } | null) {
+  function buildManager(envResult: { egressGatewayIp: string | null } | null) {
     mockPrisma = {
       environment: {
         findUnique: vi.fn().mockResolvedValue(envResult),
@@ -323,7 +222,7 @@ describe('StackContainerManager — egress bypass label', () => {
   }
 
   it('sets mini-infra.egress.bypass=true label for bypass services', async () => {
-    manager = buildManager({ egressFirewallEnabled: false, egressGatewayIp: null });
+    manager = buildManager({ egressGatewayIp: null });
     const bypassService = makeService({ egressBypass: true });
     const options = makeOptions('env-1');
 
@@ -333,19 +232,19 @@ describe('StackContainerManager — egress bypass label', () => {
     expect(callArgs.labels?.['mini-infra.egress.bypass']).toBe('true');
   });
 
-  it('does NOT set mini-infra.egress.bypass label for normal services', async () => {
-    manager = buildManager({ egressFirewallEnabled: false, egressGatewayIp: null });
-    const normalService = makeService({ egressBypass: false });
+  it('does not set the egress.bypass label for non-bypass services', async () => {
+    manager = buildManager({ egressGatewayIp: null });
+    const service = makeService({ egressBypass: false });
     const options = makeOptions('env-1');
 
-    await manager.createAndStartContainer('app', normalService, options);
+    await manager.createAndStartContainer('app', service, options);
 
     const callArgs = mockCreateLongRunningContainer.mock.calls[0][0];
     expect(callArgs.labels?.['mini-infra.egress.bypass']).toBeUndefined();
   });
 
-  it('does NOT set mini-infra.egress.bypass label when egressBypass is unset', async () => {
-    manager = buildManager({ egressFirewallEnabled: false, egressGatewayIp: null });
+  it('does not set the egress.bypass label when egressBypass is unset', async () => {
+    manager = buildManager({ egressGatewayIp: null });
     const service = makeService({});
     const options = makeOptions('env-1');
 
