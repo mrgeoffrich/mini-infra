@@ -40,6 +40,11 @@ func BuildGatewayHandler(
 	sk.ConnectTimeout = 10 * time.Second
 	sk.Log = logger
 	sk.AllowMissingRole = false
+	// Wrap the default resolver so a `context.Canceled` from upstream DNS
+	// (e.g. Go's parallel A/AAAA lookup cancelling the slower query) lands
+	// on rejectResponse's net.Error/Timeout branch (504) rather than the
+	// catch-all 500. See resolver_shim.go for the why.
+	sk.Resolver = NewResolverShim(sk.Resolver)
 
 	sk.ShuttingDown.Store(false)
 	sk.ConnTracker = conntrack.NewTracker(sk.IdleTimeout, sk.MetricsClient, sk.Log, sk.ShuttingDown, nil)
