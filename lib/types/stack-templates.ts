@@ -171,6 +171,57 @@ export interface TemplateVaultSection {
   kv?: TemplateVaultKv[];
 }
 
+export interface TemplateNatsAccount {
+  name: string;
+  displayName?: string;
+  description?: string;
+  scope: 'host' | 'environment' | 'stack';
+}
+
+export interface TemplateNatsCredential {
+  name: string;
+  account: string;
+  displayName?: string;
+  description?: string;
+  publishAllow: string[];
+  subscribeAllow: string[];
+  ttlSeconds?: number;
+  scope: 'host' | 'environment' | 'stack';
+}
+
+export interface TemplateNatsStream {
+  name: string;
+  account: string;
+  description?: string;
+  subjects: string[];
+  retention?: 'limits' | 'interest' | 'workqueue';
+  storage?: 'file' | 'memory';
+  maxMsgs?: number | null;
+  maxBytes?: number | null;
+  maxAgeSeconds?: number | null;
+  scope: 'host' | 'environment' | 'stack';
+}
+
+export interface TemplateNatsConsumer {
+  name: string;
+  stream: string;
+  durableName?: string;
+  description?: string;
+  filterSubject?: string;
+  deliverPolicy?: 'all' | 'last' | 'new' | 'by_start_sequence' | 'by_start_time' | 'last_per_subject';
+  ackPolicy?: 'none' | 'all' | 'explicit';
+  maxDeliver?: number | null;
+  ackWaitSeconds?: number | null;
+  scope: 'host' | 'environment' | 'stack';
+}
+
+export interface TemplateNatsSection {
+  accounts?: TemplateNatsAccount[];
+  credentials?: TemplateNatsCredential[];
+  streams?: TemplateNatsStream[];
+  consumers?: TemplateNatsConsumer[];
+}
+
 export interface StackTemplateVersionInfo {
   id: string;
   templateId: string;
@@ -193,6 +244,7 @@ export interface StackTemplateVersionInfo {
   configFiles?: StackTemplateConfigFileInfo[];
   inputs?: TemplateInputDeclaration[];
   vault?: TemplateVaultSection;
+  nats?: TemplateNatsSection;
 }
 
 export interface StackTemplateServiceInfo {
@@ -212,6 +264,9 @@ export interface StackTemplateServiceInfo {
   vaultAppRoleId?: string | null;
   /** Symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time (PR 2). */
   vaultAppRoleRef?: string | null;
+  natsCredentialId?: string | null;
+  /** Symbolic credential name from nats.credentials[]; resolved to natsCredentialId at apply time. */
+  natsCredentialRef?: string | null;
 }
 
 export interface StackTemplateConfigFileInfo {
@@ -253,6 +308,9 @@ export interface CreateStackTemplateRequest {
    *  DraftVersionInput.vault. Triggers the template-vault:write permission
    *  gate at the route layer when non-empty. */
   vault?: TemplateVaultSection;
+  /** Optional NATS section persisted on the initial v0 draft. Triggers the
+   *  template-nats:write permission gate when non-empty. */
+  nats?: TemplateNatsSection;
 }
 
 export interface StackTemplateConfigFileInput {
@@ -284,6 +342,7 @@ export interface DraftVersionInput {
   notes?: string;
   inputs?: TemplateInputDeclaration[];
   vault?: TemplateVaultSection;
+  nats?: TemplateNatsSection;
 }
 
 export interface PublishDraftRequest {

@@ -40,7 +40,7 @@ export interface SystemSettingsInfo {
 // Settings Categories
 // ====================
 
-export const SETTINGS_CATEGORIES = ["docker", "cloudflare", "azure", "system", "deployments", "haproxy", "tls", "github", "github-app", "agent", "self-backup", "vault"] as const;
+export const SETTINGS_CATEGORIES = ["docker", "cloudflare", "azure", "system", "deployments", "haproxy", "tls", "github", "github-app", "agent", "self-backup", "vault", "nats"] as const;
 export type SettingsCategory = typeof SETTINGS_CATEGORIES[number];
 
 export const VALIDATION_STATUSES = ["valid", "invalid", "pending", "error"] as const;
@@ -151,7 +151,7 @@ export interface ConnectivityStatusInfo {
 // Connectivity Status Enums
 // ====================
 
-export type ConnectivityService = "cloudflare" | "docker" | "azure" | "system" | "deployments" | "tls" | "github" | "github-app" | "vault";
+export type ConnectivityService = "cloudflare" | "docker" | "azure" | "system" | "deployments" | "tls" | "github" | "github-app" | "vault" | "nats";
 
 export const CONNECTIVITY_STATUS_TYPES = ["connected", "failed", "timeout", "unreachable"] as const;
 export type ConnectivityStatusType = typeof CONNECTIVITY_STATUS_TYPES[number];

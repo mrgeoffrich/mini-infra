@@ -23,6 +23,7 @@ import {
   IconDownload,
   IconUsers,
   IconWorld,
+  IconCloud,
 } from "@tabler/icons-react";
 
 export interface RouteMetadata {
@@ -619,6 +620,42 @@ export const routeConfig: Record<string, RouteConfig> = {
         parent: "/vault/approles",
         showInNav: false,
         helpDoc: "vault/vault-approles",
+      },
+    },
+  },
+
+  "/nats": {
+    path: "/nats",
+    title: "NATS",
+    icon: IconCloud,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "administration",
+    description: "Managed NATS accounts, credentials, streams, and consumers",
+    children: {
+      accounts: {
+        path: "/nats/accounts",
+        title: "NATS Accounts",
+        parent: "/nats",
+        showInNav: false,
+      },
+      credentials: {
+        path: "/nats/credentials",
+        title: "NATS Credentials",
+        parent: "/nats",
+        showInNav: false,
+      },
+      streams: {
+        path: "/nats/streams",
+        title: "NATS Streams",
+        parent: "/nats",
+        showInNav: false,
+      },
+      consumers: {
+        path: "/nats/consumers",
+        title: "NATS Consumers",
+        parent: "/nats",
+        showInNav: false,
       },
     },
   },

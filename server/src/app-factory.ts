@@ -78,6 +78,7 @@ import vaultRoutes from "./routes/vault";
 import vaultPolicyRoutes from "./routes/vault/policies";
 import vaultAppRoleRoutes from "./routes/vault/approles";
 import vaultKvRoutes from "./routes/vault/kv";
+import natsRoutes from "./routes/nats";
 import egressRoutes from "./routes/egress";
 import egressFwAgentRoutes from "./routes/egress-fw-agent";
 import { listRouteMeta } from "./lib/openapi-registry";
@@ -191,6 +192,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     // shared status/bootstrap router.
     { id: "vaultKv", path: "/api/vault/kv", name: "vaultKvRoutes", getRouter: () => vaultKvRoutes },
     { id: "vault", path: "/api/vault", name: "vaultRoutes", getRouter: () => vaultRoutes },
+    { id: "nats", path: "/api/nats", name: "natsRoutes", getRouter: () => natsRoutes },
     // Dev-only: exchange admin credentials for a full-admin API key. Only
     // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
     // returns undefined and the route is skipped.

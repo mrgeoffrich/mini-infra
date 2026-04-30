@@ -134,4 +134,22 @@ describe('Pool service schema validation', () => {
     );
     expect(result.success).toBe(true);
   });
+
+  it('accepts NATS dynamicEnv entries', () => {
+    const result = stackDefinitionSchema.safeParse(
+      wrap([
+        baseStateful({
+          natsCredentialRef: 'manager-creds',
+          containerConfig: {
+            env: {},
+            dynamicEnv: {
+              NATS_URL: { kind: 'nats-url' },
+              NATS_CREDS: { kind: 'nats-creds' },
+            },
+          },
+        }),
+      ]),
+    );
+    expect(result.success).toBe(true);
+  });
 });

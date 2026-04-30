@@ -27,6 +27,7 @@ import type {
   VaultPolicyAppliedEvent,
   VaultAppRoleAppliedEvent,
 } from "./vault";
+import type { NatsAppliedEvent } from "./nats";
 import type {
   EgressEventBroadcast,
   EgressPolicyUpdatedEvent,
@@ -55,6 +56,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "agent-sidecar",
   "self-update",
   "vault",
+  "nats",
   "pools",
   "egress",
   "egress-fw-agent",
@@ -92,6 +94,7 @@ export const Channel = {
   AGENT_SIDECAR: "agent-sidecar",
   SELF_UPDATE: "self-update",
   VAULT: "vault",
+  NATS: "nats",
   POOLS: "pools",
   EGRESS: "egress",
   EGRESS_FW_AGENT: "egress-fw-agent",
@@ -224,6 +227,9 @@ export const ServerEvent = {
   VAULT_PASSPHRASE_LOCKED: "vault:passphrase:locked",
   VAULT_POLICY_APPLIED: "vault:policy:applied",
   VAULT_APPROLE_APPLIED: "vault:approle:applied",
+  // NATS
+  NATS_APPLIED: "nats:applied",
+  NATS_STATUS_CHANGED: "nats:status:changed",
   // Egress Firewall
   EGRESS_EVENT: "egress:event",
   EGRESS_POLICY_UPDATED: "egress:policy:updated",
@@ -508,6 +514,10 @@ export interface ServerToClientEvents {
   "vault:passphrase:locked": (data: VaultPassphraseLockEvent) => void;
   "vault:policy:applied": (data: VaultPolicyAppliedEvent) => void;
   "vault:approle:applied": (data: VaultAppRoleAppliedEvent) => void;
+
+  // ── NATS ───────────────────────────────────────────
+  "nats:applied": (data: NatsAppliedEvent) => void;
+  "nats:status:changed": (data: NatsAppliedEvent) => void;
 
   // ── Egress Firewall ─────────────────────────────────
   /** Single DNS query ingested into EgressEvent (live traffic feed) */

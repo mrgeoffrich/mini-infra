@@ -12,6 +12,7 @@ import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { StackUserEvent } from '../../services/stacks/stack-user-event';
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
+import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
   emitStackApplyStarted,
@@ -185,6 +186,13 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       });
       if (vaultPhase.status === 'error') {
         throw new Error(vaultPhase.error ?? 'Vault reconciliation phase failed');
+      }
+      const natsPhase = await runStackNatsApplyPhase(prisma, stackId, {
+        triggeredBy,
+        requireNatsReady: true,
+      });
+      if (natsPhase.status === 'error') {
+        throw new Error(natsPhase.error ?? 'NATS reconciliation phase failed');
       }
 
       const result = await reconciler.apply(stackId, {

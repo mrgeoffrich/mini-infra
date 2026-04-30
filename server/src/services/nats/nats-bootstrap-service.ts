@@ -22,6 +22,7 @@ import {
   type NatsPermissions,
 } from "./nats-key-manager";
 import { renderNatsConfig } from "./nats-config-renderer";
+import { getNatsControlPlaneService } from "./nats-control-plane-service";
 
 const log = getLogger("platform", "nats-bootstrap-service");
 
@@ -64,6 +65,23 @@ export class NatsBootstrapService {
    * needing a manual KV write.
    */
   async bootstrap(): Promise<NatsBootstrapResult> {
+    try {
+      const managed = await getNatsControlPlaneService().applyConfig();
+      if (managed.systemAccountPublic) {
+        return {
+          generatedSeeds: managed.generatedSeeds,
+          operatorPublic: managed.operatorPublic,
+          accountPublic: managed.systemAccountPublic,
+        };
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("nats_accounts")) {
+        throw err;
+      }
+      log.warn("NATS control-plane tables are unavailable; falling back to KV-only bootstrap");
+    }
+
     const kv = getVaultKVService();
 
     let operatorSeed = await this.tryReadField(NATS_OPERATOR_KV_PATH, FIELD_OPERATOR_SEED);

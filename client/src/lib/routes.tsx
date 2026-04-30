@@ -69,6 +69,11 @@ import VaultPoliciesPage from "@/app/vault/policies/page";
 import VaultPolicyDetailPage from "@/app/vault/policies/[id]/page";
 import VaultAppRolesPage from "@/app/vault/approles/page";
 import VaultAppRoleDetailPage from "@/app/vault/approles/[id]/page";
+import NatsPage from "@/app/nats/page";
+import NatsAccountsPage from "@/app/nats/accounts/page";
+import NatsCredentialsPage from "@/app/nats/credentials/page";
+import NatsStreamsPage from "@/app/nats/streams/page";
+import NatsConsumersPage from "@/app/nats/consumers/page";
 
 export const router = createBrowserRouter([
   {
@@ -370,6 +375,26 @@ export const router = createBrowserRouter([
       {
         path: "vault/approles/:id",
         element: <VaultAppRoleDetailPage />,
+      },
+      {
+        path: "nats",
+        element: <NatsPage />,
+      },
+      {
+        path: "nats/accounts",
+        element: <NatsAccountsPage />,
+      },
+      {
+        path: "nats/credentials",
+        element: <NatsCredentialsPage />,
+      },
+      {
+        path: "nats/streams",
+        element: <NatsStreamsPage />,
+      },
+      {
+        path: "nats/consumers",
+        element: <NatsConsumersPage />,
       },
       {
         path: "user/settings",

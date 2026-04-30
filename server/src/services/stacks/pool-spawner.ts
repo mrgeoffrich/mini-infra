@@ -9,6 +9,7 @@ import type {
 import type { DockerExecutorService } from '../docker-executor';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
+import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { getLogger } from '../../lib/logger-factory';
 import {
@@ -22,7 +23,7 @@ import { resolveEgressEnv, attachEgressNetworkIfNeeded } from './egress-injectio
 const log = getLogger('stacks', 'pool-spawner');
 
 /** Env keys the caller is never allowed to set — mini-infra owns Vault values. */
-const RESERVED_CALLER_ENV_PREFIXES = ['VAULT_'];
+const RESERVED_CALLER_ENV_PREFIXES = ['VAULT_', 'NATS_'];
 
 export interface PoolSpawnContext {
   stackId: string;
@@ -137,10 +138,13 @@ export async function spawnPoolInstance(
   // single source of truth for service-level vs. stack-level fallback.
   const binding = resolveEffectiveVaultBinding(stack, service);
   let vaultEnv: Record<string, string> = {};
+  const hasVaultEntries = !!containerConfig.dynamicEnv && Object.values(containerConfig.dynamicEnv).some(
+    (src) => src.kind === 'vault-addr' || src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id' || src.kind === 'vault-kv',
+  );
   if (
     vaultServicesReady() &&
     containerConfig.dynamicEnv &&
-    Object.values(containerConfig.dynamicEnv).some((src) => src.kind !== 'pool-management-token')
+    hasVaultEntries
   ) {
     try {
       const injector = new VaultCredentialInjector(prisma);
@@ -165,6 +169,23 @@ export async function spawnPoolInstance(
     }
   }
 
+  let natsEnv: Record<string, string> = {};
+  if (
+    containerConfig.dynamicEnv &&
+    Object.values(containerConfig.dynamicEnv).some((src) => src.kind === 'nats-url' || src.kind === 'nats-creds')
+  ) {
+    try {
+      const injector = new NatsCredentialInjector(prisma);
+      const resolved = await injector.resolve(service.natsCredentialId ?? null, containerConfig);
+      if (resolved) natsEnv = resolved;
+    } catch (err) {
+      return {
+        success: false,
+        error: `NATS credential resolution failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
   // Egress proxy env — injected for non-bypass services in env-scoped stacks
   // when the env has a provisioned gateway. Pool workers need this on the
   // same gates as the static service path so outbound calls flow through the
@@ -181,6 +202,7 @@ export async function spawnPoolInstance(
     ...egressEnv,
     ...(containerConfig.env ?? {}),
     ...vaultEnv,
+    ...natsEnv,
     ...sanitiseCallerEnv(ctx.callerEnv),
   };
 
@@ -320,6 +342,9 @@ export async function spawnPoolInstance(
   const declaredPurposes = new Set(containerConfig.joinResourceNetworks ?? []);
   if (binding.appRoleId && Object.keys(vaultEnv).length > 0) {
     declaredPurposes.add('vault');
+  }
+  if (Object.keys(natsEnv).length > 0) {
+    declaredPurposes.add('nats');
   }
   if (declaredPurposes.size > 0) {
     const docker = dockerExecutor.getDockerClient();

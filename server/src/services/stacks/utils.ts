@@ -131,6 +131,9 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
       : Prisma.DbNull,
     poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
+    vaultAppRoleRef: s.vaultAppRoleRef ?? null,
+    natsCredentialId: s.natsCredentialId ?? null,
+    natsCredentialRef: s.natsCredentialRef ?? null,
   };
 }
 
@@ -277,6 +280,9 @@ export function resolveServiceConfigs(
     adoptedContainer?: unknown;
     poolConfig?: unknown;
     vaultAppRoleId?: string | null;
+    vaultAppRoleRef?: string | null;
+    natsCredentialId?: string | null;
+    natsCredentialRef?: string | null;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>
 ): {
@@ -323,6 +329,9 @@ export function toServiceDefinition(svc: {
   adoptedContainer?: unknown;
   poolConfig?: unknown;
   vaultAppRoleId?: string | null;
+  vaultAppRoleRef?: string | null;
+  natsCredentialId?: string | null;
+  natsCredentialRef?: string | null;
 }): StackServiceDefinition {
   return {
     serviceName: svc.serviceName,
@@ -338,6 +347,9 @@ export function toServiceDefinition(svc: {
     adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
     poolConfig: (svc.poolConfig as unknown as StackServiceDefinition['poolConfig']) ?? undefined,
     vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
+    vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
+    natsCredentialId: svc.natsCredentialId ?? undefined,
+    natsCredentialRef: svc.natsCredentialRef ?? undefined,
   };
 }
 

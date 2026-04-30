@@ -188,6 +188,7 @@ const serviceLabels = {
   github: "GitHub",
   "github-app": "GitHub App",
   vault: "Vault",
+  nats: "NATS",
 } as const;
 
 export function ServiceStatusCard({
