@@ -70,6 +70,11 @@ screenshots/
 .superpowers/
 .worktrees/
 
+# Agent scratch directories
+.agents/
+.codex/
+.claude/worktrees/
+
 # Python artifacts (pg-az-backup)
 __pycache__/
 *.pyc

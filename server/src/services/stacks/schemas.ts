@@ -94,6 +94,8 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
     kind: z.literal("pool-management-token"),
     poolService: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
   }),
+  z.object({ kind: z.literal("nats-url") }),
+  z.object({ kind: z.literal("nats-creds") }),
   z.object({
     kind: z.literal("vault-kv"),
     path: kvPathSchema,
@@ -345,6 +347,9 @@ export const stackServiceCommonFieldsSchema = z.object({
   // Symbolic reference to a vault.appRoles[].name declared in the same draft
   // / template. Resolved to a concrete vaultAppRoleId at apply time.
   vaultAppRoleRef: z.string().min(1).optional(),
+  // Symbolic reference to a nats.credentials[].name declared in the same draft
+  // / template. Resolved to a concrete natsCredentialId at apply time.
+  natsCredentialRef: z.string().min(1).optional(),
 });
 
 export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
@@ -355,10 +360,10 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     configFiles: z.array(stackConfigFileSchema).optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
     poolConfig: poolConfigSchema.optional(),
+    // Resolved concrete IDs — set at apply time only, never present in
+    // template/draft input. Symbolic *Ref siblings live on the common base.
     vaultAppRoleId: z.string().min(1).nullable().optional(),
-    // Symbolic reference to a vault.appRoles[].name declared in the same draft.
-    // Resolved to a concrete vaultAppRoleId at apply time by the vault apply orchestrator.
-    vaultAppRoleRef: z.string().min(1).optional(),
+    natsCredentialId: z.string().min(1).nullable().optional(),
   })
   .refine(
     (data) => {
@@ -530,6 +535,7 @@ export const updateStackServiceSchema = z.object({
   adoptedContainer: adoptedContainerSchema.nullable().optional(),
   poolConfig: poolConfigSchema.nullable().optional(),
   vaultAppRoleId: z.string().nullable().optional(),
+  natsCredentialId: z.string().nullable().optional(),
 });
 
 export const applyStackSchema = z.object({

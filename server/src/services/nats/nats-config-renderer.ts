@@ -6,10 +6,17 @@
 // bootstrap step regenerate the conf any time the operator/account JWTs
 // rotate without re-deriving the layout in two places.
 
+export interface RenderedNatsAccount {
+  publicKey: string;
+  jwt: string;
+}
+
 export interface NatsConfigInputs {
   operatorJwt: string;
-  accountPublicKey: string;
-  accountJwt: string;
+  accountPublicKey?: string;
+  accountJwt?: string;
+  accounts?: RenderedNatsAccount[];
+  systemAccountPublicKey?: string;
   /** Enable JetStream persistence. The NATS container mounts /data, so the
    *  store directory points there. */
   jetStream: boolean;
@@ -21,17 +28,26 @@ export interface NatsConfigInputs {
 }
 
 export function renderNatsConfig(inputs: NatsConfigInputs): string {
+  const accounts = inputs.accounts ?? (
+    inputs.accountPublicKey && inputs.accountJwt
+      ? [{ publicKey: inputs.accountPublicKey, jwt: inputs.accountJwt }]
+      : []
+  );
+  const systemAccountPublicKey = inputs.systemAccountPublicKey ?? inputs.accountPublicKey ?? accounts[0]?.publicKey;
+
   const lines: string[] = [];
   lines.push("# Managed by mini-infra — regenerated on every NATS bootstrap.");
   lines.push(`operator: ${inputs.operatorJwt}`);
-  if (inputs.jetStream) {
-    lines.push(`system_account: ${inputs.accountPublicKey}`);
+  if (inputs.jetStream && systemAccountPublicKey) {
+    lines.push(`system_account: ${systemAccountPublicKey}`);
   }
   lines.push("");
   lines.push("resolver: MEMORY");
   lines.push("");
   lines.push("resolver_preload: {");
-  lines.push(`  ${inputs.accountPublicKey}: ${inputs.accountJwt}`);
+  for (const account of accounts) {
+    lines.push(`  ${account.publicKey}: ${account.jwt}`);
+  }
   lines.push("}");
   if (inputs.jetStream) {
     lines.push("");

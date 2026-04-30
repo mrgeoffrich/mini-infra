@@ -47,6 +47,8 @@ export type DynamicEnvSource =
   | { kind: 'vault-role-id' }
   | { kind: 'vault-wrapped-secret-id'; ttlSeconds?: number }
   | { kind: 'pool-management-token'; poolService: string }
+  | { kind: 'nats-url' }
+  | { kind: 'nats-creds' }
   /**
    * Read a single field from a Vault KV v2 path at apply time using the
    * Mini Infra admin token. The container receives the value as a plain
@@ -287,6 +289,8 @@ export interface StackService {
   poolConfig: PoolConfig | null;
   vaultAppRoleId: string | null;
   lastAppliedVaultAppRoleId: string | null;
+  natsCredentialId: string | null;
+  natsCredentialRef: string | null;
   poolManagementTokenHash: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -364,6 +368,10 @@ export interface StackServiceDefinition {
   /** Symbolic reference to a vault.appRoles[].name in the owning template draft.
    *  Resolved to a concrete vaultAppRoleId at apply time. */
   vaultAppRoleRef?: string | null;
+  natsCredentialId?: string | null;
+  /** Symbolic reference to a nats.credentials[].name in the owning template draft.
+   *  Resolved to a concrete natsCredentialId at apply time. */
+  natsCredentialRef?: string | null;
 }
 
 export interface StackDefinition {
@@ -648,6 +656,7 @@ export interface UpdateStackServiceRequest {
   routing?: StackServiceRouting | null;
   poolConfig?: PoolConfig | null;
   vaultAppRoleId?: string | null;
+  natsCredentialId?: string | null;
 }
 
 export interface ApplyStackRequest {

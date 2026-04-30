@@ -17,6 +17,10 @@ import {
   templateVaultPolicySchema,
   templateVaultAppRoleSchema,
   templateVaultKvSchema,
+  templateNatsAccountSchema,
+  templateNatsCredentialSchema,
+  templateNatsStreamSchema,
+  templateNatsConsumerSchema,
 } from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
@@ -66,6 +70,13 @@ const templateVaultSchema = z.object({
   kv: z.array(templateVaultKvSchema).optional(),
 });
 
+const templateNatsSchema = z.object({
+  accounts: z.array(templateNatsAccountSchema).optional(),
+  credentials: z.array(templateNatsCredentialSchema).optional(),
+  streams: z.array(templateNatsStreamSchema).optional(),
+  consumers: z.array(templateNatsConsumerSchema).optional(),
+});
+
 const postInstallActionSchema = z.object({
   type: z.string().min(1),
 });
@@ -89,10 +100,14 @@ export const templateFileSchema = z.object({
   postInstallActions: z.array(postInstallActionSchema).optional(),
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSchema.optional(),
+  nats: templateNatsSchema.optional(),
 }).superRefine((data, ctx) => {
   const inputNames = new Set((data.inputs ?? []).map((i) => i.name));
   const policyNames = new Set((data.vault?.policies ?? []).map((p) => p.name));
   const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
+  const natsAccountNames = new Set((data.nats?.accounts ?? []).map((a) => a.name));
+  const natsCredentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
+  const natsStreamNames = new Set((data.nats?.streams ?? []).map((s) => s.name));
 
   // Unique input names
   const seenInputNames = new Set<string>();
@@ -167,6 +182,46 @@ export const templateFileSchema = z.object({
     }
   }
 
+  for (const credential of data.nats?.credentials ?? []) {
+    if (!natsAccountNames.has(credential.account)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `NATS credential '${credential.name}' references unknown account '${credential.account}' (defined: ${formatNameSet(natsAccountNames)})`,
+        path: ["nats", "credentials"],
+      });
+    }
+  }
+
+  for (const stream of data.nats?.streams ?? []) {
+    if (!natsAccountNames.has(stream.account)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `NATS stream '${stream.name}' references unknown account '${stream.account}' (defined: ${formatNameSet(natsAccountNames)})`,
+        path: ["nats", "streams"],
+      });
+    }
+  }
+
+  for (const consumer of data.nats?.consumers ?? []) {
+    if (!natsStreamNames.has(consumer.stream)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `NATS consumer '${consumer.name}' references unknown stream '${consumer.stream}' (defined: ${formatNameSet(natsStreamNames)})`,
+        path: ["nats", "consumers"],
+      });
+    }
+  }
+
+  for (const svc of data.services) {
+    if (svc.natsCredentialRef !== undefined && !natsCredentialNames.has(svc.natsCredentialRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(natsCredentialNames)})`,
+        path: ["services"],
+      });
+    }
+  }
+
 });
 
 export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
@@ -176,6 +231,7 @@ export type TemplateVaultPolicy = z.infer<typeof templateVaultPolicySchema>;
 export type TemplateVaultAppRole = z.infer<typeof templateVaultAppRoleSchema>;
 export type TemplateVaultKv = z.infer<typeof templateVaultKvSchema>;
 export type TemplateVault = z.infer<typeof templateVaultSchema>;
+export type TemplateNats = z.infer<typeof templateNatsSchema>;
 
 function formatNameSet(set: Set<string>): string {
   if (set.size === 0) return "none defined";
@@ -219,6 +275,7 @@ export interface LoadedTemplate {
   postInstallActions?: PostInstallAction[];
   inputs?: TemplateInput[];
   vault?: TemplateVault;
+  nats?: TemplateNats;
   definition: {
     name: string;
     description?: string;
@@ -240,6 +297,7 @@ export interface LoadedTemplate {
       order: number;
       routing?: z.infer<typeof stackServiceRoutingSchema>;
       vaultAppRoleRef?: string;
+      natsCredentialRef?: string;
     }>;
   };
   configFiles: StackTemplateConfigFileInput[];
@@ -358,6 +416,7 @@ export function loadTemplateFromObject(
       order: svc.order,
       routing: svc.routing,
       vaultAppRoleRef: svc.vaultAppRoleRef,
+      natsCredentialRef: svc.natsCredentialRef,
     };
   });
 
@@ -372,6 +431,7 @@ export function loadTemplateFromObject(
     postInstallActions: data.postInstallActions,
     inputs: data.inputs,
     vault: data.vault,
+    nats: data.nats,
     definition: {
       name: data.name,
       description: data.description,

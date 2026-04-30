@@ -69,6 +69,59 @@ const templateVaultSectionSchema = z.object({
   kv: z.array(templateVaultKvSchema).optional(),
 });
 
+const natsSubjectSchema = z.string().min(1).max(255).regex(/^[A-Za-z0-9_$*>\-.]+$/);
+
+export const templateNatsAccountSchema = z.object({
+  name: z.string().min(1).max(100),
+  displayName: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+});
+
+export const templateNatsCredentialSchema = z.object({
+  name: z.string().min(1).max(100),
+  account: z.string().min(1).max(100),
+  displayName: z.string().max(200).optional(),
+  description: z.string().max(500).optional(),
+  publishAllow: z.array(natsSubjectSchema).min(1),
+  subscribeAllow: z.array(natsSubjectSchema).min(1),
+  ttlSeconds: z.number().int().min(0).optional(),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+});
+
+export const templateNatsStreamSchema = z.object({
+  name: z.string().min(1).max(100),
+  account: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  subjects: z.array(natsSubjectSchema).min(1),
+  retention: z.enum(["limits", "interest", "workqueue"]).optional(),
+  storage: z.enum(["file", "memory"]).optional(),
+  maxMsgs: z.number().int().nullable().optional(),
+  maxBytes: z.number().int().nullable().optional(),
+  maxAgeSeconds: z.number().int().nullable().optional(),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+});
+
+export const templateNatsConsumerSchema = z.object({
+  name: z.string().min(1).max(100),
+  stream: z.string().min(1).max(100),
+  durableName: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  filterSubject: natsSubjectSchema.optional(),
+  deliverPolicy: z.enum(["all", "last", "new", "by_start_sequence", "by_start_time", "last_per_subject"]).optional(),
+  ackPolicy: z.enum(["none", "all", "explicit"]).optional(),
+  maxDeliver: z.number().int().nullable().optional(),
+  ackWaitSeconds: z.number().int().nullable().optional(),
+  scope: z.enum(["host", "environment", "stack"]).default("environment"),
+});
+
+const templateNatsSectionSchema = z.object({
+  accounts: z.array(templateNatsAccountSchema).optional(),
+  credentials: z.array(templateNatsCredentialSchema).optional(),
+  streams: z.array(templateNatsStreamSchema).optional(),
+  consumers: z.array(templateNatsConsumerSchema).optional(),
+});
+
 const templateNameSchema = z
   .string()
   .min(1)
@@ -130,6 +183,7 @@ export const createTemplateSchema = z.object({
   // initial StackTemplateVersion row.
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
+  nats: templateNatsSectionSchema.optional(),
 });
 
 export const updateTemplateMetaSchema = z.object({
@@ -153,6 +207,7 @@ export const draftVersionSchema = z.object({
   notes: z.string().max(1000).optional(),
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
+  nats: templateNatsSectionSchema.optional(),
 }).superRefine((data, ctx) => {
   // Mirror templateFileSchema: every services[].vaultAppRoleRef must resolve
   // to a vault.appRoles[].name declared in this same draft body. Otherwise
@@ -166,6 +221,17 @@ export const draftVersionSchema = z.object({
         code: z.ZodIssueCode.custom,
         message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
         path: ['services', i, 'vaultAppRoleRef'],
+      });
+    }
+  }
+  const credentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
+  for (let i = 0; i < data.services.length; i++) {
+    const svc = data.services[i];
+    if (svc.natsCredentialRef !== undefined && !credentialNames.has(svc.natsCredentialRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(credentialNames)})`,
+        path: ['services', i, 'natsCredentialRef'],
       });
     }
   }

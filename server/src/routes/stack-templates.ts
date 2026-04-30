@@ -114,6 +114,13 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
         code: 'template_vault_scope_required',
       });
     }
+    if (draftHasNatsSection(req.body) && !callerHasScope(req, 'template-nats:write')) {
+      return res.status(403).json({
+        success: false,
+        message: 'The nats section requires the template-nats:write scope',
+        code: 'template_nats_scope_required',
+      });
+    }
 
     const parsed = createTemplateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -166,6 +173,19 @@ function draftHasVaultSection(body: unknown): boolean {
   );
 }
 
+function draftHasNatsSection(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null) return false;
+  const nats = (body as Record<string, unknown>).nats;
+  if (typeof nats !== 'object' || nats === null) return false;
+  const n = nats as Record<string, unknown>;
+  return (
+    (Array.isArray(n.accounts) && n.accounts.length > 0) ||
+    (Array.isArray(n.credentials) && n.credentials.length > 0) ||
+    (Array.isArray(n.streams) && n.streams.length > 0) ||
+    (Array.isArray(n.consumers) && n.consumers.length > 0)
+  );
+}
+
 /**
  * Return true if the caller has a specific scope (session users always pass).
  */
@@ -185,6 +205,13 @@ router.post('/:templateId/draft', requirePermission('stacks:write'), async (req,
         success: false,
         message: 'The vault section requires the template-vault:write scope',
         code: 'template_vault_scope_required',
+      });
+    }
+    if (draftHasNatsSection(req.body) && !callerHasScope(req, 'template-nats:write')) {
+      return res.status(403).json({
+        success: false,
+        message: 'The nats section requires the template-nats:write scope',
+        code: 'template_nats_scope_required',
       });
     }
 

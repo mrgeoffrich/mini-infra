@@ -41,6 +41,7 @@ import { StackPlanComputer } from './stack-plan-computer';
 import { StackServiceHandlers, type ServiceHandlerContext } from './stack-service-handlers';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
+import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
@@ -663,6 +664,7 @@ export class StackReconciler {
       serviceName: string;
       vaultAppRoleId: string | null;
       lastAppliedVaultAppRoleId: string | null;
+      natsCredentialId?: string | null;
     }>,
     resolvedDefinitions: Map<string, StackServiceDefinition>,
     poolTokens: Record<string, string>,
@@ -678,6 +680,7 @@ export class StackReconciler {
     const serviceByName = new Map(services.map((s) => [s.serviceName, s]));
     const vaultReady = vaultServicesReady();
     const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
+    const natsInjector = new NatsCredentialInjector(this.prisma);
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
       if (!activeServiceNames.has(serviceName)) continue;
@@ -691,7 +694,10 @@ export class StackReconciler {
         (src) => src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id',
       );
       const hasVaultTouchEntries = Object.values(dynamicEnv).some(
-        (src) => src.kind !== 'pool-management-token',
+        (src) => src.kind === 'vault-addr' || src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id' || src.kind === 'vault-kv',
+      );
+      const hasNatsEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds',
       );
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
@@ -700,12 +706,13 @@ export class StackReconciler {
       const svcRow = serviceByName.get(serviceName) ?? {
         vaultAppRoleId: null,
         lastAppliedVaultAppRoleId: null,
+        natsCredentialId: null,
       };
       const binding = resolveEffectiveVaultBinding(stack, svcRow);
 
       // Pool-token-only entries: resolve inline without invoking Vault. Used
       // when a stack has Pool services but no other Vault dependencies.
-      if (!hasVaultTouchEntries && hasPoolTokenEntries) {
+      if (!hasVaultTouchEntries && !hasNatsEntries && hasPoolTokenEntries) {
         const values: Record<string, string> = {};
         for (const [key, src] of Object.entries(dynamicEnv)) {
           if (src.kind === 'pool-management-token') {
@@ -714,6 +721,24 @@ export class StackReconciler {
           }
         }
         if (Object.keys(values).length > 0) overrides.set(serviceName, values);
+        continue;
+      }
+
+      if (hasNatsEntries) {
+        try {
+          const values = await natsInjector.resolve(svcRow.natsCredentialId ?? null, serviceDef.containerConfig);
+          if (values) {
+            const existing = overrides.get(serviceName) ?? {};
+            overrides.set(serviceName, { ...existing, ...values });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.error({ service: serviceName, err: msg }, 'NATS dynamic env resolution failed');
+          throw new Error(`NATS credential injection failed for service "${serviceName}": ${msg}`, { cause: err });
+        }
+      }
+
+      if (!hasVaultTouchEntries) {
         continue;
       }
 
@@ -738,7 +763,10 @@ export class StackReconciler {
           },
           serviceDef.containerConfig,
         );
-        if (res) overrides.set(serviceName, res.values);
+        if (res) {
+          const existing = overrides.get(serviceName) ?? {};
+          overrides.set(serviceName, { ...existing, ...res.values });
+        }
         if (binding.recordPerService && binding.appRoleId) {
           serviceBindingsToRecord.set(serviceName, binding.appRoleId);
         }

@@ -22,6 +22,7 @@ import type {
   StackParameterValue,
   StackInfo,
   StackDefinition,
+  TemplateNatsSection,
 } from "@mini-infra/types";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
@@ -42,6 +43,7 @@ export interface UpsertSystemTemplateInput {
   category?: string;
   builtinVersion: number;
   definition: StackDefinition;
+  nats?: TemplateNatsSection;
   configFiles?: StackTemplateConfigFileInput[];
 }
 
@@ -70,6 +72,10 @@ const versionSummary = {
   vaultPolicies: true,
   vaultAppRoles: true,
   vaultKv: true,
+  natsAccounts: true,
+  natsCredentials: true,
+  natsStreams: true,
+  natsConsumers: true,
   publishedAt: true,
   createdAt: true,
   createdById: true,
@@ -357,6 +363,10 @@ export class StackTemplateService {
           vaultPolicies: input.vault?.policies ? (input.vault.policies as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsAccounts: input.nats?.accounts ? (input.nats.accounts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsCredentials: input.nats?.credentials ? (input.nats.credentials as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsStreams: input.nats?.streams ? (input.nats.streams as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsConsumers: input.nats?.consumers ? (input.nats.consumers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -516,6 +526,10 @@ export class StackTemplateService {
           vaultPolicies: input.vault?.policies ? (input.vault.policies as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsAccounts: input.nats?.accounts ? (input.nats.accounts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsCredentials: input.nats?.credentials ? (input.nats.credentials as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsStreams: input.nats?.streams ? (input.nats.streams as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+          natsConsumers: input.nats?.consumers ? (input.nats.consumers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -660,6 +674,7 @@ export class StackTemplateService {
       category,
       builtinVersion,
       definition,
+      nats,
       configFiles: externalConfigFiles,
     } = input;
 
@@ -753,6 +768,10 @@ export class StackTemplateService {
             resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
             networks: definition.networks as unknown as Prisma.InputJsonValue,
             volumes: definition.volumes as unknown as Prisma.InputJsonValue,
+            natsAccounts: nats?.accounts ? (nats.accounts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsCredentials: nats?.credentials ? (nats.credentials as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsStreams: nats?.streams ? (nats.streams as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsConsumers: nats?.consumers ? (nats.consumers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
             publishedAt: new Date(),
           },
         });
@@ -772,6 +791,10 @@ export class StackTemplateService {
             resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
             networks: definition.networks as unknown as Prisma.InputJsonValue,
             volumes: definition.volumes as unknown as Prisma.InputJsonValue,
+            natsAccounts: nats?.accounts ? (nats.accounts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsCredentials: nats?.credentials ? (nats.credentials as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsStreams: nats?.streams ? (nats.streams as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+            natsConsumers: nats?.consumers ? (nats.consumers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
             publishedAt: new Date(),
           },
         });
@@ -1105,6 +1128,7 @@ export class StackTemplateService {
     // JsonValue and need a double-assertion to reach the domain types.
     const versionRecord = version as unknown as Record<string, unknown>;
     const vaultSection = buildVaultSection(versionRecord);
+    const natsSection = buildNatsSection(versionRecord);
     const base: StackTemplateVersionInfo = {
       id: version.id,
       templateId: version.templateId,
@@ -1123,6 +1147,7 @@ export class StackTemplateService {
       createdById: version.createdById,
       inputs: (versionRecord['inputs'] as unknown as StackTemplateVersionInfo['inputs']) ?? undefined,
       vault: vaultSection,
+      nats: natsSection,
     };
 
     if (isVersionDetailPayload(version)) {
@@ -1180,6 +1205,8 @@ function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<tru
     poolConfig: (svc.poolConfig ?? null) as unknown as StackTemplateServiceInfo['poolConfig'],
     vaultAppRoleId: svc.vaultAppRoleId ?? null,
     vaultAppRoleRef: svc.vaultAppRoleRef ?? null,
+    natsCredentialId: svc.natsCredentialId ?? null,
+    natsCredentialRef: svc.natsCredentialRef ?? null,
   };
 }
 
@@ -1218,6 +1245,8 @@ function toTemplateServiceCreate(
     poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     vaultAppRoleRef: s.vaultAppRoleRef ?? null,
+    natsCredentialId: s.natsCredentialId ?? null,
+    natsCredentialRef: s.natsCredentialRef ?? null,
   };
 }
 
@@ -1232,6 +1261,17 @@ function buildVaultSection(version: Record<string, unknown>): StackTemplateVersi
     policies: (version['vaultPolicies'] as unknown as VaultSection['policies']) ?? undefined,
     appRoles: (version['vaultAppRoles'] as unknown as VaultSection['appRoles']) ?? undefined,
     kv: (version['vaultKv'] as unknown as VaultSection['kv']) ?? undefined,
+  };
+}
+
+function buildNatsSection(version: Record<string, unknown>): StackTemplateVersionInfo['nats'] {
+  if (!version['natsAccounts'] && !version['natsCredentials'] && !version['natsStreams'] && !version['natsConsumers']) return undefined;
+  type NatsSection = NonNullable<StackTemplateVersionInfo['nats']>;
+  return {
+    accounts: (version['natsAccounts'] as unknown as NatsSection['accounts']) ?? undefined,
+    credentials: (version['natsCredentials'] as unknown as NatsSection['credentials']) ?? undefined,
+    streams: (version['natsStreams'] as unknown as NatsSection['streams']) ?? undefined,
+    consumers: (version['natsConsumers'] as unknown as NatsSection['consumers']) ?? undefined,
   };
 }
 

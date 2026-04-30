@@ -60,6 +60,7 @@ export async function syncBuiltinStacks(
         category: template.category,
         builtinVersion: template.builtinVersion,
         definition: template.definition as unknown as StackDefinition,
+        nats: template.nats,
         configFiles: template.configFiles,
       });
       templateByName.set(template.name, { id: templateId, template });

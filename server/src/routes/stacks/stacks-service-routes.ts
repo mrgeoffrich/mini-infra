@@ -66,6 +66,12 @@ router.put(
           ? { disconnect: true }
           : { connect: { id: data.vaultAppRoleId } };
     }
+    if (data.natsCredentialId !== undefined) {
+      updateData.natsCredential =
+        data.natsCredentialId === null
+          ? { disconnect: true }
+          : { connect: { id: data.natsCredentialId } };
+    }
 
     await prisma.$transaction([
       prisma.stackService.update({ where: { id: service.id }, data: updateData }),

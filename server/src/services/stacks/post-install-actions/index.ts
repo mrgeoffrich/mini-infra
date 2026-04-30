@@ -1,5 +1,6 @@
 import { getLogger } from "../../../lib/logger-factory";
 import { registerPostgresServer } from "./register-postgres-server";
+import { registerNatsAddress } from "./register-nats-address";
 import { registerVaultAddress } from "./register-vault-address";
 import type { PostInstallContext } from "./types";
 
@@ -14,7 +15,7 @@ type ActionHandler = (ctx: PostInstallContext) => Promise<void>;
 const templateHandlers: Record<string, ActionHandler[]> = {
   postgres: [registerPostgresServer],
   vault: [registerVaultAddress],
-  'vault-nats': [registerVaultAddress],
+  'vault-nats': [registerVaultAddress, registerNatsAddress],
 };
 
 /**
