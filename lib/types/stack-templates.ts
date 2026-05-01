@@ -215,7 +215,72 @@ export interface TemplateNatsConsumer {
   scope: 'host' | 'environment' | 'stack';
 }
 
+/**
+ * App-author-facing role declaration. Materializes into a NatsCredentialProfile
+ * row at apply time, with the stack's resolved subjectPrefix prepended to every
+ * publish/subscribe entry. Subject patterns are written *relative* to the
+ * prefix — the orchestrator does the prepend.
+ */
+export interface TemplateNatsRole {
+  name: string;
+  publish?: string[];
+  subscribe?: string[];
+  /**
+   * Controls `_INBOX.>` auto-injection for NATS request/reply ergonomics.
+   * Default `'both'` injects in pub and sub (right for roles that initiate
+   * AND respond to request/reply). `'reply'` = pub only (pure responder).
+   * `'request'` = sub only (pure requester). `'none'` = no injection.
+   */
+  inboxAuto?: 'both' | 'reply' | 'request' | 'none';
+  /** Credential JWT TTL. Defaults to NatsCredentialProfile system default (3600s). */
+  ttlSeconds?: number;
+}
+
+/**
+ * App-author-facing signer declaration. Materializes a scoped signing key on
+ * the shared NATS account; the seed is injected into the named service via
+ * the `nats-signer-seed` dynamicEnv kind so the service can mint per-user
+ * JWTs in-process. The server cryptographically constrains anything signed
+ * with this key to the declared subject scope.
+ */
+export interface TemplateNatsSigner {
+  name: string;
+  /**
+   * Subject sub-tree the signing key is constrained to, *relative* to the
+   * stack's subjectPrefix. E.g. `agent.worker` → minted JWTs cannot exceed
+   * `<prefix>.agent.worker.>`.
+   */
+  subjectScope: string;
+  /** Hard cap (NATS-enforced) on TTL of any JWT the signer can mint. Defaults to 3600s. */
+  maxTtlSeconds?: number;
+}
+
+/**
+ * App-author-facing cross-stack subject import. Resolved at apply time
+ * against the producer stack's latest applied version's exports.
+ */
+export interface TemplateNatsImport {
+  /** Structural reference to another stack (by name). Resolved at apply time. */
+  fromStack: string;
+  /** Subjects relative to the *producer's* subjectPrefix. Must match producer's exports. */
+  subjects: string[];
+  /** Roles in *this* stack that get the imported subjects added to their subscribe list. Required (per-role binding only). */
+  forRoles: string[];
+}
+
 export interface TemplateNatsSection {
+  // App-author surface (safe-by-default; auto-prefixed; validated at publish).
+  /** Defaults to `app.{{stack.id}}`. Non-default values require an admin allowlist entry. */
+  subjectPrefix?: string;
+  roles?: TemplateNatsRole[];
+  signers?: TemplateNatsSigner[];
+  /** Subjects relative to subjectPrefix that this stack publishes for cross-app consumption. */
+  exports?: string[];
+  imports?: TemplateNatsImport[];
+
+  // Low-level surface (system templates and advanced/internal use).
+  // App templates use the role/signer surface above; mixing the two within
+  // one template is rejected at validation time.
   accounts?: TemplateNatsAccount[];
   credentials?: TemplateNatsCredential[];
   streams?: TemplateNatsStream[];
@@ -267,6 +332,10 @@ export interface StackTemplateServiceInfo {
   natsCredentialId?: string | null;
   /** Symbolic credential name from nats.credentials[]; resolved to natsCredentialId at apply time. */
   natsCredentialRef?: string | null;
+  /** Symbolic role name from nats.roles[]; resolved to a materialized NatsCredentialProfile at apply time. */
+  natsRole?: string | null;
+  /** Symbolic signer name from nats.signers[]; auto-injects NATS_SIGNER_SEED dynamicEnv at apply time. */
+  natsSigner?: string | null;
 }
 
 export interface StackTemplateConfigFileInfo {

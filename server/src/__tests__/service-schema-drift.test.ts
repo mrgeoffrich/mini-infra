@@ -61,6 +61,9 @@ const COMMON_FIELDS = [
   'order',
   'routing',
   'vaultAppRoleRef',
+  'natsCredentialRef',
+  'natsRole',
+  'natsSigner',
 ] as const;
 
 // Every key in COMMON_FIELDS must also be a key of the shared base. If

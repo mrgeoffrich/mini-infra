@@ -40,7 +40,7 @@ export interface SystemSettingsInfo {
 // Settings Categories
 // ====================
 
-export const SETTINGS_CATEGORIES = ["docker", "cloudflare", "azure", "system", "deployments", "haproxy", "tls", "github", "github-app", "agent", "self-backup", "vault", "nats"] as const;
+export const SETTINGS_CATEGORIES = ["docker", "cloudflare", "azure", "system", "deployments", "haproxy", "tls", "github", "github-app", "agent", "self-backup", "vault", "nats", "nats-prefix-allowlist"] as const;
 export type SettingsCategory = typeof SETTINGS_CATEGORIES[number];
 
 export const VALIDATION_STATUSES = ["valid", "invalid", "pending", "error"] as const;

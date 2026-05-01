@@ -71,6 +71,45 @@ const templateVaultSectionSchema = z.object({
 
 const natsSubjectSchema = z.string().min(1).max(255).regex(/^[A-Za-z0-9_$*>\-.]+$/);
 
+// Subjects in app-author roles[].publish/subscribe are *relative* to the stack's
+// subjectPrefix and the orchestrator prepends. Wildcards inside the relative
+// path are fine; what's forbidden is breaking out of the prefix or hitting
+// reserved namespaces. Static rules:
+//   - cannot start with `>` or `*` (would shadow whole prefix tree)
+//   - cannot start with `_INBOX.` (use inboxAuto instead)
+//   - cannot start with `$SYS.` (system-account namespace)
+//   - cannot contain `..` or empty tokens
+//
+// Exported so the file-loader path can reuse the same strict shape.
+export const natsRelativeSubjectSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[A-Za-z0-9_*>\-.]+$/, "subject must contain only letters, numbers, '_', '-', '.', '*', '>'")
+  .refine((s) => !s.startsWith(">") && !s.startsWith("*"), {
+    message: "relative subject must not start with a wildcard ('>' or '*') — that would shadow the entire stack prefix",
+  })
+  .refine((s) => !s.startsWith("_INBOX."), {
+    message: "relative subject must not target '_INBOX.>' directly — use the inboxAuto field on the role",
+  })
+  .refine((s) => !s.startsWith("$SYS.") && s !== "$SYS", {
+    message: "relative subject must not target the '$SYS.>' system-account namespace",
+  })
+  .refine((s) => !s.includes("..") && !s.split(".").some((tok) => tok.length === 0), {
+    message: "relative subject must not contain empty tokens ('..' or leading/trailing dots)",
+  });
+
+// Subject scope for a signer: a relative path with no wildcards (the signing
+// key is constrained to `<prefix>.<scope>.>`; scope itself must be concrete).
+const natsSubjectScopeSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(/^[A-Za-z0-9_\-.]+$/, "signer subjectScope must contain only letters, numbers, '_', '-', '.'")
+  .refine((s) => !s.includes("..") && !s.split(".").some((tok) => tok.length === 0), {
+    message: "signer subjectScope must not contain empty tokens ('..' or leading/trailing dots)",
+  });
+
 export const templateNatsAccountSchema = z.object({
   name: z.string().min(1).max(100),
   displayName: z.string().max(200).optional(),
@@ -115,7 +154,58 @@ export const templateNatsConsumerSchema = z.object({
   scope: z.enum(["host", "environment", "stack"]).default("environment"),
 });
 
+// ----- Phase 1: app-author role / signer / import surface -----
+
+export const templateNatsRoleSchema = z.object({
+  name: z.string().min(1).max(100).regex(nameRegex, "role name can only contain letters, numbers, '_', '-'"),
+  publish: z.array(natsRelativeSubjectSchema).optional(),
+  subscribe: z.array(natsRelativeSubjectSchema).optional(),
+  inboxAuto: z.enum(["both", "reply", "request", "none"]).optional(),
+  ttlSeconds: z.number().int().min(0).optional(),
+});
+
+export const templateNatsSignerSchema = z.object({
+  name: z.string().min(1).max(100).regex(nameRegex, "signer name can only contain letters, numbers, '_', '-'"),
+  subjectScope: natsSubjectScopeSchema,
+  maxTtlSeconds: z.number().int().min(1).optional(),
+});
+
+export const templateNatsImportSchema = z.object({
+  fromStack: z.string().min(1).max(100),
+  subjects: z.array(natsRelativeSubjectSchema).min(1),
+  /** Required: per-role binding only — security-critical to prevent broadcast. */
+  forRoles: z.array(z.string().min(1)).min(1),
+});
+
+// Subject prefix syntax: dotted segments of [a-zA-Z0-9_-]; `{{...}}` template
+// substitutions are walked separately by the substitution validator. Can't
+// contain wildcards or root-level traversal; allowlist enforces the human-
+// readable case (e.g. "navi") at apply time.
+//
+// Exported alongside `natsRelativeSubjectSchema` so the file-loader path uses
+// the same strict shapes — otherwise system-template files could sneak in
+// wildcards or `$SYS.*` prefixes that the HTTP draft path rejects.
+export const templateNatsSubjectPrefixSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .refine((s) => !/[>*]/.test(s), { message: "subjectPrefix must not contain wildcards" })
+  .refine((s) => !s.startsWith(".") && !s.endsWith("."), {
+    message: "subjectPrefix must not start or end with '.'",
+  })
+  .refine((s) => !s.startsWith("$SYS"), {
+    message: "subjectPrefix must not target the system-account namespace",
+  });
+
 const templateNatsSectionSchema = z.object({
+  // Phase 1 additions (app-author surface)
+  subjectPrefix: templateNatsSubjectPrefixSchema.optional(),
+  roles: z.array(templateNatsRoleSchema).optional(),
+  signers: z.array(templateNatsSignerSchema).optional(),
+  exports: z.array(natsRelativeSubjectSchema).optional(),
+  imports: z.array(templateNatsImportSchema).optional(),
+
+  // Existing low-level surface (system templates / advanced)
   accounts: z.array(templateNatsAccountSchema).optional(),
   credentials: z.array(templateNatsCredentialSchema).optional(),
   streams: z.array(templateNatsStreamSchema).optional(),
@@ -184,6 +274,48 @@ export const createTemplateSchema = z.object({
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
   nats: templateNatsSectionSchema.optional(),
+}).superRefine((data, ctx) => {
+  // Mirror draftVersionSchema: vaultAppRoleRef / natsCredentialRef / natsRole /
+  // natsSigner must resolve, the legacy/new mixing rule applies, and role +
+  // signer names must be unique. Without this, a POST /stack-templates that
+  // mixes legacy `nats.credentials` with new `nats.roles` would persist on the
+  // initial v0 draft and only fail later on the first /draft save.
+  const appRoleNames = new Set((data.vault?.appRoles ?? []).map((a) => a.name));
+  const credentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
+  const roleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
+  const signerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
+  for (let i = 0; i < data.services.length; i++) {
+    const svc = data.services[i];
+    if (svc.vaultAppRoleRef !== undefined && !appRoleNames.has(svc.vaultAppRoleRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' vaultAppRoleRef '${svc.vaultAppRoleRef}' references unknown appRole (defined: ${formatNameSet(appRoleNames)})`,
+        path: ['services', i, 'vaultAppRoleRef'],
+      });
+    }
+    if (svc.natsCredentialRef !== undefined && !credentialNames.has(svc.natsCredentialRef)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsCredentialRef '${svc.natsCredentialRef}' references unknown credential (defined: ${formatNameSet(credentialNames)})`,
+        path: ['services', i, 'natsCredentialRef'],
+      });
+    }
+    if (svc.natsRole !== undefined && !roleNames.has(svc.natsRole)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsRole '${svc.natsRole}' references unknown role (defined: ${formatNameSet(roleNames)})`,
+        path: ['services', i, 'natsRole'],
+      });
+    }
+    if (svc.natsSigner !== undefined && !signerNames.has(svc.natsSigner)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsSigner '${svc.natsSigner}' references unknown signer (defined: ${formatNameSet(signerNames)})`,
+        path: ['services', i, 'natsSigner'],
+      });
+    }
+  }
+  validateNatsSectionShape(data.nats, ctx);
 });
 
 export const updateTemplateMetaSchema = z.object({
@@ -225,6 +357,8 @@ export const draftVersionSchema = z.object({
     }
   }
   const credentialNames = new Set((data.nats?.credentials ?? []).map((c) => c.name));
+  const roleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
+  const signerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
   for (let i = 0; i < data.services.length; i++) {
     const svc = data.services[i];
     if (svc.natsCredentialRef !== undefined && !credentialNames.has(svc.natsCredentialRef)) {
@@ -234,8 +368,94 @@ export const draftVersionSchema = z.object({
         path: ['services', i, 'natsCredentialRef'],
       });
     }
+    if (svc.natsRole !== undefined && !roleNames.has(svc.natsRole)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsRole '${svc.natsRole}' references unknown role (defined: ${formatNameSet(roleNames)})`,
+        path: ['services', i, 'natsRole'],
+      });
+    }
+    if (svc.natsSigner !== undefined && !signerNames.has(svc.natsSigner)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsSigner '${svc.natsSigner}' references unknown signer (defined: ${formatNameSet(signerNames)})`,
+        path: ['services', i, 'natsSigner'],
+      });
+    }
   }
+  validateNatsSectionShape(data.nats, ctx);
 });
+
+/**
+ * Reusable cross-section validator for the NATS section. Catches the
+ * legacy/new mixing rule, name collisions inside roles/signers, and the
+ * per-role `imports[].forRoles` resolution. Called from both
+ * `draftVersionSchema` and `templateFileSchema` so the rules apply uniformly
+ * to HTTP draft submissions and bundled file-loaded templates.
+ */
+export function validateNatsSectionShape(
+  nats: { accounts?: unknown[]; credentials?: unknown[]; streams?: unknown[]; consumers?: unknown[];
+          roles?: Array<{ name: string }>; signers?: Array<{ name: string }>;
+          imports?: Array<{ forRoles?: string[] }>; exports?: unknown[]; subjectPrefix?: unknown } | undefined,
+  ctx: z.RefinementCtx,
+): void {
+  if (!nats) return;
+  const hasLegacy = (nats.credentials?.length ?? 0) > 0;
+  const hasNewRoles = (nats.roles?.length ?? 0) > 0;
+  // Mixing rule: a single template must not mix the legacy `credentials`
+  // surface with the new `roles` surface. System templates use legacy;
+  // app templates use roles. Forces an explicit migration step.
+  if (hasLegacy && hasNewRoles) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "nats.credentials (legacy) and nats.roles (new) cannot be declared in the same template — pick one surface",
+      path: ["nats", "roles"],
+    });
+  }
+
+  // Unique role names
+  const seenRoleNames = new Set<string>();
+  for (let i = 0; i < (nats.roles?.length ?? 0); i++) {
+    const r = nats.roles![i];
+    if (seenRoleNames.has(r.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate NATS role name: '${r.name}'`,
+        path: ["nats", "roles", i, "name"],
+      });
+    }
+    seenRoleNames.add(r.name);
+  }
+
+  // Unique signer names
+  const seenSignerNames = new Set<string>();
+  for (let i = 0; i < (nats.signers?.length ?? 0); i++) {
+    const s = nats.signers![i];
+    if (seenSignerNames.has(s.name)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate NATS signer name: '${s.name}'`,
+        path: ["nats", "signers", i, "name"],
+      });
+    }
+    seenSignerNames.add(s.name);
+  }
+
+  // imports[].forRoles must reference declared roles (per-role binding only).
+  for (let i = 0; i < (nats.imports?.length ?? 0); i++) {
+    const imp = nats.imports![i];
+    for (let j = 0; j < (imp.forRoles?.length ?? 0); j++) {
+      const r = imp.forRoles![j];
+      if (!seenRoleNames.has(r)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `nats.imports[${i}].forRoles references unknown role '${r}' (defined: ${formatNameSet(seenRoleNames)})`,
+          path: ["nats", "imports", i, "forRoles", j],
+        });
+      }
+    }
+  }
+}
 
 function formatNameSet(set: Set<string>): string {
   if (set.size === 0) return 'none defined';

@@ -21,6 +21,12 @@ import {
   templateNatsCredentialSchema,
   templateNatsStreamSchema,
   templateNatsConsumerSchema,
+  templateNatsRoleSchema,
+  templateNatsSignerSchema,
+  templateNatsImportSchema,
+  templateNatsSubjectPrefixSchema,
+  natsRelativeSubjectSchema,
+  validateNatsSectionShape,
 } from "./stack-template-schemas";
 import type { StackTemplateConfigFileInput } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
@@ -71,6 +77,15 @@ const templateVaultSchema = z.object({
 });
 
 const templateNatsSchema = z.object({
+  // App-author surface (Phase 1 additions). Reuse canonical strict shapes
+  // from stack-template-schemas.ts so file-loaded templates can't sneak in
+  // wildcards or `$SYS.*` prefixes that the HTTP draft path rejects.
+  subjectPrefix: templateNatsSubjectPrefixSchema.optional(),
+  roles: z.array(templateNatsRoleSchema).optional(),
+  signers: z.array(templateNatsSignerSchema).optional(),
+  exports: z.array(natsRelativeSubjectSchema).optional(),
+  imports: z.array(templateNatsImportSchema).optional(),
+  // Legacy / system surface
   accounts: z.array(templateNatsAccountSchema).optional(),
   credentials: z.array(templateNatsCredentialSchema).optional(),
   streams: z.array(templateNatsStreamSchema).optional(),
@@ -212,6 +227,9 @@ export const templateFileSchema = z.object({
     }
   }
 
+  const natsRoleNames = new Set((data.nats?.roles ?? []).map((r) => r.name));
+  const natsSignerNames = new Set((data.nats?.signers ?? []).map((s) => s.name));
+
   for (const svc of data.services) {
     if (svc.natsCredentialRef !== undefined && !natsCredentialNames.has(svc.natsCredentialRef)) {
       ctx.addIssue({
@@ -220,8 +238,23 @@ export const templateFileSchema = z.object({
         path: ["services"],
       });
     }
+    if (svc.natsRole !== undefined && !natsRoleNames.has(svc.natsRole)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsRole '${svc.natsRole}' references unknown role (defined: ${formatNameSet(natsRoleNames)})`,
+        path: ["services"],
+      });
+    }
+    if (svc.natsSigner !== undefined && !natsSignerNames.has(svc.natsSigner)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Service '${svc.serviceName}' natsSigner '${svc.natsSigner}' references unknown signer (defined: ${formatNameSet(natsSignerNames)})`,
+        path: ["services"],
+      });
+    }
   }
 
+  validateNatsSectionShape(data.nats, ctx);
 });
 
 export type TemplateFileDefinition = z.infer<typeof templateFileSchema>;
@@ -298,6 +331,8 @@ export interface LoadedTemplate {
       routing?: z.infer<typeof stackServiceRoutingSchema>;
       vaultAppRoleRef?: string;
       natsCredentialRef?: string;
+      natsRole?: string;
+      natsSigner?: string;
     }>;
   };
   configFiles: StackTemplateConfigFileInput[];
@@ -417,6 +452,8 @@ export function loadTemplateFromObject(
       routing: svc.routing,
       vaultAppRoleRef: svc.vaultAppRoleRef,
       natsCredentialRef: svc.natsCredentialRef,
+      natsRole: svc.natsRole,
+      natsSigner: svc.natsSigner,
     };
   });
 

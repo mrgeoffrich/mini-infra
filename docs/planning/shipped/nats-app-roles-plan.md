@@ -1,6 +1,6 @@
 # NATS App Roles & Subject Scoping in the Stack Definition Language
 
-**Status:** Proposed
+**Status:** Phases 1, 2, 3, and 5 shipped. Phase 4 (signers) deferred until the Phase 0 prerequisite (live account-JWT propagation) lands.
 **Forcing function:** [slackbot-agent-sdk](https://github.com/) — a third-party app that wants to consume NATS via mini-infra without hand-rolling NKey/JWT minting and without colliding with other apps' subjects.
 **Builds on:** the NATS first-class primitives shipped in #320 / #322 (`vault-nats` built-in stack, `NatsControlPlaneService`, `TemplateNatsSection`).
 

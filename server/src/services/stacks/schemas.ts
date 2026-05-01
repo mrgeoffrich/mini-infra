@@ -101,6 +101,10 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
     path: kvPathSchema,
     field: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "vault-kv field may only contain letters, numbers, '_', '-'"),
   }),
+  z.object({
+    kind: z.literal("nats-signer-seed"),
+    signer: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "nats signer name may only contain letters, numbers, '_', '-'"),
+  }),
 ]);
 
 export const poolConfigSchema = z.object({
@@ -350,6 +354,12 @@ export const stackServiceCommonFieldsSchema = z.object({
   // Symbolic reference to a nats.credentials[].name declared in the same draft
   // / template. Resolved to a concrete natsCredentialId at apply time.
   natsCredentialRef: z.string().min(1).optional(),
+  // Symbolic reference to a nats.roles[].name. Resolved at apply time to a
+  // materialized NatsCredentialProfile (subjectPrefix-prepended permissions).
+  natsRole: z.string().min(1).optional(),
+  // Symbolic reference to a nats.signers[].name. Causes NATS_SIGNER_SEED to
+  // be auto-injected as dynamicEnv at apply time.
+  natsSigner: z.string().min(1).optional(),
 });
 
 export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema

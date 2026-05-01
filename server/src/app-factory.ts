@@ -79,6 +79,7 @@ import vaultPolicyRoutes from "./routes/vault/policies";
 import vaultAppRoleRoutes from "./routes/vault/approles";
 import vaultKvRoutes from "./routes/vault/kv";
 import natsRoutes from "./routes/nats";
+import natsPrefixAllowlistRoutes from "./routes/nats-prefix-allowlist";
 import egressRoutes from "./routes/egress";
 import egressFwAgentRoutes from "./routes/egress-fw-agent";
 import { listRouteMeta } from "./lib/openapi-registry";
@@ -192,6 +193,9 @@ function getRouteDefinitions(): RouteDefinition[] {
     // shared status/bootstrap router.
     { id: "vaultKv", path: "/api/vault/kv", name: "vaultKvRoutes", getRouter: () => vaultKvRoutes },
     { id: "vault", path: "/api/vault", name: "vaultRoutes", getRouter: () => vaultRoutes },
+    // Allowlist must be mounted BEFORE the catch-all `/api/nats` router so
+    // requests to `/api/nats/prefix-allowlist/...` reach this router instead.
+    { id: "natsPrefixAllowlist", path: "/api/nats/prefix-allowlist", name: "natsPrefixAllowlistRoutes", getRouter: () => natsPrefixAllowlistRoutes },
     { id: "nats", path: "/api/nats", name: "natsRoutes", getRouter: () => natsRoutes },
     // Dev-only: exchange admin credentials for a full-admin API key. Only
     // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
