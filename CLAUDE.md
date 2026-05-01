@@ -84,6 +84,11 @@ Mini Infra is a web application designed to manage a single Docker host and its 
 - **Event** — audit log entry for long-running operations. Tracks type, category, status progression, trigger source, progress, user, and duration. Streams via Socket.IO.
 - **Self-Update** — in-place upgrade via sidecar health-check pattern. Pulls new image, validates, swaps containers. Auto-rollback on failure. Data preserved on mounted volumes.
 - **Agent Sidecar** — optional AI operations assistant in a separate container. Natural language interface to Docker, Mini Infra API, and docs. Per-user conversations with SSE streaming.
+- **NATS** — built-in message bus, deployed as a managed `vault-nats` stack. Accounts, credential profiles, JetStream streams/consumers, and runtime config are DB-backed and reconciled via `POST /api/nats/apply`. NKeys/operator keys live in Vault.
+- **NATS App Role** — symbolic role on a stack template (`nats.roles[]`) that materializes into a `NatsCredentialProfile` at apply time. Subject prefix (`nats.subjectPrefix`, default `app.<stack.id>`) is prepended to publish/subscribe; `_INBOX.>` auto-injected per `inboxAuto`. Services bind via `services[].natsRole: <name>` → injects `NATS_CREDS` + `NATS_URL`.
+- **NATS Signer** — scoped signing key (`nats.signers[]`) for in-process JWT minting; delivered as `NATS_SIGNER_SEED`. Constrained to a declared `subjectScope` sub-tree.
+- **NATS Subject Prefix Allowlist** — admin-only allowlist (CRUD-per-entry at `/api/nats/prefix-allowlist`) that gates which templates may claim non-default subject prefixes. Wildcards, `$SYS.*`, and subject-tree overlaps are rejected at write time.
+- **NATS Import / Export** — cross-stack subject sharing via `nats.exports[]` / `nats.imports[]`. Imports resolve at apply time against the producer's last-applied snapshot, scoped to the same environment, and are bound to specific consumer roles via `forRoles`.
 
 ## Project Structure
 
