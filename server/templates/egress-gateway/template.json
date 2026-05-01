@@ -35,6 +35,9 @@
           "rules.apply.>",
           "container-map.apply.>"
         ],
+        "kvBuckets": [
+          "egress-gw-health"
+        ],
         "inboxAuto": "both"
       }
     ]

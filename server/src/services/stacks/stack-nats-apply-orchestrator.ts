@@ -639,12 +639,18 @@ async function materializeRole(args: {
   if (args.additionalSubscribeAbsolute && args.additionalSubscribeAbsolute.length > 0) {
     subscribeAllow.push(...args.additionalSubscribeAbsolute);
   }
-  // ALT-27: KV bucket access. KV subjects live in the `$KV.>` system tree,
-  // outside the stack's prefix, so they can't be expressed via the relative
-  // `publish`/`subscribe` lists. Each bucket B gets `$KV.B.>` on BOTH lists
-  // — KV Put needs pub, Get/watch needs sub. Defense-in-depth name re-check
-  // matches the schema regex so a corrupt DB row can't slip an injection
-  // vector through to the permission renderer.
+  // ALT-27 + ALT-28: KV bucket access. KV subjects live in the `$KV.>` and
+  // `$JS.API.>` system trees, outside the stack's prefix, so they can't be
+  // expressed via the relative `publish`/`subscribe` lists. Each bucket B
+  // gets:
+  //   - `$KV.B.>` on BOTH publish (Put) and subscribe (Get/watch)
+  //   - `$JS.API.STREAM.INFO.KV_B` on publish — the SDK's KV view binds
+  //     by calling stream-info on the underlying `KV_<bucket>` stream;
+  //     without this grant the first Put/Get fails with "Permissions
+  //     Violation" before the actual KV operation runs.
+  // Defense-in-depth name re-check matches the schema regex so a corrupt
+  // DB row can't slip an injection vector through to the permission
+  // renderer.
   for (const bucket of role.kvBuckets ?? []) {
     if (!/^[a-zA-Z0-9_-]+$/.test(bucket) || bucket.length === 0 || bucket.length > 100) {
       throw new Error(`NATS apply: role '${role.name}' kvBuckets entry '${bucket}' is invalid`);
@@ -652,6 +658,7 @@ async function materializeRole(args: {
     const subj = `$KV.${bucket}.>`;
     publishAllow.push(subj);
     subscribeAllow.push(subj);
+    publishAllow.push(`$JS.API.STREAM.INFO.KV_${bucket}`);
   }
 
   // Profile name: `<stackId>-<roleName>`. `stack.id` is opaque but

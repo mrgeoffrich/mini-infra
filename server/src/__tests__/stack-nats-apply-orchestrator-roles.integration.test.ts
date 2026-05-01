@@ -213,6 +213,59 @@ describe('runStackNatsApplyPhase — Phase 3 role materialization', () => {
     expect(sub.includes('_INBOX.>')).toBe(expected.subInbox);
   });
 
+  it('kvBuckets adds the JS.API.STREAM.INFO lookup grant alongside $KV.<bucket>.>', async () => {
+    // ALT-28 follow-up: the SDK's KV view binds by calling stream-info on
+    // the underlying `KV_<bucket>` stream before the first Put/Get. Without
+    // a publish grant on `$JS.API.STREAM.INFO.KV_<bucket>` the bind fails
+    // with "Permissions Violation" and the heartbeat path silently breaks.
+    // This test pins both grants — `$KV.<bucket>.>` (Put) AND the stream-info
+    // lookup — so a future regression that drops one shows up here.
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'gw',
+          publish: ['x'],
+          kvBuckets: ['egress-gw-health'],
+          inboxAuto: 'both',
+        },
+      ],
+    });
+
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const profile = await testPrisma.natsCredentialProfile.findFirst({
+      where: { name: { contains: 'gw' } },
+    });
+    const pub = profile!.publishAllow as unknown as string[];
+    const sub = profile!.subscribeAllow as unknown as string[];
+    expect(pub).toContain('$KV.egress-gw-health.>');
+    expect(pub).toContain('$JS.API.STREAM.INFO.KV_egress-gw-health');
+    // KV reads need subscribe access too — get/watch flow through `$KV.<bucket>.>`.
+    expect(sub).toContain('$KV.egress-gw-health.>');
+  });
+
+  it('roles without kvBuckets get no $KV / $JS.API publish grants', async () => {
+    // Negative pin: the kvBuckets injection only fires when the role
+    // declares a bucket. A role without one must not inherit any system-tree
+    // grants — defence-in-depth against a future change accidentally
+    // broadening the grant set.
+    const { stackId } = await seedStack({
+      natsRoles: [
+        { name: 'gw', publish: ['x'], inboxAuto: 'both' },
+      ],
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const profile = await testPrisma.natsCredentialProfile.findFirst({
+      where: { name: { contains: 'gw' } },
+    });
+    const pub = profile!.publishAllow as unknown as string[];
+    expect(pub.some((s) => s.startsWith('$KV.'))).toBe(false);
+    expect(pub.some((s) => s.startsWith('$JS.API.'))).toBe(false);
+  });
+
   it('two stacks with the same role name get distinct profiles with non-overlapping prefixes', async () => {
     const a = await seedStack({
       natsRoles: [{ name: 'gateway', publish: ['x'] }],
