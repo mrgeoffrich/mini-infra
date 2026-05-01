@@ -111,9 +111,7 @@ for await (const msg of sub) {
 }
 ```
 
-> **Wait — don't I need to publish to `app.<stack-id>.jobs.completed`?** Yes, on the wire. But the credential JWT pins your client into the prefixed namespace, so your code uses the unprefixed name and the server rewrites/enforces. In practice you publish and subscribe by the relative subject everywhere.
-
-Actually that's a half-truth: NATS does **not** rewrite subjects. Your code must use the *full* subject including the prefix. Read [the prefix gotcha](#the-prefix-gotcha) below before you ship.
+> **The example above is incomplete — your client code must use the *absolute* subject (prefix-included), not the relative one from the role declaration.** NATS does not rewrite subjects on the server; the role's prefix-relative form is just how mini-infra renders the permission allowlist. Read [the prefix gotcha](#the-prefix-gotcha) below for the corrected pattern before you ship.
 
 ### Go (`nats.go`)
 
@@ -161,7 +159,7 @@ A **signer** is a scoped NKey on your stack's NATS account. Your service holds t
 ```json
 {
   "nats": {
-    "roles": [{ "name": "gateway", "publish": ["agent.>"], "subscribe": ["agent.>"] }],
+    "roles": [{ "name": "gateway", "publish": ["agent.>"], "subscribe": ["agent.>"], "ttlSeconds": 0 }],
     "signers": [
       { "name": "worker-minter", "subjectScope": "agent.worker" }
     ]
