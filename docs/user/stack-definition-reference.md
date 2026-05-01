@@ -229,15 +229,17 @@ Each key is an environment variable name. Each value must be one of:
 | `{ kind: "vault-role-id" }` | Inject the bound Vault AppRole role ID. | Exact object shape. |
 | `{ kind: "vault-wrapped-secret-id", ttlSeconds: 300 }` | Inject a wrapped secret ID minted at apply time. | `ttlSeconds` is optional, integer `> 0`. If omitted, runtime default is `300`. |
 | `{ kind: "nats-url" }` | URL of the managed NATS cluster reachable from the service's network. | Exact object shape. |
-| `{ kind: "nats-creds" }` | Multi-line credentials file (JWT + nkey seed) for the bound `natsRole`. **Fixed TTL — see warning below.** | Exact object shape. The service must declare a `natsRole`. |
-| `{ kind: "nats-signer-seed", signer: "<name>" }` | NKey seed (base32) of the named scoped signing key, for in-process JWT minting. | `signer` must match a `nats.signers[].name` on the stack template. |
+| `{ kind: "nats-creds" }` | Multi-line credentials file (JWT + nkey seed) for the bound `natsRole`. **Fixed at apply time — see TTL note below.** | Exact object shape. The service must declare a `natsRole`. |
+| `{ kind: "nats-signer-seed", signer: "<name>" }` | NKey seed (base32) of the named scoped signing key, for in-process JWT minting. Used to mint **ephemeral per-tenant creds** (e.g. an agent gateway minting per-user worker creds), not for the service's own connection. | `signer` must match a `nats.signers[].name` on the stack template. |
 | `{ kind: "nats-account-public", signer: "<name>" }` | Public key of the NATS account that owns the named signer. Pair with `nats-signer-seed`; `nats-jwt`'s `encodeUser` requires it as the `issuer_account` claim. | `signer` must match a `nats.signers[].name` on the stack template. |
 
 Runtime notes:
 
 - `dynamicEnv` values are resolved at apply time, not at plan time.
 - Their source definitions stay in the stack definition, but the secret values themselves are not part of the definition hash.
-- **`nats-creds` is fixed-TTL.** The JWT is minted once at apply time with the credential profile's `ttlSeconds` (default `3600`) and is **not refreshed**. When the JWT expires, NATS will close the connection on the next reconnect attempt and reject all reconnects until the container is restarted (or the stack re-applied). For any service whose connection is expected to outlive the TTL — i.e. virtually every long-running service — use the **signer pattern** (`nats-signer-seed` + `nats-account-public`) and an authenticator callback that mints a fresh user JWT on connect. See [Connecting your app to NATS](/nats/app-integration) for the recipe. Reserve `nats-creds` for one-shot containers (jobs, init containers, batch tasks) whose lifetime is shorter than the TTL.
+- **`nats-creds` is minted once at apply time and never refreshed.** Whatever `ttlSeconds` the credential profile is configured with becomes the JWT's `exp`. When `exp` passes, NATS closes the connection and rejects reconnects until the container is restarted or the stack re-applied.
+  - **For long-running services, set `ttlSeconds: 0` on the role.** That mints a non-expiring JWT, which is the canonical NATS pattern for service-owned connections; revocation is handled out-of-band via the account's revocations list rather than via expiry. The default `ttlSeconds: 3600` is suitable only for short-lived containers (jobs, init containers, batch tasks) whose lifetime is shorter than the TTL.
+  - **Permission changes still need a re-apply + container restart** even with `ttlSeconds: 0` — the cred is static once minted. If you need fast permission propagation (no restarts), see the niche signer-with-authenticator-callback recipe in [Connecting your app to NATS](/nats/app-integration#advanced-fast-permission-propagation-via-authenticator-callback).
 
 ## `services[].containerConfig.healthcheck`
 
