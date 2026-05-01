@@ -40,10 +40,15 @@
  */
 
 import { Readable } from 'stream';
+import { EgressGwSubject, NatsConsumer, NatsStream } from '@mini-infra/types';
 import type { PrismaClient } from '../../generated/prisma/client';
-import DockerService from '../docker';
+// Phase 2 (ALT-27) + Phase 3 (ALT-28) made both ingest paths bus-driven —
+// no Docker container-event listener needed; JetStream durable consumers
+// auto-resume from last-acked sequence on reconnect.
 import { DockerStreamDemuxer } from '../../lib/docker-stream';
 import { getLogger } from '../../lib/logger-factory';
+import { NatsBus } from '../nats/nats-bus';
+import type { EgressGwDecision } from '../nats/payload-schemas';
 import { emitEgressEvent } from './egress-socket-emitter';
 import type { EgressFwEvent } from '../nats/payload-schemas';
 
@@ -201,6 +206,15 @@ interface PendingRow {
   destIp?: string;
   destPort?: number;
   reason?: string;
+  /**
+   * Optional acknowledgement callbacks invoked after the batch is committed
+   * to the EgressEvent table. JetStream consumers attach a `msg.ack()` here
+   * so a server crash mid-flush triggers redelivery rather than silent loss.
+   * Null for log-tailed sources (Docker log-attach has no ack model — losses
+   * are inherent to that transport, which is exactly why Phase 3 moved off
+   * it for the gateway).
+   */
+  ackOnFlush?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -390,18 +404,32 @@ abstract class BaseTailer {
   /**
    * Returns true if this event should be suppressed (within dedup window).
    * Also updates bucket state and pushes the rolled-up row if the window expired.
+   *
+   * `ackIfSuppressed` lets JetStream-sourced ingest paths acknowledge a
+   * message that's been "absorbed" into an existing dedup bucket (no row
+   * queued, but the message must still be acked so JetStream doesn't
+   * redeliver it). For row-producing paths the ack instead rides on the
+   * `ackOnFlush` field of the queued PendingRow.
    */
   protected _checkDedup(
     key: DedupKey,
     mergedHits: number,
     rowFactory: () => PendingRow,
+    ackIfSuppressed?: () => void,
   ): boolean {
     const now = Date.now();
     const bucket = this.dedupBuckets.get(key);
 
     if (bucket && now - bucket.windowStart < DEDUP_WINDOW_MS) {
-      // Within window — accumulate, suppress new row
+      // Within window — accumulate, suppress new row. Ack the underlying
+      // JetStream message (if any) so it isn't redelivered — the bucket
+      // already has its hit count.
       bucket.hits += mergedHits;
+      try {
+        ackIfSuppressed?.();
+      } catch {
+        // best-effort
+      }
       return true;
     }
 
@@ -428,115 +456,154 @@ abstract class BaseTailer {
   // Ingestion methods — one per event type
   // -------------------------------------------------------------------------
 
-  private async _ingestDnsQuery(line: DnsQueryLine): Promise<void> {
-    if (!line.stackId) return;
+  /**
+   * `ack`, when supplied, is the JetStream message ack callback. It rides on
+   * the `PendingRow.ackOnFlush` field for non-suppressed events and is
+   * invoked directly by `_checkDedup` for suppressed (within-window) events.
+   * Pre-policy-lookup drop paths (no stackId, no policy match) ack
+   * immediately — the message is a no-op so JetStream shouldn't redeliver.
+   */
+  protected async _ingestDnsQuery(line: DnsQueryLine, ack?: () => void): Promise<void> {
+    if (!line.stackId) {
+      ack?.();
+      return;
+    }
 
     const policyContext = await this._lookupPolicy(line.stackId);
     if (!policyContext) {
       this._warnNoPolicyIfNeeded(line.stackId, 'dns.query', line.srcIp);
+      ack?.();
       return;
     }
 
     const key = makeDedupKey(policyContext.id, line.serviceName, line.qname, line.action);
-    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
-      policyId: policyContext.id,
-      occurredAt: line.ts ? new Date(line.ts) : new Date(),
-      sourceStackId: line.stackId,
-      sourceServiceName: line.serviceName,
-      destination: line.qname,
-      matchedPattern: line.matchedPattern,
-      action: line.action,
-      protocol: 'dns',
-      mergedHits: line.mergedHits,
-      stackNameSnapshot: policyContext.stackNameSnapshot,
-      environmentNameSnapshot: policyContext.environmentNameSnapshot,
-      environmentId: policyContext.environmentId,
-    }));
+    const suppressed = this._checkDedup(
+      key,
+      line.mergedHits,
+      () => ({
+        policyId: policyContext.id,
+        occurredAt: line.ts ? new Date(line.ts) : new Date(),
+        sourceStackId: line.stackId,
+        sourceServiceName: line.serviceName,
+        destination: line.qname,
+        matchedPattern: line.matchedPattern,
+        action: line.action,
+        protocol: 'dns',
+        mergedHits: line.mergedHits,
+        stackNameSnapshot: policyContext.stackNameSnapshot,
+        environmentNameSnapshot: policyContext.environmentNameSnapshot,
+        environmentId: policyContext.environmentId,
+        ackOnFlush: ack,
+      }),
+      ack,
+    );
 
     if (!suppressed && line.matchedPattern) {
       void this._bumpRuleHits(policyContext.id, line.matchedPattern);
     }
   }
 
-  private async _ingestTcpConnect(line: TcpConnectLine): Promise<void> {
-    if (!line.stackId) return;
+  protected async _ingestTcpConnect(line: TcpConnectLine, ack?: () => void): Promise<void> {
+    if (!line.stackId) {
+      ack?.();
+      return;
+    }
 
     const policyContext = await this._lookupPolicy(line.stackId);
     if (!policyContext) {
       this._warnNoPolicyIfNeeded(line.stackId, 'tcp/connect', line.srcIp);
+      ack?.();
       return;
     }
 
     const key = makeDedupKey(policyContext.id, line.serviceName, line.target, line.action);
-    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
-      policyId: policyContext.id,
-      occurredAt: line.ts ? new Date(line.ts) : new Date(),
-      sourceStackId: line.stackId,
-      sourceServiceName: line.serviceName,
-      destination: line.target, // use target as destination for list/filter UI
-      target: line.target,
-      matchedPattern: line.matchedPattern,
-      action: line.action,
-      protocol: 'connect',
-      mergedHits: line.mergedHits,
-      bytesUp: line.bytesUp !== undefined ? BigInt(line.bytesUp) : undefined,
-      bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
-      reason: line.reason,
-      stackNameSnapshot: policyContext.stackNameSnapshot,
-      environmentNameSnapshot: policyContext.environmentNameSnapshot,
-      environmentId: policyContext.environmentId,
-    }));
+    const suppressed = this._checkDedup(
+      key,
+      line.mergedHits,
+      () => ({
+        policyId: policyContext.id,
+        occurredAt: line.ts ? new Date(line.ts) : new Date(),
+        sourceStackId: line.stackId,
+        sourceServiceName: line.serviceName,
+        destination: line.target, // use target as destination for list/filter UI
+        target: line.target,
+        matchedPattern: line.matchedPattern,
+        action: line.action,
+        protocol: 'connect',
+        mergedHits: line.mergedHits,
+        bytesUp: line.bytesUp !== undefined ? BigInt(line.bytesUp) : undefined,
+        bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
+        reason: line.reason,
+        stackNameSnapshot: policyContext.stackNameSnapshot,
+        environmentNameSnapshot: policyContext.environmentNameSnapshot,
+        environmentId: policyContext.environmentId,
+        ackOnFlush: ack,
+      }),
+      ack,
+    );
 
     if (!suppressed && line.matchedPattern) {
       void this._bumpRuleHits(policyContext.id, line.matchedPattern);
     }
   }
 
-  private async _ingestTcpHttp(line: TcpHttpLine): Promise<void> {
-    if (!line.stackId) return;
+  protected async _ingestTcpHttp(line: TcpHttpLine, ack?: () => void): Promise<void> {
+    if (!line.stackId) {
+      ack?.();
+      return;
+    }
 
     const policyContext = await this._lookupPolicy(line.stackId);
     if (!policyContext) {
       this._warnNoPolicyIfNeeded(line.stackId, 'tcp/http', line.srcIp);
+      ack?.();
       return;
     }
 
     const key = makeDedupKey(policyContext.id, line.serviceName, line.target, line.action);
-    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
-      policyId: policyContext.id,
-      occurredAt: line.ts ? new Date(line.ts) : new Date(),
-      sourceStackId: line.stackId,
-      sourceServiceName: line.serviceName,
-      destination: line.target, // use target as destination for list/filter UI
-      target: line.target,
-      method: line.method,
-      path: line.path,
-      status: line.status,
-      bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
-      matchedPattern: line.matchedPattern,
-      action: line.action,
-      protocol: 'http',
-      mergedHits: line.mergedHits,
-      reason: line.reason,
-      stackNameSnapshot: policyContext.stackNameSnapshot,
-      environmentNameSnapshot: policyContext.environmentNameSnapshot,
-      environmentId: policyContext.environmentId,
-    }));
+    const suppressed = this._checkDedup(
+      key,
+      line.mergedHits,
+      () => ({
+        policyId: policyContext.id,
+        occurredAt: line.ts ? new Date(line.ts) : new Date(),
+        sourceStackId: line.stackId,
+        sourceServiceName: line.serviceName,
+        destination: line.target, // use target as destination for list/filter UI
+        target: line.target,
+        method: line.method,
+        path: line.path,
+        status: line.status,
+        bytesDown: line.bytesDown !== undefined ? BigInt(line.bytesDown) : undefined,
+        matchedPattern: line.matchedPattern,
+        action: line.action,
+        protocol: 'http',
+        mergedHits: line.mergedHits,
+        reason: line.reason,
+        stackNameSnapshot: policyContext.stackNameSnapshot,
+        environmentNameSnapshot: policyContext.environmentNameSnapshot,
+        environmentId: policyContext.environmentId,
+        ackOnFlush: ack,
+      }),
+      ack,
+    );
 
     if (!suppressed && line.matchedPattern) {
       void this._bumpRuleHits(policyContext.id, line.matchedPattern);
     }
   }
 
-  protected async _ingestFwDrop(line: FwDropLine): Promise<void> {
+  protected async _ingestFwDrop(line: FwDropLine, ack?: () => void): Promise<void> {
     if (!line.stackId) {
       // fw_drop without stackId cannot be attributed — drop it
+      ack?.();
       return;
     }
 
     const policyContext = await this._lookupPolicy(line.stackId);
     if (!policyContext) {
       this._warnNoPolicyIfNeeded(line.stackId, 'fw_drop', line.srcIp);
+      ack?.();
       return;
     }
 
@@ -549,22 +616,28 @@ abstract class BaseTailer {
       line.destPort,
       line.protocol,
     );
-    const suppressed = this._checkDedup(key, line.mergedHits, () => ({
-      policyId: policyContext.id,
-      occurredAt: line.ts ? new Date(line.ts) : new Date(),
-      sourceStackId: line.stackId,
-      sourceServiceName: line.serviceName,
-      destination: destLabel, // destIp:destPort for list/filter UI
-      destIp: line.destIp,
-      destPort: line.destPort,
-      action: 'blocked',
-      protocol: line.protocol,
-      mergedHits: line.mergedHits,
-      reason: line.reason,
-      stackNameSnapshot: policyContext.stackNameSnapshot,
-      environmentNameSnapshot: policyContext.environmentNameSnapshot,
-      environmentId: policyContext.environmentId,
-    }));
+    const suppressed = this._checkDedup(
+      key,
+      line.mergedHits,
+      () => ({
+        policyId: policyContext.id,
+        occurredAt: line.ts ? new Date(line.ts) : new Date(),
+        sourceStackId: line.stackId,
+        sourceServiceName: line.serviceName,
+        destination: destLabel, // destIp:destPort for list/filter UI
+        destIp: line.destIp,
+        destPort: line.destPort,
+        action: 'blocked',
+        protocol: line.protocol,
+        mergedHits: line.mergedHits,
+        reason: line.reason,
+        stackNameSnapshot: policyContext.stackNameSnapshot,
+        environmentNameSnapshot: policyContext.environmentNameSnapshot,
+        environmentId: policyContext.environmentId,
+        ackOnFlush: ack,
+      }),
+      ack,
+    );
     if (suppressed) return;
     // fw_drop has no matchedPattern — no rule hit bump
   }
@@ -588,7 +661,7 @@ abstract class BaseTailer {
     }, BATCH_FLUSH_INTERVAL_MS);
   }
 
-  private _rollExpiredDedupWindows(): void {
+  protected _rollExpiredDedupWindows(): void {
     const now = Date.now();
     for (const [key, bucket] of this.dedupBuckets.entries()) {
       if (now - bucket.windowStart >= DEDUP_WINDOW_MS) {
@@ -633,6 +706,25 @@ abstract class BaseTailer {
       });
 
       log.debug({ count: batch.length }, 'Flushed EgressEvent batch');
+
+      // Successful insert: acknowledge any JetStream messages that
+      // contributed to this batch. We do this before the socket emit so
+      // JetStream's queue depth tracks the persisted state, not the UI
+      // dispatch state. A `try/catch` around each ack guards against a
+      // closed connection making the iteration throw and skipping later
+      // acks — best-effort, dedup window absorbs any redelivery.
+      for (const row of batch) {
+        if (row.ackOnFlush) {
+          try {
+            row.ackOnFlush();
+          } catch (err) {
+            log.warn(
+              { err: err instanceof Error ? err.message : String(err) },
+              'Failed to ack JetStream message after batch flush — JetStream will redeliver',
+            );
+          }
+        }
+      }
 
       // Emit one egress:event per row after successful batch insert.
       // createMany does not return IDs, so we synthesise placeholder IDs for
@@ -699,75 +791,189 @@ abstract class BaseTailer {
 }
 
 // ---------------------------------------------------------------------------
-// GatewayTailer — one per environment
+// EgressDecisionsConsumer — single instance, drains the shared
+// `EgressGwDecisions` JetStream stream across every environment.
 // ---------------------------------------------------------------------------
+//
+// Replaces the per-environment Docker log-attach (`GatewayTailer`) that
+// shipped before Phase 3. Compared to log-attach:
+//
+//  - decisions survive a gateway container restart (JetStream queues them
+//    until we ack), which is the headline win in the ALT-28 acceptance
+//    criteria;
+//  - one consumer drains every env (the gateway uses environmentId in the
+//    payload; the per-env discrimination lives there, not in the subject);
+//  - acks ride on the PendingRow.ackOnFlush hook so the message stays in
+//    the stream until the EgressEvent row is committed — flush failure
+//    triggers JetStream redelivery rather than a silent drop.
+//
+// The consumer extends `BaseTailer` for its dedup/batch/policy-lookup
+// machinery; the stream-attach methods (`_connect`, `_attachStream`,
+// `_scheduleReconnect`) are inherited but unused here — JetStream
+// reconnect is handled by `NatsBus`.
+//
+class EgressDecisionsConsumer extends BaseTailer {
+  private cancel: (() => void) | null = null;
 
-class GatewayTailer extends BaseTailer {
-  constructor(
-    private readonly envId: string,
-    private readonly envName: string,
-    prisma: PrismaClient,
-  ) {
+  constructor(prisma: PrismaClient) {
     super(prisma);
   }
 
+  /**
+   * Register the JetStream consumer and start the batch timer. The bus may
+   * not be connected yet — `jsConsume` records the registration and the bus
+   * will start the consume loop the moment the first connection is up. So
+   * this method is fire-and-forget; the only failure mode is "bus not
+   * initialised", which only happens in unit tests that opt out of the bus.
+   */
   start(): void {
-    void this._connect();
+    if (this.cancel) return;
     this._startBatchTimer();
-    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer started');
+    try {
+      const bus = NatsBus.getInstance();
+      this.cancel = bus.jetstream.consume<EgressGwDecision>(
+        {
+          stream: NatsStream.egressGwDecisions,
+          durable: NatsConsumer.egressGwDecisionsServer,
+          // The stream captures `EgressGwSubject.decisions`. Pass it as the
+          // filter so Zod validation runs on each delivery (the bus's
+          // `subjectForSchema` falls back to the stream-namespaced key when
+          // the filter is missing, which never matches `payloadSchemas`).
+          filterSubject: EgressGwSubject.decisions,
+        },
+        async (decision, ctx) => {
+          // Each decision arrives Zod-validated by the bus. Manual-ack: we
+          // thread `ctx.ack` through `_ingest*` so the JetStream message
+          // stays in-flight until either:
+          //   - the decision is suppressed by dedup (ack inside _checkDedup), or
+          //   - the EgressEvent row is committed by the next batch flush
+          //     (ack runs in _flushBatch).
+          // A handler exception leaves the message unacked; ack-wait
+          // expires; JetStream redelivers; the dedup window catches the
+          // duplicate. That's the chain that gives us "zero in-flight
+          // decisions lost across gateway restart".
+          await this._handleDecision(decision, ctx.ack);
+        },
+        { ack: 'manual' },
+      );
+      log.info(
+        {
+          stream: NatsStream.egressGwDecisions,
+          consumer: NatsConsumer.egressGwDecisionsServer,
+        },
+        'Egress decisions consumer registered',
+      );
+    } catch (err) {
+      // Bus not initialised — typically a unit test that mocks
+      // EgressLogIngester without booting NatsBus. Log at info so the
+      // production path is loud about it, but don't throw.
+      log.info(
+        { err: err instanceof Error ? err.message : String(err) },
+        'Egress decisions consumer not started — NatsBus unavailable',
+      );
+    }
   }
 
   stop(): void {
+    if (this.cancel) {
+      try {
+        this.cancel();
+      } catch {
+        // best-effort
+      }
+      this.cancel = null;
+    }
     super.stop();
-    log.info({ envId: this.envId, envName: this.envName }, 'Gateway tailer stopped');
+    log.info('Egress decisions consumer stopped');
   }
 
+  /**
+   * Required by the abstract `BaseTailer` contract. The JetStream consumer
+   * has its own reconnect handling (managed by `NatsBus`), so this is
+   * intentionally a no-op — there's no Docker stream to reconnect.
+   */
   protected async _connect(): Promise<void> {
-    if (this.stopped) return;
+    // no-op
+  }
 
-    const containerName = `${this.envName}-egress-gateway-egress-gateway`;
-
-    const dockerService = DockerService.getInstance();
-    if (!dockerService.isConnected()) {
-      log.warn({ containerName }, 'Docker not connected — will retry');
-      this._scheduleReconnect(containerName);
+  /** Map a Zod-validated EgressGwDecision into the shared ingest pipeline. */
+  private async _handleDecision(
+    decision: EgressGwDecision,
+    ack: () => void,
+  ): Promise<void> {
+    // The Zod payload schema (`egressGwDecisionSchema`) is a discriminated
+    // union over `evt`. Adding a new variant here without extending the
+    // schema would silently fall through — we ack and skip rather than
+    // hold the message indefinitely.
+    if (decision.evt === 'dns.query') {
+      await this._ingestDnsQuery(
+        {
+          ts: decision.ts,
+          level: 'info', // schema doesn't carry level; downstream doesn't use it
+          evt: 'dns.query',
+          srcIp: decision.srcIp,
+          qname: decision.qname,
+          qtype: decision.qtype,
+          action: decision.action,
+          matchedPattern: decision.matchedPattern,
+          wouldHaveBeen: decision.wouldHaveBeen,
+          stackId: decision.stackId,
+          serviceName: decision.serviceName,
+          reason: decision.reason,
+          mergedHits: decision.mergedHits,
+        },
+        ack,
+      );
       return;
     }
-
-    try {
-      const docker = await dockerService.getDockerInstance();
-
-      const containers = await docker.listContainers({
-        all: false,
-        filters: JSON.stringify({ name: [containerName] }),
-      });
-      const match = containers.find((c) =>
-        c.Names?.some((n) => n === `/${containerName}`),
-      );
-
-      if (!match) {
-        log.debug({ containerName }, 'Gateway container not found — will retry');
-        this._scheduleReconnect(containerName);
+    if (decision.evt === 'tcp') {
+      if (decision.protocol === 'connect') {
+        await this._ingestTcpConnect(
+          {
+            ts: decision.ts,
+            evt: 'tcp',
+            protocol: 'connect',
+            srcIp: decision.srcIp,
+            target: decision.target,
+            action: decision.action === 'observed' ? 'allowed' : decision.action,
+            reason: decision.reason,
+            matchedPattern: decision.matchedPattern,
+            stackId: decision.stackId,
+            serviceName: decision.serviceName,
+            bytesUp: decision.bytesUp,
+            bytesDown: decision.bytesDown,
+            mergedHits: decision.mergedHits,
+          },
+          ack,
+        );
         return;
       }
-
-      const dockerContainer = docker.getContainer(match.Id);
-      const rawStream = (await dockerContainer.logs({
-        follow: true as const,
-        stdout: true,
-        stderr: false,
-        tail: 0,
-      })) as unknown as Readable;
-
-      this._attachStream(rawStream, containerName);
-      log.info({ containerName, containerId: match.Id }, 'Tailing gateway container logs');
-    } catch (err) {
-      log.warn(
-        { err: err instanceof Error ? err.message : String(err), containerName },
-        'Failed to attach to gateway log stream — reconnecting',
-      );
-      this._scheduleReconnect(containerName);
+      if (decision.protocol === 'http') {
+        await this._ingestTcpHttp(
+          {
+            ts: decision.ts,
+            evt: 'tcp',
+            protocol: 'http',
+            srcIp: decision.srcIp,
+            target: decision.target,
+            method: decision.method ?? '',
+            path: decision.path ?? '',
+            action: decision.action === 'observed' ? 'allowed' : decision.action,
+            reason: decision.reason,
+            matchedPattern: decision.matchedPattern,
+            stackId: decision.stackId,
+            serviceName: decision.serviceName,
+            status: decision.status,
+            bytesDown: decision.bytesDown,
+            mergedHits: decision.mergedHits,
+          },
+          ack,
+        );
+        return;
+      }
     }
+    log.warn({ evt: (decision as { evt?: string }).evt }, 'Unhandled egress decision evt — acking and skipping');
+    ack();
   }
 }
 
@@ -893,116 +1099,60 @@ export class FwAgentJsConsumer extends BaseTailer {
 }
 
 // ---------------------------------------------------------------------------
-// EgressLogIngester — orchestrates GatewayTailers + FwAgentJsConsumer
+// EgressLogIngester — orchestrates the gateway + fw-agent JetStream consumers
 // ---------------------------------------------------------------------------
-
-interface EnvRow {
-  id: string;
-  name: string;
-  egressGatewayIp: string;
-}
+//
+// Phase 3 (ALT-28) replaced the gateway's per-env Docker log-attach with a
+// single shared JetStream consumer (`EgressDecisionsConsumer`). Phase 2
+// (ALT-27) replaced the fw-agent's Docker log-attach with its own JetStream
+// consumer (`FwAgentJsConsumer`). Both paths are now bus-driven; no Docker
+// container-event listening is needed — durable consumers resume from the
+// last-acked sequence on reconnect, regardless of producer-side restarts.
+//
 
 export class EgressLogIngester {
-  private readonly tailers = new Map<string, GatewayTailer>();
+  private decisionsConsumer: EgressDecisionsConsumer | null = null;
   private fwAgentConsumer: FwAgentJsConsumer | null = null;
   private stopped = false;
 
   constructor(private readonly prisma: PrismaClient) {}
 
   /**
-   * Start tailing all currently known gateway environments and the fw-agent
-   * singleton, and subscribe to Docker events so we reconnect when containers
-   * restart.
+   * Start the gateway-decisions consumer and the fw-agent consumer. Both
+   * are bus-driven JetStream durable consumers, so neither needs a Docker
+   * container-event reconnect loop — the SDK handles resumption.
    */
   async start(): Promise<void> {
-    // Initial scan — per-env gateway tailers
-    const envs = await this._getEnvsWithGateway();
-    for (const env of envs) {
-      this._ensureTailer(env);
-    }
+    // Single shared JetStream consumer for the gateway. Per-env discrimination
+    // is via `environmentId` in the payload, not the subject.
+    this.decisionsConsumer = new EgressDecisionsConsumer(this.prisma);
+    this.decisionsConsumer.start();
 
-    // Host-singleton fw-agent JS consumer (ALT-27 — replaces the legacy
-    // docker-logs follow). Durable consumer survives restarts of either the
-    // agent or this server, so we don't need to react to docker container
-    // events for the fw-agent anymore — JetStream handles the resumption.
+    // Host-singleton fw-agent JetStream consumer (ALT-27). Replaces the
+    // legacy Docker log-attach. Durable consumer survives restarts of
+    // either the agent or this server.
     this.fwAgentConsumer = new FwAgentJsConsumer(this.prisma);
     this.fwAgentConsumer.start();
 
-    // Subscribe to Docker container events for the gateway tailers only.
-    // (The fw-agent doesn't need a docker-event listener — see comment
-    // above.)
-    const dockerService = DockerService.getInstance();
-    dockerService.onContainerEvent((event) => {
-      if (this.stopped) return;
-
-      const name = event.containerName ?? '';
-
-      // Gateway containers — name-based match
-      if (name.endsWith('-egress-gateway-egress-gateway')) {
-        if (event.action === 'start' || event.action === 'die' || event.action === 'stop') {
-          void this._reconcileTailers();
-        }
-      }
-    });
-
     log.info(
-      { tailerCount: this.tailers.size, fwAgentConsumer: true },
+      { decisionsConsumer: true, fwAgentConsumer: true },
       'EgressLogIngester started',
     );
   }
 
   /**
-   * Stop all tailers.
+   * Stop both consumers. Idempotent.
    */
   stop(): void {
     this.stopped = true;
-    for (const tailer of this.tailers.values()) {
-      tailer.stop();
+    if (this.decisionsConsumer) {
+      this.decisionsConsumer.stop();
+      this.decisionsConsumer = null;
     }
-    this.tailers.clear();
     if (this.fwAgentConsumer) {
       this.fwAgentConsumer.stop();
       this.fwAgentConsumer = null;
     }
     log.info('EgressLogIngester stopped');
-  }
-
-  // -------------------------------------------------------------------------
-  // Internal helpers
-  // -------------------------------------------------------------------------
-
-  private _ensureTailer(env: EnvRow): void {
-    if (this.tailers.has(env.id)) return;
-    const tailer = new GatewayTailer(env.id, env.name, this.prisma);
-    this.tailers.set(env.id, tailer);
-    tailer.start();
-  }
-
-  private async _reconcileTailers(): Promise<void> {
-    const envs = await this._getEnvsWithGateway();
-    const envIds = new Set(envs.map((e) => e.id));
-
-    // Start new tailers
-    for (const env of envs) {
-      this._ensureTailer(env);
-    }
-
-    // Stop tailers for environments that no longer have a gateway
-    for (const [envId, tailer] of this.tailers.entries()) {
-      if (!envIds.has(envId)) {
-        tailer.stop();
-        this.tailers.delete(envId);
-      }
-    }
-  }
-
-  private async _getEnvsWithGateway(): Promise<EnvRow[]> {
-    const envs = await this.prisma.environment.findMany({
-      where: { egressGatewayIp: { not: null } },
-      select: { id: true, name: true, egressGatewayIp: true },
-    });
-    return envs.filter(
-      (e): e is EnvRow => e.egressGatewayIp !== null && e.egressGatewayIp !== undefined,
-    );
   }
 }

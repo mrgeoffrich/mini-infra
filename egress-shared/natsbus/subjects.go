@@ -36,11 +36,27 @@ const (
 )
 
 // Egress gateway subjects (Phase 3).
+//
+// `RulesApply`, `RulesApplied`, `ContainerMapApply`, `ContainerMapApplied`,
+// and `Health` are BASE prefixes — the server appends an `<envId>` token at
+// runtime so each environment's gateway gets its own command/event subject.
+// `Decisions` is the lone shared subject (one JetStream stream across all
+// envs, with environmentId carried in the payload).
 const (
-	SubjectEgressGwRulesApply   = "mini-infra.egress.gw.rules.apply"
-	SubjectEgressGwRulesApplied = "mini-infra.egress.gw.rules.applied"
-	SubjectEgressGwDecisions    = "mini-infra.egress.gw.decisions"
-	SubjectEgressGwHealth       = "mini-infra.egress.gw.health"
+	SubjectEgressGwRulesApply           = "mini-infra.egress.gw.rules.apply"
+	SubjectEgressGwRulesApplied         = "mini-infra.egress.gw.rules.applied"
+	SubjectEgressGwContainerMapApply    = "mini-infra.egress.gw.container-map.apply"
+	SubjectEgressGwContainerMapApplied  = "mini-infra.egress.gw.container-map.applied"
+	SubjectEgressGwDecisions            = "mini-infra.egress.gw.decisions"
+	SubjectEgressGwHealth               = "mini-infra.egress.gw.health"
+)
+
+// JetStream / KV resource names used by the gateway. Shared with the server
+// side — the server creates them via NatsControlPlaneService, the gateway
+// only references them at publish-time.
+const (
+	StreamEgressGwDecisions = "EgressGwDecisions"
+	KvEgressGwHealth        = "egress-gw-health"
 )
 
 // PostgreSQL backup subjects (Phase 4).
@@ -72,6 +88,8 @@ var AllSubjects = []string{
 	SubjectEgressFwHealth,
 	SubjectEgressGwRulesApply,
 	SubjectEgressGwRulesApplied,
+	SubjectEgressGwContainerMapApply,
+	SubjectEgressGwContainerMapApplied,
 	SubjectEgressGwDecisions,
 	SubjectEgressGwHealth,
 	SubjectBackupRun,

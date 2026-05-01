@@ -42,15 +42,33 @@ vi.mock('../../docker', () => ({
 // Track pushContainerMap calls
 const pushCalls: Array<{ version: number; entries: unknown[] }> = [];
 
-vi.mock('../egress-gateway-client', () => ({
-  EgressGatewayClient: class {
-    readonly ip: string;
-    constructor(ip: string) { this.ip = ip; }
-    async pushContainerMap(req: { version: number; entries: unknown[] }) {
-      pushCalls.push(req);
-      return { version: req.version, entryCount: req.entries.length };
+// Phase 3: container-map pushes go via NATS through `egress-gateway-transport`.
+// We mock the new transport entry point here; tests still inspect `pushCalls`
+// the way they did with the legacy HTTP client.
+let containerMapInterceptor:
+  | ((req: { environmentId: string; version: number; entries: unknown[] }) => Promise<{
+      version: number;
+      entryCount: number;
+      accepted: boolean;
+    }>)
+  | null = null;
+
+vi.mock('../egress-gateway-transport', () => ({
+  pushContainerMapViaNats: async (
+    environmentId: string,
+    request: { version: number; entries: unknown[] },
+  ) => {
+    if (containerMapInterceptor) {
+      return containerMapInterceptor({ environmentId, ...request });
     }
+    pushCalls.push({ version: request.version, entries: request.entries });
+    return {
+      version: request.version,
+      entryCount: request.entries.length,
+      accepted: true as const,
+    };
   },
+  EgressGatewayTransportError: class extends Error {},
 }));
 
 // ---------------------------------------------------------------------------
@@ -515,10 +533,15 @@ describe('EgressContainerMapPusher', () => {
   // Per-env independence
   // -------------------------------------------------------------------------
 
-  it('creates a separate gateway client for each env with its own IP', async () => {
-    const { EgressGatewayClient } = await import('../egress-gateway-client');
-    const clientIps: string[] = [];
-    const OrigClient = EgressGatewayClient as unknown as { new(ip: string): { ip: string; pushContainerMap: (r: unknown) => Promise<unknown> } };
+  it('routes each env push to its own subject (envId-based, not IP-based)', async () => {
+    // Phase 3: routing is by NATS subject token (envId), not by IP address.
+    // We capture envId per call rather than IP — the egress gateway's IP is
+    // no longer the addressing mechanism for the control plane.
+    const seenEnvIds: string[] = [];
+    containerMapInterceptor = async (req) => {
+      seenEnvIds.push(req.environmentId);
+      return { version: req.version, entryCount: req.entries.length, accepted: true };
+    };
 
     const prisma = makePrisma({
       environments: [
@@ -527,24 +550,14 @@ describe('EgressContainerMapPusher', () => {
       ],
     });
 
-    // Spy on constructor via the mock class
-    const origPush = OrigClient.prototype.pushContainerMap;
-    OrigClient.prototype.pushContainerMap = async function(this: { ip: string }, req: unknown) {
-      clientIps.push(this.ip);
-      return origPush.call(this, req);
-    };
-
     const pusher = new EgressContainerMapPusher(prisma);
     pusher.start();
     await vi.runAllTimersAsync();
 
-    // Both env IPs should have been called
-    expect(clientIps).toContain('172.30.0.2');
-    expect(clientIps).toContain('172.31.0.2');
+    expect(seenEnvIds).toContain('env-1');
+    expect(seenEnvIds).toContain('env-2');
 
-    // Restore
-    OrigClient.prototype.pushContainerMap = origPush;
-
+    containerMapInterceptor = null;
     pusher.stop();
   });
 

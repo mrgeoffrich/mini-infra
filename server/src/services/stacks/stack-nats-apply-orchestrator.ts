@@ -6,8 +6,10 @@ import {
   type TemplateContextEnvironment,
 } from "./template-engine";
 import { mergeParameterValues } from "./utils";
+import { NatsBus } from "../nats/nats-bus";
 import { getNatsControlPlaneService, natsSignerSeedKvPath } from "../nats/nats-control-plane-service";
 import { NatsPrefixAllowlistService } from "../nats/nats-prefix-allowlist-service";
+import { ensureEgressGatewaySeeded } from "../nats/system-nats-bootstrap";
 import { generateScopedSigningKey } from "../nats/nats-key-manager";
 import { getVaultKVService } from "../vault/vault-kv-service";
 import { getLogger } from "../../lib/logger-factory";
@@ -52,6 +54,14 @@ export async function runStackNatsApplyPhase(
     },
   });
   if (!stack?.templateId || stack.templateVersion == null) return { status: "skipped" };
+
+  // Resolve the template's name so we can self-heal the system NATS seed
+  // for templates that depend on it (e.g. egress-gateway needs the
+  // `mini-infra.egress.gw` prefix-allowlist entry to clear validation).
+  const template = await prisma.stackTemplate.findUnique({
+    where: { id: stack.templateId },
+    select: { id: true, name: true },
+  });
 
   const templateVersion = await prisma.stackTemplateVersion.findFirst({
     where: { templateId: stack.templateId, version: stack.templateVersion },
@@ -107,6 +117,23 @@ export async function runStackNatsApplyPhase(
   const status = await getNatsControlPlaneService(prisma).getStatus();
   if (!status.configured && opts.requireNatsReady) {
     throw new Error("NATS is not configured; deploy the vault-nats stack before applying a NATS-bearing template");
+  }
+
+  // System NATS seed self-heal: if the boot-time seed failed (DB race on
+  // first install, or NATS not yet up), the prefix-allowlist + JetStream
+  // rows for the egress-gateway namespace would be missing — and the apply
+  // below would fail allowlist validation. Re-run the seed here for the
+  // egress-gateway template before going further. Idempotent on the
+  // happy path (every operation is upsert).
+  if (template && template.name === "egress-gateway") {
+    try {
+      await ensureEgressGatewaySeeded(prisma, new Map([[template.name, { id: template.id }]]));
+    } catch (err) {
+      getLogger("integrations", "nats-apply-orchestrator").warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "ensureEgressGatewaySeeded failed during stack apply (proceeding; allowlist validation may reject)",
+      );
+    }
   }
 
   try {
@@ -367,6 +394,12 @@ export async function runStackNatsApplyPhase(
     }
 
     await service.applyConfig();
+    // `applyConfig()` rotates the server's own bus credentials in Vault KV
+    // every run (alongside the per-account JWTs). Without forcing the
+    // running bus to re-read those creds, the live connection silently
+    // continues authenticating with a stale `.creds` blob — same lifecycle
+    // gap that bit Phase 1's `/api/nats/apply` route. Mirror that fix here.
+    NatsBus.getInstance().invalidateCreds();
     await service.applyJetStreamResources();
 
     const credentialRefByService = new Map(
@@ -606,12 +639,18 @@ async function materializeRole(args: {
   if (args.additionalSubscribeAbsolute && args.additionalSubscribeAbsolute.length > 0) {
     subscribeAllow.push(...args.additionalSubscribeAbsolute);
   }
-  // ALT-27: KV bucket access. KV subjects live in the `$KV.>` system tree,
-  // outside the stack's prefix, so they can't be expressed via the relative
-  // `publish`/`subscribe` lists. Each bucket B gets `$KV.B.>` on BOTH lists
-  // — KV Put needs pub, Get/watch needs sub. Defense-in-depth name re-check
-  // matches the schema regex so a corrupt DB row can't slip an injection
-  // vector through to the permission renderer.
+  // ALT-27 + ALT-28: KV bucket access. KV subjects live in the `$KV.>` and
+  // `$JS.API.>` system trees, outside the stack's prefix, so they can't be
+  // expressed via the relative `publish`/`subscribe` lists. Each bucket B
+  // gets:
+  //   - `$KV.B.>` on BOTH publish (Put) and subscribe (Get/watch)
+  //   - `$JS.API.STREAM.INFO.KV_B` on publish — the SDK's KV view binds
+  //     by calling stream-info on the underlying `KV_<bucket>` stream;
+  //     without this grant the first Put/Get fails with "Permissions
+  //     Violation" before the actual KV operation runs.
+  // Defense-in-depth name re-check matches the schema regex so a corrupt
+  // DB row can't slip an injection vector through to the permission
+  // renderer.
   for (const bucket of role.kvBuckets ?? []) {
     if (!/^[a-zA-Z0-9_-]+$/.test(bucket) || bucket.length === 0 || bucket.length > 100) {
       throw new Error(`NATS apply: role '${role.name}' kvBuckets entry '${bucket}' is invalid`);
@@ -619,6 +658,7 @@ async function materializeRole(args: {
     const subj = `$KV.${bucket}.>`;
     publishAllow.push(subj);
     subscribeAllow.push(subj);
+    publishAllow.push(`$JS.API.STREAM.INFO.KV_${bucket}`);
   }
 
   // Profile name: `<stackId>-<roleName>`. `stack.id` is opaque but

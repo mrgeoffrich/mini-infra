@@ -1,10 +1,10 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 8,
+  "builtinVersion": 10,
   "scope": "environment",
   "category": "infrastructure",
-  "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control",
+  "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control. Talks to the Mini Infra server over NATS (subjects under mini-infra.egress.gw.>).",
   "parameters": [
     {
       "name": "log-level",
@@ -13,30 +13,59 @@
       "description": "Log level for the egress gateway (debug, info, warn, error)"
     }
   ],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "nats", "optional": false }
+  ],
   "resourceOutputs": [
     { "type": "docker-network", "purpose": "egress", "joinSelf": true }
   ],
   "networks": [],
   "volumes": [],
+  "nats": {
+    "subjectPrefix": "mini-infra.egress.gw",
+    "roles": [
+      {
+        "name": "gw",
+        "publish": [
+          "rules.applied.>",
+          "container-map.applied.>",
+          "decisions"
+        ],
+        "subscribe": [
+          "rules.apply.>",
+          "container-map.apply.>"
+        ],
+        "kvBuckets": [
+          "egress-gw-health"
+        ],
+        "inboxAuto": "both"
+      }
+    ]
+  },
   "services": [
     {
       "serviceName": "egress-gateway",
       "serviceType": "Stateful",
       "dockerImage": "${EGRESS_GATEWAY_IMAGE_TAG}",
       "dockerTag": "latest",
+      "natsRole": "gw",
       "containerConfig": {
         "egressBypass": true,
         "env": {
           "LOG_LEVEL": "{{params.log-level}}",
           "PROXY_PORT": "3128",
-          "ADMIN_PORT": "8054"
+          "ENVIRONMENT_ID": "{{environment.id}}",
+          "STACK_ID": "{{stack.id}}"
+        },
+        "dynamicEnv": {
+          "NATS_URL": { "kind": "nats-url" },
+          "NATS_CREDS": { "kind": "nats-creds" }
         },
         "ports": [
-          { "containerPort": 3128, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false },
-          { "containerPort": 8054, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false }
+          { "containerPort": 3128, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false }
         ],
         "restartPolicy": "unless-stopped",
-        "joinResourceNetworks": ["egress"],
+        "joinResourceNetworks": ["egress", "nats"],
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },
       "dependsOn": [],

@@ -13,7 +13,8 @@
 
 import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
-import { EgressGatewayClient, type ContainerMapEntry } from './egress-gateway-client';
+import { type ContainerMapEntry } from './egress-gateway-client';
+import { pushContainerMapViaNats } from './egress-gateway-transport';
 import { getLogger } from '../../lib/logger-factory';
 import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
@@ -186,9 +187,8 @@ export class EgressContainerMapPusher {
         return;
       }
 
-      const client = new EgressGatewayClient(env.egressGatewayIp);
       state.version += 1;
-      const result = await client.pushContainerMap({
+      const result = await pushContainerMapViaNats(env.id, {
         version: state.version,
         entries,
       });
@@ -196,7 +196,7 @@ export class EgressContainerMapPusher {
       state.lastPushedFingerprint = fingerprint;
       log.info(
         { envId: env.id, envName: env.name, version: result.version, entryCount: result.entryCount },
-        'Container map pushed to gateway',
+        'Container map pushed to gateway via NATS',
       );
 
       // Emit gateway health — success

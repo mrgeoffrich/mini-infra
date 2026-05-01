@@ -44,6 +44,17 @@ const log = getLogger("platform", "nats-control-plane");
 const OPERATOR_NAME = "mini-infra-operator";
 const DEFAULT_ACCOUNT_NAME = "mini-infra-account";
 const DEFAULT_ACCOUNT_DISPLAY = "Mini Infra Account";
+/**
+ * The NATS system account is exclusively for `$SYS.>` administration. NATS
+ * 2.10+ refuses to enable JetStream on the system account ("jetstream can
+ * not be enabled on the system account") — so the system account must be
+ * separate from the default app account, even though they're both managed
+ * by Mini Infra. Phase 3 (ALT-28) introduced JetStream-bearing streams +
+ * KV buckets on `mini-infra-account`, which forced this split.
+ */
+const SYSTEM_ACCOUNT_NAME = "mini-infra-system";
+const SYSTEM_ACCOUNT_DISPLAY = "Mini Infra System";
+export const NATS_SYSTEM_ACCOUNT_KV_PATH = "shared/nats-accounts/mini-infra-system";
 
 export const NATS_OPERATOR_KV_PATH = "shared/nats-operator";
 export const NATS_CONFIG_KV_PATH = "shared/nats-config";
@@ -202,16 +213,42 @@ export class NatsControlPlaneService {
   }
 
   async ensureDefaultAccount(): Promise<NatsAccountInfo> {
+    // The default app account is NOT the system account — JetStream cannot
+    // be enabled on a system account, and Phase 3 puts streams + KV here.
+    // The `update.isSystem: false` clause migrates pre-Phase-3 rows where
+    // `mini-infra-account` was incorrectly marked as system.
     const account = await this.db.natsAccount.upsert({
       where: { name: DEFAULT_ACCOUNT_NAME },
       create: {
         name: DEFAULT_ACCOUNT_NAME,
         displayName: DEFAULT_ACCOUNT_DISPLAY,
         description: "Default NATS account managed by Mini Infra",
-        isSystem: true,
+        isSystem: false,
         seedKvPath: NATS_DEFAULT_ACCOUNT_KV_PATH,
       },
-      update: {},
+      update: { isSystem: false },
+    });
+    await this.ensureSystemAccount();
+    return serializeAccount(account);
+  }
+
+  /**
+   * Provision the dedicated system account (`mini-infra-system`). Idempotent.
+   * Called from `ensureDefaultAccount` so the bootstrap flow always sees
+   * both rows; nats-config-renderer picks the `isSystem: true` row to populate
+   * `system_account` in nats.conf.
+   */
+  private async ensureSystemAccount(): Promise<NatsAccountInfo> {
+    const account = await this.db.natsAccount.upsert({
+      where: { name: SYSTEM_ACCOUNT_NAME },
+      create: {
+        name: SYSTEM_ACCOUNT_NAME,
+        displayName: SYSTEM_ACCOUNT_DISPLAY,
+        description: "NATS system account ($SYS.> administration only)",
+        isSystem: true,
+        seedKvPath: NATS_SYSTEM_ACCOUNT_KV_PATH,
+      },
+      update: { isSystem: true },
     });
     return serializeAccount(account);
   }
@@ -396,17 +433,24 @@ export class NatsControlPlaneService {
     for (const account of accounts) {
       let accountSeed = await this.tryReadField(account.seedKvPath, FIELD_ACCOUNT_SEED);
       if (!accountSeed) {
-        const generated = await generateAccount(account.name, operatorKp);
+        const generated = await generateAccount(account.name, operatorKp, [], {
+          isSystem: account.isSystem,
+        });
         accountSeed = generated.seed;
         generatedSeeds = true;
       }
 
       const signingKeys = signingKeysByAccount.get(account.id) ?? [];
+      // System accounts must be minted without JetStream limits — NATS 2.10+
+      // fatal-exits at boot ("Not allowed to enable JetStream on the system
+      // account") if the system-account JWT carries `mem_storage` /
+      // `disk_storage` etc. App accounts get the full JS limit set.
       const accountMaterial = await reissueAccountJwt(
         account.name,
         accountSeed,
         operatorKp,
         signingKeys,
+        { isSystem: account.isSystem },
       );
       await kv.write(account.seedKvPath, {
         [FIELD_ACCOUNT_SEED]: accountSeed,
@@ -731,6 +775,74 @@ export class NatsControlPlaneService {
 
   async applyJetStreamResources(): Promise<void> {
     return this.serialize(() => this.applyJetStreamResourcesInner());
+  }
+
+  /**
+   * Idempotently ensure JetStream KV buckets exist on the system account.
+   * KV buckets are JetStream streams under the hood (named `KV_<bucket>`),
+   * but creating one requires admin permission on the account — which only
+   * the control plane has. App-level NATS roles (e.g. the egress-gateway's
+   * `gw` role) only get publish/subscribe on the bucket's subject namespace
+   * once the bucket exists, so the bucket must be pre-seeded by the server.
+   *
+   * Called from server boot for system-internal buckets (egress-gw-health,
+   * egress-fw-health, …). Caller passes the bucket spec list — keeping the
+   * spec out of this service avoids a third source of truth for bucket names.
+   */
+  async ensureSystemKvBuckets(
+    buckets: Array<{
+      name: string;
+      maxAgeSeconds?: number;
+      maxBytes?: number;
+      description?: string;
+    }>,
+  ): Promise<void> {
+    if (buckets.length === 0) return;
+    return this.serialize(async () => {
+      const account = await this.db.natsAccount.findUnique({
+        where: { name: DEFAULT_ACCOUNT_NAME },
+      });
+      if (!account) {
+        log.warn(
+          { account: DEFAULT_ACCOUNT_NAME },
+          "ensureSystemKvBuckets: default account missing; deferring",
+        );
+        return;
+      }
+      const creds = await this.mintAccountAdminCreds(account);
+      const url = await this.getInternalUrl();
+      const nc = await connect({
+        servers: url,
+        authenticator: credsAuthenticator(new TextEncoder().encode(creds)),
+        timeout: 5000,
+        reconnect: false,
+      });
+      try {
+        const js = nc.jetstream();
+        for (const b of buckets) {
+          // `views.kv` creates the underlying stream when missing (default
+          // `bindOnly: false`). Idempotent — calling twice for the same
+          // bucket is a metadata-only round-trip.
+          try {
+            await js.views.kv(b.name, {
+              ...(b.maxAgeSeconds !== undefined
+                ? { max_age: b.maxAgeSeconds * 1_000_000_000 }
+                : {}),
+              ...(b.maxBytes !== undefined ? { max_bytes: b.maxBytes } : {}),
+              ...(b.description ? { description: b.description } : {}),
+            });
+            log.info({ bucket: b.name }, "JetStream KV bucket ensured");
+          } catch (err) {
+            log.warn(
+              { bucket: b.name, err: err instanceof Error ? err.message : String(err) },
+              "ensureSystemKvBuckets: bucket create/update failed",
+            );
+          }
+        }
+      } finally {
+        await nc.drain();
+      }
+    });
   }
 
   private async applyJetStreamResourcesInner(): Promise<void> {

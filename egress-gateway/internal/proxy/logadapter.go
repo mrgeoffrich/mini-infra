@@ -9,12 +9,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// EgressEvent is the NDJSON shape written to stdout for the log ingester.
-// The `evt` field is always "tcp"; protocol is "connect" (HTTPS CONNECT) or "http".
+// EgressEvent is the canonical proxy-decision shape produced by the log hook.
+// Phase 3 (ALT-28) added EnvironmentId so the server-side consumer (which
+// drains a single shared JetStream stream across every env) can attribute
+// each decision to a tenant from the payload alone.
 type EgressEvent struct {
 	Evt            string  `json:"evt"`            // always "tcp"
 	Protocol       string  `json:"protocol"`       // "connect" | "http"
 	Ts             string  `json:"ts"`             // RFC3339Nano
+	EnvironmentId  string  `json:"environmentId"`  // env that produced the decision
 	SrcIp          string  `json:"srcIp"`
 	Target         string  `json:"target"`         // host:port for CONNECT, hostname for HTTP
 	Method         *string `json:"method,omitempty"` // HTTP method (HTTP forward only)
@@ -30,11 +33,17 @@ type EgressEvent struct {
 	MergedHits     int     `json:"mergedHits"`
 }
 
+// DecisionEmitter is the sink for canonical proxy decisions. The default
+// (`EmitToStdout`) preserves the legacy log-tail path; Phase 3's main.go
+// wires a JetStream-publishing emitter instead. Tests inject their own.
+type DecisionEmitter func(EgressEvent)
+
 var stdoutMu sync.Mutex
 
-// emitEgressEvent writes an EgressEvent as NDJSON to stdout.
-// Writes are serialised to prevent interleaved output.
-func emitEgressEvent(evt EgressEvent) {
+// EmitToStdout writes an EgressEvent as NDJSON to stdout — the legacy path,
+// kept for the feature-flagged `EGRESS_GATEWAY_LEGACY_ADMIN=true` mode and as
+// the safe default when no NATS publisher has been wired in yet.
+func EmitToStdout(evt EgressEvent) {
 	if evt.Ts == "" {
 		evt.Ts = time.Now().UTC().Format(time.RFC3339Nano)
 	}
@@ -98,7 +107,10 @@ func toInt64(v any) (int64, bool) {
 //   - "inbound_remote_addr"  → SrcIp
 //   - "requested_host"       → Target
 //   - "role"                 → StackId
-type NDJSONLogHook struct{}
+type NDJSONLogHook struct {
+	emit          DecisionEmitter
+	environmentId string
+}
 
 // Levels returns the logrus levels that should trigger this hook.
 // Info covers allowed decisions; Warn covers denied decisions.
@@ -115,6 +127,21 @@ func (h *NDJSONLogHook) Fire(entry *logrus.Entry) error {
 		h.handleConnClose(entry)
 	}
 	return nil
+}
+
+// emitOrFallback dispatches the decision through the configured emitter,
+// falling back to stdout if (somehow) none was wired. The default
+// constructor always sets one — this branch only fires for tests that
+// pass a nil emitter explicitly.
+func (h *NDJSONLogHook) emitOrFallback(evt EgressEvent) {
+	if h.environmentId != "" {
+		evt.EnvironmentId = h.environmentId
+	}
+	if h.emit != nil {
+		h.emit(evt)
+		return
+	}
+	EmitToStdout(evt)
 }
 
 // handleDecision handles CANONICAL-PROXY-DECISION log entries (HTTP forward
@@ -170,7 +197,7 @@ func (h *NDJSONLogHook) handleDecision(entry *logrus.Entry) {
 		evt.BytesDown = v
 	}
 
-	emitEgressEvent(evt)
+	h.emitOrFallback(evt)
 }
 
 // handleConnClose handles CANONICAL-PROXY-CN-CLOSE log entries. This fires
@@ -212,10 +239,26 @@ func (h *NDJSONLogHook) handleConnClose(entry *logrus.Entry) {
 		evt.BytesDown = v
 	}
 
-	emitEgressEvent(evt)
+	h.emitOrFallback(evt)
 }
 
-// NewNDJSONLogHook constructs the hook.
+// NewNDJSONLogHook constructs the hook with the legacy stdout emitter. Kept
+// for the feature-flagged legacy path and existing tests; production wires
+// `NewNDJSONLogHookWithEmitter` from main.go.
 func NewNDJSONLogHook() *NDJSONLogHook {
-	return &NDJSONLogHook{}
+	return &NDJSONLogHook{emit: EmitToStdout}
+}
+
+// NewNDJSONLogHookWithEmitter constructs the hook with a custom decision
+// emitter (e.g. JetStream-publish) and an environment id stamped on every
+// decision. EnvironmentId is required by the server-side consumer to
+// attribute decisions when the JetStream stream is shared across envs.
+func NewNDJSONLogHookWithEmitter(environmentId string, emit DecisionEmitter) *NDJSONLogHook {
+	if emit == nil {
+		emit = EmitToStdout
+	}
+	return &NDJSONLogHook{
+		emit:          emit,
+		environmentId: environmentId,
+	}
 }

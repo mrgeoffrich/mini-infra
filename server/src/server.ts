@@ -65,6 +65,7 @@ import { seedVaultPolicies } from "./services/vault/vault-seed";
 import { getNatsControlPlaneService } from "./services/nats/nats-control-plane-service";
 import { NatsBus } from "./services/nats/nats-bus";
 import { registerPingResponder } from "./services/nats/nats-bus-ping";
+import { seedSystemNatsResources } from "./services/nats/system-nats-bootstrap";
 import {
   startEgressBackgroundServices,
   bootstrapFwAgentStack,
@@ -300,6 +301,21 @@ const initializeServices = async () => {
     console.log("[STARTUP] Syncing built-in stack definitions...");
     const templateByName = await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
+
+    // Seed system-owned NATS rows (prefix allowlist entries for the
+    // `mini-infra.>` namespace, JetStream streams + consumers shared across
+    // env-scoped sidecars). Idempotent. Non-fatal — without these rows the
+    // egress-gateway stack apply will fail allowlist validation, but a
+    // bootstrap-time failure here shouldn't block the rest of the server.
+    try {
+      await seedSystemNatsResources(prisma, templateByName);
+      console.log("[STARTUP] ✓ System NATS resources seeded");
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Failed to seed system NATS resources (non-fatal — will retry on next boot)",
+      );
+    }
 
     // ALT-27: bootstrap the egress-fw-agent stack now that the template
     // is in the DB. Two phases:

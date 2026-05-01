@@ -190,6 +190,15 @@ export interface JsHandlerContext {
   timestampMs: number;
   /** Headers from the original publish, if any. */
   headers: Record<string, string> | null;
+  /**
+   * Acknowledge the JetStream message manually. Only takes effect when the
+   * consume registration was created with `ack: 'manual'`; in `'auto'` mode
+   * the bus calls this on handler success (calling it from the handler then
+   * is a no-op). Idempotent — repeat calls do nothing. Phase 3 uses this so
+   * a decision is only acked after its EgressEvent row has hit the DB
+   * (ack-after-persist), not after the handler enqueues into the batcher.
+   */
+  ack: () => void;
 }
 
 export interface JsConsumeOptions extends SubscribeOptions {
@@ -708,7 +717,6 @@ export class NatsBus {
     for await (const msg of messages) {
       const ctx = jsContextFromMsg(msg);
       const work = (async () => {
-        let acked = false;
         try {
           const raw = msg.data.length === 0 ? undefined : JSON.parse(DECODER.decode(msg.data));
           const body = reg.opts.unchecked
@@ -716,8 +724,10 @@ export class NatsBus {
             : this.validateRequest(reg.subjectForSchema, raw);
           await reg.handler(body, ctx);
           if (ackMode === "auto") {
-            msg.ack();
-            acked = true;
+            // ctx.ack is idempotent, so a manual-ack handler that mistakenly
+            // ran on an auto-ack registration produces a single ack rather
+            // than a double-ack protocol error.
+            ctx.ack();
           }
         } catch (err) {
           log.error(
@@ -731,12 +741,10 @@ export class NatsBus {
             },
             "jetstream handler failed; nak for redelivery",
           );
-          if (!acked) {
-            try {
-              msg.nak();
-            } catch {
-              // best-effort — server-side ack-wait will redeliver anyway
-            }
+          try {
+            msg.nak();
+          } catch {
+            // best-effort — server-side ack-wait will redeliver anyway
           }
         }
       })();
@@ -1063,12 +1071,26 @@ function jsContextFromMsg(msg: JsMsg): JsHandlerContext {
     }
     headerMap = Object.keys(out).length > 0 ? out : null;
   }
+  // Idempotent ack closure. The bus's auto-ack path checks the same flag so
+  // a double-ack from "handler called ack() then auto-ack fires" is a no-op
+  // rather than a JetStream protocol error.
+  let acked = false;
+  const ack = () => {
+    if (acked) return;
+    acked = true;
+    try {
+      msg.ack();
+    } catch {
+      // Best-effort — server-side ack-wait will redeliver if this drops.
+    }
+  };
   return {
     subject: msg.subject,
     streamSeq: msg.seq,
     deliveryAttempt: msg.info.deliveryCount,
     timestampMs: Math.floor(Number(msg.info.timestampNanos) / 1_000_000),
     headers: headerMap,
+    ack,
   };
 }
 

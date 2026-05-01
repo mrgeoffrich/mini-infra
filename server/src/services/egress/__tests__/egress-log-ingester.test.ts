@@ -1,24 +1,17 @@
 /**
- * Tests for EgressLogIngester (internal logic)
+ * Tests for EgressLogIngester — fw-agent log-attach path only.
  *
- * We test the ingester's behaviour via the exported EgressLogIngester class,
- * but most logic lives in the private GatewayTailer and FwAgentTailer. We
- * test it indirectly by exercising the public `start()` method with mocked
- * DockerService and Prisma, and by triggering synthetic log lines.
+ * The gateway-side path no longer goes through Docker log-attach (Phase 3 /
+ * ALT-28 moved it onto a JetStream durable consumer). Those tests live in
+ * `egress-decisions-consumer.test.ts`. The fw-agent tailer continues to
+ * use Docker log-attach until ALT-27 (Phase 2) lands.
  *
- * Key behaviours tested:
- *  1. Only recognised evt types are ingested; others are ignored.
- *  2. Lines without a stackId are dropped.
- *  3. Lines whose stackId has no matching EgressPolicy are dropped.
- *  4. Dedup window collapses repeated entries within 60 s.
- *  5. EgressRule.hits is bumped when matchedPattern is set.
- *  6. tcp/connect events persist target/bytes/matchedPattern.
- *  7. tcp/http events persist method/path/status/bytesDown.
- *  8. fw_drop events persist destIp/destPort/protocol/reason.
- *  9. fw_drop dedup collapses repeated (policyId, service, srcIp, destIp, destPort, protocol).
- * 10. fw_drop without stackId is dropped.
- * 11. fw_drop dedup window expiry starts a fresh window.
- * 12. fw_drop with no matching EgressPolicy is dropped.
+ * Key behaviours tested here:
+ *  1. fw_drop events persist destIp/destPort/protocol/reason.
+ *  2. fw_drop dedup collapses repeated (policyId, service, srcIp, destIp, destPort, protocol).
+ *  3. fw_drop without stackId is dropped.
+ *  4. fw_drop dedup window expiry starts a fresh window.
+ *  5. fw_drop with no matching EgressPolicy is dropped.
  */
 
 import { EgressLogIngester } from '../egress-log-ingester';
@@ -56,6 +49,18 @@ const mockDockerInstance = {
  * (the wrapper) which returns DockerContainerInfo[] with a `labels` field.
  */
 const mockDockerServiceListContainers = vi.fn();
+
+// EgressLogIngester now boots an EgressDecisionsConsumer that registers a
+// JetStream consumer through NatsBus.getInstance(). For these fw-agent tests
+// we don't exercise the bus at all — stub `jsConsume` to a no-op cancel handle
+// so `EgressDecisionsConsumer.start()` succeeds quietly.
+vi.mock('../../nats/nats-bus', () => ({
+  NatsBus: {
+    getInstance: () => ({
+      jsConsume: vi.fn(() => () => undefined),
+    }),
+  },
+}));
 
 vi.mock('../../docker', () => ({
   default: {
@@ -259,362 +264,6 @@ describe('EgressLogIngester', () => {
     vi.clearAllMocks();
   });
 
-  // -------------------------------------------------------------------------
-  // Only dns.query lines are ingested (existing behaviour)
-  // -------------------------------------------------------------------------
-
-  it('ingests dns.query lines and ignores other evt types', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} }); // idle fw-agent stream
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    // Push a dns.query line and unrecognised event lines
-    pushLine(makeDnsQueryLine());
-    pushLine({ ts: new Date().toISOString(), level: 'info', evt: 'startup', msg: 'listening' });
-    pushLine({ ts: new Date().toISOString(), level: 'info', evt: 'admin.rules-update', version: 1 });
-
-    // Advance to trigger flush
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    // Only the dns.query line should produce a row
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: { destination: string }[] }];
-    expect(args.data).toHaveLength(1);
-    expect(args.data[0].destination).toBe('api.example.com');
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // Policy lookup miss drops event
-  // -------------------------------------------------------------------------
-
-  it('drops events when stackId has no matching EgressPolicy', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma({ policy: null }); // no policy found
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeDnsQueryLine({ stackId: 'unknown-stack' }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).not.toHaveBeenCalled();
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // Lines without stackId are dropped
-  // -------------------------------------------------------------------------
-
-  it('drops events without stackId', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    // Push a line without stackId
-    pushLine(makeDnsQueryLine({ stackId: undefined }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).not.toHaveBeenCalled();
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // Dedup window collapses repeated entries
-  // -------------------------------------------------------------------------
-
-  it('collapses repeated (policyId, service, destination, action) within 60 s window', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    // Push 5 identical lines — same key
-    for (let i = 0; i < 5; i++) {
-      pushLine(makeDnsQueryLine({ qname: 'api.openai.com', action: 'observed', stackId: 'stk-1', serviceName: 'web' }));
-    }
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    // Only the first occurrence should be flushed — the rest are deduped
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: { mergedHits: number }[] }];
-    expect(args.data).toHaveLength(1);
-    // mergedHits should be 1 (from the sidecar line)
-    expect(args.data[0].mergedHits).toBe(1);
-
-    ingester.stop();
-  });
-
-  it('starts a fresh window after the dedup window expires', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    // First occurrence
-    pushLine(makeDnsQueryLine({ qname: 'api.openai.com', action: 'observed' }));
-    await vi.advanceTimersByTimeAsync(1500);
-
-    // Advance past 60-second dedup window
-    await vi.advanceTimersByTimeAsync(61_000);
-
-    // Second occurrence after window expiry — should produce a new row
-    pushLine(makeDnsQueryLine({ qname: 'api.openai.com', action: 'observed' }));
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).toHaveBeenCalledTimes(2);
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // EgressRule.hits is bumped when matchedPattern is set
-  // -------------------------------------------------------------------------
-
-  it('bumps EgressRule.hits when matchedPattern is present', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = makePrisma({ egressRuleUpdateMany: updateMany });
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeDnsQueryLine({
-      qname: 'api.openai.com',
-      matchedPattern: 'api.openai.com',
-      action: 'allowed',
-    }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    expect(updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { policyId: 'policy-1', pattern: 'api.openai.com' },
-        data: expect.objectContaining({ hits: { increment: 1 } }),
-      }),
-    );
-
-    ingester.stop();
-  });
-
-  it('does not bump EgressRule.hits when matchedPattern is absent', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
-    const prisma = makePrisma({ egressRuleUpdateMany: updateMany });
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    // Line with no matchedPattern
-    pushLine(makeDnsQueryLine({ matchedPattern: undefined }));
-    await vi.advanceTimersByTimeAsync(1500);
-
-    expect(updateMany).not.toHaveBeenCalled();
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // tcp/connect events
-  // -------------------------------------------------------------------------
-
-  it('parses tcp connect event (allowed) and persists target/bytes/matchedPattern', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeTcpConnectLine({
-      target: 'api.example.com:443',
-      action: 'allowed',
-      matchedPattern: '*.example.com',
-      bytesUp: 1024,
-      bytesDown: 4096,
-    }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
-    const row = args.data[0];
-    expect(row.destination).toBe('api.example.com:443');
-    expect(row.target).toBe('api.example.com:443');
-    expect(row.protocol).toBe('connect');
-    expect(row.action).toBe('allowed');
-    expect(row.matchedPattern).toBe('*.example.com');
-    expect(row.bytesUp).toBe(BigInt(1024));
-    expect(row.bytesDown).toBe(BigInt(4096));
-    expect(row.reason).toBeNull();
-
-    ingester.stop();
-  });
-
-  it('parses tcp connect event (blocked) and persists reason', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeTcpConnectLine({
-      target: 'evil.example.com:443',
-      action: 'blocked',
-      reason: 'rule-deny',
-      matchedPattern: undefined,
-      bytesUp: undefined,
-      bytesDown: undefined,
-    }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
-    const row = args.data[0];
-    expect(row.action).toBe('blocked');
-    expect(row.reason).toBe('rule-deny');
-    expect(row.bytesUp).toBeNull();
-    expect(row.bytesDown).toBeNull();
-
-    ingester.stop();
-  });
-
-  // -------------------------------------------------------------------------
-  // tcp/http events
-  // -------------------------------------------------------------------------
-
-  it('parses tcp http event (allowed) and persists method/path/status/bytesDown', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeTcpHttpLine({
-      target: 'example.com',
-      method: 'GET',
-      path: '/api/v1/data',
-      status: 200,
-      bytesDown: 5678,
-      action: 'allowed',
-      matchedPattern: '*.example.com',
-    }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
-    const row = args.data[0];
-    expect(row.destination).toBe('example.com');
-    expect(row.target).toBe('example.com');
-    expect(row.method).toBe('GET');
-    expect(row.path).toBe('/api/v1/data');
-    expect(row.status).toBe(200);
-    expect(row.bytesDown).toBe(BigInt(5678));
-    expect(row.bytesUp).toBeNull();
-    expect(row.protocol).toBe('http');
-    expect(row.action).toBe('allowed');
-    expect(row.matchedPattern).toBe('*.example.com');
-
-    ingester.stop();
-  });
-
-  it('parses tcp http event (blocked) and persists reason', async () => {
-    const { stream, pushLine } = makeLogStream();
-    const fwAgentStream = new Readable({ read() {} });
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'gw-container-1' ? stream : fwAgentStream),
-    }));
-
-    const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
-
-    pushLine(makeTcpHttpLine({
-      target: 'blocked.example.com',
-      method: 'POST',
-      path: '/submit',
-      action: 'blocked',
-      reason: 'ip-literal',
-      status: undefined,
-      bytesDown: undefined,
-      matchedPattern: undefined,
-    }));
-
-    await vi.advanceTimersByTimeAsync(1500);
-
-    const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
-    expect(createMany).toHaveBeenCalledTimes(1);
-    const [args] = createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
-    const row = args.data[0];
-    expect(row.action).toBe('blocked');
-    expect(row.reason).toBe('ip-literal');
-    expect(row.status).toBeNull();
-    expect(row.bytesDown).toBeNull();
-    expect(row.matchedPattern).toBeNull();
-
-    ingester.stop();
-  });
 
   // -------------------------------------------------------------------------
   // fw_drop events (ALT-27 — now via JetStream durable consumer)

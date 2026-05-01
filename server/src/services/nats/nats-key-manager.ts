@@ -48,8 +48,14 @@ const TEXT_ENCODER = new TextEncoder();
 /**
  * Wide-open account limits. We use NATS auth to scope individual users via
  * pub/sub allow-lists; account-level caps would just add noise here.
+ *
+ * The JetStream limits are required even when the server has JetStream
+ * enabled — NATS gates JetStream per-account via the account JWT, and a
+ * JWT without these fields is "JetStream not enabled for account". `-1`
+ * means unlimited; we lean on stream-level `max_bytes` / `max_age` to
+ * actually bound disk usage.
  */
-const DEFAULT_ACCOUNT_LIMITS = {
+const BASE_ACCOUNT_LIMITS = {
   conn: -1,
   subs: -1,
   data: -1,
@@ -60,6 +66,34 @@ const DEFAULT_ACCOUNT_LIMITS = {
   leaf: -1,
   disallow_bearer: false,
 };
+
+/**
+ * App-account limits enable JetStream (Phase 3 / ALT-28). Without these
+ * the account is JetStream-disabled even though the server has JetStream
+ * on. `-1` is unlimited; we lean on per-stream `max_bytes` / `max_age` to
+ * bound disk usage.
+ */
+const DEFAULT_ACCOUNT_LIMITS = {
+  ...BASE_ACCOUNT_LIMITS,
+  mem_storage: -1,
+  disk_storage: -1,
+  streams: -1,
+  consumer: -1,
+  mem_max_stream_bytes: -1,
+  disk_max_stream_bytes: -1,
+  max_bytes_required: false,
+  max_ack_pending: -1,
+};
+
+/**
+ * System-account limits intentionally OMIT JetStream — NATS 2.10+ refuses
+ * to enable JetStream on the system account ("Not allowed to enable
+ * JetStream on the system account") and a fatal-exits at boot if the
+ * account JWT carries `mem_storage` or `disk_storage`. The system account
+ * is for `$SYS.>` administration only; JetStream lives on the default app
+ * account.
+ */
+const SYSTEM_ACCOUNT_LIMITS = { ...BASE_ACCOUNT_LIMITS };
 
 /** Decode an NKey seed string into a KeyPair. */
 export function loadKeyPair(seed: string): KeyPair {
@@ -86,19 +120,26 @@ export async function reissueOperatorJwt(
   return { seed: operatorSeed, publicKey, jwt };
 }
 
+export interface AccountMintOptions {
+  /** When true, mint with system-only limits (no JetStream). Default false. */
+  isSystem?: boolean;
+}
+
 /** Generate a fresh account key pair and sign its JWT with the operator. */
 export async function generateAccount(
   name: string,
   operatorKp: KeyPair,
   signingKeys: SigningKey[] = [],
+  opts: AccountMintOptions = {},
 ): Promise<AccountMaterial> {
   const kp = createAccount();
   const seed = TEXT_DECODER.decode(kp.getSeed());
   const publicKey = kp.getPublicKey();
+  const limits = opts.isSystem ? SYSTEM_ACCOUNT_LIMITS : DEFAULT_ACCOUNT_LIMITS;
   const jwt = await encodeAccount(
     name,
     kp,
-    { limits: DEFAULT_ACCOUNT_LIMITS, signing_keys: signingKeys },
+    { limits, signing_keys: signingKeys },
     { signer: operatorKp },
   );
   return { seed, publicKey, jwt };
@@ -115,13 +156,15 @@ export async function reissueAccountJwt(
   accountSeed: string,
   operatorKp: KeyPair,
   signingKeys: SigningKey[] = [],
+  opts: AccountMintOptions = {},
 ): Promise<AccountMaterial> {
   const kp = loadKeyPair(accountSeed);
   const publicKey = kp.getPublicKey();
+  const limits = opts.isSystem ? SYSTEM_ACCOUNT_LIMITS : DEFAULT_ACCOUNT_LIMITS;
   const jwt = await encodeAccount(
     name,
     kp,
-    { limits: DEFAULT_ACCOUNT_LIMITS, signing_keys: signingKeys },
+    { limits, signing_keys: signingKeys },
     { signer: operatorKp },
   );
   return { seed: accountSeed, publicKey, jwt };
@@ -178,8 +221,18 @@ export async function mintSystemUserCreds(
  * Mint a long-lived `.creds` blob for the server's own NATS bus connection.
  * The credential is bound to the default (non-system) account and scoped to
  * the `mini-infra.>` system-internal namespace plus `_INBOX.>` for req/reply
- * inboxes. Re-minted on every `applyConfig()` so a leaked KV blob is
- * invalidated by the next apply rather than living until manual intervention.
+ * inboxes, plus the JetStream control plane (`$JS.API.>`, `$JS.ACK.>`) and
+ * KV (`$KV.>`) so the server bus can use JetStream streams, durable
+ * consumers, and KV buckets directly. Re-minted on every `applyConfig()`
+ * so a leaked KV blob is invalidated by the next apply rather than living
+ * until manual intervention.
+ *
+ * Phase 1 only needed `mini-infra.>` (smoke-ping req/reply). Phase 3 added
+ * the JetStream and KV grants because the server now drives JetStream
+ * publishes / consumes / KV puts directly through the bus instead of through
+ * a separate admin-creds connection. Without these permissions the bus
+ * connects but the first `consumer.consume()` fails with
+ * `Permissions Violation for Publish to "$JS.API.CONSUMER.INFO.<…>"`.
  */
 export async function mintServerBusUserCreds(
   defaultAccountKp: KeyPair,
@@ -188,8 +241,8 @@ export async function mintServerBusUserCreds(
     "mini-infra-server-bus",
     defaultAccountKp,
     {
-      pub: ["mini-infra.>"],
-      sub: ["mini-infra.>", "_INBOX.>"],
+      pub: ["mini-infra.>", "$JS.API.>", "$JS.ACK.>", "$KV.>"],
+      sub: ["mini-infra.>", "_INBOX.>", "$JS.API.>", "$KV.>"],
     },
     0,
   );
