@@ -57,12 +57,44 @@ export const EgressFwSubject = {
   health: "mini-infra.egress.fw.health",
 } as const;
 
-/** Phase 3: egress gateway subjects. Reserved. */
+/**
+ * Phase 3: egress gateway subjects.
+ *
+ * The gateway is environment-scoped — there's one container per env. To route
+ * commands to a specific gateway, the server appends an `<envId>` token at
+ * runtime (e.g. `mini-infra.egress.gw.rules.apply.<envId>`). The constants
+ * here are the BASE prefixes; never publish on the bare constant for
+ * `rulesApply` / `rulesApplied` / `containerMapApply` / `containerMapApplied`
+ * / `health` — there's nothing listening.
+ *
+ * `decisions` is the exception: a single shared stream across every env, with
+ * `environmentId` carried in the payload. One server-side consumer drains the
+ * full firehose.
+ */
 export const EgressGwSubject = {
+  /** Command (req/reply, per-env): `<rulesApply>.<envId>` — server pushes a new ruleset. */
   rulesApply: "mini-infra.egress.gw.rules.apply",
+  /** Event (per-env): `<rulesApplied>.<envId>` — gateway acknowledges an apply. */
   rulesApplied: "mini-infra.egress.gw.rules.applied",
-  /** Event stream: per-decision proxy verdicts; JetStream durable. */
+  /**
+   * Command (req/reply, per-env): `<containerMapApply>.<envId>` — server
+   * pushes the container-IP-to-stack map. Replaces `POST /admin/container-map`
+   * on the legacy admin port.
+   */
+  containerMapApply: "mini-infra.egress.gw.container-map.apply",
+  /** Event (per-env): `<containerMapApplied>.<envId>` — gateway acknowledges a container-map apply. */
+  containerMapApplied: "mini-infra.egress.gw.container-map.applied",
+  /**
+   * Event stream (shared, JetStream `EgressGwDecisions`): every proxy
+   * decision from every env. `environmentId` lives in the payload so the
+   * server consumer can attribute. Work-queue retention; survives gateway
+   * restart — that's the headline win over the old log-tail.
+   */
   decisions: "mini-infra.egress.gw.decisions",
+  /**
+   * Heartbeat (KV bucket `egress-gw-health`, key = envId): periodic snapshot
+   * of the gateway's current state. Latest-only via KV; no JetStream stream.
+   */
   health: "mini-infra.egress.gw.health",
 } as const;
 
@@ -112,6 +144,26 @@ export const NatsStream = {
 } as const;
 
 /**
+ * Durable JetStream consumer names, named `<stream>-<subscriber>` per the
+ * convention in `internal-nats-messaging-plan.md` §4.4. Same constant lives
+ * on both the seeder (server) and the ingester (server consumer) so a
+ * rename only needs touching one place.
+ */
+export const NatsConsumer = {
+  egressGwDecisionsServer: "EgressGwDecisions-server",
+  egressFwEventsServer: "EgressFwEvents-server",
+} as const;
+
+/**
+ * JetStream KV bucket names. Used for last-known-state heartbeats where
+ * subscribers latch the most recent value (see plan doc §4.3).
+ */
+export const NatsKvBucket = {
+  egressGwHealth: "egress-gw-health",
+  egressFwHealth: "egress-fw-health",
+} as const;
+
+/**
  * Flat array of every concrete subject this file declares. Used by the
  * TS↔Go drift check to compare against the Go mirror without having to know
  * the grouping shape.
@@ -124,6 +176,8 @@ export const ALL_NATS_SUBJECTS: readonly string[] = [
   EgressFwSubject.health,
   EgressGwSubject.rulesApply,
   EgressGwSubject.rulesApplied,
+  EgressGwSubject.containerMapApply,
+  EgressGwSubject.containerMapApplied,
   EgressGwSubject.decisions,
   EgressGwSubject.health,
   BackupSubject.run,

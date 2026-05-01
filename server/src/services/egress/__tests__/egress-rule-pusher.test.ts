@@ -19,35 +19,51 @@ vi.mock('../../../lib/logger-factory', () => ({
 }));
 
 // Track pushRules calls — module-level so the mock closure can reference it.
+// Phase 3: rule pushes go via NATS through `egress-gateway-transport`. The
+// shape recorded here is the same one we used to send via HTTP, since the
+// test only cares about the version + stackPolicies snapshot, not the wire
+// format.
 const pushRulesCalls: Array<{ version: number; stackPolicies: Record<string, unknown> }> = [];
 
 // Interceptor hook — tests may replace this to control gateway behaviour.
 // Default: always succeed.
 let gatewayInterceptor: ((req: {
+  environmentId: string;
   version: number;
   stackPolicies: Record<string, unknown>;
 }) => Promise<{ version: number; ruleCount: number; stackCount: number; accepted: boolean }>) | null = null;
 
-vi.mock('../egress-gateway-client', () => ({
-  EgressGatewayClient: class {
-    readonly ip: string;
-    constructor(ip: string) {
-      this.ip = ip;
+// Stub the NATS-backed transport. The pusher used to instantiate
+// `EgressGatewayClient` directly; now it calls `pushRulesViaNats`. We mock
+// the latter to capture invocations and let tests inject failure modes.
+vi.mock('../egress-gateway-transport', () => ({
+  pushRulesViaNats: async (
+    environmentId: string,
+    request: { version: number; stackPolicies: Record<string, unknown> },
+  ) => {
+    if (gatewayInterceptor) {
+      return gatewayInterceptor({ environmentId, ...request });
     }
-    async pushRules(req: { version: number; stackPolicies: Record<string, unknown> }) {
-      if (gatewayInterceptor) {
-        return gatewayInterceptor(req);
-      }
-      pushRulesCalls.push({ version: req.version, stackPolicies: req.stackPolicies });
-      return {
-        version: req.version,
-        ruleCount: Object.values(req.stackPolicies).reduce(
-          (acc, p) => acc + ((p as { rules: unknown[] }).rules?.length ?? 0),
-          0,
-        ),
-        stackCount: Object.keys(req.stackPolicies).length,
-        accepted: true as const,
-      };
+    pushRulesCalls.push({ version: request.version, stackPolicies: request.stackPolicies });
+    return {
+      version: request.version,
+      ruleCount: Object.values(request.stackPolicies).reduce(
+        (acc, p) => acc + ((p as { rules: unknown[] }).rules?.length ?? 0),
+        0,
+      ),
+      stackCount: Object.keys(request.stackPolicies).length,
+      accepted: true as const,
+    };
+  },
+  // The pusher reads gateway health from the KV bucket on success; stub
+  // returns null so the rule-pusher's defaults kick in (used only to populate
+  // the UI emit, irrelevant to these assertions).
+  readGatewayHealth: async () => null,
+  EgressGatewayTransportError: class extends Error {
+    status: string;
+    constructor(message: string, status: string) {
+      super(message);
+      this.status = status;
     }
   },
 }));

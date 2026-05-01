@@ -1,6 +1,14 @@
 // Mock environment variables for testing
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
+// Some unit tests transitively import modules that load prisma at module
+// scope (e.g. services/docker.ts → lib/prisma.ts), and prisma's DB-URL
+// parser throws if DATABASE_URL is unset. Unit tests don't actually touch
+// the DB — every Prisma call is mocked — but the import chain still
+// resolves at fork startup. A benign in-memory file URL keeps the parser
+// happy without creating any real DB. Integration tests overwrite this in
+// setup-integration.ts.
+process.env.DATABASE_URL = process.env.DATABASE_URL ?? "file::memory:?cache=shared";
 
 import { internalSecrets } from "../lib/security-config";
 

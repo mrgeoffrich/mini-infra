@@ -20,10 +20,8 @@
  */
 
 import type { PrismaClient } from '../../generated/prisma/client';
-import {
-  EgressGatewayClient,
-  type StackPolicyEntry,
-} from './egress-gateway-client';
+import { type StackPolicyEntry } from './egress-gateway-client';
+import { pushRulesViaNats, readGatewayHealth } from './egress-gateway-transport';
 import { getLogger } from '../../lib/logger-factory';
 import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
@@ -252,10 +250,12 @@ export class EgressRulePusher {
   private async _pushEnvWithRetry(env: EnvRow, state: EnvPushState): Promise<void> {
     const attempt = async (): Promise<void> => {
       const { snapshot, policyIds } = await this._buildSnapshot(env.id);
-      const client = new EgressGatewayClient(env.egressGatewayIp);
       state.version += 1;
 
-      const result = await client.pushRules({
+      // Push via NATS request/reply on `mini-infra.egress.gw.rules.apply.<envId>`.
+      // The gateway's reply is Zod-validated by NatsBus on the way back; a
+      // non-accepted reply throws (see EgressGatewayTransportError).
+      const result = await pushRulesViaNats(env.id, {
         version: state.version,
         stackPolicies: snapshot,
       });
@@ -276,8 +276,13 @@ export class EgressRulePusher {
           ruleCount: result.ruleCount,
           stackCount: result.stackCount,
         },
-        'Rules snapshot pushed to gateway',
+        'Rules snapshot pushed to gateway via NATS',
       );
+
+      // Read the gateway's most recent heartbeat (KV bucket) so the UI
+      // emitter can attribute container-map state correctly. Best-effort —
+      // if the bucket isn't ready yet, we still emit success for rules.
+      const health = await readGatewayHealth(env.id);
 
       // Emit gateway health — success
       emitEgressGatewayHealth({
@@ -286,9 +291,8 @@ export class EgressRulePusher {
         ok: true,
         rulesVersion: state.version,
         appliedRulesVersion: state.version,
-        // Container-map version not known by the rule pusher — null safe defaults
-        containerMapVersion: 0,
-        appliedContainerMapVersion: null,
+        containerMapVersion: health?.containerMapVersion ?? 0,
+        appliedContainerMapVersion: health?.containerMapVersion ?? null,
         upstream: {
           servers: [],
           lastSuccessAt: new Date().toISOString(),

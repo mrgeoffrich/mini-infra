@@ -15,6 +15,7 @@ import { EgressNetworkAllocator } from '../egress/egress-network-allocator';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
 import { getEnvFirewallManager } from '../egress';
 import { StackReconciler } from '../stacks/stack-reconciler';
+import { runStackNatsApplyPhase } from '../stacks/stack-nats-apply-orchestrator';
 import DockerService from '../docker';
 
 export class EnvironmentManager {
@@ -781,11 +782,34 @@ export class EnvironmentManager {
       const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
       await egressPolicyLifecycle.ensureDefaultPolicy(egressStack.id, userId ?? null);
 
-      // Step 5: Apply the stack
+      // Step 5: Apply the stack.
+      //
+      // The egress-gateway template injects `NATS_CREDS` via dynamicEnv, which
+      // requires a `NatsCredentialProfile` row to exist for this stack before
+      // the reconciler resolves env. Normal user-driven applies go through
+      // `routes/stacks/stacks-apply-route.ts`, which calls
+      // `runStackNatsApplyPhase` for that purpose. The auto-provision shortcut
+      // here would otherwise skip it — fail-closed at `resolveVaultEnv` with
+      // "no NATS credential profile is bound". Phase 3 / ALT-28.
       try {
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
         const reconciler = new StackReconciler(dockerExecutor, this.prisma);
+
+        const natsPhase = await runStackNatsApplyPhase(this.prisma, egressStack.id, {
+          triggeredBy: userId ?? 'system',
+        });
+        if (natsPhase.status === 'error') {
+          this.logger.error(
+            { environmentId, stackId: egressStack.id, error: natsPhase.error },
+            'NATS apply phase failed; aborting egress gateway provisioning',
+          );
+          await this.userEventService.appendLogs(
+            userEventId,
+            `[${new Date().toISOString()}] WARNING: NATS apply failed: ${natsPhase.error ?? 'unknown'}`,
+          );
+          return;
+        }
 
         const applyResult = await reconciler.apply(egressStack.id, {
           triggeredBy: userId ?? 'system',
