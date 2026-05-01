@@ -308,3 +308,31 @@ describe('dynamicEnvSourceSchema — nats-signer-seed', () => {
     expect(r.success).toBe(false);
   });
 });
+
+// ─── DynamicEnvSource: nats-account-public parses ────────────────────────────
+
+describe('dynamicEnvSourceSchema — nats-account-public', () => {
+  it('nats-account-public dynamicEnv parses', async () => {
+    const { stackContainerConfigSchema } = await import('../services/stacks/schemas');
+    const r = stackContainerConfigSchema.safeParse({
+      dynamicEnv: { NATS_ACCOUNT_PUB: { kind: 'nats-account-public', signer: 'minter' } },
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it('nats-account-public with empty signer rejected', async () => {
+    const { stackContainerConfigSchema } = await import('../services/stacks/schemas');
+    const r = stackContainerConfigSchema.safeParse({
+      dynamicEnv: { NATS_ACCOUNT_PUB: { kind: 'nats-account-public', signer: '' } },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it('nats-account-public with invalid signer name rejected', async () => {
+    const { stackContainerConfigSchema } = await import('../services/stacks/schemas');
+    const r = stackContainerConfigSchema.safeParse({
+      dynamicEnv: { NATS_ACCOUNT_PUB: { kind: 'nats-account-public', signer: 'has spaces' } },
+    });
+    expect(r.success).toBe(false);
+  });
+});

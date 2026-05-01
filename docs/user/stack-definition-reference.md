@@ -228,6 +228,8 @@ Each key is an environment variable name. Each value must be one of:
 | `{ kind: "vault-addr" }` | Inject the Vault address. | Exact object shape. |
 | `{ kind: "vault-role-id" }` | Inject the bound Vault AppRole role ID. | Exact object shape. |
 | `{ kind: "vault-wrapped-secret-id", ttlSeconds: 300 }` | Inject a wrapped secret ID minted at apply time. | `ttlSeconds` is optional, integer `> 0`. If omitted, runtime default is `300`. |
+| `{ kind: "nats-signer-seed", signer: "<name>" }` | NKey seed (base32) of the named scoped signing key, for in-process JWT minting. | `signer` must match a `nats.signers[].name` on the stack template. |
+| `{ kind: "nats-account-public", signer: "<name>" }` | Public key of the NATS account that owns the named signer. Pair with `nats-signer-seed`; `nats-jwt`'s `encodeUser` requires it as the `issuer_account` claim. | `signer` must match a `nats.signers[].name` on the stack template. |
 
 Runtime notes:
 

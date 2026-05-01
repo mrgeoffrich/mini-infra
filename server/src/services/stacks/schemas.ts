@@ -105,6 +105,10 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
     kind: z.literal("nats-signer-seed"),
     signer: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "nats signer name may only contain letters, numbers, '_', '-'"),
   }),
+  z.object({
+    kind: z.literal("nats-account-public"),
+    signer: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "nats signer name may only contain letters, numbers, '_', '-'"),
+  }),
 ]);
 
 export const poolConfigSchema = z.object({
