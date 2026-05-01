@@ -6,7 +6,6 @@ import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getOwnContainerId } from "../services/self-update";
 import {
-  ensureFwAgent,
   restartFwAgent,
   findFwAgent,
   isFwAgentHealthy,
@@ -201,8 +200,13 @@ router.post(
             { operationId, totalSteps, stepNames: [...stepNames] },
           );
 
-          const result = await ensureFwAgent({
-            onProgress: (step, completedCount, total) => {
+          // ALT-27: /start now triggers the same stack-bootstrap apply as
+          // /restart. The legacy host-singleton had a meaningful "start vs
+          // restart" distinction (recreate-vs-reattach); a stack apply is
+          // idempotent and handles both. Keep the route for backward compat
+          // with the settings card that has separate buttons.
+          const result = await restartFwAgent({
+            onProgress: (step: OperationStep, completedCount: number, total: number) => {
               steps.push(step);
               try {
                 emitToChannel(

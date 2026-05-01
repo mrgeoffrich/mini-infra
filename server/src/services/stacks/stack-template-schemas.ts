@@ -161,6 +161,13 @@ export const templateNatsRoleSchema = z.object({
   publish: z.array(natsRelativeSubjectSchema).optional(),
   subscribe: z.array(natsRelativeSubjectSchema).optional(),
   inboxAuto: z.enum(["both", "reply", "request", "none"]).optional(),
+  // KV bucket names. Each materializes into `$KV.<bucket>.>` on both pub
+  // and sub at apply time. Bucket-name rules mirror NATS' validator:
+  // alphanumeric + `_`/`-`, ≤100 chars. The orchestrator constructs the
+  // absolute subject form so the schema only validates the bucket names.
+  kvBuckets: z
+    .array(z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "kvBuckets entry: alphanumeric + '_' / '-' only"))
+    .optional(),
   ttlSeconds: z.number().int().min(0).optional(),
 });
 

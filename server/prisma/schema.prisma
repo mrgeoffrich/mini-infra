@@ -1251,6 +1251,12 @@ model NatsState {
   kind                  String    @unique
   stackId               String?
   clientUrl             String?
+  /// Host-loopback NATS URL (e.g. nats://127.0.0.1:4222). Used by services
+  /// running in `network_mode: host` (egress-fw-agent), where the docker-DNS
+  /// `clientUrl` cannot resolve. Populated by `applyConfig()` from the
+  /// vault-nats stack's `nats-host-port` parameter; nullable until the
+  /// vault-nats stack is applied at least once.
+  clientHostUrl         String?
   monitorUrl            String?
   bootstrappedAt        DateTime?
   lastAppliedAt         DateTime?

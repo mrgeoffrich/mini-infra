@@ -1,14 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+/**
+ * Unit tests for the slimmed `fw-agent-sidecar.ts` (ALT-27).
+ *
+ * The legacy host-singleton flow (`ensureFwAgent`/`removeFwAgent`/Unix
+ * socket health checks) is gone — the fw-agent is now a stack template
+ * bootstrapped by `bootstrapFwAgentStack`. The surviving compatibility
+ * surface is small enough that focused tests are clearer than a re-do
+ * of the legacy mock matrix.
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockPrisma,
   mockListContainers,
-  mockGetContainer,
-  mockCreateContainer,
   mockGetDockerInstance,
-  mockPullImageWithAutoAuth,
-  mockGetOwnContainerId,
-  mockFetcher,
 } = vi.hoisted(() => ({
   mockPrisma: {
     systemSettings: {
@@ -16,17 +20,10 @@ const {
     },
   },
   mockListContainers: vi.fn(),
-  mockGetContainer: vi.fn(),
-  mockCreateContainer: vi.fn(),
   mockGetDockerInstance: vi.fn(),
-  mockPullImageWithAutoAuth: vi.fn(),
-  mockGetOwnContainerId: vi.fn(),
-  mockFetcher: vi.fn(),
 }));
 
-vi.mock("../../../lib/prisma", () => ({
-  default: mockPrisma,
-}));
+vi.mock("../../../lib/prisma", () => ({ default: mockPrisma }));
 
 vi.mock("../../docker", () => ({
   default: {
@@ -36,261 +33,128 @@ vi.mock("../../docker", () => ({
   },
 }));
 
-vi.mock("../../docker-executor/registry-manager", () => ({
-  RegistryManager: class {
-    pullImageWithAutoAuth(image: string) {
-      return mockPullImageWithAutoAuth(image);
-    }
-  },
+// We do NOT exercise the bootstrap path in these tests — that's covered
+// by the stack-bootstrap-specific tests. Stub it to a no-op so calling
+// `restartFwAgent` here doesn't pull the whole apply pipeline in.
+vi.mock("../fw-agent-stack-bootstrap", () => ({
+  bootstrapFwAgentStack: vi.fn(async () => ({
+    stackId: "stack-id-stub",
+    applyDispatched: true,
+    reason: null,
+  })),
 }));
-vi.mock("../../registry-credential", () => ({
-  RegistryCredentialService: class {},
-}));
-
-vi.mock("../../self-update", () => ({
-  getOwnContainerId: () => mockGetOwnContainerId(),
-}));
-
-vi.mock("../fw-agent-transport", async (orig) => {
-  const actual = await (orig as () => Promise<typeof import("../fw-agent-transport")>)();
-  return {
-    ...actual,
-    createUnixSocketFetcher: () => mockFetcher,
-  };
-});
 
 import {
-  ensureFwAgent,
-  removeFwAgent,
   findFwAgent,
   getFwAgentConfig,
   isFwAgentHealthy,
-  stopHealthChecks,
+  restartFwAgent,
+  FW_AGENT_STARTUP_STEPS,
 } from "../fw-agent-sidecar";
 
-function makeContainer(overrides?: Partial<{ id: string; state: string }>) {
-  return {
-    Id: "abc123def456",
-    State: "running",
-    Labels: { "mini-infra.egress.fw-agent": "true" },
-    ...overrides,
-  };
-}
+beforeEach(() => {
+  mockPrisma.systemSettings.findMany.mockReset();
+  mockListContainers.mockReset();
+  mockGetDockerInstance.mockReset();
+  mockGetDockerInstance.mockResolvedValue({
+    listContainers: mockListContainers,
+  });
+});
 
-describe("fw-agent-sidecar", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockListContainers.mockResolvedValue([]);
-    mockCreateContainer.mockResolvedValue({
-      id: "newcontainer123",
-      start: vi.fn().mockResolvedValue(undefined),
-    });
-    mockGetContainer.mockReturnValue({
-      remove: vi.fn().mockResolvedValue(undefined),
-      stop: vi.fn().mockResolvedValue(undefined),
-    });
-    mockGetDockerInstance.mockResolvedValue({
-      listContainers: mockListContainers,
-      getContainer: mockGetContainer,
-      createContainer: mockCreateContainer,
-    });
-    mockPullImageWithAutoAuth.mockResolvedValue(undefined);
-    mockGetOwnContainerId.mockReturnValue("server-container-id");
+describe("getFwAgentConfig", () => {
+  it("falls back to the env-injected image when no setting is present", async () => {
     mockPrisma.systemSettings.findMany.mockResolvedValue([]);
-    mockFetcher.mockResolvedValue({ status: 200, body: { status: "ok" } });
+    process.env.EGRESS_FW_AGENT_IMAGE_TAG = "ghcr.io/mini-infra/fw-agent:test";
+
+    const cfg = await getFwAgentConfig();
+    expect(cfg.image).toBe("ghcr.io/mini-infra/fw-agent:test");
+    expect(cfg.autoStart).toBe(true);
+
     delete process.env.EGRESS_FW_AGENT_IMAGE_TAG;
   });
 
-  afterEach(() => {
-    stopHealthChecks();
+  it("treats auto_start='false' as disabled, anything else as enabled", async () => {
+    mockPrisma.systemSettings.findMany.mockResolvedValue([
+      { key: "auto_start", value: "false" },
+    ]);
+    expect((await getFwAgentConfig()).autoStart).toBe(false);
+
+    mockPrisma.systemSettings.findMany.mockResolvedValue([
+      { key: "auto_start", value: "true" },
+    ]);
+    expect((await getFwAgentConfig()).autoStart).toBe(true);
+
+    mockPrisma.systemSettings.findMany.mockResolvedValue([]);
+    expect((await getFwAgentConfig()).autoStart).toBe(true);
   });
 
-  // -------------------------------------------------------------------------
-  // getFwAgentConfig
-  // -------------------------------------------------------------------------
+  it("setting `image` overrides the env fallback", async () => {
+    mockPrisma.systemSettings.findMany.mockResolvedValue([
+      { key: "image", value: "registry.local/custom-fw:9.9" },
+    ]);
+    process.env.EGRESS_FW_AGENT_IMAGE_TAG = "ghcr.io/mini-infra/fw-agent:test";
 
-  describe("getFwAgentConfig", () => {
-    it("falls back to env var when no DB setting", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "ghcr.io/test/fw-agent:latest";
-      const cfg = await getFwAgentConfig();
-      expect(cfg.image).toBe("ghcr.io/test/fw-agent:latest");
-      expect(cfg.autoStart).toBe(true);
-    });
+    const cfg = await getFwAgentConfig();
+    expect(cfg.image).toBe("registry.local/custom-fw:9.9");
 
-    it("DB setting overrides env var", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "ghcr.io/test/fw-agent:env";
-      mockPrisma.systemSettings.findMany.mockResolvedValue([
-        { key: "image", value: "ghcr.io/test/fw-agent:db" },
-      ]);
-      const cfg = await getFwAgentConfig();
-      expect(cfg.image).toBe("ghcr.io/test/fw-agent:db");
-    });
-
-    it("autoStart defaults to true and respects 'false' string", async () => {
-      mockPrisma.systemSettings.findMany.mockResolvedValue([
-        { key: "auto_start", value: "false" },
-      ]);
-      const cfg = await getFwAgentConfig();
-      expect(cfg.autoStart).toBe(false);
-    });
+    delete process.env.EGRESS_FW_AGENT_IMAGE_TAG;
   });
+});
 
-  // -------------------------------------------------------------------------
-  // findFwAgent
-  // -------------------------------------------------------------------------
-
-  describe("findFwAgent", () => {
-    it("returns null when no labelled container exists", async () => {
-      mockListContainers.mockResolvedValue([]);
-      const result = await findFwAgent();
-      expect(result).toBeNull();
-      expect(mockListContainers).toHaveBeenCalledWith({
-        all: true,
-        filters: { label: ["mini-infra.egress.fw-agent=true"] },
-      });
-    });
-
-    it("returns id+state when a container is found", async () => {
-      mockListContainers.mockResolvedValue([makeContainer({ Id: "xyz", State: "exited" })]);
-      const result = await findFwAgent();
-      expect(result).toEqual({ id: "xyz", state: "exited" });
+describe("findFwAgent", () => {
+  it("returns the first container with the fw-agent label", async () => {
+    mockListContainers.mockResolvedValue([
+      { Id: "abc123", State: "running" },
+    ]);
+    const found = await findFwAgent();
+    expect(found).toEqual({ id: "abc123", state: "running" });
+    expect(mockListContainers).toHaveBeenCalledWith({
+      all: true,
+      filters: { label: ["mini-infra.egress.fw-agent=true"] },
     });
   });
 
-  // -------------------------------------------------------------------------
-  // ensureFwAgent
-  // -------------------------------------------------------------------------
-
-  describe("ensureFwAgent", () => {
-    it("returns null in dev mode (no own container)", async () => {
-      mockGetOwnContainerId.mockReturnValue(null);
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      const result = await ensureFwAgent();
-      expect(result).toBeNull();
-    });
-
-    it("returns null when image is not configured", async () => {
-      const result = await ensureFwAgent();
-      expect(result).toBeNull();
-    });
-
-    it("respects checkAutoStart=true with auto_start=false", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockPrisma.systemSettings.findMany.mockResolvedValue([
-        { key: "auto_start", value: "false" },
-      ]);
-      const result = await ensureFwAgent({ checkAutoStart: true });
-      expect(result).toBeNull();
-      expect(mockListContainers).not.toHaveBeenCalled();
-    });
-
-    it("reconnects to a running container without recreating", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockListContainers.mockResolvedValue([makeContainer({ State: "running" })]);
-      const result = await ensureFwAgent();
-      expect(result).toEqual({ containerId: "abc123def456" });
-      expect(mockCreateContainer).not.toHaveBeenCalled();
-      expect(mockPullImageWithAutoAuth).not.toHaveBeenCalled();
-    });
-
-    it("creates a fresh container when none exists, with the host network spec", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockListContainers.mockResolvedValue([]);
-
-      const result = await ensureFwAgent();
-
-      expect(result).toEqual({ containerId: "newcontainer123" });
-      expect(mockPullImageWithAutoAuth).toHaveBeenCalledWith("img:1");
-      expect(mockCreateContainer).toHaveBeenCalledOnce();
-
-      const opts = mockCreateContainer.mock.calls[0][0];
-      expect(opts.Image).toBe("img:1");
-      expect(opts.name).toBe("mini-infra-egress-fw-agent");
-      expect(opts.Labels["mini-infra.egress.fw-agent"]).toBe("true");
-      expect(opts.Labels["mini-infra.managed"]).toBe("true");
-      expect(opts.HostConfig.NetworkMode).toBe("host");
-      expect(opts.HostConfig.CapAdd).toEqual(["NET_ADMIN", "NET_RAW"]);
-      expect(opts.HostConfig.Binds).toContain(
-        "/var/run/mini-infra:/var/run/mini-infra",
-      );
-      expect(opts.HostConfig.Binds).toContain("/lib/modules:/lib/modules:ro");
-      expect(opts.HostConfig.RestartPolicy).toEqual({ Name: "unless-stopped" });
-    });
-
-    it("removes a stopped container before recreating", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockListContainers.mockResolvedValue([makeContainer({ State: "exited", Id: "stopped123" })]);
-      const remove = vi.fn().mockResolvedValue(undefined);
-      mockGetContainer.mockReturnValue({ remove });
-
-      const result = await ensureFwAgent();
-
-      expect(remove).toHaveBeenCalledWith({ force: true });
-      expect(mockCreateContainer).toHaveBeenCalledOnce();
-      expect(result).toEqual({ containerId: "newcontainer123" });
-    });
-
-    it("propagates pull failures with an explanatory error", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockPullImageWithAutoAuth.mockRejectedValue(new Error("registry 500"));
-      mockListContainers.mockResolvedValue([]);
-
-      await expect(ensureFwAgent()).rejects.toThrow(/Failed to pull egress fw-agent image "img:1"/);
-      expect(mockCreateContainer).not.toHaveBeenCalled();
-    });
-
-    it("reports progress through the onProgress callback", async () => {
-      process.env.EGRESS_FW_AGENT_IMAGE_TAG = "img:1";
-      mockListContainers.mockResolvedValue([]);
-      const onProgress = vi.fn();
-
-      await ensureFwAgent({ onProgress });
-
-      const stepNames = onProgress.mock.calls.map((c) => c[0].step);
-      expect(stepNames).toEqual([
-        "Pull fw-agent image",
-        "Create container",
-        "Start container",
-        "Verify health",
-      ]);
-    });
+  it("returns null when no labelled container exists", async () => {
+    mockListContainers.mockResolvedValue([]);
+    expect(await findFwAgent()).toBeNull();
   });
 
-  // -------------------------------------------------------------------------
-  // removeFwAgent
-  // -------------------------------------------------------------------------
+  it("returns null and swallows docker errors", async () => {
+    mockListContainers.mockRejectedValue(new Error("docker down"));
+    expect(await findFwAgent()).toBeNull();
+  });
+});
 
-  describe("removeFwAgent", () => {
-    it("is a no-op in dev mode", async () => {
-      mockGetOwnContainerId.mockReturnValue(null);
-      await removeFwAgent();
-      expect(mockListContainers).not.toHaveBeenCalled();
-      expect(isFwAgentHealthy()).toBe(false);
+describe("isFwAgentHealthy", () => {
+  it("returns false (Phase 2 stub — Stage D10 wires it to KV)", () => {
+    // Pinned so a careless re-introduction of the Unix-socket health path
+    // fails the test. Stage D10 will replace the body and update this
+    // assertion to read from the egress-fw-health KV bucket.
+    expect(isFwAgentHealthy()).toBe(false);
+  });
+});
+
+describe("restartFwAgent + FW_AGENT_STARTUP_STEPS", () => {
+  it("preserves the four legacy step names for UI backward compat", () => {
+    expect(FW_AGENT_STARTUP_STEPS).toEqual([
+      "Pull fw-agent image",
+      "Create container",
+      "Start container",
+      "Verify health",
+    ]);
+  });
+
+  it("emits all four progress steps when the stack apply dispatches", async () => {
+    // Container appears running on first poll → Verify health = "completed".
+    mockListContainers.mockResolvedValue([
+      { Id: "fw-id-1", State: "running" },
+    ]);
+    const events: { step: string; status: string }[] = [];
+    const result = await restartFwAgent({
+      onProgress: (step) => events.push({ step: step.step, status: step.status }),
     });
-
-    it("stops + removes a running container", async () => {
-      mockListContainers.mockResolvedValue([makeContainer({ Id: "abc", State: "running" })]);
-      const stop = vi.fn().mockResolvedValue(undefined);
-      const remove = vi.fn().mockResolvedValue(undefined);
-      mockGetContainer.mockReturnValue({ stop, remove });
-
-      await removeFwAgent();
-
-      expect(stop).toHaveBeenCalledWith({ t: 10 });
-      expect(remove).toHaveBeenCalledOnce();
-      expect(isFwAgentHealthy()).toBe(false);
-    });
-
-    it("removes a non-running container without calling stop", async () => {
-      mockListContainers.mockResolvedValue([makeContainer({ State: "exited" })]);
-      const stop = vi.fn();
-      const remove = vi.fn().mockResolvedValue(undefined);
-      mockGetContainer.mockReturnValue({ stop, remove });
-
-      await removeFwAgent();
-
-      expect(stop).not.toHaveBeenCalled();
-      expect(remove).toHaveBeenCalledOnce();
-    });
+    expect(result).toEqual({ containerId: "fw-id-1" });
+    expect(events.map((e) => e.step)).toEqual([...FW_AGENT_STARTUP_STEPS]);
+    expect(events.every((e) => e.status === "completed")).toBe(true);
   });
 });

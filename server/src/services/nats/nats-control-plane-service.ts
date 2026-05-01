@@ -172,6 +172,13 @@ export class NatsControlPlaneService {
     stackId: string;
     clientUrl: string;
     monitorUrl: string;
+    /**
+     * Host-loopback NATS URL (e.g. nats://127.0.0.1:4222). Required for
+     * services running in `network_mode: host` where the docker-DNS
+     * `clientUrl` cannot resolve. Optional here for forward-compat with
+     * older callers; new callers always set it.
+     */
+    clientHostUrl?: string;
   }): Promise<void> {
     await this.db.natsState.upsert({
       where: { kind: "primary" },
@@ -180,11 +187,16 @@ export class NatsControlPlaneService {
         stackId: input.stackId,
         clientUrl: input.clientUrl,
         monitorUrl: input.monitorUrl,
+        ...(input.clientHostUrl ? { clientHostUrl: input.clientHostUrl } : {}),
       },
       update: {
         stackId: input.stackId,
         clientUrl: input.clientUrl,
         monitorUrl: input.monitorUrl,
+        // `??` not `||` so we can clear with explicit `null` if a future
+        // caller wants to (no current call site does, but the type is
+        // honest about its semantics).
+        clientHostUrl: input.clientHostUrl ?? null,
       },
     });
   }
@@ -325,6 +337,20 @@ export class NatsControlPlaneService {
   async getInternalUrl(): Promise<string> {
     const state = await this.db.natsState.findUnique({ where: { kind: "primary" } });
     return state?.clientUrl ?? "nats://mini-infra-vault-nats-nats:4222";
+  }
+
+  /**
+   * Host-loopback NATS URL for `network_mode: host` services that can't
+   * resolve docker-internal DNS (e.g. egress-fw-agent, ALT-27). Returns the
+   * stored `clientHostUrl` if `applyConfig()` has run since the migration
+   * landed, otherwise falls back to `nats://127.0.0.1:4222` (the vault-nats
+   * template's host-port default). The fallback exists so a fresh worktree
+   * boot doesn't deadlock on apply-ordering — fw-agent injection runs before
+   * the next vault-nats apply has had a chance to populate the field.
+   */
+  async getHostUrl(): Promise<string> {
+    const state = await this.db.natsState.findUnique({ where: { kind: "primary" } });
+    return state?.clientHostUrl ?? "nats://127.0.0.1:4222";
   }
 
   async applyConfig(): Promise<NatsApplyConfigResult> {

@@ -617,24 +617,86 @@ describe('EgressLogIngester', () => {
   });
 
   // -------------------------------------------------------------------------
-  // fw_drop events
+  // fw_drop events (ALT-27 — now via JetStream durable consumer)
+  //
+  // These tests exercise `FwAgentJsConsumer._handleJsEvent` directly. The
+  // legacy docker-logs/NDJSON path is gone; events arrive as typed
+  // `EgressFwEvent` messages. The dedup/batch logic in BaseTailer is
+  // unchanged so the behavior assertions match the legacy ones.
   // -------------------------------------------------------------------------
 
-  it('parses fw_drop event and persists destIp/destPort/protocol/reason', async () => {
-    // Use fw-agent stream for fw_drop events
-    const gatewayStream = new Readable({ read() {} }); // idle gateway
-    const { stream: fwAgentStream, pushLine } = makeLogStream();
+  // Helper: typed event payload shape matching `payload-schemas.ts`.
+  function makeFwDropEvent(overrides: object = {}): {
+    occurredAtMs: number;
+    protocol: 'tcp' | 'udp' | 'icmp';
+    srcIp: string;
+    destIp: string;
+    destPort?: number;
+    stackId?: string;
+    serviceName?: string;
+    reason?: string;
+    mergedHits: number;
+  } {
+    return {
+      occurredAtMs: Date.now(),
+      protocol: 'tcp',
+      srcIp: '172.30.0.10',
+      destIp: '10.20.30.40',
+      destPort: 5432,
+      stackId: 'stk-1',
+      serviceName: 'web',
+      reason: 'non-allowed-egress',
+      mergedHits: 1,
+      ...overrides,
+    };
+  }
 
-    setupFwAgentServiceMock(true);
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
-    }));
-
-    const prisma = makePrisma();
+  // Construct a bare consumer wired to a fake prisma, no NATS connection.
+  // We invoke `_handleJsEvent` directly via `as any` — `FwAgentJsConsumer`
+  // is exported intentionally lightly because its only public surface is
+  // start/stop and the orchestrator. The dedup/batch helpers come from
+  // BaseTailer and don't need NATS to exercise.
+  async function newFwAgentConsumer(prisma: ReturnType<typeof makePrisma>) {
+    // Lazy import to avoid pulling NATS bus deps before tests need them.
+    const mod = await import('../egress-log-ingester');
+    // Access the (non-exported) FwAgentJsConsumer via a small reflective
+    // hack: instantiate `EgressLogIngester` and pull its private member
+    // before .start() is called, then construct a fresh JS consumer
+    // through the same constructor signature.
+    void mod;
+    // The class is private to the module. We export-by-effect: a sibling
+    // accessor would be cleaner, but for unit-testing scope a constructor
+    // shim works. The cast walks one prototype chain off the
+    // EgressLogIngester start path — but that's an integration setup;
+    // simpler: reconstruct directly via the BaseTailer parent. The
+    // semantics under test (`_ingestFwDrop`) live on BaseTailer, so
+    // any subclass with a public `start()` + `stop()` will do. We use
+    // the JS consumer because that's what runs in production.
     const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
+    // Don't start the ingester (would require docker mocks). Instead
+    // reach into the orchestrator's seam: spawn a JS consumer directly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Ctor = (mod as any).FwAgentJsConsumer ?? null;
+    if (!Ctor) {
+      // Fallback — reach via the orchestrator's start path. We only
+      // do this if the module changes its export shape later.
+      void ingester;
+      throw new Error("FwAgentJsConsumer not exported from egress-log-ingester");
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const consumer = new Ctor(prisma);
+    // Start the batch timer so flushes happen on the existing 1s cadence.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (consumer as any)._startBatchTimer();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return consumer as { _handleJsEvent: (e: object) => Promise<void>; stop(): void };
+  }
 
-    pushLine(makeFwDropLine({
+  it('parses fw_drop event and persists destIp/destPort/protocol/reason', async () => {
+    const prisma = makePrisma();
+    const consumer = await newFwAgentConsumer(prisma);
+
+    await consumer._handleJsEvent(makeFwDropEvent({
       destIp: '10.20.30.40',
       destPort: 5432,
       protocol: 'tcp',
@@ -657,25 +719,16 @@ describe('EgressLogIngester', () => {
     expect(row.destination).toBe('10.20.30.40:5432');
     expect(row.matchedPattern).toBeNull();
 
-    ingester.stop();
+    consumer.stop();
   });
 
   it('fw_drop dedup: collapses repeated (policyId, service, srcIp, destIp, destPort, protocol) within 60 s', async () => {
-    const gatewayStream = new Readable({ read() {} });
-    const { stream: fwAgentStream, pushLine } = makeLogStream();
-
-    setupFwAgentServiceMock(true);
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
-    }));
-
     const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
+    const consumer = await newFwAgentConsumer(prisma);
 
-    // Push 5 identical fw_drop lines
+    // Send 5 identical events
     for (let i = 0; i < 5; i++) {
-      pushLine(makeFwDropLine({
+      await consumer._handleJsEvent(makeFwDropEvent({
         destIp: '10.20.30.40',
         destPort: 5432,
         protocol: 'tcp',
@@ -692,91 +745,62 @@ describe('EgressLogIngester', () => {
     const [args] = createMany.mock.calls[0] as [{ data: Record<string, unknown>[] }];
     expect(args.data).toHaveLength(1);
 
-    ingester.stop();
+    consumer.stop();
   });
 
   it('fw_drop without stackId is dropped', async () => {
-    const gatewayStream = new Readable({ read() {} });
-    const { stream: fwAgentStream, pushLine } = makeLogStream();
-
-    setupFwAgentServiceMock(true);
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
-    }));
-
     const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
+    const consumer = await newFwAgentConsumer(prisma);
 
-    // fw_drop without stackId — cannot attribute, must be dropped
-    pushLine(makeFwDropLine({ stackId: undefined }));
+    await consumer._handleJsEvent(makeFwDropEvent({ stackId: undefined }));
 
     await vi.advanceTimersByTimeAsync(1500);
 
     const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
     expect(createMany).not.toHaveBeenCalled();
 
-    ingester.stop();
+    consumer.stop();
   });
 
-  // -------------------------------------------------------------------------
-  // High 2: fw_drop dedup window expiry starts a fresh window
-  // -------------------------------------------------------------------------
-
   it('fw_drop: starts a fresh window after the dedup window expires', async () => {
-    const gatewayStream = new Readable({ read() {} });
-    const { stream: fwAgentStream, pushLine } = makeLogStream();
-
-    setupFwAgentServiceMock(true);
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
-    }));
-
     const prisma = makePrisma();
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
+    const consumer = await newFwAgentConsumer(prisma);
 
-    // First occurrence
-    pushLine(makeFwDropLine({ destIp: '10.20.30.40', destPort: 5432, protocol: 'tcp' }));
+    await consumer._handleJsEvent(makeFwDropEvent({
+      destIp: '10.20.30.40',
+      destPort: 5432,
+      protocol: 'tcp',
+    }));
     await vi.advanceTimersByTimeAsync(1500);
 
     // Advance past 60-second dedup window
     await vi.advanceTimersByTimeAsync(61_000);
 
-    // Second occurrence after window expiry — should produce a new row
-    pushLine(makeFwDropLine({ destIp: '10.20.30.40', destPort: 5432, protocol: 'tcp' }));
+    // Second occurrence — should produce a new row
+    await consumer._handleJsEvent(makeFwDropEvent({
+      destIp: '10.20.30.40',
+      destPort: 5432,
+      protocol: 'tcp',
+    }));
     await vi.advanceTimersByTimeAsync(1500);
 
     const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
     expect(createMany).toHaveBeenCalledTimes(2);
 
-    ingester.stop();
+    consumer.stop();
   });
 
-  // -------------------------------------------------------------------------
-  // High 3: fw_drop with no matching EgressPolicy is dropped
-  // -------------------------------------------------------------------------
-
   it('fw_drop: drops events when stackId has no matching EgressPolicy', async () => {
-    const gatewayStream = new Readable({ read() {} });
-    const { stream: fwAgentStream, pushLine } = makeLogStream();
-
-    setupFwAgentServiceMock(true);
-    mockDockerInstance.getContainer.mockImplementation((id: string) => ({
-      logs: vi.fn().mockResolvedValue(id === 'fw-agent-container-1' ? fwAgentStream : gatewayStream),
-    }));
-
     const prisma = makePrisma({ policy: null }); // no policy found
-    const ingester = new EgressLogIngester(prisma);
-    await ingester.start();
+    const consumer = await newFwAgentConsumer(prisma);
 
-    pushLine(makeFwDropLine({ stackId: 'unknown-stack' }));
+    await consumer._handleJsEvent(makeFwDropEvent({ stackId: 'unknown-stack' }));
 
     await vi.advanceTimersByTimeAsync(1500);
 
     const createMany = prisma.egressEvent.createMany as ReturnType<typeof vi.fn>;
     expect(createMany).not.toHaveBeenCalled();
 
-    ingester.stop();
+    consumer.stop();
   });
 });

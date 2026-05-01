@@ -156,6 +156,17 @@ export interface StackContainerConfig {
   labels?: Record<string, string>;
   joinNetworks?: string[];
   joinResourceNetworks?: string[];
+  /**
+   * Docker network mode. Defaults to bridge (the only mode the reconciler
+   * could express before this field existed). `host` puts the container in
+   * the host's network namespace — needed by services that manipulate the
+   * host's nftables/iptables (egress-fw-agent) or otherwise require direct
+   * host networking. Templates that set `networkMode: "host"` MUST also
+   * leave `ports`, `joinNetworks`, and `joinResourceNetworks` empty: in
+   * host mode there are no per-container ports to bind and the container
+   * cannot also join a docker bridge network. Validated at template-load.
+   */
+  networkMode?: 'bridge' | 'host';
   restartPolicy?: typeof RESTART_POLICIES[number];
   healthcheck?: {
     test: string[];

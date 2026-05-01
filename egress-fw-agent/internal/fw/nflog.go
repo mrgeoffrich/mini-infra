@@ -15,6 +15,7 @@ import (
 	"github.com/google/gopacket/layers"
 
 	"github.com/mrgeoffrich/mini-infra/egress-fw-agent/internal/events"
+	"github.com/mrgeoffrich/mini-infra/egress-shared/natsbus"
 	"github.com/mrgeoffrich/mini-infra/egress-shared/state"
 )
 
@@ -43,19 +44,35 @@ func (r *nonIPv4RateLimit) shouldLog() bool {
 }
 
 // NflogReader subscribes to NFLOG group 1 and emits fw_drop events.
+//
+// ALT-27: events go to JetStream `mini-infra.egress.fw.events` via the
+// supplied bus. The legacy stdout NDJSON path has been removed — the
+// server's log-attach ingester is replaced by a JetStream durable consumer
+// (`EgressFwEvents-server`) that resumes from its last-acked position
+// across container restarts. That's the source of the "≤1s loss across
+// restart" acceptance criterion.
+//
+// `bus` is nullable so the legacy Unix-socket transport (kept behind a
+// feature flag for one release; see Stage D12) can still run NflogReader
+// without a NATS connection. When nil, fw_drop events are dropped on the
+// floor with a once-per-minute warn — the legacy stdout path is gone, so
+// consumers MUST use NATS.
 type NflogReader struct {
-	containerMap  *state.ContainerMap
-	dedup         *events.Deduplicator
-	log           *slog.Logger
+	containerMap   *state.ContainerMap
+	dedup          *events.Deduplicator
+	log            *slog.Logger
+	bus            *natsbus.Bus
 	nonIPv4Limiter nonIPv4RateLimit
+	noBusWarner    nonIPv4RateLimit
 }
 
 // NewNflogReader creates a new NflogReader.
-func NewNflogReader(cm *state.ContainerMap, log *slog.Logger) *NflogReader {
+func NewNflogReader(cm *state.ContainerMap, log *slog.Logger, bus *natsbus.Bus) *NflogReader {
 	return &NflogReader{
 		containerMap: cm,
 		dedup:        events.NewDeduplicator(),
 		log:          log,
+		bus:          bus,
 	}
 }
 
@@ -174,16 +191,41 @@ func (r *NflogReader) handlePacket(attrs nflog.Attribute) {
 		return
 	}
 
-	_ = events.EmitFwDrop(events.FwDropEvent{
-		Protocol:    proto,
-		SrcIp:       srcIP,
-		DestIp:      dstIP,
-		DestPort:    dstPort,
-		StackId:     stackID,
-		ServiceName: serviceName,
-		Reason:      nflogReasonDrop,
-		MergedHits:  hits,
-	})
+	if r.bus == nil {
+		// Legacy transport mode (no NATS). Warn rate-limited so the
+		// operator notices but the log isn't flooded.
+		if r.noBusWarner.shouldLog() {
+			r.log.Warn("NFLOG event dropped — bus not configured (legacy transport mode)")
+		}
+		return
+	}
+
+	evt := natsbus.EgressFwEvent{
+		OccurredAtMs: time.Now().UnixMilli(),
+		Protocol:     proto,
+		SrcIp:        srcIP,
+		DestIp:       dstIP,
+		Reason:       nflogReasonDrop,
+		MergedHits:   uint32(hits),
+	}
+	if dstPort != 0 {
+		port := dstPort
+		evt.DestPort = &port
+	}
+	if stackID != nil {
+		evt.StackId = *stackID
+	}
+	if serviceName != nil {
+		evt.ServiceName = *serviceName
+	}
+	if _, err := r.bus.JSPublish(natsbus.SubjectEgressFwEvents, evt); err != nil {
+		// JS publish can fail during a NATS reconnect window. The bus
+		// SDK buffers up to its ReconnectBufSize; beyond that we drop
+		// rather than block the NFLOG read loop. Log warn rate-limited.
+		if r.noBusWarner.shouldLog() {
+			r.log.Warn("NFLOG event JS publish failed", "err", err.Error())
+		}
+	}
 }
 
 // decodeL3L4 extracts (srcIP, dstIP, dstPort, protocol) from a raw IPv4 packet.

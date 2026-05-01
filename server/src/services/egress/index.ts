@@ -45,16 +45,19 @@ export { EgressGatewayClient, EgressGatewayError } from './egress-gateway-client
 export { EgressRulePusher } from './egress-rule-pusher';
 export { EnvFirewallManager } from './env-firewall-manager';
 export {
-  ensureFwAgent,
-  removeFwAgent,
   restartFwAgent,
   findFwAgent,
   isFwAgentHealthy,
+  getFwAgentHealthSnapshot,
+  startFwAgentHealthWatcher,
+  stopFwAgentHealthWatcher,
   getFwAgentConfig,
-  stopHealthChecks as stopFwAgentHealthChecks,
   FW_AGENT_STARTUP_STEPS,
   type FwAgentProgressCallback,
 } from './fw-agent-sidecar';
+// ALT-27: stack-based bootstrap replaces the legacy host-singleton
+// `ensureFwAgent`/`removeFwAgent`/`stopHealthChecks` exports.
+export { bootstrapFwAgentStack } from './fw-agent-stack-bootstrap';
 
 export type ShutdownFn = () => void;
 

@@ -1,0 +1,77 @@
+{
+  "name": "egress-fw-agent",
+  "displayName": "Egress Firewall Agent",
+  "builtinVersion": 1,
+  "scope": "host",
+  "category": "infrastructure",
+  "description": "Host-singleton firewall agent that enforces L3/L4 egress rules via nftables and emits NFLOG drop events. Runs in `network_mode: host` with NET_ADMIN/NET_RAW (required to manage the host's nftables namespace). Communicates with mini-infra-server over NATS — rule push via request/reply on `mini-infra.egress.fw.rules.apply`, NFLOG events via JetStream `EgressFwEvents`, 5 s heartbeat via KV bucket `egress-fw-health`.",
+  "parameters": [
+    {
+      "name": "log-level",
+      "type": "string",
+      "default": "info",
+      "description": "Log level for the fw-agent (debug, info, warn, error)"
+    }
+  ],
+  "networks": [],
+  "volumes": [],
+  "nats": {
+    "subjectPrefix": "mini-infra.egress.fw",
+    "roles": [
+      {
+        "name": "agent",
+        "publish": [
+          "rules.applied",
+          "events"
+        ],
+        "subscribe": [
+          "rules.apply"
+        ],
+        "kvBuckets": [
+          "egress-fw-health"
+        ],
+        "inboxAuto": "reply"
+      }
+    ]
+  },
+  "services": [
+    {
+      "serviceName": "egress-fw-agent",
+      "serviceType": "Stateful",
+      "dockerImage": "${EGRESS_FW_AGENT_IMAGE_TAG}",
+      "dockerTag": "latest",
+      "natsRole": "agent",
+      "containerConfig": {
+        "networkMode": "host",
+        "capAdd": ["NET_ADMIN", "NET_RAW"],
+        "egressBypass": true,
+        "env": {
+          "LOG_LEVEL": "{{params.log-level}}"
+        },
+        "dynamicEnv": {
+          "NATS_URL": { "kind": "nats-url" },
+          "NATS_CREDS": { "kind": "nats-creds" }
+        },
+        "mounts": [
+          {
+            "source": "/lib/modules",
+            "target": "/lib/modules",
+            "type": "bind",
+            "readOnly": true
+          }
+        ],
+        "labels": {
+          "mini-infra.egress.fw-agent": "true"
+        },
+        "restartPolicy": "unless-stopped",
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}
