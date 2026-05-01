@@ -230,12 +230,10 @@ Defer until Phase 4 has settled — same pattern, same subscribers; no surprise.
 
 ## 8. Linear tracking
 
-Phase issues in Linear (Altitude Devops team) — each links back to this doc:
+Phase issues in Linear (Altitude Devops team) — each links back to this doc. Phase 1 blocks all later phases; Phase 5 also blocks on Phase 4.
 
-- Phase 1 — Foundation: `NatsBus`, subject constants, prefix allowlist
-- Phase 2 — `egress-fw-agent` onto NATS
-- Phase 3 — `egress-gateway` onto NATS
-- Phase 4 — `pg-az-backup` progress + result events
-- Phase 5 — `update-sidecar` progress (optional)
-
-Issue identifiers will be appended here once filed.
+- [ALT-26](https://linear.app/altitude-devops/issue/ALT-26) — Phase 1: Foundation (`NatsBus`, subject constants, prefix allowlist)
+- [ALT-27](https://linear.app/altitude-devops/issue/ALT-27) — Phase 2: `egress-fw-agent` onto NATS
+- [ALT-28](https://linear.app/altitude-devops/issue/ALT-28) — Phase 3: `egress-gateway` onto NATS
+- [ALT-29](https://linear.app/altitude-devops/issue/ALT-29) — Phase 4: `pg-az-backup` progress + result events
+- [ALT-30](https://linear.app/altitude-devops/issue/ALT-30) — Phase 5: `update-sidecar` progress (optional)
