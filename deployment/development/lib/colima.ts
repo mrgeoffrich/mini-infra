@@ -38,6 +38,11 @@ export function startColima(opts: ColimaStartOpts): void {
 }
 
 export function deleteColima(profile: string): boolean {
-  const res = spawnSync('colima', ['delete', profile, '--force'], { stdio: 'inherit' });
+  // --data is required to remove the VM's container runtime data (docker
+  // volumes, images). Without it the VM directory is removed but a fresh
+  // `colima start` on the same profile resurrects the old volumes/images,
+  // which breaks compose-up with "volume already exists but was not created
+  // by Docker Compose" + a dangling container ID.
+  const res = spawnSync('colima', ['delete', profile, '--data', '--force'], { stdio: 'inherit' });
   return res.status === 0;
 }
