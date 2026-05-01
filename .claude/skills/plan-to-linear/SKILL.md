@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and populates Linear with a matching project plus one issue per phase. Each issue carries the phase's Goal / Deliverables / Done when, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), prior-art commit references, and the conventions an executor needs — enough context that the `execute-next-task` skill can pick up the issue and start work without re-planning the high-level scope. Also rewrites the plan doc's Linear-tracking section to replace `ALT-_TBD_` placeholders with the real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", or any equivalent request to seed Linear from an existing markdown plan. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user asks to *modify* an existing project's issues.
+description: Reads a phased markdown planning document under `docs/planning/` and populates Linear with a matching project plus one issue per phase. Each issue carries the phase's Goal / Deliverables / Done when, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope. Also rewrites the plan doc's Linear-tracking section to replace `ALT-_TBD_` placeholders with the real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", or any equivalent request to seed Linear from an existing markdown plan. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user asks to *modify* an existing project's issues.
 ---
 
 # Plan to Linear
@@ -70,9 +70,11 @@ Read the doc end-to-end and extract:
 
 ---
 
-## Phase 3 — Map touched components to per-component docs
+## Phase 3 — Map touched components to docs and smoke tests
 
-For each phase, look at the file paths you extracted. Group them by top-level directory and attach the relevant CLAUDE.md / ARCHITECTURE.md pointers. The map for this repo:
+For each phase, look at the file paths you extracted. Group them by top-level directory. Two outputs come from this step: which **doc pointers** to attach to the ticket, and which **smoke-test recipes** to recommend at the end of execution.
+
+### 3.1 Doc pointers per component
 
 | Top-level dir matched | Docs to attach (relative to repo root) |
 |---|---|
@@ -94,7 +96,26 @@ Verify each attached file actually exists with `Read` or `ls` before including i
 
 **Also include** any `docs/architecture/*.md` from the plan-doc-level references collected in Phase 2.
 
-This step is the difference between Reading 1 and Reading 2 of the populator design: the executor doesn't get a pre-baked plan, it gets pointers to exactly the right convention files for the components it'll touch.
+This is the difference between Reading 1 and Reading 2 of the populator design: the executor doesn't get a pre-baked plan, it gets pointers to exactly the right convention files for the components it'll touch.
+
+### 3.2 Smoke-test recipes per component
+
+Map the same touched paths to the live-smoke recipe the executor should run after build/lint/unit tests pass. These go into the ticket's "Smoke tests" section. Pick whichever apply — multiple components → multiple recipes.
+
+| Touched path pattern | Smoke recipe to recommend |
+|---|---|
+| `client/src/`, `client/public/` | Invoke the `test-dev` skill walking the affected user flow in the dev environment. Don't re-implement what `test-dev` does. |
+| `server/src/routes/` | Hit the affected endpoint(s) with `curl` against the URL in `environment-details.xml`. Use the admin API key from `//admin/apiKey` in the same file. |
+| `server/src/services/` (no route change) | If the service runs at boot or on a schedule, watch the server logs for the relevant subcomponent (`grep '"subcomponent":"<name>"' logs/app.*.log`). If it's invoked from a route that already exists, hit that route. |
+| `server/templates/` | Confirm the affected stack reconciles cleanly: `docker ps` shows the new containers, no errors in the relevant container's logs (`docker logs <container>`). |
+| `egress-gateway/`, `egress-fw-agent/`, `egress-shared/` | Confirm the binary builds, the container starts, and the egress page in dev shows the agent/gateway healthy. |
+| Server NATS subjects (`server/src/services/nats/`, `lib/types/nats-subjects.ts`) | Publish a test message via `NatsBus` (or the smoke ping `mini-infra.system.ping`) and verify the consumer side fires. Reference `docs/architecture/internal-messaging.md` for the subject inventory. |
+| `update-sidecar/`, `agent-sidecar/` | Run the sidecar's npm tests (`cd <dir> && npm test`). Live smoke is component-specific; if the phase exercises a runtime path, drive it from the server side. |
+| `pg-az-backup/` | Trigger a backup from the dev UI (or via the API) and confirm the run completes; check Azure Blob if the env has Azure configured, otherwise just confirm the runner exited cleanly. |
+| `lib/types/` only | No live smoke needed; build pass = types compile. |
+| `docs/`, README, SKILL.md, root configs only | No live smoke; build/lint is enough. The phase is docs-only — also tell the executor to skip the backgrounded `pnpm worktree-env start`. |
+
+If the phase touches several components, list one recipe per. If none of these match (rare — usually means a totally new component), write `<no recipe — confirm with user before merging>` and the executor will surface it.
 
 ---
 
@@ -194,7 +215,7 @@ For each phase, in order, create a Linear issue:
 
 ---
 
-## Relevant docs (read before planning)
+## Relevant docs (read before writing code)
 
 **Repo-wide:**
 - [CLAUDE.md](CLAUDE.md) — pnpm, worktree workflow, build invariants
@@ -208,11 +229,37 @@ For each phase, in order, create a Linear issue:
 
 ---
 
+## Workflow
+
+This is an execution-agent ticket — no separate planning phase. Read the docs above, then:
+
+1. **Pre-flight.** Confirm clean working tree, on a feature branch, in a worktree path.
+2. **`pnpm install`.** Fresh worktrees do not share `node_modules` with the main checkout (per root `CLAUDE.md`). Run synchronously; required before any other `pnpm` command including `pnpm worktree-env`.
+3. **Spin up the dev env in the background.** Kick off `pnpm worktree-env start` with `run_in_background: true` so it warms while you work. Idempotent — safe if the env is already up.
+   - <if the phase is docs-only, replace this whole bullet with: "Skip — phase is docs-only, no live smoke needed.">
+4. **Read the dev env URL and admin creds from `environment-details.xml`** at the worktree root once the background command has finished, before running smoke tests.
+
+## Smoke tests (run after build/lint/unit tests pass)
+
+<bullets generated from Phase 3.2's smoke-recipe map for this phase's touched components.
+ Examples by component:>
+
+- **Server route changes** → `curl -H "x-api-key: <admin>" $MINI_INFRA_URL/api/<route>` and verify response shape.
+- **UI changes** → invoke the `test-dev` skill on the affected page; walk the golden path.
+- **Stack template changes** → `docker ps` shows the new containers, `docker logs <container>` clean.
+- **NATS subject changes** → publish via `NatsBus`, confirm consumer fires; baseline with `mini-infra.system.ping`.
+- ...
+
+If none of the recipes match, the populator emits `<no recipe — confirm with user before merging>` here and the executor will surface that.
+
+---
+
 ## Conventions
 
 - Commit format: `<area>(<scope>): <subject> (Phase N, ALT-NN)` — area tag for this project: `<detected from Phase 4>`
-- PR body must include `Closes ALT-NN` so merging closes this issue.
-- Anything the plan section says to **defer** stays deferred — don't expand scope.
+- PR body must include `Closes ALT-NN` so merging the PR auto-closes this issue.
+- Anything the plan section says to **defer** stays deferred — don't expand scope on the fly.
+- When done, the executor leaves a structured handoff comment on this issue covering Known issues / Work deferred / Blockers / Deviations from the plan.
 
 ## Prior art
 
