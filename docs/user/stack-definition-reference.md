@@ -228,6 +228,8 @@ Each key is an environment variable name. Each value must be one of:
 | `{ kind: "vault-addr" }` | Inject the Vault address. | Exact object shape. |
 | `{ kind: "vault-role-id" }` | Inject the bound Vault AppRole role ID. | Exact object shape. |
 | `{ kind: "vault-wrapped-secret-id", ttlSeconds: 300 }` | Inject a wrapped secret ID minted at apply time. | `ttlSeconds` is optional, integer `> 0`. If omitted, runtime default is `300`. |
+| `{ kind: "nats-url" }` | URL of the managed NATS cluster reachable from the service's network. | Exact object shape. |
+| `{ kind: "nats-creds" }` | Multi-line credentials file (JWT + nkey seed) for the bound `natsRole`. **Fixed TTL — see warning below.** | Exact object shape. The service must declare a `natsRole`. |
 | `{ kind: "nats-signer-seed", signer: "<name>" }` | NKey seed (base32) of the named scoped signing key, for in-process JWT minting. | `signer` must match a `nats.signers[].name` on the stack template. |
 | `{ kind: "nats-account-public", signer: "<name>" }` | Public key of the NATS account that owns the named signer. Pair with `nats-signer-seed`; `nats-jwt`'s `encodeUser` requires it as the `issuer_account` claim. | `signer` must match a `nats.signers[].name` on the stack template. |
 
@@ -235,6 +237,7 @@ Runtime notes:
 
 - `dynamicEnv` values are resolved at apply time, not at plan time.
 - Their source definitions stay in the stack definition, but the secret values themselves are not part of the definition hash.
+- **`nats-creds` is fixed-TTL.** The JWT is minted once at apply time with the credential profile's `ttlSeconds` (default `3600`) and is **not refreshed**. When the JWT expires, NATS will close the connection on the next reconnect attempt and reject all reconnects until the container is restarted (or the stack re-applied). For any service whose connection is expected to outlive the TTL — i.e. virtually every long-running service — use the **signer pattern** (`nats-signer-seed` + `nats-account-public`) and an authenticator callback that mints a fresh user JWT on connect. See [Connecting your app to NATS](/nats/app-integration) for the recipe. Reserve `nats-creds` for one-shot containers (jobs, init containers, batch tasks) whose lifetime is shorter than the TTL.
 
 ## `services[].containerConfig.healthcheck`
 
