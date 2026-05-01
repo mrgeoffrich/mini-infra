@@ -18,7 +18,21 @@
  * connection use `await bus.ready({ timeoutMs })`.
  */
 
-import { connect, credsAuthenticator, type NatsConnection, type Subscription } from "nats";
+import {
+  AckPolicy,
+  connect,
+  credsAuthenticator,
+  DeliverPolicy,
+  RetentionPolicy,
+  StorageType,
+  type ConsumerMessages,
+  type JsMsg,
+  type KV,
+  type NatsConnection,
+  type PubAck,
+  type StreamConfig,
+  type Subscription,
+} from "nats";
 import { z, type ZodType } from "zod";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultKVService } from "../vault/vault-kv-service";
@@ -97,6 +111,124 @@ interface SubscriptionRegistration {
   live: Subscription | null;
 }
 
+// ============================================================
+// JetStream — type surface
+// ============================================================
+
+/**
+ * Spec for `bus.jetstream.ensureStream`. Subset of `StreamConfig` covering
+ * the fields the migration actually uses; map onto the SDK's full config at
+ * the call site. `name`, `subjects`, and at least one of (`maxBytes`,
+ * `maxAgeMs`) are required by convention — Phase 2's plan doc §7 calls out
+ * explicit limits as a non-optional design choice for every stream.
+ */
+export interface StreamSpec {
+  /** PascalCase, no dots. e.g. `EgressFwEvents`. */
+  name: string;
+  /** Subjects (or wildcards) the stream captures. */
+  subjects: string[];
+  description?: string;
+  /** Defaults to `RetentionPolicy.Limits` (the SDK's default). */
+  retention?: RetentionPolicy;
+  /** Defaults to `StorageType.File`. */
+  storage?: StorageType;
+  /** Hard cap on bytes. Default 1 GiB per the plan. */
+  maxBytes?: number;
+  /** Hard cap on age in milliseconds. Default 30 d per the plan. */
+  maxAgeMs?: number;
+  /** Hard cap on message count. Optional. */
+  maxMsgs?: number;
+}
+
+/**
+ * Spec for `bus.jetstream.ensureConsumer` / `consume`. Durable name is
+ * mandatory — every consumer this codebase creates is durable, per the plan's
+ * "named `<stream>-<subscriber>`" convention.
+ */
+export interface ConsumerSpec {
+  /** Owning stream name. */
+  stream: string;
+  /** Durable name. e.g. `EgressFwEvents-server`. */
+  durable: string;
+  /** Optional filter subject (single — multi-subject filters not modeled). */
+  filterSubject?: string;
+  /** Defaults to `AckPolicy.Explicit`. */
+  ackPolicy?: AckPolicy;
+  /** Defaults to `DeliverPolicy.All`. */
+  deliverPolicy?: DeliverPolicy;
+  /** Default 30 s. */
+  ackWaitMs?: number;
+  /** Default 5. */
+  maxDeliver?: number;
+}
+
+/** Spec for a JetStream KV bucket. */
+export interface KvSpec {
+  bucket: string;
+  /** Per-key TTL in milliseconds. e.g. 30 000 for the heartbeat bucket. */
+  ttlMs?: number;
+  /** Number of historical revisions per key. Default 1. */
+  history?: number;
+  /** Defaults to `StorageType.File`. */
+  storage?: StorageType;
+  description?: string;
+}
+
+/** Handler signature for `consume`. Throw to nack-with-redelivery. */
+export type JsHandler<T> = (
+  msg: T,
+  ctx: JsHandlerContext,
+) => Promise<void> | void;
+
+export interface JsHandlerContext {
+  subject: string;
+  /** JetStream sequence number on the source stream. */
+  streamSeq: number;
+  /** Delivery attempt number — 1 on the first delivery. */
+  deliveryAttempt: number;
+  /** Message timestamp from the stream, ms since epoch. */
+  timestampMs: number;
+  /** Headers from the original publish, if any. */
+  headers: Record<string, string> | null;
+}
+
+export interface JsConsumeOptions extends SubscribeOptions {
+  /**
+   * Ack policy when the handler returns successfully. Defaults to `auto` —
+   * the bus calls `msg.ack()` on success and `msg.nak()` on thrown handler.
+   * Set `manual` and ack inside the handler for at-least-once semantics that
+   * survive partial work (e.g. write to DB then ack).
+   */
+  ack?: "auto" | "manual";
+}
+
+/** KV facade — thin wrapper around the SDK's `KV`. */
+export interface BusKv {
+  /**
+   * Fetch the latest value at `key`, or null if missing/deleted/purged.
+   * KV value validation is the caller's responsibility (Phase 2 callers
+   * use Zod inline). When a per-bucket schema registry is added later,
+   * `get`/`put` will gain an `opts.unchecked` knob mirroring the
+   * subject-level pattern; until then the surface is intentionally
+   * minimal so a "I forgot to validate" bug isn't masked by a flag that
+   * doesn't actually do anything.
+   */
+  get<T>(key: string): Promise<{ value: T; revision: number; updatedAtMs: number } | null>;
+  /** Set `key` to `value`. Returns the new revision. */
+  put<T>(key: string, value: T): Promise<number>;
+}
+
+interface JsSubscriptionRegistration {
+  spec: ConsumerSpec;
+  /** Subject used for schema lookup; usually `spec.filterSubject` or the
+   *  stream's wildcard. Phase 2 always passes a concrete subject. */
+  subjectForSchema: string;
+  handler: JsHandler<unknown>;
+  opts: JsConsumeOptions;
+  /** Live ConsumerMessages iterator while connected. */
+  liveStop: (() => void) | null;
+}
+
 const ENCODER = new TextEncoder();
 const DECODER = new TextDecoder();
 
@@ -141,6 +273,12 @@ export class NatsBus {
   // to settle before draining the connection — prevents post-shutdown side
   // effects in stateful Phase 2+ handlers.
   private activeHandlers = new Set<Promise<unknown>>();
+  // JetStream consumer registrations. Mirrors `registrations` for core subs:
+  // re-attached on every reconnect, durable across creds invalidation. The
+  // consumer record on the server is what makes this safe — the durable
+  // remembers its position, so re-consume() resumes from where we left off
+  // rather than re-delivering everything.
+  private jsRegistrations: JsSubscriptionRegistration[] = [];
 
   private constructor(private readonly opts: NatsBusOptions = {}) {}
 
@@ -184,6 +322,20 @@ export class NatsBus {
     }
     this.liveSubs = [];
     for (const reg of this.registrations) reg.live = null;
+
+    // Stop JetStream consumer iterators the same way. The durable remembers
+    // the last-acked sequence, so the next `consume()` after reconnect picks
+    // up where we left off.
+    for (const reg of this.jsRegistrations) {
+      if (reg.liveStop) {
+        try {
+          reg.liveStop();
+        } catch {
+          // best-effort
+        }
+        reg.liveStop = null;
+      }
+    }
 
     // Wait for in-flight handlers to settle. allSettled so a misbehaving
     // handler can't block the rest of shutdown forever.
@@ -370,6 +522,280 @@ export class NatsBus {
     );
   }
 
+  // ============================================================
+  // JetStream — public surface
+  // ============================================================
+
+  /**
+   * JetStream wrappers. Mirrors the plan-doc shape (`docs/planning/not-shipped/
+   * internal-nats-messaging-plan.md` §5):
+   *
+   *   - `ensureStream(spec)`   — idempotent stream upsert
+   *   - `ensureConsumer(spec)` — idempotent durable consumer upsert
+   *   - `publish(subject, payload)` — JS publish with Zod validation
+   *   - `consume(spec, handler)` — durable consumer with re-attach
+   *   - `ensureKv(spec)` / `kv(bucket)` — KV bucket helpers
+   *
+   * All require an active connection. They throw if the bus is disconnected
+   * (callers either await `bus.ready()` first or accept the throw — same
+   * contract as core `publish`/`request`).
+   */
+  readonly jetstream = {
+    ensureStream: (spec: StreamSpec): Promise<void> => this.jsEnsureStream(spec),
+    ensureConsumer: (spec: ConsumerSpec): Promise<void> => this.jsEnsureConsumer(spec),
+    publish: <T>(subject: string, payload: T, opts: PublishOptions = {}): Promise<PubAck> =>
+      this.jsPublish(subject, payload, opts),
+    consume: <T>(
+      spec: ConsumerSpec,
+      handler: JsHandler<T>,
+      opts: JsConsumeOptions = {},
+    ): (() => void) => this.jsConsume(spec, handler, opts),
+    ensureKv: (spec: KvSpec): Promise<void> => this.jsEnsureKv(spec),
+    kv: (bucket: string): BusKv => this.jsKv(bucket),
+  };
+
+  // ============================================================
+  // JetStream — internals
+  // ============================================================
+
+  private async jsEnsureStream(spec: StreamSpec): Promise<void> {
+    const nc = this.requireConnected();
+    const jsm = await nc.jetstreamManager();
+    const cfg: Partial<StreamConfig> = {
+      name: spec.name,
+      subjects: spec.subjects,
+      ...(spec.description !== undefined ? { description: spec.description } : {}),
+      retention: spec.retention ?? RetentionPolicy.Limits,
+      storage: spec.storage ?? StorageType.File,
+      max_bytes: spec.maxBytes ?? 1024 * 1024 * 1024, // 1 GiB default
+      // SDK uses nanoseconds for max_age; 0 means unlimited.
+      max_age: spec.maxAgeMs !== undefined ? spec.maxAgeMs * 1_000_000 : 30 * 24 * 60 * 60 * 1_000_000_000,
+      ...(spec.maxMsgs !== undefined ? { max_msgs: spec.maxMsgs } : {}),
+    };
+    try {
+      await jsm.streams.update(spec.name, cfg);
+      log.debug({ stream: spec.name, subjects: spec.subjects }, "jetstream stream updated");
+    } catch (updateErr) {
+      // Either the stream doesn't exist yet (404 → create) or the update is
+      // genuinely incompatible (e.g. retention change). The control-plane
+      // service uses the same try/update→catch/add pattern; we mirror it so
+      // bootstrapping the stream the first time works without two RPCs.
+      const msg = updateErr instanceof Error ? updateErr.message : String(updateErr);
+      if (!/not found|10059/i.test(msg)) {
+        // Update of an existing stream failed — re-throw so the caller sees
+        // the real reason (likely an incompatible config change). Don't
+        // shadow it with an `add` that would also fail with a duplicate
+        // error.
+        throw updateErr;
+      }
+      try {
+        await jsm.streams.add(cfg);
+        log.info({ stream: spec.name, subjects: spec.subjects }, "jetstream stream created");
+      } catch (addErr) {
+        log.error(
+          { stream: spec.name, err: addErr instanceof Error ? addErr.message : String(addErr) },
+          "jetstream stream create failed",
+        );
+        throw addErr;
+      }
+    }
+  }
+
+  private async jsEnsureConsumer(spec: ConsumerSpec): Promise<void> {
+    const nc = this.requireConnected();
+    const jsm = await nc.jetstreamManager();
+    const cfg = {
+      durable_name: spec.durable,
+      ack_policy: spec.ackPolicy ?? AckPolicy.Explicit,
+      deliver_policy: spec.deliverPolicy ?? DeliverPolicy.All,
+      ack_wait: (spec.ackWaitMs ?? 30_000) * 1_000_000, // ms → ns
+      max_deliver: spec.maxDeliver ?? 5,
+      ...(spec.filterSubject ? { filter_subject: spec.filterSubject } : {}),
+    };
+    try {
+      await jsm.consumers.update(spec.stream, spec.durable, cfg);
+      log.debug({ stream: spec.stream, durable: spec.durable }, "jetstream consumer updated");
+    } catch (updateErr) {
+      const msg = updateErr instanceof Error ? updateErr.message : String(updateErr);
+      if (!/not found|10014|10059/i.test(msg)) {
+        throw updateErr;
+      }
+      await jsm.consumers.add(spec.stream, cfg);
+      log.info({ stream: spec.stream, durable: spec.durable }, "jetstream consumer created");
+    }
+  }
+
+  private async jsPublish<T>(
+    subject: string,
+    payload: T,
+    opts: PublishOptions,
+  ): Promise<PubAck> {
+    const nc = this.requireConnected();
+    const validated = opts.unchecked ? payload : this.validateRequest(subject, payload);
+    return nc.jetstream().publish(subject, ENCODER.encode(JSON.stringify(validated)));
+  }
+
+  private jsConsume<T>(
+    spec: ConsumerSpec,
+    handler: JsHandler<T>,
+    opts: JsConsumeOptions,
+  ): () => void {
+    const reg: JsSubscriptionRegistration = {
+      spec,
+      // Phase 2 always uses a single concrete filter subject. If a future
+      // caller leaves it unset we lose schema lookup (the wildcard parent
+      // wouldn't match the registry); record the durable name instead so
+      // logs at least carry context, and fall back to `unchecked`.
+      subjectForSchema: spec.filterSubject ?? `__js:${spec.stream}/${spec.durable}`,
+      handler: handler as JsHandler<unknown>,
+      opts,
+      liveStop: null,
+    };
+    this.jsRegistrations.push(reg);
+    if (this.state === "connected" && this.nc) {
+      void this.attachJsRegistration(reg, this.nc);
+    }
+    return () => {
+      this.jsRegistrations = this.jsRegistrations.filter((r) => r !== reg);
+      if (reg.liveStop) {
+        try {
+          reg.liveStop();
+        } catch {
+          // best-effort
+        }
+        reg.liveStop = null;
+      }
+    };
+  }
+
+  private async attachJsRegistration(
+    reg: JsSubscriptionRegistration,
+    nc: NatsConnection,
+  ): Promise<void> {
+    let messages: ConsumerMessages;
+    try {
+      const consumer = await nc.jetstream().consumers.get(reg.spec.stream, reg.spec.durable);
+      messages = await consumer.consume();
+    } catch (err) {
+      log.error(
+        {
+          stream: reg.spec.stream,
+          durable: reg.spec.durable,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        "jetstream consume attach failed; will retry on next reconnect",
+      );
+      return;
+    }
+    let stopped = false;
+    reg.liveStop = () => {
+      if (stopped) return;
+      stopped = true;
+      try {
+        messages.stop();
+      } catch {
+        // best-effort
+      }
+    };
+    void this.consumeJs(reg, messages);
+  }
+
+  private async consumeJs(
+    reg: JsSubscriptionRegistration,
+    messages: ConsumerMessages,
+  ): Promise<void> {
+    const ackMode = reg.opts.ack ?? "auto";
+    for await (const msg of messages) {
+      const ctx = jsContextFromMsg(msg);
+      const work = (async () => {
+        let acked = false;
+        try {
+          const raw = msg.data.length === 0 ? undefined : JSON.parse(DECODER.decode(msg.data));
+          const body = reg.opts.unchecked
+            ? raw
+            : this.validateRequest(reg.subjectForSchema, raw);
+          await reg.handler(body, ctx);
+          if (ackMode === "auto") {
+            msg.ack();
+            acked = true;
+          }
+        } catch (err) {
+          log.error(
+            {
+              stream: reg.spec.stream,
+              durable: reg.spec.durable,
+              subject: ctx.subject,
+              streamSeq: ctx.streamSeq,
+              attempt: ctx.deliveryAttempt,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "jetstream handler failed; nak for redelivery",
+          );
+          if (!acked) {
+            try {
+              msg.nak();
+            } catch {
+              // best-effort — server-side ack-wait will redeliver anyway
+            }
+          }
+        }
+      })();
+      this.activeHandlers.add(work);
+      void work.finally(() => this.activeHandlers.delete(work));
+      // Serialise per-consumer (same rationale as core subs in `consume`).
+      await work;
+    }
+  }
+
+  private async jsEnsureKv(spec: KvSpec): Promise<void> {
+    const nc = this.requireConnected();
+    // The SDK's `views.kv` is itself idempotent (it creates the underlying
+    // KV-backing stream if missing, otherwise opens). But it doesn't update
+    // settings on an existing bucket — to keep the contract honest we only
+    // call it for creation, and update via the underlying stream if a real
+    // settings drift case comes up later.
+    await nc.jetstream().views.kv(spec.bucket, {
+      ...(spec.ttlMs !== undefined ? { ttl: spec.ttlMs } : {}),
+      ...(spec.history !== undefined ? { history: spec.history } : {}),
+      ...(spec.storage !== undefined ? { storage: spec.storage } : {}),
+      ...(spec.description !== undefined ? { description: spec.description } : {}),
+    });
+    log.info({ bucket: spec.bucket, ttlMs: spec.ttlMs }, "jetstream kv ensured");
+  }
+
+  private jsKv(bucket: string): BusKv {
+    // Resolve the underlying SDK KV lazily and per-call so a reconnect
+    // (which replaces `this.nc`) is naturally picked up. Caching the KV
+    // object would re-use a dead JetStream client across the gap.
+    const resolveKv = async (): Promise<KV> => {
+      const nc = this.requireConnected();
+      return nc.jetstream().views.kv(bucket);
+    };
+    return {
+      get: async <T>(
+        key: string,
+      ): Promise<{ value: T; revision: number; updatedAtMs: number } | null> => {
+        const kv = await resolveKv();
+        const entry = await kv.get(key);
+        if (!entry || entry.operation === "DEL" || entry.operation === "PURGE") {
+          return null;
+        }
+        const value = (entry.value.length === 0
+          ? undefined
+          : JSON.parse(DECODER.decode(entry.value))) as T;
+        return {
+          value,
+          revision: entry.revision,
+          updatedAtMs: entry.created.getTime(),
+        };
+      },
+      put: async <T>(key: string, value: T): Promise<number> => {
+        const kv = await resolveKv();
+        return kv.put(key, ENCODER.encode(JSON.stringify(value)));
+      },
+    };
+  }
+
   private attachRegistration(reg: SubscriptionRegistration, nc: NatsConnection): void {
     const sub = nc.subscribe(
       reg.subject,
@@ -400,6 +826,23 @@ export class NatsBus {
     for (const reg of this.registrations) {
       reg.live = null;
       this.attachRegistration(reg, nc);
+    }
+    // JetStream consumers re-attach the same way. Stop any leftover loops
+    // first (mirrors the core sub treatment above) — the previous loop has
+    // already exited via `unsubscribe()`-style stop, but we still null
+    // `liveStop` so a later `shutdown()` can't double-stop.
+    for (const reg of this.jsRegistrations) {
+      if (reg.liveStop) {
+        try {
+          reg.liveStop();
+        } catch {
+          // best-effort
+        }
+        reg.liveStop = null;
+      }
+      // Fire-and-forget — re-attach failures get logged inside the helper
+      // and the next reconnect retries.
+      void this.attachJsRegistration(reg, nc);
     }
   }
 
@@ -609,13 +1052,36 @@ export class NatsBus {
   }
 }
 
+function jsContextFromMsg(msg: JsMsg): JsHandlerContext {
+  // SDK headers are an iterable of `[key, value[]]`. Flatten to last-write-
+  // wins string map; multi-valued headers aren't used by Phase 2+ payloads.
+  let headerMap: Record<string, string> | null = null;
+  if (msg.headers) {
+    const out: Record<string, string> = {};
+    for (const [k, vs] of msg.headers) {
+      if (vs.length > 0) out[k] = vs[vs.length - 1];
+    }
+    headerMap = Object.keys(out).length > 0 ? out : null;
+  }
+  return {
+    subject: msg.subject,
+    streamSeq: msg.seq,
+    deliveryAttempt: msg.info.deliveryCount,
+    timestampMs: Math.floor(Number(msg.info.timestampNanos) / 1_000_000),
+    headers: headerMap,
+  };
+}
+
 function backoffDelayMs(attempt: number): number {
   const base = Math.min(
     RECONNECT_BACKOFF_MAX_MS,
     RECONNECT_BACKOFF_MIN_MS * 2 ** Math.max(0, attempt - 1),
   );
-  // Full jitter — caps thundering herd if multiple processes restart at once.
-  return Math.floor(Math.random() * base);
+  // Full jitter — caps thundering herd if multiple processes restart at
+  // once. The `Math.max(1, ...)` floor avoids a synchronous-feeling
+  // setTimeout(0) on the unlucky ~0.1% of attempt-1 rolls (review M4) —
+  // a tight reconnect loop would otherwise spin during NATS flap.
+  return Math.max(1, Math.floor(Math.random() * base));
 }
 
 function validateOrThrow<T>(

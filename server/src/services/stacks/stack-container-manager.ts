@@ -214,6 +214,14 @@ export class StackContainerManager {
       config.egressBypass === true,
     );
 
+    // Host-mode containers can't join docker networks (Docker rejects it,
+    // and the schema's superRefine already blocks the combination). The
+    // container-manager defends in depth by zeroing the network list when
+    // host mode is requested — a stale options.networkNames couldn't reach
+    // here without bypassing schema validation, but a defensive empty
+    // beats a confusing Docker EINVAL at apply time.
+    const networks = config.networkMode === "host" ? [] : options.networkNames;
+
     const container = await this.dockerExecutor.createLongRunningContainer({
       image,
       name: containerName,
@@ -227,7 +235,8 @@ export class StackContainerManager {
       ports,
       internalPorts,
       mounts,
-      networks: options.networkNames,
+      networks,
+      networkMode: config.networkMode,
       restartPolicy: config.restartPolicy,
       healthcheck,
       logConfig,

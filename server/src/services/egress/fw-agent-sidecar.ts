@@ -1,51 +1,172 @@
 /**
- * Lifecycle for the egress-fw-agent host-singleton sidecar.
+ * Operator-facing helpers for the egress-fw-agent stack (ALT-27).
  *
- * The fw-agent enforces L3/L4 egress rules in the host network namespace via
- * iptables/ipset and emits NFLOG events. Because it lives in `network_mode:
- * host` and needs NET_ADMIN/NET_RAW, it must run as its own container — but
- * mini-infra-server now manages its lifecycle (find/create/start/remove) the
- * same way it manages the agent-sidecar, instead of relying on docker-compose.
+ * The fw-agent used to be a host-singleton container managed directly via
+ * the Docker API by `ensureFwAgent()`. That code path is gone — it's now a
+ * host-scoped stack template (`server/templates/egress-fw-agent/`) wired
+ * through the same reconciler as every other stack. This module is the
+ * thin compatibility surface for the existing settings card UI and the
+ * egress-fw-agent route handler:
  *
- * Communication with the agent stays over the shared Unix socket at
- * /var/run/mini-infra/fw.sock, so EnvFirewallManager is unchanged.
+ *   - `getFwAgentConfig()` — reads image/auto_start from SystemSettings.
+ *     The `image` setting is now reflected into the stack via the template's
+ *     `${EGRESS_FW_AGENT_IMAGE_TAG}` substitution variable; auto_start is
+ *     consulted by `bootstrapFwAgentStack` at boot.
+ *   - `findFwAgent()` — finds the running container by label. Same label
+ *     the legacy host-singleton used (`mini-infra.egress.fw-agent=true`),
+ *     and the new template sets it for backward compat with the
+ *     EnvFirewallManager event filter and the (Stage D11) JetStream
+ *     consumer fallback discovery.
+ *   - `isFwAgentHealthy()` — Stage D10 wires this to the `egress-fw-health`
+ *     KV bucket. Until then it reports `false` (the legacy Unix-socket
+ *     health check is dead).
+ *   - `restartFwAgent()` — re-triggers the stack bootstrap apply.
+ *
+ * The `FwAgentProgressCallback` shape is preserved — the egress-fw-agent
+ * route still emits Channel.EGRESS_FW_AGENT events with the four legacy
+ * step names so the existing settings-card UI keeps working without a
+ * front-end change. The mapping from stack-apply progress to the four
+ * legacy steps is approximate; we trade granularity for backward compat.
  */
-import type Docker from "dockerode";
+
 import { getLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
-import { RegistryManager } from "../docker-executor/registry-manager";
-import { RegistryCredentialService } from "../registry-credential";
 import prisma from "../../lib/prisma";
-import { getOwnContainerId } from "../self-update";
-import {
-  createUnixSocketFetcher,
-  getFwAgentSocketPath,
-  type Fetcher,
-} from "./fw-agent-transport";
+import { bootstrapFwAgentStack } from "./fw-agent-stack-bootstrap";
 import type { OperationStep } from "@mini-infra/types";
+// `NatsBus` is imported lazily so the `isFwAgentHealthy()` polling watcher
+// doesn't pull the prisma chain at import time when this module is brought
+// up by a unit test of an unrelated route.
+import type { NatsBus } from "../nats/nats-bus";
+import type { EgressFwHealth } from "../nats/payload-schemas";
+import { EGRESS_FW_HEALTH_BUCKET } from "../nats/nats-system-bootstrap";
 
 const logger = getLogger("stacks", "fw-agent-sidecar");
 
 const FW_AGENT_LABEL = "mini-infra.egress.fw-agent";
-const FW_AGENT_CONTAINER_NAME = "mini-infra-egress-fw-agent";
-const HEALTH_CHECK_INTERVAL_MS = 30_000;
-const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 const SETTINGS_CATEGORY = "egress-fw-agent";
 
-// Module-level state
-let healthCheckInterval: NodeJS.Timeout | null = null;
-let agentHealthy = false;
-
 // ---------------------------------------------------------------------------
-// Public getters
+// Health watcher — reads the egress-fw-health KV bucket on a tight cadence
+// and exposes the freshness summary via `isFwAgentHealthy()` (kept sync for
+// backward compat with the legacy host-singleton API).
 // ---------------------------------------------------------------------------
 
-export function isFwAgentHealthy(): boolean {
-  return agentHealthy;
+/** Heartbeat freshness threshold — per ALT-27 acceptance criteria, the UI
+ *  reports "healthy" when the latest heartbeat is ≤10s old. */
+const HEALTH_FRESHNESS_THRESHOLD_MS = 10_000;
+const HEALTH_POLL_INTERVAL_MS = 2_000;
+const HEALTH_KV_KEY = "current"; // matches `healthKey` in the Go agent
+
+let healthPollTimer: NodeJS.Timeout | null = null;
+let cachedHealthy = false;
+let lastHealthReportedAtMs: number | null = null;
+let lastHealthLastApplyId: string | null = null;
+let cachedNatsBusForHealth: NatsBus | null = null;
+
+async function loadNatsBusForHealth(): Promise<NatsBus> {
+  if (cachedNatsBusForHealth) return cachedNatsBusForHealth;
+  // Lazy require — see the file-top import note about prisma chains.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require("../nats/nats-bus") as typeof import("../nats/nats-bus");
+  cachedNatsBusForHealth = mod.NatsBus.getInstance();
+  return cachedNatsBusForHealth;
+}
+
+async function pollHealthOnce(): Promise<void> {
+  try {
+    const bus = await loadNatsBusForHealth();
+    const kv = bus.jetstream.kv(EGRESS_FW_HEALTH_BUCKET);
+    const entry = await kv.get<EgressFwHealth>(HEALTH_KV_KEY);
+    if (!entry) {
+      // No heartbeat in the bucket yet — agent hasn't reported, or its
+      // first publish hasn't landed. Keep `false` so the UI shows
+      // "starting" rather than "stale".
+      cachedHealthy = false;
+      lastHealthReportedAtMs = null;
+      return;
+    }
+    const age = Date.now() - entry.value.reportedAtMs;
+    cachedHealthy = entry.value.ok && age <= HEALTH_FRESHNESS_THRESHOLD_MS;
+    lastHealthReportedAtMs = entry.value.reportedAtMs;
+    lastHealthLastApplyId = entry.value.lastApplyId ?? null;
+  } catch (err) {
+    // KV read fails when the bus is reconnecting or the bucket doesn't
+    // exist yet (e.g. cold-boot worktree where bootstrap hasn't run).
+    // Don't flap the cache — keep whatever we last knew. Polling resumes
+    // on the next tick. Logged at debug so a stuck KV-read symptom is
+    // diagnosable without flooding production logs on routine reconnect
+    // bounces.
+    logger.debug(
+      { err: err instanceof Error ? err.message : String(err) },
+      "fw-agent health KV read failed — keeping cached value",
+    );
+  }
+}
+
+/**
+ * Start the background health watcher. Idempotent — calling twice is a
+ * no-op. Call from server boot once the NatsBus has been started.
+ */
+export function startFwAgentHealthWatcher(): void {
+  if (healthPollTimer) return;
+  // Kick off immediately so a freshly-booted server doesn't show "stale"
+  // for the first 2 s; subsequent polls run on the interval.
+  void pollHealthOnce();
+  healthPollTimer = setInterval(() => void pollHealthOnce(), HEALTH_POLL_INTERVAL_MS);
+  logger.info({ intervalMs: HEALTH_POLL_INTERVAL_MS }, "fw-agent health watcher started");
+}
+
+/** Stop the watcher. For graceful shutdown + tests. */
+export function stopFwAgentHealthWatcher(): void {
+  if (healthPollTimer) {
+    clearInterval(healthPollTimer);
+    healthPollTimer = null;
+  }
+  cachedNatsBusForHealth = null;
 }
 
 // ---------------------------------------------------------------------------
-// Settings helpers
+// Public getters preserved from the legacy surface
+// ---------------------------------------------------------------------------
+
+/**
+ * Reports the most-recently observed health of the fw-agent (ALT-27,
+ * Stage D10). Backed by the background watcher started by
+ * `startFwAgentHealthWatcher()`. Returns `false` when:
+ *   - the watcher hasn't started yet,
+ *   - the agent hasn't published a heartbeat,
+ *   - the latest heartbeat's `reportedAtMs` is older than the freshness
+ *     threshold (default 10 s),
+ *   - the heartbeat said `ok: false`.
+ * Stays sync for backward compat with the route handler and existing
+ * callers.
+ */
+export function isFwAgentHealthy(): boolean {
+  return cachedHealthy;
+}
+
+/**
+ * Richer status snapshot for diagnostics. Returns null when the watcher
+ * has never observed a heartbeat in this process.
+ */
+export function getFwAgentHealthSnapshot(): {
+  healthy: boolean;
+  reportedAtMs: number | null;
+  ageMs: number | null;
+  lastApplyId: string | null;
+} {
+  const now = Date.now();
+  return {
+    healthy: cachedHealthy,
+    reportedAtMs: lastHealthReportedAtMs,
+    ageMs: lastHealthReportedAtMs !== null ? now - lastHealthReportedAtMs : null,
+    lastApplyId: lastHealthLastApplyId,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Settings — image and auto_start
 // ---------------------------------------------------------------------------
 
 async function getSettings(): Promise<Map<string, string>> {
@@ -67,7 +188,7 @@ export async function getFwAgentConfig(): Promise<{
 }
 
 // ---------------------------------------------------------------------------
-// Container discovery
+// Container discovery — find the stack-managed fw-agent container by label
 // ---------------------------------------------------------------------------
 
 export async function findFwAgent(): Promise<{
@@ -78,62 +199,19 @@ export async function findFwAgent(): Promise<{
     const docker = await DockerService.getInstance().getDockerInstance();
     const containers = await docker.listContainers({
       all: true,
-      filters: {
-        label: [`${FW_AGENT_LABEL}=true`],
-      },
+      filters: { label: [`${FW_AGENT_LABEL}=true`] },
     });
     if (containers.length === 0) return null;
     const c = containers[0];
     return { id: c.Id, state: c.State };
   } catch (err) {
-    logger.error({ err }, "Failed to find egress fw-agent");
+    logger.error({ err }, "Failed to find egress fw-agent container");
     return null;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Health checking — tickles the Unix admin socket
-// ---------------------------------------------------------------------------
-
-let cachedFetcher: Fetcher | null = null;
-function getFetcher(): Fetcher {
-  if (!cachedFetcher) {
-    cachedFetcher = createUnixSocketFetcher(getFwAgentSocketPath(), HEALTH_CHECK_TIMEOUT_MS);
-  }
-  return cachedFetcher;
-}
-
-async function checkAgentHealth(): Promise<void> {
-  try {
-    const resp = await getFetcher()({ method: "GET", path: "/v1/health" });
-    if (resp.status === 200) {
-      agentHealthy = true;
-      logger.debug("Egress fw-agent health check passed");
-    } else {
-      agentHealthy = false;
-      logger.warn({ status: resp.status }, "Egress fw-agent health check non-200");
-    }
-  } catch (err) {
-    agentHealthy = false;
-    logger.debug({ err: err instanceof Error ? err.message : String(err) }, "Egress fw-agent health check error");
-  }
-}
-
-function startHealthChecks(): void {
-  stopHealthChecks();
-  void checkAgentHealth();
-  healthCheckInterval = setInterval(() => void checkAgentHealth(), HEALTH_CHECK_INTERVAL_MS);
-}
-
-export function stopHealthChecks(): void {
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Sidecar lifecycle
+// Restart / start — trigger a stack bootstrap apply
 // ---------------------------------------------------------------------------
 
 export type FwAgentProgressCallback = (
@@ -142,7 +220,12 @@ export type FwAgentProgressCallback = (
   totalSteps: number,
 ) => void;
 
-/** Step names used for progress reporting. */
+/**
+ * Step names preserved verbatim from the legacy host-singleton flow so the
+ * existing settings-card UI's progress-bar copy doesn't change. The mapping
+ * from stack-apply progress to these steps is approximate — see the
+ * `restartFwAgent()` body for the heuristic.
+ */
 export const FW_AGENT_STARTUP_STEPS = [
   "Pull fw-agent image",
   "Create container",
@@ -150,181 +233,75 @@ export const FW_AGENT_STARTUP_STEPS = [
   "Verify health",
 ] as const;
 
-export async function ensureFwAgent(options?: {
+/**
+ * Trigger a stack bootstrap apply for the fw-agent. Idempotent — if the
+ * stack is already in sync, the underlying reconciler emits a no-op plan
+ * and this returns `null` (caller then reports "already healthy" or similar).
+ *
+ * The progress callback receives the four legacy steps in order. Because
+ * `bootstrapFwAgentStack` runs the apply in the background and returns
+ * immediately, we synthesise the progress callbacks from the points we
+ * can observe: stack-row-created, apply-dispatched, container-found-running.
+ * The full granular stack-apply progress events still flow through their
+ * usual Socket.IO channel (`Channel.STACK`) for clients that care.
+ *
+ * Returns `{ containerId }` when a container is running after the apply
+ * settles, `null` if the stack couldn't be created or applied.
+ */
+export async function restartFwAgent(options?: {
   onProgress?: FwAgentProgressCallback;
-  checkAutoStart?: boolean;
 }): Promise<{ containerId: string } | null> {
-  const ownContainerId = getOwnContainerId();
-  if (!ownContainerId) {
-    logger.info("Not running in Docker, egress fw-agent will not be managed");
-    return null;
-  }
-
-  const config = await getFwAgentConfig();
-  if (options?.checkAutoStart && !config.autoStart) {
-    logger.info("Egress fw-agent auto-start is disabled");
-    return null;
-  }
-  if (!config.image) {
-    logger.warn("No egress fw-agent image configured (EGRESS_FW_AGENT_IMAGE_TAG not set)");
-    return null;
-  }
-
-  const existing = await findFwAgent();
-  if (existing) {
-    if (existing.state === "running") {
-      logger.info({ containerId: existing.id }, "Found running egress fw-agent, reconnecting");
-      startHealthChecks();
-      return { containerId: existing.id };
-    }
-    logger.info(
-      { containerId: existing.id, state: existing.state },
-      "Found stopped egress fw-agent, removing",
-    );
-    try {
-      const docker = await DockerService.getInstance().getDockerInstance();
-      await docker.getContainer(existing.id).remove({ force: true });
-    } catch (err) {
-      logger.warn({ err }, "Failed to remove stopped egress fw-agent");
-    }
-  }
-
-  return createFwAgent(config, options?.onProgress);
-}
-
-async function createFwAgent(
-  config: { image: string | null },
-  onProgress?: FwAgentProgressCallback,
-): Promise<{ containerId: string } | null> {
-  if (!config.image) return null;
-
+  const onProgress = options?.onProgress;
   const totalSteps = FW_AGENT_STARTUP_STEPS.length;
-  let completedCount = 0;
-
+  let completed = 0;
   const reportStep = (
     step: string,
     status: "completed" | "failed" | "skipped",
     detail?: string,
   ) => {
-    if (status === "completed") completedCount++;
+    if (status === "completed") completed++;
     try {
-      onProgress?.({ step, status, detail }, completedCount, totalSteps);
+      onProgress?.({ step, status, detail }, completed, totalSteps);
     } catch {
       /* never break caller */
     }
   };
 
-  try {
-    const docker = await DockerService.getInstance().getDockerInstance();
+  const result = await bootstrapFwAgentStack(prisma);
+  if (!result.stackId) {
+    reportStep("Pull fw-agent image", "failed", result.reason ?? "no stack");
+    return null;
+  }
+  // Map stack-bootstrap milestones to the legacy step labels. We can't
+  // observe the per-step container creation in real time without splicing
+  // into the reconciler — that's deliberately out of scope. Mark the first
+  // three as completed once the apply has been dispatched (the user sees
+  // the bar fill in) and the fourth based on container presence below.
+  reportStep("Pull fw-agent image", "completed", "stack apply dispatched");
+  reportStep("Create container", "completed");
+  reportStep("Start container", "completed");
 
-    logger.info({ image: config.image }, "Creating egress fw-agent container");
-
-    // Step 1: Pull the image (auto-auth handles ghcr/local-registry creds)
-    try {
-      const registryManager = new RegistryManager(
-        docker,
-        new RegistryCredentialService(prisma),
-      );
-      await registryManager.pullImageWithAutoAuth(config.image);
-      logger.info({ image: config.image }, "Egress fw-agent image pulled");
-      reportStep("Pull fw-agent image", "completed", config.image);
-    } catch (pullErr) {
-      logger.error({ err: pullErr, image: config.image }, "Failed to pull egress fw-agent image");
-      reportStep(
-        "Pull fw-agent image",
-        "failed",
-        pullErr instanceof Error ? pullErr.message : String(pullErr),
-      );
-      throw new Error(
-        `Failed to pull egress fw-agent image "${config.image}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
-        { cause: pullErr },
-      );
+  // Poll briefly for the container to show up; the apply runs in the
+  // background so a few hundred ms of patience is normal even on a warm
+  // boot. Give up after ~6 s — beyond that a timeout is more useful to
+  // the operator than waiting forever.
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const found = await findFwAgent();
+    if (found && found.state === "running") {
+      reportStep("Verify health", "completed", "container running");
+      return { containerId: found.id };
     }
-
-    // Step 2: Create container
-    const createOptions: Docker.ContainerCreateOptions = {
-      Image: config.image,
-      name: FW_AGENT_CONTAINER_NAME,
-      Labels: {
-        [FW_AGENT_LABEL]: "true",
-        "mini-infra.managed": "true",
-      },
-      Env: [
-        `LOG_LEVEL=${process.env.FW_AGENT_LOG_LEVEL || process.env.LOG_LEVEL || "info"}`,
-      ],
-      HostConfig: {
-        NetworkMode: "host",
-        CapAdd: ["NET_ADMIN", "NET_RAW"],
-        Binds: [
-          "/var/run/mini-infra:/var/run/mini-infra",
-          "/lib/modules:/lib/modules:ro",
-        ],
-        RestartPolicy: { Name: "unless-stopped" },
-      },
-    };
-
-    const fwAgent = await docker.createContainer(createOptions);
-    reportStep("Create container", "completed");
-
-    // Step 3: Start container
-    await fwAgent.start();
-    const fwAgentId = (fwAgent as unknown as { id: string }).id;
-    logger.info({ fwAgentId }, "Egress fw-agent container started");
-    reportStep("Start container", "completed", fwAgentId.slice(0, 12));
-
-    // Step 4: Verify health (allow a brief startup window)
-    startHealthChecks();
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    await checkAgentHealth();
-    if (agentHealthy) {
-      reportStep("Verify health", "completed");
-    } else {
-      reportStep(
-        "Verify health",
-        "completed",
-        "Health check pending — agent is starting",
-      );
-    }
-
-    return { containerId: fwAgentId };
-  } catch (err) {
-    logger.error({ err }, "Failed to create egress fw-agent container");
-    throw err;
+    await new Promise((r) => setTimeout(r, 200));
   }
-}
-
-export async function removeFwAgent(): Promise<void> {
-  stopHealthChecks();
-
-  if (!getOwnContainerId()) {
-    agentHealthy = false;
-    return;
-  }
-
-  const existing = await findFwAgent();
-  if (!existing) {
-    agentHealthy = false;
-    return;
-  }
-
-  try {
-    const docker = await DockerService.getInstance().getDockerInstance();
-    const container = docker.getContainer(existing.id);
-    if (existing.state === "running") {
-      logger.info({ containerId: existing.id }, "Stopping egress fw-agent");
-      await container.stop({ t: 10 });
-    }
-    await container.remove();
-    logger.info({ containerId: existing.id }, "Egress fw-agent removed");
-  } catch (err) {
-    logger.error({ err }, "Failed to remove egress fw-agent");
-  }
-  agentHealthy = false;
-}
-
-export async function restartFwAgent(options?: {
-  onProgress?: FwAgentProgressCallback;
-}): Promise<{ containerId: string } | null> {
-  await removeFwAgent();
-  return ensureFwAgent({ onProgress: options?.onProgress });
+  // Mark step 4 as failed (not completed) when the container isn't
+  // confirmed running — the route emits `success: false` for null-return
+  // and showing 4/4 "completed" steps alongside an overall failure
+  // confused operators in the legacy flow. Better to be honest about
+  // which step actually didn't finish.
+  reportStep(
+    "Verify health",
+    "failed",
+    "Container did not reach running state within 6s — apply may still be in progress; refresh status shortly",
+  );
+  return null;
 }

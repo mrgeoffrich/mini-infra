@@ -67,9 +67,10 @@ import { NatsBus } from "./services/nats/nats-bus";
 import { registerPingResponder } from "./services/nats/nats-bus-ping";
 import {
   startEgressBackgroundServices,
-  ensureFwAgent,
-  removeFwAgent,
+  bootstrapFwAgentStack,
   type ShutdownFn as EgressShutdownFn,
+  startFwAgentHealthWatcher,
+  stopFwAgentHealthWatcher,
 } from "./services/egress";
 
 // Global scheduler instances
@@ -148,7 +149,12 @@ const initializeServices = async () => {
     dockerService.onConnect(async () => {
       logger.info("Docker connected, re-provisioning sidecars");
       try {
-        await ensureFwAgent({ checkAutoStart: true });
+        // ALT-27: fw-agent is now a host-scope stack. The bootstrap is
+        // idempotent — if the stack is already applied this is a couple
+        // of cheap DB lookups; if it isn't (e.g. Docker just came back
+        // and the apply was retrying in the background), this re-arms
+        // the apply. Same role the legacy `ensureFwAgent` had here.
+        await bootstrapFwAgentStack(prisma);
       } catch (err) {
         logger.warn(
           { err },
@@ -173,24 +179,12 @@ const initializeServices = async () => {
     setupHAProxyCrashLoopWatcher();
     console.log("[STARTUP] ✓ HAProxy crash loop watcher initialized");
 
-    // Provision the egress fw-agent host-singleton sidecar BEFORE the egress
-    // background services start, so EnvFirewallManager.start() can reach the
-    // admin socket during its boot reconcile pass.
-    console.log("[STARTUP] Checking egress fw-agent...");
-    try {
-      const fwAgentResult = await ensureFwAgent({ checkAutoStart: true });
-      if (fwAgentResult) {
-        logger.info({ containerId: fwAgentResult.containerId }, "Egress fw-agent provisioned");
-        console.log("[STARTUP] ✓ Egress fw-agent provisioned");
-      } else {
-        console.log(
-          "[STARTUP] Egress fw-agent not started (disabled, no image, or not in Docker)",
-        );
-      }
-    } catch (err) {
-      logger.warn({ err }, "Egress fw-agent provisioning failed (non-fatal)");
-      console.log("[STARTUP] ⚠ Egress fw-agent provisioning failed (non-fatal)");
-    }
+    // ALT-27: the fw-agent stack bootstrap runs *after* `syncBuiltinStacks`
+    // because the bootstrap needs the `egress-fw-agent` system template to
+    // already be upserted in the DB. Originally placed here (mirroring the
+    // legacy `ensureFwAgent` slot) but the early bail with reason
+    // "template not synced" made the EnvFirewallManager.start() that
+    // follows useless on a fresh boot. Moved further down the chain.
 
     // Start egress firewall background services (non-fatal if they fail)
     console.log("[STARTUP] Starting egress background services...");
@@ -307,6 +301,37 @@ const initializeServices = async () => {
     const templateByName = await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
 
+    // ALT-27: bootstrap the egress-fw-agent stack now that the template
+    // is in the DB. Two phases:
+    //   1) Idempotent stack create (DB only) — synchronous here so a
+    //      subsequent EnvFirewallManager start has a stack id to point at.
+    //   2) Apply runs in the background (waits up to 30s for NATS to be
+    //      ready, then runs the same vault → nats → reconciler.apply
+    //      pipeline a manual UI apply uses). Non-fatal — operator can
+    //      retry from the egress-fw-agent settings card if it fails.
+    console.log("[STARTUP] Bootstrapping egress fw-agent stack...");
+    try {
+      const result = await bootstrapFwAgentStack(prisma);
+      if (result.stackId) {
+        logger.info(
+          { stackId: result.stackId, applyDispatched: result.applyDispatched },
+          "Egress fw-agent stack bootstrapped",
+        );
+        console.log(
+          `[STARTUP] ✓ Egress fw-agent stack ${result.stackId.slice(0, 8)} (apply: ${
+            result.applyDispatched ? "dispatched" : "skipped — " + (result.reason ?? "?")
+          })`,
+        );
+      } else {
+        console.log(
+          `[STARTUP] Egress fw-agent stack not bootstrapped (${result.reason ?? "unknown"})`,
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "Egress fw-agent stack bootstrap failed (non-fatal)");
+      console.log("[STARTUP] ⚠ Egress fw-agent stack bootstrap failed (non-fatal)");
+    }
+
     // Initialize Vault services (always-on; Vault itself is optional)
     console.log("[STARTUP] Initializing Vault services...");
     try {
@@ -368,9 +393,25 @@ const initializeServices = async () => {
     try {
       NatsBus.getInstance().start();
       registerPingResponder();
+      // ALT-27 Stage D10: start the fw-agent health watcher unconditionally
+      // — the watcher tolerates a disconnected bus internally (its
+      // pollHealthOnce catch keeps the cached value), so calling it before
+      // the bus is ready is safe. Keeping it outside the `ready()` try
+      // avoids a slow-NATS cold boot leaving the watcher permanently
+      // unstarted (review finding H1).
+      startFwAgentHealthWatcher();
       try {
         await NatsBus.getInstance().ready({ timeoutMs: 3_000 });
         console.log("[STARTUP] ✓ NATS bus connected");
+        // ALT-27: ensure JetStream streams + KV buckets system-internal
+        // subjects depend on. Fire-and-forget — the helper logs its own
+        // errors and the next boot retries. Doing it here (rather than
+        // inside `applyConfig`) keeps the messaging-namespace boot
+        // separate from the NATS control-plane boot.
+        const { bootstrapNatsSystemResources } = await import(
+          "./services/nats/nats-system-bootstrap"
+        );
+        void bootstrapNatsSystemResources();
       } catch (busErr) {
         logger.info(
           { err: busErr instanceof Error ? busErr.message : String(busErr) },
@@ -691,6 +732,15 @@ startServer()
         logger.info("Pool instance reaper stopped");
       }
 
+      // Stop the fw-agent health watcher before draining the bus —
+      // otherwise its 2s tick races the bus shutdown with a stale KV
+      // read.
+      try {
+        stopFwAgentHealthWatcher();
+      } catch (err) {
+        logger.warn({ err }, "fw-agent health watcher stop failed (non-fatal)");
+      }
+
       // Drain the system NATS bus before stopping containers — otherwise
       // any in-flight publishes (including ping replies) get truncated and
       // log noise spikes during shutdown.
@@ -716,17 +766,13 @@ startServer()
         logger.warn({ err }, "Failed to remove agent sidecar during shutdown (non-fatal)");
       }
 
-      // Stop and remove the egress fw-agent container. nftables rules and the
-      // persisted env store survive container removal (kernel + shared volume),
-      // so the next boot's ensureFwAgent → boot reconcile re-attaches without
-      // dropping rules. Recreating on boot also lets self-update pick up a new
-      // fw-agent image cleanly.
-      try {
-        await removeFwAgent();
-        logger.info("Egress fw-agent stopped and removed");
-      } catch (err) {
-        logger.warn({ err }, "Failed to remove egress fw-agent during shutdown (non-fatal)");
-      }
+      // ALT-27: fw-agent is now a stack — its container lifecycle is owned
+      // by the stack reconciler. We deliberately leave it running across
+      // mini-infra-server restarts: nftables rules and the persisted env
+      // store survive container restarts (kernel + shared volume), and
+      // the next boot's `bootstrapFwAgentStack` is idempotent (no-op if
+      // the container is already in sync). Stopping it here would force a
+      // rule-replay on every server restart for no benefit.
 
       // Shut down Socket.IO before closing the HTTP server
       await shutdownSocketIO();

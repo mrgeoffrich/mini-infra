@@ -46,25 +46,152 @@ export const systemPingReplySchema = z.object({
 export type SystemPingReply = z.infer<typeof systemPingReplySchema>;
 
 // ====================================================================
-// Egress fw-agent (Phase 2 — schemas declared early so Phase 1 lands the
-// subject contract end-to-end; the agent is not yet wired)
+// Egress fw-agent (Phase 2)
+//
+// The four legacy Unix-socket admin endpoints (POST /v1/env, DELETE /v1/env/
+// :env, POST /v1/ipset/:env/managed/{add|del|sync}) collapse into a single
+// `rules.apply` request. The body is a discriminated union keyed on `op` —
+// keeps existing env-firewall-manager.ts call sites 1:1 with the legacy
+// transport (one bus.request per former HTTP call) while honouring the plan
+// doc's single-command-subject convention.
+//
+// The `rules.applied` event is fan-out, fact-tense, and lands on JetStream;
+// it carries the `op` so subscribers can filter without parsing reasons.
 // ====================================================================
 
-export const egressFwRulesApplyRequestSchema = z.object({
-  /** Opaque correlation id for the apply, propagated into events. */
-  applyId: z.string().min(1).max(64),
-  /** Serialised ruleset; opaque to the bus, agent parses. */
-  ruleset: z.string(),
+const ipv4 = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)$/, {
+  message: "must be a dotted-quad IPv4 address",
 });
+const ipv4Cidr = z.string().regex(/^(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\/(?:3[0-2]|[12]?\d)$/, {
+  message: "must be an IPv4 CIDR (e.g. 172.30.5.0/24)",
+});
+// Env names mirror EnvironmentManager's invariant (lowercase, dotted/dashed
+// segments, ≤63 chars). Tightened from a free string so a typo can't end up
+// as a stray ipset on the host.
+const envName = z.string().min(1).max(63).regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/, {
+  message: "must be kebab-case [a-z0-9-]",
+});
+// `applyId` is set by the server. Width chosen to fit a UUID v4 with room
+// for a short prefix if we ever want to namespace it.
+const applyId = z.string().min(1).max(64);
+const fwMode = z.enum(["observe", "enforce"]);
+
+const envUpsertOp = z.object({
+  op: z.literal("env-upsert"),
+  applyId,
+  envName,
+  bridgeCidr: ipv4Cidr,
+  mode: fwMode,
+});
+const envRemoveOp = z.object({
+  op: z.literal("env-remove"),
+  applyId,
+  envName,
+});
+const ipsetAddOp = z.object({
+  op: z.literal("ipset-add"),
+  applyId,
+  envName,
+  ip: ipv4,
+});
+const ipsetDelOp = z.object({
+  op: z.literal("ipset-del"),
+  applyId,
+  envName,
+  ip: ipv4,
+});
+const ipsetSyncOp = z.object({
+  op: z.literal("ipset-sync"),
+  applyId,
+  envName,
+  ips: z.array(ipv4).max(10_000),
+});
+
+export const egressFwRulesApplyRequestSchema = z.discriminatedUnion("op", [
+  envUpsertOp,
+  envRemoveOp,
+  ipsetAddOp,
+  ipsetDelOp,
+  ipsetSyncOp,
+]);
 export type EgressFwRulesApplyRequest = z.infer<typeof egressFwRulesApplyRequestSchema>;
+export type EgressFwApplyOp = EgressFwRulesApplyRequest["op"];
 
 export const egressFwRulesApplyReplySchema = z.object({
-  applyId: z.string(),
+  applyId,
   status: z.enum(["applied", "rejected"]),
-  /** Reason on rejection, free text. */
-  reason: z.string().optional(),
+  /** Reason on rejection, free text. Always set when status="rejected". */
+  reason: z.string().max(500).optional(),
 });
 export type EgressFwRulesApplyReply = z.infer<typeof egressFwRulesApplyReplySchema>;
+
+/**
+ * Past-tense fan-out event published by the agent after a successful apply.
+ * Carries `op` so durable consumers (audit, metrics) can filter without
+ * cracking the reply payload, and `durationMs` so apply-latency histograms
+ * are derivable from the event stream alone.
+ */
+export const egressFwRulesAppliedSchema = z.object({
+  applyId,
+  op: z.enum(["env-upsert", "env-remove", "ipset-add", "ipset-del", "ipset-sync"]),
+  envName,
+  appliedAtMs: z.number().int().nonnegative(),
+  /** Wall-clock duration on the agent — apply RPC service time, not RTT. */
+  durationMs: z.number().int().nonnegative(),
+});
+export type EgressFwRulesApplied = z.infer<typeof egressFwRulesAppliedSchema>;
+
+/**
+ * NFLOG-derived drop event. Replaces the bespoke `fw_drop` JSON line shape
+ * (see `server/src/services/egress/egress-log-ingester.ts` for the legacy
+ * shape this is a re-typing of).
+ *
+ * `evt`/`ts` from the legacy shape are gone — the subject is the
+ * discriminator and `occurredAtMs` is a JSON-friendly number. Fields are
+ * named alongside the existing `EgressEvent` Prisma columns so the ingester
+ * can map straight through.
+ */
+export const egressFwEventSchema = z.object({
+  occurredAtMs: z.number().int().nonnegative(),
+  protocol: z.enum(["tcp", "udp", "icmp"]),
+  srcIp: ipv4,
+  destIp: ipv4,
+  /** Optional — ICMP and some malformed packets have no port. */
+  destPort: z.number().int().min(0).max(65_535).optional(),
+  /** Source stack ID from container labels; missing for stray traffic. */
+  stackId: z.string().min(1).max(64).optional(),
+  /** Source service name within the stack; missing if unattributed. */
+  serviceName: z.string().min(1).max(128).optional(),
+  /** Free-form rule reason (e.g. "default-deny", "out-of-bridge"). */
+  reason: z.string().max(200).optional(),
+  /**
+   * Pre-aggregation count from the agent's NFLOG batcher. ≥1; an unbatched
+   * event is `mergedHits: 1`. The ingester sums these into Prisma-side
+   * dedup buckets identically to the legacy log path.
+   */
+  mergedHits: z.number().int().positive(),
+});
+export type EgressFwEvent = z.infer<typeof egressFwEventSchema>;
+
+/**
+ * Heartbeat published every 5 s into the `egress-fw-health` KV bucket. The
+ * server reads the latest value to compute freshness for the health UI; per
+ * the plan, freshness ≤10 s under normal load is the SLA.
+ */
+export const egressFwHealthSchema = z.object({
+  ok: z.boolean(),
+  reportedAtMs: z.number().int().nonnegative(),
+  /**
+   * Number of NFLOG events buffered in the agent's in-memory queue waiting
+   * to be JetStream-published. >0 is a yellow flag; sustained growth means
+   * the agent can't keep up.
+   */
+  queueDepth: z.number().int().nonnegative().optional(),
+  /** Last `applyId` the agent processed, if any. Useful for verifying that
+   *  a server-side apply has propagated end to end. */
+  lastApplyId: z.string().min(1).max(64).optional(),
+});
+export type EgressFwHealth = z.infer<typeof egressFwHealthSchema>;
 
 // ====================================================================
 // Schema registry — used by NatsBus for validation lookups.
@@ -100,20 +227,14 @@ export const payloadSchemas: Record<KnownNatsSubject, SubjectSchemaEntry> = {
     request: egressFwRulesApplyRequestSchema,
     reply: egressFwRulesApplyReplySchema,
   },
-  // Phase 2+ subjects: schemas land alongside the migration that uses them.
   [EgressFwSubject.rulesApplied]: {
-    // Stub: same shape as the apply reply for now; will be re-typed in Phase 2.
-    request: egressFwRulesApplyReplySchema,
+    request: egressFwRulesAppliedSchema,
   },
   [EgressFwSubject.events]: {
-    // Opaque blob in Phase 1 — Phase 2 will refine when fw-agent ships.
-    request: z.unknown(),
+    request: egressFwEventSchema,
   },
   [EgressFwSubject.health]: {
-    request: z.object({
-      ok: z.boolean(),
-      reportedAtMs: z.number().int().nonnegative(),
-    }),
+    request: egressFwHealthSchema,
   },
   [EgressGwSubject.rulesApply]: { request: z.unknown() },
   [EgressGwSubject.rulesApplied]: { request: z.unknown() },

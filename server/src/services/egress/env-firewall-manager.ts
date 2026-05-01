@@ -1,24 +1,29 @@
 /**
  * EnvFirewallManager
  *
- * Drives the egress-fw-agent (a privileged host-singleton container) over its
- * Unix-socket HTTP admin API. Responsible for:
+ * Drives the egress-fw-agent (a privileged host-scope stack container) via
+ * the typed `FwAgentTransport`. ALT-27 swapped the underlying transport
+ * from a Unix-socket HTTP admin API to NATS request/reply (default; the
+ * legacy Unix path is kept compiled behind `MINI_INFRA_FW_AGENT_TRANSPORT=
+ * unix` for one release as a rollback path). Responsibilities are
+ * unchanged:
  *
- * 1. Calling POST /v1/env when a firewall-enabled env is created or its mode changes.
- * 2. Calling DELETE /v1/env/:env when a firewall-enabled env is destroyed.
- * 3. Subscribing to Docker container start/die/destroy events and pushing ipset
- *    add/del deltas for managed containers (non-bypass, not the gateway itself).
- * 4. Reconcile on server boot and Docker daemon reconnect — calls syncManaged
- *    for each opted-in env.
- * 5. Outage queue: if the agent socket is unreachable, queue ipset updates (bounded
- *    at 1000 entries; drop oldest on overflow). Drain on recovery.
+ * 1. `transport.envUpsert` when a firewall-enabled env is created or its
+ *    mode changes (`mini-infra.egress.fw.rules.apply` op=`env-upsert`).
+ * 2. `transport.envRemove` when a firewall-enabled env is destroyed
+ *    (op=`env-remove`).
+ * 3. Subscribing to Docker container start/die/destroy events and pushing
+ *    `ipset-add`/`ipset-del` deltas for managed containers (non-bypass,
+ *    not the gateway itself).
+ * 4. Reconcile on server boot and Docker daemon reconnect — calls
+ *    `transport.ipsetSync` for each opted-in env.
+ * 5. Outage queue: if the transport is unreachable, queue ipset updates
+ *    (bounded at 1000 entries; drop oldest on overflow). Drain on
+ *    recovery. The queue is meaningful even on NATS — NATS Core publishes
+ *    are synchronous on reconnect-buffer overflow.
  *
- * The agent socket is at /var/run/mini-infra/fw.sock (configurable via
- * FW_AGENT_SOCKET_PATH env var). The mini-infra-server container mounts the
- * same directory, so plain HTTP-over-unix-socket works.
- *
- * Feature flag: egressFirewallEnabled on the Environment model defaults to false.
- * Nothing is called for envs with the flag OFF.
+ * Feature flag: egressFirewallEnabled on the Environment model defaults
+ * to false. Nothing is called for envs with the flag OFF.
  *
  * Design decisions vs. plan:
  * - The plan (section 2.7) suggests calling EnvFirewallManager.addManagedContainer()
@@ -32,14 +37,10 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { getLogger } from '../../lib/logger-factory';
 import {
-  createUnixSocketFetcher,
-  getFwAgentSocketPath,
-  type Fetcher,
-  type FwAgentRequest,
-  type FwAgentResponse,
+  getFwAgentTransport,
+  type FwAgentTransport,
+  type FirewallMode as TransportFirewallMode,
 } from './fw-agent-transport';
-
-export type { Fetcher, FwAgentRequest, FwAgentResponse };
 
 const log = getLogger('stacks', 'env-firewall-manager');
 
@@ -49,7 +50,7 @@ const log = getLogger('stacks', 'env-firewall-manager');
 
 const QUEUE_CAP = 1000;
 
-export type FirewallMode = 'observe' | 'enforce';
+export type FirewallMode = TransportFirewallMode;
 
 // ---------------------------------------------------------------------------
 // Queued delta — applied when the agent recovers from an outage
@@ -66,8 +67,7 @@ interface QueuedDelta {
 // ---------------------------------------------------------------------------
 
 export class EnvFirewallManager {
-  private readonly fetcher: Fetcher;
-  private readonly socketPath: string;
+  private readonly transport: FwAgentTransport;
   private stopped = false;
 
   /** Bounded outage queue */
@@ -75,12 +75,17 @@ export class EnvFirewallManager {
   /** Whether the agent is currently reachable */
   private agentUp = false;
 
+  /**
+   * `transportOverride` is for tests — production callers always omit
+   * it and get the cached transport from `getFwAgentTransport()`, which
+   * picks NATS by default and falls back to the legacy Unix socket only
+   * when MINI_INFRA_FW_AGENT_TRANSPORT=unix.
+   */
   constructor(
     private readonly prisma: PrismaClient,
-    fetcher?: Fetcher,
+    transportOverride?: FwAgentTransport,
   ) {
-    this.socketPath = getFwAgentSocketPath();
-    this.fetcher = fetcher ?? createUnixSocketFetcher(this.socketPath);
+    this.transport = transportOverride ?? getFwAgentTransport();
   }
 
   // -------------------------------------------------------------------------
@@ -89,7 +94,7 @@ export class EnvFirewallManager {
 
   /** Start the manager — subscribe to Docker events and run boot reconcile. */
   async start(): Promise<void> {
-    log.info({ socketPath: this.socketPath }, 'EnvFirewallManager starting');
+    log.info('EnvFirewallManager starting');
 
     const dockerService = DockerService.getInstance();
     dockerService.onContainerEvent(async (event) => {
@@ -139,10 +144,10 @@ export class EnvFirewallManager {
     }
 
     try {
-      const resp = await this.fetcher({
-        method: 'POST',
-        path: '/v1/env',
-        body: { env: env.name, bridgeCidr, mode },
+      const resp = await this.transport.envUpsert({
+        envName: env.name,
+        bridgeCidr,
+        mode,
       });
       if (resp.status !== 200) {
         log.warn({ envId, status: resp.status, body: resp.body }, 'fw-agent: applyEnv failed');
@@ -190,7 +195,11 @@ export class EnvFirewallManager {
     }
 
     try {
-      const resp = await this.fetcher({ method: 'DELETE', path: `/v1/env/${envName}` });
+      const resp = await this.transport.envRemove({ envName });
+      // Legacy unix returned 404 when the env was already gone (idempotent
+      // delete); the NATS path returns 200 because the agent's apply-side
+      // handler treats "remove non-existent env" as a no-op and replies
+      // applied. Either is success here.
       if (resp.status !== 200 && resp.status !== 404) {
         log.warn({ envId, envName, status: resp.status }, 'fw-agent: removeEnv non-200');
       } else {
@@ -371,10 +380,10 @@ export class EnvFirewallManager {
         // All envs in the outer list already have egressFirewallEnabled: true.
         // Default to observe mode for reconcile — the mode is not persisted
         // separately, and observe is the safe default (no packets dropped).
-        const resp = await this.fetcher({
-          method: 'POST',
-          path: '/v1/env',
-          body: { env: env.name, bridgeCidr, mode: 'observe' as FirewallMode },
+        const resp = await this.transport.envUpsert({
+          envName: env.name,
+          bridgeCidr,
+          mode: 'observe',
         });
         if (resp.status === 200) {
           this.agentUp = true;
@@ -445,11 +454,7 @@ export class EnvFirewallManager {
 
   private async _addMember(envName: string, ip: string): Promise<void> {
     try {
-      const resp = await this.fetcher({
-        method: 'POST',
-        path: `/v1/ipset/${envName}/managed/add`,
-        body: { ip },
-      });
+      const resp = await this.transport.ipsetAdd({ envName, ip });
       if (resp.status !== 200) {
         log.warn({ envName, ip, status: resp.status }, 'fw-agent: addMember non-200');
       } else {
@@ -463,11 +468,7 @@ export class EnvFirewallManager {
 
   private async _delMember(envName: string, ip: string): Promise<void> {
     try {
-      const resp = await this.fetcher({
-        method: 'POST',
-        path: `/v1/ipset/${envName}/managed/del`,
-        body: { ip },
-      });
+      const resp = await this.transport.ipsetDel({ envName, ip });
       if (resp.status !== 200) {
         log.warn({ envName, ip, status: resp.status }, 'fw-agent: delMember non-200');
       } else {
@@ -481,11 +482,7 @@ export class EnvFirewallManager {
 
   private async _syncManaged(envName: string, ips: string[]): Promise<void> {
     try {
-      const resp = await this.fetcher({
-        method: 'POST',
-        path: `/v1/ipset/${envName}/managed/sync`,
-        body: { ips },
-      });
+      const resp = await this.transport.ipsetSync({ envName, ips });
       if (resp.status !== 200) {
         log.warn({ envName, count: ips.length, status: resp.status }, 'fw-agent: syncManaged non-200');
       } else {

@@ -232,6 +232,19 @@ export interface TemplateNatsRole {
    * `'request'` = sub only (pure requester). `'none'` = no injection.
    */
   inboxAuto?: 'both' | 'reply' | 'request' | 'none';
+  /**
+   * NATS JetStream KV buckets the role needs read/write access to. Each
+   * bucket `B` materializes into `$KV.B.>` on **both** publishAllow and
+   * subscribeAllow — KV ops need pub (Put) and sub (Get/watch). KV
+   * subjects live in the `$KV.>` system tree so they can't be expressed
+   * via the relative `publish` / `subscribe` lists. Bucket names refer
+   * to live JS KV buckets; they are NOT prefixed by the stack's
+   * subjectPrefix.
+   *
+   * Used by the egress-fw-agent (ALT-27) for its 5 s health heartbeat
+   * bucket. Future system templates use the same mechanism.
+   */
+  kvBuckets?: string[];
   /** Credential JWT TTL. Defaults to NatsCredentialProfile system default (3600s). */
   ttlSeconds?: number;
 }

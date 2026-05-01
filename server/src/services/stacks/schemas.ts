@@ -159,6 +159,10 @@ export const stackContainerConfigSchema = z.object({
   labels: z.record(z.string(), z.string()).optional(),
   joinNetworks: z.array(z.string().min(1)).optional(),
   joinResourceNetworks: z.array(z.string().min(1)).optional(),
+  // `host` puts the container in the host's network namespace — required by
+  // services that manipulate the host's nftables/iptables (egress-fw-agent).
+  // Combined-with-other-fields validation is in the superRefine below.
+  networkMode: z.enum(["bridge", "host"]).optional(),
   restartPolicy: z
     .enum(RESTART_POLICIES)
     .optional(),
@@ -219,6 +223,54 @@ export const stackContainerConfigSchema = z.object({
           `restartPolicy="${config.restartPolicy}" cannot be combined with vault-wrapped-secret-id (${wrappedKeys.join(', ')}). ` +
           `Wrapped secret IDs are single-use; auto-restart will retry the unwrap forever and bury the original first-boot error. ` +
           `Use restartPolicy="no" (preferred) or "on-failure" so the original failure stays visible — redeploy the stack to mint a fresh wrapped token.`,
+      });
+    }
+  }
+
+  // host networking is mutually exclusive with bridge-only concepts. Block
+  // these combinations at template-load so a misconfigured host-mode stack
+  // doesn't get partway through reconciliation before docker rejects it.
+  // - `ports`: in host mode the container shares the host's port space
+  //   directly; PortBindings are ignored (and would be confusing in drift).
+  // - `joinNetworks` / `joinResourceNetworks`: a host-mode container
+  //   cannot also belong to a docker bridge network — Docker rejects it.
+  // Templates that need to reach docker-internal services from host mode
+  // resolve them via the host port (e.g. NATS via `nats-url`'s host-mode
+  // branch) rather than joining the network.
+  if (config.networkMode === "host") {
+    if (config.ports && config.ports.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["ports"],
+        message: 'networkMode="host" cannot be combined with `ports` (host-mode containers share the host port space directly; PortBindings are ignored).',
+      });
+    }
+    if (config.joinNetworks && config.joinNetworks.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["joinNetworks"],
+        message: 'networkMode="host" cannot be combined with `joinNetworks` — Docker forbids joining a bridge network from host network mode.',
+      });
+    }
+    if (config.joinResourceNetworks && config.joinResourceNetworks.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["joinResourceNetworks"],
+        message: 'networkMode="host" cannot be combined with `joinResourceNetworks` — Docker forbids joining a bridge network from host network mode. Resolve docker-internal services via host loopback (e.g. nats-url returns the host form for host-mode containers).',
+      });
+    }
+    // Host-mode containers don't join the env's egress bridge networks,
+    // so EnvFirewallManager can never learn their IPs to push ipset
+    // rules. Without `egressBypass: true` the operator gets a service
+    // that's silently in a both-not-monitored-AND-not-firewalled state.
+    // Forcing the bypass flag makes the architectural reality explicit
+    // at template-load time. (Built-in egress-fw-agent template already
+    // sets it; this catches user templates that omit it.)
+    if (config.egressBypass !== true) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["egressBypass"],
+        message: 'networkMode="host" requires egressBypass: true — host-mode containers do not join bridge networks and cannot be monitored by the egress firewall manager.',
       });
     }
   }

@@ -45,6 +45,7 @@ import DockerService from '../docker';
 import { DockerStreamDemuxer } from '../../lib/docker-stream';
 import { getLogger } from '../../lib/logger-factory';
 import { emitEgressEvent } from './egress-socket-emitter';
+import type { EgressFwEvent } from '../nats/payload-schemas';
 
 const log = getLogger('stacks', 'egress-log-ingester');
 
@@ -527,7 +528,7 @@ abstract class BaseTailer {
     }
   }
 
-  private async _ingestFwDrop(line: FwDropLine): Promise<void> {
+  protected async _ingestFwDrop(line: FwDropLine): Promise<void> {
     if (!line.stackId) {
       // fw_drop without stackId cannot be attributed — drop it
       return;
@@ -771,10 +772,29 @@ class GatewayTailer extends BaseTailer {
 }
 
 // ---------------------------------------------------------------------------
-// FwAgentTailer — host singleton
+// FwAgentJsConsumer — host singleton, JetStream durable consumer (ALT-27)
 // ---------------------------------------------------------------------------
+//
+// Replaces the legacy `FwAgentTailer` (docker logs follow → NDJSON parse).
+// The agent now publishes typed `EgressFwEvent` messages to JetStream via
+// `mini-infra.egress.fw.events`; this class reads them through a durable
+// consumer named `EgressFwEvents-server`.
+//
+// The "≤1s loss across agent restart" acceptance criterion is what
+// motivated the move: log-attach drops every in-flight line on container
+// restart. Durable consumers resume from the last-acked sequence, so an
+// agent flap loses only the in-flight (un-acked) batch — typically zero
+// or one event.
 
-class FwAgentTailer extends BaseTailer {
+export class FwAgentJsConsumer extends BaseTailer {
+  private cancel: (() => void) | null = null;
+  // Re-entrancy guard against the BaseTailer reconnect scheduler firing a
+  // second `_connect()` while the first is still mid-await (review M5).
+  // Without this, the second call's `consume()` overwrites `this.cancel`
+  // with the new iterator's stop, leaking the prior iterator and double-
+  // delivering every message it processes.
+  private connecting = false;
+
   constructor(prisma: PrismaClient) {
     super(prisma);
   }
@@ -782,63 +802,98 @@ class FwAgentTailer extends BaseTailer {
   start(): void {
     void this._connect();
     this._startBatchTimer();
-    log.info('Fw-agent tailer started');
+    log.info('Fw-agent JS consumer started');
   }
 
   stop(): void {
+    if (this.cancel) {
+      try {
+        this.cancel();
+      } catch {
+        // best-effort
+      }
+      this.cancel = null;
+    }
     super.stop();
-    log.info('Fw-agent tailer stopped');
+    log.info('Fw-agent JS consumer stopped');
   }
 
+  // _connect on BaseTailer is the docker-logs hook; we override to set up
+  // the JetStream consumer instead. Same retry-on-reconnect pattern.
   protected async _connect(): Promise<void> {
-    if (this.stopped) return;
-
-    const dockerService = DockerService.getInstance();
-    if (!dockerService.isConnected()) {
-      log.debug('Docker not connected — fw-agent tailer will retry');
-      this._scheduleReconnect('fw-agent');
-      return;
-    }
-
+    if (this.stopped || this.connecting) return;
+    this.connecting = true;
     try {
-      // Use DockerService.listContainers() wrapper (adds caching, redaction, timeout).
-      // The wrapper fetches all running containers; we filter by label client-side.
-      // This is safe — the host singleton is one container so no perf concern.
-      const allContainers = await dockerService.listContainers(false);
-      const matchInfo = allContainers.find(
-        (c) => c.labels['mini-infra.egress.fw-agent'] === 'true',
+      // Lazy require to avoid the prisma chain at module import time —
+      // matches the pattern in fw-agent-transport.ts and fw-agent-sidecar.ts.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const busMod = require('../nats/nats-bus') as typeof import('../nats/nats-bus');
+      const { EgressFwSubject, NatsStream } = await import('@mini-infra/types');
+      const bus = busMod.NatsBus.getInstance();
+
+      // Wait for the bus to be ready. On a cold worktree boot this can
+      // take a while; we tolerate it via the same scheduleReconnect path
+      // the docker-logs version used.
+      await bus.ready({ timeoutMs: 5_000 });
+
+      // The stream is bootstrapped by `nats-system-bootstrap.ts`. The
+      // consumer is created here lazily — keeps the consumer name + filter
+      // co-located with the code that processes its messages, so a future
+      // refactor can grep both with one query.
+      await bus.jetstream.ensureConsumer({
+        stream: NatsStream.egressFwEvents,
+        durable: 'EgressFwEvents-server',
+        filterSubject: EgressFwSubject.events,
+      });
+      this.cancel = bus.jetstream.consume<EgressFwEvent>(
+        {
+          stream: NatsStream.egressFwEvents,
+          durable: 'EgressFwEvents-server',
+          filterSubject: EgressFwSubject.events,
+        },
+        async (msg) => this._handleJsEvent(msg),
+        { ack: 'auto' },
       );
-
-      if (!matchInfo) {
-        // fw-agent container doesn't exist yet (Phase 2 hasn't shipped) — retry quietly
-        log.debug('Fw-agent container not found — will retry (Phase 2 not yet deployed)');
-        this._scheduleReconnect('fw-agent');
-        return;
-      }
-
-      const docker = await dockerService.getDockerInstance();
-      const dockerContainer = docker.getContainer(matchInfo.id);
-      const rawStream = (await dockerContainer.logs({
-        follow: true as const,
-        stdout: true,
-        stderr: false,
-        tail: 0,
-      })) as unknown as Readable;
-
-      this._attachStream(rawStream, 'fw-agent');
-      log.info({ containerId: matchInfo.id }, 'Tailing fw-agent container logs');
+      log.info('Fw-agent JS consumer attached to EgressFwEvents stream');
     } catch (err) {
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        'Failed to attach to fw-agent log stream — reconnecting',
+        'Failed to attach JS consumer for fw-agent events — will retry',
       );
-      this._scheduleReconnect('fw-agent');
+      this._scheduleReconnect('fw-agent-js');
+    } finally {
+      this.connecting = false;
     }
+  }
+
+  private async _handleJsEvent(evt: EgressFwEvent): Promise<void> {
+    // Translate the typed event into the legacy `FwDropLine` shape so the
+    // shared dedup/batch path in BaseTailer can ingest it without
+    // bifurcating. Mapping is mostly identity:
+    //   - occurredAtMs (number) → ts (RFC3339Nano string) for `_ingestFwDrop`
+    //   - DestPort (optional) flattened to undefined when missing
+    const line: FwDropLine = {
+      ts: new Date(evt.occurredAtMs).toISOString(),
+      evt: 'fw_drop',
+      protocol: evt.protocol,
+      srcIp: evt.srcIp,
+      destIp: evt.destIp,
+      destPort: evt.destPort ?? undefined,
+      stackId: evt.stackId,
+      serviceName: evt.serviceName,
+      reason: evt.reason,
+      mergedHits: evt.mergedHits,
+    };
+    if (!line.stackId) {
+      // fw_drop without stackId can't be attributed; matches legacy behavior.
+      return;
+    }
+    await this._ingestFwDrop(line);
   }
 }
 
 // ---------------------------------------------------------------------------
-// EgressLogIngester — orchestrates GatewayTailers + FwAgentTailer
+// EgressLogIngester — orchestrates GatewayTailers + FwAgentJsConsumer
 // ---------------------------------------------------------------------------
 
 interface EnvRow {
@@ -849,7 +904,7 @@ interface EnvRow {
 
 export class EgressLogIngester {
   private readonly tailers = new Map<string, GatewayTailer>();
-  private fwAgentTailer: FwAgentTailer | null = null;
+  private fwAgentConsumer: FwAgentJsConsumer | null = null;
   private stopped = false;
 
   constructor(private readonly prisma: PrismaClient) {}
@@ -866,17 +921,21 @@ export class EgressLogIngester {
       this._ensureTailer(env);
     }
 
-    // Host-singleton fw-agent tailer
-    this.fwAgentTailer = new FwAgentTailer(this.prisma);
-    this.fwAgentTailer.start();
+    // Host-singleton fw-agent JS consumer (ALT-27 — replaces the legacy
+    // docker-logs follow). Durable consumer survives restarts of either the
+    // agent or this server, so we don't need to react to docker container
+    // events for the fw-agent anymore — JetStream handles the resumption.
+    this.fwAgentConsumer = new FwAgentJsConsumer(this.prisma);
+    this.fwAgentConsumer.start();
 
-    // Subscribe to Docker container events to react to restarts.
+    // Subscribe to Docker container events for the gateway tailers only.
+    // (The fw-agent doesn't need a docker-event listener — see comment
+    // above.)
     const dockerService = DockerService.getInstance();
     dockerService.onContainerEvent((event) => {
       if (this.stopped) return;
 
       const name = event.containerName ?? '';
-      const labels = (event as { labels?: Record<string, string> }).labels ?? {};
 
       // Gateway containers — name-based match
       if (name.endsWith('-egress-gateway-egress-gateway')) {
@@ -884,22 +943,10 @@ export class EgressLogIngester {
           void this._reconcileTailers();
         }
       }
-
-      // Fw-agent container — label-based match
-      if (labels['mini-infra.egress.fw-agent'] === 'true') {
-        if (event.action === 'start' || event.action === 'die' || event.action === 'stop') {
-          // Restart the fw-agent tailer so it picks up the new container
-          if (this.fwAgentTailer) {
-            this.fwAgentTailer.stop();
-          }
-          this.fwAgentTailer = new FwAgentTailer(this.prisma);
-          this.fwAgentTailer.start();
-        }
-      }
     });
 
     log.info(
-      { tailerCount: this.tailers.size, fwAgentTailer: true },
+      { tailerCount: this.tailers.size, fwAgentConsumer: true },
       'EgressLogIngester started',
     );
   }
@@ -913,9 +960,9 @@ export class EgressLogIngester {
       tailer.stop();
     }
     this.tailers.clear();
-    if (this.fwAgentTailer) {
-      this.fwAgentTailer.stop();
-      this.fwAgentTailer = null;
+    if (this.fwAgentConsumer) {
+      this.fwAgentConsumer.stop();
+      this.fwAgentConsumer = null;
     }
     log.info('EgressLogIngester stopped');
   }

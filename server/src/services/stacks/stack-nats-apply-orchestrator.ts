@@ -606,6 +606,20 @@ async function materializeRole(args: {
   if (args.additionalSubscribeAbsolute && args.additionalSubscribeAbsolute.length > 0) {
     subscribeAllow.push(...args.additionalSubscribeAbsolute);
   }
+  // ALT-27: KV bucket access. KV subjects live in the `$KV.>` system tree,
+  // outside the stack's prefix, so they can't be expressed via the relative
+  // `publish`/`subscribe` lists. Each bucket B gets `$KV.B.>` on BOTH lists
+  // — KV Put needs pub, Get/watch needs sub. Defense-in-depth name re-check
+  // matches the schema regex so a corrupt DB row can't slip an injection
+  // vector through to the permission renderer.
+  for (const bucket of role.kvBuckets ?? []) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(bucket) || bucket.length === 0 || bucket.length > 100) {
+      throw new Error(`NATS apply: role '${role.name}' kvBuckets entry '${bucket}' is invalid`);
+    }
+    const subj = `$KV.${bucket}.>`;
+    publishAllow.push(subj);
+    subscribeAllow.push(subj);
+  }
 
   // Profile name: `<stackId>-<roleName>`. `stack.id` is opaque but
   // collision-free — two stacks with the same `name` (host scope) would

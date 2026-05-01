@@ -384,12 +384,15 @@ export async function run(argv: string[]): Promise<void> {
   // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
   const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
   const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
-  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the FwAgentSidecar service inside
-  // mini-infra-server (which calls docker pull/create directly), so this value
-  // MUST include a `:tag` suffix that the server can pull from the local
-  // registry at runtime.
-  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent:latest`;
-  const egressFwAgentPushRef = egressFwAgentImageTag;
+  // ALT-27: EGRESS_FW_AGENT_IMAGE_TAG is consumed by the egress-fw-agent
+  // stack template's `dockerImage` field (the template appends its own
+  // `:latest` tag), so this value must NOT include a `:tag` suffix —
+  // matches the egress-gateway pattern above. Pre-ALT-27 this DID carry
+  // the tag because the legacy host-singleton in `fw-agent-sidecar.ts`
+  // pulled the image directly; the stack-template reconciler now does
+  // the concat instead.
+  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent`;
+  const egressFwAgentPushRef = `${egressFwAgentImageTag}:latest`;
 
   const sidecarBuildSpecs: SidecarBuildSpec[] = [
     {

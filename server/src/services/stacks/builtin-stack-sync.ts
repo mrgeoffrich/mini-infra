@@ -8,6 +8,7 @@ import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 import { runSystemStackMigrations } from "./system-stack-migrations";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
+import { seedSystemPrefixAllowlist } from "../nats/seed-system-prefix-allowlist";
 // Resolve the templates directory relative to the server root.
 // In dev, __dirname is server/src/services/stacks/ (3 levels up to server/).
 // In prod, __dirname is server/dist/server/src/services/stacks/ (5 levels up to server/).
@@ -70,6 +71,18 @@ export async function syncBuiltinStacks(
         "Failed to sync system template"
       );
     }
+  }
+
+  // 1b. Seed prefix-allowlist entries that system templates need at apply
+  // time. Runs after template upsert (the seed binds to template IDs that
+  // were just written), and before stack upgrades / NATS apply chains kick
+  // in (so the apply path finds the entry already there). Idempotent.
+  try {
+    await seedSystemPrefixAllowlist({ prisma, templateByName });
+  } catch (error) {
+    log.error({ error }, "Failed to seed system NATS prefix allowlist");
+    // Non-fatal — apply will fail loudly with a clear allowlist error if a
+    // system template can't resolve its prefix.
   }
 
   // 2. Upgrade existing stacks that were instantiated from a system template
