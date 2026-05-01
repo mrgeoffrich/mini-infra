@@ -11,10 +11,11 @@ export function useAllServicesStatus() {
       filters: { service: "cloudflare" },
       limit: 1,
     });
-  const { data: azureData, isLoading: azureLoading } = useConnectivityStatus({
-    filters: { service: "azure" },
-    limit: 1,
-  });
+  const { data: storageData, isLoading: storageLoading } =
+    useConnectivityStatus({
+      filters: { service: "storage" },
+      limit: 1,
+    });
   const { data: githubData, isLoading: githubLoading } =
     useConnectivityStatus({
       filters: { service: "github-app" },
@@ -22,23 +23,26 @@ export function useAllServicesStatus() {
     });
 
   const isLoading =
-    dockerLoading || cloudflareLoading || azureLoading || githubLoading;
+    dockerLoading || cloudflareLoading || storageLoading || githubLoading;
 
   const dockerConnected = dockerData?.data?.[0]?.status === "connected";
   const cloudflareConnected =
     cloudflareData?.data?.[0]?.status === "connected";
-  const azureConnected = azureData?.data?.[0]?.status === "connected";
+  const storageConnected = storageData?.data?.[0]?.status === "connected";
   const githubConnected = githubData?.data?.[0]?.status === "connected";
 
   const anyConnected =
-    dockerConnected || cloudflareConnected || azureConnected || githubConnected;
+    dockerConnected ||
+    cloudflareConnected ||
+    storageConnected ||
+    githubConnected;
   const allDisconnected = !anyConnected;
 
   return {
     isLoading,
     dockerConnected,
     cloudflareConnected,
-    azureConnected,
+    storageConnected,
     githubConnected,
     anyConnected,
     allDisconnected,

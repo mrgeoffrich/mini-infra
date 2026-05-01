@@ -12,14 +12,14 @@ import DockerService from "../services/docker";
 import { emitToChannel } from "../lib/socket";
 import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
+import { StorageCertificateStore } from "../services/tls/storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
 import { CertificateDistributor } from "../services/tls/certificate-distributor";
 import { CertificateProvisioningService } from "../services/tls/certificate-provisioning-service";
 import { CloudflareService } from "../services/cloudflare";
-import { AzureStorageService } from "../services/azure-storage-service";
+import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
 import {
@@ -59,12 +59,10 @@ const settingUpFrontends = new Set<string>();
  */
 async function buildSetupService(): Promise<ManualFrontendSetupService> {
   const tlsConfig = new TlsConfigService(prisma);
-  const azureConfig = new AzureStorageService(prisma);
   const containerName = await tlsConfig.getCertificateContainerName();
-  const connectionString = await azureConfig.getConnectionString();
-  if (!connectionString) throw new Error("Azure Storage not configured");
+  const storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
 
-  const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+  const certificateStore = new StorageCertificateStore(storageBackend, containerName);
   const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
   const cloudflareConfig = new CloudflareService(prisma);
   const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);

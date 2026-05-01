@@ -11,7 +11,7 @@ import { SelfBackupExecutor } from "./self-backup-executor";
 export interface ScheduledJob {
   schedule: string;
   timezone: string;
-  containerName: string;
+  storageLocationId: string;
   task: cron.ScheduledTask;
   isEnabled: boolean;
   nextScheduledAt: Date | null;
@@ -24,7 +24,7 @@ export interface ScheduleInfo {
   isEnabled: boolean;
   schedule: string;
   timezone: string;
-  containerName: string;
+  storageLocationId: string;
   nextScheduledAt: Date | null;
   isRegistered: boolean;
 }
@@ -79,7 +79,7 @@ export class SelfBackupScheduler {
         await this.registerSchedule(
           config.cronSchedule,
           config.timezone,
-          config.azureContainerName
+          config.storageLocationId,
         );
 
         // Enable if configured to be enabled
@@ -88,7 +88,7 @@ export class SelfBackupScheduler {
         getLogger("backup", "self-backup-scheduler").info({
           schedule: config.cronSchedule,
           timezone: config.timezone,
-          containerName: config.azureContainerName,
+          storageLocationId: config.storageLocationId,
           nextScheduledAt: this.scheduledJob?.nextScheduledAt?.toISOString(),
         }, "Self-backup scheduler initialized and enabled");
       } else {
@@ -110,7 +110,7 @@ export class SelfBackupScheduler {
    */
   private async loadConfigFromDatabase(): Promise<{
     cronSchedule: string;
-    azureContainerName: string;
+    storageLocationId: string;
     timezone: string;
     enabled: boolean;
   } | null> {
@@ -129,17 +129,17 @@ export class SelfBackupScheduler {
       const settingsMap = new Map(settings.map(s => [s.key, s.value]));
 
       const cronSchedule = settingsMap.get("cron_schedule");
-      const azureContainerName = settingsMap.get("azure_container_name");
+      const storageLocationId = settingsMap.get("storage_location_id");
       const timezone = settingsMap.get("timezone") || "UTC";
       const enabled = settingsMap.get("enabled") === "true";
 
-      if (!cronSchedule || !azureContainerName) {
+      if (!cronSchedule || !storageLocationId) {
         return null;
       }
 
       return {
         cronSchedule,
-        azureContainerName,
+        storageLocationId,
         timezone,
         enabled,
       };
@@ -155,12 +155,12 @@ export class SelfBackupScheduler {
    * Register a new backup schedule
    * @param schedule - Cron expression
    * @param timezone - Timezone for schedule
-   * @param containerName - Azure container
+   * @param storageLocationId - Provider-agnostic storage location id
    */
   public async registerSchedule(
     schedule: string,
     timezone: string,
-    containerName: string
+    storageLocationId: string,
   ): Promise<void> {
     try {
       // Validate cron expression
@@ -176,7 +176,7 @@ export class SelfBackupScheduler {
         schedule,
         async () => {
           await withOperation("self-backup-tick", () =>
-            this.executeScheduledBackup(containerName),
+            this.executeScheduledBackup(storageLocationId),
           );
         },
         {
@@ -194,7 +194,7 @@ export class SelfBackupScheduler {
       this.scheduledJob = {
         schedule,
         timezone,
-        containerName,
+        storageLocationId,
         task,
         isEnabled: false,
         nextScheduledAt,
@@ -203,7 +203,7 @@ export class SelfBackupScheduler {
       getLogger("backup", "self-backup-scheduler").info({
         schedule,
         timezone,
-        containerName,
+        storageLocationId,
         nextScheduledAt: nextScheduledAt?.toISOString(),
       }, "Self-backup schedule registered");
 
@@ -212,7 +212,7 @@ export class SelfBackupScheduler {
         error: error instanceof Error ? error.message : "Unknown error",
         schedule,
         timezone,
-        containerName,
+        storageLocationId,
       }, "Failed to register self-backup schedule");
       throw error;
     }
@@ -285,7 +285,7 @@ export class SelfBackupScheduler {
   public async updateSchedule(
     schedule: string,
     timezone: string,
-    containerName: string
+    storageLocationId: string,
   ): Promise<void> {
     const wasEnabled = this.scheduledJob?.isEnabled || false;
 
@@ -293,7 +293,7 @@ export class SelfBackupScheduler {
     await this.unregisterSchedule();
 
     // Register new schedule
-    await this.registerSchedule(schedule, timezone, containerName);
+    await this.registerSchedule(schedule, timezone, storageLocationId);
 
     // Re-enable if it was enabled before
     if (wasEnabled) {
@@ -303,7 +303,7 @@ export class SelfBackupScheduler {
     getLogger("backup", "self-backup-scheduler").info({
       schedule,
       timezone,
-      containerName,
+      storageLocationId,
       wasEnabled,
     }, "Self-backup schedule updated");
   }
@@ -338,7 +338,7 @@ export class SelfBackupScheduler {
         isEnabled: false,
         schedule: "",
         timezone: "",
-        containerName: "",
+        storageLocationId: "",
         nextScheduledAt: null,
         isRegistered: false,
       };
@@ -348,7 +348,7 @@ export class SelfBackupScheduler {
       isEnabled: this.scheduledJob.isEnabled,
       schedule: this.scheduledJob.schedule,
       timezone: this.scheduledJob.timezone,
-      containerName: this.scheduledJob.containerName,
+      storageLocationId: this.scheduledJob.storageLocationId,
       nextScheduledAt: this.scheduledJob.nextScheduledAt,
       isRegistered: true,
     };
@@ -357,14 +357,14 @@ export class SelfBackupScheduler {
   /**
    * Execute scheduled backup
    */
-  private async executeScheduledBackup(containerName: string): Promise<void> {
+  private async executeScheduledBackup(storageLocationId: string): Promise<void> {
     getLogger("backup", "self-backup-scheduler").info({
-      containerName,
+      storageLocationId,
     }, "Executing scheduled self-backup");
 
     try {
       await this.backupExecutor.executeBackup(
-        containerName,
+        storageLocationId,
         'scheduled'
       );
 
@@ -379,7 +379,7 @@ export class SelfBackupScheduler {
     } catch (error) {
       getLogger("backup", "self-backup-scheduler").error({
         error: error instanceof Error ? error.message : "Unknown error",
-        containerName,
+        storageLocationId,
       }, "Scheduled self-backup failed");
     }
   }

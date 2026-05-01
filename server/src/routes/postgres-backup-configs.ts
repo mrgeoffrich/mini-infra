@@ -36,20 +36,18 @@ const databaseConfigService = new PostgresDatabaseManager(prisma);
 
 // Zod validation schemas
 
-// Create backup configuration request validation schema
+// Create backup configuration request validation schema. The
+// `storageLocationId` is interpreted by the active StorageBackend — Azure
+// container name today, Google Drive folder id in Phase 3.
 const createBackupConfigSchema = z.object({
   databaseId: z.string().min(1, "Database ID is required"),
   schedule: z.string().optional(),
   timezone: z.string().optional(),
-  azureContainerName: z
+  storageLocationId: z
     .string()
-    .min(3, "Azure container name must be at least 3 characters")
-    .max(63, "Azure container name must be at most 63 characters")
-    .regex(
-      /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/,
-      "Azure container name must contain only lowercase letters, numbers, and hyphens, and start/end with alphanumeric characters",
-    ),
-  azurePathPrefix: z.string().optional().default(""),
+    .min(1, "Storage location id is required")
+    .max(256, "Storage location id must be at most 256 characters"),
+  storagePathPrefix: z.string().optional().default(""),
   retentionDays: z
     .number()
     .int()
@@ -71,16 +69,12 @@ const createBackupConfigSchema = z.object({
 const updateBackupConfigSchema = z.object({
   schedule: z.string().nullable().optional(),
   timezone: z.string().optional(),
-  azureContainerName: z
+  storageLocationId: z
     .string()
-    .min(3, "Azure container name must be at least 3 characters")
-    .max(63, "Azure container name must be at most 63 characters")
-    .regex(
-      /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/,
-      "Azure container name must contain only lowercase letters, numbers, and hyphens, and start/end with alphanumeric characters",
-    )
+    .min(1, "Storage location id is required")
+    .max(256, "Storage location id must be at most 256 characters")
     .optional(),
-  azurePathPrefix: z.string().optional(),
+  storagePathPrefix: z.string().optional(),
   retentionDays: z
     .number()
     .int()
@@ -182,7 +176,7 @@ router.post("/quick-setup", requirePermission('postgres:write') as RequestHandle
         isActive: true,
       },
     });
-    const azureContainerName = defaultContainerSetting?.value || "postgres-backups";
+    const storageLocationId = defaultContainerSetting?.value || "postgres-backups";
 
     // Get the server's admin password
     const adminPassword = await postgresServerService.getServerAdminPassword(
@@ -210,8 +204,8 @@ router.post("/quick-setup", requirePermission('postgres:write') as RequestHandle
       {
         schedule: "0 2 * * *", // 2am every day
         timezone: timezone,
-        azureContainerName: azureContainerName,
-        azurePathPrefix: setupRequest.databaseName,
+        storageLocationId: storageLocationId,
+        storagePathPrefix: setupRequest.databaseName,
         retentionDays: 30,
         backupFormat: "custom" as BackupFormat,
         compressionLevel: 6,
@@ -426,8 +420,8 @@ router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
       createRequest.databaseId,
       {
         schedule: createRequest.schedule,
-        azureContainerName: createRequest.azureContainerName,
-        azurePathPrefix: createRequest.azurePathPrefix || "",
+        storageLocationId: createRequest.storageLocationId,
+        storagePathPrefix: createRequest.storagePathPrefix || "",
         retentionDays: createRequest.retentionDays,
         backupFormat: createRequest.backupFormat,
         compressionLevel: createRequest.compressionLevel,
@@ -440,7 +434,7 @@ router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
         requestId,
         configId: createdConfig.id,
         databaseId: createRequest.databaseId,
-        azureContainer: createRequest.azureContainerName,
+        storageLocationId: createRequest.storageLocationId,
         schedule: createRequest.schedule,
         isEnabled: createRequest.isEnabled,
       },
@@ -454,7 +448,7 @@ router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
         requestId,
         configId: createdConfig.id,
         databaseId: createRequest.databaseId,
-        azureContainerName: createRequest.azureContainerName,
+        storageLocationId: createRequest.storageLocationId,
         retentionDays: createRequest.retentionDays,
         backupFormat: createRequest.backupFormat,
         hasSchedule: !!createRequest.schedule,

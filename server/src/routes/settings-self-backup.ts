@@ -17,7 +17,7 @@ const router = express.Router();
 // Validation schema for configuration update
 const configSchema = z.object({
   cronSchedule: z.string().min(1, "Cron schedule is required"),
-  azureContainerName: z.string().min(1, "Azure container is required"),
+  storageLocationId: z.string().min(1, "Storage location id is required"),
   timezone: z.string().min(1, "Timezone is required"),
 });
 
@@ -47,7 +47,7 @@ router.get("/", requirePermission('backups:read'), async (req, res) => {
 
     const config = {
       cronSchedule: settingsMap.get("cron_schedule") || "0 * * * *",
-      azureContainerName: settingsMap.get("azure_container_name") || "",
+      storageLocationId: settingsMap.get("storage_location_id") || "",
       timezone: settingsMap.get("timezone") || "UTC",
       enabled: settingsMap.get("enabled") === "true",
     };
@@ -99,7 +99,7 @@ router.put("/", requirePermission('backups:write'), async (req, res) => {
     // Update settings in database
     const settingsToUpdate = [
       { key: "cron_schedule", value: validatedData.cronSchedule },
-      { key: "azure_container_name", value: validatedData.azureContainerName },
+      { key: "storage_location_id", value: validatedData.storageLocationId },
       { key: "timezone", value: validatedData.timezone },
     ];
 
@@ -134,14 +134,14 @@ router.put("/", requirePermission('backups:write'), async (req, res) => {
       await scheduler.updateSchedule(
         validatedData.cronSchedule,
         validatedData.timezone,
-        validatedData.azureContainerName
+        validatedData.storageLocationId,
       );
     }
 
     logger.info({
       userId,
       cronSchedule: validatedData.cronSchedule,
-      azureContainerName: validatedData.azureContainerName,
+      storageLocationId: validatedData.storageLocationId,
       timezone: validatedData.timezone,
     }, "Self-backup configuration updated");
 
@@ -219,17 +219,17 @@ router.post("/enable", requirePermission('backups:write'), async (req, res) => {
         });
         const settingsMap = new Map(settings.map(s => [s.key, s.value]));
         const cronSchedule = settingsMap.get("cron_schedule");
-        const azureContainerName = settingsMap.get("azure_container_name");
+        const storageLocationId = settingsMap.get("storage_location_id");
         const timezone = settingsMap.get("timezone") || "UTC";
 
-        if (!cronSchedule || !azureContainerName) {
+        if (!cronSchedule || !storageLocationId) {
           return res.status(400).json({
             success: false,
-            error: "Backup schedule not configured. Please set a schedule and Azure container first.",
+            error: "Backup schedule not configured. Please set a schedule and storage location first.",
           });
         }
 
-        await scheduler.registerSchedule(cronSchedule, timezone, azureContainerName);
+        await scheduler.registerSchedule(cronSchedule, timezone, storageLocationId);
       }
       await scheduler.enableSchedule();
     }
@@ -364,12 +364,12 @@ router.post("/trigger", requirePermission('backups:write'), async (req, res) => 
       });
     }
 
-    // Get container name from settings
+    // Get storage location from settings
     const containerSetting = await prisma.systemSettings.findUnique({
       where: {
         category_key: {
           category: "self-backup",
-          key: "azure_container_name",
+          key: "storage_location_id",
         },
       },
     });
@@ -377,7 +377,7 @@ router.post("/trigger", requirePermission('backups:write'), async (req, res) => 
     if (!containerSetting || !containerSetting.value) {
       return res.status(400).json({
         success: false,
-        error: "Azure container not configured",
+        error: "Storage location not configured",
       });
     }
 
@@ -403,8 +403,9 @@ router.post("/trigger", requirePermission('backups:write'), async (req, res) => 
         completedAt: backup.completedAt?.toISOString() || null,
         status: backup.status as 'in_progress' | 'completed' | 'failed',
         filePath: backup.filePath,
-        azureBlobUrl: backup.azureBlobUrl,
-        azureContainerName: backup.azureContainerName,
+        storageObjectUrl: backup.storageObjectUrl,
+        storageLocationId: backup.storageLocationId,
+        storageProviderAtCreation: backup.storageProviderAtCreation,
         fileName: backup.fileName,
         fileSize: backup.fileSize,
         errorMessage: backup.errorMessage,

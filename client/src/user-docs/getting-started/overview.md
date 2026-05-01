@@ -21,7 +21,7 @@ Mini Infra connects to your Docker host and provides a UI and API for the follow
 | **Containers** | View, start, stop, restart, and delete Docker containers. Inspect volumes and networks. |
 | **Deployments** | Configure and run zero-downtime blue-green deployments with health checks and automatic rollback. |
 | **Environments** | Group containers and services into named environments (e.g., production, staging). |
-| **PostgreSQL Backups** | Schedule and restore encrypted backups of PostgreSQL databases to Azure Blob Storage. |
+| **PostgreSQL Backups** | Schedule and restore encrypted backups of PostgreSQL databases to the configured storage backend. |
 | **Load Balancer** | Manage HAProxy frontends and backends that route traffic to your containers. |
 | **TLS Certificates** | Issue and auto-renew SSL/TLS certificates using Let's Encrypt. |
 | **Tunnels** | Monitor Cloudflare tunnel health and manage public hostname routing. |
@@ -45,7 +45,7 @@ Before using most features, you need to connect Mini Infra to external services:
 | Service | Required for | Where to configure |
 |---------|-------------|-------------------|
 | **Docker** | All container and deployment features | [Connected Services → Docker](/connectivity-docker) |
-| **Azure Blob Storage** | PostgreSQL backups, self-backups, TLS certificate storage | [Connected Services → Azure Storage](/connectivity-azure) |
+| **Storage backend** | PostgreSQL backups, self-backups, TLS certificate storage | [Connected Services → Storage](/connectivity-storage) |
 | **Cloudflare** | Tunnel monitoring, DNS record management | [Connected Services → Cloudflare](/connectivity-cloudflare) |
 | **GitHub** | Bug reporting, package registry integration | [Connected Services → GitHub](/connectivity-github) |
 

@@ -259,10 +259,30 @@
   ref: connectivity/health-monitoring#docker
 - q: What Docker host URL should I use?
   ref: connectivity/health-monitoring#docker-host-url-examples
+- q: How do I connect storage?
+  ref: connectivity/health-monitoring#storage
 - q: How do I connect Azure Storage?
-  ref: connectivity/health-monitoring#azure-storage
+  ref: connectivity/health-monitoring#azure
 - q: Where do I find my Azure connection string?
-  ref: connectivity/health-monitoring#azure-storage
+  ref: connectivity/health-monitoring#azure
+- q: How do I connect Google Drive as a storage backend?
+  ref: connectivity/health-monitoring#google-drive
+- q: How do I create a Google OAuth client for Mini Infra?
+  ref: connectivity/health-monitoring#step-1-create-the-google-cloud-oauth-client
+- q: What Google Drive scope does Mini Infra request?
+  ref: connectivity/health-monitoring#permissions-and-what-to-expect
+- q: How do I switch storage providers?
+  ref: connectivity/health-monitoring#switching-the-active-storage-provider
+- q: Why is the storage provider switch blocked?
+  ref: connectivity/health-monitoring#hard-block-conditions
+- q: How do I disconnect a storage provider entirely?
+  ref: connectivity/health-monitoring#disconnecting-a-non-active-provider-entirely
+- q: Why am I getting redirect_uri_mismatch from Google?
+  ref: connectivity/health-monitoring#troubleshooting-google-drive
+- q: My Google Drive folder ID is rejected as inaccessible
+  ref: connectivity/health-monitoring#troubleshooting-google-drive
+- q: Drive OAuth fails in a worktree
+  ref: connectivity/health-monitoring#worktree-dev-gotcha
 - q: How do I connect Cloudflare?
   ref: connectivity/health-monitoring#cloudflare
 - q: How do I connect GitHub?

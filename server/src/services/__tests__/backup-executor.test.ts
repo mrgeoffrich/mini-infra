@@ -3,17 +3,13 @@ import { PrismaClient } from "../../generated/prisma/client";
 import { BackupExecutorService, BackupConfigurationManager } from "../backup";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 import * as loggerFactory from "../../lib/logger-factory";
 
 // Hoist mock variables used inside vi.mock() factory functions
-const { mockQueue, mockBlobServiceClient, mockBlobClient, mockContainerClient } = vi.hoisted(() => {
-  const mockBlobClient = {
-    getProperties: vi.fn(),
-    url: "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
-  };
-
+const { mockQueue } = vi.hoisted(() => {
   return {
     mockQueue: {
       add: vi.fn(),
@@ -30,15 +26,6 @@ const { mockQueue, mockBlobServiceClient, mockBlobClient, mockContainerClient } 
         total: 0,
       }),
     },
-    mockBlobServiceClient: {
-      accountName: "testaccount",
-      getContainerClient: vi.fn(),
-    },
-    mockBlobClient,
-    mockContainerClient: {
-      listBlobsFlat: vi.fn(),
-      getBlobClient: vi.fn(function() { return mockBlobClient; }),
-    },
   };
 });
 
@@ -52,7 +39,6 @@ vi.mock("../../lib/in-memory-queue", () => {
 vi.mock("../docker-executor");
 vi.mock("../backup/backup-configuration-manager");
 vi.mock("../postgres/postgres-database-manager");
-vi.mock("../azure-storage-service");
 
 // Mock logger factory - create the mock instance inline
 vi.mock("../../lib/logger-factory", () => {
@@ -77,12 +63,6 @@ vi.mock("../../lib/logger-factory", () => {
   };
 });
 
-vi.mock("@azure/storage-blob", () => ({
-  BlobServiceClient: {
-    fromConnectionString: vi.fn(function() { return mockBlobServiceClient; }),
-  },
-}));
-
 // Get reference to the mocked logger
 const { servicesLogger } = loggerFactory as any;
 const mockLogger = servicesLogger();
@@ -103,6 +83,7 @@ const mockPrisma = {
 const mockDockerExecutor = {
   initialize: vi.fn(),
   executeContainerWithProgress: vi.fn(),
+  pullImageWithAutoAuth: vi.fn().mockResolvedValue(undefined),
 } as unknown as DockerExecutorService;
 
 const mockBackupConfigurationManager = {
@@ -115,10 +96,31 @@ const mockPostgresDatabaseManager = {
   getConnectionConfig: vi.fn(),
 } as unknown as PostgresDatabaseManager;
 
-const mockAzureStorageService = {
-  get: vi.fn(),
-  getConnectionString: vi.fn(),
-} as unknown as AzureStorageService;
+// Mock the active StorageBackend the executor resolves via StorageService.
+const mockStorageBackend = {
+  providerId: "azure",
+  mintUploadHandle: vi.fn().mockResolvedValue({
+    kind: "azure-sas-url",
+    payload: {
+      sasUrl: "https://acc.blob.core.windows.net/cont/blob?sas",
+      containerName: "cont",
+      blobName: "blob",
+    },
+    expiresAt: new Date(Date.now() + 3600 * 1000),
+  }),
+  head: vi.fn().mockResolvedValue({
+    name: "blob",
+    size: 1024,
+    contentType: "application/octet-stream",
+  }),
+  getDownloadHandle: vi.fn().mockResolvedValue({
+    redirectUrl: "https://acc.blob.core.windows.net/cont/blob?dl-sas",
+  }),
+} as unknown as StorageBackend;
+
+vi.spyOn(StorageService, "getInstance").mockReturnValue({
+  getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+} as unknown as StorageService);
 
 describe("BackupExecutorService", () => {
   let backupExecutorService: BackupExecutorService;
@@ -126,6 +128,9 @@ describe("BackupExecutorService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     backupExecutorService = new BackupExecutorService(mockPrisma);
+    vi.spyOn(StorageService, "getInstance").mockReturnValue({
+      getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+    } as unknown as StorageService);
 
     // Mock service instances
     (backupExecutorService as any).dockerExecutor = mockDockerExecutor;
@@ -133,14 +138,12 @@ describe("BackupExecutorService", () => {
       mockBackupConfigurationManager;
     (backupExecutorService as any).databaseConfigService =
       mockPostgresDatabaseManager;
-    (backupExecutorService as any).azureConfigService = mockAzureStorageService;
     (backupExecutorService as any).backupQueue = mockQueue;
   });
 
-  afterAll(() => {
-    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
-    AzureStorageService.cleanupCache();
-  });
+  // Note: AzureStorageBackend cache cleanup is covered by the backend's own
+  // unit tests; this suite mocks StorageService directly so there's no cache
+  // to clean up here.
 
   describe("constructor", () => {
     it("should initialize with Prisma client and create queue", () => {
@@ -218,7 +221,7 @@ describe("BackupExecutorService", () => {
       startedAt: new Date("2023-01-01T00:00:00Z"),
       completedAt: null,
       sizeBytes: null,
-      azureBlobUrl: null,
+      storageObjectUrl: null,
       errorMessage: null,
       metadata: null,
     };
@@ -247,7 +250,7 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         progress: 0,
         metadata: null,
@@ -331,7 +334,7 @@ describe("BackupExecutorService", () => {
       startedAt: new Date("2023-01-01T00:00:00Z"),
       completedAt: null,
       sizeBytes: null,
-      azureBlobUrl: null,
+      storageObjectUrl: null,
       errorMessage: null,
       metadata: null,
     };
@@ -352,7 +355,7 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         progress: 50,
         metadata: null,
@@ -479,14 +482,15 @@ describe("BackupExecutorService", () => {
 
     const mockBackupConfig = {
       id: "config-123",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       backupFormat: "custom",
       compressionLevel: 6,
     };
 
     const mockConnectionConfig = {
       host: "localhost",
+      port: 5432,
       username: "testuser",
       password: "testpass",
       database: "testdb",
@@ -502,9 +506,26 @@ describe("BackupExecutorService", () => {
       mockPostgresDatabaseManager.getConnectionConfig = vi
         .fn()
         .mockResolvedValue(mockConnectionConfig);
-      mockAzureStorageService.get = vi
-        .fn()
-        .mockResolvedValue("azure-connection-string");
+      // The new executor resolves the backend via StorageService — no need
+      // to wire a getConnectionString stub. Make sure mintUploadHandle and
+      // head() return canonical fixtures.
+      mockStorageBackend.mintUploadHandle = vi.fn().mockResolvedValue({
+        kind: "azure-sas-url",
+        payload: {
+          sasUrl: "https://acc.blob.core.windows.net/cont/blob?sas",
+          containerName: "cont",
+          blobName: "blob",
+        },
+        expiresAt: new Date(Date.now() + 3600 * 1000),
+      });
+      mockStorageBackend.head = vi.fn().mockResolvedValue({
+        name: "blob",
+        size: 1000000,
+        createdAt: new Date("2023-01-01T02:00:00Z"),
+      });
+      mockStorageBackend.getDownloadHandle = vi.fn().mockResolvedValue({
+        redirectUrl: "https://acc.blob.core.windows.net/cont/blob?dl-sas",
+      });
       mockPrisma.systemSettings.findFirst = vi.fn().mockResolvedValue({
         value: "postgres:15-alpine",
       });
@@ -528,39 +549,6 @@ describe("BackupExecutorService", () => {
           };
         });
 
-      // Mock Azure verification
-      mockBlobServiceClient.getContainerClient = vi
-        .fn()
-        .mockReturnValue(mockContainerClient);
-      const mockBlobs = [
-        {
-          name: "db-backups/testdb/backup-2023-01-01.sql",
-          properties: {
-            createdOn: new Date("2023-01-01T02:00:00Z"),
-            contentLength: 1000000,
-          },
-        },
-      ];
-
-      // Create async iterator
-      const mockAsyncIterator = {
-        [Symbol.asyncIterator]() {
-          let index = 0;
-          return {
-            async next() {
-              if (index < mockBlobs.length) {
-                return { value: mockBlobs[index++], done: false };
-              }
-              return { done: true };
-            },
-          };
-        },
-      };
-
-      mockContainerClient.listBlobsFlat = vi
-        .fn()
-        .mockReturnValue(mockAsyncIterator);
-
       mockBackupConfigurationManager.updateLastBackupTime = vi
         .fn()
         .mockResolvedValue(undefined);
@@ -575,7 +563,7 @@ describe("BackupExecutorService", () => {
         startedAt: new Date(),
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         metadata: null,
       });
@@ -589,73 +577,89 @@ describe("BackupExecutorService", () => {
         "execute-backup",
         expect.any(Function),
       );
+
+      // Run the registered processor with our queued job to drive the
+      // executeBackup path end-to-end and assert the completion write
+      // includes the storage provider that owned the backup.
+      const processorCall = (mockQueue.process as any).mock.calls.find(
+        (call: any) => call[0] === "execute-backup",
+      );
+      expect(processorCall).toBeDefined();
+      const processor = processorCall![1] as (job: any) => Promise<void>;
+
+      await processor({
+        id: "job-123",
+        data: {
+          backupOperationId: "operation-123",
+          databaseId: "db-123",
+          operationType: "manual",
+          userId: "user-123",
+        },
+      });
+
+      // The completion write must capture the active provider so a later
+      // restore can resolve the right backend even after the active provider
+      // has switched. Phase 1 only ships the Azure provider, so the value
+      // here is "azure" — but the field MUST be present on the write.
+      expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: "operation-123" },
+          data: expect.objectContaining({
+            storageProviderAtCreation: "azure",
+          }),
+        }),
+      );
     });
   });
 
-  describe("verifyBackupInAzure", () => {
-    beforeEach(() => {
-      mockAzureStorageService.getConnectionString = vi
-        .fn()
-        .mockResolvedValue("azure-connection-string");
-      mockBlobServiceClient.getContainerClient = vi
-        .fn()
-        .mockReturnValue(mockContainerClient);
-    });
-
+  describe("verifyBackupInStorage", () => {
     it("should verify backup files exist", async () => {
-      mockBlobClient.getProperties = vi.fn().mockResolvedValue({
-        contentLength: 1000000,
+      mockStorageBackend.head = vi.fn().mockResolvedValue({
+        name: "db-backups/testdb/backup-2023-01-01.sql",
+        size: 1000000,
+      });
+      mockStorageBackend.getDownloadHandle = vi.fn().mockResolvedValue({
+        redirectUrl:
+          "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql?sas",
       });
 
-      const result = await (backupExecutorService as any).verifyBackupInAzure(
+      const result = await (backupExecutorService as any).verifyBackupInStorage(
+        mockStorageBackend,
         "test-container",
         "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(true);
       expect(result.sizeBytes).toBe(BigInt(1000000));
-      expect(result.blobUrl).toBe(
-        "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql",
-      );
+      expect(result.objectUrl).toContain("test-container");
     });
 
-    it("should return error when no backup files found", async () => {
-      mockBlobClient.getProperties = vi.fn().mockRejectedValue(new Error("Blob not found"));
+    it("should return error when backup object is missing", async () => {
+      mockStorageBackend.head = vi.fn().mockResolvedValue(null);
 
-      const result = await (backupExecutorService as any).verifyBackupInAzure(
+      const result = await (backupExecutorService as any).verifyBackupInStorage(
+        mockStorageBackend,
         "test-container",
         "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("Backup file not found");
+      expect(result.error).toContain("Backup object not found");
     });
 
-    it("should handle Azure connection string not configured", async () => {
-      mockAzureStorageService.getConnectionString = vi.fn().mockResolvedValue(null);
+    it("should propagate backend errors as a failure result", async () => {
+      mockStorageBackend.head = vi
+        .fn()
+        .mockRejectedValue(new Error("Storage backend unreachable"));
 
-      const result = await (backupExecutorService as any).verifyBackupInAzure(
-        "test-container",
-        "db-backups",
-        "testdb",
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("Azure connection string not configured");
-    });
-
-    it("should handle Azure storage errors", async () => {
-      mockBlobServiceClient.getContainerClient = vi.fn().mockImplementation(() => {
-        throw new Error("Azure storage error");
-      });
-
-      const result = await (backupExecutorService as any).verifyBackupInAzure(
+      const result = await (backupExecutorService as any).verifyBackupInStorage(
+        mockStorageBackend,
         "test-container",
         "db-backups/testdb/backup-2023-01-01.sql",
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe("Azure storage error");
+      expect(result.error).toContain("Storage backend unreachable");
     });
   });
 
@@ -820,7 +824,7 @@ describe("BackupExecutorService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://example.blob.core.windows.net/container/backup.sql",
         errorMessage: null,
         progress: 100,
@@ -839,7 +843,7 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: "2023-01-01T01:00:00.000Z",
         sizeBytes: 1000000,
-        azureBlobUrl:
+        storageObjectUrl:
           "https://example.blob.core.windows.net/container/backup.sql",
         errorMessage: null,
         progress: 100,
@@ -856,7 +860,7 @@ describe("BackupExecutorService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         progress: 50,
         metadata: null,
@@ -874,7 +878,7 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         progress: 50,
         metadata: null,
@@ -890,7 +894,7 @@ describe("BackupExecutorService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: "Test error",
         progress: 0,
         metadata: "invalid-json",

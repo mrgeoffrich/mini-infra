@@ -45,13 +45,13 @@ import { DnsCacheService, DnsCacheScheduler } from "./services/dns";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
 import { TlsConfigService } from "./services/tls/tls-config";
-import { AzureStorageCertificateStore } from "./services/tls/azure-storage-certificate-store";
+import { StorageCertificateStore } from "./services/tls/storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "./services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "./services/tls/certificate-lifecycle-manager";
 import { CertificateDistributor } from "./services/tls/certificate-distributor";
 import { CloudflareService } from "./services/cloudflare";
-import { AzureStorageService } from "./services/azure-storage-service";
+import { StorageService } from "./services/storage/storage-service";
 import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
@@ -408,16 +408,19 @@ const initializeServices = async () => {
         console.log("[STARTUP] TLS configuration detected, initializing renewal scheduler...");
         logger.info("TLS configuration detected, initializing renewal scheduler");
 
-        // Get Azure Storage connection string
-        const azureConfig = new AzureStorageService(prisma);
-        const connectionString = await azureConfig.getConnectionString();
-
-        if (!connectionString) {
-          throw new Error("Azure Storage connection not configured. Please configure Azure Storage first.");
+        // Resolve the active storage backend (Azure today; Drive in Phase 3).
+        let storageBackend;
+        try {
+          storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
+        } catch (err) {
+          throw new Error(
+            `No storage provider is configured (${err instanceof Error ? err.message : "unknown"}). Configure a storage provider first.`,
+            { cause: err },
+          );
         }
 
-        // Initialize TLS services
-        const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+        // Initialize TLS services using the provider-agnostic cert store
+        const certificateStore = new StorageCertificateStore(storageBackend, containerName);
         const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
         const cloudflareConfig = new CloudflareService(prisma);
         const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);

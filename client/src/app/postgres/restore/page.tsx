@@ -112,7 +112,7 @@ export default function PostgresRestorePage() {
     databaseId || "",
   );
   const backupConfig = backupConfigResponse?.data;
-  const containerName = backupConfig?.azureContainerName || "postgres-backups";
+  const containerName = backupConfig?.storageLocationId || "postgres-backups";
 
   // Fetch available backups
   const {

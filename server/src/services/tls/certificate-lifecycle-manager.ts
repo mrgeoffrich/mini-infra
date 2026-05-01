@@ -10,7 +10,7 @@ import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
 import { withOperation } from "../../lib/logging-context";
 import { AcmeClientManager } from "./acme-client-manager";
-import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
+import { StorageCertificateStore } from "./storage-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
 import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
@@ -28,7 +28,7 @@ export type IssuanceStepCallback = (
  */
 export class CertificateLifecycleManager {
   private acmeClient: AcmeClientManager;
-  private certificateStore: AzureStorageCertificateStore;
+  private certificateStore: StorageCertificateStore;
   private dnsChallenge: DnsChallenge01Provider;
   private distributor?: CertificateDistributor;
   private prisma: PrismaClient;
@@ -37,7 +37,7 @@ export class CertificateLifecycleManager {
 
   constructor(
     acmeClient: AcmeClientManager,
-    certificateStore: AzureStorageCertificateStore,
+    certificateStore: StorageCertificateStore,
     dnsChallenge: DnsChallenge01Provider,
     prisma: PrismaClient,
     containerName: string,

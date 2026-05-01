@@ -110,7 +110,7 @@ describe("ProgressTrackerService", () => {
       startedAt: new Date("2023-01-01T00:00:00Z"),
       completedAt: null,
       sizeBytes: BigInt(1000000),
-      azureBlobUrl: null,
+      storageObjectUrl: null,
       errorMessage: null,
       metadata:
         '{"currentStep": "uploading", "totalSteps": 5, "completedSteps": 3}',
@@ -271,7 +271,7 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: null,
         metadata: null,
         database: { name: "test-db-1" },
@@ -348,7 +348,7 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: null,
@@ -484,7 +484,7 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date(2023, 0, 1 + (i % 31), 0, 0, 0), // Cycle through valid days
         completedAt: new Date(2023, 0, 1 + (i % 31), 1, 0, 0), // Cycle through valid days
         sizeBytes: BigInt(1000000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: null,
@@ -899,7 +899,7 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://account.blob.core.windows.net/backups/backup.sql",
         errorMessage: null,
         metadata: '{"currentStep": "completed", "totalSteps": 5}',
@@ -965,7 +965,7 @@ describe("ProgressTrackerService", () => {
         startedAt: new Date("2023-01-01T03:00:00Z"),
         completedAt: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: "Connection failed",
         metadata: null,
         database: { name: "failed-db" },

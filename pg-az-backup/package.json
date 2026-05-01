@@ -1,0 +1,13 @@
+{
+  "name": "mini-infra-pg-az-backup",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Sidecar that backs up / restores PostgreSQL to a pluggable storage backend (Azure SAS URL or Google Drive resumable upload).",
+  "type": "module",
+  "scripts": {
+    "test": "echo 'no tests' && exit 0"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}

@@ -58,11 +58,11 @@ export type PostgresConnectionFormData = z.infer<typeof postgresConnectionSchema
 export const backupConfigSchema = z.object({
   schedule: z.string().optional(),
   timezone: z.string().optional(),
-  azureContainerName: z
+  storageLocationId: z
     .string()
-    .min(1, "Azure container name is required")
-    .max(255, "Container name must be less than 255 characters"),
-  azurePathPrefix: z.string().optional(),
+    .min(1, "Storage location id is required")
+    .max(255, "Storage location id must be less than 255 characters"),
+  storagePathPrefix: z.string().optional(),
   retentionDays: z
     .number()
     .int()

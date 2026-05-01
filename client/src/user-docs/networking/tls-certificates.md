@@ -6,20 +6,20 @@ tags:
   - tls
   - certificates
   - networking
-  - azure
+  - storage
   - haproxy
 ---
 
 # TLS Certificate Management
 
-Mini Infra can issue and automatically renew SSL/TLS certificates using Let's Encrypt. Certificates are stored in Azure Blob Storage and used by HAProxy frontends to serve HTTPS traffic.
+Mini Infra can issue and automatically renew SSL/TLS certificates using Let's Encrypt. Certificates are stored in the configured storage backend (Azure Blob Storage today, with Google Drive arriving in a later phase) and used by HAProxy frontends to serve HTTPS traffic.
 
 ## Prerequisites
 
 Before issuing certificates you need:
 
-1. **Azure Blob Storage** — connected at [Connected Services → Azure Storage](/connectivity-azure)
-2. **TLS Settings** — configured at [Settings → TLS Settings](/settings-tls) with an Azure container for certificate storage and an ACME email address
+1. **A configured storage backend** — connected at [Connected Services → Storage](/connectivity-storage), with a TLS-certificate location assigned.
+2. **TLS Settings** — configured at [Settings → TLS Settings](/settings-tls) with an ACME email address. The certificate storage location is picked under [Connected Services → Storage](/connectivity-storage).
 3. **Cloudflare** — connected at [Connected Services → Cloudflare](/connectivity-cloudflare) for DNS-01 challenge validation
 
 ## The Certificates page
@@ -64,12 +64,12 @@ Click a certificate to open its detail page at `/certificates/:id`. The page sho
 | **Issued** | Date the certificate was issued |
 | **Auto-Renewal** | Whether automatic renewal is enabled |
 
-### Azure Storage card
+### Storage card
 
 | Field | Description |
 |-------|-------------|
-| **Container Name** | Azure container where the certificate is stored |
-| **Blob Name** | File name within the container |
+| **Location Name** | Storage location (Azure container or Drive folder) where the certificate is stored |
+| **Object Name** | File name within the storage location |
 | **Provider** | ACME provider (Let's Encrypt) |
 | **Issuer** | Certificate authority |
 
@@ -101,5 +101,5 @@ When creating or editing a manual HAProxy frontend, enable **SSL/TLS** and selec
 
 - **Let's Encrypt rate limits apply.** The production endpoint has limits on certificates per domain per week. Use the **Staging** provider in TLS Settings for testing.
 - Revoking a certificate is **irreversible**. Do not revoke a certificate unless you are certain it has been compromised.
-- Certificates are stored in Azure Blob Storage. If the Azure connection is lost, certificate renewal will fail.
+- Certificates are stored in the configured storage backend. If the storage connection is lost, certificate renewal will fail.
 - A certificate covering a wildcard domain (`*.example.com`) requires DNS-01 challenge validation through Cloudflare.

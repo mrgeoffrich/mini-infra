@@ -48,7 +48,8 @@ import {
   useDeletePostgresBackupConfig,
 } from "@/hooks/use-postgres-backup-configs";
 import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
-import { useAzureContainers } from "@/hooks/use-azure-settings";
+import { useStorageSettings } from "@/hooks/use-storage-settings";
+import { StorageLocationSelector } from "@/components/storage/StorageLocationSelector";
 import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import {
   IconAlertCircle,
@@ -94,11 +95,10 @@ export function BackupConfigurationModal({
   const deleteMutation = useDeletePostgresBackupConfig();
   const manualBackupMutation = useCreateManualBackup();
 
-  // Fetch Azure containers for dropdown
-  const { data: azureContainersResponse, isLoading: containersLoading } =
-    useAzureContainers({
-      enabled: isOpen, // Only fetch when modal is open
-    });
+  // Resolve the active storage provider so the selector can fan out to the
+  // right backend (Azure today, Drive in Phase 3).
+  const { data: storageSettings } = useStorageSettings({ enabled: isOpen });
+  const activeProviderId = storageSettings?.activeProviderId ?? null;
 
   // Fetch user preferences and timezones
   const { data: userPreferences } = useUserPreferences();
@@ -109,9 +109,9 @@ export function BackupConfigurationModal({
     defaultValues: {
       schedule: backupConfig?.schedule || "0 2 * * *", // Daily at 2 AM
       timezone: backupConfig?.timezone || userPreferences?.timezone || "UTC",
-      azureContainerName:
-        backupConfig?.azureContainerName || "postgres-backups",
-      azurePathPrefix: backupConfig?.azurePathPrefix || database.name,
+      storageLocationId:
+        backupConfig?.storageLocationId || "postgres-backups",
+      storagePathPrefix: backupConfig?.storagePathPrefix || database.name,
       retentionDays: backupConfig?.retentionDays || 30,
       backupFormat: backupConfig?.backupFormat || "custom",
       compressionLevel: backupConfig?.compressionLevel || 6,
@@ -209,8 +209,9 @@ export function BackupConfigurationModal({
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
               {submitError.includes("container") ||
-              submitError.includes("Azure")
-                ? `Azure Storage Error: ${submitError}. Please ensure the Azure Storage account is configured and the container exists.`
+              submitError.includes("storage") ||
+              submitError.includes("Storage")
+                ? `Storage Error: ${submitError}. Please ensure the storage backend is configured and the location exists.`
                 : submitError}
             </AlertDescription>
           </Alert>
@@ -372,64 +373,32 @@ export function BackupConfigurationModal({
             )}
 
             <div className="grid grid-cols-2 gap-4">
-              {/* Azure Container */}
+              {/* Storage location */}
               <FormField
                 control={form.control}
-                name="azureContainerName"
-                render={({ field }) => {
-                  const containers =
-                    azureContainersResponse?.data?.containers || [];
-
-                  return (
-                    <FormItem>
-                      <FormLabel>Container</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
+                name="storageLocationId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Location</FormLabel>
+                    <FormControl>
+                      <StorageLocationSelector
+                        provider={activeProviderId}
                         value={field.value}
-                        disabled={containersLoading}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue
-                              placeholder={
-                                containersLoading
-                                  ? "Loading containers..."
-                                  : containers.length === 0
-                                    ? "No containers available"
-                                    : "Select container"
-                              }
-                            />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {containers.map((container) => (
-                            <SelectItem
-                              key={container.name}
-                              value={container.name}
-                            >
-                              {container.name}
-                            </SelectItem>
-                          ))}
-                          {containers.length === 0 && !containersLoading && (
-                            <SelectItem value="" disabled>
-                              No containers found
-                            </SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        Azure Storage container for backups
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  );
-                }}
+                        onChange={field.onChange}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Storage location for backups
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
 
               {/* Path Prefix */}
               <FormField
                 control={form.control}
-                name="azurePathPrefix"
+                name="storagePathPrefix"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Path Prefix</FormLabel>

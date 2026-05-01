@@ -3,12 +3,16 @@ import { runWithContext } from "../../lib/logging-context";
 import type { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
-import { AzureStorageService } from "../azure-storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { BackupValidator } from "./backup-validator";
 import { RollbackManager } from "./rollback-manager";
 import { DbOperations } from "./db-operations";
 import { extractBlobNameFromUrl, extractContainerFromUrl } from "./utils";
 import { resolveDatabaseNetworkName } from "../backup/database-network-resolver";
+import {
+  buildSidecarDownloadEnv,
+  redactSidecarEnv,
+} from "../backup/sidecar-env";
 
 // Timeout for restore operations (3 hours)
 export const RESTORE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
@@ -20,7 +24,7 @@ export const RESTORE_TIMEOUT_MS = 3 * 60 * 60 * 1000;
 export class RestoreRunner {
   private dockerExecutor: DockerExecutorService;
   private databaseConfigService: PostgresDatabaseManager;
-  private azureConfigService: AzureStorageService;
+  private storageBackend: StorageBackend;
   private backupValidator: BackupValidator;
   private rollbackManager: RollbackManager;
   private dbOps: DbOperations;
@@ -29,7 +33,7 @@ export class RestoreRunner {
   constructor(
     dockerExecutor: DockerExecutorService,
     databaseConfigService: PostgresDatabaseManager,
-    azureConfigService: AzureStorageService,
+    storageBackend: StorageBackend,
     backupValidator: BackupValidator,
     rollbackManager: RollbackManager,
     dbOps: DbOperations,
@@ -37,7 +41,7 @@ export class RestoreRunner {
   ) {
     this.dockerExecutor = dockerExecutor;
     this.databaseConfigService = databaseConfigService;
-    this.azureConfigService = azureConfigService;
+    this.storageBackend = storageBackend;
     this.backupValidator = backupValidator;
     this.rollbackManager = rollbackManager;
     this.dbOps = dbOps;
@@ -216,33 +220,11 @@ export class RestoreRunner {
         "Docker image pulled successfully",
       );
 
-      // Verify Azure is configured
+      // Backend availability is asserted at construction time. We still log
+      // the resolved provider for traceability.
       getLogger("backup", "restore-runner").debug(
-        {
-          operationId,
-        },
-        "Verifying Azure Storage configuration",
-      );
-
-      const azureConnectionString =
-        await this.azureConfigService.getConnectionString();
-      if (!azureConnectionString) {
-        getLogger("backup", "restore-runner").error(
-          {
-            operationId,
-          },
-          "Azure connection string not configured",
-        );
-        throw new Error(
-          "Azure Storage connection string is not configured. Please configure Azure settings before attempting restore.",
-        );
-      }
-
-      getLogger("backup", "restore-runner").debug(
-        {
-          operationId,
-        },
-        "Azure Storage configuration verified",
+        { operationId, providerId: this.storageBackend.providerId },
+        "Storage backend resolved for restore",
       );
 
       // Get database connection details
@@ -298,7 +280,6 @@ export class RestoreRunner {
       const rollbackBackupUrl =
         await this.rollbackManager.createRollbackBackup(
           baseConnectionConfig,
-          azureConnectionString,
           dockerImage,
           database.database,
           backupUrl,
@@ -320,16 +301,23 @@ export class RestoreRunner {
         message: "Starting restore container",
       });
 
-      // Extract blob name from backup URL and generate a read SAS URL for restore
+      // Extract location and object name from the backup URL and mint a
+      // provider-agnostic read handle for the restore container.
       const blobName = extractBlobNameFromUrl(backupUrl);
       const containerName = extractContainerFromUrl(backupUrl);
-      const sasExpiryMinutes = Math.ceil(RESTORE_TIMEOUT_MS / 60000) + 15;
-      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
-        containerName,
+      const ttlMinutes = Math.ceil(RESTORE_TIMEOUT_MS / 60000) + 15;
+
+      const sidecarEnv = await buildSidecarDownloadEnv(
+        this.storageBackend,
+        { id: containerName },
         blobName,
-        sasExpiryMinutes,
-        "read",
+        ttlMinutes,
       );
+      if (!sidecarEnv) {
+        throw new Error(
+          `Restore container could not get a download handle from provider '${this.storageBackend.providerId}'`,
+        );
+      }
 
       getLogger("backup", "restore-runner").info(
         {
@@ -337,9 +325,11 @@ export class RestoreRunner {
           backupUrl,
           containerName,
           blobName,
-          sasExpiryMinutes,
+          ttlMinutes,
+          providerId: this.storageBackend.providerId,
+          provider: sidecarEnv.STORAGE_PROVIDER,
         },
-        "Generated read SAS URL for restore",
+        "Minted download handle for restore",
       );
 
       // Execute restore using Docker
@@ -349,7 +339,7 @@ export class RestoreRunner {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_SAS_URL: "[REDACTED]",
+        ...redactSidecarEnv(sidecarEnv),
         RESTORE: "yes",
         DROP_PUBLIC: "yes",
       };
@@ -380,7 +370,7 @@ export class RestoreRunner {
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
-              AZURE_SAS_URL: azureSasUrl,
+              ...sidecarEnv,
               RESTORE: "yes",
               DROP_PUBLIC: "yes",
             },
@@ -514,7 +504,7 @@ export class RestoreRunner {
         await this.rollbackManager.executeRollback(
           connectionConfig,
           rollbackBackupUrl,
-          azureConnectionString,
+          
           dockerImage,
           databaseNetworkName,
         );
@@ -584,7 +574,7 @@ export class RestoreRunner {
         await this.rollbackManager.executeRollback(
           connectionConfig,
           rollbackBackupUrl,
-          azureConnectionString,
+          
           dockerImage,
           databaseNetworkName,
         );

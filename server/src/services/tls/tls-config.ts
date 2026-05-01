@@ -7,8 +7,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { getLogger } from "../../lib/logger-factory";
-import { BlobServiceClient } from "@azure/storage-blob";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
 
 /**
  * TLS Configuration Service Settings Keys
@@ -30,117 +29,104 @@ export interface AcmeAccountConfig {
 }
 
 /**
- * TlsConfigService handles TLS-related configuration management
- * Extends the base ConfigurationService to provide TLS-specific functionality
+ * TlsConfigService handles TLS-related configuration management. The
+ * "container" name is now interpreted as a generic storage location id —
+ * Azure container today, Drive folder in Phase 3 — but the setting key is
+ * kept for greenfield-stable schema reasons.
  */
 export class TlsConfigService extends ConfigurationService {
   private static readonly DEFAULT_RENEWAL_CRON = "0 2 * * *"; // Daily at 2 AM
   private static readonly DEFAULT_RENEWAL_DAYS = 30;
   private static readonly DEFAULT_ACME_PROVIDER: AcmeProvider = "letsencrypt";
-  private static readonly TIMEOUT_MS = 15000; // 15 seconds
-
-  private azureConfigService: AzureStorageService;
 
   constructor(prisma: PrismaClient) {
     super(prisma, "tls");
-    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**
-   * Validate Azure Storage container access for certificate storage
-   * @param settings - Optional settings to validate with (overrides stored settings)
-   * @returns Validation result with connectivity status
+   * Validate that the certificate storage location is reachable through the
+   * active StorageBackend.
    */
   async validate(settings?: Record<string, string>): Promise<ValidationResult> {
     const startTime = Date.now();
     const logger = getLogger("tls", "tls-config");
 
     try {
-      // Get container name (from provided settings or database)
-      const containerName = settings?.[TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER]
-        || (await this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER));
+      const containerName =
+        settings?.[TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER] ||
+        (await this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER));
 
       if (!containerName) {
         return {
           isValid: false,
-          message: "Azure Storage container for certificates not configured",
+          message: "Certificate storage location not configured",
           errorCode: "CONTAINER_NOT_CONFIGURED",
         };
       }
 
-      // Validate container name format (Azure Storage requirements)
-      if (!containerName.match(/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/)) {
+      let backend;
+      try {
+        backend = await StorageService.getInstance(this.prisma).getActiveBackend();
+      } catch {
         return {
           isValid: false,
-          message: "Invalid Azure Storage container name format",
-          errorCode: "INVALID_CONTAINER_NAME",
+          message:
+            "Storage provider is not configured. Configure a storage provider before validating TLS settings.",
+          errorCode: "STORAGE_NOT_CONFIGURED",
         };
       }
 
-      // Get Azure Storage connection string from Azure config
-      const connectionString = await this.azureConfigService.getConnectionString();
-
-      if (!connectionString) {
-        return {
-          isValid: false,
-          message: "Azure Storage connection not configured. Please configure Azure Storage first.",
-          errorCode: "AZURE_STORAGE_NOT_CONFIGURED",
-        };
-      }
-
-      // Test container access
-      const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-      const containerClient = blobServiceClient.getContainerClient(containerName);
-
-      // Check if container exists
-      const exists = await containerClient.exists();
-
-      if (!exists) {
-        return {
-          isValid: false,
-          message: `Azure Storage container '${containerName}' does not exist`,
-          errorCode: "CONTAINER_NOT_FOUND",
-        };
-      }
-
-      // Test read access by listing blobs (lightweight operation)
-      const blobIterator = containerClient.listBlobsFlat({ prefix: "cert_" }).byPage({ maxPageSize: 1 });
-      await blobIterator.next();
-
+      const access = await backend.testLocationAccess({ id: containerName });
       const responseTime = Date.now() - startTime;
 
-      // Record successful connectivity
+      if (!access.accessible) {
+        const errMeta = (access.metadata ?? {}) as {
+          error?: string;
+          errorCode?: string;
+        };
+        await this.recordConnectivityStatus(
+          "failed",
+          responseTime,
+          errMeta.error ?? `Storage location '${containerName}' not accessible`,
+          errMeta.errorCode ?? "LOCATION_INACCESSIBLE",
+        );
+        return {
+          isValid: false,
+          message: `Storage location '${containerName}' is not accessible: ${
+            errMeta.error ?? "permission denied"
+          }`,
+          errorCode: errMeta.errorCode ?? "LOCATION_INACCESSIBLE",
+          responseTimeMs: responseTime,
+        };
+      }
+
       await this.recordConnectivityStatus(
         "connected",
         responseTime,
         undefined,
         undefined,
-        { containerName }
+        { containerName },
       );
 
       logger.info(
-        {
-          containerName,
-          responseTime,
-        },
-        "Azure Storage container validation successful"
+        { containerName, responseTime },
+        "Certificate storage location validation successful",
       );
 
       return {
         isValid: true,
-        message: `Azure Storage container '${containerName}' is accessible`,
+        message: `Certificate storage location '${containerName}' is accessible`,
         responseTimeMs: responseTime,
-        metadata: {
-          containerName,
-        },
+        metadata: { containerName, providerId: backend.providerId },
       };
     } catch (error) {
       const responseTime = Date.now() - startTime;
-      const errorMessage = (error instanceof Error ? error.message : String(error)) || "Unknown error";
+      const errorMessage =
+        (error instanceof Error ? error.message : String(error)) ||
+        "Unknown error";
       let errorCode = "UNKNOWN_ERROR";
       let connectivityStatus: ConnectivityStatusType = "failed";
 
-      // Parse specific Azure Storage errors
       if (errorMessage.includes("timeout")) {
         errorCode = "TIMEOUT";
         connectivityStatus = "timeout";
@@ -149,7 +135,10 @@ export class TlsConfigService extends ConfigurationService {
         errorMessage.includes("InvalidAccountKey")
       ) {
         errorCode = "INVALID_CREDENTIALS";
-      } else if (errorMessage.includes("Forbidden") || errorMessage.includes("403")) {
+      } else if (
+        errorMessage.includes("Forbidden") ||
+        errorMessage.includes("403")
+      ) {
         errorCode = "INSUFFICIENT_PERMISSIONS";
       } else if (
         errorMessage.includes("ENOTFOUND") ||
@@ -161,36 +150,26 @@ export class TlsConfigService extends ConfigurationService {
         errorCode = "CONTAINER_NOT_FOUND";
       }
 
-      // Record failed connectivity
       await this.recordConnectivityStatus(
         connectivityStatus,
         responseTime,
         errorMessage,
-        errorCode
+        errorCode,
       );
-
       logger.error(
-        {
-          error: errorMessage,
-          errorCode,
-          responseTime,
-        },
-        "Azure Storage container validation failed"
+        { error: errorMessage, errorCode, responseTime },
+        "Certificate storage validation failed",
       );
 
       return {
         isValid: false,
-        message: `Azure Storage validation failed: ${errorMessage}`,
+        message: `TLS storage validation failed: ${errorMessage}`,
         errorCode,
         responseTimeMs: responseTime,
       };
     }
   }
 
-  /**
-   * Get health status of Azure Storage container connectivity
-   * @returns Service health status
-   */
   async getHealthStatus(): Promise<ServiceHealthStatus> {
     const latestStatus = await this.getLatestConnectivityStatus();
 
@@ -211,37 +190,33 @@ export class TlsConfigService extends ConfigurationService {
       responseTime: latestStatus.responseTimeMs || undefined,
       errorMessage: latestStatus.errorMessage || undefined,
       errorCode: latestStatus.errorCode || undefined,
-      metadata: latestStatus.metadata ? JSON.parse(latestStatus.metadata) : undefined,
+      metadata: latestStatus.metadata
+        ? JSON.parse(latestStatus.metadata)
+        : undefined,
     };
   }
 
   /**
-   * Get certificate storage container name
-   * @returns Container name for certificate storage
+   * Get certificate storage location id (Azure container name; Drive folder ID).
    */
   async getCertificateContainerName(): Promise<string> {
-    const containerName = await this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER);
-
+    const containerName = await this.get(
+      TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER,
+    );
     if (!containerName) {
-      throw new Error("Certificate storage container not configured");
+      throw new Error("Certificate storage location not configured");
     }
-
     return containerName;
   }
 
   /**
-   * Get certificate storage container name without throwing.
-   * Use this when the caller needs to handle the unconfigured case
-   * (e.g. building services that don't always require TLS).
+   * Same but returning null instead of throwing — used by services that
+   * tolerate missing TLS configuration (e.g. stack reconciler).
    */
   async getCertificateContainerNameOrNull(): Promise<string | null> {
     return this.get(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER);
   }
 
-  /**
-   * Get ACME account configuration
-   * @returns ACME account configuration
-   */
   async getAcmeAccountConfig(): Promise<AcmeAccountConfig> {
     const email = await this.get(TLS_SETTINGS_KEYS.DEFAULT_ACME_EMAIL);
     const providerStr = await this.get(TLS_SETTINGS_KEYS.DEFAULT_ACME_PROVIDER);
@@ -250,7 +225,8 @@ export class TlsConfigService extends ConfigurationService {
       throw new Error("ACME email not configured");
     }
 
-    const provider = (providerStr as AcmeProvider) || TlsConfigService.DEFAULT_ACME_PROVIDER;
+    const provider =
+      (providerStr as AcmeProvider) || TlsConfigService.DEFAULT_ACME_PROVIDER;
 
     return {
       email,
@@ -258,64 +234,54 @@ export class TlsConfigService extends ConfigurationService {
     };
   }
 
-  /**
-   * Get renewal check cron schedule
-   * @returns Cron expression
-   */
   async getRenewalCheckCron(): Promise<string> {
     const cron = await this.get(TLS_SETTINGS_KEYS.RENEWAL_CHECK_CRON);
     return cron || TlsConfigService.DEFAULT_RENEWAL_CRON;
   }
 
-  /**
-   * Get renewal days before expiry
-   * @returns Number of days before expiry to renew
-   */
   async getRenewalDaysBeforeExpiry(): Promise<number> {
     const days = await this.get(TLS_SETTINGS_KEYS.RENEWAL_DAYS_BEFORE_EXPIRY);
     return days ? parseInt(days, 10) : TlsConfigService.DEFAULT_RENEWAL_DAYS;
   }
 
-  /**
-   * Helper method to set certificate storage container
-   */
-  async setCertificateContainer(containerName: string, userId: string): Promise<void> {
-    await this.set(TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER, containerName, userId);
+  async setCertificateContainer(
+    containerName: string,
+    userId: string,
+  ): Promise<void> {
+    await this.set(
+      TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER,
+      containerName,
+      userId,
+    );
   }
 
-  /**
-   * Helper method to set ACME configuration
-   */
   async setAcmeConfig(
     email: string,
     provider: AcmeProvider,
-    userId: string
+    userId: string,
   ): Promise<void> {
     await this.set(TLS_SETTINGS_KEYS.DEFAULT_ACME_EMAIL, email, userId);
-    await this.set(TLS_SETTINGS_KEYS.DEFAULT_ACME_PROVIDER, provider, userId);
+    await this.set(
+      TLS_SETTINGS_KEYS.DEFAULT_ACME_PROVIDER,
+      provider,
+      userId,
+    );
   }
 
-  /**
-   * Helper method to set renewal configuration
-   */
   async setRenewalConfig(
     cronSchedule: string,
     daysBeforeExpiry: number,
-    userId: string
+    userId: string,
   ): Promise<void> {
-    await this.set(TLS_SETTINGS_KEYS.RENEWAL_CHECK_CRON, cronSchedule, userId);
-    await this.set(TLS_SETTINGS_KEYS.RENEWAL_DAYS_BEFORE_EXPIRY, daysBeforeExpiry.toString(), userId);
-  }
-
-  /**
-   * Get Azure Storage connection string from Azure config service
-   * @returns Connection string
-   */
-  async getConnectionString(): Promise<string> {
-    const connectionString = await this.azureConfigService.getConnectionString();
-    if (!connectionString) {
-      throw new Error("Azure Storage not configured");
-    }
-    return connectionString;
+    await this.set(
+      TLS_SETTINGS_KEYS.RENEWAL_CHECK_CRON,
+      cronSchedule,
+      userId,
+    );
+    await this.set(
+      TLS_SETTINGS_KEYS.RENEWAL_DAYS_BEFORE_EXPIRY,
+      daysBeforeExpiry.toString(),
+      userId,
+    );
   }
 }

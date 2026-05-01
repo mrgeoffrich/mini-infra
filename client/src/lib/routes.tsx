@@ -15,7 +15,7 @@ import { VolumeInspectPage } from "@/app/containers/volumes/VolumeInspectPage";
 import { VolumeFileContentPage } from "@/app/containers/volumes/VolumeFileContentPage";
 import DockerSettingsPage from "@/app/connectivity/docker/page";
 import CloudflareSettingsPage from "@/app/connectivity/cloudflare/page";
-import AzureSettingsPage from "@/app/connectivity/azure/page";
+import StorageSettingsPage from "@/app/connectivity-storage/page";
 import GitHubConnectivityPage from "@/app/connectivity/github/page";
 import SystemSettingsPage from "@/app/settings/system/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
@@ -284,8 +284,8 @@ export const router = createBrowserRouter([
         element: <CloudflareSettingsPage />,
       },
       {
-        path: "connectivity-azure",
-        element: <AzureSettingsPage />,
+        path: "connectivity-storage",
+        element: <StorageSettingsPage />,
       },
       {
         path: "connectivity-github",

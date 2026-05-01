@@ -2,16 +2,17 @@
 const {
   mockPrismaInstance,
   mockRestoreExecutorService,
-  mockAzureStorageService,
-  mockContainerClient,
-  mockBlobServiceClient,
+  mockStorageBackend,
 } = vi.hoisted(() => {
-  const mockContainerClient = {
-    listBlobsFlat: vi.fn(),
-    getBlobClient: vi.fn((blobName: string) => ({
-      url: `https://storage.blob.core.windows.net/backups/${blobName}`,
-    })),
-  };
+  const objects: Array<{
+    name: string;
+    size: number;
+    createdAt: Date;
+    lastModified: Date;
+    contentType: string;
+    etag: string;
+    metadata: Record<string, string>;
+  }> = [];
 
   return {
     mockPrismaInstance: {
@@ -27,12 +28,17 @@ const {
     mockRestoreExecutorService: {
       queueRestore: vi.fn(),
     },
-    mockAzureStorageService: {
-      get: vi.fn(),
-    },
-    mockContainerClient,
-    mockBlobServiceClient: {
-      getContainerClient: vi.fn(function() { return mockContainerClient; }),
+    mockStorageBackend: {
+      providerId: "azure",
+      list: vi.fn(async () => ({ objects, hasMore: false })),
+      getDownloadHandle: vi.fn(async (_ref: unknown, name: string) => ({
+        redirectUrl: `https://storage.blob.core.windows.net/backups/${name}?sas`,
+      })),
+      // Test hook so test cases can seed the listing.
+      __setObjects: (next: typeof objects) => {
+        objects.length = 0;
+        objects.push(...next);
+      },
     },
   };
 });
@@ -60,15 +66,32 @@ vi.mock("../../services/restore-executor/restore-executor-instance", () => ({
   setRestoreExecutorService: vi.fn(),
 }));
 
-// Mock the AzureStorageService
-vi.mock("../../services/azure-storage-service", () => ({
-  AzureStorageService: vi.fn(function() { return mockAzureStorageService; }),
-}));
-
-// Mock Azure Storage
-vi.mock("@azure/storage-blob", () => ({
-  BlobServiceClient: {
-    fromConnectionString: vi.fn(function() { return mockBlobServiceClient; }),
+// Mock the StorageService — the route resolves backends via this.
+vi.mock("../../services/storage/storage-service", () => ({
+  StorageService: {
+    getInstance: () => ({
+      getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+      getBackendByProviderId: vi.fn().mockReturnValue(mockStorageBackend),
+      getBackendByProviderIdOrThrow: vi
+        .fn()
+        .mockResolvedValue(mockStorageBackend),
+      isProviderConfigured: vi.fn().mockResolvedValue(true),
+    }),
+  },
+  StorageNotConfiguredError: class extends Error {},
+  StorageProviderUnregisteredError: class extends Error {},
+  ProviderNoLongerConfiguredError: class extends Error {
+    code = "PROVIDER_NO_LONGER_CONFIGURED";
+    providerId: string;
+    constructor(providerId: string) {
+      super(`Original provider '${providerId}' is no longer configured.`);
+      this.providerId = providerId;
+    }
+  },
+  STORAGE_LOCATION_KEYS: {
+    POSTGRES_BACKUP: "locations.postgres_backup",
+    SELF_BACKUP: "locations.self_backup",
+    TLS_CERTIFICATES: "locations.tls_certificates",
   },
 }));
 
@@ -180,16 +203,11 @@ import request from "supertest";
 import express from "express";
 import { PrismaClient } from "../../generated/prisma/client";
 import { RestoreExecutorService } from "../../services/restore-executor";
-import { AzureStorageService } from "../../services/azure-storage-service";
-import { BlobServiceClient } from "@azure/storage-blob";
+import { ProviderNoLongerConfiguredError } from "../../services/storage/storage-service";
 import router from "../postgres-restore";
 
 // Get the mocked instances
 const mockPrismaClient = mockPrismaInstance;
-// Use the shared mock instances defined above
-// mockRestoreExecutorService and mockAzureStorageService are already defined
-
-// Azure Storage mock instances are now defined above in the mock setup section
 
 const app = express();
 app.use(express.json());
@@ -407,6 +425,29 @@ describe("PostgreSQL Restore API", () => {
       expect(response.body.success).toBe(false);
       expect(response.body.error).toBe("Internal server error");
     });
+
+    it("returns 409 with friendly message when the original provider has been forgotten", async () => {
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
+      mockRestoreExecutorService.queueRestore.mockRejectedValue(
+        new ProviderNoLongerConfiguredError("azure"),
+      );
+
+      const response = await request(app)
+        .post("/api/postgres/restore/test-db-id")
+        .send({
+          backupUrl: "https://storage.blob.core.windows.net/backups/backup.sql",
+          confirmRestore: true,
+        })
+        .expect(409);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe("PROVIDER_NO_LONGER_CONFIGURED");
+      expect(response.body.providerId).toBe("azure");
+      expect(response.body.message).toMatch(/no longer configured/i);
+    });
   });
 
   describe("GET /api/postgres/restore/:operationId/status", () => {
@@ -527,89 +568,54 @@ describe("PostgreSQL Restore API", () => {
   });
 
   describe("GET /api/postgres/restore/backups/:containerName", () => {
-    const mockBlobs = [
+    // The route now drives the active StorageBackend rather than dipping into
+    // the Azure SDK. We seed the mock backend's `list()` results here.
+    const mockObjects = [
       {
         name: "testdb/backup_2024-01-01_00-00-00.sql",
-        properties: {
-          contentLength: 1024000,
-          createdOn: new Date("2024-01-01T00:00:00Z"),
-          lastModified: new Date("2024-01-01T00:00:00Z"),
-          contentType: "application/sql",
-          etag: '"0x8D9A1B2C3D4E5F6"',
-        },
-        metadata: {
-          databaseName: "testdb",
-          backupType: "full",
-        },
+        size: 1024000,
+        contentType: "application/sql",
+        etag: '"0x8D9A1B2C3D4E5F6"',
+        createdAt: new Date("2024-01-01T00:00:00Z"),
+        lastModified: new Date("2024-01-01T00:00:00Z"),
+        metadata: { databaseName: "testdb", backupType: "full" },
       },
       {
         name: "testdb/backup_2024-01-02_00-00-00.dump",
-        properties: {
-          contentLength: 2048000,
-          createdOn: new Date("2024-01-02T00:00:00Z"),
-          lastModified: new Date("2024-01-02T00:00:00Z"),
-          contentType: "application/octet-stream",
-          etag: '"0x8D9A1B2C3D4E5F7"',
-        },
-        metadata: {
-          databaseName: "testdb",
-          backupType: "incremental",
-        },
+        size: 2048000,
+        contentType: "application/octet-stream",
+        etag: '"0x8D9A1B2C3D4E5F7"',
+        createdAt: new Date("2024-01-02T00:00:00Z"),
+        lastModified: new Date("2024-01-02T00:00:00Z"),
+        metadata: { databaseName: "testdb", backupType: "incremental" },
       },
     ];
 
-    // Azure Storage mock instances are defined globally above
+    function seed(objects: typeof mockObjects) {
+      (mockStorageBackend as unknown as {
+        __setObjects: (next: typeof mockObjects) => void;
+      }).__setObjects(objects);
+    }
 
     beforeEach(() => {
-      mockAzureStorageService.get.mockResolvedValue(
-        "DefaultEndpointsProtocol=https;AccountName=test;AccountKey=key;EndpointSuffix=core.windows.net",
-      );
+      seed(mockObjects);
     });
 
     it("should list available backups", async () => {
-      const mockAsyncIterable = {
-        async *[Symbol.asyncIterator]() {
-          for (const blob of mockBlobs) {
-            yield blob;
-          }
-        },
-      };
-
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
-
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container")
         .expect(200);
 
       expect(response.body.success).toBe(true);
       expect(response.body.data).toHaveLength(2);
-      expect(response.body.data[0]).toEqual({
-        name: "testdb/backup_2024-01-02_00-00-00.dump",
-        url: "https://storage.blob.core.windows.net/backups/testdb/backup_2024-01-02_00-00-00.dump",
-        sizeBytes: 2048000,
-        createdAt: "2024-01-02T00:00:00.000Z",
-        lastModified: "2024-01-02T00:00:00.000Z",
-        metadata: {
-          databaseName: "testdb",
-          contentType: "application/octet-stream",
-          etag: '"0x8D9A1B2C3D4E5F7"',
-          backupType: "incremental",
-        },
-      });
+      expect(response.body.data[0].name).toBe(
+        "testdb/backup_2024-01-02_00-00-00.dump",
+      );
+      expect(response.body.data[0].sizeBytes).toBe(2048000);
       expect(response.body.pagination.totalCount).toBe(2);
     });
 
     it("should handle pagination parameters", async () => {
-      const mockAsyncIterable = {
-        async *[Symbol.asyncIterator]() {
-          for (const blob of mockBlobs) {
-            yield blob;
-          }
-        },
-      };
-
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
-
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container?page=1&limit=1")
         .expect(200);
@@ -624,16 +630,6 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle filter parameters", async () => {
-      const mockAsyncIterable = {
-        async *[Symbol.asyncIterator]() {
-          for (const blob of mockBlobs) {
-            yield blob;
-          }
-        },
-      };
-
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
-
       const response = await request(app)
         .get(
           "/api/postgres/restore/backups/test-container?createdAfter=2024-01-01T12:00:00Z&sizeMin=1500000",
@@ -647,17 +643,6 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should handle sort parameters", async () => {
-      const mockAsyncIterable = {
-        async *[Symbol.asyncIterator]() {
-          for (const blob of mockBlobs.reverse()) {
-            // Reverse order to test sorting
-            yield blob;
-          }
-        },
-      };
-
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
-
       const response = await request(app)
         .get(
           "/api/postgres/restore/backups/test-container?sortBy=sizeBytes&sortOrder=asc",
@@ -669,29 +654,18 @@ describe("PostgreSQL Restore API", () => {
     });
 
     it("should filter out non-backup files", async () => {
-      const mixedBlobs = [
-        ...mockBlobs,
+      seed([
+        ...mockObjects,
         {
           name: "config.json",
-          properties: {
-            contentLength: 1000,
-            createdOn: new Date("2024-01-03T00:00:00Z"),
-            lastModified: new Date("2024-01-03T00:00:00Z"),
-            contentType: "application/json",
-          },
+          size: 1000,
+          contentType: "application/json",
+          etag: '"0x"',
+          createdAt: new Date("2024-01-03T00:00:00Z"),
+          lastModified: new Date("2024-01-03T00:00:00Z"),
           metadata: {},
         },
-      ];
-
-      const mockAsyncIterable = {
-        async *[Symbol.asyncIterator]() {
-          for (const blob of mixedBlobs) {
-            yield blob;
-          }
-        },
-      };
-
-      mockContainerClient.listBlobsFlat.mockReturnValue(mockAsyncIterable);
+      ]);
 
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container")
@@ -700,8 +674,10 @@ describe("PostgreSQL Restore API", () => {
       expect(response.body.data).toHaveLength(2); // Should exclude config.json
     });
 
-    it("should return 500 if Azure connection string not configured", async () => {
-      mockAzureStorageService.get.mockResolvedValue(null);
+    it("should return 500 if storage backend is not configured", async () => {
+      mockStorageBackend.list = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("STORAGE_NOT_CONFIGURED"));
 
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container")
@@ -711,10 +687,10 @@ describe("PostgreSQL Restore API", () => {
       expect(response.body.error).toBe("Internal server error");
     });
 
-    it("should handle Azure Storage errors", async () => {
-      mockContainerClient.listBlobsFlat.mockImplementation(() => {
-        throw new Error("Azure Storage connection failed");
-      });
+    it("should handle storage backend errors", async () => {
+      mockStorageBackend.list = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Backend listing failed"));
 
       const response = await request(app)
         .get("/api/postgres/restore/backups/test-container")

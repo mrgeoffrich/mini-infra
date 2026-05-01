@@ -4,19 +4,19 @@ description: An overview of how PostgreSQL backup management works in Mini Infra
 tags:
   - postgres
   - backup
-  - azure
+  - storage
   - monitoring
 ---
 
 # PostgreSQL Backup Overview
 
-Mini Infra lets you connect to PostgreSQL servers, manage their databases, and schedule automated backups to Azure Blob Storage. Backups run inside short-lived Docker containers using `pg_dump` and are stored as compressed files in Azure.
+Mini Infra lets you connect to PostgreSQL servers, manage their databases, and schedule automated backups to the configured storage backend (Azure Blob Storage today, with Google Drive arriving in a later phase). Backups run inside short-lived Docker containers using `pg_dump` and are stored as compressed files in the active storage backend.
 
 ## Prerequisites
 
 Before using PostgreSQL backup features you need:
 
-1. **Azure Blob Storage** — configured at [Connected Services → Azure Storage](/connectivity-azure). Backups are stored in Azure containers.
+1. **A configured storage backend** — set up at [Connected Services → Storage](/connectivity-storage). Pick the active provider (Azure Blob Storage today) and assign a default postgres-backup location.
 2. **Docker PostgreSQL images** — configured at [Settings → System Settings](/settings-system). Mini Infra uses these images to run backup and restore operations.
 3. **Docker connected** — the Docker daemon must be connected so Mini Infra can launch backup containers.
 
@@ -80,6 +80,6 @@ The bottom of the PostgreSQL pages shows:
 
 ## What to watch out for
 
-- Azure Blob Storage must be connected and a container must be selected before backups can run.
+- A storage backend must be connected and a default location must be selected before backups can run.
 - Backup operations run inside Docker containers. If Docker is not connected or the configured backup image is not available, backups will fail.
 - Backups are stored indefinitely unless you configure a **Retention Days** limit in the backup configuration.
