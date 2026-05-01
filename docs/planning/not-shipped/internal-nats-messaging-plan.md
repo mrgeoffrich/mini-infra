@@ -145,19 +145,26 @@ What the bus is **not**: a generic message broker abstraction with pluggable tra
 
 Each phase is a separate Linear issue (linked at the bottom of this doc). Phases land in order — every phase depends on Phase 1 — but later phases are otherwise independent of each other.
 
-### Phase 1 — Foundation: `NatsBus`, subject constants, prefix allowlist entry
+### Phase 1 — Foundation: `NatsBus`, subject constants, smoke ping
 
 **Goal:** the shared client, the namespace, and one trivial round-trip working end to end. No production traffic yet.
 
 Deliverables:
 - `server/src/services/nats/nats-bus.ts` (singleton, publish/request/subscribe, JetStream wrappers).
-- `lib/types/nats-subjects.ts` and `lib/types/nats-payloads/` (Zod schemas).
-- `egress-shared/natsbus/` (Go counterpart) and a build-time drift check.
-- `mini-infra` added to the prefix allowlist via a migration; bound to a new system role on the `vault-nats` template (so the server has credentials to publish/subscribe under it).
-- Smoke subject: `mini-infra.system.ping` (request/reply) used by a server-side health check that asserts the bus is up. Wired into the existing `Connected Service` health UI.
-- Logger and metrics hooks (publish count, subscribe count, request latency p50/p99).
+- `lib/types/nats-subjects.ts` (subject constants only — runtime-dep-free, per `lib/CLAUDE.md`).
+- `server/src/services/nats/payload-schemas.ts` (Zod schemas + inferred types — schemas live server-side because the lib package is types-only).
+- `egress-shared/natsbus/` (Go counterpart, constants only — Go client wrappers land in Phase 2 with the first real consumer).
+- A `mini-infra-server-bus` `.creds` blob, minted by `applyConfig()` into Vault KV (`shared/nats-server-bus-creds`) and bound to the default account with `pub: ["mini-infra.>"]` + `sub: ["mini-infra.>", "_INBOX.>"]`. Read by `NatsBus` at connect time and rotated on every apply.
+- Smoke subject: `mini-infra.system.ping` (request/reply). The server's bus connection registers a loopback responder; a `pingSelf()` helper measures round-trip latency.
+- A CI drift check (`scripts/check-nats-subject-drift.mjs`) that fails when the TS and Go subject constants diverge.
+- Logger context (`getLogger("integrations", "nats-bus")`).
 
-Done when: an integration test publishes `mini-infra.system.ping` from the server bus and gets a typed reply from a test responder, with both ends going through the singleton.
+Deferred to follow-ups (deliberately out of Phase 1 scope):
+- **Prefix allowlist entry.** The allowlist gates which *templates* may claim a non-default prefix; the server's own creds carry pub/sub permission directly and don't go through the allowlist. The first template that needs to claim `mini-infra.egress.fw.*` (Phase 2) will add the entry.
+- **Connected Service / ConnectivityScheduler integration.** The scheduler is wired around `ConfigurationService.validate()` and adding a fake settings category for the bus is real scope creep. Phase 1 exposes `bus.getHealth()` + `pingSelf()`; UI integration lands as a follow-up.
+- **Metrics hooks.** Publish/subscribe counters and request-latency histograms are easy to add but no consumer wires them up yet — log lines carry the same data on a per-call basis until a real metrics surface lands.
+
+Done when: an integration test boots a real `nats:2.12.8-alpine` container, the server bus connects through the testcontainers URL, the loopback ping round-trips with a matching nonce, and Zod validation rejects malformed publishes.
 
 ### Phase 2 — `egress-fw-agent` onto NATS
 

@@ -174,6 +174,27 @@ export async function mintSystemUserCreds(
   );
 }
 
+/**
+ * Mint a long-lived `.creds` blob for the server's own NATS bus connection.
+ * The credential is bound to the default (non-system) account and scoped to
+ * the `mini-infra.>` system-internal namespace plus `_INBOX.>` for req/reply
+ * inboxes. Re-minted on every `applyConfig()` so a leaked KV blob is
+ * invalidated by the next apply rather than living until manual intervention.
+ */
+export async function mintServerBusUserCreds(
+  defaultAccountKp: KeyPair,
+): Promise<string> {
+  return mintUserCreds(
+    "mini-infra-server-bus",
+    defaultAccountKp,
+    {
+      pub: ["mini-infra.>"],
+      sub: ["mini-infra.>", "_INBOX.>"],
+    },
+    0,
+  );
+}
+
 export interface ScopedSigningKeyMaterial {
   seed: string;
   publicKey: string;

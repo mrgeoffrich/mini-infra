@@ -63,6 +63,8 @@ import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-l
 import { initVaultServices } from "./services/vault/vault-services";
 import { seedVaultPolicies } from "./services/vault/vault-seed";
 import { getNatsControlPlaneService } from "./services/nats/nats-control-plane-service";
+import { NatsBus } from "./services/nats/nats-bus";
+import { registerPingResponder } from "./services/nats/nats-bus-ping";
 import {
   startEgressBackgroundServices,
   ensureFwAgent,
@@ -325,6 +327,10 @@ const initializeServices = async () => {
             // installed; the conf will simply sit unread in the KV.
             try {
               await getNatsControlPlaneService().applyConfig();
+              // applyConfig() rotates the server-bus creds blob in Vault KV
+              // every run; tell any already-connected bus to reconnect with
+              // the fresh creds. No-op on cold boot (bus not started yet).
+              NatsBus.getInstance().invalidateCreds();
             } catch (natsErr) {
               logger.warn(
                 { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },
@@ -347,6 +353,32 @@ const initializeServices = async () => {
       logger.error(
         { err: err instanceof Error ? err.message : String(err) },
         "Failed to initialize Vault services (non-fatal)",
+      );
+    }
+
+    // Start the system NATS bus. Non-blocking — the connect loop runs in
+    // the background and tolerates vault-nats not being up yet (fresh
+    // worktree boot, or NATS container restart). Registering the ping
+    // responder before `ready()` is important: NatsBus subscriptions are
+    // durable across reconnects, so the responder is attached automatically
+    // whenever the bus first reaches `connected`.
+    try {
+      NatsBus.getInstance().start();
+      registerPingResponder();
+      try {
+        await NatsBus.getInstance().ready({ timeoutMs: 3_000 });
+        console.log("[STARTUP] ✓ NATS bus connected");
+      } catch (busErr) {
+        logger.info(
+          { err: busErr instanceof Error ? busErr.message : String(busErr) },
+          "NATS bus not connected at boot — will keep retrying in the background",
+        );
+        console.log("[STARTUP] NATS bus retrying in background (non-fatal)");
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "NATS bus start failed (non-fatal)",
       );
     }
 
@@ -654,6 +686,16 @@ startServer()
       if (poolInstanceReaper) {
         poolInstanceReaper.stop();
         logger.info("Pool instance reaper stopped");
+      }
+
+      // Drain the system NATS bus before stopping containers — otherwise
+      // any in-flight publishes (including ping replies) get truncated and
+      // log noise spikes during shutdown.
+      try {
+        await NatsBus.getInstance().shutdown();
+        logger.info("NATS bus drained");
+      } catch (err) {
+        logger.warn({ err }, "NATS bus shutdown failed (non-fatal)");
       }
 
       // Shutdown agent service

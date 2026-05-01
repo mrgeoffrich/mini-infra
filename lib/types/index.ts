@@ -89,6 +89,9 @@ export * from "./vault";
 // NATS types
 export * from "./nats";
 
+// NATS subject constants (system-internal app-to-app messaging)
+export * from "./nats-subjects";
+
 // Egress firewall types
 export * from "./egress";
 
