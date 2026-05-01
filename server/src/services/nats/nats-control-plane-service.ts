@@ -65,10 +65,6 @@ const FIELD_CONFIG = "conf";
 const FIELD_SYSTEM_CREDS = "creds";
 const FIELD_ACCOUNTS_INDEX = "index";
 
-/** vault-nats template version this control plane targets. v1 used MEMORY
- *  resolver; v2 uses the full account resolver + live $SYS.REQ.CLAIMS.UPDATE. */
-const RESOLVER_MODE: "memory" | "full" = "full";
-
 /** Path prefix for storing scoped signing-key seeds keyed by stack. */
 export function natsSignerSeedKvPath(stackId: string, signerName: string): string {
   return `${NATS_SIGNER_KV_PATH_PREFIX}/${stackId}-${signerName}`;
@@ -81,6 +77,16 @@ export interface NatsApplyConfigResult {
   generatedSeeds: boolean;
   operatorPublic: string;
   systemAccountPublic: string | null;
+  /**
+   * Public keys of accounts whose JWT update could not be propagated to the
+   * running NATS server via $SYS.REQ.CLAIMS.UPDATE. The cold-start path
+   * (entrypoint reads `shared/nats-accounts-index` on container restart)
+   * fixes these on next NATS restart, but until then the live server holds
+   * stale claims for the listed accounts. Callers that have a security-
+   * sensitive change pending (notably stack destroy revoking signers) must
+   * inspect this list and force a NATS restart on a non-empty result.
+   */
+  unpropagatedAccountPublicKeys: string[];
 }
 
 type CredentialWithAccount = Prisma.NatsCredentialProfileGetPayload<{
@@ -386,13 +392,14 @@ export class NatsControlPlaneService {
       }
     }
 
-    // Phase 0: persist system-account user creds so the control plane (and
-    // anything else with KV access) can connect as $SYS without re-deriving
-    // them. Idempotent — only writes on first successful bootstrap.
-    if (systemAccountSeed && !(await this.tryReadField(NATS_SYSTEM_CREDS_KV_PATH, FIELD_SYSTEM_CREDS))) {
+    // Phase 0: re-mint system-account user creds on every apply. The user
+    // JWT is non-expiring (TTL=0) since the control plane uses it on demand
+    // and re-mint cost is negligible — rotating on every apply means a
+    // leaked KV blob is invalidated by the next apply rather than living
+    // until manual intervention. The user nkey rotates with each mint.
+    if (systemAccountSeed) {
       const systemCreds = await mintSystemUserCreds(loadKeyPair(systemAccountSeed));
       await kv.write(NATS_SYSTEM_CREDS_KV_PATH, { [FIELD_SYSTEM_CREDS]: systemCreds });
-      log.info("Minted system-account creds for live $SYS.REQ.CLAIMS.UPDATE pushes");
     }
 
     // Phase 0: write the full set of account JWTs to a single Vault KV blob
@@ -408,7 +415,6 @@ export class NatsControlPlaneService {
       accounts: renderedAccounts,
       systemAccountPublicKey: systemAccountPublic ?? renderedAccounts[0]?.publicKey,
       jetStream: true,
-      resolverMode: RESOLVER_MODE,
     });
     await kv.write(NATS_CONFIG_KV_PATH, { [FIELD_CONFIG]: conf });
 
@@ -430,13 +436,23 @@ export class NatsControlPlaneService {
     });
 
     // Phase 0: best-effort live propagation of every re-issued account JWT.
-    // If the NATS server isn't reachable yet (first-ever apply, container
-    // not started), the cold-start path catches it: the entrypoint reads
-    // $NATS_ACCOUNTS_INDEX on next start and seeds /data/accounts/.
-    await this.propagateAccountClaims(renderedAccounts);
+    // Failed accounts come back in `unpropagated`; the cold-start path
+    // (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX) repairs them on
+    // next NATS restart. Callers with a security-sensitive change pending
+    // (notably stack destroy revoking signers) inspect this list and force
+    // a NATS recycle on a non-empty result.
+    const unpropagatedAccountPublicKeys = await this.propagateAccountClaims(renderedAccounts);
 
-    log.info({ accountCount: accounts.length }, "NATS config rendered to Vault KV");
-    return { generatedSeeds, operatorPublic: operatorMaterial.publicKey, systemAccountPublic };
+    log.info(
+      { accountCount: accounts.length, unpropagated: unpropagatedAccountPublicKeys.length },
+      "NATS config rendered to Vault KV",
+    );
+    return {
+      generatedSeeds,
+      operatorPublic: operatorMaterial.publicKey,
+      systemAccountPublic,
+      unpropagatedAccountPublicKeys,
+    };
   }
 
   /**
@@ -466,32 +482,55 @@ export class NatsControlPlaneService {
 
   /**
    * Push every re-issued account JWT to the running NATS server via
-   * `$SYS.REQ.CLAIMS.UPDATE`. Logs and swallows individual failures — the
-   * cold-start path (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX) is
-   * authoritative on next container start, so a missed live push never
-   * causes a divergence beyond the time it takes to recycle the container.
+   * `$SYS.REQ.CLAIMS.UPDATE`. Failures are caught per-account and returned;
+   * the cold-start path (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX)
+   * repairs them on next NATS restart. Callers with a security-sensitive
+   * change pending must inspect the result and force a recycle on a
+   * non-empty array.
+   *
+   * Two failure shapes get logged differently:
+   *   - "no responders" (503): expected during the v1→v2 upgrade window
+   *     when the running server is still on the MEMORY resolver. Logged
+   *     at info, not warn.
+   *   - Anything else: the resolver is wired up but rejected the claim,
+   *     or the connection broke mid-loop. Logged at warn.
    */
-  private async propagateAccountClaims(accounts: RenderedNatsAccount[]): Promise<void> {
-    if (accounts.length === 0) return;
+  private async propagateAccountClaims(accounts: RenderedNatsAccount[]): Promise<string[]> {
+    if (accounts.length === 0) return [];
+    const failed: string[] = [];
     try {
       await this.withSystemNats(async (nc) => {
         for (const account of accounts) {
           try {
             await this.requestUpdateClaim(nc, account.publicKey, account.jwt);
           } catch (err) {
-            log.warn(
-              { err: err instanceof Error ? err.message : String(err), publicKey: account.publicKey },
-              "Account claim update failed; cold-start path will repair on next NATS restart",
-            );
+            failed.push(account.publicKey);
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("503") || msg.toLowerCase().includes("no responders")) {
+              log.info(
+                { publicKey: account.publicKey },
+                "Account claim update has no responders (full resolver not yet running); cold-start path will seed it",
+              );
+            } else {
+              log.warn(
+                { err: msg, publicKey: account.publicKey },
+                "Account claim update failed; cold-start path will repair on next NATS restart",
+              );
+            }
           }
         }
       });
     } catch (err) {
+      // System NATS unreachable entirely — every account is unpropagated.
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },
         "System NATS connection unavailable; relying on cold-start propagation",
       );
+      for (const account of accounts) {
+        if (!failed.includes(account.publicKey)) failed.push(account.publicKey);
+      }
     }
+    return failed;
   }
 
   /**
@@ -505,32 +544,31 @@ export class NatsControlPlaneService {
     });
   }
 
+  /**
+   * Send one `$SYS.REQ.CLAIMS.UPDATE` request and validate the JSON reply.
+   * NATS 2.10+ always replies with JSON of the form `{ data: { code } }` on
+   * success or `{ error: { description } }` on failure. We target 2.12+ in
+   * the vault-nats template, so a non-JSON reply is genuinely unexpected
+   * and surfaced as an error rather than treated as legacy success.
+   */
   private async requestUpdateClaim(
     nc: NatsConnection,
     publicKey: string,
     jwt: string,
   ): Promise<void> {
-    const subject = `$SYS.REQ.CLAIMS.UPDATE`;
-    const reply = await nc.request(subject, new TextEncoder().encode(jwt), { timeout: 5000 });
+    const reply = await nc.request("$SYS.REQ.CLAIMS.UPDATE", new TextEncoder().encode(jwt), { timeout: 5000 });
     const body = new TextDecoder().decode(reply.data);
-    // The full resolver replies with a JSON object that has a `data.code`
-    // (200) on success or a top-level `error` field on failure.
+    let parsed: { error?: { description?: string }; data?: { code?: number; account?: string } };
     try {
-      const parsed = JSON.parse(body) as { error?: { description?: string }; data?: { code?: number } };
-      if (parsed.error) {
-        throw new Error(`Account claim update rejected: ${parsed.error.description ?? body}`);
-      }
-      if (parsed.data && parsed.data.code !== undefined && parsed.data.code !== 200) {
-        throw new Error(`Account claim update rejected with code ${parsed.data.code}`);
-      }
-    } catch (parseErr) {
-      // Older nats-server replies are plain-text "OK"; treat anything that
-      // isn't JSON as success unless it explicitly says otherwise.
-      if (body && !body.toLowerCase().includes("ok") && parseErr instanceof SyntaxError) {
-        log.debug({ body, publicKey }, "Non-JSON claim-update reply; treating as success");
-      } else if (!(parseErr instanceof SyntaxError)) {
-        throw parseErr;
-      }
+      parsed = JSON.parse(body) as typeof parsed;
+    } catch {
+      throw new Error(`Account claim update for ${publicKey} returned non-JSON reply: ${body.slice(0, 200)}`);
+    }
+    if (parsed.error) {
+      throw new Error(`Account claim update for ${publicKey} rejected: ${parsed.error.description ?? body}`);
+    }
+    if (parsed.data?.code !== undefined && parsed.data.code !== 200) {
+      throw new Error(`Account claim update for ${publicKey} rejected with code ${parsed.data.code}`);
     }
   }
 

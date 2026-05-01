@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { connect, credsAuthenticator, ErrorCode } from "nats";
+import { connect, credsAuthenticator } from "nats";
 import { startTestNats, type TestNatsEnv } from "./helpers/nats-test-server";
 import {
   generateAccount,
   generateScopedSigningKey,
   loadKeyPair,
+  mintUserCreds,
   reissueAccountJwt,
 } from "../services/nats/nats-key-manager";
 
@@ -55,6 +56,35 @@ describe("Phase 4 — scoped signer materialization (external)", () => {
     );
     const creds = new TextDecoder().decode(fmtCreds(userJwt, userKp));
 
+    // Privileged listener: connect as an account-admin user (full pub/sub on
+    // `>`) and subscribe to the wildcard. Anything the scoped user manages to
+    // publish — in-scope or out-of-scope — will land here. The trim guarantee
+    // means the out-of-scope publish must NEVER reach this subscriber.
+    const accountKp = loadKeyPair(appAccount.seed);
+    const adminCreds = await mintUserCreds(
+      "trim-listener",
+      accountKp,
+      { pub: [">"], sub: [">"] },
+      60,
+    );
+    const listener = await connect({
+      servers: env.url,
+      authenticator: credsAuthenticator(new TextEncoder().encode(adminCreds)),
+      timeout: 5_000,
+      reconnect: false,
+    });
+    const inScopeReceived: string[] = [];
+    const outOfScopeReceived: string[] = [];
+    const inScopeSub = listener.subscribe("app.x.in.>", {
+      callback: (_err, msg) => inScopeReceived.push(msg.subject),
+    });
+    const outOfScopeSub = listener.subscribe("other.>", {
+      callback: (_err, msg) => outOfScopeReceived.push(msg.subject),
+    });
+    // Round-trip a sentinel through the listener so we know its subscriptions
+    // are registered server-side before the scoped publish fires.
+    await listener.flush();
+
     const nc = await connect({
       servers: env.url,
       authenticator: credsAuthenticator(new TextEncoder().encode(creds)),
@@ -63,41 +93,36 @@ describe("Phase 4 — scoped signer materialization (external)", () => {
     });
 
     try {
-      // In-scope publish must succeed — flush round-trips it through the
-      // server, so a permission denial would surface as an error here.
+      // In-scope publish must succeed and reach the listener.
       nc.publish("app.x.in.write", new TextEncoder().encode("ok"));
       await nc.flush();
 
-      // Out-of-scope publish must be rejected. The nats client surfaces
-      // permission violations either as a per-publish error event or as a
-      // connection close, depending on auth mode. Subscribe to the error
-      // stream in advance so we can capture either.
-      const errorPromise = (async () => {
-        for await (const status of nc.status()) {
-          if (status.type === "error" && status.error?.code === ErrorCode.PermissionsViolation) {
-            return status.error;
-          }
-        }
-        return null;
-      })();
-
+      // Out-of-scope publish must be silently dropped by the server's scope
+      // trim. The publish call itself doesn't error (NATS surfaces permission
+      // violations asynchronously, and the trimmed scope template makes the
+      // user's pub allow list strictly `[app.x.in.>, _INBOX.>]` — anything
+      // outside is denied at the server boundary, never delivered).
       nc.publish("other.namespace.evil", new TextEncoder().encode("nope"));
-      await nc.flush().catch(() => {
-        /* server-side denial may surface here too */
-      });
+      // Use a request/round-trip to the listener as a second-flush barrier:
+      // the listener sees its own publish, so by the time we observe it the
+      // scoped user's earlier publishes have either been delivered or
+      // explicitly denied.
+      await nc.flush();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      await listener.flush();
 
-      // Wait briefly for an async permission-violation status event.
-      const err = await Promise.race([
-        errorPromise,
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1_000)),
-      ]);
-      // We expect *some* signal of denial — either a PermissionsViolation
-      // status, or the publish was simply silently dropped (the trim made
-      // the permission empty). Either is acceptable; the load-bearing check
-      // is that the in-scope publish above succeeded.
-      void err;
+      // Load-bearing assertions.
+      expect(inScopeReceived).toContain("app.x.in.write");
+      expect(outOfScopeReceived).toEqual([]);
     } finally {
-      await nc.drain().catch(() => undefined);
+      await Promise.all([
+        nc.drain().catch(() => undefined),
+        (async () => {
+          inScopeSub.unsubscribe();
+          outOfScopeSub.unsubscribe();
+          await listener.drain().catch(() => undefined);
+        })(),
+      ]);
     }
   }, 30_000);
 

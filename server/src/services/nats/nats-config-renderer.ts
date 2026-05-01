@@ -11,31 +11,14 @@ export interface RenderedNatsAccount {
   jwt: string;
 }
 
-/**
- * `memory`  — original Phase-1 mode. Embeds `resolver_preload { ... }` directly
- *             in nats.conf. Account JWTs do not hot-reload; rotating a scoped
- *             signing key requires a server restart.
- *
- * `full`    — full account resolver (Phase 0). NATS reads JWTs from
- *             `resolverDir/<publicKey>.jwt` files at startup and accepts
- *             `$SYS.REQ.CLAIMS.UPDATE` requests at runtime. Required for
- *             Phase 4 signers — without it scoped signing-key rotation
- *             cannot propagate without bouncing the server.
- */
-export type NatsResolverMode = "memory" | "full";
-
 export interface NatsConfigInputs {
   operatorJwt: string;
   accountPublicKey?: string;
   accountJwt?: string;
   accounts?: RenderedNatsAccount[];
   systemAccountPublicKey?: string;
-  /** Resolver mode — defaults to "memory" for backwards compatibility with
-   *  Phase 1 vault-nats v1. The v2 template renders "full". */
-  resolverMode?: NatsResolverMode;
   /** Directory the full resolver loads JWTs from / writes to. Defaults to
-   *  /data/accounts (the NATS container's mounted nats_data volume). Only
-   *  used in "full" mode. */
+   *  /data/accounts (the NATS container's mounted nats_data volume). */
   resolverDir?: string;
   /** Enable JetStream persistence. The NATS container mounts /data, so the
    *  store directory points there. */
@@ -47,6 +30,12 @@ export interface NatsConfigInputs {
   jetStreamMaxStore?: string;
 }
 
+/**
+ * Render nats.conf using the full account resolver. NATS reads JWTs from
+ * `resolverDir/<publicKey>.jwt` files at startup and accepts
+ * `$SYS.REQ.CLAIMS.UPDATE` requests at runtime — this is what makes scoped
+ * signing-key rotation propagate without bouncing the server.
+ */
 export function renderNatsConfig(inputs: NatsConfigInputs): string {
   const accounts = inputs.accounts ?? (
     inputs.accountPublicKey && inputs.accountJwt
@@ -54,7 +43,7 @@ export function renderNatsConfig(inputs: NatsConfigInputs): string {
       : []
   );
   const systemAccountPublicKey = inputs.systemAccountPublicKey ?? inputs.accountPublicKey ?? accounts[0]?.publicKey;
-  const resolverMode: NatsResolverMode = inputs.resolverMode ?? "memory";
+  const dir = inputs.resolverDir ?? "/data/accounts";
 
   const lines: string[] = [];
   lines.push("# Managed by mini-infra — regenerated on every NATS bootstrap.");
@@ -63,25 +52,13 @@ export function renderNatsConfig(inputs: NatsConfigInputs): string {
     lines.push(`system_account: ${systemAccountPublicKey}`);
   }
   lines.push("");
-
-  if (resolverMode === "full") {
-    const dir = inputs.resolverDir ?? "/data/accounts";
-    lines.push("resolver: {");
-    lines.push("  type: full");
-    lines.push(`  dir: "${dir}"`);
-    // Reject runtime delete requests — mini-infra owns the lifecycle and
-    // pushes empty/replacement JWTs through `$SYS.REQ.CLAIMS.UPDATE` instead.
-    lines.push("  allow_delete: false");
-    lines.push("}");
-  } else {
-    lines.push("resolver: MEMORY");
-    lines.push("");
-    lines.push("resolver_preload: {");
-    for (const account of accounts) {
-      lines.push(`  ${account.publicKey}: ${account.jwt}`);
-    }
-    lines.push("}");
-  }
+  lines.push("resolver: {");
+  lines.push("  type: full");
+  lines.push(`  dir: "${dir}"`);
+  // Reject runtime delete requests — mini-infra owns the lifecycle and
+  // pushes empty/replacement JWTs through `$SYS.REQ.CLAIMS.UPDATE` instead.
+  lines.push("  allow_delete: false");
+  lines.push("}");
 
   if (inputs.jetStream) {
     lines.push("");

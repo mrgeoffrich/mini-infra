@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderNatsConfig } from "../nats-config-renderer";
 
 describe("renderNatsConfig", () => {
-  it("emits operator, MEMORY resolver, and the account preload block", () => {
+  it("emits operator + the full resolver block", () => {
     const conf = renderNatsConfig({
       operatorJwt: "OP_JWT_PLACEHOLDER",
       accountPublicKey: "ACCT_PUBLIC",
@@ -11,8 +11,13 @@ describe("renderNatsConfig", () => {
     });
 
     expect(conf).toContain("operator: OP_JWT_PLACEHOLDER");
-    expect(conf).toContain("resolver: MEMORY");
-    expect(conf).toContain("ACCT_PUBLIC: ACCT_JWT_PLACEHOLDER");
+    expect(conf).toContain("resolver: {");
+    expect(conf).toContain("type: full");
+    expect(conf).toContain('dir: "/data/accounts"');
+    expect(conf).toContain("allow_delete: false");
+    // Account JWTs are not embedded — they live on disk under /data/accounts.
+    expect(conf).not.toContain("ACCT_JWT_PLACEHOLDER");
+    expect(conf).not.toContain("resolver_preload");
     expect(conf).not.toContain("system_account:");
     expect(conf).not.toContain("jetstream");
   });
@@ -44,7 +49,7 @@ describe("renderNatsConfig", () => {
     expect(conf).toContain("max_file_store: 10G");
   });
 
-  it("renders multiple managed accounts and uses the requested system account", () => {
+  it("uses the explicit systemAccountPublicKey when supplied", () => {
     const conf = renderNatsConfig({
       operatorJwt: "OP",
       accounts: [
@@ -56,8 +61,21 @@ describe("renderNatsConfig", () => {
     });
 
     expect(conf).toContain("system_account: A_SYS");
-    expect(conf).toContain("A_SYS: SYS_JWT");
-    expect(conf).toContain("A_APP: APP_JWT");
+    // Full resolver does not preload — JWTs live in /data/accounts.
+    expect(conf).not.toContain("SYS_JWT");
+    expect(conf).not.toContain("APP_JWT");
+  });
+
+  it("respects a custom resolverDir", () => {
+    const conf = renderNatsConfig({
+      operatorJwt: "OP",
+      accountPublicKey: "AP",
+      accountJwt: "AJ",
+      jetStream: true,
+      resolverDir: "/var/nats/accounts",
+    });
+
+    expect(conf).toContain('dir: "/var/nats/accounts"');
   });
 
   it("ends with a trailing newline", () => {
@@ -68,39 +86,5 @@ describe("renderNatsConfig", () => {
       jetStream: false,
     });
     expect(conf.endsWith("\n")).toBe(true);
-  });
-
-  it("renders the full resolver block when resolverMode is 'full' and omits the preload", () => {
-    const conf = renderNatsConfig({
-      operatorJwt: "OP",
-      accounts: [
-        { publicKey: "A_SYS", jwt: "SYS_JWT" },
-        { publicKey: "A_APP", jwt: "APP_JWT" },
-      ],
-      systemAccountPublicKey: "A_SYS",
-      jetStream: true,
-      resolverMode: "full",
-    });
-
-    expect(conf).toContain("resolver: {");
-    expect(conf).toContain("type: full");
-    expect(conf).toContain('dir: "/data/accounts"');
-    expect(conf).toContain("allow_delete: false");
-    expect(conf).not.toContain("resolver_preload");
-    expect(conf).not.toContain("A_SYS: SYS_JWT");
-    expect(conf).toContain("system_account: A_SYS");
-  });
-
-  it("respects a custom resolverDir in full mode", () => {
-    const conf = renderNatsConfig({
-      operatorJwt: "OP",
-      accountPublicKey: "AP",
-      accountJwt: "AJ",
-      jetStream: true,
-      resolverMode: "full",
-      resolverDir: "/var/nats/accounts",
-    });
-
-    expect(conf).toContain('dir: "/var/nats/accounts"');
   });
 });

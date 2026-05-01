@@ -1117,9 +1117,13 @@ export class StackReconciler {
    *   2. The seed blobs in Vault KV at `shared/nats-signers/<stackId>-<name>`
    *      do not have a database FK; they have to be wiped manually.
    *
-   * Best-effort throughout — a failure here mustn't block the rest of the
-   * destroy. If the live push fails, the cold-start path (entrypoint reads
-   * the regenerated `accounts-index` blob) catches up on next restart.
+   * If the live push fails, the running NATS server still trusts the now-
+   * orphan public keys until the container restarts. That's a security gap
+   * — a leaked seed would still authenticate. To close it deterministically
+   * we restart the vault-nats NATS container as a fallback. The next start
+   * reads the freshly-rebuilt `shared/nats-accounts-index` from Vault KV and
+   * seeds /data/accounts/, so the live server comes back without the
+   * revoked signers.
    */
   private async revokeStackNatsSigningKeys(stackId: string, log: Logger): Promise<void> {
     let signingKeys: Array<{ id: string; seedKvPath: string }>;
@@ -1142,13 +1146,41 @@ export class StackReconciler {
     }
 
     // Re-issue + propagate parent account JWTs minus the now-deleted rows.
+    // If `applyConfig` itself throws (e.g. Vault KV unreachable), treat the
+    // whole apply as unpropagated — every revoked signer's public key is
+    // still trusted by the live server until the recycle below.
+    let unpropagated: string[];
     try {
-      await getNatsControlPlaneService(this.prisma).applyConfig();
+      const result = await getNatsControlPlaneService(this.prisma).applyConfig();
+      unpropagated = result.unpropagatedAccountPublicKeys;
     } catch (err) {
       log.warn(
         { err },
-        'NATS account claim re-push during stack destroy failed; cold-start path will repair on next NATS restart',
+        'NATS account claim re-push during stack destroy failed; will recycle the NATS container to apply revocation',
       );
+      unpropagated = ['<all>'];
+    }
+
+    // Security-sensitive recovery: any account whose live update we couldn't
+    // push still trusts the now-removed signing keys. Force-recycle the
+    // managed NATS container to read the freshly-written accounts-index
+    // from Vault KV on cold start.
+    if (unpropagated.length > 0) {
+      log.warn(
+        { unpropagatedCount: unpropagated.length },
+        'Recycling vault-nats NATS container to complete signer revocation',
+      );
+      try {
+        await this.recycleManagedNatsContainer(log);
+      } catch (err) {
+        // If we can't recycle the container, surface a CRITICAL log line —
+        // the destroy still cleans up DB + Vault KV below, but operators
+        // need to know the live revocation didn't complete.
+        log.error(
+          { err, stackId, signerCount: signingKeys.length },
+          'CRITICAL: scoped signer revocation did not propagate to the running NATS server. Manually restart the vault-nats NATS container to invalidate any leaked seeds.',
+        );
+      }
     }
 
     // Wipe seed blobs from Vault KV.
@@ -1162,6 +1194,38 @@ export class StackReconciler {
           'Best-effort Vault KV delete of signer seed during stack destroy failed',
         );
       }
+    }
+  }
+
+  /**
+   * Restart the host vault-nats NATS service container. Identifies it via
+   * the `mini-infra.stack-id` label on the stack recorded in NatsState plus
+   * `mini-infra.service=nats`. No-op if NatsState has no stackId yet (the
+   * vault-nats stack hasn't applied) or no matching container is running.
+   */
+  private async recycleManagedNatsContainer(log: Logger): Promise<void> {
+    const state = await this.prisma.natsState.findUnique({ where: { kind: 'primary' } });
+    if (!state?.stackId) {
+      log.warn('NatsState has no stackId; cannot identify the vault-nats NATS container to recycle');
+      return;
+    }
+    const docker = this.dockerExecutor.getDockerClient();
+    const containers = await docker.listContainers({
+      all: true,
+      filters: { label: [`mini-infra.stack-id=${state.stackId}`, `mini-infra.service=nats`] },
+    });
+    if (containers.length === 0) {
+      log.warn({ vaultNatsStackId: state.stackId }, 'No NATS container found to recycle');
+      return;
+    }
+    for (const c of containers) {
+      // dockerode's restart performs a graceful stop+start; we use a 10s
+      // stop timeout matching the rest of the reconciler. The container
+      // entrypoint reads $NATS_ACCOUNTS_INDEX from Vault KV on startup, so
+      // the freshly-rendered claims (which exclude the just-deleted scoped
+      // signers) take effect on this restart.
+      await docker.getContainer(c.Id).restart({ t: 10 });
+      log.info({ containerId: c.Id }, 'Recycled vault-nats NATS container to complete signer revocation');
     }
   }
 }

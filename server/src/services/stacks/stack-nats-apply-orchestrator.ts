@@ -346,7 +346,6 @@ export async function runStackNatsApplyPhase(
           accountId: defaultAccount.id,
           subjectPrefix: resolvedSubjectPrefix,
           stackId,
-          triggeredBy: opts.triggeredBy,
         });
         renderedSignerNames.add(signer.name);
         resources.push({ type: "signing-key", concreteName: sk.publicKey, scope: "stack" });
@@ -657,15 +656,28 @@ async function materializeRole(args: {
  * materialized) is what splices the live `NatsSigningKey` rows into the
  * account JWT and pushes via `$SYS.REQ.CLAIMS.UPDATE`.
  */
+/**
+ * Same regex `nats-control-plane-service.ts` validates account/credential/
+ * stream names with — applied here so a corrupt or hostile signers JSON
+ * blob can't smuggle a name with shell-special chars or path separators
+ * through to the Vault KV path or env var key.
+ */
+const SIGNER_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,99}$/;
+
 async function materializeSigner(args: {
   prisma: PrismaClient;
   signer: TemplateNatsSigner;
   accountId: string;
   subjectPrefix: string;
   stackId: string;
-  triggeredBy: string | undefined;
 }): Promise<{ id: string; publicKey: string }> {
   const { signer, subjectPrefix, stackId } = args;
+
+  if (!SIGNER_NAME_RE.test(signer.name)) {
+    throw new Error(
+      `NATS apply: signer name '${signer.name}' must be lowercase alphanumeric with optional '-' or '_' (max 100 chars)`,
+    );
+  }
 
   // Defense-in-depth: same shape rules as roles. The Phase 1 schema is the
   // primary gate, but a corrupt natsSigners JSON column could otherwise
@@ -729,7 +741,6 @@ async function materializeSigner(args: {
           maxTtlSeconds,
         },
       });
-  void args.triggeredBy; // tracked via NatsSigningKey audit columns (none today)
   return { id: row.id, publicKey: row.publicKey };
 }
 

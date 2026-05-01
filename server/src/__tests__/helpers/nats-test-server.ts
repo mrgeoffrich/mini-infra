@@ -71,7 +71,6 @@ export async function startTestNats(): Promise<TestNatsEnv> {
     systemAccountPublicKey: reissuedSys.publicKey,
     jetStream: true,
     jetStreamStoreDir: "/data/jetstream",
-    resolverMode: "full",
     resolverDir: ACCOUNTS_DIR,
   });
 
@@ -110,7 +109,7 @@ export async function startTestNats(): Promise<TestNatsEnv> {
     operatorKp,
     systemAccountMaterial: reissuedSys,
     sysAccountKp,
-    async pushAccountClaim(publicKey: string, jwt: string): Promise<void> {
+    async pushAccountClaim(_publicKey: string, jwt: string): Promise<void> {
       const { connect, credsAuthenticator } = await import("nats");
       const nc = await connect({
         servers: url,
@@ -140,9 +139,6 @@ export async function startTestNats(): Promise<TestNatsEnv> {
             throw parseErr;
           }
         }
-        // Hint to publicKey usage so the linter doesn't flag the parameter
-        // as unused. The reply body is what carries success/failure status.
-        void publicKey;
       } finally {
         await nc.drain();
       }
