@@ -7,8 +7,31 @@ export function isColimaRunning(profile: string): boolean {
 }
 
 export function colimaExists(profile: string): boolean {
-  const res = spawnSync('colima', ['status', profile], { encoding: 'utf8' });
-  return res.status === 0;
+  // `colima status <profile>` exits non-zero for *stopped* VMs as well as
+  // missing ones, so it can't distinguish "doesn't exist" from "not running".
+  // `colima list --json` enumerates every instance regardless of state.
+  const res = spawnSync('colima', ['list', '--json'], { encoding: 'utf8' });
+  if (res.status !== 0) return false;
+  const stdout = res.stdout || '';
+  for (const line of stdout.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed) as { name?: string };
+      if (obj?.name === profile) return true;
+    } catch {
+      // Some colima versions wrap the output in a JSON array; fall through.
+    }
+  }
+  try {
+    const arr = JSON.parse(stdout) as Array<{ name?: string }>;
+    if (Array.isArray(arr)) {
+      return arr.some((entry) => entry?.name === profile);
+    }
+  } catch {
+    // No JSON to parse — treat as not found.
+  }
+  return false;
 }
 
 export interface ColimaStartOpts {
