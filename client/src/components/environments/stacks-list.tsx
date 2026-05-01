@@ -251,7 +251,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                   <p className="text-sm font-medium text-muted-foreground mb-3">
                     Available templates for this environment
                   </p>
-                  <div className="grid gap-2">
+                  <div className="grid grid-cols-1 gap-2">
                     {availableTemplates.map((t) => (
                       <div
                         key={t.id}
