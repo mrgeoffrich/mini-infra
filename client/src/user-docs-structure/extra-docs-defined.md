@@ -216,3 +216,84 @@ Each entry is consumed by the `write-user-docs` skill to generate the actual art
 - Link to the system settings page for the API key secret configuration
 
 ---
+
+## vault/vault-app-integration.md
+
+**Title**: Using Vault from your app
+**Category**: vault
+**Order**: 4
+
+**Content to cover**:
+- Consumer-facing companion to the admin Vault docs — for app authors writing stack templates
+- Declaring `vault.policies[]`, `vault.appRoles[]`, and `vault.kv[]` in a template
+- Pattern A: AppRole login flow with wrapped `secret_id` (recommended for runtime secret reads)
+- Pattern B: `vault-kv` `dynamicEnv` kind for plain env-var injection at apply time
+- `dynamicEnv` kinds reference: `vault-addr`, `vault-role-id`, `vault-wrapped-secret-id`, `vault-kv`
+- Service binding via `vaultAppRoleRef`
+- AppRole field reference: `policy`, `scope`, `tokenTtl`, `tokenMaxTtl`, `tokenPeriod`, `secretIdTtl`, `secretIdNumUses`
+- Full unwrap → login → read code sample
+- Trade-off table: AppRole vs KV-only injection
+- End-to-end template example mixing both patterns
+- Common gotchas: single-use wrapped secret_id, KV updates needing re-apply, scope stickiness
+
+---
+
+## nats/nats-overview.md
+
+**Title**: NATS for App Developers
+**Category**: nats
+**Order**: 1
+
+**Content to cover**:
+- Introduction to the built-in NATS message bus (with JetStream) for app authors
+- What the integration provides out of the box: cluster URL, per-stack credential JWT, scoped permissions
+- Key concepts glossary: subject prefix, role, signer, export, import, `_INBOX.>` auto-injection
+- Architecture diagram showing template → apply orchestrator → container env vars
+- "When to reach for NATS" decision table — fan-out, RPC, cross-stack streaming, per-user JWTs
+- Distinction between the app-author surface (`roles`/`signers`) and the low-level surface (`accounts`/`streams`/`consumers`)
+- Pointers to the integration and cross-stack-sharing guides
+- Common gotchas: relative-vs-absolute subjects, mixing surfaces, import resolution timing
+
+---
+
+## nats/nats-app-integration.md
+
+**Title**: Connecting your app to NATS
+**Category**: nats
+**Order**: 2
+
+**Content to cover**:
+- Step-by-step guide to declaring `nats.roles[]` and binding services via `natsRole`
+- Role field reference: `name`, `publish`, `subscribe`, `inboxAuto`, `ttlSeconds`
+- `dynamicEnv` kinds: `nats-url`, `nats-creds`, `nats-signer-seed`
+- The "prefix gotcha" — subjects in template are relative, client code uses absolute
+- Reading the prefix into a `NATS_SUBJECT_PREFIX` env var for client code
+- Code samples: `nats.js` (Node) and `nats.go` connect/publish/subscribe
+- Optional Step 4: declaring `nats.signers[]` for in-process JWT minting
+- Signer field reference: `name`, `subjectScope`, `maxTtlSeconds`
+- Server-enforced subject-scope constraints on signer-minted JWTs
+- Minimal end-to-end template example
+- Common gotchas: creds file format, RPC `inboxAuto` defaults, re-apply for permission changes
+
+---
+
+## nats/nats-cross-stack-sharing.md
+
+**Title**: Sharing NATS subjects across stacks
+**Category**: nats
+**Order**: 3
+
+**Content to cover**:
+- When to use exports/imports vs internal pub/sub
+- Producer-side `nats.exports[]` declaration and the requirement that exported subjects be publishable by some local role
+- Consumer-side `nats.imports[]` with `fromStack`, `subjects`, and `forRoles`
+- Same-environment-only restriction
+- Subject prefix allowlist — when and why to request a custom human-readable prefix
+- Allowlist validation rules: no wildcards, no `$SYS.*`, no overlap with existing entries
+- The error message users see when a non-allowlisted prefix is rejected
+- Apply order: producer must apply before consumer can resolve imports
+- Renames and breaking changes for cross-stack contracts
+- End-to-end producer + consumer template example
+- Common gotchas: glob imports unsupported, imports add only to subscribe, bidirectional comms require both sides export and import
+
+---
