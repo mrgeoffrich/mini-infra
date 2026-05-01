@@ -45,7 +45,7 @@ Wildcards (`*` and `>`) work the same as regular NATS, e.g. `events.*` matches o
 | `publish` | no | `[]` | Subject patterns this role can publish to (relative to prefix). |
 | `subscribe` | no | `[]` | Subject patterns this role can subscribe to (relative to prefix). |
 | `inboxAuto` | no | `both` | Whether `_INBOX.>` is auto-injected for request/reply: `both`, `request`, `reply`, or `none`. |
-| `ttlSeconds` | no | `3600` | TTL (seconds) of the minted credential JWT. |
+| `ttlSeconds` | no | `3600` | TTL (seconds) of the minted credential JWT. **Set to `0` to mint a non-expiring JWT — the canonical pattern for long-running services.** The default of `3600` only suits short-lived containers (jobs, batch tasks). See the warning at the end of Step 2. |
 
 ## Step 2 --- Bind a service to the role
 
@@ -76,6 +76,16 @@ At apply time, the orchestrator:
 3. Writes the JWT to `NATS_CREDS` as a multi-line credentials file.
 
 The values appear as plain environment variables to your container --- no SDK calls or AppRole flow needed for the connect itself.
+
+> **⚠ `NATS_CREDS` is minted once at apply time and never refreshed.** Whatever `ttlSeconds` the role is configured with becomes the JWT's `exp`. When `exp` passes, NATS closes the connection and rejects every reconnect attempt until the container is restarted or the stack re-applied. The default of `3600` is suitable only for one-shot containers (jobs, init containers, batch tasks) whose lifetime is shorter than the TTL.
+>
+> **For long-running services, set `ttlSeconds: 0` on the role:**
+>
+> ```json
+> { "name": "worker", "publish": [...], "subscribe": [...], "ttlSeconds": 0 }
+> ```
+>
+> That mints a non-expiring JWT — the canonical NATS pattern for service-owned connections. Revocation is via the account's revocations list rather than expiry. **No app-side code changes needed.** Re-apply + restart the container if you ever change the role's permissions, since the cred is static once minted.
 
 ## Step 3 --- Connect from your app
 
@@ -142,9 +152,11 @@ const sub = nc.subscribe(`${process.env.NATS_SUBJECT_PREFIX}.jobs.queued`);
 
 If you'd like a stable, human-readable prefix (e.g. `myapp` instead of `app.cm0xyz`), ask an admin to add an entry to the [prefix allowlist](/nats/cross-stack-sharing#subject-prefix-allowlist).
 
-## Step 4 (optional) --- Add a signer for in-process JWT minting
+## Step 4 (optional) --- Mint ephemeral per-tenant creds with a signer
 
-A **signer** lets your service mint its own short-lived NATS JWTs --- useful for an agent gateway that hands one-shot credentials to per-user worker jobs. The server constrains anything signed with this key to the declared sub-tree, so a leaked seed cannot escape its scope.
+> **This is for the case where your service mints creds for *other* clients** — typically a manager/gateway that hands per-user, per-tenant, or per-job creds to downstream workers (the slackbot's worker-pool pattern is the canonical example). For the service's own NATS connection, use `ttlSeconds: 0` from Step 2 instead — that's the canonical NATS pattern for service-owned connections and needs no app-side code changes.
+
+A **signer** is a scoped NKey on your stack's NATS account. Your service holds the seed and uses it to mint user JWTs in-process. The server cryptographically constrains anything signed with the key to the declared subject sub-tree, so a leaked seed cannot escape its scope --- which is what makes it safe to hand the seed to your service.
 
 ```json
 {
@@ -172,9 +184,11 @@ A **signer** lets your service mint its own short-lived NATS JWTs --- useful for
 }
 ```
 
-At apply time, the seed is read from Vault KV at `shared/nats-signers/<stackId>-worker-minter` and injected into the container as `NATS_SIGNER_SEED` (NKey, base32). The matching account public key lands in `NATS_ACCOUNT_PUB` --- you need it as the `issuer_account` claim when minting JWTs (see below). Your service uses any standard nkeys library to mint user JWTs whose `pub`/`sub` permissions are *subsets* of `<prefix>.agent.worker.>`.
+At apply time, the seed is read from Vault KV at `shared/nats-signers/<stackId>-worker-minter` and injected into the container as `NATS_SIGNER_SEED` (NKey, base32). The matching account public key lands in `NATS_ACCOUNT_PUB` --- you need it as the `issuer_account` claim when minting JWTs. Your service uses any standard nkeys library to mint user JWTs whose `pub`/`sub` permissions are *subsets* of `<prefix>.agent.worker.>`.
 
-### Minting JWTs in-process
+The seed itself never expires; the user JWTs you mint with it are short-lived and disposable. Hand them to per-tenant clients; the server enforces the scope envelope cryptographically.
+
+### Minting a per-tenant cred
 
 ```ts
 import { encodeUser, fmtCreds } from "nats-jwt";
@@ -195,6 +209,84 @@ const creds = new TextDecoder().decode(fmtCreds(userJwt, userKp));
 // hand `creds` to the worker; the server trims its permissions to the scope envelope.
 ```
 
+### Advanced: fast permission propagation via authenticator callback
+
+> **Niche.** Skip this unless you have a specific need: `ttlSeconds: 0` from Step 2 covers the long-running-service case, and the "mint a cred for a downstream worker" pattern above covers the per-tenant case.
+
+If you want a long-running service to pick up new role permissions **without restarting the container**, you can replace its static `nats-creds` with the signer pattern wired through your NATS client's authenticator callback. The callback fires on every (re)connect, so re-applying the stack (which updates the signer's scope template via `$SYS.REQ.CLAIMS.UPDATE`) makes the next reconnect pick up new permissions automatically.
+
+This adds app-side complexity and an extra NATS round-trip per reconnect; it's not the recommended default. Use it only when restart-on-permission-change is genuinely a problem.
+
+#### Node.js (`nats.js`)
+
+```ts
+import { connect, jwtAuthenticator } from "nats";
+import { encodeUser } from "nats-jwt";
+import { createUser, fromSeed } from "nkeys.js";
+
+const signerKp = fromSeed(new TextEncoder().encode(process.env.NATS_SIGNER_SEED!));
+const accountPub = process.env.NATS_ACCOUNT_PUB!;
+
+// Stable user nkey for the lifetime of the process. The user JWT we mint
+// below is short-lived; the user nkey is not.
+const userKp = createUser();
+const userPub = userKp.getPublicKey();
+const userSeed = userKp.getSeed();
+
+async function mintFreshUserJwt(): Promise<string> {
+  return await encodeUser(
+    userPub,
+    userKp,
+    signerKp,
+    { issuer_account: accountPub },
+    { exp: Math.floor(Date.now() / 1000) + 600, scopedUser: true },
+  );
+}
+
+const nc = await connect({
+  servers: process.env.NATS_URL!,
+  // jwtAuthenticator accepts a function for the JWT — called on every
+  // (re)connect, so the JWT is always freshly minted.
+  authenticator: jwtAuthenticator(() => mintFreshUserJwt(), userSeed),
+  reconnect: true,
+  maxReconnectAttempts: -1,
+});
+```
+
+#### Go (`nats.go`)
+
+```go
+import (
+  "github.com/nats-io/nats.go"
+  "github.com/nats-io/nkeys"
+  jwtv2 "github.com/nats-io/jwt/v2"
+)
+
+signerKp, _ := nkeys.FromSeed([]byte(os.Getenv("NATS_SIGNER_SEED")))
+accountPub := os.Getenv("NATS_ACCOUNT_PUB")
+
+userKp, _ := nkeys.CreateUser()
+userPub, _ := userKp.PublicKey()
+
+mintJwt := func() (string, error) {
+  uc := jwtv2.NewUserClaims(userPub)
+  uc.IssuerAccount = accountPub
+  uc.Expires = time.Now().Add(10 * time.Minute).Unix()
+  return uc.Encode(signerKp) // signed with the scoped signer
+}
+
+signCB := func(nonce []byte) ([]byte, error) { return userKp.Sign(nonce) }
+
+nc, err := nats.Connect(
+  os.Getenv("NATS_URL"),
+  // UserJWT's first arg is called on every (re)connect.
+  nats.UserJWT(mintJwt, signCB),
+  nats.MaxReconnects(-1),
+)
+```
+
+> **Why this works only with the callback variant.** Static authenticators (`credsAuthenticator` / `nats.UserCredentials`) capture the JWT bytes once at connect and reuse them on every internal reconnect. The callback variant is what makes the lib re-mint on each reconnect — that's how new permissions propagate without a container restart.
+
 ### Signer fields
 
 | Field | Required | Default | Description |
@@ -214,7 +306,8 @@ A minimal complete example:
       {
         "name": "api",
         "publish": ["events.created", "events.updated"],
-        "subscribe": ["commands.>"]
+        "subscribe": ["commands.>"],
+        "ttlSeconds": 0
       }
     ]
   },
@@ -243,4 +336,4 @@ Apply, and your `api` container boots with everything it needs to talk to NATS.
 - **Subjects in role declarations are relative; your client code is absolute.** Read `NATS_SUBJECT_PREFIX` in your app and prepend it explicitly. Forgetting this is the #1 source of "permissions violation" errors.
 - **`inboxAuto` matters for RPC.** Default `'both'` is right for most services. Pick `'reply'` for pure responders and `'request'` for pure requesters if you want tighter permissions.
 - **Re-apply after editing roles.** Subject permission changes take effect when the orchestrator re-mints the credential. Container restarts alone don't pick up new permissions.
-- **TTL = grant lifetime, not connection lifetime.** A connected client keeps its session even after the cred TTL expires (until it disconnects). Re-apply for new TTLs to take hold for fresh connections.
+- **`nats-creds` JWTs *are* enforced for the connection's lifetime.** When the JWT in `NATS_CREDS` expires, the NATS server closes the connection on the next protocol tick and rejects every reconnect attempt — your existing session does **not** get a grace period. The slackbot stack hit this in the wild: containers booted at 13:00, JWTs expired at 14:00, NATS started returning `authentication expired` at 14:06, and the dependent gateway → manager RPCs failed an hour later. Fix: set `ttlSeconds: 0` on the role to mint a non-expiring JWT — the canonical NATS pattern for service-owned connections — and re-deploy.
