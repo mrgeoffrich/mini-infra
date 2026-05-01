@@ -299,3 +299,50 @@ template was added under `server/templates/` to support Tiers 4–8.
 Declares one role (`gateway`) and one signer (`worker-minter` scoped to
 `agent.worker`), idles in a `sleep 30` loop, exposes `NATS_URL`,
 `NATS_CREDS`, and `NATS_SIGNER_SEED` for inspection.
+
+---
+
+## Second execution (2026-05-01, fresh-from-scratch)
+
+After landing the destroy-hook fix, deleted the worktree-env entirely
+(`pnpm worktree-env delete --force`, which unregisters the WSL distro
+and wipes volumes) and recreated from scratch (`start --seed`).
+
+All 8 tiers pass cleanly. No code-level surprises. Two operator-flow
+quirks worth capturing:
+
+### Quirk 1 — Vault passphrase locks on every server start
+
+The Vault admin client only authenticates while the operator passphrase
+is unlocked. The seeder unlocks it as part of bootstrap, but the unlock
+state is in-process memory: the next request — including the very first
+post-seeder API call from outside — sees a re-locked passphrase, and
+any Vault-KV-touching call (apply, KV read) fails with
+`permission denied`.
+
+Workaround in the smoke flow: call `POST /api/vault/passphrase/unlock`
+once after the seeder finishes (or after any server restart). Not a bug,
+intended security behaviour. Worth a note in operator runbooks: an
+external automation (e.g. a CI smoke-runner) must be prepared to unlock
+before any further Vault-touching API call.
+
+### Quirk 2 — Rebuild-in-place loses docker-network membership
+
+Observed on the previous (rebuild) run: after `pnpm worktree-env start`
+recreated the mini-infra container in place, it lost membership in
+`mini-infra-vault` and `mini-infra-nats` networks and could no longer
+reach the running vault-nats stack. Required manual
+`docker network connect` to recover.
+
+Did NOT recur on the fresh-from-scratch flow (delete + start --seed) —
+the seeder rebuilt all containers and networks in correct order. So
+this is specific to the rebuild-in-place path and out of scope for
+this PR.
+
+### Final result
+
+Both runs confirm: vault-nats v2 boots correctly, the live propagation
+path works end-to-end, signers are wired through the orchestrator into
+the running container, scope trim is enforced server-side, orphan
+profiles get pruned, destroy revokes signers, and the recycle fallback
+kicks in correctly when live propagation fails.
