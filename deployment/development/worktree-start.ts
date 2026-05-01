@@ -40,6 +40,7 @@ import {
   ensureDockerReady,
   importDistro,
   isDistroRunning,
+  listRunningMiniInfraDistros,
   startDocker as startWslDocker,
 } from './lib/wsl.js';
 import { seed, ensureVaultUnlocked } from './lib/seeder.js';
@@ -51,6 +52,15 @@ const COMPOSE_FILE = path.join(SCRIPT_DIR, 'docker-compose.worktree.yaml');
 
 const COLIMA_CPUS = 2;
 const COLIMA_MEMORY_GIB = 8;
+
+// Each running mini-infra WSL distro runs its own dockerd, and every dockerd
+// carves bridge subnets out of Docker's default address pool. Past ~4
+// concurrent daemons, new network creation starts failing with
+// `(HTTP code 400) unexpected - all predefined address pools have been
+// fully subnetted`, which surfaces in the UI as a stuck dataplane sync.
+// Refuse to start a *new* instance once this many are already running;
+// re-running an already-running profile stays allowed.
+const MAX_RUNNING_WSL_INSTANCES = 4;
 
 type Driver = 'colima' | 'wsl';
 
@@ -226,6 +236,23 @@ export async function run(argv: string[]): Promise<void> {
       assertWslAvailable();
     } catch (err) {
       logError(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+    const targetDistro = distroName(profile);
+    const runningMini = listRunningMiniInfraDistros();
+    const startingNew = !runningMini.includes(targetDistro);
+    if (startingNew && runningMini.length >= MAX_RUNNING_WSL_INSTANCES) {
+      logError(
+        `Refusing to start: ${runningMini.length} mini-infra WSL distros are already running ` +
+          `(max ${MAX_RUNNING_WSL_INSTANCES}). Each runs its own dockerd and contends for ` +
+          `Docker's default address pool — adding another typically triggers ` +
+          `'all predefined address pools have been fully subnetted' on network creation.`,
+      );
+      logError('Currently running:');
+      for (const d of runningMini) logError(`  - ${d}`);
+      logError('');
+      logError('Tear one down with:  pnpm worktree-env delete <profile> --force');
+      logError('See all profiles:    pnpm worktree-env list');
       process.exit(1);
     }
   }

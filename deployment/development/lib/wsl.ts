@@ -70,6 +70,16 @@ export function listRunningDistros(): string[] {
     .map((d) => d.name);
 }
 
+/**
+ * Subset of `listRunningDistros()` filtered to mini-infra-prefixed distros —
+ * the ones we know each run their own dockerd and contend for Docker's
+ * default address pool. Used by `worktree-start` to refuse new instances
+ * once too many daemons are already running.
+ */
+export function listRunningMiniInfraDistros(): string[] {
+  return listRunningDistros().filter((d) => d.startsWith(DISTRO_PREFIX));
+}
+
 export interface WslImportOpts {
   name: string;
   baseTarball: string;
