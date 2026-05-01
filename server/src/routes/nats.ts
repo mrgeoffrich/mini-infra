@@ -6,6 +6,7 @@ import { getUserId } from "../lib/get-user-id";
 import { emitToChannel } from "../lib/socket";
 import { requirePermission } from "../middleware/auth";
 import { getNatsControlPlaneService } from "../services/nats/nats-control-plane-service";
+import { NatsBus } from "../services/nats/nats-bus";
 import { Channel, ServerEvent } from "@mini-infra/types";
 
 const router = Router();
@@ -94,6 +95,12 @@ router.post(
     try {
       await getNatsControlPlaneService().applyConfig();
       await getNatsControlPlaneService().applyJetStreamResources();
+      // applyConfig() rotated the server-bus creds blob in Vault KV; tell
+      // the live bus to reconnect and pick up the fresh creds. No-op if
+      // the bus hasn't been started yet (cold-boot path is wired in
+      // server.ts and short-circuits there). Same call site as the boot
+      // path — keeps the mint-then-invalidate pair consistent.
+      NatsBus.getInstance().invalidateCreds();
       emitToChannel(Channel.NATS, ServerEvent.NATS_APPLIED, { operationId, success: true });
       res.json({ success: true, data: { operationId } });
     } catch (err) {

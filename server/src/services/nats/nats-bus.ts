@@ -551,24 +551,23 @@ export class NatsBus {
     }
     const url = await getNatsControlPlaneService().getInternalUrl();
     let creds: string | undefined;
+    let readError: string | null = null;
     try {
       const kv = getVaultKVService();
       const blob = await kv.read(NATS_SERVER_BUS_CREDS_KV_PATH);
       const v = blob?.[FIELD_SERVER_BUS_CREDS];
       if (typeof v === "string" && v.length > 0) creds = v;
     } catch (err) {
-      log.debug(
-        {
-          path: NATS_SERVER_BUS_CREDS_KV_PATH,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        "server bus creds not yet available — will connect anonymously and retry on next cycle",
-      );
+      readError = err instanceof Error ? err.message : String(err);
     }
     if (!creds) {
+      // Surface the actual cause (Vault sealed, no admin token, path 404,
+      // wrong field) instead of the boot-time-friendly fallback message.
+      // Without this you can't tell apart "applyConfig hasn't run yet" from
+      // "applyConfig wrote the blob but Vault auth has rotated underneath us".
       throw new Error(
-        `server bus creds not present at ${NATS_SERVER_BUS_CREDS_KV_PATH}; ` +
-          `applyConfig() may not have run yet`,
+        `server bus creds not usable at ${NATS_SERVER_BUS_CREDS_KV_PATH}: ` +
+          (readError ?? "KV read returned null or missing field"),
       );
     }
     return { url, creds };
