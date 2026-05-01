@@ -45,6 +45,14 @@ import {
 } from './lib/wsl.js';
 import { seed, ensureVaultUnlocked } from './lib/seeder.js';
 import { ApiClient } from './lib/api.js';
+import {
+  buildSidecarsToTarballs,
+  detectHostBuildContext,
+  ensureBuildOutputDir,
+  finalizeSidecarImages,
+  type SidecarBuildSpec,
+  type SidecarTarball,
+} from './lib/sidecar-build.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..', '..');
@@ -365,6 +373,60 @@ export async function run(argv: string[]): Promise<void> {
   );
   logInfo(`Egress pool: ${egressPoolCidr}`);
 
+  // Image tags are derivable from `registryPort` alone, so compute them now
+  // and kick off sidecar builds on a host docker context before we wait on
+  // the per-worktree VM. Sidecar Dockerfiles don't depend on the per-worktree
+  // VM at build time — only at runtime — so building them on Docker Desktop
+  // (or another always-on host context) overlaps with VM boot and finishes
+  // long before mini-infra is healthy. See lib/sidecar-build.ts.
+  const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
+  // EGRESS_GATEWAY_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field
+  // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
+  const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
+  const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
+  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the FwAgentSidecar service inside
+  // mini-infra-server (which calls docker pull/create directly), so this value
+  // MUST include a `:tag` suffix that the server can pull from the local
+  // registry at runtime.
+  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent:latest`;
+  const egressFwAgentPushRef = egressFwAgentImageTag;
+
+  const sidecarBuildSpecs: SidecarBuildSpec[] = [
+    {
+      name: 'agent-sidecar',
+      dockerfile: path.join(PROJECT_ROOT, 'agent-sidecar', 'Dockerfile'),
+      contextDir: PROJECT_ROOT,
+      tag: agentSidecarImageTag,
+    },
+    {
+      name: 'egress-gateway',
+      dockerfile: path.join(PROJECT_ROOT, 'egress-gateway', 'Dockerfile'),
+      contextDir: PROJECT_ROOT,
+      tag: egressGatewayPushRef,
+    },
+    {
+      name: 'egress-fw-agent',
+      dockerfile: path.join(PROJECT_ROOT, 'egress-fw-agent', 'Dockerfile'),
+      contextDir: PROJECT_ROOT,
+      tag: egressFwAgentPushRef,
+    },
+  ];
+
+  let hostBuildPromise: Promise<SidecarTarball[]> | null = null;
+  const hostBuildContext = detectHostBuildContext();
+  if (hostBuildContext) {
+    const outputDir = ensureBuildOutputDir();
+    logInfo(
+      `Pre-building 3 sidecar images on host context '${hostBuildContext}' in parallel with VM boot...`,
+    );
+    hostBuildPromise = buildSidecarsToTarballs(sidecarBuildSpecs, hostBuildContext, outputDir);
+    // Attach a no-op catcher so a build failure during VM boot doesn't fire
+    // an unhandledRejection warning before we get to await the promise.
+    hostBuildPromise.catch(() => {});
+  } else {
+    logInfo('No host docker context for pre-builds — sidecars will build on per-worktree daemon');
+  }
+
   // Bring the VM up via the selected driver. For environment-details.xml,
   // colima exposes a host-side unix socket path; wsl exposes only TCP, so
   // the socket field is empty there.
@@ -418,17 +480,6 @@ export async function run(argv: string[]): Promise<void> {
   }
 
   const composeProjectName = `mini-infra-${profile}`;
-  const agentSidecarImageTag = `localhost:${registryPort}/mini-infra-agent-sidecar:latest`;
-  // EGRESS_GATEWAY_IMAGE_TAG is consumed by the egress-gateway stack template's `dockerImage` field
-  // (the template appends its own `:latest` tag), so this value must NOT include a `:tag` suffix.
-  const egressGatewayImageTag = `localhost:${registryPort}/mini-infra-egress-gateway`;
-  const egressGatewayPushRef = `${egressGatewayImageTag}:latest`;
-  // EGRESS_FW_AGENT_IMAGE_TAG is consumed by the FwAgentSidecar service inside
-  // mini-infra-server (which calls docker pull/create directly), so this value
-  // MUST include a `:tag` suffix that the server can pull from the local
-  // registry at runtime.
-  const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent:latest`;
-  const egressFwAgentPushRef = egressFwAgentImageTag;
 
   const stackEnv: NodeJS.ProcessEnv = {
     DOCKER_HOST: dockerHost,
@@ -485,83 +536,18 @@ export async function run(argv: string[]): Promise<void> {
   }
   logOk('alpine:latest ready');
 
-  // Build + push sidecar image
-  logInfo('Building agent sidecar image...');
-  const build = exec(
-    'docker',
-    [
-      'build',
-      '-t',
-      agentSidecarImageTag,
-      '-f',
-      path.join(PROJECT_ROOT, 'agent-sidecar', 'Dockerfile'),
-      PROJECT_ROOT,
-    ],
-    { env: stackEnv, stdio: 'inherit' },
-  );
-  if (build.status !== 0) {
-    logError('Agent sidecar build failed');
+  // Sidecar images: if a host build was kicked off before VM boot it has
+  // (likely) finished while we were waiting for Colima/WSL. Load + push the
+  // tarballs into the per-worktree daemon. If the host path failed or was
+  // unavailable, fall back to building on the per-worktree daemon (still in
+  // parallel across the three images).
+  try {
+    await finalizeSidecarImages(sidecarBuildSpecs, hostBuildPromise, dockerHost);
+    logOk('Sidecar images ready in per-worktree registry');
+  } catch (err) {
+    logError(`Sidecar image preparation failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
-  logInfo(`Pushing agent sidecar image to ${agentSidecarImageTag}...`);
-  const push = exec('docker', ['push', agentSidecarImageTag], { env: stackEnv, stdio: 'inherit' });
-  if (push.status !== 0) {
-    logError('Agent sidecar push failed');
-    process.exit(1);
-  }
-  logOk('Agent sidecar image pushed');
-
-  // Build + push egress-gateway image (Smokescreen forward proxy)
-  logInfo('Building egress-gateway image...');
-  const egressGwBuild = exec(
-    'docker',
-    [
-      'build',
-      '-t',
-      egressGatewayPushRef,
-      '-f',
-      path.join(PROJECT_ROOT, 'egress-gateway', 'Dockerfile'),
-      PROJECT_ROOT,
-    ],
-    { env: stackEnv, stdio: 'inherit' },
-  );
-  if (egressGwBuild.status !== 0) {
-    logError('Egress-gateway build failed');
-    process.exit(1);
-  }
-  logInfo(`Pushing egress-gateway image to ${egressGatewayPushRef}...`);
-  const egressGwPush = exec('docker', ['push', egressGatewayPushRef], { env: stackEnv, stdio: 'inherit' });
-  if (egressGwPush.status !== 0) {
-    logError('Egress-gateway push failed');
-    process.exit(1);
-  }
-  logOk('Egress-gateway image pushed');
-
-  // Build + push egress-fw-agent image (host firewall agent — iptables/ipset/NFLOG)
-  logInfo('Building egress-fw-agent image...');
-  const egressFwAgentBuild = exec(
-    'docker',
-    [
-      'build',
-      '-t',
-      egressFwAgentPushRef,
-      '-f',
-      path.join(PROJECT_ROOT, 'egress-fw-agent', 'Dockerfile'),
-      PROJECT_ROOT,
-    ],
-    { env: stackEnv, stdio: 'inherit' },
-  );
-  if (egressFwAgentBuild.status !== 0) {
-    logError('Egress-fw-agent build failed');
-    process.exit(1);
-  }
-  logInfo(`Pushing egress-fw-agent image to ${egressFwAgentPushRef}...`);
-  const egressFwAgentPush = exec('docker', ['push', egressFwAgentPushRef], { env: stackEnv, stdio: 'inherit' });
-  if (egressFwAgentPush.status !== 0) {
-    logError('Egress-fw-agent push failed');
-    process.exit(1);
-  }
-  logOk('Egress-fw-agent image pushed');
 
   // Capture extra networks joined at runtime (e.g. vault) so they survive rebuild
   const miniInfraContainer = `${composeProjectName}-mini-infra-1`;
