@@ -511,3 +511,55 @@ sections:
           - token_period — for long-running services that need indefinite renewal
           - Deleting an AppRole — Mini Infra only, not removed from Vault
           - AppRole login flow — POST /v1/auth/approle/login
+      - slug: vault-app-integration
+        topics:
+          - Consumer guide for app authors using Vault from a stack template
+          - Declaring vault.policies, vault.appRoles, and vault.kv in a template
+          - Pattern A — AppRole login flow with wrapped secret_id
+          - Pattern B — vault-kv dynamicEnv for plain env-var injection at apply time
+          - dynamicEnv kinds — vault-addr, vault-role-id, vault-wrapped-secret-id, vault-kv
+          - vaultAppRoleRef service binding
+          - AppRole field reference — policy, scope, tokenTtl, tokenPeriod, secretIdTtl, secretIdNumUses
+          - Wrapped secret_id — single-use, boot-time unwrap and login flow
+          - Policy scopes — host, environment, stack
+          - When to use AppRole vs KV-only injection — trade-offs
+          - End-to-end template example mixing both patterns
+
+  - slug: nats
+    label: NATS
+    description: Built-in NATS message bus — overview, app integration, and cross-stack sharing
+    articles:
+      - slug: nats-overview
+        topics:
+          - Built-in NATS message bus and JetStream concepts
+          - What app authors get out of the box — URL, credential JWT, scoped permissions
+          - Subject prefix concept — default app.<stack-id>, isolation by namespace
+          - Roles — named publish/subscribe permission bundles bound to services
+          - Signers — scoped signing keys for in-process JWT minting
+          - Exports and imports — cross-stack subject sharing
+          - _INBOX.> auto-injection for request/reply RPC
+          - When to use NATS in a stack — fan-out, RPC, cross-stack streaming, per-user tokens
+          - Difference between app-author surface (roles/signers) and low-level surface (accounts/streams/consumers)
+      - slug: nats-app-integration
+        topics:
+          - Consumer guide for app authors connecting a stack to NATS
+          - Declaring nats.roles[] in a stack template — name, publish, subscribe, inboxAuto, ttlSeconds
+          - Binding services via natsRole and natsSigner
+          - dynamicEnv kinds — nats-url, nats-creds, nats-signer-seed
+          - Subject prefix gotcha — relative in template, absolute in client code
+          - Reading the prefix into NATS_SUBJECT_PREFIX env var
+          - Code samples for nats.js (Node) and nats.go
+          - Declaring nats.signers[] for in-process JWT minting
+          - Subject scope enforcement for signers
+          - End-to-end minimal template example
+      - slug: nats-cross-stack-sharing
+        topics:
+          - Sharing NATS subjects between stacks via exports and imports
+          - Producer-side nats.exports[] declaration
+          - Consumer-side nats.imports[] with fromStack, subjects, forRoles
+          - Same-environment-only restriction
+          - Subject prefix allowlist — when and how to request a custom human-readable prefix
+          - Allowlist validation rules — no wildcards, no $SYS, no overlap
+          - Apply order — producer must apply before consumer can resolve imports
+          - Renames and breaking changes for cross-stack contracts
+          - End-to-end producer/consumer template example
