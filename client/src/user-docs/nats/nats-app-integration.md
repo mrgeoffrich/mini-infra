@@ -163,7 +163,8 @@ A **signer** lets your service mint its own short-lived NATS JWTs --- useful for
         "dynamicEnv": {
           "NATS_URL": { "kind": "nats-url" },
           "NATS_CREDS": { "kind": "nats-creds" },
-          "NATS_SIGNER_SEED": { "kind": "nats-signer-seed", "signer": "worker-minter" }
+          "NATS_SIGNER_SEED": { "kind": "nats-signer-seed", "signer": "worker-minter" },
+          "NATS_ACCOUNT_PUB": { "kind": "nats-account-public", "signer": "worker-minter" }
         }
       }
     }
@@ -171,13 +172,34 @@ A **signer** lets your service mint its own short-lived NATS JWTs --- useful for
 }
 ```
 
-At apply time, the seed is read from Vault KV at `shared/nats-signers/<stackId>-worker-minter` and injected into the container as `NATS_SIGNER_SEED` (NKey, base32). Your service uses any standard nkeys library to mint user JWTs whose `pub`/`sub` permissions are *subsets* of `<prefix>.agent.worker.>`.
+At apply time, the seed is read from Vault KV at `shared/nats-signers/<stackId>-worker-minter` and injected into the container as `NATS_SIGNER_SEED` (NKey, base32). The matching account public key lands in `NATS_ACCOUNT_PUB` --- you need it as the `issuer_account` claim when minting JWTs (see below). Your service uses any standard nkeys library to mint user JWTs whose `pub`/`sub` permissions are *subsets* of `<prefix>.agent.worker.>`.
+
+### Minting JWTs in-process
+
+```ts
+import { encodeUser, fmtCreds } from "nats-jwt";
+import { createUser, fromSeed } from "nkeys.js";
+
+const signerKp = fromSeed(new TextEncoder().encode(process.env.NATS_SIGNER_SEED!));
+const accountPub = process.env.NATS_ACCOUNT_PUB!;
+
+const userKp = createUser();
+const userJwt = await encodeUser(
+  "worker-job-42",
+  userKp,
+  signerKp,
+  { issuer_account: accountPub }, // required when signing with a scoped key
+  { exp: Math.floor(Date.now() / 1000) + 60, scopedUser: true },
+);
+const creds = new TextDecoder().decode(fmtCreds(userJwt, userKp));
+// hand `creds` to the worker; the server trims its permissions to the scope envelope.
+```
 
 ### Signer fields
 
 | Field | Required | Default | Description |
 |---|---|---|---|
-| `name` | yes | --- | Identifier; referenced from `services[].natsSigner` and the `nats-signer-seed` dynamicEnv. |
+| `name` | yes | --- | Identifier; referenced from `services[].natsSigner` and from `nats-signer-seed` / `nats-account-public` dynamicEnv entries. |
 | `subjectScope` | yes | --- | Sub-tree (relative to prefix) the signing key is constrained to. NATS-enforced. |
 | `maxTtlSeconds` | no | `3600` | Hard cap on TTL of any JWT the signer can mint. |
 

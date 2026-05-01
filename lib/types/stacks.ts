@@ -68,7 +68,15 @@ export type DynamicEnvSource =
    * this dynamicEnv kind by hand. Resolved at apply time from Vault KV at
    * `shared/nats-signers/<stackId>-<signerName>`.
    */
-  | { kind: 'nats-signer-seed'; signer: string };
+  | { kind: 'nats-signer-seed'; signer: string }
+  /**
+   * Public key of the NATS account that owns the named signing key. Required
+   * by `nats-jwt`'s `encodeUser` as the `issuer_account` claim whenever a
+   * scoped signing key (rather than the account key itself) signs a user JWT
+   * — without it the server rejects the JWT. Pair with `nats-signer-seed`
+   * for any service that mints user JWTs in-process.
+   */
+  | { kind: 'nats-account-public'; signer: string };
 
 /**
  * Per-service configuration for a `Pool` service. Pools are container

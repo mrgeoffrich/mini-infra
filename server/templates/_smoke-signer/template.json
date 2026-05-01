@@ -45,7 +45,8 @@
         "dynamicEnv": {
           "NATS_URL": { "kind": "nats-url" },
           "NATS_CREDS": { "kind": "nats-creds" },
-          "NATS_SIGNER_SEED": { "kind": "nats-signer-seed", "signer": "worker-minter" }
+          "NATS_SIGNER_SEED": { "kind": "nats-signer-seed", "signer": "worker-minter" },
+          "ACCOUNT_PUB": { "kind": "nats-account-public", "signer": "worker-minter" }
         },
         "restartPolicy": "unless-stopped",
         "joinResourceNetworks": ["nats"],

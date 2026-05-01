@@ -699,7 +699,11 @@ export class StackReconciler {
         (src) => src.kind === 'vault-addr' || src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id' || src.kind === 'vault-kv',
       );
       const hasNatsEntries = Object.values(dynamicEnv).some(
-        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds' || src.kind === 'nats-signer-seed',
+        (src) =>
+          src.kind === 'nats-url' ||
+          src.kind === 'nats-creds' ||
+          src.kind === 'nats-signer-seed' ||
+          src.kind === 'nats-account-public',
       );
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
