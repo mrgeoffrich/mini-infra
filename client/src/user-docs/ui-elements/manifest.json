@@ -446,7 +446,7 @@
       "id": "environment-egress-firewall-toggle",
       "label": "Environment Egress Firewall Toggle",
       "elementType": "Switch",
-      "file": "client/src/components/egress/egress-firewall-card.tsx"
+      "file": "client/src/components/egress/egress-environment-firewall-toggles.tsx"
     },
     {
       "id": "egress-add-rule",
