@@ -1,7 +1,7 @@
 import { OperatorPassphraseService } from "../../lib/operator-passphrase-service";
 import { VaultAdminService, UNSEAL_STEP_NAMES } from "./vault-admin-service";
 import { VaultStateService } from "./vault-state-service";
-import { getNatsBootstrapService } from "../nats/nats-bootstrap-service";
+import { getNatsControlPlaneService } from "../nats/nats-control-plane-service";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { VaultStatus } from "@mini-infra/types";
@@ -182,7 +182,7 @@ export class VaultHealthWatcher {
       // not refresh it. Non-fatal so a NATS hiccup never blocks Vault.
       try {
         await this.admin.authenticateAsAdmin();
-        await getNatsBootstrapService().bootstrap();
+        await getNatsControlPlaneService().applyConfig();
       } catch (natsErr) {
         log.warn(
           { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },

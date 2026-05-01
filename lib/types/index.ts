@@ -86,6 +86,9 @@ export * from "./operations";
 // Vault types
 export * from "./vault";
 
+// NATS types
+export * from "./nats";
+
 // Egress firewall types
 export * from "./egress";
 

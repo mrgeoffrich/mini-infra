@@ -62,7 +62,7 @@ import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-upd
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
 import { initVaultServices } from "./services/vault/vault-services";
 import { seedVaultPolicies } from "./services/vault/vault-seed";
-import { getNatsBootstrapService } from "./services/nats/nats-bootstrap-service";
+import { getNatsControlPlaneService } from "./services/nats/nats-control-plane-service";
 import {
   startEgressBackgroundServices,
   ensureFwAgent,
@@ -324,7 +324,7 @@ const initializeServices = async () => {
             // nats.conf in Vault KV. Safe to skip if no vault-nats stack is
             // installed; the conf will simply sit unread in the KV.
             try {
-              await getNatsBootstrapService().bootstrap();
+              await getNatsControlPlaneService().applyConfig();
             } catch (natsErr) {
               logger.warn(
                 { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },

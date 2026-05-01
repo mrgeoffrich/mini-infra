@@ -762,51 +762,6 @@ export async function ensureVaultUnlocked(api: ApiClient): Promise<void> {
   }
 }
 
-interface VaultPolicySummary {
-  id?: string;
-  name?: string;
-  publishedVersion?: number;
-}
-
-/**
- * Publish the two system Vault policies (`mini-infra-admin` and
- * `mini-infra-operator`) so the DB tracks them as published. The bootstrap
- * flow already writes the HCL to Vault directly, but leaves the DB rows in
- * draft state — without this step they show as unpublished in the UI on a
- * fresh dev environment. Idempotent: skips policies already at version >= 1.
- */
-async function publishSystemVaultPolicies(api: ApiClient): Promise<void> {
-  const SYSTEM_POLICY_NAMES = ['mini-infra-admin', 'mini-infra-operator'];
-
-  const res = await api.get<unknown>('/api/vault/policies');
-  if (res.status !== 200) {
-    logSkip(`Vault policies list returned ${res.status} — skipping system policy publish`);
-    return;
-  }
-  const policies = pickItems<VaultPolicySummary>(res.body);
-
-  for (const name of SYSTEM_POLICY_NAMES) {
-    const policy = policies.find((p) => p.name === name);
-    if (!policy?.id) {
-      logSkip(`System Vault policy '${name}' not found — skipping publish`);
-      continue;
-    }
-    if ((policy.publishedVersion ?? 0) > 0) {
-      logSkip(`Vault policy '${name}' already published (v${policy.publishedVersion})`);
-      continue;
-    }
-    logInfo(`Publishing Vault policy '${name}'`);
-    const publishRes = await api.post(`/api/vault/policies/${policy.id}/publish`);
-    if (publishRes.status === 200 || publishRes.status === 201) {
-      logOk(`Vault policy '${name}' published`);
-    } else {
-      logError(
-        `Publishing Vault policy '${name}' returned ${publishRes.status}: ${publishRes.bodyText}`,
-      );
-    }
-  }
-}
-
 async function markOnboardingComplete(api: ApiClient): Promise<void> {
   logInfo('Marking onboarding complete');
   const res = await api.post('/api/onboarding/complete', {});
@@ -884,7 +839,6 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     });
   }
   await ensureVaultUnlocked(api);
-  await publishSystemVaultPolicies(api);
   if (vaultNatsStackId) {
     await applyAndWaitForSynced(api, vaultNatsStackId, 'NATS service', {
       serviceNames: ['nats'],

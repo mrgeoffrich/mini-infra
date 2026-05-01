@@ -26,6 +26,7 @@ export type PermissionDomain =
   | "pools"
   | "vault"
   | "storage"
+  | "nats"
   // Vault KV broker is a sub-domain so write→read implication works without
   // entangling KV scopes with the broader vault:write (policies/AppRoles).
   | "vault-kv"
@@ -33,7 +34,8 @@ export type PermissionDomain =
   // inside a stack template draft. Separate from stacks:write so template
   // authors can build templates without needing broad Vault admin rights, while
   // Vault sections still require an explicit elevated scope.
-  | "template-vault";
+  | "template-vault"
+  | "template-nats";
 
 /** Permission actions */
 export type PermissionAction = "read" | "write" | "use";
@@ -541,6 +543,49 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    domain: "nats",
+    label: "NATS",
+    description: "Managed NATS accounts, credentials, streams, and consumers",
+    permissions: [
+      {
+        scope: "nats:read",
+        domain: "nats",
+        action: "read",
+        label: "View NATS",
+        description: "View NATS status, accounts, credential profiles, streams, and consumers",
+      },
+      {
+        scope: "nats:write",
+        domain: "nats",
+        action: "write",
+        label: "Manage NATS",
+        description: "Create, update, delete, apply, and mint NATS credentials",
+      },
+      {
+        scope: "nats:admin",
+        domain: "nats",
+        action: "write",
+        label: "NATS Administration",
+        description: "Regenerate managed NATS configuration, reconcile JetStream resources, and manage the subject-prefix allowlist",
+      },
+    ],
+  },
+  {
+    domain: "template-nats",
+    label: "Template NATS Sections",
+    description: "Embed NATS accounts, credentials, streams, and consumers inside stack template drafts",
+    permissions: [
+      {
+        scope: "template-nats:write",
+        domain: "template-nats",
+        action: "write",
+        label: "Author Template NATS Sections",
+        description:
+          "Include nats.accounts, nats.credentials, nats.streams, or nats.consumers inside a template draft. Still requires stacks:write for the draft itself.",
+      },
+    ],
+  },
+  {
     domain: "vault-kv",
     label: "Vault KV (Secrets)",
     description: "Brokered Vault KV v2 secret reads and writes via the Mini Infra admin token",
@@ -614,6 +659,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "registry:read",
       "monitoring:read",
       "stacks:read",
+      "nats:read",
       "agent:use",
       "agent:read",
     ],
@@ -639,6 +685,8 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "stacks:write",
       "storage:read",
       "storage:write",
+      "nats:read",
+      "nats:write",
       "events:read",
       "events:write",
       // Stacks routinely seed shared KV secrets that their services consume
@@ -650,6 +698,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       // Stack managers author templates — granting vault section authoring
       // alongside stacks:write is the natural pairing.
       "template-vault:write",
+      "template-nats:write",
     ],
   },
   {

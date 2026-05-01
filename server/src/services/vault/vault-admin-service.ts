@@ -5,15 +5,15 @@ import { VaultHttpClient } from "./vault-http-client";
 import type { VaultAuthResponse } from "./vault-http-client";
 import { VaultStateService } from "./vault-state-service";
 import { getLogger } from "../../lib/logger-factory";
-import { getNatsBootstrapService } from "../nats/nats-bootstrap-service";
+import { getNatsControlPlaneService } from "../nats/nats-control-plane-service";
 import { emitToChannel } from "../../lib/socket";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
-// Single source of truth for the admin policy HCL. Imported by the seeder so
-// the DB row, the bootstrap-time write, and the per-login self-heal all
-// publish the same body — no drift when capabilities are added or removed.
-import { MINI_INFRA_ADMIN_HCL } from "./vault-policy-bodies";
+// Bootstrap and per-login self-heal both read system policy bodies from the
+// seeded DB rows (`isSystem: true`), which `seedVaultPolicies` keeps pinned
+// to the codebase constants in `vault-policy-bodies.ts`. No HCL import here.
+import { seedVaultPolicies } from "./vault-seed";
 
 const log = getLogger("platform", "vault-admin-service");
 
@@ -33,57 +33,13 @@ const MINI_INFRA_OPERATOR_POLICY_NAME = "mini-infra-operator";
 const MINI_INFRA_ADMIN_APPROLE_NAME = "mini-infra-admin";
 const MINI_INFRA_OPERATOR_USERPASS_NAME = "mini-infra-operator";
 
-const ADMIN_POLICY_HCL = MINI_INFRA_ADMIN_HCL;
-
-const OPERATOR_POLICY_HCL = `# mini-infra-operator — userpass policy for human operator logging into the
-# Vault UI to inspect state and debug. Deliberately NOT admin-equivalent: all
-# write paths are delegated to the mini-infra-admin AppRole via the Mini Infra
-# API. If a human operator needs admin capability, grant them the vault:admin
-# scope on Mini Infra and drive Vault through the UI there.
-
-# Read-only visibility into seal, mounts, policies, audit config
-path "sys/health" { capabilities = ["read", "list"] }
-path "sys/seal-status" { capabilities = ["read", "list"] }
-path "sys/mounts" { capabilities = ["read", "list"] }
-path "sys/mounts/*" { capabilities = ["read", "list"] }
-path "sys/auth" { capabilities = ["read", "list"] }
-path "sys/auth/*" { capabilities = ["read", "list"] }
-path "sys/policies/acl" { capabilities = ["read", "list"] }
-path "sys/policies/acl/*" { capabilities = ["read", "list"] }
-path "sys/capabilities-self" { capabilities = ["update"] }
-
-# List and read AppRoles to see which apps are configured
-path "auth/approle/role" { capabilities = ["read", "list"] }
-path "auth/approle/role/*" { capabilities = ["read", "list"] }
-
-# Let the operator change their own userpass password. Others' passwords and
-# new user creation are NOT allowed — use the admin AppRole via Mini Infra.
-path "auth/userpass/users/mini-infra-operator/password" {
-  capabilities = ["update"]
-}
-
-# Read and write secrets under secret/ — the operator needs this to debug
-# what apps are reading at runtime. KV v2 requires both data/ and metadata/.
-path "secret/data/*" {
-  capabilities = ["create", "read", "update", "delete", "list"]
-}
-path "secret/metadata/*" {
-  capabilities = ["read", "list", "delete"]
-}
-
-# Token lifecycle for own session
-path "auth/token/lookup-self" { capabilities = ["read"] }
-path "auth/token/renew-self" { capabilities = ["update"] }
-path "auth/token/revoke-self" { capabilities = ["update"] }
-`;
-
 const BOOTSTRAP_STEPS = [
   "Initialise Vault (sys/init)",
   "Persist and unseal with operator passphrase",
   "Enable auth methods (approle, userpass)",
   "Enable KV v2 at secret/",
-  "Write mini-infra-admin policy + AppRole",
-  "Write mini-infra-operator policy + userpass user",
+  "Apply system policies + admin AppRole",
+  "Create operator userpass user",
   "Rotate root token",
 ] as const;
 
@@ -131,6 +87,54 @@ export class VaultAdminService {
 
   getClient(): VaultHttpClient | null {
     return this.client;
+  }
+
+  /**
+   * Write every `isSystem: true` VaultPolicy from the DB to Vault and mark the
+   * row as published. Idempotent: re-running re-syncs the body and refreshes
+   * `lastAppliedAt`. Used by `bootstrap()` to apply admin + operator (and any
+   * future system policies) in one place driven by the seed.
+   *
+   * Reads `draftHclBody` (not `publishedHclBody`): the seed pins
+   * `draftHclBody` to the codebase constant for system rows on every boot,
+   * so `draftHclBody` is the authoritative current body. Reading
+   * `publishedHclBody` would push the previous deployment's HCL after a
+   * capability upgrade.
+   *
+   * `publishedVersion` is intentionally not bumped on re-apply — this is a
+   * re-assertion of the existing version, not a new publish. The UI's
+   * "Publish" path (`VaultPolicyService.publish`) is what bumps the version
+   * when an operator deliberately publishes user-edited HCL.
+   */
+  private async publishSystemPolicies(client: VaultHttpClient): Promise<void> {
+    const policies = await this.prisma.vaultPolicy.findMany({
+      where: { isSystem: true },
+    });
+    for (const p of policies) {
+      const body = p.draftHclBody;
+      if (!body) {
+        log.warn(
+          { policy: p.name },
+          "System Vault policy has no HCL body; skipping",
+        );
+        continue;
+      }
+      await client.writePolicy(p.name, body);
+      await this.prisma.vaultPolicy.update({
+        where: { id: p.id },
+        data: {
+          publishedHclBody: body,
+          publishedVersion:
+            p.publishedVersion === 0 ? 1 : p.publishedVersion,
+          publishedAt: p.publishedAt ?? new Date(),
+          lastAppliedAt: new Date(),
+        },
+      });
+      log.info(
+        { policy: p.name },
+        "System Vault policy applied from DB",
+      );
+    }
   }
 
   /**
@@ -233,11 +237,18 @@ export class VaultAdminService {
       total,
     );
 
-    // 5. Admin policy + AppRole
+    // 5. Apply all system policies from the DB, then create the admin AppRole
+    //    bound to mini-infra-admin. The DB rows are the source of truth: any
+    //    policy with isSystem=true gets written to Vault and marked published.
+    //    Re-seed first so a freshly-installed instance always has the
+    //    mini-infra-admin and mini-infra-operator rows present even if the
+    //    boot-time seed call hasn't run yet (e.g. tests instantiating the
+    //    service directly).
     const { adminRoleId, adminSecretId } = await this.wrapStep(
       BOOTSTRAP_STEPS[4],
       async () => {
-        await client.writePolicy(MINI_INFRA_ADMIN_POLICY_NAME, ADMIN_POLICY_HCL);
+        await seedVaultPolicies(this.prisma);
+        await this.publishSystemPolicies(client);
         await client.writeAppRole(MINI_INFRA_ADMIN_APPROLE_NAME, {
           token_policies: MINI_INFRA_ADMIN_POLICY_NAME,
           token_period: "1h",
@@ -256,15 +267,11 @@ export class VaultAdminService {
       total,
     );
 
-    // 6. Operator policy + userpass user
+    // 6. Operator userpass user — the policy itself was applied in step 5.
     const operatorPassword = generateRandomPassword();
     await this.wrapStep(
       BOOTSTRAP_STEPS[5],
       async () => {
-        await client.writePolicy(
-          MINI_INFRA_OPERATOR_POLICY_NAME,
-          OPERATOR_POLICY_HCL,
-        );
         await client.createUserpassUser(
           MINI_INFRA_OPERATOR_USERPASS_NAME,
           operatorPassword,
@@ -313,7 +320,7 @@ export class VaultAdminService {
     // means the vault-nats stack's NATS service won't apply until a future
     // bootstrap call succeeds. Re-runs at boot via authenticateAsAdmin.
     try {
-      await getNatsBootstrapService().bootstrap();
+      await getNatsControlPlaneService().applyConfig();
     } catch (err) {
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },
@@ -408,19 +415,20 @@ export class VaultAdminService {
     const secretId = await this.stateService.readAdminSecretId();
     const res = await this.client.appRoleLogin(roleId, secretId);
     this.adoptAuthResponse(res);
-    // Reconcile the admin policy with the source-of-truth HCL on every
-    // successful login. Idempotent overwrite — keeps policy capabilities in
-    // sync with the codebase even after upgrades that add new capabilities
-    // (e.g. KV `patch` for the brokered Vault KV API).
+    // Reconcile every system policy with the source-of-truth HCL on every
+    // successful login. Idempotent — keeps Vault in sync with the codebase
+    // even after upgrades that add new capabilities (e.g. KV `patch` for the
+    // brokered Vault KV API). Driven entirely off the seeded DB rows so the
+    // bootstrap path and the per-login self-heal can't drift.
     try {
-      await this.client.writePolicy(MINI_INFRA_ADMIN_POLICY_NAME, ADMIN_POLICY_HCL);
+      await this.publishSystemPolicies(this.client);
     } catch (err) {
-      // Non-fatal — apply will surface a clearer error if the policy is
+      // Non-fatal — apply will surface a clearer error if a policy is
       // missing capabilities. We still want the login to succeed so the
       // operator can investigate via the UI.
       log.warn(
         { err: err instanceof Error ? err.message : String(err) },
-        "Failed to refresh admin policy on login (non-fatal)",
+        "Failed to refresh system policies on login (non-fatal)",
       );
     }
   }

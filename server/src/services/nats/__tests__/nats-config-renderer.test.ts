@@ -44,6 +44,22 @@ describe("renderNatsConfig", () => {
     expect(conf).toContain("max_file_store: 10G");
   });
 
+  it("renders multiple managed accounts and uses the requested system account", () => {
+    const conf = renderNatsConfig({
+      operatorJwt: "OP",
+      accounts: [
+        { publicKey: "A_SYS", jwt: "SYS_JWT" },
+        { publicKey: "A_APP", jwt: "APP_JWT" },
+      ],
+      systemAccountPublicKey: "A_SYS",
+      jetStream: true,
+    });
+
+    expect(conf).toContain("system_account: A_SYS");
+    expect(conf).toContain("A_SYS: SYS_JWT");
+    expect(conf).toContain("A_APP: APP_JWT");
+  });
+
   it("ends with a trailing newline", () => {
     const conf = renderNatsConfig({
       operatorJwt: "OP",

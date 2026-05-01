@@ -1103,6 +1103,7 @@ model Stack {
   vaultAppRole                VaultAppRole? @relation("StackVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   vaultFailClosed             Boolean       @default(true)
   lastAppliedVaultAppRoleId   String?
+  lastAppliedNatsSnapshot     String?
 
   // Phase 2 — AES-256-GCM encrypted JSON blob of operator-supplied input values.
   // Never returned via API; GET /stacks/:id returns inputValueKeys (names only).
@@ -1125,6 +1126,8 @@ model Stack {
   poolInstances        PoolInstance[]
 
   vaultResources       StackVaultResource[]
+  natsResources        StackNatsResource[]
+  natsSigningKeys      NatsSigningKey[]     @relation("StackNatsSigningKey")
   egressPolicies       EgressPolicy[]
 
   @@index([environmentId])
@@ -1148,6 +1151,20 @@ model StackVaultResource {
   @@unique([stackId, type, concreteName])
   @@index([type, concreteName])
   @@map("stack_vault_resources")
+}
+
+/// StackNatsResource — index of concrete NATS objects owned by a stack after apply.
+model StackNatsResource {
+  id           String  @id @default(cuid())
+  stackId      String
+  stack        Stack   @relation(fields: [stackId], references: [id], onDelete: Cascade)
+  type         String  // "account" | "credential" | "stream" | "consumer"
+  concreteName String
+  scope        String? // "host" | "environment" | "stack" | null
+
+  @@unique([stackId, type, concreteName])
+  @@index([type, concreteName])
+  @@map("stack_nats_resources")
 }
 
 // Vault Management Models
@@ -1225,6 +1242,148 @@ model VaultAppRole {
   @@map("vault_app_roles")
 }
 
+// NATS Management Models
+
+/// NatsState - Singleton row for the managed NATS instance from the vault-nats stack
+model NatsState {
+  id                    String    @id @default(cuid())
+  kind                  String    @unique
+  stackId               String?
+  clientUrl             String?
+  monitorUrl            String?
+  bootstrappedAt        DateTime?
+  lastAppliedAt         DateTime?
+  operatorPublic        String?
+  systemAccountPublic   String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("nats_state")
+}
+
+/// NatsAccount - NATS account material managed by Mini Infra, with seeds stored in Vault KV
+model NatsAccount {
+  id              String                  @id @default(cuid())
+  name            String                  @unique
+  displayName     String
+  description     String?
+  isSystem        Boolean                 @default(false)
+  seedKvPath      String
+  publicKey       String?
+  jwt             String?
+  lastAppliedAt   DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  credentialProfiles NatsCredentialProfile[]
+  streams             NatsStream[]
+  signingKeys         NatsSigningKey[]
+
+  @@index([isSystem])
+  @@map("nats_accounts")
+}
+
+/// NatsCredentialProfile - Reusable scoped credentials minted from a NATS account seed
+model NatsCredentialProfile {
+  id              String        @id @default(cuid())
+  name            String        @unique
+  displayName     String
+  description     String?
+  accountId       String
+  account         NatsAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  publishAllow    Json
+  subscribeAllow  Json
+  ttlSeconds      Int           @default(3600)
+  lastAppliedAt   DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  stackServices           StackService[]         @relation("ServiceNatsCredential")
+  stackTemplateServices   StackTemplateService[] @relation("TemplateServiceNatsCredential")
+
+  @@index([accountId])
+  @@map("nats_credential_profiles")
+}
+
+/// NatsStream - JetStream stream definitions owned by Mini Infra
+model NatsStream {
+  id              String          @id @default(cuid())
+  name            String          @unique
+  accountId       String
+  account         NatsAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  description     String?
+  subjects        Json
+  retention       String          @default("limits")
+  storage         String          @default("file")
+  maxMsgs         Int?
+  maxBytes        Int?
+  maxAgeSeconds   Int?
+  lastAppliedAt   DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  consumers       NatsConsumer[]
+
+  @@index([accountId])
+  @@map("nats_streams")
+}
+
+/// NatsConsumer - JetStream consumer definitions owned by Mini Infra
+model NatsConsumer {
+  id              String      @id @default(cuid())
+  streamId        String
+  stream          NatsStream  @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  name            String
+  durableName     String?
+  description     String?
+  filterSubject   String?
+  deliverPolicy   String      @default("all")
+  ackPolicy       String      @default("explicit")
+  maxDeliver      Int?
+  ackWaitSeconds  Int?
+  lastAppliedAt   DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([streamId, name])
+  @@index([streamId])
+  @@map("nats_consumers")
+}
+
+/// NatsSigningKey - Scoped signing keys bound to a stack via the new
+/// `nats.signers[]` template surface. The seed itself is stored in Vault KV
+/// at `seedKvPath`; this row indexes the stack-scoped binding so the
+/// destroy path can revoke + propagate cleanly. The server-side cryptographic
+/// guarantee (a JWT minted with this key cannot exceed `scopedSubject`) is
+/// enforced by NATS via the scope template embedded in the account JWT.
+model NatsSigningKey {
+  id             String      @id @default(cuid())
+  accountId      String
+  account        NatsAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stackId        String
+  stack          Stack       @relation("StackNatsSigningKey", fields: [stackId], references: [id], onDelete: Cascade)
+  name           String      // template-author symbol, e.g. "worker-minter"
+  scope          String      // relative scope as declared, e.g. "agent.worker"
+  scopedSubject  String      // resolved absolute subject, e.g. "app.<stackId>.agent.worker.>"
+  publicKey      String      // for cross-checking server-side validation
+  seedKvPath     String      // shared/nats-signers/<stackId>-<name>
+  maxTtlSeconds  Int
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([stackId, name])
+  @@index([accountId])
+  @@map("nats_signing_keys")
+}
+
 // StackService - Individual service within a stack
 model StackService {
   id              String           @id @default(cuid())
@@ -1246,12 +1405,16 @@ model StackService {
   vaultAppRoleId              String?
   vaultAppRole                VaultAppRole? @relation("ServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   lastAppliedVaultAppRoleId   String?
+  natsCredentialId            String?
+  natsCredential              NatsCredentialProfile? @relation("ServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
+  natsCredentialRef           String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
   @@unique([stackId, serviceName])
   @@index([stackId])
   @@index([vaultAppRoleId])
+  @@index([natsCredentialId])
   @@map("stack_services")
 }
 
@@ -1411,6 +1574,19 @@ model StackTemplateVersion {
   vaultPolicies          Json?                       // TemplateVaultPolicy[]
   vaultAppRoles          Json?                       // TemplateVaultAppRole[]
   vaultKv                Json?                       // TemplateVaultKv[]
+  natsAccounts           Json?                       // TemplateNatsAccount[]
+  natsCredentials        Json?                       // TemplateNatsCredential[]
+  natsStreams            Json?                       // TemplateNatsStream[]
+  natsConsumers          Json?                       // TemplateNatsConsumer[]
+
+  // Phase 1 — NATS app-author surface (roles/signers/imports/exports + prefix).
+  // Persisted on the version row so apply-time orchestrator and cross-stack
+  // consumers can resolve against the latest applied snapshot.
+  natsSubjectPrefix      String?                     // e.g. "app.{{stack.id}}" or allowlisted "navi"
+  natsRoles              Json?                       // TemplateNatsRole[]
+  natsSigners            Json?                       // TemplateNatsSigner[]
+  natsExports            Json?                       // string[] — *resolved* (prefixed) export subjects
+  natsImports            Json?                       // TemplateNatsImport[]
 
   // Relations
   services               StackTemplateService[]
@@ -1446,10 +1622,20 @@ model StackTemplateService {
   vaultAppRole    VaultAppRole?         @relation("TemplateServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   // Phase 2 — symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time.
   vaultAppRoleRef String?
+  natsCredentialId  String?
+  natsCredential    NatsCredentialProfile? @relation("TemplateServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
+  natsCredentialRef String?
+  // Phase 1 — symbolic refs into nats.roles[] and nats.signers[] declared on
+  // the same StackTemplateVersion. Resolved at apply time: natsRole → bound
+  // NatsCredentialProfile (auto-prefixed); natsSigner → auto-injected
+  // NATS_SIGNER_SEED dynamicEnv. Mutually exclusive with natsCredentialRef.
+  natsRole          String?
+  natsSigner        String?
 
   @@unique([versionId, serviceName])
   @@index([versionId])
   @@index([vaultAppRoleId])
+  @@index([natsCredentialId])
   @@map("stack_template_services")
 }
 

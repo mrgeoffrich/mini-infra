@@ -351,6 +351,138 @@ Reference note:
 | `containerName` | Yes | Name of the already-running Docker container to route to. | 1-253 chars. |
 | `listeningPort` | Yes | Port Mini Infra should target on that container. | Integer `1-65535`. |
 
+## `nats` — app-author surface (roles, signers, imports/exports)
+
+The `nats` section lets a stack template declare its NATS topology safely
+without hand-rolling NKey/JWT minting. Mini Infra materializes the
+declarations into `NatsCredentialProfile` rows at apply time and binds them
+to services via the symbolic refs below. This section is **separate** from
+the low-level `accounts` / `credentials` / `streams` / `consumers` shape used
+by built-in system templates — mixing the two within one template is
+rejected at validation time. App templates use the role/signer surface.
+
+### `nats.subjectPrefix`
+
+The subject namespace this stack lives under. Every relative subject in
+`roles[].publish` / `roles[].subscribe` / `exports[]` / `imports[].subjects`
+gets this prefix prepended at apply time.
+
+**Default:** `app.{{stack.id}}` — opaque but collision-free across stacks.
+
+A non-default prefix (e.g. `navi`, `events.platform`) requires an admin
+allowlist entry. POST `/api/nats/prefix-allowlist` with `{ prefix,
+allowedTemplateIds }` to grant a template the right to claim that prefix.
+The allowlist is CRUD-per-entry; subject-tree overlaps (e.g. `events` and
+`events.platform`) are rejected at write time.
+
+### `nats.roles[]`
+
+Symbolic role declarations. Each entry materializes into a
+`NatsCredentialProfile` row at apply time, with the resolved subjectPrefix
+prepended to every `publish` / `subscribe` entry.
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Symbolic name. Service-level `natsRole: <name>` resolves to this. |
+| `publish` | No | Subjects relative to the stack's subjectPrefix. Prepended at apply. |
+| `subscribe` | No | Same shape as `publish`, for the role's subscribe permissions. |
+| `inboxAuto` | No | Controls `_INBOX.>` auto-injection. Default `'both'` (right for roles that send AND respond to request/reply). Other values: `'reply'` (pub only), `'request'` (sub only), `'none'`. |
+| `ttlSeconds` | No | Credential JWT TTL. Defaults to system default (3600s). |
+
+**Subject pattern rules** (enforced at validation):
+- No `>` or `*` at the start of a relative subject (would shadow the whole prefix tree).
+- No leading `_INBOX.` — use `inboxAuto`.
+- No leading `$SYS.` — system-account namespace is reserved.
+- No empty tokens (`..` or leading/trailing dots).
+- Wildcards mid-pattern (e.g. `agent.*.in`, `events.>`) are fine.
+
+### `nats.signers[]`
+
+Scoped signing keys for in-process JWT minting (e.g. a manager service
+that mints per-user worker JWTs). The seed is delivered to the service via
+`NATS_SIGNER_SEED` env var. The NATS server cryptographically constrains
+anything signed with this key to the declared `subjectScope` — a
+compromised signer cannot escape its sub-tree.
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `name` | Yes | Symbolic name. Service-level `natsSigner: <name>` resolves to this. |
+| `subjectScope` | Yes | Subject sub-tree the key is constrained to, *relative* to the stack's subjectPrefix. E.g. `agent.worker` → minted JWTs cannot exceed `<prefix>.agent.worker.>`. No wildcards. |
+| `maxTtlSeconds` | No | Hard NATS-enforced cap on JWT TTL. Default 3600. |
+
+> **Note.** Signers depend on the live NATS account-JWT propagation
+> mechanism described in the design doc (Phase 0). Until that ships,
+> `signers[]` is accepted by validation but not yet materialized.
+
+### `nats.exports[]`
+
+Subjects relative to this stack's subjectPrefix that other stacks may
+import. After apply, the resolved (prefixed) form lands in the stack's
+`lastAppliedNatsSnapshot`; consumer stacks read from there.
+
+```yaml
+exports:
+  - "events.>"
+```
+
+### `nats.imports[]`
+
+Cross-stack subject sharing. Each entry resolves at apply time against the
+producer's last applied snapshot.
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `fromStack` | Yes | Producer stack name. Scoped to the consumer's environment (cross-environment imports are not supported in v1). |
+| `subjects` | Yes | Subjects relative to the *producer's* subjectPrefix. Must match one of the producer's `exports[]` patterns. |
+| `forRoles` | Yes | **Required.** Roles in *this* stack that get the imported subjects added to their `subscribe` list. Per-role binding only — security-critical so a "consumer" role doesn't accidentally pick up subjects intended for a specific gateway. |
+
+```yaml
+imports:
+  - fromStack: events-bus
+    subjects: ["events.user.>"]
+    forRoles: ["watcher"]
+```
+
+### Service bindings
+
+Symbolic refs on `services[].natsRole` and `services[].natsSigner` resolve
+at apply time:
+
+| Field | Effect |
+| --- | --- |
+| `services[].natsRole: <name>` | Binds `StackService.natsCredentialId` to the materialized role profile. The injector (`nats-credential-injector.ts`) auto-injects `NATS_CREDS` and `NATS_URL` env vars. |
+| `services[].natsSigner: <name>` | Auto-injects `NATS_SIGNER_SEED` env var into the service. Coexists with `natsRole` — a manager service typically has both. |
+
+A service with both `natsRole` and `natsCredentialRef` (legacy) prefers the
+role binding — but the validator rejects mixing the two surfaces in one
+template, so this only applies in degenerate / corrupted-template states.
+
+### Worked example (slackbot-style topology)
+
+```yaml
+nats:
+  # subjectPrefix omitted → defaults to "app.{{stack.id}}"
+  roles:
+    - name: gateway
+      publish:   ["agent.in"]
+      subscribe: ["slack.api", "askuser", "agent.reply.>"]
+      # inboxAuto defaults to 'both'
+    - name: manager
+      publish:   ["agent.worker.>"]
+      subscribe: ["agent.ensure", "agent.worker.ready.>"]
+  signers:
+    - name: worker-minter
+      subjectScope: "agent.worker"
+      maxTtlSeconds: 2400
+
+services:
+  - name: slack-gateway
+    natsRole: gateway
+  - name: manager
+    natsRole: manager           # → NATS_CREDS (connection)
+    natsSigner: worker-minter   # → NATS_SIGNER_SEED (in-process minting)
+```
+
 ## Templating notes
 
 Mini Infra resolves templates from a context that includes:

@@ -80,6 +80,7 @@
         "googleapis": "^144.0.0",
         "helmet": "^8.1.0",
         "jsonwebtoken": "^9.0.3",
+        "nats": "^2.29.3",
         "nats-jwt": "^0.0.9",
         "nkeys.js": "^1.1.0",
         "node-cache": "^5.1.2",

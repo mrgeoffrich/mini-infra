@@ -45,6 +45,12 @@ export interface ValidateInput {
   vaultPolicies?: unknown;
   vaultAppRoles?: unknown;
   vaultKvPaths?: string[];
+  /** NATS section — subjectPrefix, role pub/sub patterns, signer scopes, exports, and import subjects support substitution. */
+  natsSubjectPrefix?: string;
+  natsRoles?: unknown;
+  natsSigners?: unknown;
+  natsExports?: unknown;
+  natsImports?: unknown;
 }
 
 export function validateTemplateSubstitutions(input: ValidateInput): TemplateSubstitutionIssue[] {
@@ -77,6 +83,26 @@ export function validateTemplateSubstitutions(input: ValidateInput): TemplateSub
     for (let i = 0; i < input.vaultKvPaths.length; i++) {
       walk(input.vaultKvPaths[i], `vault.kv[${i}].path`, kvCtx);
     }
+  }
+
+  // NATS section — params/stack/environment substitutions allowed in
+  // subjectPrefix, role pub/sub patterns, signer scopes, export subjects,
+  // and import subjects. Same allowed namespaces as the Vault section
+  // (no `{{inputs.*}}` — that namespace is KV-only).
+  if (input.natsSubjectPrefix !== undefined) {
+    walk(input.natsSubjectPrefix, 'nats.subjectPrefix', ctx);
+  }
+  if (input.natsRoles) {
+    walk(input.natsRoles, 'nats.roles', ctx);
+  }
+  if (input.natsSigners) {
+    walk(input.natsSigners, 'nats.signers', ctx);
+  }
+  if (input.natsExports) {
+    walk(input.natsExports, 'nats.exports', ctx);
+  }
+  if (input.natsImports) {
+    walk(input.natsImports, 'nats.imports', ctx);
   }
 
   return issues;
