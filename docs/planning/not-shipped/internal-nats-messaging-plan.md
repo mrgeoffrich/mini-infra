@@ -237,7 +237,7 @@ Defer until Phase 4 has settled — same pattern, same subscribers; no surprise.
 
 ## 8. Linear tracking
 
-Phase issues in Linear (Altitude Devops team) — each links back to this doc. Phase 1 blocks all later phases; Phase 5 also blocks on Phase 4.
+Tracked under the [Internal NATS Messaging Migration](https://linear.app/altitude-devops/project/internal-nats-messaging-migration-e76f6def15e8/overview) project on the Altitude Devops team. Phase issues each link back to this doc. Phase 1 blocks all later phases; Phase 5 also blocks on Phase 4.
 
 - [ALT-26](https://linear.app/altitude-devops/issue/ALT-26) — Phase 1: Foundation (`NatsBus`, subject constants, prefix allowlist)
 - [ALT-27](https://linear.app/altitude-devops/issue/ALT-27) — Phase 2: `egress-fw-agent` onto NATS

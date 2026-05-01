@@ -170,6 +170,10 @@ These show up in nearly every feature. Skim them before making changes that touc
 
 Channels and event names are constants in [lib/types/socket-events.ts](lib/types/socket-events.ts). Use `Channel.*` and `ServerEvent.*` — never raw strings. The server emits via `emitToChannel()`; the client subscribes per-room via `useSocketChannel()` and listens via `useSocketEvent()`. Long-running operations follow a **started → step → completed** triplet; see the patterns sections of [server/ARCHITECTURE.md](server/ARCHITECTURE.md) and [client/ARCHITECTURE.md](client/ARCHITECTURE.md).
 
+### NATS is the system-internal bus
+
+Server↔sidecar control-plane traffic (egress firewall agent, egress gateway, future backup and self-update progress) goes over NATS through the singleton `NatsBus` ([server/src/services/nats/nats-bus.ts](server/src/services/nats/nats-bus.ts)). Subjects live under `mini-infra.>`, with constants in [lib/types/nats-subjects.ts](lib/types/nats-subjects.ts) (and a Go mirror in [egress-shared/natsbus/subjects.go](egress-shared/natsbus/subjects.go), kept in lockstep by a CI drift check). Payloads are Zod-validated on both ends. The client never subscribes to NATS — when a NATS event matters to the UI, the server bridges it to Socket.IO. See [docs/architecture/internal-messaging.md](docs/architecture/internal-messaging.md) for the full namespace, per-pair flows, and how to add a new channel.
+
 ### Task tracker for long-running ops
 
 Operations like certificate issuance, stack apply, container connect, and HAProxy migrations report progress through a single registry-driven UI. Server emits `*_STARTED`, `*_STEP`, `*_COMPLETED`. The client maps task types to that triplet in [client/src/lib/task-type-registry.ts](client/src/lib/task-type-registry.ts), and components register tasks with `trackTask()` so progress is visible from anywhere in the app.
