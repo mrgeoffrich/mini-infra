@@ -21,6 +21,8 @@ import type {
   StackPlanResponse,
   StackValidationError,
   StackValidationResult,
+  StackStatusResponseData,
+  StackDeploymentRecord,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
@@ -180,7 +182,7 @@ async function applyStack(
 async function fetchStackStatus(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: { stack: StackInfo; containerStatus: unknown[] } }> {
+): Promise<{ success: boolean; data: StackStatusResponseData }> {
   const response = await fetch(`/api/stacks/${stackId}/status`, {
     credentials: "include",
     headers: {
@@ -204,7 +206,7 @@ async function fetchStackStatus(
 async function fetchStackHistory(
   stackId: string,
   correlationId?: string,
-): Promise<{ success: boolean; data: unknown[]; total?: number }> {
+): Promise<{ success: boolean; data: StackDeploymentRecord[]; total?: number }> {
   const response = await fetch(`/api/stacks/${stackId}/history`, {
     credentials: "include",
     headers: {
