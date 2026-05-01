@@ -1,5 +1,5 @@
 {
-  "generated": "2026-04-29",
+  "generated": "2026-05-01",
   "description": "UI element IDs (data-tour attributes) available for agent highlighting. Pass \"id\" to highlight_element and the route key to navigate_to. \"global\" elements are present on all pages.",
   "routes": {
     "/applications/new": {
@@ -65,47 +65,6 @@
         }
       ]
     },
-    "/connectivity-azure": {
-      "title": "Azure Storage",
-      "elements": [
-        {
-          "id": "azure-connection-string-input",
-          "label": "Azure Connection String Input",
-          "elementType": "FormItem",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        },
-        {
-          "id": "azure-validate-button",
-          "label": "Azure Validate Button",
-          "elementType": "Button",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        },
-        {
-          "id": "azure-container-list",
-          "label": "Azure Container List",
-          "elementType": "div",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        },
-        {
-          "id": "azure-default-container-selector",
-          "label": "Azure Default Container Selector",
-          "elementType": "div",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        },
-        {
-          "id": "azure-self-backup-container-selector",
-          "label": "Azure Self Backup Container Selector",
-          "elementType": "div",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        },
-        {
-          "id": "azure-tls-container-selector",
-          "label": "Azure Tls Container Selector",
-          "elementType": "div",
-          "file": "client/src/app/connectivity/azure/page.tsx"
-        }
-      ]
-    },
     "/connectivity-cloudflare": {
       "title": "Cloudflare",
       "elements": [
@@ -166,6 +125,41 @@
           "label": "Github Setup Card",
           "elementType": "div",
           "file": "client/src/app/connectivity/github/page.tsx"
+        }
+      ]
+    },
+    "/connectivity-storage": {
+      "title": "Storage",
+      "elements": [
+        {
+          "id": "storage-locations-list",
+          "label": "Storage Locations List",
+          "elementType": "div",
+          "file": "client/src/app/connectivity-storage/page.tsx"
+        },
+        {
+          "id": "storage-inactive-providers",
+          "label": "Storage Inactive Providers",
+          "elementType": "Card",
+          "file": "client/src/app/connectivity-storage/page.tsx"
+        },
+        {
+          "id": "storage-postgres-backup-location-selector",
+          "label": "Storage Postgres Backup Location Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity-storage/page.tsx"
+        },
+        {
+          "id": "storage-self-backup-location-selector",
+          "label": "Storage Self Backup Location Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity-storage/page.tsx"
+        },
+        {
+          "id": "storage-tls-location-selector",
+          "label": "Storage Tls Location Selector",
+          "elementType": "div",
+          "file": "client/src/app/connectivity-storage/page.tsx"
         }
       ]
     },
@@ -452,7 +446,25 @@
       "id": "environment-egress-firewall-toggle",
       "label": "Environment Egress Firewall Toggle",
       "elementType": "Switch",
-      "file": "client/src/components/egress/egress-firewall-card.tsx"
+      "file": "client/src/components/egress/egress-environment-firewall-toggles.tsx"
+    },
+    {
+      "id": "egress-add-rule",
+      "label": "Egress Add Rule",
+      "elementType": "Button",
+      "file": "client/src/components/egress/egress-rules-table.tsx"
+    },
+    {
+      "id": "egress-stack-row",
+      "label": "Egress Stack Row",
+      "elementType": "Link",
+      "file": "client/src/components/egress/egress-stacks-table.tsx"
+    },
+    {
+      "id": "egress-allow-blocked",
+      "label": "Egress Allow Blocked",
+      "elementType": "Button",
+      "file": "client/src/components/egress/egress-traffic-feed.tsx"
     },
     {
       "id": "header-backup-health",
@@ -477,6 +489,108 @@
       "label": "Header Connectivity",
       "elementType": "div",
       "file": "client/src/components/site-header.tsx"
+    },
+    {
+      "id": "storage-provider-picker",
+      "label": "Storage Provider Picker",
+      "elementType": "Card",
+      "file": "client/src/components/storage/StorageProviderPicker.tsx"
+    },
+    {
+      "id": "storage-switch-precheck-loading",
+      "label": "Storage Switch Precheck Loading",
+      "elementType": "div",
+      "file": "client/src/components/storage/StorageSwitchConfirmDialog.tsx"
+    },
+    {
+      "id": "storage-switch-acknowledge",
+      "label": "Storage Switch Acknowledge",
+      "elementType": "label",
+      "file": "client/src/components/storage/StorageSwitchConfirmDialog.tsx"
+    },
+    {
+      "id": "storage-switch-confirm",
+      "label": "Storage Switch Confirm",
+      "elementType": "Button",
+      "file": "client/src/components/storage/StorageSwitchConfirmDialog.tsx"
+    },
+    {
+      "id": "storage-switch-blockers",
+      "label": "Storage Switch Blockers",
+      "elementType": "Alert",
+      "file": "client/src/components/storage/StorageSwitchConfirmDialog.tsx"
+    },
+    {
+      "id": "storage-switch-warnings",
+      "label": "Storage Switch Warnings",
+      "elementType": "Alert",
+      "file": "client/src/components/storage/StorageSwitchConfirmDialog.tsx"
+    },
+    {
+      "id": "storage-azure-connection-string-input",
+      "label": "Storage Azure Connection String Input",
+      "elementType": "FormItem",
+      "file": "client/src/components/storage/providers/azure/AzureProviderConfig.tsx"
+    },
+    {
+      "id": "storage-validate-button",
+      "label": "Storage Validate Button",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/azure/AzureProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-folder-input",
+      "label": "Storage Google Drive Folder Input",
+      "elementType": "Input",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveFolderInput.tsx"
+    },
+    {
+      "id": "storage-google-drive-validate-folder",
+      "label": "Storage Google Drive Validate Folder",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveFolderInput.tsx"
+    },
+    {
+      "id": "storage-google-drive-create-folder",
+      "label": "Storage Google Drive Create Folder",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveFolderInput.tsx"
+    },
+    {
+      "id": "storage-google-drive-client-id-input",
+      "label": "Storage Google Drive Client Id Input",
+      "elementType": "FormItem",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-client-secret-input",
+      "label": "Storage Google Drive Client Secret Input",
+      "elementType": "FormItem",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-save-credentials",
+      "label": "Storage Google Drive Save Credentials",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-reconnect",
+      "label": "Storage Google Drive Reconnect",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-disconnect",
+      "label": "Storage Google Drive Disconnect",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
+    },
+    {
+      "id": "storage-google-drive-connect",
+      "label": "Storage Google Drive Connect",
+      "elementType": "Button",
+      "file": "client/src/components/storage/providers/google-drive/GoogleDriveProviderConfig.tsx"
     },
     {
       "id": "header-task-tracker",

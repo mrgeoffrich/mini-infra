@@ -3,7 +3,9 @@ import { InMemoryQueue, Job as QueueJob } from "../../lib/in-memory-queue";
 import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
+import type { StorageBackend, StorageProviderId } from "@mini-infra/types";
+import { STORAGE_PROVIDER_IDS } from "@mini-infra/types";
 import { RestoreOperationInfo, DatabaseConnectionConfig } from "@mini-infra/types";
 import type { RestoreOperation } from "../../generated/prisma/client";
 
@@ -50,7 +52,7 @@ export class RestoreExecutorService {
   // Backing fields for getter/setter pattern
   private _dockerExecutor: DockerExecutorService;
   private _databaseConfigService: PostgresDatabaseManager;
-  private _azureConfigService: AzureStorageService;
+  private _storageBackend: StorageBackend | null;
   private _restoreQueue: InMemoryQueue;
 
   // Sub-modules
@@ -67,7 +69,9 @@ export class RestoreExecutorService {
     this.prisma = prisma;
     this._dockerExecutor = new DockerExecutorService();
     this._databaseConfigService = new PostgresDatabaseManager(prisma);
-    this._azureConfigService = new AzureStorageService(prisma);
+    // Backend is resolved lazily per-restore (so restoring a row whose
+    // `storageProviderAtCreation` differs from the active provider works).
+    this._storageBackend = null;
 
     // Initialize in-memory queue
     this._restoreQueue = new InMemoryQueue("postgres-restore", {
@@ -108,12 +112,13 @@ export class RestoreExecutorService {
     this.rebuildSubModules();
   }
 
-  private get azureConfigService(): AzureStorageService {
-    return this._azureConfigService;
+  /** Test hook: lets unit tests inject a mock `StorageBackend`. */
+  private get storageBackend(): StorageBackend | null {
+    return this._storageBackend;
   }
 
-  private set azureConfigService(value: AzureStorageService) {
-    this._azureConfigService = value;
+  private set storageBackend(value: StorageBackend | null) {
+    this._storageBackend = value;
     this.rebuildSubModules();
   }
 
@@ -129,11 +134,23 @@ export class RestoreExecutorService {
    * Rebuild all sub-modules with current backing field values.
    * Called whenever a dependency is replaced (e.g. by tests).
    */
+  /**
+   * Rebuild sub-modules with whichever StorageBackend is active right now.
+   * Sub-modules are recreated for every restore so a config rotation between
+   * queued restores is honoured. If no backend is wired (boot before any
+   * provider is configured), the sub-modules are left null and operations
+   * throw a clear `STORAGE_NOT_CONFIGURED` when invoked.
+   */
   private rebuildSubModules(): void {
-    this.backupValidator = new BackupValidator(this._azureConfigService);
+    if (!this._storageBackend) {
+      // Defer construction; route handlers must call `prepareForRestore()`
+      // before queueing.
+      return;
+    }
+    this.backupValidator = new BackupValidator(this._storageBackend);
     this.rollbackManager = new RollbackManager(
       this._dockerExecutor,
-      this._azureConfigService,
+      this._storageBackend,
     );
     this.dbOps = new DbOperations(
       this.prisma,
@@ -142,12 +159,38 @@ export class RestoreExecutorService {
     this.restoreRunner = new RestoreRunner(
       this._dockerExecutor,
       this._databaseConfigService,
-      this._azureConfigService,
+      this._storageBackend,
       this.backupValidator,
       this.rollbackManager,
       this.dbOps,
       this.prisma,
     );
+  }
+
+  /**
+   * Resolve the storage backend that owns a given backup row. Used by the
+   * route handlers so a restore for a row whose `storageProviderAtCreation`
+   * differs from the active provider still loads the right backend.
+   *
+   * If the original provider's config has been wiped (via "Disconnect
+   * <provider> entirely"), throws `ProviderNoLongerConfiguredError` so the
+   * caller can map it to a friendly 409 instead of letting the underlying
+   * SDK fail with an opaque auth error.
+   */
+  private async resolveBackendForRestore(
+    storageProviderAtCreation: string,
+  ): Promise<StorageBackend> {
+    const storageService = StorageService.getInstance(this.prisma);
+    if (
+      (STORAGE_PROVIDER_IDS as readonly string[]).includes(
+        storageProviderAtCreation,
+      )
+    ) {
+      return storageService.getBackendByProviderIdOrThrow(
+        storageProviderAtCreation as StorageProviderId,
+      );
+    }
+    return storageService.getActiveBackend();
   }
 
   // =====================================================================
@@ -253,6 +296,20 @@ export class RestoreExecutorService {
           userId,
         },
         "Queueing new restore operation",
+      );
+
+      // Precheck: resolve the backend up-front so a "the original provider has
+      // been forgotten" error surfaces synchronously to the caller rather than
+      // failing the queued job a few seconds later. We look up the row that
+      // owns this backup URL — same logic as `executeRestore`.
+      const ownerRow = await this.prisma.backupOperation.findFirst({
+        where: { storageObjectUrl: backupUrl },
+        select: { storageProviderAtCreation: true },
+      });
+      // Throws `ProviderNoLongerConfiguredError` if the provider config was
+      // wiped via "Disconnect entirely". The caller maps this to a 409.
+      await this.resolveBackendForRestore(
+        ownerRow?.storageProviderAtCreation ?? "azure",
       );
 
       // Create restore operation record
@@ -502,6 +559,20 @@ export class RestoreExecutorService {
     userId: string,
     targetDatabaseName?: string,
   ): Promise<void> {
+    // Resolve backend before each run so a config rotation between queued
+    // jobs is honoured. If the operation row encodes which provider it was
+    // created under, prefer that backend.
+    const op = await this.prisma.backupOperation.findFirst({
+      where: { storageObjectUrl: backupUrl },
+      select: { storageProviderAtCreation: true },
+    });
+    const backend = await this.resolveBackendForRestore(
+      op?.storageProviderAtCreation ?? "azure",
+    );
+    if (this._storageBackend !== backend) {
+      this._storageBackend = backend;
+      this.rebuildSubModules();
+    }
     return this.restoreRunner.executeRestore(
       operationId,
       databaseId,
@@ -544,7 +615,6 @@ export class RestoreExecutorService {
 
   private async createRollbackBackup(
     connectionConfig: DatabaseConnectionConfig,
-    azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
     backupUrl: string,
@@ -552,7 +622,6 @@ export class RestoreExecutorService {
   ): Promise<string> {
     return this.rollbackManager.createRollbackBackup(
       connectionConfig,
-      azureConnectionString,
       dockerImage,
       databaseName,
       backupUrl,
@@ -563,14 +632,12 @@ export class RestoreExecutorService {
   private async executeRollback(
     connectionConfig: DatabaseConnectionConfig,
     rollbackBackupUrl: string,
-    azureConnectionString: string,
     dockerImage: string,
     networkMode?: string,
   ): Promise<void> {
     return this.rollbackManager.executeRollback(
       connectionConfig,
       rollbackBackupUrl,
-      azureConnectionString,
       dockerImage,
       networkMode,
     );

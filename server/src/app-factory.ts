@@ -29,8 +29,9 @@ import settingsRoutes from "./routes/settings";
 import settingsConnectivityRoutes from "./routes/settings-connectivity";
 import settingsValidationRoutes from "./routes/settings-validation";
 import settingsDockerRoutes from "./routes/settings-docker";
-import azureSettingsRoutes from "./routes/azure-settings";
-import azureConnectivityRoutes from "./routes/azure-connectivity";
+import storageSettingsRoutes from "./routes/storage-settings";
+import storageConnectivityRoutes from "./routes/storage-connectivity";
+import storageGoogleDriveOAuthRoutes from "./routes/storage-google-drive-oauth";
 import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 import cloudflareConnectivityRoutes from "./routes/cloudflare-connectivity";
 import githubSettingsRoutes from "./routes/github-settings";
@@ -140,7 +141,8 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "docker", path: "/api/docker", name: "dockerRoutes", getRouter: () => dockerRoutes },
     { id: "selfBackupSettings", path: "/api/settings/self-backup", name: "selfBackupSettingsRoutes", getRouter: () => selfBackupSettingsRoutes },
     { id: "systemSettings", path: "/api/settings/system", name: "systemSettingsRoutes", getRouter: () => systemSettingsRoutes },
-    { id: "azureSettings", path: "/api/settings/azure", name: "azureSettingsRoutes", getRouter: () => azureSettingsRoutes },
+    { id: "storageGoogleDriveOAuth", path: "/api/storage/google-drive/oauth", name: "storageGoogleDriveOAuthRoutes", getRouter: () => storageGoogleDriveOAuthRoutes },
+    { id: "storageSettings", path: "/api/storage", name: "storageSettingsRoutes", getRouter: () => storageSettingsRoutes },
     { id: "cloudflareSettings", path: "/api/settings/cloudflare", name: "cloudflareSettingsRoutes", getRouter: () => cloudflareSettingsRoutes },
     { id: "githubSettings", path: "/api/settings/github", name: "githubSettingsRoutes", getRouter: () => githubSettingsRoutes },
     { id: "githubAppSettings", path: "/api/settings/github-app", name: "githubAppSettingsRoutes", getRouter: () => githubAppSettingsRoutes },
@@ -150,7 +152,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "settingsValidation", path: "/api/settings/validate", name: "settingsValidationRoutes", getRouter: () => settingsValidationRoutes },
     { id: "settingsDocker", path: "/api/settings/docker-host", name: "settingsDockerRoutes", getRouter: () => settingsDockerRoutes },
     { id: "settings", path: "/api/settings", name: "settingsRoutes", getRouter: () => settingsRoutes },
-    { id: "azureConnectivity", path: "/api/connectivity/azure", name: "azureConnectivityRoutes", getRouter: () => azureConnectivityRoutes },
+    { id: "storageConnectivity", path: "/api/connectivity/storage", name: "storageConnectivityRoutes", getRouter: () => storageConnectivityRoutes },
     { id: "cloudflareConnectivity", path: "/api/connectivity", name: "cloudflareConnectivityRoutes", getRouter: () => cloudflareConnectivityRoutes },
     { id: "postgresDatabases", path: "/api/postgres/databases", name: "postgresDatabasesRoutes", getRouter: () => postgresDatabasesRoutes },
     { id: "postgresBackupConfigs", path: "/api/postgres/backup-configs", name: "postgresBackupConfigsRoutes", getRouter: () => postgresBackupConfigsRoutes },

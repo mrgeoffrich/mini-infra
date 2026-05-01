@@ -83,8 +83,11 @@ import {
   useBackupHistory,
   type SelfBackupInfo,
 } from "@/hooks/use-self-backup";
-import { useAzureContainers } from "@/hooks/use-azure-settings";
-import { useConnectivityStatus } from "@/hooks/use-settings";
+import {
+  useStorageConnectivity,
+  useStorageLocationsList,
+  useStorageSettings,
+} from "@/hooks/use-storage-settings";
 import { useFormattedDateTime } from "@/hooks/use-formatted-date";
 import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import { formatBytes, formatDuration, cn } from "@/lib/utils";
@@ -92,7 +95,7 @@ import { formatBytes, formatDuration, cn } from "@/lib/utils";
 // Configuration form schema
 const configSchema = z.object({
   cronSchedule: z.string().min(1, "Cron schedule is required"),
-  azureContainerName: z.string().min(1, "Azure container is required"),
+  storageLocationId: z.string().min(1, "Storage location is required"),
   timezone: z.string().min(1, "Timezone is required"),
 });
 
@@ -198,12 +201,13 @@ export default function SelfBackupSettingsPage() {
   // API hooks
   const { data: configData, isLoading: isLoadingConfig } =
     useSelfBackupConfig();
-  const { isLoading: isLoadingContainers } =
-    useAzureContainers();
-  const { data: azureConnectivity } = useConnectivityStatus({
-    filters: { service: "azure" },
-    limit: 1,
-  });
+  const { data: storageSettings } = useStorageSettings();
+  const activeProviderId = storageSettings?.activeProviderId ?? null;
+  const { isLoading: isLoadingContainers } = useStorageLocationsList(
+    activeProviderId ?? "azure",
+    { enabled: activeProviderId !== null },
+  );
+  const { data: storageConnectivity } = useStorageConnectivity();
   const { data: userPreferences } = useUserPreferences();
   const { data: timezones } = useTimezones();
   const updateConfig = useUpdateSelfBackupConfig();
@@ -224,16 +228,15 @@ export default function SelfBackupSettingsPage() {
     limit: 10,
   });
 
-  // Check if Azure is connected
-  const isAzureConnected =
-    azureConnectivity?.data?.[0]?.status === "connected";
+  // Check if storage backend is connected
+  const isStorageConnected = storageConnectivity?.status === "connected";
 
   // Form setup
   const form = useForm<ConfigFormData>({
     resolver: zodResolver(configSchema),
     defaultValues: {
       cronSchedule: configData?.config?.cronSchedule || "0 * * * *",
-      azureContainerName: configData?.config?.azureContainerName || "",
+      storageLocationId: configData?.config?.storageLocationId || "",
       timezone: configData?.config?.timezone || userPreferences?.timezone || "UTC",
     },
   });
@@ -245,7 +248,7 @@ export default function SelfBackupSettingsPage() {
     if (configData?.config) {
       form.reset({
         cronSchedule: configData.config.cronSchedule,
-        azureContainerName: configData.config.azureContainerName,
+        storageLocationId: configData.config.storageLocationId,
         timezone: configData.config.timezone || userPreferences?.timezone || "UTC",
       });
     }
@@ -337,22 +340,23 @@ export default function SelfBackupSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">Self-Backup Settings</h1>
             <p className="text-muted-foreground">
-              Configure automated backups of the Mini Infra database to Azure Blob Storage
+              Configure automated backups of the Mini Infra database to the
+              configured storage backend.
             </p>
           </div>
         </div>
 
-        {/* Azure Storage Check */}
-        {!isAzureConnected && (
+        {/* Storage backend connectivity check */}
+        {!isStorageConnected && (
           <Alert>
             <IconAlertTriangle className="h-4 w-4" />
             <AlertDescription className="flex items-center justify-between">
               <span>
-                Azure Blob Storage is required for self-backups. Please configure
-                Azure Storage settings first.
+                A configured storage backend is required for self-backups.
+                Configure storage settings first.
               </span>
               <Button asChild variant="outline" size="sm">
-                <Link to="/connectivity-azure">Configure Azure</Link>
+                <Link to="/connectivity-storage">Configure Storage</Link>
               </Button>
             </AlertDescription>
           </Alert>
@@ -382,7 +386,7 @@ export default function SelfBackupSettingsPage() {
                       <Input
                         {...field}
                         placeholder="0 * * * *"
-                        disabled={!isAzureConnected}
+                        disabled={!isStorageConnected}
                       />
                     </FormControl>
                     <FormDescription>
@@ -399,7 +403,7 @@ export default function SelfBackupSettingsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => field.onChange(preset.value)}
-                          disabled={!isAzureConnected}
+                          disabled={!isStorageConnected}
                           title={preset.description}
                         >
                           {preset.label}
@@ -426,7 +430,7 @@ export default function SelfBackupSettingsPage() {
                           <Button
                             variant="outline"
                             role="combobox"
-                            disabled={!isAzureConnected}
+                            disabled={!isStorageConnected}
                             className={cn(
                               "w-full justify-between",
                               !field.value && "text-muted-foreground",
@@ -508,7 +512,7 @@ export default function SelfBackupSettingsPage() {
                       checked={config?.enabled || false}
                       onCheckedChange={handleToggleEnabled}
                       disabled={
-                        !isAzureConnected ||
+                        !isStorageConnected ||
                         enableBackup.isPending ||
                         disableBackup.isPending
                       }
@@ -532,7 +536,7 @@ export default function SelfBackupSettingsPage() {
                 <Button
                   type="submit"
                   disabled={
-                    !isAzureConnected ||
+                    !isStorageConnected ||
                     !form.formState.isDirty ||
                     updateConfig.isPending
                   }
@@ -548,8 +552,8 @@ export default function SelfBackupSettingsPage() {
                   variant="outline"
                   onClick={handleTriggerBackup}
                   disabled={
-                    !isAzureConnected ||
-                    !config?.azureContainerName ||
+                    !isStorageConnected ||
+                    !config?.storageLocationId ||
                     triggerBackup.isPending
                   }
                   data-tour="backup-trigger-manual"
@@ -633,6 +637,7 @@ export default function SelfBackupSettingsPage() {
                       <BackupHistoryRow
                         key={backup.id}
                         backup={backup}
+                        activeProviderId={activeProviderId}
                         onViewError={handleViewError}
                       />
                     ))}
@@ -700,14 +705,25 @@ export default function SelfBackupSettingsPage() {
 // Backup history row component
 function BackupHistoryRow({
   backup,
+  activeProviderId,
   onViewError,
 }: {
   backup: SelfBackupInfo;
+  activeProviderId: string | null;
   onViewError: (backup: SelfBackupInfo) => void;
 }) {
   const formatStartedAt = useFormattedDateTime(
     backup.startedAt ? new Date(backup.startedAt) : null
   );
+  const providerLabel =
+    backup.storageProviderAtCreation === "azure"
+      ? "Azure"
+      : backup.storageProviderAtCreation === "google-drive"
+        ? "Google Drive"
+        : backup.storageProviderAtCreation;
+  const isFromOtherProvider =
+    activeProviderId !== null &&
+    backup.storageProviderAtCreation !== activeProviderId;
 
   return (
     <TableRow>
@@ -734,7 +750,20 @@ function BackupHistoryRow({
           {backup.status}
         </Badge>
       </TableCell>
-      <TableCell className="font-mono text-sm">{backup.fileName}</TableCell>
+      <TableCell className="font-mono text-sm">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span>{backup.fileName}</span>
+          {isFromOtherProvider && (
+            <Badge
+              variant="outline"
+              className="font-normal text-xs"
+              title={`Stored in ${providerLabel} (different from current active provider)`}
+            >
+              stored in {providerLabel}
+            </Badge>
+          )}
+        </div>
+      </TableCell>
       <TableCell>
         {backup.fileSize ? formatBytes(backup.fileSize) : "—"}
       </TableCell>
@@ -755,7 +784,7 @@ function BackupHistoryRow({
             View Error
           </Button>
         )}
-        {backup.status === "completed" && backup.azureBlobUrl && (
+        {backup.status === "completed" && backup.storageObjectUrl && (
           <Button variant="ghost" size="sm" asChild>
             <a href={`/api/self-backups/${backup.id}/download`}>
               <IconDownload className="mr-1 h-3 w-3" />

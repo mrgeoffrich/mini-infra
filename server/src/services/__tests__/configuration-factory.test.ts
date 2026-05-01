@@ -3,7 +3,7 @@ import { PrismaClient } from "../../generated/prisma/client";
 import { ConfigurationServiceFactory } from "../configuration-factory";
 import { DockerConfigService } from "../docker-config";
 import { CloudflareService } from "../cloudflare";
-import { AzureStorageService } from "../azure-storage-service";
+import { AzureStorageBackend } from "../storage/providers/azure/azure-storage-backend";
 
 const { mockLogger } = vi.hoisted(() => ({
   mockLogger: {
@@ -31,7 +31,7 @@ vi.mock("../../lib/logger-factory", () => ({
 // Mock configuration services
 vi.mock("../docker-config");
 vi.mock("../cloudflare/cloudflare-service");
-vi.mock("../azure-storage-service");
+vi.mock("../storage/providers/azure/azure-storage-backend");
 vi.mock("../tls/tls-config");
 
 // Mock Prisma client
@@ -61,8 +61,8 @@ describe("ConfigurationServiceFactory", () => {
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
-    AzureStorageService.cleanupCache();
+    // Clean up the static NodeCache in AzureStorageBackend to prevent timer leaks
+    AzureStorageBackend.cleanupCache();
   });
 
   describe("Constructor", () => {
@@ -75,7 +75,7 @@ describe("ConfigurationServiceFactory", () => {
       expect(supportedCategories).toEqual([
         "docker",
         "cloudflare",
-        "azure",
+        "storage-azure",
         "tls",
         "vault",
       ]);
@@ -98,10 +98,10 @@ describe("ConfigurationServiceFactory", () => {
     });
 
     it("should create Azure configuration service", () => {
-      const service = factory.create({ category: "azure" });
+      const service = factory.create({ category: "storage-azure" });
 
-      expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
-      expect(service).toBeInstanceOf(AzureStorageService);
+      expect(AzureStorageBackend).toHaveBeenCalledWith(mockPrisma);
+      expect(service).toBeInstanceOf(AzureStorageBackend);
     });
 
     it("should throw error for unsupported category", () => {
@@ -182,14 +182,14 @@ describe("ConfigurationServiceFactory", () => {
       expect(categories1).toEqual([
         "docker",
         "cloudflare",
-        "azure",
+        "storage-azure",
         "tls",
         "vault",
       ]);
       expect(categories2).toEqual([
         "docker",
         "cloudflare",
-        "azure",
+        "storage-azure",
         "tls",
         "vault",
       ]);
@@ -207,7 +207,7 @@ describe("ConfigurationServiceFactory", () => {
     it("should return true for supported categories", () => {
       expect(factory.isSupported("docker")).toBe(true);
       expect(factory.isSupported("cloudflare")).toBe(true);
-      expect(factory.isSupported("azure")).toBe(true);
+      expect(factory.isSupported("storage-azure")).toBe(true);
       expect(factory.isSupported("tls")).toBe(true);
     });
 
@@ -240,7 +240,7 @@ describe("ConfigurationServiceFactory", () => {
     it("should create services that extend base configuration service", () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
-      const azureService = factory.create({ category: "azure" });
+      const azureService = factory.create({ category: "storage-azure" });
 
       // Check if instances have expected methods from base class
       expect(typeof dockerService.validate).toBe("function");
@@ -268,7 +268,7 @@ describe("ConfigurationServiceFactory", () => {
     it("should pass prisma client to all created services", async () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
-      const azureService = factory.create({ category: "azure" });
+      const azureService = factory.create({ category: "storage-azure" });
 
       // Test that services can use the prisma client by calling methods that interact with it
       // These calls should not throw errors if prisma client is properly injected
@@ -282,17 +282,17 @@ describe("ConfigurationServiceFactory", () => {
     it("should create services with correct constructors", () => {
       const dockerService = factory.create({ category: "docker" });
       const cloudflareService = factory.create({ category: "cloudflare" });
-      const azureService = factory.create({ category: "azure" });
+      const azureService = factory.create({ category: "storage-azure" });
 
       // Verify that each service was created with the correct constructor and prisma client
       expect(DockerConfigService).toHaveBeenCalledWith(mockPrisma);
       expect(CloudflareService).toHaveBeenCalledWith(mockPrisma);
-      expect(AzureStorageService).toHaveBeenCalledWith(mockPrisma);
+      expect(AzureStorageBackend).toHaveBeenCalledWith(mockPrisma);
 
       // Verify that the services are instances of the correct classes
       expect(dockerService).toBeInstanceOf(DockerConfigService);
       expect(cloudflareService).toBeInstanceOf(CloudflareService);
-      expect(azureService).toBeInstanceOf(AzureStorageService);
+      expect(azureService).toBeInstanceOf(AzureStorageBackend);
     });
   });
 

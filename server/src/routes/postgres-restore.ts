@@ -7,8 +7,10 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
 import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
-import { AzureStorageService } from "../services/azure-storage-service";
-import { BlobServiceClient } from "@azure/storage-blob";
+import {
+  ProviderNoLongerConfiguredError,
+  StorageService,
+} from "../services/storage/storage-service";
 import {
   RestoreOperationStatusResponse,
   CreateRestoreOperationResponse,
@@ -25,9 +27,6 @@ import {
 
 const router = Router();
 
-// Initialize services
-const azureConfigService = new AzureStorageService(prisma);
-
 // ====================
 // Validation Schemas
 // ====================
@@ -37,10 +36,10 @@ const CreateRestoreOperationSchema = z
     databaseId: z.string().min(1, "Database ID is required"),
     backupUrl: z
       .string()
-      .url("Must be a valid URL")
+      .min(1, "Backup URL is required")
       .refine(
-        (url) => validateAzureStorageUrl(url),
-        "Backup URL must be a valid Azure Storage blob URL ending with .dump or .sql",
+        (url) => validateBackupUrlForRestore(url),
+        "Backup URL must be a valid Azure Storage blob URL or '<folderId>/<filename>' path ending with .dump or .sql",
       ),
     confirmRestore: z.boolean().optional(),
     restoreToNewDatabase: z.boolean().optional(),
@@ -103,6 +102,15 @@ const PaginationSchema = z.object({
 // ====================
 
 /**
+ * Check that a string ends with one of the recognised backup-file suffixes
+ * (mirrors the suffix filter used by `listAvailableBackupsInContainer` and
+ * `parseBackupUrl`'s downstream consumers).
+ */
+function hasBackupFileSuffix(path: string): boolean {
+  return path.endsWith(".dump") || path.endsWith(".sql");
+}
+
+/**
  * Validate if the URL is a proper Azure Storage blob URL
  */
 function validateAzureStorageUrl(url: string): boolean {
@@ -118,13 +126,42 @@ function validateAzureStorageUrl(url: string): boolean {
     const pathParts = parsedUrl.pathname.substring(1).split("/"); // Remove leading slash
     const hasValidPath = pathParts.length >= 2 && !!pathParts[0] && !!pathParts[1];
 
-    // Check if it ends with .dump or .sql (expected backup file extensions)
-    const isBackupFile = parsedUrl.pathname.endsWith(".dump") || parsedUrl.pathname.endsWith(".sql");
-
-    return isAzureStorageUrl && hasValidPath && isBackupFile;
+    return (
+      isAzureStorageUrl && hasValidPath && hasBackupFileSuffix(parsedUrl.pathname)
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Validate a Drive-style path-only backup URL of the form
+ * `<folderId>/<filename>`. No scheme, no host. Must have a non-empty location
+ * id and a filename ending in a recognised suffix.
+ */
+function validateDrivePathBackupUrl(url: string): boolean {
+  // Reject URL-shaped inputs early — those are validated by the Azure path.
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url)) return false;
+  // Strip any accidental leading slashes / query string.
+  const trimmed = url.replace(/^\/+/, "").split("?")[0];
+  const parts = trimmed.split("/");
+  if (parts.length < 2) return false;
+  const locationId = parts[0];
+  const objectName = parts.slice(1).join("/");
+  if (!locationId || !objectName) return false;
+  return hasBackupFileSuffix(objectName);
+}
+
+/**
+ * Validate a backup URL coming off the wire. Two shapes are accepted (matching
+ * `parseBackupUrl` in `services/restore-executor/utils.ts`):
+ *   1. Azure full URL — `https://<acct>.blob.core.windows.net/<container>/<blob>`
+ *      ending in `.dump` or `.sql`.
+ *   2. Drive path-only — `<folderId>/<filename>` ending in `.dump` or `.sql`.
+ */
+function validateBackupUrlForRestore(url: string): boolean {
+  if (!url || typeof url !== "string") return false;
+  return validateAzureStorageUrl(url) || validateDrivePathBackupUrl(url);
 }
 
 /**
@@ -215,49 +252,54 @@ async function listAvailableBackupsInContainer(
   pagination: { page: number; limit: number },
 ): Promise<{ items: BackupBrowserItem[]; totalCount: number }> {
   try {
-    const azureConnectionString =
-      await azureConfigService.get("connection_string");
-    if (!azureConnectionString) {
-      throw new Error("Azure connection string not configured");
-    }
-
-    const blobServiceClient = BlobServiceClient.fromConnectionString(
-      azureConnectionString,
-    );
-    const containerClient = blobServiceClient.getContainerClient(containerName);
+    const storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
+    const list = await storageBackend.list({ id: containerName }, { limit: 500 });
 
     const blobs: BackupBrowserItem[] = [];
 
-    // List all blobs in container
-    for await (const blob of containerClient.listBlobsFlat({
-      includeMetadata: true,
-    })) {
-      // Skip if not a backup file (should be .dump or .sql files based on our naming convention)
-      if (!blob.name.endsWith(".dump") && !blob.name.endsWith(".sql")) {
+    for (const obj of list.objects) {
+      if (!obj.name.endsWith(".dump") && !obj.name.endsWith(".sql")) {
         continue;
       }
 
-      const blobClient = containerClient.getBlobClient(blob.name);
-      const blobUrl = blobClient.url;
+      // Resolve a "url" for the frontend. For Azure we mint a SAS URL via
+      // getDownloadHandle; for Drive (no download-handle support) we fall
+      // back to the same path-shape the upload path emits — `<location>/<name>`.
+      // `parseBackupUrl()` and the restore-route validator both accept it.
+      let url = "";
+      if (storageBackend.getDownloadHandle) {
+        try {
+          const handle = await storageBackend.getDownloadHandle(
+            { id: containerName },
+            obj.name,
+            15,
+          );
+          url = handle.redirectUrl ?? "";
+        } catch {
+          /* fall through to path-shape fallback */
+        }
+      }
+      if (!url) {
+        url = `${containerName}/${obj.name}`;
+      }
 
       // Extract database ID from blob path
-      const pathParts = blob.name.split("/");
+      const pathParts = obj.name.split("/");
       const databaseId = pathParts.length > 1 ? pathParts[0] : "unknown";
 
       const item: BackupBrowserItem = {
-        name: blob.name,
-        url: blobUrl,
-        sizeBytes: blob.properties.contentLength || 0,
+        name: obj.name,
+        url,
+        sizeBytes: obj.size ?? 0,
         createdAt:
-          blob.properties.createdOn?.toISOString() || new Date().toISOString(),
+          obj.createdAt?.toISOString() || new Date().toISOString(),
         lastModified:
-          blob.properties.lastModified?.toISOString() ||
-          new Date().toISOString(),
+          obj.lastModified?.toISOString() || new Date().toISOString(),
         metadata: {
           databaseName: databaseId,
-          contentType: blob.properties.contentType,
-          etag: blob.properties.etag,
-          ...blob.metadata,
+          contentType: obj.contentType,
+          etag: obj.etag,
+          ...obj.metadata,
         },
       };
 
@@ -510,6 +552,26 @@ router.post(
           success: false,
           error: "Validation error",
           message: errorMessage,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      if (error instanceof ProviderNoLongerConfiguredError) {
+        logger.warn(
+          {
+            requestId,
+            userId: user?.id,
+            databaseId,
+            providerId: error.providerId,
+          },
+          "Restore blocked: original provider no longer configured",
+        );
+        return res.status(409).json({
+          success: false,
+          error: "PROVIDER_NO_LONGER_CONFIGURED",
+          message: error.message,
+          providerId: error.providerId,
           timestamp: new Date().toISOString(),
           requestId,
         });

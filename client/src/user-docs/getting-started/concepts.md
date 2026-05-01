@@ -149,7 +149,7 @@ A **server** is an individual container endpoint within a backend. Servers can b
 
 ## PostgreSQL Backups
 
-Mini Infra can schedule and manage encrypted backups of PostgreSQL databases, stored in Azure Blob Storage.
+Mini Infra can schedule and manage encrypted backups of PostgreSQL databases, stored in the configured storage backend (Azure Blob Storage today, with Google Drive arriving in a later phase).
 
 ### Backup Configuration
 
@@ -159,7 +159,7 @@ Each backup configuration defines:
 - A **retention policy** — automatically delete backups older than N days (default 30).
 - **Format** — `custom` (pg_dump -Fc, compressed binary, faster) or `sql` (plain text, portable).
 - **Compression level** — 0 (none) through 9 (maximum), default 6.
-- The Azure **container name** and **path prefix** for storage.
+- The **storage location** (Azure container or Drive folder) and **path prefix** within it.
 
 Backups can be triggered **manually** or run on their **schedule**. Each backup is encrypted with AES before upload.
 
@@ -175,7 +175,7 @@ Mini Infra automates SSL/TLS certificate issuance and renewal via **ACME** (the 
 
 Certificates are requested using the **DNS-01 challenge** — Mini Infra creates a validation TXT record in Cloudflare DNS, proves domain ownership, and receives the certificate. Wildcard domains (e.g., `*.example.com`) are supported.
 
-Certificates and private keys are stored encrypted in **Azure Blob Storage**.
+Certificates and private keys are stored encrypted in the **configured storage backend** (Azure Blob Storage today, with Google Drive arriving in a later phase).
 
 ### Auto-Renewal
 
@@ -208,7 +208,7 @@ Mini Infra integrates with four external services. Each has a **connectivity sta
 | Service | Required For | Key Configuration |
 |---------|-------------|-------------------|
 | **Docker** | All container and deployment features | Daemon endpoint (TCP or socket), registry credentials for private images |
-| **Azure Storage** | Backups, TLS certificate storage | Connection string (account name + key) |
+| **Storage backend** | Backups, TLS certificate storage | Provider-specific credentials (Azure connection string today; Google Drive credentials in a later phase) |
 | **Cloudflare** | Tunnels, DNS, TLS challenges | API token and account ID |
 | **GitHub** | Authentication, bug reporting, package registry | OAuth app credentials |
 

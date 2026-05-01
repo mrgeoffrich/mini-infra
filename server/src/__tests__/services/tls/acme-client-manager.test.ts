@@ -4,7 +4,7 @@
 
 import { AcmeClientManager } from "../../../services/tls/acme-client-manager";
 import { TlsConfigService } from "../../../services/tls/tls-config";
-import { AzureStorageCertificateStore } from "../../../services/tls/azure-storage-certificate-store";
+import { StorageCertificateStore } from "../../../services/tls/storage-certificate-store";
 import { DnsChallenge01Provider } from "../../../services/tls/dns-challenge-provider";
 import * as acme from "@mini-infra/acme";
 
@@ -90,7 +90,7 @@ vi.mock("../../../lib/logger-factory", () => {
 describe("AcmeClientManager", () => {
   let acmeClientManager: AcmeClientManager;
   let mockTlsConfig: Mocked<TlsConfigService>;
-  let mockKeyVaultStore: Mocked<AzureStorageCertificateStore>;
+  let mockKeyVaultStore: Mocked<StorageCertificateStore>;
   let mockDnsChallenge: Mocked<DnsChallenge01Provider>;
 
   beforeEach(() => {

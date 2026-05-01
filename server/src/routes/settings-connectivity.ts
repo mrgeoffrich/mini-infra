@@ -40,7 +40,7 @@ const connectivityQuerySchema = z.object({
     .enum([
       "docker",
       "cloudflare",
-      "azure",
+      "storage",
       "system",
       "deployments",
       "haproxy",
@@ -270,7 +270,7 @@ router.get("/summary", requirePermission('settings:read') as RequestHandler, (as
     const services = [
       "docker",
       "cloudflare",
-      "azure",
+      "storage",
       "github-app",
       "tls",
     ];
@@ -311,9 +311,9 @@ router.get("/summary", requirePermission('settings:read') as RequestHandler, (as
       }
     }
 
-    // Add default postgres backup container to the azure entry
-    if (summary["azure"]) {
-      summary["azure"].defaultPostgresContainer =
+    // Add default postgres backup container to the storage entry
+    if (summary["storage"]) {
+      summary["storage"].defaultPostgresContainer =
         defaultContainerSetting?.value || null;
     }
 

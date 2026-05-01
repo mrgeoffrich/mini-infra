@@ -5,9 +5,10 @@ import { runWithContext } from "../../lib/logging-context";
 import { DockerExecutorService } from "../docker-executor";
 import { BackupConfigurationManager } from "./backup-configuration-manager";
 import { PostgresDatabaseManager, getPgBackupImage } from "../postgres";
-import { AzureStorageService } from "../azure-storage-service";
-import { BlobServiceClient } from "@azure/storage-blob";
+import { StorageService } from "../storage/storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { resolveDatabaseNetworkName } from "./database-network-resolver";
+import { buildSidecarUploadEnv, redactSidecarEnv } from "./sidecar-env";
 import {
   BackupOperationInfo,
   BackupOperationType,
@@ -46,7 +47,11 @@ export class BackupExecutorService {
   private dockerExecutor: DockerExecutorService;
   private backupConfigService: BackupConfigurationManager;
   private databaseConfigService: PostgresDatabaseManager;
-  private azureConfigService: AzureStorageService;
+  // Backend resolved lazily on each call so a config rotation between calls is
+  // honoured without restarting the executor.
+  private async getStorageBackend(): Promise<StorageBackend> {
+    return await StorageService.getInstance(this.prisma).getActiveBackend();
+  }
   private backupQueue: InMemoryQueue;
   private isInitialized = false;
 
@@ -62,7 +67,6 @@ export class BackupExecutorService {
     this.dockerExecutor = new DockerExecutorService();
     this.backupConfigService = new BackupConfigurationManager(prisma);
     this.databaseConfigService = new PostgresDatabaseManager(prisma);
-    this.azureConfigService = new AzureStorageService(prisma);
 
     // Initialize in-memory queue
     this.backupQueue = new InMemoryQueue("postgres-backup", {
@@ -467,7 +471,7 @@ export class BackupExecutorService {
         {
           operationId,
           backupConfigId: backupConfig.id,
-          azureContainerName: backupConfig.azureContainerName,
+          storageLocationId: backupConfig.storageLocationId,
           backupFormat: backupConfig.backupFormat,
           compressionLevel: backupConfig.compressionLevel,
         },
@@ -541,31 +545,32 @@ export class BackupExecutorService {
         });
       }
 
-      // Verify Azure is configured (needed for SAS URL generation and post-backup verification)
+      // Resolve the active storage backend (Azure today; Drive in Phase 3).
       getLogger("backup", "backup-executor").debug(
-        {
-          operationId,
-        },
-        "Verifying Azure Storage configuration",
+        { operationId },
+        "Resolving active storage backend",
       );
 
-      const azureConnectionString =
-        await this.azureConfigService.getConnectionString();
-      if (!azureConnectionString) {
+      let storageBackend: StorageBackend;
+      try {
+        storageBackend = await this.getStorageBackend();
+      } catch (err) {
         getLogger("backup", "backup-executor").error(
           {
             operationId,
+            error: err instanceof Error ? err.message : "Unknown error",
           },
-          "Azure connection string not configured",
+          "No storage provider configured for backup",
         );
-        throw new Error("Azure connection string not configured");
+        throw new Error(
+          `No storage provider configured: ${err instanceof Error ? err.message : "unknown"}`,
+          { cause: err },
+        );
       }
 
       getLogger("backup", "backup-executor").debug(
-        {
-          operationId,
-        },
-        "Azure Storage configuration verified",
+        { operationId, providerId: storageBackend.providerId },
+        "Storage backend resolved",
       );
 
       // Get database connection details
@@ -603,25 +608,31 @@ export class BackupExecutorService {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const blobName = `${databaseId}/${operationId}_${timestamp}.dump`;
 
-      // Generate a write SAS URL for the backup container to upload directly
-      const sasExpiryMinutes = Math.ceil(BackupExecutorService.BACKUP_TIMEOUT_MS / 60000) + 15;
-      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
-        backupConfig.azureContainerName,
+      // Mint a provider-agnostic upload handle for the backup sidecar to use.
+      // Azure backend returns a SAS URL; Drive backend will return a token+folder
+      // bundle in Phase 3.
+      const ttlMinutes =
+        Math.ceil(BackupExecutorService.BACKUP_TIMEOUT_MS / 60000) + 15;
+      const uploadHandle = await storageBackend.mintUploadHandle(
+        { id: backupConfig.storageLocationId },
         blobName,
-        sasExpiryMinutes,
-        "write",
+        ttlMinutes,
       );
+
+      const sidecarEnv = buildSidecarUploadEnv(uploadHandle);
 
       getLogger("backup", "backup-executor").info(
         {
           operationId,
-          azureContainerName: backupConfig.azureContainerName,
+          storageLocationId: backupConfig.storageLocationId,
           blobName,
           backupFormat: backupConfig.backupFormat,
           compressionLevel: backupConfig.compressionLevel,
-          sasExpiryMinutes,
+          ttlMinutes,
+          providerId: storageBackend.providerId,
+          handleKind: uploadHandle.kind,
         },
-        "Generated backup file path and SAS URL",
+        "Minted upload handle for backup sidecar",
       );
 
       // Execute backup using Docker
@@ -631,7 +642,7 @@ export class BackupExecutorService {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_SAS_URL: "[REDACTED]",
+        ...redactSidecarEnv(sidecarEnv),
         BACKUP_FORMAT: backupConfig.backupFormat,
         COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
       };
@@ -663,7 +674,7 @@ export class BackupExecutorService {
               POSTGRES_USER: connectionConfig.username,
               POSTGRES_PASSWORD: connectionConfig.password,
               POSTGRES_DATABASE: connectionConfig.database,
-              AZURE_SAS_URL: azureSasUrl,
+              ...sidecarEnv,
               BACKUP_FORMAT: backupConfig.backupFormat,
               COMPRESSION_LEVEL: backupConfig.compressionLevel.toString(),
             },
@@ -707,7 +718,7 @@ export class BackupExecutorService {
                 break;
               case "completed":
                 progressValue = 80;
-                message = "Backup completed, uploading to Azure";
+                message = "Backup completed, uploading to storage";
                 getLogger("backup", "backup-executor").info(
                   {
                     operationId,
@@ -791,22 +802,23 @@ export class BackupExecutorService {
       await this.updateBackupProgress(operationId, {
         status: "running",
         progress: 85,
-        message: "Verifying backup in Azure Storage",
+        message: "Verifying backup in storage",
       });
 
-      // Verify backup files in Azure Storage
+      // Verify backup objects in the active backend
       getLogger("backup", "backup-executor").info(
         {
           operationId,
-          azureContainerName: backupConfig.azureContainerName,
+          storageLocationId: backupConfig.storageLocationId,
           blobName,
         },
-        "Starting backup verification in Azure Storage",
+        "Starting backup verification in storage backend",
       );
 
       const verificationStartTime = Date.now();
-      const backupVerification = await this.verifyBackupInAzure(
-        backupConfig.azureContainerName,
+      const backupVerification = await this.verifyBackupInStorage(
+        storageBackend,
+        backupConfig.storageLocationId,
         blobName,
       );
 
@@ -815,10 +827,10 @@ export class BackupExecutorService {
           operationId,
           success: backupVerification.success,
           sizeBytes: backupVerification.sizeBytes?.toString(),
-          blobUrl: backupVerification.blobUrl,
+          objectUrl: backupVerification.objectUrl,
           verificationTimeMs: Date.now() - verificationStartTime,
         },
-        "Backup verification in Azure Storage completed",
+        "Backup verification completed",
       );
 
       if (!backupVerification.success) {
@@ -827,7 +839,7 @@ export class BackupExecutorService {
             operationId,
             error: backupVerification.error,
           },
-          "Backup verification in Azure Storage failed",
+          "Backup verification failed",
         );
         throw new Error(
           backupVerification.error || "Backup verification failed",
@@ -841,7 +853,7 @@ export class BackupExecutorService {
         {
           operationId,
           sizeBytes: backupVerification.sizeBytes?.toString(),
-          blobUrl: backupVerification.blobUrl,
+          objectUrl: backupVerification.objectUrl,
         },
         "Updating backup operation with completion status and file details",
       );
@@ -852,7 +864,8 @@ export class BackupExecutorService {
           status: "completed",
           progress: 100,
           sizeBytes: backupVerification.sizeBytes,
-          azureBlobUrl: backupVerification.blobUrl,
+          storageObjectUrl: backupVerification.objectUrl,
+          storageProviderAtCreation: storageBackend.providerId,
           completedAt: new Date(),
         },
       });
@@ -873,7 +886,7 @@ export class BackupExecutorService {
           operationId,
           databaseId,
           sizeBytes: backupVerification.sizeBytes?.toString(),
-          blobUrl: backupVerification.blobUrl,
+          objectUrl: backupVerification.objectUrl,
           totalExecutionTimeMs: Date.now() - executionStartTime,
         },
         "Backup operation completed successfully",
@@ -914,72 +927,68 @@ export class BackupExecutorService {
   }
 
   /**
-   * Verify backup files exist in Azure Storage
+   * Verify the backup object exists in the storage backend.
    */
-  private async verifyBackupInAzure(
-    containerName: string,
-    blobName: string,
+  private async verifyBackupInStorage(
+    backend: StorageBackend,
+    storageLocationId: string,
+    objectName: string,
   ): Promise<{
     success: boolean;
     error?: string;
     sizeBytes?: bigint;
-    blobUrl?: string;
+    objectUrl?: string;
   }> {
     try {
-      const azureConnectionString =
-        await this.azureConfigService.getConnectionString();
-      if (!azureConnectionString) {
+      const head = await backend.head({ id: storageLocationId }, objectName);
+      if (!head) {
         return {
           success: false,
-          error: "Azure connection string not configured",
+          error: `Backup object not found: ${objectName}`,
         };
       }
-
-      const blobServiceClient = BlobServiceClient.fromConnectionString(
-        azureConnectionString,
+      const sizeBytes = BigInt(head.size ?? 0);
+      // Resolve the canonical objectUrl in two passes:
+      //   1. If the backend has `getDownloadHandle` (Azure), use the SAS URL.
+      //   2. Otherwise (Drive, or if the SAS mint fails), fall back to the
+      //      same path-shape `<storageLocationId>/<objectName>` that the
+      //      upload path returns (see google-drive-backend.ts:544 and Azure's
+      //      blob-path equivalent). `parseBackupUrl()` accepts both shapes.
+      let objectUrl: string | undefined;
+      if (backend.getDownloadHandle) {
+        try {
+          const handle = await backend.getDownloadHandle(
+            { id: storageLocationId },
+            objectName,
+            60,
+          );
+          objectUrl = handle.redirectUrl;
+        } catch {
+          // Non-fatal: fall through to the path-shape fallback below.
+        }
+      }
+      if (!objectUrl) {
+        objectUrl = `${storageLocationId}/${objectName}`;
+      }
+      getLogger("backup", "backup-executor").info(
+        {
+          storageLocationId,
+          objectName,
+          sizeBytes: sizeBytes.toString(),
+          providerId: backend.providerId,
+        },
+        "Backup object verified in storage backend",
       );
-      const containerClient =
-        blobServiceClient.getContainerClient(containerName);
-
-      // Check if the specific blob exists
-      const blobClient = containerClient.getBlobClient(blobName);
-
-      try {
-        const properties = await blobClient.getProperties();
-        const blobUrl = blobClient.url;
-        const sizeBytes = BigInt(properties.contentLength || 0);
-
-        getLogger("backup", "backup-executor").info(
-          {
-            containerName,
-            blobName,
-            sizeBytes: sizeBytes.toString(),
-            blobUrl,
-          },
-          "Backup file verified in Azure Storage",
-        );
-
-        return {
-          success: true,
-          sizeBytes,
-          blobUrl,
-        };
-      } catch {
-        return {
-          success: false,
-          error: `Backup file not found: ${blobName}`,
-        };
-      }
+      return { success: true, sizeBytes, objectUrl };
     } catch (error) {
       getLogger("backup", "backup-executor").error(
         {
           error: error instanceof Error ? error.message : "Unknown error",
-          containerName,
-          blobName,
+          storageLocationId,
+          objectName,
         },
-        "Failed to verify backup in Azure Storage",
+        "Failed to verify backup in storage backend",
       );
-
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -1069,7 +1078,8 @@ export class BackupExecutorService {
       startedAt: operation.startedAt.toISOString(),
       completedAt: operation.completedAt?.toISOString() || null,
       sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
-      azureBlobUrl: operation.azureBlobUrl,
+      storageObjectUrl: operation.storageObjectUrl,
+      storageProviderAtCreation: operation.storageProviderAtCreation,
       errorMessage: operation.errorMessage,
       progress: operation.progress,
       metadata: operation.metadata ? JSON.parse(operation.metadata) : null,

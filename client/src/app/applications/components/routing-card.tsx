@@ -32,9 +32,9 @@ import {
   useCloudflareSettings,
 } from "@/hooks/use-cloudflare-settings";
 import {
-  useAzureSettings,
-  useAzureConnectivityStatus,
-} from "@/hooks/use-azure-settings";
+  useStorageConnectivity,
+  useStorageSettings,
+} from "@/hooks/use-storage-settings";
 import type { ApplicationRoutingData } from "@/lib/application-schemas";
 
 interface Props {
@@ -97,22 +97,19 @@ export function RoutingCard({
           : "Cloudflare is configured but not reachable. DNS zones shown below may be stale, and deployment may fail to provision DNS records."
         : null;
 
-  const { data: azSettings, isLoading: azSettingsLoading } = useAzureSettings({
-    enabled: networkType === "local",
-  });
-  const { data: azConnectivity, isLoading: azConnLoading } =
-    useAzureConnectivityStatus({
-      enabled: networkType === "local",
-    });
-  const azConfigured = azSettings?.data?.connectionConfigured ?? false;
-  const azConnected = azConnectivity?.status === "connected";
-  const azLoading = azSettingsLoading || azConnLoading;
-  const azWarning =
-    networkType === "local" && !azLoading
-      ? !azConfigured
-        ? "Azure Storage is not configured. Local applications use Let's Encrypt certificates, which are stored in Azure Blob Storage. Without it, TLS provisioning will fail on deploy."
-        : !azConnected
-          ? "Azure Storage is configured but not reachable. TLS certificate provisioning may fail on deploy."
+  const { data: storageSettings, isLoading: storageSettingsLoading } =
+    useStorageSettings({ enabled: networkType === "local" });
+  const { data: storageConnectivity, isLoading: storageConnLoading } =
+    useStorageConnectivity({ enabled: networkType === "local" });
+  const storageConfigured = !!storageSettings?.activeProviderId;
+  const storageConnected = storageConnectivity?.status === "connected";
+  const storageLoading = storageSettingsLoading || storageConnLoading;
+  const storageWarning =
+    networkType === "local" && !storageLoading
+      ? !storageConfigured
+        ? "Storage is not configured. Local applications use Let's Encrypt certificates, which are stored in the configured storage backend. Without it, TLS provisioning will fail on deploy."
+        : !storageConnected
+          ? "Storage is configured but not reachable. TLS certificate provisioning may fail on deploy."
           : null
       : null;
 
@@ -205,17 +202,17 @@ export function RoutingCard({
               </div>
             )}
 
-            {azWarning && (
+            {storageWarning && (
               <div className="flex items-start gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-100">
                 <IconAlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                 <div>
-                  <p className="font-medium">Azure Storage connection issue</p>
-                  <p className="mt-1 opacity-90">{azWarning}</p>
+                  <p className="font-medium">Storage connection issue</p>
+                  <p className="mt-1 opacity-90">{storageWarning}</p>
                   <Link
-                    to="/connectivity-azure"
+                    to="/connectivity-storage"
                     className="mt-2 inline-flex items-center gap-1 underline"
                   >
-                    Configure Azure Storage
+                    Configure Storage
                     <IconExternalLink className="h-3 w-3" />
                   </Link>
                 </div>

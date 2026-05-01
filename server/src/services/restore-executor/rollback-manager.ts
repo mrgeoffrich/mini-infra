@@ -1,36 +1,42 @@
-import { BlobServiceClient } from "@azure/storage-blob";
-import type { DatabaseConnectionConfig } from "@mini-infra/types";
+import type { DatabaseConnectionConfig, StorageBackend } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { DockerExecutorService } from "../docker-executor";
-import { AzureStorageService } from "../azure-storage-service";
 import {
   parseBackupUrl,
   extractContainerFromUrl,
-  getStorageAccountFromConnectionString,
 } from "./utils";
+import {
+  buildSidecarUploadEnv,
+  buildSidecarDownloadEnv,
+  redactSidecarEnv,
+} from "../backup/sidecar-env";
 
 /**
- * RollbackManager handles creating, executing, and cleaning up
- * rollback backups for restore operations.
+ * RollbackManager handles creating, executing, and cleaning up rollback
+ * backups for restore operations. Provider-agnostic — every storage call goes
+ * through `StorageBackend`.
  */
 export class RollbackManager {
   private dockerExecutor: DockerExecutorService;
-  private azureConfigService: AzureStorageService;
+  private storageBackend: StorageBackend;
 
   constructor(
     dockerExecutor: DockerExecutorService,
-    azureConfigService: AzureStorageService,
+    storageBackend: StorageBackend,
   ) {
     this.dockerExecutor = dockerExecutor;
-    this.azureConfigService = azureConfigService;
+    this.storageBackend = storageBackend;
   }
 
   /**
-   * Create a rollback backup before restore
+   * Create a rollback backup before restore.
+   *
+   * Returns the public-ish URL of the new rollback object so it can later be
+   * passed to `executeRollback()`. Azure backends populate this from the
+   * upload result; Drive will populate it from a `getDownloadHandle()` call.
    */
   async createRollbackBackup(
     connectionConfig: DatabaseConnectionConfig,
-    azureConnectionString: string,
     dockerImage: string,
     databaseName: string,
     backupUrl: string,
@@ -48,20 +54,21 @@ export class RollbackManager {
         "Creating pre-restore backup for rollback purposes",
       );
 
-      // Extract container name from backup URL and generate unique path for rollback backup
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const rollbackContainerName = extractContainerFromUrl(backupUrl);
       const rollbackBlobName = `${databaseName}/rollback-${timestamp}.dump`;
 
-      // Generate a write SAS URL for the rollback backup upload
+      // Mint a write upload handle for the rollback backup; the sidecar uses
+      // the provider-discriminated payload to upload directly.
       const rollbackTimeoutMs = 30 * 60 * 1000;
-      const sasExpiryMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
-      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
-        rollbackContainerName,
+      const ttlMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
+      const handle = await this.storageBackend.mintUploadHandle(
+        { id: rollbackContainerName },
         rollbackBlobName,
-        sasExpiryMinutes,
-        "write",
+        ttlMinutes,
       );
+
+      const sidecarEnv = buildSidecarUploadEnv(handle);
 
       getLogger("backup", "rollback-manager").info(
         {
@@ -69,9 +76,11 @@ export class RollbackManager {
           rollbackBlobName,
           timestamp,
           backupUrl,
-          sasExpiryMinutes,
+          ttlMinutes,
+          providerId: this.storageBackend.providerId,
+          handleKind: handle.kind,
         },
-        "Generated rollback backup path and write SAS URL",
+        "Generated rollback backup path and write upload handle",
       );
 
       const containerEnv = {
@@ -80,7 +89,7 @@ export class RollbackManager {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_SAS_URL: "[REDACTED]",
+        ...redactSidecarEnv(sidecarEnv),
       };
 
       getLogger("backup", "rollback-manager").info(
@@ -92,7 +101,6 @@ export class RollbackManager {
         "Starting rollback backup container",
       );
 
-      // Execute backup for rollback purposes
       const containerResult = await this.dockerExecutor.executeContainer({
         image: dockerImage,
         env: {
@@ -101,7 +109,7 @@ export class RollbackManager {
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
-          AZURE_SAS_URL: azureSasUrl,
+          ...sidecarEnv,
         },
         timeout: rollbackTimeoutMs,
         ...(networkMode && { networkMode }),
@@ -119,18 +127,13 @@ export class RollbackManager {
 
       if (containerResult.stdout) {
         getLogger("backup", "rollback-manager").debug(
-          {
-            stdout: containerResult.stdout.substring(0, 500),
-          },
+          { stdout: containerResult.stdout.substring(0, 500) },
           "Rollback backup container stdout (truncated)",
         );
       }
-
       if (containerResult.stderr) {
         getLogger("backup", "rollback-manager").debug(
-          {
-            stderr: containerResult.stderr.substring(0, 500),
-          },
+          { stderr: containerResult.stderr.substring(0, 500) },
           "Rollback backup container stderr (truncated)",
         );
       }
@@ -149,7 +152,10 @@ export class RollbackManager {
         );
       }
 
-      const rollbackBackupUrl = `https://${getStorageAccountFromConnectionString(azureConnectionString)}.blob.core.windows.net/${rollbackContainerName}/${rollbackBlobName}`;
+      // Always stash the path-shaped locator so executeRollback() can
+      // re-resolve via the active backend. Azure could mint a fresh SAS at
+      // restore-time anyway; Drive needs the locator + a freshly-minted token.
+      const rollbackBackupUrl = `${rollbackContainerName}/${rollbackBlobName}`;
 
       getLogger("backup", "rollback-manager").info(
         {
@@ -176,12 +182,11 @@ export class RollbackManager {
   }
 
   /**
-   * Execute rollback using the pre-restore backup
+   * Execute rollback using the pre-restore backup.
    */
   async executeRollback(
     connectionConfig: DatabaseConnectionConfig,
     rollbackBackupUrl: string,
-    azureConnectionString: string,
     dockerImage: string,
     networkMode?: string,
   ): Promise<void> {
@@ -198,24 +203,30 @@ export class RollbackManager {
 
       const { containerName, blobName } = parseBackupUrl(rollbackBackupUrl);
 
-      // Generate a read SAS URL for the rollback backup download
       const rollbackTimeoutMs = 60 * 60 * 1000;
-      const sasExpiryMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
-      const azureSasUrl = await this.azureConfigService.generateBlobSasUrl(
-        containerName,
+      const ttlMinutes = Math.ceil(rollbackTimeoutMs / 60000) + 15;
+
+      const sidecarEnv = await buildSidecarDownloadEnv(
+        this.storageBackend,
+        { id: containerName },
         blobName,
-        sasExpiryMinutes,
-        "read",
+        ttlMinutes,
       );
+      if (!sidecarEnv) {
+        throw new Error(
+          `Rollback restore could not get a download handle from provider '${this.storageBackend.providerId}'`,
+        );
+      }
 
       getLogger("backup", "rollback-manager").debug(
         {
           rollbackBackupUrl,
           containerName,
           blobName,
-          sasExpiryMinutes,
+          ttlMinutes,
+          provider: sidecarEnv.STORAGE_PROVIDER,
         },
-        "Generated read SAS URL for rollback restore",
+        "Generated download handle for rollback restore",
       );
 
       const containerEnv = {
@@ -224,17 +235,13 @@ export class RollbackManager {
         POSTGRES_USER: connectionConfig.username,
         POSTGRES_PASSWORD: "[REDACTED]",
         POSTGRES_DATABASE: connectionConfig.database,
-        AZURE_SAS_URL: "[REDACTED]",
+        ...redactSidecarEnv(sidecarEnv),
         RESTORE: "yes",
         DROP_PUBLIC: "yes",
       };
 
       getLogger("backup", "rollback-manager").info(
-        {
-          dockerImage,
-          environment: containerEnv,
-          timeoutMs: rollbackTimeoutMs,
-        },
+        { dockerImage, environment: containerEnv, timeoutMs: rollbackTimeoutMs },
         "Starting rollback container execution",
       );
 
@@ -246,7 +253,7 @@ export class RollbackManager {
           POSTGRES_USER: connectionConfig.username,
           POSTGRES_PASSWORD: connectionConfig.password,
           POSTGRES_DATABASE: connectionConfig.database,
-          AZURE_SAS_URL: azureSasUrl,
+          ...sidecarEnv,
           RESTORE: "yes",
           DROP_PUBLIC: "yes",
         },
@@ -267,18 +274,13 @@ export class RollbackManager {
 
       if (containerResult.stdout) {
         getLogger("backup", "rollback-manager").debug(
-          {
-            stdout: containerResult.stdout.substring(0, 500),
-          },
+          { stdout: containerResult.stdout.substring(0, 500) },
           "Rollback container stdout (truncated)",
         );
       }
-
       if (containerResult.stderr) {
         getLogger("backup", "rollback-manager").debug(
-          {
-            stderr: containerResult.stderr.substring(0, 500),
-          },
+          { stderr: containerResult.stderr.substring(0, 500) },
           "Rollback container stderr (truncated)",
         );
       }
@@ -299,10 +301,7 @@ export class RollbackManager {
       }
 
       getLogger("backup", "rollback-manager").info(
-        {
-          rollbackBackupUrl,
-          executionTimeMs: Date.now() - startTime,
-        },
+        { rollbackBackupUrl, executionTimeMs: Date.now() - startTime },
         "Rollback executed successfully",
       );
     } catch (error) {
@@ -320,80 +319,25 @@ export class RollbackManager {
   }
 
   /**
-   * Clean up rollback backup after successful restore
+   * Clean up the rollback backup object after a successful restore.
+   * Always best-effort: cleanup failure must not fail the parent restore.
    */
   async cleanupRollbackBackup(rollbackBackupUrl: string): Promise<void> {
     const startTime = Date.now();
     try {
       getLogger("backup", "rollback-manager").debug(
-        {
-          rollbackBackupUrl,
-        },
+        { rollbackBackupUrl },
         "Starting rollback backup cleanup",
       );
 
-      const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
-      if (!azureConnectionString) {
-        getLogger("backup", "rollback-manager").warn(
-          {
-            rollbackBackupUrl,
-          },
-          "Azure connection string not available for cleanup",
-        );
-        return;
-      }
-
-      const blobServiceClient = BlobServiceClient.fromConnectionString(
-        azureConnectionString,
-      );
-
       const { containerName, blobName } = parseBackupUrl(rollbackBackupUrl);
+      await this.storageBackend.delete({ id: containerName }, blobName);
 
-      getLogger("backup", "rollback-manager").debug(
-        {
-          rollbackBackupUrl,
-          containerName,
-          blobName,
-        },
-        "Parsed rollback backup URL for cleanup",
+      getLogger("backup", "rollback-manager").info(
+        { rollbackBackupUrl, cleanupTimeMs: Date.now() - startTime },
+        "Rollback backup deleted successfully",
       );
-
-      const blobClient = blobServiceClient
-        .getContainerClient(containerName)
-        .getBlobClient(blobName);
-
-      // Check if blob exists before trying to delete
-      const exists = await blobClient.exists();
-
-      getLogger("backup", "rollback-manager").debug(
-        {
-          rollbackBackupUrl,
-          exists,
-        },
-        "Checked rollback backup existence",
-      );
-
-      if (exists) {
-        await blobClient.deleteIfExists();
-
-        getLogger("backup", "rollback-manager").info(
-          {
-            rollbackBackupUrl,
-            cleanupTimeMs: Date.now() - startTime,
-          },
-          "Rollback backup deleted successfully",
-        );
-      } else {
-        getLogger("backup", "rollback-manager").info(
-          {
-            rollbackBackupUrl,
-          },
-          "Rollback backup does not exist, no cleanup needed",
-        );
-      }
     } catch (error) {
-      // Log but don't throw - cleanup failure shouldn't fail the restore
       getLogger("backup", "rollback-manager").warn(
         {
           error: error instanceof Error ? error.message : "Unknown error",

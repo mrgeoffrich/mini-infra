@@ -24,7 +24,7 @@ Certificates issued by Mini Infra are stored in Azure Blob Storage.
 
 Click **Test Connection** to verify that Mini Infra can access the selected container, then **Save Settings** to apply.
 
-Azure Blob Storage must be connected at [Connected Services → Azure Storage](/connectivity-azure) for this section to work.
+Azure Blob Storage must be connected at [Connected Services → Azure Storage](/connectivity-storage) for this section to work.
 
 ## ACME Provider
 

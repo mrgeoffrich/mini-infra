@@ -3,18 +3,16 @@ import { Prisma } from "../../generated/prisma/client";
 import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
 import { UserPreferencesService } from "../user-preferences";
 import { BackupSchedulerService } from "./backup-scheduler";
 import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
 
 export class BackupConfigurationManager {
   private prisma: PrismaClient;
-  private azureConfigService: AzureStorageService;
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**
@@ -25,8 +23,8 @@ export class BackupConfigurationManager {
     config: {
       schedule?: string;
       timezone?: string;
-      azureContainerName: string;
-      azurePathPrefix: string;
+      storageLocationId: string;
+      storagePathPrefix: string;
       retentionDays?: number;
       backupFormat?: BackupFormat;
       compressionLevel?: number;
@@ -58,8 +56,8 @@ export class BackupConfigurationManager {
         throw new Error(`Invalid timezone: ${timezone}`);
       }
 
-      // Validate Azure container if Azure is configured
-      await this.validateAzureContainer(config.azureContainerName);
+      // Validate storage location through the active backend
+      await this.validateStorageLocation(config.storageLocationId);
 
       // Validate configuration values
       this.validateBackupConfig(config);
@@ -87,8 +85,8 @@ export class BackupConfigurationManager {
           databaseId: databaseId,
           schedule: config.schedule || null,
           timezone: timezone,
-          azureContainerName: config.azureContainerName,
-          azurePathPrefix: config.azurePathPrefix,
+          storageLocationId: config.storageLocationId,
+          storagePathPrefix: config.storagePathPrefix,
           retentionDays: config.retentionDays || 30,
           backupFormat: config.backupFormat || "custom",
           compressionLevel: config.compressionLevel || 6,
@@ -135,7 +133,7 @@ export class BackupConfigurationManager {
           databaseId: databaseId,
           schedule: config.schedule,
           timezone: timezone,
-          azureContainer: config.azureContainerName,
+          storageLocationId: config.storageLocationId,
         },
         "Backup configuration created",
       );
@@ -161,8 +159,8 @@ export class BackupConfigurationManager {
     updates: {
       schedule?: string | null;
       timezone?: string;
-      azureContainerName?: string;
-      azurePathPrefix?: string;
+      storageLocationId?: string;
+      storagePathPrefix?: string;
       retentionDays?: number;
       backupFormat?: BackupFormat;
       compressionLevel?: number;
@@ -197,9 +195,9 @@ export class BackupConfigurationManager {
         throw new Error(`Invalid timezone: ${updates.timezone}`);
       }
 
-      // Validate Azure container if changed
-      if (updates.azureContainerName) {
-        await this.validateAzureContainer(updates.azureContainerName);
+      // Validate storage location through the active backend if changed
+      if (updates.storageLocationId) {
+        await this.validateStorageLocation(updates.storageLocationId);
       }
 
       // Validate other updates
@@ -226,11 +224,11 @@ export class BackupConfigurationManager {
       if (updates.timezone) {
         updateData.timezone = updates.timezone;
       }
-      if (updates.azureContainerName) {
-        updateData.azureContainerName = updates.azureContainerName;
+      if (updates.storageLocationId) {
+        updateData.storageLocationId = updates.storageLocationId;
       }
-      if (updates.azurePathPrefix) {
-        updateData.azurePathPrefix = updates.azurePathPrefix;
+      if (updates.storagePathPrefix) {
+        updateData.storagePathPrefix = updates.storagePathPrefix;
       }
       if (updates.retentionDays !== undefined) {
         updateData.retentionDays = updates.retentionDays;
@@ -468,34 +466,35 @@ export class BackupConfigurationManager {
   }
 
   /**
-   * Validate that the specified Azure container exists and is accessible
+   * Validate that the specified storage location is accessible via the active backend.
    */
-  private async validateAzureContainer(containerName: string): Promise<void> {
+  private async validateStorageLocation(storageLocationId: string): Promise<void> {
     try {
-      const accessResult =
-        await this.azureConfigService.testContainerAccess(containerName);
-
-      if (!accessResult.accessible) {
+      const backend = await StorageService.getInstance(this.prisma).getActiveBackend();
+      const access = await backend.testLocationAccess({ id: storageLocationId });
+      if (!access.accessible) {
+        const errMeta = (access.metadata ?? {}) as {
+          error?: string;
+          errorCode?: string;
+        };
         throw new Error(
-          `Azure container '${containerName}' is not accessible: ${accessResult.error || "Unknown error"}`,
+          `Storage location '${storageLocationId}' is not accessible: ${errMeta.error || "Unknown error"}`,
         );
       }
-
       getLogger("backup", "backup-configuration-manager").debug(
         {
-          containerName,
-          responseTime: accessResult.responseTimeMs,
-          cached: accessResult.cached,
+          storageLocationId,
+          providerId: backend.providerId,
         },
-        "Azure container validation successful",
+        "Storage location validation successful",
       );
     } catch (error) {
       getLogger("backup", "backup-configuration-manager").error(
         {
-          containerName,
+          storageLocationId,
           error: error instanceof Error ? error.message : "Unknown error",
         },
-        "Azure container validation failed",
+        "Storage location validation failed",
       );
       throw error;
     }
@@ -548,28 +547,22 @@ export class BackupConfigurationManager {
    * Validate backup configuration values
    */
   private validateBackupConfig(config: {
-    azureContainerName: string;
-    azurePathPrefix: string;
+    storageLocationId: string;
+    storagePathPrefix: string;
     retentionDays?: number;
     backupFormat?: BackupFormat;
     compressionLevel?: number;
   }): void {
-    if (!config.azureContainerName || config.azureContainerName.trim() === "") {
-      throw new Error("Azure container name is required");
+    if (!config.storageLocationId || config.storageLocationId.trim() === "") {
+      throw new Error("Storage location id is required");
     }
 
-    // Azure path prefix can be empty (root of container)
+    // Storage path prefix can be empty (root of location).
 
-    // Validate container name format
-    const containerNamePattern = /^[a-z0-9]([a-z0-9-])*[a-z0-9]$/;
-    if (
-      config.azureContainerName.length < 3 ||
-      config.azureContainerName.length > 63 ||
-      !containerNamePattern.test(config.azureContainerName)
-    ) {
-      throw new Error(
-        "Azure container name must be 3-63 characters, contain only lowercase letters, numbers, and hyphens, and start/end with alphanumeric characters",
-      );
+    // Length sanity check (max applies to both Azure container names and Drive
+    // folder ids comfortably).
+    if (config.storageLocationId.length < 1 || config.storageLocationId.length > 256) {
+      throw new Error("Storage location id must be 1-256 characters");
     }
 
     if (config.retentionDays !== undefined && config.retentionDays < 1) {
@@ -600,8 +593,8 @@ export class BackupConfigurationManager {
       databaseId: config.databaseId,
       schedule: config.schedule,
       timezone: config.timezone,
-      azureContainerName: config.azureContainerName,
-      azurePathPrefix: config.azurePathPrefix,
+      storageLocationId: config.storageLocationId,
+      storagePathPrefix: config.storagePathPrefix,
       retentionDays: config.retentionDays,
       backupFormat: config.backupFormat as BackupFormat,
       compressionLevel: config.compressionLevel,

@@ -4,7 +4,6 @@ import {
   IconBook,
   IconBrandDocker,
   IconBrandCloudflare,
-  IconBrandAzure,
   IconBrandGithub,
   IconCertificate,
   IconDashboard,
@@ -416,14 +415,14 @@ export const routeConfig: Record<string, RouteConfig> = {
     helpDoc: "connectivity/health-monitoring",
   },
 
-  "/connectivity-azure": {
-    path: "/connectivity-azure",
-    title: "Azure Storage",
-    icon: IconBrandAzure,
+  "/connectivity-storage": {
+    path: "/connectivity-storage",
+    title: "Storage",
+    icon: IconDatabase,
     showInNav: true,
     navGroup: "main",
     navSection: "connectivity",
-    description: "Azure Storage service connectivity and configuration",
+    description: "Storage backend connectivity and configuration",
     helpDoc: "connectivity/health-monitoring",
   },
 

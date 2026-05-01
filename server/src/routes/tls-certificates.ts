@@ -17,13 +17,13 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { emitToChannel } from "../lib/socket";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureStorageCertificateStore } from "../services/tls/azure-storage-certificate-store";
+import { StorageCertificateStore } from "../services/tls/storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
 import { DnsChallenge01Provider } from "../services/tls/dns-challenge-provider";
 import { CertificateLifecycleManager } from "../services/tls/certificate-lifecycle-manager";
 import { CertificateDistributor } from "../services/tls/certificate-distributor";
 import { CloudflareService } from "../services/cloudflare";
-import { AzureStorageService } from "../services/azure-storage-service";
+import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
 import { Channel, ServerEvent, type CertIssuanceStep } from "@mini-infra/types";
@@ -57,19 +57,15 @@ function parseCertificateData(certificate: Record<string, unknown>) {
 async function initializeLifecycleManager(): Promise<CertificateLifecycleManager> {
   // Initialize config services
   const tlsConfig = new TlsConfigService(prisma);
-  const azureConfig = new AzureStorageService(prisma);
 
-  // Get certificate container name
+  // Get certificate storage location id
   const containerName = await tlsConfig.getCertificateContainerName();
 
-  // Get Azure Storage connection string
-  const connectionString = await azureConfig.getConnectionString();
-  if (!connectionString) {
-    throw new Error("Azure Storage not configured");
-  }
+  // Resolve the active StorageBackend (Azure today; Drive in Phase 3).
+  const storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
 
   // Initialize services
-  const certificateStore = new AzureStorageCertificateStore(connectionString, containerName);
+  const certificateStore = new StorageCertificateStore(storageBackend, containerName);
   const acmeClient = new AcmeClientManager(tlsConfig, certificateStore);
   const cloudflareConfig = new CloudflareService(prisma);
   const dnsChallenge = new DnsChallenge01Provider(cloudflareConfig);

@@ -74,8 +74,7 @@ export default function TlsSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">TLS Configuration</h1>
             <p className="text-muted-foreground">
-              Configure Azure Storage and ACME settings for certificate
-              management
+              Configure storage and ACME settings for certificate management
             </p>
           </div>
         </div>

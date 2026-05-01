@@ -7,6 +7,7 @@ import {
   IconBrandCloudflare,
   IconBrandAzure,
   IconBrandGithub,
+  IconBrandGoogleDrive,
   IconDatabase,
   IconHelp,
   IconRobot,
@@ -16,6 +17,7 @@ import {
   useConnectivityStatus,
   ConnectivityService,
 } from "@/hooks/use-settings";
+import { useStorageSettings } from "@/hooks/use-storage-settings";
 import { useBackupHealth } from "@/hooks/use-self-backup";
 import { useAgentChat } from "@/hooks/use-agent-chat";
 import { Breadcrumbs } from "@/components/breadcrumbs";
@@ -112,8 +114,8 @@ function ConnectivityIndicator({
         return "/connectivity-docker";
       case "cloudflare":
         return "/connectivity-cloudflare";
-      case "azure":
-        return "/connectivity-azure";
+      case "storage":
+        return "/connectivity-storage";
       case "github-app":
         return "/connectivity-github";
       default:
@@ -155,6 +157,30 @@ function ConnectivityIndicator({
     >
       {content}
     </div>
+  );
+}
+
+// Storage connectivity indicator — picks an icon from the active provider so
+// the top bar reflects whichever backend (Azure / Drive / generic) is in use.
+function StorageConnectivityIndicator() {
+  const { data: storageSettings } = useStorageSettings();
+  const activeProviderId = storageSettings?.activeProviderId ?? null;
+
+  let icon: React.ComponentType<{ size?: number; className?: string }> =
+    IconDatabase;
+  if (activeProviderId === "azure") {
+    icon = IconBrandAzure;
+  } else if (activeProviderId === "google-drive") {
+    icon = IconBrandGoogleDrive;
+  }
+
+  return (
+    <ConnectivityIndicator
+      service="storage"
+      icon={icon}
+      label="Storage"
+      tourId="header-storage"
+    />
   );
 }
 
@@ -211,7 +237,7 @@ function AssistedSetupButton() {
     limit: 1,
   });
   const { data: azureData } = useConnectivityStatus({
-    filters: { service: "azure" },
+    filters: { service: "storage" },
     limit: 1,
   });
   const { data: githubData } = useConnectivityStatus({
@@ -315,12 +341,8 @@ export function SiteHeader() {
                 label="Cloudflare"
                 tourId="header-cloudflare"
               />
-              <ConnectivityIndicator
-                service="azure"
-                icon={IconBrandAzure}
-                label="Azure"
-                tourId="header-azure"
-              />
+              <StorageConnectivityIndicator />
+
               <ConnectivityIndicator
                 service="github-app"
                 icon={IconBrandGithub}

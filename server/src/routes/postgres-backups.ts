@@ -118,7 +118,8 @@ function mapBackupOperationToInfo(operation: Prisma.BackupOperationGetPayload<tr
     startedAt: operation.startedAt.toISOString(),
     completedAt: operation.completedAt?.toISOString() || null,
     sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
-    azureBlobUrl: operation.azureBlobUrl,
+    storageObjectUrl: operation.storageObjectUrl,
+    storageProviderAtCreation: operation.storageProviderAtCreation,
     errorMessage: operation.errorMessage,
     progress: operation.progress,
     metadata: operation.metadata ? JSON.parse(operation.metadata) : null,
@@ -409,7 +410,8 @@ router.get(
           completedAt: operation.completedAt?.toISOString() || null,
           errorMessage: operation.errorMessage,
           sizeBytes: operation.sizeBytes ? Number(operation.sizeBytes) : null,
-          azureBlobUrl: operation.azureBlobUrl,
+          storageObjectUrl: operation.storageObjectUrl,
+          storageProviderAtCreation: operation.storageProviderAtCreation,
           metadata: operation.metadata ? JSON.parse(operation.metadata) : null,
         },
         message: `Backup operation is ${operation.status}`,
@@ -494,12 +496,12 @@ router.delete(
         });
       }
 
-      // TODO: Delete Azure blob if it exists
-      // This would require Azure Storage integration
-      if (operation.azureBlobUrl) {
+      // TODO: Delete the storage object if it exists. Today we just drop
+      // the row; the object stays in the backend until retention sweeps it.
+      if (operation.storageObjectUrl) {
         logger.debug(
-          { requestId, backupId, blobUrl: operation.azureBlobUrl },
-          "TODO: Delete Azure blob (not implemented yet)",
+          { requestId, backupId, objectUrl: operation.storageObjectUrl },
+          "TODO: Delete storage object (not implemented yet)",
         );
       }
 

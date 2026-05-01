@@ -1,104 +1,64 @@
-import { BlobServiceClient } from "@azure/storage-blob";
 import { getLogger } from "../../lib/logger-factory";
-import { AzureStorageService } from "../azure-storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { parseBackupUrl } from "./utils";
 import type { BackupValidationResult } from "./types";
 
 /**
- * BackupValidator handles validation of backup files in Azure Storage
+ * BackupValidator validates backup files in the active StorageBackend
  * before restore operations are executed.
  */
 export class BackupValidator {
-  private azureConfigService: AzureStorageService;
+  private backend: StorageBackend;
 
-  constructor(azureConfigService: AzureStorageService) {
-    this.azureConfigService = azureConfigService;
+  constructor(backend: StorageBackend) {
+    this.backend = backend;
   }
 
   /**
-   * Validate backup file before restore
+   * Validate backup file before restore.
+   *
+   * Performs cheap pre-flight checks: existence, plausible size, optional
+   * databaseId match (legacy backups encode it as the path's first segment),
+   * and a non-fatal age warning.
    */
   async validateBackupFile(
     backupUrl: string,
     databaseId?: string,
   ): Promise<BackupValidationResult> {
     try {
-      const azureConnectionString =
-        await this.azureConfigService.get("connection_string");
-      if (!azureConnectionString) {
-        return {
-          isValid: false,
-          error: "Azure connection string not configured",
-        };
-      }
-
-      const blobServiceClient = BlobServiceClient.fromConnectionString(
-        azureConnectionString,
-      );
-
-      // Parse backup URL to get container and blob name
       const { containerName, blobName } = parseBackupUrl(backupUrl);
-      const blobClient = blobServiceClient
-        .getContainerClient(containerName)
-        .getBlobClient(blobName);
-
       getLogger("backup", "backup-validator").debug(
-        {
-          backupUrl,
-          containerName,
-          blobName,
-          databaseId,
-        },
+        { backupUrl, containerName, blobName, databaseId },
         "Starting backup file validation",
       );
 
-      // Check if blob exists and get properties
-      const exists = await blobClient.exists();
-      if (!exists) {
-        getLogger("backup", "backup-validator").warn(
-          {
-            backupUrl,
-            containerName,
-            blobName,
-          },
-          "Backup file not found in Azure Storage",
-        );
+      const head = await this.backend.head({ id: containerName }, blobName);
+      if (!head) {
         return {
           isValid: false,
-          error: `Backup file not found in Azure Storage: ${blobName}`,
+          error: `Backup file not found in storage: ${blobName}`,
         };
       }
 
-      const properties = await blobClient.getProperties();
-
-      // Enhanced validation - check file size
-      const sizeBytes = properties.contentLength || 0;
+      const sizeBytes = head.size ?? 0;
       if (sizeBytes < 100) {
-        // Backup files should be at least 100 bytes
         return {
           isValid: false,
           error: `Backup file appears to be too small (${sizeBytes} bytes) or corrupted`,
         };
       }
 
-      // Check for reasonable maximum file size (e.g., 50GB)
       const maxSizeBytes = 50 * 1024 * 1024 * 1024; // 50GB
       if (sizeBytes > maxSizeBytes) {
         getLogger("backup", "backup-validator").warn(
-          {
-            backupUrl,
-            sizeBytes,
-            maxSizeBytes,
-          },
+          { backupUrl, sizeBytes, maxSizeBytes },
           "Warning: Backup file is extremely large",
         );
       }
 
-      // Validate backup file belongs to the correct database if databaseId is provided
       if (databaseId) {
         const pathParts = blobName.split("/");
-        const backupDatabaseId = pathParts[0]; // Expected format: databaseId/backup_file.dump
-
+        const backupDatabaseId = pathParts[0];
         if (backupDatabaseId !== databaseId) {
           getLogger("backup", "backup-validator").warn(
             {
@@ -116,41 +76,29 @@ export class BackupValidator {
         }
       }
 
-      // Check if file is not too old (configurable threshold)
-      const maxAgeInDays = 365; // 1 year
-      const lastModified = properties.lastModified || new Date();
+      const maxAgeInDays = 365;
+      const lastModified = head.lastModified ?? new Date();
       const ageInMs = Date.now() - lastModified.getTime();
       const ageInDays = ageInMs / (1000 * 60 * 60 * 24);
-
       if (ageInDays > maxAgeInDays) {
         getLogger("backup", "backup-validator").warn(
-          {
-            backupUrl,
-            ageInDays: Math.round(ageInDays),
-            maxAgeInDays,
-          },
+          { backupUrl, ageInDays: Math.round(ageInDays), maxAgeInDays },
           "Warning: Backup file is quite old",
         );
       }
 
-      // Validate content type if available
       const expectedContentTypes = [
         "application/octet-stream",
         "application/sql",
         "text/plain",
-        undefined, // Some backups may not have content type set
+        undefined,
       ];
-
       if (
-        properties.contentType &&
-        !expectedContentTypes.includes(properties.contentType)
+        head.contentType &&
+        !expectedContentTypes.includes(head.contentType)
       ) {
         getLogger("backup", "backup-validator").warn(
-          {
-            backupUrl,
-            contentType: properties.contentType,
-            expectedContentTypes,
-          },
+          { backupUrl, contentType: head.contentType, expectedContentTypes },
           "Warning: Unexpected backup file content type",
         );
       }
@@ -163,7 +111,7 @@ export class BackupValidator {
           sizeBytes,
           sizeMB: Math.round(sizeBytes / (1024 * 1024)),
           lastModified: lastModified.toISOString(),
-          contentType: properties.contentType,
+          contentType: head.contentType,
           ageInDays: Math.round(ageInDays),
         },
         "Backup file validated successfully",
@@ -174,9 +122,8 @@ export class BackupValidator {
         sizeBytes,
         lastModified,
         metadata: {
-          contentType: properties.contentType,
-          etag: properties.etag,
-          contentEncoding: properties.contentEncoding,
+          contentType: head.contentType,
+          etag: head.etag,
           containerName,
           blobName,
           ageInDays: Math.round(ageInDays),

@@ -7,7 +7,7 @@
 
 import { Logger } from "pino";
 import { getLogger } from "../../lib/logger-factory";
-import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
+import { StorageCertificateStore } from "./storage-certificate-store";
 import { HAProxyService } from "../haproxy/haproxy-service";
 import { HAProxyDataPlaneClient } from "../haproxy/haproxy-dataplane-client";
 import { DockerExecutorService } from "../docker-executor";
@@ -29,7 +29,7 @@ export interface DeploymentResult {
  * Service for deploying certificates to HAProxy
  */
 export class CertificateDistributor {
-  private certificateStore: AzureStorageCertificateStore;
+  private certificateStore: StorageCertificateStore;
   private haproxyService: HAProxyService;
   private dockerExecutor: DockerExecutorService;
   private dataPlaneClient?: HAProxyDataPlaneClient;
@@ -37,7 +37,7 @@ export class CertificateDistributor {
   private certDir: string;
 
   constructor(
-    certificateStore: AzureStorageCertificateStore,
+    certificateStore: StorageCertificateStore,
     haproxyService: HAProxyService,
     dockerExecutor: DockerExecutorService,
     dataPlaneClient?: HAProxyDataPlaneClient
