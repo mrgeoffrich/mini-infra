@@ -55,7 +55,20 @@ export type DynamicEnvSource =
    * env var — no Vault client SDK or AppRole needed by the running app.
    * Apply re-runs re-read; KV updates do not propagate until the next apply.
    */
-  | { kind: 'vault-kv'; path: string; field: string };
+  | { kind: 'vault-kv'; path: string; field: string }
+  /**
+   * Seed (NKey, base32) of a *scoped signing key* on the shared NATS account.
+   * Distinct from `nats-creds` — this is NOT used to connect to NATS; it is
+   * used by the service to mint downstream user JWTs in-process. Server-side
+   * NATS enforces the signer's subjectScope at JWT-validation time, so a
+   * compromised signer cannot escape its declared sub-tree.
+   *
+   * Auto-wired by the apply orchestrator when a service declares
+   * `natsSigner: '<name>'` against a `nats.signers[]` entry — apps don't write
+   * this dynamicEnv kind by hand. Resolved at apply time from Vault KV at
+   * `shared/nats-signers/<stackId>-<signerName>`.
+   */
+  | { kind: 'nats-signer-seed'; signer: string };
 
 /**
  * Per-service configuration for a `Pool` service. Pools are container
@@ -372,6 +385,12 @@ export interface StackServiceDefinition {
   /** Symbolic reference to a nats.credentials[].name in the owning template draft.
    *  Resolved to a concrete natsCredentialId at apply time. */
   natsCredentialRef?: string | null;
+  /** Symbolic reference to a nats.roles[].name. Resolved at apply time to a
+   *  materialized NatsCredentialProfile (auto-prefixed permissions). */
+  natsRole?: string | null;
+  /** Symbolic reference to a nats.signers[].name. Causes NATS_SIGNER_SEED to
+   *  be auto-injected as dynamicEnv at apply time. */
+  natsSigner?: string | null;
 }
 
 export interface StackDefinition {

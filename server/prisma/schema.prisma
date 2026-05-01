@@ -1119,6 +1119,7 @@ model Stack {
 
   vaultResources       StackVaultResource[]
   natsResources        StackNatsResource[]
+  natsSigningKeys      NatsSigningKey[]     @relation("StackNatsSigningKey")
   egressPolicies       EgressPolicy[]
 
   @@index([environmentId])
@@ -1270,6 +1271,7 @@ model NatsAccount {
 
   credentialProfiles NatsCredentialProfile[]
   streams             NatsStream[]
+  signingKeys         NatsSigningKey[]
 
   @@index([isSystem])
   @@map("nats_accounts")
@@ -1346,6 +1348,32 @@ model NatsConsumer {
   @@unique([streamId, name])
   @@index([streamId])
   @@map("nats_consumers")
+}
+
+/// NatsSigningKey - Scoped signing keys bound to a stack via the new
+/// `nats.signers[]` template surface. The seed itself is stored in Vault KV
+/// at `seedKvPath`; this row indexes the stack-scoped binding so the
+/// destroy path can revoke + propagate cleanly. The server-side cryptographic
+/// guarantee (a JWT minted with this key cannot exceed `scopedSubject`) is
+/// enforced by NATS via the scope template embedded in the account JWT.
+model NatsSigningKey {
+  id             String      @id @default(cuid())
+  accountId      String
+  account        NatsAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  stackId        String
+  stack          Stack       @relation("StackNatsSigningKey", fields: [stackId], references: [id], onDelete: Cascade)
+  name           String      // template-author symbol, e.g. "worker-minter"
+  scope          String      // relative scope as declared, e.g. "agent.worker"
+  scopedSubject  String      // resolved absolute subject, e.g. "app.<stackId>.agent.worker.>"
+  publicKey      String      // for cross-checking server-side validation
+  seedKvPath     String      // shared/nats-signers/<stackId>-<name>
+  maxTtlSeconds  Int
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@unique([stackId, name])
+  @@index([accountId])
+  @@map("nats_signing_keys")
 }
 
 // StackService - Individual service within a stack
@@ -1543,6 +1571,15 @@ model StackTemplateVersion {
   natsStreams            Json?                       // TemplateNatsStream[]
   natsConsumers          Json?                       // TemplateNatsConsumer[]
 
+  // Phase 1 — NATS app-author surface (roles/signers/imports/exports + prefix).
+  // Persisted on the version row so apply-time orchestrator and cross-stack
+  // consumers can resolve against the latest applied snapshot.
+  natsSubjectPrefix      String?                     // e.g. "app.{{stack.id}}" or allowlisted "navi"
+  natsRoles              Json?                       // TemplateNatsRole[]
+  natsSigners            Json?                       // TemplateNatsSigner[]
+  natsExports            Json?                       // string[] — *resolved* (prefixed) export subjects
+  natsImports            Json?                       // TemplateNatsImport[]
+
   // Relations
   services               StackTemplateService[]
   configFiles            StackTemplateConfigFile[]
@@ -1580,6 +1617,12 @@ model StackTemplateService {
   natsCredentialId  String?
   natsCredential    NatsCredentialProfile? @relation("TemplateServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
   natsCredentialRef String?
+  // Phase 1 — symbolic refs into nats.roles[] and nats.signers[] declared on
+  // the same StackTemplateVersion. Resolved at apply time: natsRole → bound
+  // NatsCredentialProfile (auto-prefixed); natsSigner → auto-injected
+  // NATS_SIGNER_SEED dynamicEnv. Mutually exclusive with natsCredentialRef.
+  natsRole          String?
+  natsSigner        String?
 
   @@unique([versionId, serviceName])
   @@index([versionId])

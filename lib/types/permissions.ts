@@ -541,7 +541,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         domain: "nats",
         action: "write",
         label: "NATS Administration",
-        description: "Regenerate managed NATS configuration and reconcile JetStream resources",
+        description: "Regenerate managed NATS configuration, reconcile JetStream resources, and manage the subject-prefix allowlist",
       },
     ],
   },
