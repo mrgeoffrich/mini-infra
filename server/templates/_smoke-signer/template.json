@@ -1,0 +1,62 @@
+{
+  "name": "_smoke-signer",
+  "displayName": "Smoke — NATS role + signer",
+  "builtinVersion": 1,
+  "scope": "environment",
+  "category": "examples",
+  "description": "Smoke test fixture: one role + one signer on the shared NATS account. Idles in a sleep loop; the smoke test execs into the container to mint scoped JWTs and exercise the trim guarantee.",
+  "parameters": [],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "nats", "optional": false }
+  ],
+  "networks": [],
+  "volumes": [],
+  "nats": {
+    "roles": [
+      {
+        "name": "gateway",
+        "publish": ["events.in"],
+        "subscribe": ["events.out"]
+      }
+    ],
+    "signers": [
+      {
+        "name": "worker-minter",
+        "subjectScope": "agent.worker"
+      }
+    ]
+  },
+  "services": [
+    {
+      "serviceName": "smoke",
+      "serviceType": "Stateful",
+      "dockerImage": "node",
+      "dockerTag": "20-alpine",
+      "natsRole": "gateway",
+      "natsSigner": "worker-minter",
+      "containerConfig": {
+        "entrypoint": ["/bin/sh", "-c"],
+        "command": [
+          "echo 'NATS_URL='$NATS_URL; echo 'NATS_CREDS first line:'; printf '%s' \"$NATS_CREDS\" | head -c 80; echo; echo 'NATS_SIGNER_SEED prefix:'; printf '%s' \"$NATS_SIGNER_SEED\" | head -c 4; echo; echo 'STACK_ID='$STACK_ID; echo 'ACCOUNT_PUB='$ACCOUNT_PUB; while true; do sleep 30; done"
+        ],
+        "env": {
+          "STACK_ID": "{{stack.id}}"
+        },
+        "dynamicEnv": {
+          "NATS_URL": { "kind": "nats-url" },
+          "NATS_CREDS": { "kind": "nats-creds" },
+          "NATS_SIGNER_SEED": { "kind": "nats-signer-seed", "signer": "worker-minter" }
+        },
+        "restartPolicy": "unless-stopped",
+        "joinResourceNetworks": ["nats"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

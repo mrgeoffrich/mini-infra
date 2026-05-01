@@ -42,8 +42,7 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
-import { getNatsControlPlaneService } from '../nats/nats-control-plane-service';
-import { getVaultKVService } from '../vault/vault-kv-service';
+import { revokeStackNatsSigningKeys } from './stack-nats-revocation';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
@@ -1079,13 +1078,14 @@ export class StackReconciler {
     const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
     await egressPolicyLifecycle.archiveForStack(stackId, _options?.triggeredBy ?? null);
 
-    // 4.5. Phase 4: revoke any scoped signing keys this stack owns. The
-    //      cascade will drop the NatsSigningKey rows when the stack record
-    //      goes away, but we need to (a) re-issue the parent account JWTs
-    //      *without* those keys and push live so in-flight connections stop
-    //      validating, and (b) wipe the seed blobs from Vault KV so a leaked
-    //      seed can't be reused even if the row was scraped before delete.
-    await this.revokeStackNatsSigningKeys(stackId, log);
+    // 4.5. Phase 4: revoke any scoped signing keys this stack owns before
+    //      the cascade drops the rows. See `stack-nats-revocation.ts`.
+    //      NOTE: this `destroyStack` method is currently dead code — the
+    //      production destroy flow runs through `stacks-destroy-route.ts`
+    //      which calls `revokeStackNatsSigningKeys` directly. The hook
+    //      stays here for parity in case a future caller revives this
+    //      path.
+    await revokeStackNatsSigningKeys(this.prisma, stackId, log);
 
     // 5. Delete the stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;
@@ -1104,129 +1104,5 @@ export class StackReconciler {
     };
   }
 
-  /**
-   * Phase 4: revoke a stack's scoped signing keys end-to-end on destroy.
-   *
-   * The cascade delete on `Stack` removes the `NatsSigningKey` rows on its
-   * own, but two side effects need explicit handling first:
-   *   1. The parent account's JWT still carries the rendered scope template
-   *      until we re-issue it without the entry. `applyConfig()` rebuilds
-   *      every account JWT from the live `NatsSigningKey` table, so deleting
-   *      the rows up front + calling `applyConfig` is the simplest way to
-   *      get the live update pushed via `$SYS.REQ.CLAIMS.UPDATE`.
-   *   2. The seed blobs in Vault KV at `shared/nats-signers/<stackId>-<name>`
-   *      do not have a database FK; they have to be wiped manually.
-   *
-   * If the live push fails, the running NATS server still trusts the now-
-   * orphan public keys until the container restarts. That's a security gap
-   * — a leaked seed would still authenticate. To close it deterministically
-   * we restart the vault-nats NATS container as a fallback. The next start
-   * reads the freshly-rebuilt `shared/nats-accounts-index` from Vault KV and
-   * seeds /data/accounts/, so the live server comes back without the
-   * revoked signers.
-   */
-  private async revokeStackNatsSigningKeys(stackId: string, log: Logger): Promise<void> {
-    let signingKeys: Array<{ id: string; seedKvPath: string }>;
-    try {
-      signingKeys = await this.prisma.natsSigningKey.findMany({
-        where: { stackId },
-        select: { id: true, seedKvPath: true },
-      });
-    } catch (err) {
-      log.warn({ err }, 'Failed to enumerate stack NATS signing keys for revocation; skipping');
-      return;
-    }
-    if (signingKeys.length === 0) return;
-
-    try {
-      await this.prisma.natsSigningKey.deleteMany({ where: { stackId } });
-    } catch (err) {
-      log.warn({ err }, 'Failed to delete NatsSigningKey rows for stack; cascade will eventually clean them up');
-      return;
-    }
-
-    // Re-issue + propagate parent account JWTs minus the now-deleted rows.
-    // If `applyConfig` itself throws (e.g. Vault KV unreachable), treat the
-    // whole apply as unpropagated — every revoked signer's public key is
-    // still trusted by the live server until the recycle below.
-    let unpropagated: string[];
-    try {
-      const result = await getNatsControlPlaneService(this.prisma).applyConfig();
-      unpropagated = result.unpropagatedAccountPublicKeys;
-    } catch (err) {
-      log.warn(
-        { err },
-        'NATS account claim re-push during stack destroy failed; will recycle the NATS container to apply revocation',
-      );
-      unpropagated = ['<all>'];
-    }
-
-    // Security-sensitive recovery: any account whose live update we couldn't
-    // push still trusts the now-removed signing keys. Force-recycle the
-    // managed NATS container to read the freshly-written accounts-index
-    // from Vault KV on cold start.
-    if (unpropagated.length > 0) {
-      log.warn(
-        { unpropagatedCount: unpropagated.length },
-        'Recycling vault-nats NATS container to complete signer revocation',
-      );
-      try {
-        await this.recycleManagedNatsContainer(log);
-      } catch (err) {
-        // If we can't recycle the container, surface a CRITICAL log line —
-        // the destroy still cleans up DB + Vault KV below, but operators
-        // need to know the live revocation didn't complete.
-        log.error(
-          { err, stackId, signerCount: signingKeys.length },
-          'CRITICAL: scoped signer revocation did not propagate to the running NATS server. Manually restart the vault-nats NATS container to invalidate any leaked seeds.',
-        );
-      }
-    }
-
-    // Wipe seed blobs from Vault KV.
-    const kv = getVaultKVService();
-    for (const sk of signingKeys) {
-      try {
-        await kv.delete(sk.seedKvPath, { permanent: true });
-      } catch (err) {
-        log.warn(
-          { err, path: sk.seedKvPath },
-          'Best-effort Vault KV delete of signer seed during stack destroy failed',
-        );
-      }
-    }
-  }
-
-  /**
-   * Restart the host vault-nats NATS service container. Identifies it via
-   * the `mini-infra.stack-id` label on the stack recorded in NatsState plus
-   * `mini-infra.service=nats`. No-op if NatsState has no stackId yet (the
-   * vault-nats stack hasn't applied) or no matching container is running.
-   */
-  private async recycleManagedNatsContainer(log: Logger): Promise<void> {
-    const state = await this.prisma.natsState.findUnique({ where: { kind: 'primary' } });
-    if (!state?.stackId) {
-      log.warn('NatsState has no stackId; cannot identify the vault-nats NATS container to recycle');
-      return;
-    }
-    const docker = this.dockerExecutor.getDockerClient();
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { label: [`mini-infra.stack-id=${state.stackId}`, `mini-infra.service=nats`] },
-    });
-    if (containers.length === 0) {
-      log.warn({ vaultNatsStackId: state.stackId }, 'No NATS container found to recycle');
-      return;
-    }
-    for (const c of containers) {
-      // dockerode's restart performs a graceful stop+start; we use a 10s
-      // stop timeout matching the rest of the reconciler. The container
-      // entrypoint reads $NATS_ACCOUNTS_INDEX from Vault KV on startup, so
-      // the freshly-rendered claims (which exclude the just-deleted scoped
-      // signers) take effect on this restart.
-      await docker.getContainer(c.Id).restart({ t: 10 });
-      log.info({ containerId: c.Id }, 'Recycled vault-nats NATS container to complete signer revocation');
-    }
-  }
 }
 
