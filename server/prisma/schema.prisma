@@ -1120,6 +1120,7 @@ model Stack {
   vaultResources       StackVaultResource[]
   natsResources        StackNatsResource[]
   natsSigningKeys      NatsSigningKey[]     @relation("StackNatsSigningKey")
+  natsCredentialProfiles NatsCredentialProfile[] @relation("StackNatsCredentialProfile")
   egressPolicies       EgressPolicy[]
 
   @@index([environmentId])
@@ -1285,6 +1286,12 @@ model NatsCredentialProfile {
   description     String?
   accountId       String
   account         NatsAccount   @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  // Owning stack — populated by `materializeRole` during apply. Used by the
+  // diff-and-prune step to clean up orphan profiles when a role is renamed
+  // or removed from a template. Backfilled from the `<stackId>-<roleName>`
+  // naming convention for rows created before this column existed.
+  stackId         String?
+  stack           Stack?        @relation("StackNatsCredentialProfile", fields: [stackId], references: [id], onDelete: Cascade)
   publishAllow    Json
   subscribeAllow  Json
   ttlSeconds      Int           @default(3600)
@@ -1298,6 +1305,7 @@ model NatsCredentialProfile {
   stackTemplateServices   StackTemplateService[] @relation("TemplateServiceNatsCredential")
 
   @@index([accountId])
+  @@index([stackId])
   @@map("nats_credential_profiles")
 }
 

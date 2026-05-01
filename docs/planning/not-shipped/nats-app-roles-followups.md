@@ -5,69 +5,21 @@
 
 The first PR landed Phases 1, 2, 3, and 5 of the design — the type surface,
 validation, prefix allowlist, role materialization, and cross-stack
-imports/exports. The items below were either explicitly out of scope, blocked
-on a discrete prerequisite, or surfaced as code-level TODOs during
-implementation. Each is sized so it can be picked up independently.
+imports/exports. A follow-up PR landed **Phases 0 and 4** plus the
+**`NatsCredentialProfile` orphan-profile cleanup** hardening item: the
+`vault-nats` stack now runs the full account resolver (v2), the control
+plane pushes account-JWT updates over `$SYS.REQ.CLAIMS.UPDATE`, scoped
+signing keys materialize on apply with seeds in Vault KV at
+`shared/nats-signers/<stackId>-<name>`, the `nats-signer-seed` injector
+branch is wired through the reconciler and pool spawner, and stack destroy
+revokes signers end-to-end (re-issue + push + Vault KV wipe). Real-NATS
+external-integration tests under `server/src/__tests__/*.external.test.ts`
+cover the cryptographic guarantees with a `testcontainers`-managed
+`nats:2.12.8-alpine` server.
 
----
-
-## Phase 0 — Live account-JWT propagation (PREREQUISITE for Phase 4)
-
-**Why it's blocking.** The current `vault-nats` stack runs NATS with
-`resolver: MEMORY` and a static `resolver_preload` block written into
-`nats.conf`. Account JWTs in this mode load once at process start and **do
-not hot-reload**. Scoped signing keys (the cryptographic primitive that
-makes `signers` safe) live inside the account JWT, so adding/rotating/
-revoking a signer means re-issuing the account JWT and getting the live
-`nats-server` to load the new one. Today the only options are to restart
-the server (disruptive) or `SIGHUP` (still a reload event).
-
-**Recommended path.** Switch `vault-nats` to the full account resolver
-(`resolver: { type: full, dir: ... }`) and use the NATS account-server
-protocol (`$SYS.REQ.CLAIMS.UPDATE`) to push updated account JWTs over the
-wire. No reload, no downtime.
-
-**Touch points** (verified during planning):
-- [server/src/services/nats/nats-config-renderer.ts](../../../server/src/services/nats/nats-config-renderer.ts) — make resolver mode a parameter; render `dir` for full mode.
-- [server/src/services/nats/nats-control-plane-service.ts](../../../server/src/services/nats/nats-control-plane-service.ts) — add a system-account-authenticated connection (`mintSystemUserCreds()` + `withSystemNats()` helper) and `updateAccountClaim(publicKey, jwt)` method. **Zero existing system-account plumbing today** — must build from scratch.
-- [server/src/services/nats/nats-key-manager.ts](../../../server/src/services/nats/nats-key-manager.ts) — add `mintSystemUserCreds()` (sys account, broad `$SYS.>` permissions).
-- [server/templates/vault-nats/template.json](../../../server/templates/vault-nats/template.json) — bump version; mint system-user creds at apply; write account JWTs to `/data/accounts/` on the existing `nats_data` volume.
-- Apply orchestrator: after `reissueAccountJwt()`, call `updateAccountClaim()` instead of relying on config rewrite.
-
-**Verification (must run against a real NATS server):**
-- Account JWT changes propagate within <2s of `updateAccountClaim()`.
-- Revoking a scoped signing key (re-issuing the account JWT without it) invalidates user JWTs signed by that key on next connect.
-- Backwards-compat: existing system stacks that don't declare new fields still apply cleanly under the full resolver.
-
-**Estimated effort:** 2–3 engineer-days. The largest unknown in the plan.
-
-**Pause point.** End-of-phase review before starting Phase 4. If
-propagation latency turns out unacceptable or system-user plumbing is
-brittle, fall back to `SIGHUP` reload (option 2 in design §1.3) as the
-cheap path.
-
----
-
-## Phase 4 — Signers materialization (depends on Phase 0)
-
-**Why deferred.** The Phase 1 type surface for `nats.signers[]` is shipped
-and validated, but the apply-time materialization is not. Without Phase 0,
-adding a scoped signing key to the shared account JWT can't be
-hot-reloaded into the live server, so a signer would be cryptographically
-inert until the next NATS restart.
-
-**What's still TBD when picked up:**
-- Extend `NatsKeyManager` with `generateScopedSigningKey()` distinct from `mintUserCreds`. Use `nats-jwt`'s `newScopedSigner(signingKey, role, { pub: { allow: [<scoped>] }, sub: { allow: [<scoped>, '_INBOX.>'] } })`.
-- For each signer at apply: compute `<prefix>.<subjectScope>.>`, generate ED25519 keypair, add to `Account.signing_keys`, re-issue account JWT, propagate via Phase 0 mechanism, persist seed in Vault KV at `shared/nats-signers/<stackId>-<signerName>`, persist `NatsSigningKey` row (model already shipped in Phase 1).
-- New `nats-signer-seed` branch in `NatsCredentialInjector.resolve()` that reads from Vault KV at the canonical path. The `maxTtlSeconds` cap is enforced by NATS itself via the scope template — no client-side policing.
-- Auto-inject `NATS_SIGNER_SEED` dynamicEnv when a service declares `natsSigner`.
-- Destroy path: delete `NatsSigningKey` row, delete seed from Vault KV, **and** re-issue account JWT with the signing key removed + propagate. Without the re-issue, a revoked signing key remains valid until the next account-JWT refresh.
-
-**Verification (real NATS server, not mocks):**
-- JWT minted by a scoped signer with permissions broader than its scope is silently trimmed by the server.
-- JWT with claimed TTL > `maxTtlSeconds` is rejected.
-- Seed redacted in logs (`getLogger("nats", ...)` filters).
-- Destroying a stack with a signer revokes the key end-to-end.
+The items below remain — explicitly out of scope, blocked on a discrete
+prerequisite, or surfaced as code-level TODOs during implementation. Each
+is sized so it can be picked up independently.
 
 ---
 
@@ -87,8 +39,8 @@ third-party app's needs without escape hatches.
 **Verification:** existing slackbot integration tests pass; `_INBOX.>`
 request/reply round-trips work without explicit declaration.
 
-**Blocker:** Phase 4 (signers) must ship first — the slackbot's `manager`
-service is the canonical signer use case.
+**Blocker:** ~~Phase 4 (signers) must ship first~~ — Phase 4 has shipped.
+The slackbot can now be ported.
 
 ---
 
@@ -96,23 +48,6 @@ service is the canonical signer use case.
 
 These came up during code review of Phases 1–5. None are blocking, all are
 worth doing before the first non-trivial third-party app onboards.
-
-### Orphan profile cleanup on role rename
-
-**Problem.** A role is keyed by `<stackId>-<roleName>` in
-`NatsCredentialProfile`. Renaming `gateway` → `frontdoor` in a template
-leaves the old profile row in the DB; apply creates a new row but never
-deletes the old one. Same applies to deleting a role outright.
-
-**Where flagged:**
-- [server/src/services/stacks/stack-nats-apply-orchestrator.ts](../../../server/src/services/stacks/stack-nats-apply-orchestrator.ts) — TODO comment in `materializeRole`.
-
-**Approach.** Add a per-stack "desired roles" diff at the end of the apply
-phase: enumerate existing `NatsCredentialProfile` rows owned by this stack
-(via the `<stackId>-` prefix or, better, a `stackId` FK on the profile
-table — small migration), compare against the rendered `roles[]` set,
-delete any orphans. Same pattern would later cover signer rotation when
-Phase 4 ships.
 
 ### Cycle detection in cross-stack imports
 

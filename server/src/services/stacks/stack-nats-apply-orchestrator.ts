@@ -6,8 +6,10 @@ import {
   type TemplateContextEnvironment,
 } from "./template-engine";
 import { mergeParameterValues } from "./utils";
-import { getNatsControlPlaneService } from "../nats/nats-control-plane-service";
+import { getNatsControlPlaneService, natsSignerSeedKvPath } from "../nats/nats-control-plane-service";
 import { NatsPrefixAllowlistService } from "../nats/nats-prefix-allowlist-service";
+import { generateScopedSigningKey } from "../nats/nats-key-manager";
+import { getVaultKVService } from "../vault/vault-kv-service";
 import { getLogger } from "../../lib/logger-factory";
 import type {
   EnvironmentNetworkType,
@@ -19,6 +21,7 @@ import type {
   TemplateNatsCredential,
   TemplateNatsImport,
   TemplateNatsRole,
+  TemplateNatsSigner,
   TemplateNatsStream,
 } from "@mini-infra/types";
 
@@ -62,6 +65,7 @@ export async function runStackNatsApplyPhase(
       // use `imports`/`exports`.
       natsSubjectPrefix: true,
       natsRoles: true,
+      natsSigners: true,
       natsExports: true,
       natsImports: true,
       services: {
@@ -81,6 +85,7 @@ export async function runStackNatsApplyPhase(
   const streams = (templateVersion.natsStreams as TemplateNatsStream[] | null) ?? [];
   const consumers = (templateVersion.natsConsumers as TemplateNatsConsumer[] | null) ?? [];
   const roles = (templateVersion.natsRoles as TemplateNatsRole[] | null) ?? [];
+  const signers = (templateVersion.natsSigners as TemplateNatsSigner[] | null) ?? [];
   const exportsRelative = (templateVersion.natsExports as string[] | null) ?? [];
   const imports = (templateVersion.natsImports as TemplateNatsImport[] | null) ?? [];
   // Phase 3 expands the guard to include the new app-author surface so
@@ -94,6 +99,7 @@ export async function runStackNatsApplyPhase(
     streams.length > 0 ||
     consumers.length > 0 ||
     roles.length > 0 ||
+    signers.length > 0 ||
     exportsRelative.length > 0 ||
     imports.length > 0;
   if (!hasNats) return { status: "skipped" };
@@ -270,7 +276,9 @@ export async function runStackNatsApplyPhase(
     let resolvedSubjectPrefix: string | null = null;
     const roleCredentialIdByName = new Map<string, string>();
     let resolvedExports: string[] = [];
-    if (roles.length > 0 || exportsRelative.length > 0 || imports.length > 0) {
+    const renderedRoleProfileNames = new Set<string>();
+    const renderedSignerNames = new Set<string>();
+    if (roles.length > 0 || signers.length > 0 || exportsRelative.length > 0 || imports.length > 0) {
       const defaultAccount = await service.ensureDefaultAccount();
       resolvedSubjectPrefix = await resolveAndValidateSubjectPrefix({
         prisma,
@@ -321,8 +329,42 @@ export async function runStackNatsApplyPhase(
           additionalSubscribeAbsolute: importedSubscribeByRole.get(role.name) ?? [],
         });
         roleCredentialIdByName.set(role.name, profile.id);
+        renderedRoleProfileNames.add(profile.name);
         resources.push({ type: "credential", concreteName: profile.name, scope: "stack" });
       }
+
+      // Phase 4: signers materialization. Each signer becomes a NatsSigningKey
+      // row + a Vault KV seed. The actual scope-template splice into the
+      // account JWT happens in service.applyConfig() below, which now reads
+      // every NatsSigningKey row and re-issues each affected account's JWT
+      // with the live signing-keys list. The full-resolver propagation then
+      // pushes the new claim via $SYS.REQ.CLAIMS.UPDATE.
+      for (const signer of signers) {
+        const sk = await materializeSigner({
+          prisma,
+          signer,
+          accountId: defaultAccount.id,
+          subjectPrefix: resolvedSubjectPrefix,
+          stackId,
+          triggeredBy: opts.triggeredBy,
+        });
+        renderedSignerNames.add(signer.name);
+        resources.push({ type: "signing-key", concreteName: sk.publicKey, scope: "stack" });
+      }
+
+      // Diff-and-prune. Run before applyConfig() so the re-issued account
+      // JWT reflects only the live set of signing keys + the orphan profiles
+      // are gone before any service tries to rebind to them.
+      await pruneOrphanRoleProfiles({
+        prisma,
+        stackId,
+        desiredProfileNames: renderedRoleProfileNames,
+      });
+      await pruneOrphanSigningKeys({
+        prisma,
+        stackId,
+        desiredSignerNames: renderedSignerNames,
+      });
     }
 
     await service.applyConfig();
@@ -369,6 +411,9 @@ export async function runStackNatsApplyPhase(
             // role permissions so drift detection can compare cleanly.
             subjectPrefix: resolvedSubjectPrefix,
             roles,
+            // Phase 4: snapshot the signers so a future drift detector can
+            // compare the rendered scope envelope against what's live.
+            signers,
             // Phase 5: snapshot the resolved (prefixed) exports so consumer
             // stacks can read them directly without re-resolving the
             // producer's prefix at consumer-apply time.
@@ -568,16 +613,15 @@ async function materializeRole(args: {
   // otherwise clobber each other (design §2.1 decision 2). UI can render
   // a friendlier `<stackName>-<roleName>` derived from this row.
   //
-  // TODO: orphan profiles on role rename. Renaming a role leaves the old
-  // `<stackId>-<oldName>` profile in the DB; we upsert the new one but
-  // never delete the previous. A drift reconciler / cleanup pass should
-  // diff the rendered roles against existing per-stack profiles and prune
-  // anything no longer declared.
+  // The `stackId` FK lets `pruneOrphanRoleProfiles` clean up rows when a
+  // role is renamed or removed from a template — without it the DB would
+  // just keep accumulating dead `<stackId>-<oldName>` rows.
   const profileName = concreteName(role.name, "stack", args.stackId, null);
 
   const existing = await args.prisma.natsCredentialProfile.findUnique({ where: { name: profileName } });
   const data = {
     accountId: args.accountId,
+    stackId: args.stackId,
     displayName: `${args.stackName}-${role.name}`,
     description: `Phase 3 materialized role for stack ${args.stackName}`,
     publishAllow: publishAllow as unknown as Prisma.InputJsonValue,
@@ -595,6 +639,163 @@ async function materializeRole(args: {
         },
       });
   return { id: row.id, name: profileName };
+}
+
+// =====================================================================
+// Phase 4 helpers — signers materialization + orphan cleanup
+// =====================================================================
+
+/**
+ * Materialize a single `signers[]` entry. The seed lives in Vault KV at
+ * `shared/nats-signers/<stackId>-<name>`; the public key + scope are
+ * mirrored on a `NatsSigningKey` row so the destroy path can revoke
+ * cleanly (the row is the inventory; Vault is the secret store).
+ *
+ * Reuses an existing keypair if `subjectScope` and `maxTtlSeconds` are
+ * unchanged — rotating the key only when the scope envelope shifts. The
+ * orchestrator's `applyConfig()` call (after all roles + signers are
+ * materialized) is what splices the live `NatsSigningKey` rows into the
+ * account JWT and pushes via `$SYS.REQ.CLAIMS.UPDATE`.
+ */
+async function materializeSigner(args: {
+  prisma: PrismaClient;
+  signer: TemplateNatsSigner;
+  accountId: string;
+  subjectPrefix: string;
+  stackId: string;
+  triggeredBy: string | undefined;
+}): Promise<{ id: string; publicKey: string }> {
+  const { signer, subjectPrefix, stackId } = args;
+
+  // Defense-in-depth: same shape rules as roles. The Phase 1 schema is the
+  // primary gate, but a corrupt natsSigners JSON column could otherwise
+  // sneak a wildcard through to the scope renderer.
+  const scope = signer.subjectScope;
+  if (
+    !scope || /[>*]/.test(scope) || scope.startsWith(".") || scope.endsWith(".") ||
+    scope.startsWith("$SYS.") || scope === "$SYS" || scope.startsWith("_INBOX.") ||
+    scope.includes("..") || scope.split(".").some((tok) => tok.length === 0)
+  ) {
+    throw new Error(`NATS apply: signer '${signer.name}' has invalid subjectScope '${scope}'`);
+  }
+
+  const scopedSubject = `${subjectPrefix}.${scope}.>`;
+  const maxTtlSeconds = signer.maxTtlSeconds ?? 3600;
+
+  const existing = await args.prisma.natsSigningKey.findUnique({
+    where: { stackId_name: { stackId, name: signer.name } },
+  });
+
+  // Reuse the existing keypair only if neither the scope nor the parent
+  // account changed. A scope change rotates the key (old splice removed
+  // from the account JWT on the next applyConfig, new spliced in).
+  if (existing && existing.scopedSubject === scopedSubject && existing.accountId === args.accountId) {
+    await args.prisma.natsSigningKey.update({
+      where: { id: existing.id },
+      data: { scope, maxTtlSeconds },
+    });
+    return { id: existing.id, publicKey: existing.publicKey };
+  }
+
+  const material = generateScopedSigningKey({ role: signer.name, scopedSubject });
+  const seedKvPath = natsSignerSeedKvPath(stackId, signer.name);
+  await getVaultKVService().write(seedKvPath, {
+    seed: material.seed,
+    public_key: material.publicKey,
+    scoped_subject: scopedSubject,
+  });
+
+  const row = existing
+    ? await args.prisma.natsSigningKey.update({
+        where: { id: existing.id },
+        data: {
+          accountId: args.accountId,
+          scope,
+          scopedSubject,
+          publicKey: material.publicKey,
+          seedKvPath,
+          maxTtlSeconds,
+        },
+      })
+    : await args.prisma.natsSigningKey.create({
+        data: {
+          accountId: args.accountId,
+          stackId,
+          name: signer.name,
+          scope,
+          scopedSubject,
+          publicKey: material.publicKey,
+          seedKvPath,
+          maxTtlSeconds,
+        },
+      });
+  void args.triggeredBy; // tracked via NatsSigningKey audit columns (none today)
+  return { id: row.id, publicKey: row.publicKey };
+}
+
+/**
+ * Drop `NatsCredentialProfile` rows owned by this stack whose names aren't
+ * in the freshly-rendered set. Catches role renames + removals; the FK's
+ * onDelete cascade handles the cross-table fan-out (no service still
+ * referencing the profile because the apply just rebound them).
+ */
+async function pruneOrphanRoleProfiles(args: {
+  prisma: PrismaClient;
+  stackId: string;
+  desiredProfileNames: Set<string>;
+}): Promise<number> {
+  const existing = await args.prisma.natsCredentialProfile.findMany({
+    where: { stackId: args.stackId },
+    select: { id: true, name: true },
+  });
+  const orphanIds = existing
+    .filter((row) => !args.desiredProfileNames.has(row.name))
+    .map((row) => row.id);
+  if (orphanIds.length === 0) return 0;
+  // Service rows referencing these profiles get cleared first to satisfy
+  // the FK; the relation is ON DELETE SET NULL on StackService, so this
+  // is just a precautionary unbind for any service the apply *didn't*
+  // rebind in the same pass.
+  await args.prisma.stackService.updateMany({
+    where: { natsCredentialId: { in: orphanIds } },
+    data: { natsCredentialId: null },
+  });
+  await args.prisma.natsCredentialProfile.deleteMany({ where: { id: { in: orphanIds } } });
+  return orphanIds.length;
+}
+
+/**
+ * Drop `NatsSigningKey` rows owned by this stack whose names aren't in
+ * the freshly-rendered set. Removed rows take their public key out of the
+ * next `applyConfig()` re-issued account JWT, which `updateAccountClaim()`
+ * then propagates live. Vault KV cleanup is best-effort — a stale seed
+ * blob is harmless once the public key is no longer in any account JWT.
+ */
+async function pruneOrphanSigningKeys(args: {
+  prisma: PrismaClient;
+  stackId: string;
+  desiredSignerNames: Set<string>;
+}): Promise<number> {
+  const existing = await args.prisma.natsSigningKey.findMany({
+    where: { stackId: args.stackId },
+    select: { id: true, name: true, seedKvPath: true },
+  });
+  const orphans = existing.filter((row) => !args.desiredSignerNames.has(row.name));
+  if (orphans.length === 0) return 0;
+  await args.prisma.natsSigningKey.deleteMany({
+    where: { id: { in: orphans.map((o) => o.id) } },
+  });
+  for (const orphan of orphans) {
+    try {
+      await getVaultKVService().delete(orphan.seedKvPath, { permanent: true });
+    } catch (err) {
+      getLogger("integrations", "nats-apply-orchestrator").warn(
+        { err: err instanceof Error ? err.message : String(err), path: orphan.seedKvPath },
+        "Best-effort Vault KV delete of orphan signer seed failed",
+      );
+    }
+  }
+  return orphans.length;
 }
 
 // =====================================================================

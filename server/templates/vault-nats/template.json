@@ -1,7 +1,7 @@
 {
   "name": "vault-nats",
   "displayName": "Vault + NATS",
-  "builtinVersion": 1,
+  "builtinVersion": 2,
   "scope": "host",
   "category": "infrastructure",
   "description": "OpenBao vault paired with a NATS messaging server. NATS uses Vault-managed NKey/JWT auth and JetStream persistence. Cannot coexist with the standalone 'vault' template — install one or the other.",
@@ -81,13 +81,18 @@
         "entrypoint": [
           "sh",
           "-c",
-          "mkdir -p /etc/nats && printf '%s' \"$NATS_CONF\" > /etc/nats/nats.conf && exec nats-server -c /etc/nats/nats.conf -m 8222"
+          "set -e; mkdir -p /etc/nats /data/accounts; printf '%s' \"$NATS_CONF\" > /etc/nats/nats.conf; if [ -n \"$NATS_ACCOUNTS_INDEX\" ]; then printf '%s\\n' \"$NATS_ACCOUNTS_INDEX\" | while IFS=' ' read -r pk jwt; do [ -n \"$pk\" ] && [ -n \"$jwt\" ] && printf '%s' \"$jwt\" > \"/data/accounts/$pk.jwt\"; done; fi; exec nats-server -c /etc/nats/nats.conf -m 8222"
         ],
         "dynamicEnv": {
           "NATS_CONF": {
             "kind": "vault-kv",
             "path": "shared/nats-config",
             "field": "conf"
+          },
+          "NATS_ACCOUNTS_INDEX": {
+            "kind": "vault-kv",
+            "path": "shared/nats-accounts-index",
+            "field": "index"
           }
         },
         "ports": [

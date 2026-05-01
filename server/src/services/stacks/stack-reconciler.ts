@@ -42,6 +42,8 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
+import { getNatsControlPlaneService } from '../nats/nats-control-plane-service';
+import { getVaultKVService } from '../vault/vault-kv-service';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
@@ -656,6 +658,7 @@ export class StackReconciler {
    */
   private async resolveVaultEnv(
     stack: {
+      id: string;
       vaultAppRoleId: string | null;
       vaultFailClosed: boolean;
       lastAppliedVaultAppRoleId: string | null;
@@ -697,7 +700,7 @@ export class StackReconciler {
         (src) => src.kind === 'vault-addr' || src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id' || src.kind === 'vault-kv',
       );
       const hasNatsEntries = Object.values(dynamicEnv).some(
-        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds',
+        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds' || src.kind === 'nats-signer-seed',
       );
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
@@ -726,7 +729,11 @@ export class StackReconciler {
 
       if (hasNatsEntries) {
         try {
-          const values = await natsInjector.resolve(svcRow.natsCredentialId ?? null, serviceDef.containerConfig);
+          const values = await natsInjector.resolve(
+            svcRow.natsCredentialId ?? null,
+            serviceDef.containerConfig,
+            { stackId: stack.id },
+          );
           if (values) {
             const existing = overrides.get(serviceName) ?? {};
             overrides.set(serviceName, { ...existing, ...values });
@@ -1072,6 +1079,14 @@ export class StackReconciler {
     const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
     await egressPolicyLifecycle.archiveForStack(stackId, _options?.triggeredBy ?? null);
 
+    // 4.5. Phase 4: revoke any scoped signing keys this stack owns. The
+    //      cascade will drop the NatsSigningKey rows when the stack record
+    //      goes away, but we need to (a) re-issue the parent account JWTs
+    //      *without* those keys and push live so in-flight connections stop
+    //      validating, and (b) wipe the seed blobs from Vault KV so a leaked
+    //      seed can't be reused even if the row was scraped before delete.
+    await this.revokeStackNatsSigningKeys(stackId, log);
+
     // 5. Delete the stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;
     await this.prisma.stack.delete({
@@ -1087,6 +1102,67 @@ export class StackReconciler {
       volumesRemoved,
       duration,
     };
+  }
+
+  /**
+   * Phase 4: revoke a stack's scoped signing keys end-to-end on destroy.
+   *
+   * The cascade delete on `Stack` removes the `NatsSigningKey` rows on its
+   * own, but two side effects need explicit handling first:
+   *   1. The parent account's JWT still carries the rendered scope template
+   *      until we re-issue it without the entry. `applyConfig()` rebuilds
+   *      every account JWT from the live `NatsSigningKey` table, so deleting
+   *      the rows up front + calling `applyConfig` is the simplest way to
+   *      get the live update pushed via `$SYS.REQ.CLAIMS.UPDATE`.
+   *   2. The seed blobs in Vault KV at `shared/nats-signers/<stackId>-<name>`
+   *      do not have a database FK; they have to be wiped manually.
+   *
+   * Best-effort throughout — a failure here mustn't block the rest of the
+   * destroy. If the live push fails, the cold-start path (entrypoint reads
+   * the regenerated `accounts-index` blob) catches up on next restart.
+   */
+  private async revokeStackNatsSigningKeys(stackId: string, log: Logger): Promise<void> {
+    let signingKeys: Array<{ id: string; seedKvPath: string }>;
+    try {
+      signingKeys = await this.prisma.natsSigningKey.findMany({
+        where: { stackId },
+        select: { id: true, seedKvPath: true },
+      });
+    } catch (err) {
+      log.warn({ err }, 'Failed to enumerate stack NATS signing keys for revocation; skipping');
+      return;
+    }
+    if (signingKeys.length === 0) return;
+
+    try {
+      await this.prisma.natsSigningKey.deleteMany({ where: { stackId } });
+    } catch (err) {
+      log.warn({ err }, 'Failed to delete NatsSigningKey rows for stack; cascade will eventually clean them up');
+      return;
+    }
+
+    // Re-issue + propagate parent account JWTs minus the now-deleted rows.
+    try {
+      await getNatsControlPlaneService(this.prisma).applyConfig();
+    } catch (err) {
+      log.warn(
+        { err },
+        'NATS account claim re-push during stack destroy failed; cold-start path will repair on next NATS restart',
+      );
+    }
+
+    // Wipe seed blobs from Vault KV.
+    const kv = getVaultKVService();
+    for (const sk of signingKeys) {
+      try {
+        await kv.delete(sk.seedKvPath, { permanent: true });
+      } catch (err) {
+        log.warn(
+          { err, path: sk.seedKvPath },
+          'Best-effort Vault KV delete of signer seed during stack destroy failed',
+        );
+      }
+    }
   }
 }
 

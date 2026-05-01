@@ -13,7 +13,10 @@ export default defineConfig({
           maxForks: "50%",
           testTimeout: 5000,
           include: ["src/**/__tests__/**/*.test.ts", "src/**/*.test.ts"],
-          exclude: ["src/**/__tests__/**/*.integration.test.ts"],
+          exclude: [
+            "src/**/__tests__/**/*.integration.test.ts",
+            "src/**/__tests__/**/*.external.test.ts",
+          ],
           coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
@@ -52,8 +55,11 @@ export default defineConfig({
           pool: "forks",
           maxForks: 1,
           fileParallelism: false,
-          testTimeout: 30000,
-          include: ["src/**/__tests__/haproxy-dataplane-client.integration.test.ts"],
+          testTimeout: 60000,
+          include: [
+            "src/**/__tests__/haproxy-dataplane-client.integration.test.ts",
+            "src/**/__tests__/*.external.test.ts",
+          ],
           coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],

@@ -1,5 +1,6 @@
 import { connect, credsAuthenticator, RetentionPolicy, StorageType, DeliverPolicy, AckPolicy } from "nats";
-import type { ConsumerConfig, JetStreamManager, StreamConfig } from "nats";
+import type { ConsumerConfig, JetStreamManager, NatsConnection, StreamConfig } from "nats";
+import type { SigningKey } from "nats-jwt";
 import { Prisma, type PrismaClient } from "../../generated/prisma/client";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
@@ -9,6 +10,7 @@ import {
   generateAccount,
   generateOperator,
   loadKeyPair,
+  mintSystemUserCreds,
   mintUserCreds,
   reissueAccountJwt,
   reissueOperatorJwt,
@@ -45,6 +47,13 @@ const DEFAULT_ACCOUNT_DISPLAY = "Mini Infra Account";
 export const NATS_OPERATOR_KV_PATH = "shared/nats-operator";
 export const NATS_CONFIG_KV_PATH = "shared/nats-config";
 export const NATS_DEFAULT_ACCOUNT_KV_PATH = "shared/nats-account";
+// Phase 0: system-account user creds + index of all account JWTs. The
+// vault-nats v2 entrypoint reads `shared/nats-accounts-index` on cold start
+// and writes one file per account into `/data/accounts/`; the control plane
+// reads `shared/nats-system-creds` to push live updates via $SYS.REQ.CLAIMS.UPDATE.
+export const NATS_SYSTEM_CREDS_KV_PATH = "shared/nats-system-creds";
+export const NATS_ACCOUNTS_INDEX_KV_PATH = "shared/nats-accounts-index";
+export const NATS_SIGNER_KV_PATH_PREFIX = "shared/nats-signers";
 
 const FIELD_OPERATOR_SEED = "operator_seed";
 const FIELD_OPERATOR_JWT = "operator_jwt";
@@ -53,6 +62,17 @@ const FIELD_ACCOUNT_SEED = "account_seed";
 const FIELD_ACCOUNT_JWT = "account_jwt";
 const FIELD_ACCOUNT_PUBLIC = "account_public";
 const FIELD_CONFIG = "conf";
+const FIELD_SYSTEM_CREDS = "creds";
+const FIELD_ACCOUNTS_INDEX = "index";
+
+/** vault-nats template version this control plane targets. v1 used MEMORY
+ *  resolver; v2 uses the full account resolver + live $SYS.REQ.CLAIMS.UPDATE. */
+const RESOLVER_MODE: "memory" | "full" = "full";
+
+/** Path prefix for storing scoped signing-key seeds keyed by stack. */
+export function natsSignerSeedKvPath(stackId: string, signerName: string): string {
+  return `${NATS_SIGNER_KV_PATH_PREFIX}/${stackId}-${signerName}`;
+}
 
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,99}$/;
 const SUBJECT_RE = /^[A-Za-z0-9_$*>\-.]+$/;
@@ -318,9 +338,15 @@ export class NatsControlPlaneService {
       [FIELD_OPERATOR_PUBLIC]: operatorMaterial.publicKey,
     });
 
+    // Phase 4: scoped signing keys are stored per-stack on NatsSigningKey.
+    // Group them by accountId so each account JWT can be re-issued with the
+    // full live set spliced in.
+    const signingKeysByAccount = await this.loadAccountSigningKeys();
+
     const accounts = await this.db.natsAccount.findMany({ orderBy: [{ isSystem: "desc" }, { name: "asc" }] });
     const renderedAccounts: RenderedNatsAccount[] = [];
     let systemAccountPublic: string | null = null;
+    let systemAccountSeed: string | null = null;
 
     for (const account of accounts) {
       let accountSeed = await this.tryReadField(account.seedKvPath, FIELD_ACCOUNT_SEED);
@@ -330,7 +356,13 @@ export class NatsControlPlaneService {
         generatedSeeds = true;
       }
 
-      const accountMaterial = await reissueAccountJwt(account.name, accountSeed, operatorKp);
+      const signingKeys = signingKeysByAccount.get(account.id) ?? [];
+      const accountMaterial = await reissueAccountJwt(
+        account.name,
+        accountSeed,
+        operatorKp,
+        signingKeys,
+      );
       await kv.write(account.seedKvPath, {
         [FIELD_ACCOUNT_SEED]: accountSeed,
         [FIELD_ACCOUNT_JWT]: accountMaterial.jwt,
@@ -350,14 +382,33 @@ export class NatsControlPlaneService {
       });
       if (account.isSystem && !systemAccountPublic) {
         systemAccountPublic = accountMaterial.publicKey;
+        systemAccountSeed = accountSeed;
       }
     }
+
+    // Phase 0: persist system-account user creds so the control plane (and
+    // anything else with KV access) can connect as $SYS without re-deriving
+    // them. Idempotent — only writes on first successful bootstrap.
+    if (systemAccountSeed && !(await this.tryReadField(NATS_SYSTEM_CREDS_KV_PATH, FIELD_SYSTEM_CREDS))) {
+      const systemCreds = await mintSystemUserCreds(loadKeyPair(systemAccountSeed));
+      await kv.write(NATS_SYSTEM_CREDS_KV_PATH, { [FIELD_SYSTEM_CREDS]: systemCreds });
+      log.info("Minted system-account creds for live $SYS.REQ.CLAIMS.UPDATE pushes");
+    }
+
+    // Phase 0: write the full set of account JWTs to a single Vault KV blob
+    // so the vault-nats v2 entrypoint can populate /data/accounts/ on cold
+    // start of the NATS container. One line per account: <publicKey> <jwt>.
+    const accountsIndex = renderedAccounts
+      .map((a) => `${a.publicKey} ${a.jwt}`)
+      .join("\n");
+    await kv.write(NATS_ACCOUNTS_INDEX_KV_PATH, { [FIELD_ACCOUNTS_INDEX]: accountsIndex });
 
     const conf = renderNatsConfig({
       operatorJwt: operatorMaterial.jwt,
       accounts: renderedAccounts,
       systemAccountPublicKey: systemAccountPublic ?? renderedAccounts[0]?.publicKey,
       jetStream: true,
+      resolverMode: RESOLVER_MODE,
     });
     await kv.write(NATS_CONFIG_KV_PATH, { [FIELD_CONFIG]: conf });
 
@@ -378,8 +429,128 @@ export class NatsControlPlaneService {
       },
     });
 
+    // Phase 0: best-effort live propagation of every re-issued account JWT.
+    // If the NATS server isn't reachable yet (first-ever apply, container
+    // not started), the cold-start path catches it: the entrypoint reads
+    // $NATS_ACCOUNTS_INDEX on next start and seeds /data/accounts/.
+    await this.propagateAccountClaims(renderedAccounts);
+
     log.info({ accountCount: accounts.length }, "NATS config rendered to Vault KV");
     return { generatedSeeds, operatorPublic: operatorMaterial.publicKey, systemAccountPublic };
+  }
+
+  /**
+   * Load all scoped signing keys grouped by their parent account id. Returns
+   * one `SigningKey` entry per `NatsSigningKey` row. The orchestrator owns
+   * row lifecycle; this method just rebuilds the in-memory list each apply
+   * so the next account-JWT re-issue carries the live set.
+   */
+  private async loadAccountSigningKeys(): Promise<Map<string, SigningKey[]>> {
+    const rows = await this.db.natsSigningKey.findMany();
+    const out = new Map<string, SigningKey[]>();
+    for (const row of rows) {
+      const list = out.get(row.accountId) ?? [];
+      list.push({
+        kind: "user_scope",
+        key: row.publicKey,
+        role: row.name,
+        template: {
+          pub: { allow: [row.scopedSubject], deny: [] },
+          sub: { allow: [row.scopedSubject, "_INBOX.>"], deny: [] },
+        },
+      });
+      out.set(row.accountId, list);
+    }
+    return out;
+  }
+
+  /**
+   * Push every re-issued account JWT to the running NATS server via
+   * `$SYS.REQ.CLAIMS.UPDATE`. Logs and swallows individual failures — the
+   * cold-start path (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX) is
+   * authoritative on next container start, so a missed live push never
+   * causes a divergence beyond the time it takes to recycle the container.
+   */
+  private async propagateAccountClaims(accounts: RenderedNatsAccount[]): Promise<void> {
+    if (accounts.length === 0) return;
+    try {
+      await this.withSystemNats(async (nc) => {
+        for (const account of accounts) {
+          try {
+            await this.requestUpdateClaim(nc, account.publicKey, account.jwt);
+          } catch (err) {
+            log.warn(
+              { err: err instanceof Error ? err.message : String(err), publicKey: account.publicKey },
+              "Account claim update failed; cold-start path will repair on next NATS restart",
+            );
+          }
+        }
+      });
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "System NATS connection unavailable; relying on cold-start propagation",
+      );
+    }
+  }
+
+  /**
+   * Public, callable form of the `$SYS.REQ.CLAIMS.UPDATE` push for a single
+   * account. Used by the orchestrator's destroy path so a stack tear-down
+   * can revoke its scoped signing keys without waiting for the next apply.
+   */
+  async updateAccountClaim(publicKey: string, jwt: string): Promise<void> {
+    await this.withSystemNats(async (nc) => {
+      await this.requestUpdateClaim(nc, publicKey, jwt);
+    });
+  }
+
+  private async requestUpdateClaim(
+    nc: NatsConnection,
+    publicKey: string,
+    jwt: string,
+  ): Promise<void> {
+    const subject = `$SYS.REQ.CLAIMS.UPDATE`;
+    const reply = await nc.request(subject, new TextEncoder().encode(jwt), { timeout: 5000 });
+    const body = new TextDecoder().decode(reply.data);
+    // The full resolver replies with a JSON object that has a `data.code`
+    // (200) on success or a top-level `error` field on failure.
+    try {
+      const parsed = JSON.parse(body) as { error?: { description?: string }; data?: { code?: number } };
+      if (parsed.error) {
+        throw new Error(`Account claim update rejected: ${parsed.error.description ?? body}`);
+      }
+      if (parsed.data && parsed.data.code !== undefined && parsed.data.code !== 200) {
+        throw new Error(`Account claim update rejected with code ${parsed.data.code}`);
+      }
+    } catch (parseErr) {
+      // Older nats-server replies are plain-text "OK"; treat anything that
+      // isn't JSON as success unless it explicitly says otherwise.
+      if (body && !body.toLowerCase().includes("ok") && parseErr instanceof SyntaxError) {
+        log.debug({ body, publicKey }, "Non-JSON claim-update reply; treating as success");
+      } else if (!(parseErr instanceof SyntaxError)) {
+        throw parseErr;
+      }
+    }
+  }
+
+  private async withSystemNats<T>(fn: (nc: NatsConnection) => Promise<T>): Promise<T> {
+    const creds = await this.tryReadField(NATS_SYSTEM_CREDS_KV_PATH, FIELD_SYSTEM_CREDS);
+    if (!creds) {
+      throw new Error("System NATS creds not yet provisioned in Vault KV");
+    }
+    const url = await this.getInternalUrl();
+    const nc = await connect({
+      servers: url,
+      authenticator: credsAuthenticator(new TextEncoder().encode(creds)),
+      timeout: 5000,
+      reconnect: false,
+    });
+    try {
+      return await fn(nc);
+    } finally {
+      await nc.drain();
+    }
   }
 
   async listStreams(): Promise<NatsStreamInfo[]> {
