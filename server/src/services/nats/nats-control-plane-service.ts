@@ -10,6 +10,7 @@ import {
   generateAccount,
   generateOperator,
   loadKeyPair,
+  mintServerBusUserCreds,
   mintSystemUserCreds,
   mintUserCreds,
   reissueAccountJwt,
@@ -54,6 +55,17 @@ export const NATS_DEFAULT_ACCOUNT_KV_PATH = "shared/nats-account";
 export const NATS_SYSTEM_CREDS_KV_PATH = "shared/nats-system-creds";
 export const NATS_ACCOUNTS_INDEX_KV_PATH = "shared/nats-accounts-index";
 export const NATS_SIGNER_KV_PATH_PREFIX = "shared/nats-signers";
+/**
+ * `.creds` blob for the server's own bus connection. Bound to the default
+ * (non-system) account, scoped to `mini-infra.>` + `_INBOX.>`. Re-minted on
+ * every `applyConfig()`; consumed by `NatsBus` at connect time.
+ *
+ * The path and field are exported together so the writer (this file) and the
+ * reader (`nats-bus.ts`) share one source of truth — a typo fix in one would
+ * silently break the other.
+ */
+export const NATS_SERVER_BUS_CREDS_KV_PATH = "shared/nats-server-bus-creds";
+export const FIELD_SERVER_BUS_CREDS = "creds";
 
 const FIELD_OPERATOR_SEED = "operator_seed";
 const FIELD_OPERATOR_JWT = "operator_jwt";
@@ -353,6 +365,7 @@ export class NatsControlPlaneService {
     const renderedAccounts: RenderedNatsAccount[] = [];
     let systemAccountPublic: string | null = null;
     let systemAccountSeed: string | null = null;
+    let defaultAccountSeed: string | null = null;
 
     for (const account of accounts) {
       let accountSeed = await this.tryReadField(account.seedKvPath, FIELD_ACCOUNT_SEED);
@@ -390,6 +403,9 @@ export class NatsControlPlaneService {
         systemAccountPublic = accountMaterial.publicKey;
         systemAccountSeed = accountSeed;
       }
+      if (account.name === DEFAULT_ACCOUNT_NAME) {
+        defaultAccountSeed = accountSeed;
+      }
     }
 
     // Phase 0: re-mint system-account user creds on every apply. The user
@@ -400,6 +416,26 @@ export class NatsControlPlaneService {
     if (systemAccountSeed) {
       const systemCreds = await mintSystemUserCreds(loadKeyPair(systemAccountSeed));
       await kv.write(NATS_SYSTEM_CREDS_KV_PATH, { [FIELD_SYSTEM_CREDS]: systemCreds });
+    }
+
+    // Phase 1 (internal-bus migration): mint a long-lived `.creds` for the
+    // server's own NATS bus connection, bound to the default account and
+    // scoped to `mini-infra.>` + `_INBOX.>`. Same rotate-every-apply rationale
+    // as the system creds above. NatsBus reads this on connect.
+    if (defaultAccountSeed) {
+      const serverBusCreds = await mintServerBusUserCreds(loadKeyPair(defaultAccountSeed));
+      await kv.write(NATS_SERVER_BUS_CREDS_KV_PATH, {
+        [FIELD_SERVER_BUS_CREDS]: serverBusCreds,
+      });
+    } else {
+      // ensureDefaultAccount() at the top of this method should always
+      // create the row, so this branch only fires if someone manually
+      // deleted the account. Without creds the bus loops forever printing
+      // "server bus creds not present" — surface the cause loudly.
+      log.warn(
+        { defaultAccountName: DEFAULT_ACCOUNT_NAME },
+        "default NATS account not found during applyConfig; server-bus creds were not minted, NatsBus will be unable to connect",
+      );
     }
 
     // Phase 0: write the full set of account JWTs to a single Vault KV blob

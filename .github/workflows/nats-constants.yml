@@ -1,0 +1,35 @@
+name: NATS subject constants drift check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "lib/types/nats-subjects.ts"
+      - "egress-shared/natsbus/**"
+      - "scripts/check-nats-subject-drift.mjs"
+      - ".github/workflows/nats-constants.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "lib/types/nats-subjects.ts"
+      - "egress-shared/natsbus/**"
+      - "scripts/check-nats-subject-drift.mjs"
+      - ".github/workflows/nats-constants.yml"
+  workflow_dispatch:
+
+jobs:
+  drift-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run drift check
+        run: node scripts/check-nats-subject-drift.mjs
