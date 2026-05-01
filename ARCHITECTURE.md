@@ -138,6 +138,7 @@ Everything drawn as a "stack" — HAProxy, Postgres, Vault, monitoring (Promethe
 | Docker socket | `/var/run/docker.sock` via dockerode | [server/src/services/docker.ts](server/src/services/docker.ts) (`DockerService` singleton) |
 | Postgres | App database (Prisma) | [server/src/lib/prisma.ts](server/src/lib/prisma.ts) |
 | Vault | HashiCorp Vault for secrets | [server/src/services/vault/](server/src/services/vault/) |
+| NATS | Managed message bus (control plane + JetStream) | [server/src/services/nats/](server/src/services/nats/) |
 | Cloudflare API | DNS zones, tunnels | [server/src/services/cloudflare/](server/src/services/cloudflare/) |
 | Azure Blob Storage | Backups + certificates | [server/src/services/azure-storage-service.ts](server/src/services/azure-storage-service.ts) |
 | Container registries | Image pulls (Hub, GHCR, etc.) | [server/src/services/registry-credential.ts](server/src/services/registry-credential.ts) + [server/src/services/docker-executor/](server/src/services/docker-executor/) |
@@ -228,6 +229,11 @@ Mini Infra has a precise vocabulary. Get the words right and the code reads itse
 - **Event** — an entry in the audit log. Tracks type, status progression, trigger source, progress, user, and duration. Streams via Socket.IO.
 - **Self-Update** — in-place upgrade via the update sidecar's health-check pattern. Pulls new image, validates, swaps containers. Auto-rollback on failure. Data on mounted volumes is preserved.
 - **Agent Sidecar** — the optional AI assistant. Per-user conversations, SSE streaming, has tools for Docker, the Mini Infra API, and the user docs.
+- **NATS** — the built-in message bus, deployed as a managed `vault-nats` stack. Accounts, credential profiles, JetStream streams/consumers, and the runtime config are all stored in the database and reconciled through `POST /api/nats/apply` (no NATS CLI needed). NKeys/operator keys live in Vault.
+- **NATS Subject Prefix** — every stack that uses NATS lives under a subject namespace. Defaults to `app.<stack.id>` (collision-free). A non-default prefix (e.g. `events.platform`) requires an admin entry in the prefix allowlist (`/api/nats/prefix-allowlist`).
+- **NATS App Role** — symbolic role on a stack template (`nats.roles[]` in the definition) that materializes into a `NatsCredentialProfile` at apply time, with the stack's subject prefix prepended to its publish/subscribe lists. Services reference it via `services[].natsRole: <name>` to get `NATS_CREDS` + `NATS_URL` injected. `_INBOX.>` is auto-injected per `inboxAuto`.
+- **NATS Signer** — scoped signing key on a template (`nats.signers[]`) used for in-process JWT minting (e.g. a manager service that mints worker JWTs). The seed is delivered as `NATS_SIGNER_SEED`; the NATS server cryptographically constrains anything signed with it to the declared `subjectScope`.
+- **NATS Import / Export** — cross-stack subject sharing. A producer template declares `nats.exports[]` (relative to its prefix); a consumer's `nats.imports[]` resolves at apply time against the producer's last-applied snapshot, scoped to the same environment, and grants matching subjects to the consumer roles named in `forRoles`.
 
 ## Where to next
 

@@ -401,6 +401,44 @@
 | DELETE | `/api/stack-templates/:templateId` | Delete template |
 | POST | `/api/stack-templates/:templateId/instantiate` | Create stack from template |
 
+## NATS Control Plane (`/api/nats`)
+
+Manages the built-in NATS message bus: accounts, credential profiles, JetStream streams and consumers, and the apply pipeline that materializes them into the running NATS server. Reads require `nats:read`, mutations require `nats:write`, and `apply` requires `nats:admin`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/nats/status` | NATS server status, account count, JetStream summary |
+| POST | `/api/nats/apply` | Regenerate config and reconcile JetStream resources (`nats:admin`) |
+| GET | `/api/nats/accounts` | List NATS accounts |
+| POST | `/api/nats/accounts` | Create account |
+| PATCH | `/api/nats/accounts/:id` | Update account display name / description |
+| DELETE | `/api/nats/accounts/:id` | Delete account |
+| GET | `/api/nats/credentials` | List credential profiles (subject permissions + TTL) |
+| POST | `/api/nats/credentials` | Create credential profile |
+| PATCH | `/api/nats/credentials/:id` | Update credential profile |
+| DELETE | `/api/nats/credentials/:id` | Delete credential profile |
+| POST | `/api/nats/credentials/:id/mint` | Mint a JWT/NKey pair for the profile (optional `ttlSeconds` body) |
+| GET | `/api/nats/streams` | List JetStream streams |
+| POST | `/api/nats/streams` | Create stream |
+| PATCH | `/api/nats/streams/:id` | Update stream |
+| DELETE | `/api/nats/streams/:id` | Delete stream |
+| GET | `/api/nats/consumers` | List JetStream consumers |
+| POST | `/api/nats/consumers` | Create consumer |
+| PATCH | `/api/nats/consumers/:id` | Update consumer |
+| DELETE | `/api/nats/consumers/:id` | Delete consumer |
+
+### NATS Prefix Allowlist (`/api/nats/prefix-allowlist`)
+
+Admin-only allowlist that gates which stack templates may claim non-default `nats.subjectPrefix` values (see [docs/user/stack-definition-reference.md](docs/user/stack-definition-reference.md) — "NATS app roles"). The default prefix `app.<stack.id>` is always allowed; any other prefix needs an entry here. CRUD-per-entry by design — there is no blob PUT, so a stale write cannot wipe the whole allowlist. Reads require `nats:read`, mutations require `nats:admin`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/nats/prefix-allowlist/` | List allowlist entries |
+| GET | `/api/nats/prefix-allowlist/:prefix` | Get one entry |
+| POST | `/api/nats/prefix-allowlist/` | Create entry (`{ prefix, allowedTemplateIds }`) — rejects wildcards, `$SYS`, leading/trailing dots, and subject-tree overlaps with existing entries |
+| PUT | `/api/nats/prefix-allowlist/:prefix` | Replace `allowedTemplateIds` for an existing entry |
+| DELETE | `/api/nats/prefix-allowlist/:prefix` | Remove entry |
+
 ## Monitoring (`/api/monitoring`)
 
 | Method | Path | Description |
