@@ -43,7 +43,7 @@ tags:
 
 **Likely cause:** The Azure Storage connection is not configured, the connection string is invalid, or the configured Azure container does not exist.
 
-**What to check:** Go to [Connected Services → Azure Storage](/connectivity-azure) and verify the connection is healthy. Also check the backup configuration to ensure a valid Azure container is selected.
+**What to check:** Go to [Connected Services → Azure Storage](/connectivity-storage) and verify the connection is healthy. Also check the backup configuration to ensure a valid Azure container is selected.
 
 **Fix:** Re-enter and validate the Azure connection string. Ensure the selected container exists in Azure. Create the container in Azure Portal if needed.
 

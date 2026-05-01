@@ -20,6 +20,9 @@ export * from "./settings";
 // Azure types
 export * from "./azure";
 
+// Pluggable storage backend types
+export * from "./storage";
+
 // Cloudflare types
 export * from "./cloudflare";
 

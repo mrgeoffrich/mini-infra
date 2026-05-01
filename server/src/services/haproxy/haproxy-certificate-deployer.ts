@@ -1,8 +1,8 @@
 import { getLogger } from "../../lib/logger-factory";
 import { PrismaClient } from "../../generated/prisma/client";
-import { AzureStorageCertificateStore } from "../tls/azure-storage-certificate-store";
+import { StorageCertificateStore } from "../tls/storage-certificate-store";
 import { TlsConfigService } from "../tls/tls-config";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { generateCertFileName } from "./haproxy-naming";
 
@@ -96,26 +96,29 @@ export class HaproxyCertificateDeployer {
       "Retrieved certificate from database"
     );
 
-    // Step 2: Initialize TLS config and Azure Storage client
+    // Step 2: Initialize TLS config and active storage backend
     const tlsConfig = new TlsConfigService(prisma);
-    const azureConfig = new AzureStorageService(prisma);
-
     const containerName = await tlsConfig.getCertificateContainerName();
-    const connectionString = await azureConfig.getConnectionString();
 
-    if (!connectionString) {
-      throw new Error("Azure Storage not configured");
+    let storageBackend;
+    try {
+      storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
+    } catch (err) {
+      throw new Error(
+        `No storage provider configured (${err instanceof Error ? err.message : "unknown"}). Configure a provider before deploying certificates.`,
+        { cause: err },
+      );
     }
 
-    const certificateStore = new AzureStorageCertificateStore(
-      connectionString,
-      containerName
+    const certificateStore = new StorageCertificateStore(
+      storageBackend,
+      containerName,
     );
 
-    // Step 3: Get certificate from Azure Storage
+    // Step 3: Get certificate from active storage provider
     logger.info(
       { blobName: certificate.blobName },
-      "Retrieving certificate from Azure Storage"
+      "Retrieving certificate from storage backend",
     );
 
     const certData = await certificateStore.getCertificate(

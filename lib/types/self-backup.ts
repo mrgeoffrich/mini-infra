@@ -7,8 +7,12 @@ export interface SelfBackup {
   completedAt: Date | null;
   status: 'in_progress' | 'completed' | 'failed';
   filePath: string | null;
-  azureBlobUrl: string | null;
-  azureContainerName: string;
+  /** Provider-agnostic backend URL (Azure blob URL, Drive file link, ...). */
+  storageObjectUrl: string | null;
+  /** Provider-agnostic location id (Azure container, Drive folder, ...). */
+  storageLocationId: string;
+  /** Provider id captured at write time (e.g. 'azure'). */
+  storageProviderAtCreation: string;
   fileName: string;
   fileSize: number | null;
   errorMessage: string | null;
@@ -29,8 +33,9 @@ export interface SelfBackupInfo {
   completedAt: string | null;
   status: 'in_progress' | 'completed' | 'failed';
   filePath: string | null;
-  azureBlobUrl: string | null;
-  azureContainerName: string;
+  storageObjectUrl: string | null;
+  storageLocationId: string;
+  storageProviderAtCreation: string;
   fileName: string;
   fileSize: number | null;
   errorMessage: string | null;
@@ -47,7 +52,7 @@ export interface SelfBackupInfo {
  */
 export interface SelfBackupConfig {
   cronSchedule: string;
-  azureContainerName: string;
+  storageLocationId: string;
   timezone: string;
   enabled: boolean;
 }
@@ -59,7 +64,8 @@ export interface ScheduleInfo {
   isEnabled: boolean;
   schedule: string;
   timezone: string;
-  containerName: string;
+  /** Provider-agnostic location id (Azure container, Drive folder, ...). */
+  storageLocationId: string;
   nextScheduledAt: string | null;
   isRegistered: boolean;
 }
@@ -80,7 +86,7 @@ export interface BackupHealthStatus {
  */
 export interface UpdateSelfBackupConfigRequest {
   cronSchedule: string;
-  azureContainerName: string;
+  storageLocationId: string;
   timezone: string;
 }
 

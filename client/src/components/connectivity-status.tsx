@@ -180,7 +180,7 @@ interface ServiceStatusCardProps {
 const serviceLabels = {
   docker: "Docker",
   cloudflare: "Cloudflare",
-  azure: "Azure Storage",
+  storage: "Storage",
   postgres: "PostgreSQL",
   system: "System",
   deployments: "Deployments",

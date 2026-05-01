@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PostgreSQL backup script — dumps database and uploads to Azure via SAS URL.
-# Sourced env vars from run.sh: PG_OPTS, POSTGRES_DATABASE, AZURE_SAS_URL,
-#   BACKUP_FORMAT, COMPRESSION_LEVEL
+# PostgreSQL backup script — dumps the database and uploads to the active
+# storage backend.
+# Sourced env vars from run.sh: PG_OPTS, POSTGRES_DATABASE, STORAGE_PROVIDER,
+#   BACKUP_FORMAT, COMPRESSION_LEVEL, plus provider-specific creds.
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA_DIR="/etc/data"
 mkdir -p "$DATA_DIR"
 cd "$DATA_DIR"
@@ -16,6 +18,7 @@ echo "Database: ${POSTGRES_DATABASE}"
 echo "Host: ${POSTGRES_HOST}"
 echo "Backup format: ${BACKUP_FORMAT}"
 echo "Compression level: ${COMPRESSION_LEVEL}"
+echo "Storage provider: ${STORAGE_PROVIDER}"
 
 # ── Create dump ──────────────────────────────────────────────────────────────
 
@@ -60,23 +63,37 @@ if [ "$FILE_SIZE" != "unknown" ]; then
     echo "Backup file size: ${FILE_SIZE_MB} MB"
 fi
 
-# ── Upload to Azure via SAS URL ─────────────────────────────────────────────
+# ── Upload via the active provider ──────────────────────────────────────────
 
-log "Starting upload to Azure Blob Storage"
-
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-    -X PUT \
-    -H "x-ms-blob-type: BlockBlob" \
-    -H "Content-Type: application/octet-stream" \
-    -T "$FINAL_FILE" \
-    "$AZURE_SAS_URL")
-
-if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-    log "Upload completed successfully (HTTP ${HTTP_CODE})"
-else
-    echo "Error: Upload failed with HTTP ${HTTP_CODE}" >&2
-    exit 1
-fi
+case "$STORAGE_PROVIDER" in
+    azure)
+        log "Uploading to Azure Blob Storage via SAS URL"
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X PUT \
+            -H "x-ms-blob-type: BlockBlob" \
+            -H "Content-Type: application/octet-stream" \
+            -T "$FINAL_FILE" \
+            "$AZURE_SAS_URL")
+        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            log "Upload completed successfully (HTTP ${HTTP_CODE})"
+        else
+            echo "Error: Azure upload failed with HTTP ${HTTP_CODE}" >&2
+            exit 1
+        fi
+        ;;
+    google-drive)
+        log "Uploading to Google Drive (resumable upload)"
+        if ! node "$SCRIPT_DIR/upload-google-drive.mjs" "$FINAL_FILE"; then
+            echo "Error: Google Drive upload failed" >&2
+            exit 1
+        fi
+        log "Upload completed successfully"
+        ;;
+    *)
+        echo "Unknown STORAGE_PROVIDER: $STORAGE_PROVIDER" >&2
+        exit 64
+        ;;
+esac
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
 

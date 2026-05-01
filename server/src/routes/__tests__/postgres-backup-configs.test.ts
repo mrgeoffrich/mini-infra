@@ -123,8 +123,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
       id: "config-123",
       databaseId: "db-123",
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom",
       compressionLevel: 6,
@@ -192,8 +192,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     const validCreateRequest = {
       databaseId: "db-123",
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom" as BackupFormat,
       compressionLevel: 6,
@@ -204,8 +204,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
       id: "config-new",
       databaseId: "db-123",
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom",
       compressionLevel: 6,
@@ -236,8 +236,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         "db-123",
         {
           schedule: "0 2 * * *",
-          azureContainerName: "test-backups",
-          azurePathPrefix: "db-backups/",
+          storageLocationId: "test-backups",
+          storagePathPrefix: "db-backups/",
           retentionDays: 30,
           backupFormat: "custom",
           compressionLevel: 6,
@@ -247,7 +247,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     });
 
     it("should validate required fields", async () => {
-      const invalidRequest = { ...validCreateRequest, azureContainerName: "" };
+      const invalidRequest = { ...validCreateRequest, storageLocationId: "" };
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
@@ -331,8 +331,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should create configuration without schedule", async () => {
       const configWithoutSchedule = {
         databaseId: "db-123",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
       };
 
       const mockConfigWithoutSchedule = {
@@ -408,8 +408,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should validate backup format values", async () => {
       const invalidFormatRequest = {
         databaseId: "db-123",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         backupFormat: "invalid-format" as BackupFormat,
       };
 
@@ -427,8 +427,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should validate compression level range", async () => {
       const invalidCompressionRequest = {
         databaseId: "db-123",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         compressionLevel: 15, // Invalid, should be 0-9
       };
 
@@ -450,8 +450,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should validate retention days", async () => {
       const invalidRetentionRequest = {
         databaseId: "db-123",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 0, // Invalid, should be at least 1
       };
 
@@ -470,27 +470,19 @@ describe("PostgreSQL Backup Configs API Routes", () => {
       });
     });
 
-    it("should validate Azure container name format", async () => {
+    it("should reject empty storage location id at the schema layer", async () => {
       const invalidContainerRequest = {
         databaseId: "db-123",
-        azureContainerName: "Invalid_Container_Name", // Invalid format
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "", // Empty — rejected by Zod
+        storagePathPrefix: "db-backups/",
       };
-
-      mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
-        new Error(
-          "Azure container name must be 3-63 characters, contain only lowercase letters, numbers, and hyphens",
-        ),
-      );
 
       const response = await request(app)
         .post("/api/postgres/backup-configs")
         .send(invalidContainerRequest)
         .expect(400);
 
-      expect(response.body).toMatchObject({
-        error: "Bad Request",
-      });
+      expect(response.body).toMatchObject({ error: "Bad Request" });
     });
   });
 
@@ -539,8 +531,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: "0 2 * * *",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -557,8 +549,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
           .send({
             databaseId: "db-123",
             schedule: cronExpr,
-            azureContainerName: "test-backups",
-            azurePathPrefix: "db-backups/",
+            storageLocationId: "test-backups",
+            storagePathPrefix: "db-backups/",
           })
           .expect(201);
 
@@ -573,8 +565,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -590,8 +582,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
           .post("/api/postgres/backup-configs")
           .send({
             databaseId: "db-123",
-            azureContainerName: "test-backups",
-            azurePathPrefix: "db-backups/",
+            storageLocationId: "test-backups",
+            storagePathPrefix: "db-backups/",
             backupFormat: format,
           })
           .expect(201);
@@ -639,8 +631,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: "0 2 * * *",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 30,
         backupFormat: "custom" as BackupFormat,
         compressionLevel: 6,
@@ -657,8 +649,8 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .post("/api/postgres/backup-configs")
         .send({
           databaseId: "db-123",
-          azureContainerName: "test-backups",
-          azurePathPrefix: "db-backups/",
+          storageLocationId: "test-backups",
+          storagePathPrefix: "db-backups/",
         })
         .expect(201);
 
@@ -666,7 +658,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         expect.objectContaining({
           configId: expect.any(String),
           databaseId: "db-123",
-          azureContainer: "test-backups",
+          storageLocationId: "test-backups",
         }),
         "Backup configuration created successfully",
       );
@@ -719,16 +711,16 @@ describe("PostgreSQL Backup Configs API Routes", () => {
     it("should handle minimal configuration", async () => {
       const minimalRequest = {
         databaseId: "db-123",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
       };
 
       const mockMinimalConfig = {
         id: "config-minimal",
         databaseId: "db-123",
         schedule: null,
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 30, // Default value
         backupFormat: "custom", // Default value
         compressionLevel: 6, // Default value

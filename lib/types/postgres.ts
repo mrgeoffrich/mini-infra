@@ -366,8 +366,10 @@ export interface BackupConfiguration {
   databaseId: string;
   schedule: string | null; // Cron expression
   timezone: string;
-  azureContainerName: string;
-  azurePathPrefix: string;
+  /** Provider-agnostic location id (Azure container, Drive folder, ...). */
+  storageLocationId: string;
+  /** Path prefix within the location. */
+  storagePathPrefix: string;
   retentionDays: number;
   backupFormat: BackupFormat;
   compressionLevel: number;
@@ -383,8 +385,8 @@ export interface BackupConfigurationInfo {
   databaseId: string;
   schedule: string | null; // Cron expression
   timezone: string;
-  azureContainerName: string;
-  azurePathPrefix: string;
+  storageLocationId: string;
+  storagePathPrefix: string;
   retentionDays: number;
   backupFormat: BackupFormat;
   compressionLevel: number;
@@ -410,7 +412,10 @@ export interface BackupOperation {
   startedAt: Date;
   completedAt: Date | null;
   sizeBytes: bigint | null;
-  azureBlobUrl: string | null;
+  /** Provider-agnostic backend URL (Azure blob URL, Drive file link, ...). */
+  storageObjectUrl: string | null;
+  /** Provider id captured at write time (e.g. 'azure'). */
+  storageProviderAtCreation: string;
   errorMessage: string | null;
   progress: number;
   metadata: string | null; // JSON
@@ -424,7 +429,8 @@ export interface BackupOperationInfo {
   startedAt: string;
   completedAt: string | null;
   sizeBytes: number | null;
-  azureBlobUrl: string | null;
+  storageObjectUrl: string | null;
+  storageProviderAtCreation: string;
   errorMessage: string | null;
   progress: number;
   metadata: Record<string, any> | null;
@@ -472,8 +478,8 @@ export interface CreateBackupConfigurationRequest {
   databaseId: string;
   schedule?: string; // Cron expression
   timezone?: string;
-  azureContainerName: string;
-  azurePathPrefix?: string;
+  storageLocationId: string;
+  storagePathPrefix?: string;
   retentionDays?: number;
   backupFormat?: BackupFormat;
   compressionLevel?: number;
@@ -483,8 +489,8 @@ export interface CreateBackupConfigurationRequest {
 export interface UpdateBackupConfigurationRequest {
   schedule?: string | null; // Cron expression
   timezone?: string;
-  azureContainerName?: string;
-  azurePathPrefix?: string;
+  storageLocationId?: string;
+  storagePathPrefix?: string;
   retentionDays?: number;
   backupFormat?: BackupFormat;
   compressionLevel?: number;
@@ -588,7 +594,8 @@ export interface BackupOperationStatusResponse {
     completedAt: string | null;
     errorMessage: string | null;
     sizeBytes: number | null;
-    azureBlobUrl: string | null;
+    storageObjectUrl: string | null;
+    storageProviderAtCreation: string;
     metadata: Record<string, any> | null;
   };
   message?: string;

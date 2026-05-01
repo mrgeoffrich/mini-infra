@@ -8,9 +8,9 @@ import {
 import { getLogger } from "../lib/logger-factory";
 import { DockerConfigService } from "./docker-config";
 import { CloudflareService } from "./cloudflare";
-import { AzureStorageService } from "./azure-storage-service";
 import { TlsConfigService } from "./tls/tls-config";
 import { VaultConfigService } from "./vault/vault-config-service";
+import { AzureStorageBackend } from "./storage/providers/azure/azure-storage-backend";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -19,7 +19,7 @@ export class ConfigurationServiceFactory
   private supportedCategories: SettingsCategory[] = [
     "docker",
     "cloudflare",
-    "azure",
+    "storage-azure",
     "tls",
     "vault",
   ];
@@ -48,8 +48,8 @@ export class ConfigurationServiceFactory
         case "cloudflare":
           return new CloudflareService(this.prisma);
 
-        case "azure":
-          return new AzureStorageService(this.prisma);
+        case "storage-azure":
+          return new AzureStorageBackend(this.prisma);
 
         case "tls":
           return new TlsConfigService(this.prisma);

@@ -17,16 +17,14 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
-import { AzureStorageService } from "../services/azure-storage-service";
+import { StorageService } from "../services/storage/storage-service";
 import { ACME_PROVIDERS } from "@mini-infra/types";
-import { BlobServiceClient } from "@azure/storage-blob";
 
 const logger = getLogger("tls", "tls-settings");
 const router = express.Router();
 
 // Create service instances
 const tlsConfigService = new TlsConfigService(prisma);
-const azureConfigService = new AzureStorageService(prisma);
 
 /**
  * TLS Settings Response Structure
@@ -432,25 +430,21 @@ router.get("/containers", requirePermission('tls:read'), (async (
       });
     }
 
-    // Get Azure Storage connection string
-    const connectionString = await azureConfigService.getConnectionString();
-
-    if (!connectionString) {
+    // Resolve the active storage backend (Azure today; Drive in Phase 3).
+    let storageBackend;
+    try {
+      storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
+    } catch {
       return res.status(400).json({
         error: "Configuration Missing",
-        message: "Azure Storage not configured. Please configure Azure Storage first.",
+        message: "No storage provider configured. Configure a storage provider before listing locations.",
         timestamp: new Date().toISOString(),
         requestId,
       });
     }
 
-    // List containers
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    const containers: string[] = [];
-
-    for await (const container of blobServiceClient.listContainers()) {
-      containers.push(container.name);
-    }
+    const locations = await storageBackend.listLocations();
+    const containers = locations.map((l) => l.id);
 
     logger.debug(
       {

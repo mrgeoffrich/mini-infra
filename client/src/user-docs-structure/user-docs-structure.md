@@ -80,7 +80,7 @@ _Updated after write-user-docs session: 6 new articles written for `/system-diag
 |-------|-----------|--------|----------|
 | `/connectivity-docker` | Docker | ✅ | `connectivity/health-monitoring.md` |
 | `/connectivity-cloudflare` | Cloudflare | ✅ | `connectivity/health-monitoring.md` |
-| `/connectivity-azure` | Azure Storage | ✅ | `connectivity/health-monitoring.md` |
+| `/connectivity-storage` | Storage | ✅ | `connectivity/health-monitoring.md` |
 | `/connectivity-github` | GitHub | ✅ | `connectivity/health-monitoring.md` |
 
 ### Administration

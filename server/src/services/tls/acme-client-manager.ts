@@ -9,7 +9,7 @@ import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
 import { getLogger } from "../../lib/logger-factory";
 import { TlsConfigService } from "./tls-config";
-import { AzureStorageCertificateStore } from "./azure-storage-certificate-store";
+import { StorageCertificateStore } from "./storage-certificate-store";
 import { AcmeCertificateResult } from "./types";
 import prisma from "../../lib/prisma";
 
@@ -36,11 +36,11 @@ export interface DnsChallenge01Provider {
  */
 export class AcmeClientManager {
   private acmeClient: acme.AcmeClient | null = null;
-  private certificateStore: AzureStorageCertificateStore;
+  private certificateStore: StorageCertificateStore;
   private config: TlsConfigService;
   private logger: Logger;
 
-  constructor(config: TlsConfigService, certificateStore: AzureStorageCertificateStore) {
+  constructor(config: TlsConfigService, certificateStore: StorageCertificateStore) {
     this.config = config;
     this.certificateStore = certificateStore;
     this.logger = getLogger("tls", "acme-client-manager");

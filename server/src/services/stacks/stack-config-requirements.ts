@@ -5,7 +5,7 @@ import type {
   StackTunnelIngress,
 } from '@mini-infra/types';
 import { TlsConfigService } from '../tls/tls-config';
-import { AzureStorageService } from '../azure-storage-service';
+import { StorageService } from '../storage/storage-service';
 import { CloudflareService } from '../cloudflare/cloudflare-service';
 
 export interface MissingRequirement {
@@ -26,9 +26,6 @@ export interface StackConfigurationRequirementError {
  * records, tunnel ingress) can be satisfied by the currently configured
  * integrations. Returns null if the stack has no external-resource needs
  * or all needs are met; returns a structured error otherwise.
- *
- * Fetches the stack's resource arrays and the relevant connectivity settings
- * (Azure Storage, TLS container, Cloudflare API token) in parallel.
  */
 export async function checkStackConfigurationRequirements(
   prisma: PrismaClient,
@@ -49,11 +46,10 @@ export async function checkStackConfigurationRequirements(
   }
 
   const tlsConfig = new TlsConfigService(prisma);
-  const azureConfig = new AzureStorageService(prisma);
   const cloudflareConfig = new CloudflareService(prisma);
 
-  const [azureConnectionString, certContainer, cloudflareToken] = await Promise.all([
-    azureConfig.getConnectionString(),
+  const [storageConfigured, certContainer, cloudflareToken] = await Promise.all([
+    StorageService.getInstance(prisma).isConfigured(),
     tlsConfig.getCertificateContainerNameOrNull(),
     cloudflareConfig.getApiToken(),
   ]);
@@ -62,13 +58,15 @@ export async function checkStackConfigurationRequirements(
 
   if (tls.length > 0) {
     const tlsGaps: string[] = [];
-    if (!azureConnectionString) tlsGaps.push('Azure Storage connection string');
-    if (!certContainer) tlsGaps.push('TLS certificate storage container');
+    if (!storageConfigured) tlsGaps.push('Storage provider (Azure Blob or Google Drive)');
+    if (!certContainer) tlsGaps.push('TLS certificate storage location');
     if (!cloudflareToken) tlsGaps.push('Cloudflare API token (required for DNS-01 challenge)');
     if (tlsGaps.length > 0) {
       missing.push({
         resource: 'tls',
         settings: tlsGaps,
+        // Phase 1 keeps /connectivity-azure as the page name. Phase 2 renames
+        // it to /connectivity-storage; update this string then.
         settingsUrl: '/connectivity-azure',
         reason: `This stack provisions ${tls.length} TLS certificate${tls.length === 1 ? '' : 's'}.`,
       });

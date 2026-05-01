@@ -25,6 +25,7 @@ export type PermissionDomain =
   | "stacks"
   | "pools"
   | "vault"
+  | "storage"
   | "nats"
   // Vault KV broker is a sub-domain so write→read implication works without
   // entangling KV scopes with the broader vault:write (policies/AppRoles).
@@ -308,6 +309,30 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Settings",
         description:
           "Create, update, delete settings, test connections, validate configurations",
+      },
+    ],
+  },
+  {
+    domain: "storage",
+    label: "Storage Provider",
+    description:
+      "Pluggable backup/cert storage provider (Azure Blob, Google Drive)",
+    permissions: [
+      {
+        scope: "storage:read",
+        domain: "storage",
+        action: "read",
+        label: "View Storage Settings",
+        description:
+          "View active storage provider, locations, connectivity status",
+      },
+      {
+        scope: "storage:write",
+        domain: "storage",
+        action: "write",
+        label: "Manage Storage Settings",
+        description:
+          "Configure storage providers, switch active provider, edit per-location settings",
       },
     ],
   },
@@ -628,6 +653,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "postgres:read",
       "tls:read",
       "settings:read",
+      "storage:read",
       "events:read",
       "backups:read",
       "registry:read",
@@ -657,6 +683,8 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "registry:read",
       "stacks:read",
       "stacks:write",
+      "storage:read",
+      "storage:write",
       "nats:read",
       "nats:write",
       "events:read",
@@ -684,6 +712,7 @@ export const PERMISSION_PRESETS: PermissionPreset[] = [
       "backups:read",
       "backups:write",
       "events:read",
+      "storage:read",
     ],
   },
 ];

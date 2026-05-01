@@ -1,8 +1,7 @@
 import { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
-import { AzureStorageService } from "../azure-storage-service";
+import { StorageService } from "../storage/storage-service";
 import { emitBackupHealthStatus } from "./backup-health-socket-emitter";
-import { BlobServiceClient } from "@azure/storage-blob";
 import Database from "better-sqlite3";
 import AdmZip from "adm-zip";
 import fs from "fs/promises";
@@ -15,7 +14,6 @@ import { getDatabaseFilePath } from "../../lib/database-url-parser";
  */
 export class SelfBackupExecutor {
   private prisma: PrismaClient;
-  private azureConfigService: AzureStorageService;
 
   // Paths
   private static readonly TEMP_DIR = path.resolve(process.cwd(), "temp");
@@ -30,18 +28,17 @@ export class SelfBackupExecutor {
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
-    this.azureConfigService = new AzureStorageService(prisma);
   }
 
   /**
-   * Execute a complete backup operation
-   * @param containerName - Azure container name
+   * Execute a complete backup operation.
+   * @param storageLocationId - Provider-agnostic location id (Azure container, Drive folder).
    * @param triggeredBy - 'scheduled' or 'manual'
    * @param userId - User ID if manually triggered
    * @returns SelfBackup record
    */
   async executeBackup(
-    containerName: string,
+    storageLocationId: string,
     triggeredBy: 'scheduled' | 'manual',
     userId?: string
   ): Promise<SelfBackup> {
@@ -49,11 +46,16 @@ export class SelfBackupExecutor {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('.')[0];
     const fileName = `mini-infra-${timestamp}.db.zip`;
 
+    // Resolve the active backend up-front so we can stamp the row with the
+    // provider id at creation time.
+    const backend = await StorageService.getInstance(this.prisma).getActiveBackend();
+
     // Create initial backup record
     const backup = await this.prisma.selfBackup.create({
       data: {
         status: 'in_progress',
-        azureContainerName: containerName,
+        storageLocationId: storageLocationId,
+        storageProviderAtCreation: backend.providerId,
         fileName: fileName,
         triggeredBy: triggeredBy,
         userId: userId || null,
@@ -62,7 +64,8 @@ export class SelfBackupExecutor {
 
     getLogger("backup", "self-backup-executor").info({
       backupId: backup.id,
-      containerName,
+      storageLocationId,
+      providerId: backend.providerId,
       fileName,
       triggeredBy,
       userId,
@@ -101,17 +104,18 @@ export class SelfBackupExecutor {
         fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
       }, "Backup compressed");
 
-      // Step 3: Upload to Azure
-      const azureBlobUrl = await this.uploadToAzure(
+      // Step 3: Upload via the active storage backend
+      const storageObjectUrl = await this.uploadViaStorageBackend(
         zipFilePath,
-        containerName,
-        fileName
+        storageLocationId,
+        fileName,
       );
 
       getLogger("backup", "self-backup-executor").info({
         backupId: backup.id,
-        azureBlobUrl,
-      }, "Backup uploaded to Azure");
+        storageObjectUrl,
+        providerId: backend.providerId,
+      }, "Backup uploaded to storage backend");
 
       // Step 4: Update backup record with success
       const durationMs = Date.now() - startTime;
@@ -120,7 +124,7 @@ export class SelfBackupExecutor {
         data: {
           status: 'completed',
           completedAt: new Date(),
-          azureBlobUrl,
+          storageObjectUrl,
           fileSize,
           durationMs,
         },
@@ -253,44 +257,46 @@ export class SelfBackupExecutor {
   }
 
   /**
-   * Upload ZIP to Azure Blob Storage
-   * @param zipPath - Path to ZIP file
-   * @param containerName - Azure container
-   * @param blobName - Blob name (filename)
-   * @returns Azure blob URL
+   * Upload the zipped backup to whichever storage backend is active.
+   * Returns the backend's authoritative object URL when available.
    */
-  private async uploadToAzure(
+  private async uploadViaStorageBackend(
     zipPath: string,
-    containerName: string,
-    blobName: string
+    storageLocationId: string,
+    objectName: string,
   ): Promise<string> {
-    // Get Azure connection string
-    const connectionString = await this.azureConfigService.get("connection_string");
-
-    if (!connectionString) {
-      throw new Error("Azure connection string not configured");
-    }
-
-    // Create blob service client
-    const blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
-    const containerClient = blobServiceClient.getContainerClient(containerName);
-
-    // Get block blob client
-    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-
-    // Upload file
+    const backend = await StorageService.getInstance(this.prisma).getActiveBackend();
     const fileBuffer = await fs.readFile(zipPath);
-    await blockBlobClient.upload(fileBuffer, fileBuffer.length, {
-      blobHTTPHeaders: {
-        blobContentType: 'application/zip',
+    const result = await backend.upload(
+      { id: storageLocationId },
+      objectName,
+      fileBuffer,
+      fileBuffer.length,
+      {
+        contentType: "application/zip",
+        metadata: {
+          backuptype: "self-backup",
+          createdat: new Date().toISOString(),
+        },
       },
-      metadata: {
-        'backuptype': 'self-backup',
-        'createdat': new Date().toISOString(),
-      },
-    });
-
-    return blockBlobClient.url;
+    );
+    if (result.objectUrl) return result.objectUrl;
+    // Backends without a public object URL (e.g. Drive) — try a download
+    // handle first; otherwise fall back to the path-shape `<location>/<object>`
+    // (matches Drive's upload result and `parseBackupUrl()`).
+    if (backend.getDownloadHandle) {
+      try {
+        const handle = await backend.getDownloadHandle(
+          { id: storageLocationId },
+          objectName,
+          60,
+        );
+        if (handle.redirectUrl) return handle.redirectUrl;
+      } catch {
+        /* fall through to path-shape fallback */
+      }
+    }
+    return `${storageLocationId}/${objectName}`;
   }
 
   /**

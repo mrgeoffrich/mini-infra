@@ -294,14 +294,18 @@ async function ensureDockerHostIp(api: ApiClient, env: DevEnv): Promise<void> {
 
 async function configureAzure(api: ApiClient, connectionString: string): Promise<void> {
   logInfo('Configuring Azure Storage');
-  const put = await api.put('/api/settings/azure', { connectionString });
+  const setProvider = await api.put('/api/storage/active-provider', { providerId: 'azure' });
+  if (setProvider.status !== 200 && setProvider.status !== 201) {
+    logSkip(`Storage active-provider PUT returned ${setProvider.status} (non-fatal): ${setProvider.bodyText}`);
+  }
+  const put = await api.put('/api/storage/azure', { connectionString });
   if (put.status !== 200 && put.status !== 201) {
     logError(`Azure PUT returned ${put.status}: ${put.bodyText}`);
     return;
   }
   logOk('Azure configured');
   logInfo('Validating Azure connectivity');
-  const val = await api.post('/api/settings/validate/azure', {});
+  const val = await api.post('/api/storage/azure/validate', {});
   if (val.status === 200 || val.status === 201) {
     logOk('Azure connectivity verified');
   } else {

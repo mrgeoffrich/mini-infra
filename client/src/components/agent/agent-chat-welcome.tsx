@@ -31,7 +31,7 @@ const examplePrompts = [
 function useHasDisconnectedServices() {
   const { data: dockerData } = useConnectivityStatus({ filters: { service: "docker" }, limit: 1 });
   const { data: cloudflareData } = useConnectivityStatus({ filters: { service: "cloudflare" }, limit: 1 });
-  const { data: azureData } = useConnectivityStatus({ filters: { service: "azure" }, limit: 1 });
+  const { data: azureData } = useConnectivityStatus({ filters: { service: "storage" }, limit: 1 });
   const { data: githubData } = useConnectivityStatus({ filters: { service: "github-app" }, limit: 1 });
 
   return [dockerData, cloudflareData, azureData, githubData].some(

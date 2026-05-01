@@ -195,8 +195,10 @@ model BackupConfiguration {
   database          PostgresDatabase @relation(fields: [databaseId], references: [id], onDelete: Cascade)
   schedule          String?  // Cron expression
   timezone          String   @default("UTC")
-  azureContainerName String
-  azurePathPrefix   String
+  // Provider-agnostic location: Azure container name OR Drive folder ID.
+  storageLocationId String   @default("")
+  // Per-config path prefix within the location.
+  storagePathPrefix String   @default("")
   retentionDays     Int      @default(30)
   backupFormat      String   @default("custom")
   compressionLevel  Int      @default(6)
@@ -205,7 +207,7 @@ model BackupConfiguration {
   nextScheduledAt   DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  
+
   @@index([databaseId])
   @@map("backup_configurations")
 }
@@ -220,11 +222,15 @@ model BackupOperation {
   startedAt       DateTime @default(now())
   completedAt     DateTime?
   sizeBytes       BigInt?
-  azureBlobUrl    String?
+  // Provider-agnostic backend URL (Azure blob URL, Drive file webViewLink, ...).
+  storageObjectUrl String?
+  // Captured at write time so a later restore can resolve the right backend
+  // even if the active provider has since switched.
+  storageProviderAtCreation String  @default("azure")
   errorMessage    String?
   progress        Int      @default(0)
   metadata        String?  // JSON for additional data
-  
+
   @@index([databaseId, status])
   @@index([startedAt])
   @@map("backup_operations")
@@ -253,8 +259,10 @@ model SelfBackup {
   completedAt       DateTime?
   status            String   // 'in_progress', 'completed', 'failed'
   filePath          String?  // Temp file path during backup
-  azureBlobUrl      String?  // URL after successful upload
-  azureContainerName String
+  storageObjectUrl  String?  // Provider-agnostic URL after successful upload
+  storageLocationId String   @default("") // Azure container name OR Drive folder ID
+  // Captured at write time — restore uses this to look up the right backend.
+  storageProviderAtCreation String   @default("azure")
   fileName          String   // mini-infra-{timestamp}.db.zip
   fileSize          Int?     // Bytes
   errorMessage      String?
@@ -268,7 +276,7 @@ model SelfBackup {
 
   @@index([status])
   @@index([startedAt])
-  @@index([azureContainerName])
+  @@index([storageLocationId])
   @@map("self_backups")
 }
 

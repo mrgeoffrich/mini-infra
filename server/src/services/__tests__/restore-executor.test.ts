@@ -3,7 +3,9 @@ import { PrismaClient } from "../../generated/prisma/client";
 import { RestoreExecutorService } from "../restore-executor";
 import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
-import { AzureStorageService } from "../azure-storage-service";
+import { AzureStorageBackend } from "../storage/providers/azure/azure-storage-backend";
+import { StorageService } from "../storage/storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { InMemoryQueue } from "../../lib/in-memory-queue";
 
 // Hoist mock variables used inside vi.mock() factory functions
@@ -50,7 +52,6 @@ vi.mock("../../lib/in-memory-queue", () => {
 // Mock all the services
 vi.mock("../docker-executor");
 vi.mock("../postgres/postgres-database-manager");
-vi.mock("../azure-storage-service");
 
 // Mock logger factory
 vi.mock("../../lib/logger-factory", () => {
@@ -92,6 +93,11 @@ const mockPrisma = {
     findUnique: vi.fn(),
     update: vi.fn(),
   },
+  // queueRestore consults backupOperation up-front to resolve which provider
+  // a row was created under so it can fail fast on a forgotten provider.
+  backupOperation: {
+    findFirst: vi.fn().mockResolvedValue(null),
+  },
   systemSettings: {
     findFirst: vi.fn(),
   },
@@ -113,11 +119,39 @@ const mockPostgresDatabaseManager = {
   testConnection: vi.fn(),
 } as unknown as PostgresDatabaseManager;
 
-const mockAzureStorageService = {
-  get: vi.fn(),
-  getConnectionString: vi.fn(),
-  generateBlobSasUrl: vi.fn().mockResolvedValue("https://testaccount.blob.core.windows.net/container/blob?sas-token"),
-} as unknown as AzureStorageService;
+// Mock the active StorageBackend.
+const mockStorageBackend = {
+  providerId: "azure",
+  head: vi.fn().mockResolvedValue({
+    name: "blob",
+    size: 1024,
+    contentType: "application/octet-stream",
+    lastModified: new Date(),
+  }),
+  mintUploadHandle: vi.fn().mockResolvedValue({
+    kind: "azure-sas-url",
+    payload: {
+      sasUrl: "https://testaccount.blob.core.windows.net/container/blob?sas-token",
+      containerName: "container",
+      blobName: "blob",
+    },
+    expiresAt: new Date(Date.now() + 3600 * 1000),
+  }),
+  getDownloadHandle: vi.fn().mockResolvedValue({
+    redirectUrl: "https://testaccount.blob.core.windows.net/container/blob?sas-token",
+  }),
+  delete: vi.fn().mockResolvedValue(undefined),
+  list: vi.fn().mockResolvedValue({ objects: [], hasMore: false }),
+} as unknown as StorageBackend;
+
+vi.spyOn(StorageService, "getInstance").mockReturnValue({
+  getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+  getBackendByProviderId: vi.fn().mockReturnValue(mockStorageBackend),
+  getBackendByProviderIdOrThrow: vi
+    .fn()
+    .mockResolvedValue(mockStorageBackend),
+  isProviderConfigured: vi.fn().mockResolvedValue(true),
+} as unknown as StorageService);
 
 describe("RestoreExecutorService", () => {
   let restoreExecutorService: RestoreExecutorService;
@@ -125,18 +159,26 @@ describe("RestoreExecutorService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     restoreExecutorService = new RestoreExecutorService(mockPrisma);
+    vi.spyOn(StorageService, "getInstance").mockReturnValue({
+      getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+      getBackendByProviderId: vi.fn().mockReturnValue(mockStorageBackend),
+      getBackendByProviderIdOrThrow: vi
+        .fn()
+        .mockResolvedValue(mockStorageBackend),
+      isProviderConfigured: vi.fn().mockResolvedValue(true),
+    } as unknown as StorageService);
 
     // Mock service instances
     (restoreExecutorService as any).dockerExecutor = mockDockerExecutor;
     (restoreExecutorService as any).databaseConfigService =
       mockPostgresDatabaseManager;
-    (restoreExecutorService as any).azureConfigService = mockAzureStorageService;
+    // Sub-modules are rebuilt when storageBackend is set
+    (restoreExecutorService as any).storageBackend = mockStorageBackend;
     (restoreExecutorService as any).restoreQueue = mockQueue;
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
-    AzureStorageService.cleanupCache();
+    AzureStorageBackend.cleanupCache();
   });
 
   describe("constructor", () => {
@@ -445,23 +487,13 @@ describe("RestoreExecutorService", () => {
     const backupUrl =
       "https://account.blob.core.windows.net/container/backup.sql";
 
-    beforeEach(() => {
-      mockAzureStorageService.get = vi
-        .fn()
-        .mockResolvedValue("azure-connection-string");
-      mockBlobServiceClient.getContainerClient = vi
-        .fn()
-        .mockReturnValue(mockContainerClient);
-    });
-
     it("should validate backup file successfully", async () => {
-      mockBlobClient.exists = vi.fn().mockResolvedValue(true);
-      mockBlobClient.getProperties = vi.fn().mockResolvedValue({
-        contentLength: 1000000,
+      mockStorageBackend.head = vi.fn().mockResolvedValue({
+        name: "backup.sql",
+        size: 1000000,
         lastModified: new Date("2023-01-01T02:00:00Z"),
         contentType: "application/octet-stream",
         etag: '"0x8D9ABC123"',
-        contentEncoding: "gzip",
       });
 
       const result = await (restoreExecutorService as any).validateBackupFile(
@@ -471,30 +503,23 @@ describe("RestoreExecutorService", () => {
       expect(result.isValid).toBe(true);
       expect(result.sizeBytes).toBe(1000000);
       expect(result.lastModified).toEqual(new Date("2023-01-01T02:00:00Z"));
-      expect(result.metadata).toEqual(
-        expect.objectContaining({
-          contentType: "application/octet-stream",
-          etag: '"0x8D9ABC123"',
-          contentEncoding: "gzip",
-        }),
-      );
     });
 
-    it("should return error when backup file not found", async () => {
-      mockBlobClient.exists = vi.fn().mockResolvedValue(false);
+    it("should return error when backup object is missing", async () => {
+      mockStorageBackend.head = vi.fn().mockResolvedValue(null);
 
       const result = await (restoreExecutorService as any).validateBackupFile(
         backupUrl,
       );
 
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain("Backup file not found in Azure Storage");
+      expect(result.error).toContain("Backup file not found in storage");
     });
 
     it("should return error for file too small", async () => {
-      mockBlobClient.exists = vi.fn().mockResolvedValue(true);
-      mockBlobClient.getProperties = vi.fn().mockResolvedValue({
-        contentLength: 50, // Too small
+      mockStorageBackend.head = vi.fn().mockResolvedValue({
+        name: "backup.sql",
+        size: 50, // Too small
         lastModified: new Date("2023-01-01T02:00:00Z"),
       });
 
@@ -503,18 +528,16 @@ describe("RestoreExecutorService", () => {
       );
 
       expect(result.isValid).toBe(false);
-      expect(result.error).toContain(
-        "Backup file appears to be too small",
-      );
+      expect(result.error).toContain("Backup file appears to be too small");
     });
 
     it("should warn about old backup files", async () => {
       const oldDate = new Date();
       oldDate.setFullYear(oldDate.getFullYear() - 2); // 2 years old
 
-      mockBlobClient.exists = vi.fn().mockResolvedValue(true);
-      mockBlobClient.getProperties = vi.fn().mockResolvedValue({
-        contentLength: 1000000,
+      mockStorageBackend.head = vi.fn().mockResolvedValue({
+        name: "backup.sql",
+        size: 1000000,
         lastModified: oldDate,
       });
 
@@ -533,28 +556,17 @@ describe("RestoreExecutorService", () => {
       );
     });
 
-    it("should handle Azure connection string not configured", async () => {
-      mockAzureStorageService.get = vi.fn().mockResolvedValue(null);
-
-      const result = await (restoreExecutorService as any).validateBackupFile(
-        backupUrl,
-      );
-
-      expect(result.isValid).toBe(false);
-      expect(result.error).toBe("Azure connection string not configured");
-    });
-
-    it("should handle Azure storage errors", async () => {
-      mockBlobClient.exists = vi
+    it("should handle storage backend errors", async () => {
+      mockStorageBackend.head = vi
         .fn()
-        .mockRejectedValue(new Error("Azure error"));
+        .mockRejectedValue(new Error("Backend unreachable"));
 
       const result = await (restoreExecutorService as any).validateBackupFile(
         backupUrl,
       );
 
       expect(result.isValid).toBe(false);
-      expect(result.error).toBe("Azure error");
+      expect(result.error).toBe("Backend unreachable");
     });
   });
 
@@ -684,24 +696,22 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
-      const azureConnectionString =
-        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
-
       const result = await (restoreExecutorService as any).createRollbackBackup(
         connectionConfig,
-        azureConnectionString,
         "postgres:15-alpine",
         "testdb",
         "https://testaccount.blob.core.windows.net/backups/testdb/backup.sql",
       );
 
-      expect(result).toContain("testdb/rollback-");
-      expect(result).toContain("testaccount.blob.core.windows.net");
-      expect(mockAzureStorageService.generateBlobSasUrl).toHaveBeenCalledWith(
-        "backups",
+      // Phase 3: rollback URL is the path-shaped `<location>/<object>`
+      // locator so re-resolution can happen against whichever backend wrote
+      // the row, regardless of provider.
+      expect(result).toMatch(/^backups\/testdb\/rollback-/);
+      // RollbackManager mints a write upload handle for the sidecar.
+      expect(mockStorageBackend.mintUploadHandle).toHaveBeenCalledWith(
+        { id: "backups" },
         expect.stringContaining("testdb/rollback-"),
         expect.any(Number),
-        "write",
       );
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -712,7 +722,8 @@ describe("RestoreExecutorService", () => {
             POSTGRES_USER: "testuser",
             POSTGRES_PASSWORD: "testpass",
             POSTGRES_DATABASE: "testdb",
-            AZURE_SAS_URL: expect.stringContaining("sas-token"),
+            STORAGE_PROVIDER: "azure",
+            AZURE_SAS_URL: expect.stringContaining("sas"),
           }),
           timeout: 30 * 60 * 1000,
         }),
@@ -726,13 +737,9 @@ describe("RestoreExecutorService", () => {
         stderr: "Backup failed",
       });
 
-      const azureConnectionString =
-        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
-
       await expect(
         (restoreExecutorService as any).createRollbackBackup(
           connectionConfig,
-          azureConnectionString,
           "postgres:15-alpine",
           "testdb",
           "https://testaccount.blob.core.windows.net/backups/testdb/backup.sql",
@@ -760,21 +767,16 @@ describe("RestoreExecutorService", () => {
         stderr: "",
       });
 
-      const azureConnectionString =
-        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
-
       await (restoreExecutorService as any).executeRollback(
         connectionConfig,
         rollbackUrl,
-        azureConnectionString,
         "postgres:15-alpine",
       );
 
-      expect(mockAzureStorageService.generateBlobSasUrl).toHaveBeenCalledWith(
-        "rollback-backups",
+      expect(mockStorageBackend.getDownloadHandle).toHaveBeenCalledWith(
+        { id: "rollback-backups" },
         "testdb/rollback-123.sql",
         expect.any(Number),
-        "read",
       );
       expect(mockDockerExecutor.executeContainer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -811,14 +813,10 @@ describe("RestoreExecutorService", () => {
         stderr: "Rollback failed",
       });
 
-      const azureConnectionString =
-        "DefaultEndpointsProtocol=https;AccountName=testaccount;AccountKey=testkey;EndpointSuffix=core.windows.net";
-
       await expect(
         (restoreExecutorService as any).executeRollback(
           connectionConfig,
           rollbackUrl,
-          azureConnectionString,
           "postgres:15-alpine",
         ),
       ).rejects.toThrow("Rollback execution failed: Rollback failed");
@@ -886,23 +884,15 @@ describe("RestoreExecutorService", () => {
       "https://account.blob.core.windows.net/rollback-backups/testdb/rollback-123.sql";
 
     beforeEach(() => {
-      mockAzureStorageService.get = vi
-        .fn()
-        .mockResolvedValue("azure-connection-string");
-      mockBlobServiceClient.getContainerClient = vi
-        .fn()
-        .mockReturnValue(mockContainerClient);
+      mockStorageBackend.delete = vi.fn().mockResolvedValue(undefined);
     });
 
     it("should cleanup rollback backup successfully", async () => {
-      mockBlobClient.exists = vi.fn().mockResolvedValue(true);
-      mockBlobClient.deleteIfExists = vi
-        .fn()
-        .mockResolvedValue({ succeeded: true });
+      mockStorageBackend.delete = vi.fn().mockResolvedValue(undefined);
 
       await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
 
-      expect(mockBlobClient.deleteIfExists).toHaveBeenCalled();
+      expect(mockStorageBackend.delete).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
         expect.objectContaining({
           rollbackBackupUrl: rollbackUrl,
@@ -913,35 +903,20 @@ describe("RestoreExecutorService", () => {
     });
 
     it("should handle cleanup errors gracefully", async () => {
-      mockBlobClient.exists = vi.fn().mockResolvedValue(true);
-      mockBlobClient.deleteIfExists = vi
+      mockStorageBackend.delete = vi
         .fn()
-        .mockRejectedValue(new Error("Azure error"));
+        .mockRejectedValue(new Error("Backend error"));
 
       // Should not throw, just log warning
       await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
-          error: "Azure error",
-          stack: expect.any(String),
+          error: "Backend error",
           rollbackBackupUrl: rollbackUrl,
           cleanupTimeMs: expect.any(Number),
         }),
         "Failed to clean up rollback backup",
-      );
-    });
-
-    it("should handle missing Azure connection string", async () => {
-      mockAzureStorageService.get = vi.fn().mockResolvedValue(null);
-
-      await (restoreExecutorService as any).cleanupRollbackBackup(rollbackUrl);
-
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          rollbackBackupUrl: rollbackUrl,
-        },
-        "Azure connection string not available for cleanup",
       );
     });
   });
@@ -1175,6 +1150,91 @@ describe("RestoreExecutorService", () => {
           "Restore job failed permanently",
         );
       }
+    });
+  });
+
+  // =====================================================================
+  // Phase 4 — restore from non-active provider
+  // =====================================================================
+  describe("resolveBackendForRestore (cross-provider)", () => {
+    it("returns the per-provider backend when storageProviderAtCreation === 'azure'", async () => {
+      const azureBackend = { providerId: "azure" } as unknown as StorageBackend;
+      const driveBackend = {
+        providerId: "google-drive",
+      } as unknown as StorageBackend;
+      const getBackendByProviderIdOrThrow = vi.fn(async (id: string) =>
+        id === "azure" ? azureBackend : driveBackend,
+      );
+      vi.spyOn(StorageService, "getInstance").mockReturnValueOnce({
+        getActiveBackend: vi.fn().mockResolvedValue(driveBackend),
+        getBackendByProviderIdOrThrow,
+      } as unknown as StorageService);
+
+      const backend = await (restoreExecutorService as any).resolveBackendForRestore(
+        "azure",
+      );
+      expect(backend).toBe(azureBackend);
+      expect(getBackendByProviderIdOrThrow).toHaveBeenCalledWith("azure");
+    });
+
+    it("returns the per-provider backend when storageProviderAtCreation === 'google-drive'", async () => {
+      const azureBackend = { providerId: "azure" } as unknown as StorageBackend;
+      const driveBackend = {
+        providerId: "google-drive",
+      } as unknown as StorageBackend;
+      const getBackendByProviderIdOrThrow = vi.fn(async (id: string) =>
+        id === "azure" ? azureBackend : driveBackend,
+      );
+      vi.spyOn(StorageService, "getInstance").mockReturnValueOnce({
+        getActiveBackend: vi.fn().mockResolvedValue(azureBackend),
+        getBackendByProviderIdOrThrow,
+      } as unknown as StorageService);
+
+      const backend = await (
+        restoreExecutorService as any
+      ).resolveBackendForRestore("google-drive");
+      expect(backend).toBe(driveBackend);
+      expect(getBackendByProviderIdOrThrow).toHaveBeenCalledWith("google-drive");
+    });
+
+    it("falls back to active backend for unknown provider id (legacy rows)", async () => {
+      const activeBackend = {
+        providerId: "azure",
+      } as unknown as StorageBackend;
+      const getBackendByProviderIdOrThrow = vi.fn();
+      const getActiveBackend = vi.fn().mockResolvedValue(activeBackend);
+      vi.spyOn(StorageService, "getInstance").mockReturnValueOnce({
+        getActiveBackend,
+        getBackendByProviderIdOrThrow,
+      } as unknown as StorageService);
+
+      const backend = await (
+        restoreExecutorService as any
+      ).resolveBackendForRestore("legacy-unknown");
+      expect(backend).toBe(activeBackend);
+      // Specifically did NOT consult the provider lookup.
+      expect(getBackendByProviderIdOrThrow).not.toHaveBeenCalled();
+      expect(getActiveBackend).toHaveBeenCalled();
+    });
+
+    it("throws ProviderNoLongerConfiguredError when the original provider has been forgotten", async () => {
+      const { ProviderNoLongerConfiguredError } = await import(
+        "../storage/storage-service"
+      );
+      const driveBackend = {
+        providerId: "google-drive",
+      } as unknown as StorageBackend;
+      const getBackendByProviderIdOrThrow = vi
+        .fn()
+        .mockRejectedValue(new ProviderNoLongerConfiguredError("azure"));
+      vi.spyOn(StorageService, "getInstance").mockReturnValueOnce({
+        getActiveBackend: vi.fn().mockResolvedValue(driveBackend),
+        getBackendByProviderIdOrThrow,
+      } as unknown as StorageService);
+
+      await expect(
+        (restoreExecutorService as any).resolveBackendForRestore("azure"),
+      ).rejects.toBeInstanceOf(ProviderNoLongerConfiguredError);
     });
   });
 });

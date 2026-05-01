@@ -1,7 +1,9 @@
 import prisma from "../../lib/prisma";
 import { PrismaClient } from "../../generated/prisma/client";
 import { BackupConfigurationManager } from "../backup";
-import { AzureStorageService } from "../azure-storage-service";
+import { AzureStorageBackend } from "../storage/providers/azure/azure-storage-backend";
+import { StorageService } from "../storage/storage-service";
+import type { StorageBackend } from "@mini-infra/types";
 import { BackupFormat } from "@mini-infra/types";
 import * as loggerFactory from "../../lib/logger-factory";
 import * as nodeCron from "node-cron";
@@ -45,9 +47,6 @@ const mockLogger = mockLoggerInstance;
 // Get reference to the mocked cron
 const mockCron = nodeCron as any;
 
-// Mock AzureStorageService
-vi.mock("../azure-storage-service");
-
 // Mock Prisma client
 const mockPrisma = {
   postgresDatabase: {
@@ -61,10 +60,15 @@ const mockPrisma = {
   },
 } as unknown as typeof prisma;
 
-// Mock Azure config service
-const mockAzureStorageService = {
-  testContainerAccess: vi.fn(),
-} as unknown as AzureStorageService;
+// Mock the active StorageBackend — wires testLocationAccess() to a vi.fn().
+const mockStorageBackend = {
+  providerId: "azure",
+  testLocationAccess: vi.fn(),
+} as unknown as StorageBackend;
+
+vi.spyOn(StorageService, "getInstance").mockReturnValue({
+  getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+} as unknown as StorageService);
 
 describe("BackupConfigurationManager", () => {
   let backupConfigService: BackupConfigurationManager;
@@ -72,13 +76,14 @@ describe("BackupConfigurationManager", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     backupConfigService = new BackupConfigurationManager(mockPrisma);
-    // Mock the Azure service instance
-    (backupConfigService as any).azureConfigService = mockAzureStorageService;
+    // Re-mock after clearAllMocks
+    vi.spyOn(StorageService, "getInstance").mockReturnValue({
+      getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+    } as unknown as StorageService);
   });
 
   afterAll(() => {
-    // Clean up the static NodeCache in AzureStorageService to prevent timer leaks
-    AzureStorageService.cleanupCache();
+    AzureStorageBackend.cleanupCache();
   });
 
   describe("constructor", () => {
@@ -90,8 +95,8 @@ describe("BackupConfigurationManager", () => {
   describe("createBackupConfig", () => {
     const validConfig = {
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom" as BackupFormat,
       compressionLevel: 6,
@@ -106,7 +111,7 @@ describe("BackupConfigurationManager", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
+      mockStorageBackend.testLocationAccess = vi.fn().mockResolvedValue({
         accessible: true,
         responseTimeMs: 100,
         cached: false,
@@ -125,8 +130,8 @@ describe("BackupConfigurationManager", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: validConfig.schedule,
-        azureContainerName: validConfig.azureContainerName,
-        azurePathPrefix: validConfig.azurePathPrefix,
+        storageLocationId: validConfig.storageLocationId,
+        storagePathPrefix: validConfig.storagePathPrefix,
         retentionDays: validConfig.retentionDays,
         backupFormat: validConfig.backupFormat,
         compressionLevel: validConfig.compressionLevel,
@@ -151,8 +156,8 @@ describe("BackupConfigurationManager", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: validConfig.schedule,
-        azureContainerName: validConfig.azureContainerName,
-        azurePathPrefix: validConfig.azurePathPrefix,
+        storageLocationId: validConfig.storageLocationId,
+        storagePathPrefix: validConfig.storagePathPrefix,
         retentionDays: validConfig.retentionDays,
         backupFormat: validConfig.backupFormat,
         compressionLevel: validConfig.compressionLevel,
@@ -168,8 +173,8 @@ describe("BackupConfigurationManager", () => {
           databaseId: "db-123",
           schedule: validConfig.schedule,
           timezone: "UTC",
-          azureContainerName: validConfig.azureContainerName,
-          azurePathPrefix: validConfig.azurePathPrefix,
+          storageLocationId: validConfig.storageLocationId,
+          storagePathPrefix: validConfig.storagePathPrefix,
           retentionDays: validConfig.retentionDays,
           backupFormat: validConfig.backupFormat,
           compressionLevel: validConfig.compressionLevel,
@@ -237,9 +242,11 @@ describe("BackupConfigurationManager", () => {
       mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(null);
-      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
+      mockStorageBackend.testLocationAccess = vi.fn().mockResolvedValue({
+        id: "test-backups",
+        displayName: "test-backups",
         accessible: false,
-        error: "Container not found",
+        metadata: { error: "Container not found" },
       });
 
       await expect(
@@ -249,7 +256,7 @@ describe("BackupConfigurationManager", () => {
           "user-123",
         ),
       ).rejects.toThrow(
-        "Azure container 'test-backups' is not accessible: Container not found",
+        "Storage location 'test-backups' is not accessible: Container not found",
       );
     });
 
@@ -262,7 +269,7 @@ describe("BackupConfigurationManager", () => {
         .mockResolvedValue(null);
 
       const invalidConfigs = [
-        { ...validConfig, azureContainerName: "" },
+        { ...validConfig, storageLocationId: "" },
         { ...validConfig, retentionDays: 0 },
         { ...validConfig, compressionLevel: -1 },
         { ...validConfig, compressionLevel: 10 },
@@ -289,16 +296,16 @@ describe("BackupConfigurationManager", () => {
         .mockResolvedValue(null);
 
       const configWithoutSchedule = {
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
       };
 
       const mockCreatedConfig = {
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
-        azureContainerName: configWithoutSchedule.azureContainerName,
-        azurePathPrefix: configWithoutSchedule.azurePathPrefix,
+        storageLocationId: configWithoutSchedule.storageLocationId,
+        storagePathPrefix: configWithoutSchedule.storagePathPrefix,
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -337,8 +344,8 @@ describe("BackupConfigurationManager", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: validConfig.schedule,
-        azureContainerName: validConfig.azureContainerName,
-        azurePathPrefix: validConfig.azurePathPrefix,
+        storageLocationId: validConfig.storageLocationId,
+        storagePathPrefix: validConfig.storagePathPrefix,
         retentionDays: validConfig.retentionDays,
         backupFormat: validConfig.backupFormat,
         compressionLevel: validConfig.compressionLevel,
@@ -369,8 +376,8 @@ describe("BackupConfigurationManager", () => {
       id: "config-123",
       databaseId: "db-123",
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom",
       compressionLevel: 6,
@@ -393,7 +400,7 @@ describe("BackupConfigurationManager", () => {
 
     beforeEach(() => {
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
+      mockStorageBackend.testLocationAccess = vi.fn().mockResolvedValue({
         accessible: true,
       });
     });
@@ -472,12 +479,14 @@ describe("BackupConfigurationManager", () => {
       mockPrisma.backupConfiguration.findUnique = vi
         .fn()
         .mockResolvedValue(existingConfig);
-      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
+      mockStorageBackend.testLocationAccess = vi.fn().mockResolvedValue({
+        id: "new-container",
+        displayName: "new-container",
         accessible: false,
-        error: "Container not found",
+        metadata: { error: "Container not found" },
       });
 
-      const updateWithContainer = { azureContainerName: "new-container" };
+      const updateWithContainer = { storageLocationId: "new-container" };
 
       await expect(
         backupConfigService.updateBackupConfig(
@@ -485,7 +494,7 @@ describe("BackupConfigurationManager", () => {
           updateWithContainer,
           "user-123",
         ),
-      ).rejects.toThrow("Azure container 'new-container' is not accessible");
+      ).rejects.toThrow("Storage location 'new-container' is not accessible");
     });
 
     it("should validate retention days and compression level", async () => {
@@ -542,8 +551,8 @@ describe("BackupConfigurationManager", () => {
       id: "config-123",
       databaseId: "db-123",
       schedule: "0 2 * * *",
-      azureContainerName: "test-backups",
-      azurePathPrefix: "db-backups/",
+      storageLocationId: "test-backups",
+      storagePathPrefix: "db-backups/",
       retentionDays: 30,
       backupFormat: "custom",
       compressionLevel: 6,
@@ -571,8 +580,8 @@ describe("BackupConfigurationManager", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: "0 2 * * *",
-        azureContainerName: "test-backups",
-        azurePathPrefix: "db-backups/",
+        storageLocationId: "test-backups",
+        storagePathPrefix: "db-backups/",
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -798,68 +807,43 @@ describe("BackupConfigurationManager", () => {
         .fn()
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
-      mockAzureStorageService.testContainerAccess = vi.fn().mockResolvedValue({
+      mockStorageBackend.testLocationAccess = vi.fn().mockResolvedValue({
         accessible: true,
       });
     });
 
-    it("should validate Azure container name length", async () => {
-      const shortName = "ab"; // Too short
-      const longName = "a".repeat(64); // Too long
+    it("should validate storage location id length bounds", async () => {
+      // Provider-specific naming rules now live in the backend; the manager
+      // only enforces 1-256 char bounds so any provider's location id fits.
+      const longName = "a".repeat(257);
 
       await expect(
         backupConfigService.createBackupConfig(
           "db-123",
-          { azureContainerName: shortName, azurePathPrefix: "test/" },
+          { storageLocationId: longName, storagePathPrefix: "test/" },
           "user-123",
         ),
-      ).rejects.toThrow("Azure container name must be 3-63 characters");
-
-      await expect(
-        backupConfigService.createBackupConfig(
-          "db-123",
-          { azureContainerName: longName, azurePathPrefix: "test/" },
-          "user-123",
-        ),
-      ).rejects.toThrow("Azure container name must be 3-63 characters");
+      ).rejects.toThrow("Storage location id must be 1-256 characters");
     });
 
-    it("should validate Azure container name format", async () => {
-      const invalidNames = [
-        "Test", // Capital letters
-        "test_container", // Underscores
-        "-test", // Starting with hyphen
-        "test-", // Ending with hyphen
-        "test..container", // Double dots
-        "test container", // Spaces
-      ];
-
-      for (const invalidName of invalidNames) {
-        await expect(
-          backupConfigService.createBackupConfig(
-            "db-123",
-            { azureContainerName: invalidName, azurePathPrefix: "test/" },
-            "user-123",
-          ),
-        ).rejects.toThrow();
-      }
-    });
-
-    it("should allow valid Azure container names", async () => {
+    it("should accept any non-empty storage location id (provider-specific format checks live in the backend)", async () => {
       const validNames = [
         "test",
         "test-container",
         "test123",
         "123test",
         "test-123-container",
+        // Drive folder ids look nothing like Azure container names — the
+        // manager must accept them too.
+        "1A2B3C4D5E6F7G8H9I0J",
       ];
 
       mockPrisma.backupConfiguration.create = vi.fn().mockResolvedValue({
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
-        azureContainerName: "test",
-        azurePathPrefix: "test/",
+        storageLocationId: "test",
+        storagePathPrefix: "test/",
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -874,7 +858,7 @@ describe("BackupConfigurationManager", () => {
         await expect(
           backupConfigService.createBackupConfig(
             "db-123",
-            { azureContainerName: validName, azurePathPrefix: "test/" },
+            { storageLocationId: validName, storagePathPrefix: "test/" },
             "user-123",
           ),
         ).resolves.toBeDefined();
@@ -890,8 +874,8 @@ describe("BackupConfigurationManager", () => {
         id: "config-123",
         databaseId: "db-123",
         schedule: null,
-        azureContainerName: "test-container",
-        azurePathPrefix: "test/",
+        storageLocationId: "test-container",
+        storagePathPrefix: "test/",
         retentionDays: 30,
         backupFormat: "custom",
         compressionLevel: 6,
@@ -907,8 +891,8 @@ describe("BackupConfigurationManager", () => {
           backupConfigService.createBackupConfig(
             "db-123",
             {
-              azureContainerName: "test-container",
-              azurePathPrefix: "test/",
+              storageLocationId: "test-container",
+              storagePathPrefix: "test/",
               backupFormat: format,
             },
             "user-123",
@@ -922,8 +906,8 @@ describe("BackupConfigurationManager", () => {
           backupConfigService.createBackupConfig(
             "db-123",
             {
-              azureContainerName: "test-container",
-              azurePathPrefix: "test/",
+              storageLocationId: "test-container",
+              storagePathPrefix: "test/",
               backupFormat: format as BackupFormat,
             },
             "user-123",
@@ -942,7 +926,7 @@ describe("BackupConfigurationManager", () => {
       await expect(
         backupConfigService.createBackupConfig(
           "db-123",
-          { azureContainerName: "test", azurePathPrefix: "test/" },
+          { storageLocationId: "test", storagePathPrefix: "test/" },
           "user-123",
         ),
       ).rejects.toThrow("Database connection failed");
@@ -966,14 +950,14 @@ describe("BackupConfigurationManager", () => {
         .mockResolvedValue(null);
       mockCron.validate.mockReturnValue(true);
 
-      mockAzureStorageService.testContainerAccess = vi
+      mockStorageBackend.testLocationAccess = vi
         .fn()
         .mockRejectedValue(new Error("Azure service unavailable"));
 
       await expect(
         backupConfigService.createBackupConfig(
           "db-123",
-          { azureContainerName: "test-container", azurePathPrefix: "test/" },
+          { storageLocationId: "test-container", storagePathPrefix: "test/" },
           "user-123",
         ),
       ).rejects.toThrow("Azure service unavailable");

@@ -160,7 +160,7 @@ describe("PostgreSQL Backups API", () => {
         startedAt: new Date("2024-01-01T00:00:00Z"),
         completedAt: new Date("2024-01-01T00:05:00Z"),
         sizeBytes: BigInt(1024000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://storage.blob.core.windows.net/backups/backup-1.sql",
         errorMessage: null,
         progress: 100,
@@ -174,7 +174,7 @@ describe("PostgreSQL Backups API", () => {
         startedAt: new Date("2024-01-02T00:00:00Z"),
         completedAt: new Date("2024-01-02T00:02:00Z"),
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         errorMessage: "Connection timeout",
         progress: 25,
         metadata: null,
@@ -204,7 +204,7 @@ describe("PostgreSQL Backups API", () => {
         startedAt: "2024-01-01T00:00:00.000Z",
         completedAt: "2024-01-01T00:05:00.000Z",
         sizeBytes: 1024000,
-        azureBlobUrl:
+        storageObjectUrl:
           "https://storage.blob.core.windows.net/backups/backup-1.sql",
         errorMessage: null,
         progress: 100,
@@ -359,7 +359,7 @@ describe("PostgreSQL Backups API", () => {
     const mockBackupConfig = {
       id: "config-1",
       databaseId: "test-db-id",
-      azureContainerName: "backups",
+      storageLocationId: "backups",
       schedule: "0 2 * * *",
       enabled: true,
     };
@@ -507,7 +507,7 @@ describe("PostgreSQL Backups API", () => {
       completedAt: null,
       errorMessage: null,
       sizeBytes: null,
-      azureBlobUrl: null,
+      storageObjectUrl: null,
       metadata: JSON.stringify({ currentStep: "Uploading", totalSteps: 3 }),
       database: {
         id: "test-db-id",
@@ -533,7 +533,7 @@ describe("PostgreSQL Backups API", () => {
         completedAt: null,
         errorMessage: null,
         sizeBytes: null,
-        azureBlobUrl: null,
+        storageObjectUrl: null,
         metadata: { currentStep: "Uploading", totalSteps: 3 },
       });
       expect(response.body.message).toBe("Backup operation is running");
@@ -555,7 +555,7 @@ describe("PostgreSQL Backups API", () => {
         progress: 100,
         completedAt: new Date("2024-01-01T00:05:00Z"),
         sizeBytes: BigInt(2048000),
-        azureBlobUrl:
+        storageObjectUrl:
           "https://storage.blob.core.windows.net/backups/backup-1.sql",
       };
 
@@ -572,7 +572,7 @@ describe("PostgreSQL Backups API", () => {
       expect(response.body.data.progress).toBe(100);
       expect(response.body.data.completedAt).toBe("2024-01-01T00:05:00.000Z");
       expect(response.body.data.sizeBytes).toBe(2048000);
-      expect(response.body.data.azureBlobUrl).toBe(
+      expect(response.body.data.storageObjectUrl).toBe(
         "https://storage.blob.core.windows.net/backups/backup-1.sql",
       );
     });
@@ -627,7 +627,7 @@ describe("PostgreSQL Backups API", () => {
       id: "backup-1",
       databaseId: "test-db-id",
       status: "completed",
-      azureBlobUrl:
+      storageObjectUrl:
         "https://storage.blob.core.windows.net/backups/backup-1.sql",
       database: {
         id: "test-db-id",

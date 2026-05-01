@@ -181,7 +181,10 @@ export interface BackupEventMetadata extends UserEventMetadata {
   databaseName: string;
   backupType: 'full' | 'incremental';
   sizeBytes?: number;
-  azureBlobUrl?: string;
+  /** Provider-agnostic backend URL recorded by the backup executor. */
+  storageObjectUrl?: string;
+  /** Provider id captured at write time (e.g. 'azure'). */
+  storageProviderAtCreation?: string;
 }
 
 // Metadata for container cleanup events
