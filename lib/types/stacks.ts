@@ -613,6 +613,26 @@ export interface DestroyResult {
   error?: string;
 }
 
+// Live status (server response shape from GET /stacks/:id/status)
+
+export interface StackContainerStatus {
+  serviceName: string;
+  containerId: string;
+  containerName: string;
+  image: string;
+  /** Docker container state: e.g. "running", "exited". */
+  state: string;
+  /** Human-readable Docker status string: e.g. "Up 2 hours". */
+  status: string;
+  /** "tracked" when the container has a definition-hash label, otherwise "untracked". */
+  health: string;
+}
+
+export interface StackStatusResponseData {
+  stack: StackInfo;
+  containerStatus: StackContainerStatus[];
+}
+
 // Deployment history
 
 export interface StackDeploymentRecord {
