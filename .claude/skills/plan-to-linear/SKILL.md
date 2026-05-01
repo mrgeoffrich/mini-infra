@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and populates Linear with a matching project plus one issue per phase. Each issue carries the phase's Goal / Deliverables / Done when, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope. Also rewrites the plan doc's Linear-tracking section to replace `ALT-_TBD_` placeholders with the real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", or any equivalent request to seed Linear from an existing markdown plan. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user asks to *modify* an existing project's issues.
+description: Reads a phased markdown planning document under `docs/planning/` and populates Linear with a matching project plus one issue per phase. Each issue carries the phase's Goal / Deliverables / Done when, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope. Rewrites the plan doc's Linear-tracking section to replace `ALT-_TBD_` placeholders with the real issue IDs. Finally posts a session retrospective comment on Phase 1's issue capturing meta-feedback about the run itself (ambiguities resolved, workflow friction, suggestions) — this is the feedback loop that improves the skill and the plan-doc conventions over time. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", or any equivalent request to seed Linear from an existing markdown plan. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user asks to *modify* an existing project's issues.
 ---
 
 # Plan to Linear
@@ -175,17 +175,22 @@ Don't proceed without an explicit yes. Never guess "looks good, going" — the s
 
 ## Phase 7 — Create the project
 
-Create the Linear project with the name from H1 and a description that **starts** with the `Plan:` line — this is the anchor `execute-next-task` looks for:
+Create the Linear project with the name from H1 and a description that **starts** with the `Plan:` line. This serves two purposes in one line: machine-readable anchor for `execute-next-task` and a clickable link for humans browsing the project in Linear's UI.
 
 ```
-Plan: <relative-path-to-plan-doc.md>
+Plan: [<relative-path-to-plan-doc.md>](<full-https-url-to-plan-doc-on-main>)
 
 <§1 Background paragraph 1, copied verbatim>
 ```
 
-The relative path is from the repo root, e.g. `docs/planning/not-shipped/observability-otel-tracing-plan.md`. Don't use `./`-prefixed paths or absolute paths.
+Examples:
+- `Plan: [docs/planning/not-shipped/observability-otel-tracing-plan.md](https://github.com/<owner>/<repo>/blob/main/docs/planning/not-shipped/observability-otel-tracing-plan.md)`
 
-Capture the project's URL and ID from the response — you'll need them for Phase 9.
+Derive the GitHub URL by reading `git remote get-url origin` (e.g. `https://github.com/mrgeoffrich/mini-infra`) and appending `/blob/main/<relative-path>`. Don't use `./`-prefixed paths or absolute filesystem paths.
+
+The bare-path variant (`Plan: docs/planning/...md`) is also accepted by `execute-next-task` as a legacy fallback for projects authored before this convention firmed up — but new projects use the combined format.
+
+Capture the project's URL and ID from the response — you'll need them for Phase 9 and the retrospective in Phase 11.
 
 ---
 
@@ -301,7 +306,51 @@ Do **not** commit. Leave the diff staged so the user can review and commit it th
 
 ---
 
-## Phase 11 — Report
+## Phase 11 — Session retrospective
+
+Leave a single comment on **Phase 1's issue** capturing meta-feedback about the run: ambiguities you had to resolve, friction in the skill or the conventions, and concrete suggestions. This is the feedback loop — read accumulated retrospectives to spot patterns and improve the skill (or the plan-doc convention) over time.
+
+**Crucially this is *meta*** — about how the skill ran, not about the *contents* of the tickets. If you want to flag something about a phase's deliverables, that belongs in the ticket itself or in a code-review pass on the eventual PR.
+
+Use this template. Omit any section that genuinely has nothing to report — don't pad with "N/A" or invent observations. If the entire run was uneventful, the comment is one line: "No notable friction this run."
+
+```markdown
+### Session notes — `plan-to-linear` retrospective
+
+*Meta: about how the skill ran, not the work itself. Drop a code-review pass on the ticket content separately if you want to comment on deliverables.*
+
+**Ambiguities resolved**
+- <plan-doc § / file path>: <what was unclear> → <judgment call I made>
+- ...
+
+**Workflow friction**
+- <observation about the skill, the MCP roundtrips, the plan-doc shape, or the codebase context the skill relied on>
+- ...
+
+**Suggestions** *(tag with `skill:`, `convention:`, or `project:` so they're greppable)*
+- skill: <improvement to the skill prompt or its phases>
+- convention: <improvement to the plan-doc / Linear conventions>
+- project: <improvement to this specific project's setup>
+- ...
+
+**What worked well** *(optional, short bullets)*
+- ...
+```
+
+Examples of *good* meta-feedback (concrete, actionable, about the loop):
+- `convention: Phase 4 had no "Migration shape" subsection — copying it forward to the ticket left a thin Goal/Deliverables-only body. Either the convention should require it for non-trivial phases or the skill should infer it.`
+- `skill: When the plan doc's §8 list and the §6 phase headings disagree on count, the skill stops with "out of sync" but doesn't surface the diff. Print both lists side by side.`
+- `project: No prior commits matching the area tag yet — area-tag detection fell back to "no prior commits" branch. Worked, but a hint in the plan doc would have been faster than scanning git log.`
+
+Examples of *bad* meta-feedback (about the work, not the loop) — don't include these:
+- ❌ `Phase 4 deliverables look thin. Should add a deliverable for log redaction.` — that's a code review, not retrospective.
+- ❌ `The plan is good and the phasing makes sense.` — content compliment, not workflow.
+
+Echo the comment to the user in the chat when reporting (Phase 12) so they don't have to switch contexts to read it.
+
+---
+
+## Phase 12 — Report
 
 Print a summary:
 
@@ -314,6 +363,7 @@ Print a summary:
    - <ALT-NN> Phase M: <title>           [Backlog]
 ✓ Set blocked-by relationships per plan ordering.
 ✓ Updated <plan-doc-path> §<8> with real issue IDs (uncommitted).
+✓ Posted session retrospective to <Phase 1 ALT-NN URL>.
 
 Next step: review the plan-doc diff, commit it, then run `execute-next-task` when you're ready to start Phase 1.
 ```
@@ -323,7 +373,9 @@ Next step: review the plan-doc diff, commit it, then run `execute-next-task` whe
 ## Hard rules
 
 - **Never merge into an existing project.** If a project with the same name already exists, stop. Same-named projects are almost certainly the same feature — manual reconciliation only.
-- **Never write a pre-baked implementation plan into the issue description.** Issue descriptions carry *context* — Goal, Deliverables, Done when, doc pointers — not file-by-file change lists. Implementation plans live in the executor's ExitPlanMode at execution time, against current code.
+- **Never write a pre-baked implementation plan into the issue description.** Issue descriptions carry *context* — Goal, Deliverables, Done when, doc pointers — not file-by-file change lists. The executor produces its concrete implementation against current code at execution time.
+- **Never put work-content critique in the retrospective comment.** Phase 11 is meta-only — about how the skill ran. Comments about whether deliverables are right, whether the plan is good, or whether the phasing makes sense belong in a code-review pass on the eventual PR, not as plan-to-linear retrospective.
+- **Never fabricate retrospective content.** If the run was clean, the comment is "No notable friction this run." Padding with invented friction defeats the feedback loop.
 - **Never invent docs.** If `egress-shared/CLAUDE.md` doesn't exist, don't link it. Verify each attached doc.
 - **Never guess at convention.** If §8 has no placeholder list, the H1 is missing, or no `### Phase N` headings parse — stop and report. The conventions exist for a reason.
 - **Never commit the plan-doc edit.** Leave it staged. The user owns the commit.

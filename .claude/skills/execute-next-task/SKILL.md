@@ -1,6 +1,6 @@
 ---
 name: execute-next-task
-description: Execution agent. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `pnpm install`, kicks off `pnpm worktree-env start` in the background to warm the dev env, then executes the work end-to-end — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions. **Does not produce an ExitPlanMode plan** — the planning was already done when the ticket was created. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
+description: Execution agent. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `pnpm install`, kicks off `pnpm worktree-env start` in the background to warm the dev env, then executes the work end-to-end — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions ending in In Review with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations from the plan). **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
 ---
 
 # Execute Next Task
@@ -64,8 +64,15 @@ The Linear ticket is your contract. Read it end to end and treat it as authorita
    - **Relevant docs** — the per-component CLAUDE.md / ARCHITECTURE.md pointers, plus any topic-specific architecture docs.
    - **Smoke tests** — what to run at the end to validate.
    - **Conventions** — commit/PR format, area tag, deferrals.
-2. **Fetch the parent project** (`get_project`) and confirm the `Plan:` line resolves to the same plan doc the ticket cites. If they disagree, **stop** — that's a corruption signal.
-3. **Read the plan doc's matching `### Phase N` section** anyway. The ticket has the same content but the plan doc is the source of truth — if they've drifted, side with the doc and surface the drift in your final commit.
+2. **Fetch the parent project** (`get_project`) and find the **`Plan:` line** in its description. The skill accepts three forms:
+   - `Plan: [docs/planning/.../<slug>-plan.md](https://github.com/.../blob/main/...)` — combined (preferred; what `plan-to-linear` writes today)
+   - `Plan: docs/planning/.../<slug>-plan.md` — bare path (legacy fallback)
+   - `**Plan doc:** [docs/planning/.../<slug>-plan.md](https://...)` — also accepted as a legacy fallback for projects authored before the convention firmed up
+
+   Extract the **relative path** in all cases. If the project description has none of these, **stop** with a clear "no `Plan:` line in project description" message.
+
+   Confirm the path resolves to the same plan doc the ticket cites in its **Source** section. If they disagree, **stop** — that's a corruption signal.
+3. **Read the plan doc's matching `### Phase N` section.** The ticket has the same content but the plan doc is the source of truth — if they've drifted, side with the doc and capture the drift in your handoff comment (Phase 10).
 4. **Read every doc the ticket lists under "Relevant docs."** Don't skim — these were chosen because they're the conventions you must follow. The ticket points at them so you don't have to guess what's relevant.
 5. **Read prior art** — `git log --oneline -20 main` plus any commits matching the project's area tag from the ticket. Shipped phases tell you the commit subject style and the rough size of a phase PR.
 
@@ -197,15 +204,7 @@ If everything passes, move on. If anything fails, **fix it before continuing** �
 
 ---
 
-## Phase 9 — Update the plan doc if reality drifted
-
-If your implementation diverged meaningfully from the plan doc — extra deliverable shipped, planned deliverable deferred, an unforeseen risk discovered — edit the plan doc in the same PR to reflect what actually happened. The plan doc is the lasting artefact; the issue closes when the PR merges.
-
-If you didn't drift, leave the doc alone.
-
----
-
-## Phase 10 — Commit and open the PR
+## Phase 9 — Commit and open the PR
 
 Match the most recent shipped phase's commit format from the same project. Typical:
 
@@ -233,9 +232,9 @@ Push the branch, then `gh pr create`. PR title matches the commit title. PR body
 
 ---
 
-## Phase 11 — Mark the issue In Review and leave a structured handoff comment
+## Phase 10 — Mark the issue In Review and leave a structured handoff comment
 
-Move the issue to `In Review` (canonical state name from Phase 1's status fetch) and post a single structured comment summarising the run. The comment is the handoff to the human reviewer — it captures everything the PR diff doesn't show.
+Move the issue to `In Review` (canonical state name from Phase 1's status fetch) and post a single structured comment summarising the run. The comment is the handoff to the human reviewer — and to the future re-integration agent that will fold drift back into the plan doc — so it captures everything the PR diff doesn't show. **The plan doc itself is read-only for this skill** (see hard rules); drift goes here.
 
 ```
 save_issue(id: <issue-id>, state: "In Review")
@@ -257,7 +256,7 @@ Use this template verbatim. Omit any section that genuinely has nothing to repor
 <things that stopped you finishing some part of the work — missing credentials, an upstream bug in another component, a dependency on infrastructure that isn't there. Empty if nothing blocked you.>
 
 ## Deviations from the plan
-<places where what you shipped diverges from the plan doc's Deliverables or Done-when. For each: what the plan said, what you shipped, why. If you also edited the plan doc to reflect this in Phase 9, note that.>
+<places where what you shipped diverges from the plan doc's Deliverables or Done-when. For each: what the plan said, what you shipped, why. The plan doc itself stays untouched — a re-integration agent will fold these notes back into the doc later.>
 ```
 
 Then report the PR URL to the user wrapped in a `<pr-created>` tag on its own line so any UI integrations can render a card.
@@ -271,6 +270,7 @@ The point of this comment is that the next person (human or agent) opens the Lin
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
 - **Never produce an ExitPlanMode block.** This is an execution agent. Planning happened in `plan-to-linear` when the ticket was created.
+- **Never edit the plan doc.** The plan doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the plan, capture the drift in the handoff comment (Phase 10 — Deviations from the plan section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that.
 - **Never merge PRs** — even if checks pass and the PR looks great. Merging is a human decision.
 - **Never create new Linear issues** or split phases on the fly. If scope is too big for one phase, stop and report — splitting is a planning decision, not an execution decision.
 - **Never override plan-doc conventions.** If the plan section says "Defer X to follow-up", that X is deferred. Don't quietly include it because it seemed easy.
@@ -301,6 +301,6 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > Skill: "Implementing Phase 4 — adding `mini-infra.backup.run` request handler and JetStream `BackupHistory` stream. Touching `server/src/services/backup/backup-executor.ts` first, then `server/src/services/nats/payload-schemas.ts`, then the boot sequence."
 >
-> *Implements. Runs build/lint/unit tests. Backgrounded env is up by now — runs the ticket's smoke test (publish a test backup-run request, confirm the consumer side fires). Drift check on plan doc — none.*
+> *Implements. Runs build/lint/unit tests. Backgrounded env is up by now — runs the ticket's smoke test (publish a test backup-run request, confirm the consumer side fires).*
 >
-> *Commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`. Opens PR with `Closes ALT-29` in the body. Marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording. Reports the PR URL.*
+> *Commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`. Opens PR with `Closes ALT-29` in the body. Marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording — the plan doc itself is left untouched, the re-integration agent will fold this back later. Reports the PR URL.*
