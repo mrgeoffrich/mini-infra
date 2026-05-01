@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import {
+  ALL_NATS_SUBJECTS,
   BackupSubject,
   EgressFwSubject,
   EgressGwSubject,
@@ -77,11 +78,20 @@ export interface SubjectSchemaEntry {
 }
 
 /**
+ * The set of subjects this registry knows about. Tied to `ALL_NATS_SUBJECTS`
+ * in `lib/types/nats-subjects.ts` so adding a new subject there forces an
+ * entry here at compile time — a typo in a key fails to type-check, and a
+ * forgotten schema surfaces as a missing-key compile error rather than a
+ * silent runtime skip.
+ */
+export type KnownNatsSubject = (typeof ALL_NATS_SUBJECTS)[number];
+
+/**
  * Concrete subjects only — wildcards and per-id subjects (e.g. `progress.<id>`)
  * are validated by the closest static parent subject's schema if present, or
  * skipped if the bus call is marked `unchecked: true`.
  */
-export const payloadSchemas: Record<string, SubjectSchemaEntry> = {
+export const payloadSchemas: Record<KnownNatsSubject, SubjectSchemaEntry> = {
   [SystemSubject.ping]: {
     request: systemPingRequestSchema,
     reply: systemPingReplySchema,

@@ -22,15 +22,14 @@ import { connect, credsAuthenticator, type NatsConnection, type Subscription } f
 import { z, type ZodType } from "zod";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultKVService } from "../vault/vault-kv-service";
-import { getNatsControlPlaneService } from "./nats-control-plane-service";
 import {
+  FIELD_SERVER_BUS_CREDS,
   NATS_SERVER_BUS_CREDS_KV_PATH,
+  getNatsControlPlaneService,
 } from "./nats-control-plane-service";
 import { payloadSchemas, type SubjectSchemaEntry } from "./payload-schemas";
 
 const log = getLogger("integrations", "nats-bus");
-
-const FIELD_SERVER_BUS_CREDS = "creds";
 const RECONNECT_BACKOFF_MIN_MS = 1_000;
 const RECONNECT_BACKOFF_MAX_MS = 30_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
@@ -131,6 +130,17 @@ export class NatsBus {
   private registrations: SubscriptionRegistration[] = [];
   private reconnectTimer: NodeJS.Timeout | null = null;
   private started = false;
+  // Guard against overlapping connect attempts — `invalidateCreds` can fire
+  // while `attemptConnect` is mid-await, and without this two parallel
+  // `connect()` calls would race to write `this.nc`. The guard is set true
+  // when `attemptConnect` enters and cleared when it returns (success or
+  // failure). The reconnect scheduler skips queueing while `connecting` is
+  // true; once the in-flight attempt finishes it always reschedules itself.
+  private connecting = false;
+  // Track every in-flight handler Promise so `shutdown()` can wait for them
+  // to settle before draining the connection — prevents post-shutdown side
+  // effects in stateful Phase 2+ handlers.
+  private activeHandlers = new Set<Promise<unknown>>();
 
   private constructor(private readonly opts: NatsBusOptions = {}) {}
 
@@ -146,6 +156,12 @@ export class NatsBus {
 
   /**
    * Drain the connection and stop the reconnect loop. Idempotent.
+   *
+   * Stops accepting new work, then unsubscribes live subscriptions (which
+   * causes their `consume` loops to exit), waits for any in-flight handler
+   * Promises to settle, and finally drains the connection. Handlers that
+   * started before shutdown finish their work before the bus closes —
+   * critical for any future stateful consumer.
    */
   async shutdown(): Promise<void> {
     if (this.state === "shutting-down" || this.state === "disconnected") return;
@@ -155,6 +171,26 @@ export class NatsBus {
       this.reconnectTimer = null;
     }
     this.rejectReadyWaiters(new Error("NatsBus shutting down"));
+
+    // Stop subscription iterators so consume() loops fall through. We do
+    // this before draining so handlers that are blocked on `for await msg`
+    // don't see another message arriving during shutdown.
+    for (const sub of this.liveSubs) {
+      try {
+        sub.unsubscribe();
+      } catch {
+        // best-effort
+      }
+    }
+    this.liveSubs = [];
+    for (const reg of this.registrations) reg.live = null;
+
+    // Wait for in-flight handlers to settle. allSettled so a misbehaving
+    // handler can't block the rest of shutdown forever.
+    if (this.activeHandlers.size > 0) {
+      await Promise.allSettled([...this.activeHandlers]);
+    }
+
     const nc = this.nc;
     this.nc = null;
     if (nc) {
@@ -210,9 +246,18 @@ export class NatsBus {
    * Mark the cached credential as stale and force a reconnect. Called by
    * `NatsControlPlaneService.applyConfig()` after rotating the bus creds
    * blob in Vault KV.
+   *
+   * Safe to call before `start()`: in that case the bus has nothing to
+   * disconnect, but the next call to `start()` will re-read creds from
+   * Vault (which is what every cold connect does anyway), so the invalidate
+   * is implicitly satisfied without any extra state. Logged at info either
+   * way so the call is visible in the boot transcript.
    */
   invalidateCreds(): void {
-    if (!this.started) return;
+    if (!this.started) {
+      log.info("creds invalidated before bus start; first connect will pick up fresh creds");
+      return;
+    }
     log.info("creds invalidated, scheduling reconnect");
     const nc = this.nc;
     this.nc = null;
@@ -336,6 +381,21 @@ export class NatsBus {
   }
 
   private reattachAllRegistrations(nc: NatsConnection): void {
+    // Tear down old subs first. The async iterator inside each `consume()`
+    // loop terminates when its `Subscription` is unsubscribed, so calling
+    // unsubscribe here lets the old loop exit cleanly *before* a new one
+    // is started for the same registration. Without this, a brief window
+    // exists during which an old handler could process a stray message
+    // delivered by the dying connection's drain alongside the new sub —
+    // benign for the ping responder, a double-processing bug for any
+    // stateful Phase 2+ consumer.
+    for (const oldSub of this.liveSubs) {
+      try {
+        oldSub.unsubscribe();
+      } catch {
+        // best-effort
+      }
+    }
     this.liveSubs = [];
     for (const reg of this.registrations) {
       reg.live = null;
@@ -383,20 +443,31 @@ export class NatsBus {
   ): Promise<void> {
     for await (const msg of sub) {
       const ctx: SubscribeContext = { subject: msg.subject, reply: msg.reply };
-      try {
-        const raw = this.decodeBody<unknown>(msg.data);
-        const body = opts.unchecked ? raw : this.validateRequest(subject, raw);
-        await handler(body as T, ctx);
-      } catch (err) {
-        log.error(
-          {
-            subject,
-            arrivedOn: msg.subject,
-            err: err instanceof Error ? err.message : String(err),
-          },
-          "nats subscriber handler failed",
-        );
-      }
+      const work = (async () => {
+        try {
+          const raw = this.decodeBody<unknown>(msg.data);
+          const body = opts.unchecked ? raw : this.validateRequest(subject, raw);
+          await handler(body as T, ctx);
+        } catch (err) {
+          log.error(
+            {
+              subject,
+              arrivedOn: msg.subject,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            "nats subscriber handler failed",
+          );
+        }
+      })();
+      // Track the in-flight Promise so shutdown() can wait for it. We
+      // remove on settle (regardless of outcome) so the Set never leaks.
+      this.activeHandlers.add(work);
+      void work.finally(() => this.activeHandlers.delete(work));
+      // Serialise per-subscription so a slow handler doesn't pile up
+      // unbounded message work — a single handler-instance-at-a-time per
+      // subscription matches typical req/reply expectations and keeps
+      // shutdown's wait set bounded by sub-count rather than message-rate.
+      await work;
     }
   }
 
@@ -406,7 +477,9 @@ export class NatsBus {
 
   private scheduleReconnect(delayMs: number): void {
     if (this.state === "shutting-down") return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    // Don't stack timers. If a connect is already in flight or queued, the
+    // running attempt will reschedule itself on completion.
+    if (this.connecting || this.reconnectTimer) return;
     this.state = "connecting";
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -416,6 +489,12 @@ export class NatsBus {
 
   private async attemptConnect(): Promise<void> {
     if (this.state === "shutting-down") return;
+    // Re-entrancy guard. `invalidateCreds` can call `scheduleReconnect(0)`
+    // while a previous attempt is still mid-await (waiting on `connect()`
+    // or `resolveConnection()`); without this guard two `connect()` calls
+    // would race to write `this.nc` and we'd orphan the loser's connection.
+    if (this.connecting) return;
+    this.connecting = true;
     this.connectAttempt += 1;
     let url: string | null = null;
     let creds: string | undefined;
@@ -436,6 +515,7 @@ export class NatsBus {
         reconnectTimeWait: RECONNECT_BACKOFF_MIN_MS,
       });
       this.onConnected(nc, url);
+      this.connecting = false;
       // Wait for the connection to close, then schedule a fresh attempt.
       void nc
         .closed()
@@ -457,6 +537,7 @@ export class NatsBus {
         },
         "nats bus connect failed; will retry",
       );
+      this.connecting = false;
       this.scheduleReconnect(delay);
     }
   }

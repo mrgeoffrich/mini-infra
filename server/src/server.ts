@@ -328,8 +328,11 @@ const initializeServices = async () => {
             try {
               await getNatsControlPlaneService().applyConfig();
               // applyConfig() rotates the server-bus creds blob in Vault KV
-              // every run; tell any already-connected bus to reconnect with
-              // the fresh creds. No-op on cold boot (bus not started yet).
+              // every run. invalidateCreds() forces a reconnect when the bus
+              // is already running (subsequent applies). On the cold-boot
+              // path the bus hasn't started yet — see invalidateCreds()'s
+              // pre-start handling — and the first connect later in the
+              // boot sequence reads the fresh creds straight out of Vault.
               NatsBus.getInstance().invalidateCreds();
             } catch (natsErr) {
               logger.warn(
