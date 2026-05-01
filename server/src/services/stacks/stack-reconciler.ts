@@ -42,6 +42,7 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
+import { revokeStackNatsSigningKeys } from './stack-nats-revocation';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
@@ -656,6 +657,7 @@ export class StackReconciler {
    */
   private async resolveVaultEnv(
     stack: {
+      id: string;
       vaultAppRoleId: string | null;
       vaultFailClosed: boolean;
       lastAppliedVaultAppRoleId: string | null;
@@ -697,7 +699,7 @@ export class StackReconciler {
         (src) => src.kind === 'vault-addr' || src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id' || src.kind === 'vault-kv',
       );
       const hasNatsEntries = Object.values(dynamicEnv).some(
-        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds',
+        (src) => src.kind === 'nats-url' || src.kind === 'nats-creds' || src.kind === 'nats-signer-seed',
       );
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
@@ -726,7 +728,11 @@ export class StackReconciler {
 
       if (hasNatsEntries) {
         try {
-          const values = await natsInjector.resolve(svcRow.natsCredentialId ?? null, serviceDef.containerConfig);
+          const values = await natsInjector.resolve(
+            svcRow.natsCredentialId ?? null,
+            serviceDef.containerConfig,
+            { stackId: stack.id },
+          );
           if (values) {
             const existing = overrides.get(serviceName) ?? {};
             overrides.set(serviceName, { ...existing, ...values });
@@ -1072,6 +1078,15 @@ export class StackReconciler {
     const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
     await egressPolicyLifecycle.archiveForStack(stackId, _options?.triggeredBy ?? null);
 
+    // 4.5. Phase 4: revoke any scoped signing keys this stack owns before
+    //      the cascade drops the rows. See `stack-nats-revocation.ts`.
+    //      NOTE: this `destroyStack` method is currently dead code — the
+    //      production destroy flow runs through `stacks-destroy-route.ts`
+    //      which calls `revokeStackNatsSigningKeys` directly. The hook
+    //      stays here for parity in case a future caller revives this
+    //      path.
+    await revokeStackNatsSigningKeys(this.prisma, stackId, log);
+
     // 5. Delete the stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;
     await this.prisma.stack.delete({
@@ -1088,5 +1103,6 @@ export class StackReconciler {
       duration,
     };
   }
+
 }
 

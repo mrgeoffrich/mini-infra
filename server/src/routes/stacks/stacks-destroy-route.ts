@@ -25,6 +25,7 @@ import {
   removeStackContainers,
   removeStackNetworksAndVolumes,
 } from '../../services/stacks/stack-destroy-helpers';
+import { revokeStackNatsSigningKeys } from '../../services/stacks/stack-nats-revocation';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 
@@ -166,6 +167,15 @@ async function runDestroyInBackground(
     // Step 6: Archive egress policy before deleting the stack row so we can
     // record userId on the archived record while the stack is still resolvable.
     await egressPolicyLifecycle.archiveForStack(stackId, triggeredBy ?? null);
+
+    // Step 6.5: Phase 4 — revoke any scoped NATS signing keys this stack owns.
+    // The cascade-delete in Step 7 would drop the rows, but the running NATS
+    // server would keep trusting the public keys until next restart. This
+    // helper deletes the rows up front, re-issues + propagates the parent
+    // account JWTs, recycles the NATS container if propagation failed, and
+    // wipes seeds from Vault KV. Best-effort throughout — errors don't
+    // block destroy because the stack record is going away regardless.
+    await revokeStackNatsSigningKeys(prisma, stackId, logger);
 
     // Step 7: Delete stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;

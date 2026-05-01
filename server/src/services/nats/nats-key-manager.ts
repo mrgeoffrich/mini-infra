@@ -16,7 +16,14 @@ import {
   fromSeed,
   type KeyPair,
 } from "nkeys.js";
-import { encodeOperator, encodeAccount, encodeUser, fmtCreds } from "nats-jwt";
+import {
+  encodeOperator,
+  encodeAccount,
+  encodeUser,
+  fmtCreds,
+  newScopedSigner,
+  type SigningKey,
+} from "nats-jwt";
 
 export interface NatsPermissions {
   pub: string[];
@@ -83,6 +90,7 @@ export async function reissueOperatorJwt(
 export async function generateAccount(
   name: string,
   operatorKp: KeyPair,
+  signingKeys: SigningKey[] = [],
 ): Promise<AccountMaterial> {
   const kp = createAccount();
   const seed = TEXT_DECODER.decode(kp.getSeed());
@@ -90,24 +98,30 @@ export async function generateAccount(
   const jwt = await encodeAccount(
     name,
     kp,
-    { limits: DEFAULT_ACCOUNT_LIMITS },
+    { limits: DEFAULT_ACCOUNT_LIMITS, signing_keys: signingKeys },
     { signer: operatorKp },
   );
   return { seed, publicKey, jwt };
 }
 
-/** Re-sign an existing account's JWT from its stored seed. */
+/**
+ * Re-sign an existing account's JWT from its stored seed. Accepts an optional
+ * list of scoped signing keys (Phase 4) — these are spliced into the account
+ * claims so NATS will trim user JWTs minted by them to the declared subject
+ * scope. The list fully replaces any prior signing keys.
+ */
 export async function reissueAccountJwt(
   name: string,
   accountSeed: string,
   operatorKp: KeyPair,
+  signingKeys: SigningKey[] = [],
 ): Promise<AccountMaterial> {
   const kp = loadKeyPair(accountSeed);
   const publicKey = kp.getPublicKey();
   const jwt = await encodeAccount(
     name,
     kp,
-    { limits: DEFAULT_ACCOUNT_LIMITS },
+    { limits: DEFAULT_ACCOUNT_LIMITS, signing_keys: signingKeys },
     { signer: operatorKp },
   );
   return { seed: accountSeed, publicKey, jwt };
@@ -140,4 +154,61 @@ export async function mintUserCreds(
     opts,
   );
   return TEXT_DECODER.decode(fmtCreds(jwt, userKp));
+}
+
+/**
+ * Mint a long-lived `.creds` for a system-account user. Used by the control
+ * plane to publish `$SYS.REQ.CLAIMS.UPDATE` requests. Permissions are broad
+ * because the system account is the only entity allowed to push account
+ * claims, and constraining further would just block the very purpose of
+ * minting it.
+ */
+export async function mintSystemUserCreds(
+  systemAccountKp: KeyPair,
+): Promise<string> {
+  return mintUserCreds(
+    "mini-infra-system-admin",
+    systemAccountKp,
+    { pub: ["$SYS.>"], sub: ["$SYS.>", "_INBOX.>"] },
+    0,
+  );
+}
+
+export interface ScopedSigningKeyMaterial {
+  seed: string;
+  publicKey: string;
+  /** Splice this into the account JWT's `signing_keys` claim to activate
+   *  the scope. Re-issuing the account JWT and propagating it via
+   *  `$SYS.REQ.CLAIMS.UPDATE` is what makes the scope take effect. */
+  scopeTemplate: SigningKey;
+}
+
+/**
+ * Generate a fresh ED25519 account-signing key bound to a specific subject
+ * scope. The returned `scopeTemplate` carries the public key + a permission
+ * envelope that NATS server uses to *trim* any user JWT minted by this key:
+ * even if the application asks for broader pub/sub permissions, the server
+ * will silently strip them down to `<scopedSubject>` (plus `_INBOX.>` for
+ * request/reply). This is the load-bearing cryptographic guarantee Phase 4
+ * gives third-party apps — they hold the seed but cannot issue tokens that
+ * exceed the declared scope.
+ */
+export function generateScopedSigningKey({
+  role,
+  scopedSubject,
+}: {
+  role: string;
+  scopedSubject: string;
+}): ScopedSigningKeyMaterial {
+  // Account-prefix nkey — scoped signing keys are added to the parent
+  // account's `signing_keys` and used to sign user JWTs in that account's
+  // namespace.
+  const kp = createAccount();
+  const seed = TEXT_DECODER.decode(kp.getSeed());
+  const publicKey = kp.getPublicKey();
+  const scopeTemplate = newScopedSigner(kp, role, {
+    pub: { allow: [scopedSubject], deny: [] },
+    sub: { allow: [scopedSubject, "_INBOX.>"], deny: [] },
+  });
+  return { seed, publicKey, scopeTemplate };
 }

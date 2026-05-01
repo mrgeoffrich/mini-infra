@@ -172,11 +172,17 @@ export async function spawnPoolInstance(
   let natsEnv: Record<string, string> = {};
   if (
     containerConfig.dynamicEnv &&
-    Object.values(containerConfig.dynamicEnv).some((src) => src.kind === 'nats-url' || src.kind === 'nats-creds')
+    Object.values(containerConfig.dynamicEnv).some(
+      (src) => src.kind === 'nats-url' || src.kind === 'nats-creds' || src.kind === 'nats-signer-seed',
+    )
   ) {
     try {
       const injector = new NatsCredentialInjector(prisma);
-      const resolved = await injector.resolve(service.natsCredentialId ?? null, containerConfig);
+      const resolved = await injector.resolve(
+        service.natsCredentialId ?? null,
+        containerConfig,
+        { stackId: ctx.stackId },
+      );
       if (resolved) natsEnv = resolved;
     } catch (err) {
       return {

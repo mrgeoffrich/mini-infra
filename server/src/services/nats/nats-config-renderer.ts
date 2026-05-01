@@ -17,6 +17,9 @@ export interface NatsConfigInputs {
   accountJwt?: string;
   accounts?: RenderedNatsAccount[];
   systemAccountPublicKey?: string;
+  /** Directory the full resolver loads JWTs from / writes to. Defaults to
+   *  /data/accounts (the NATS container's mounted nats_data volume). */
+  resolverDir?: string;
   /** Enable JetStream persistence. The NATS container mounts /data, so the
    *  store directory points there. */
   jetStream: boolean;
@@ -27,6 +30,12 @@ export interface NatsConfigInputs {
   jetStreamMaxStore?: string;
 }
 
+/**
+ * Render nats.conf using the full account resolver. NATS reads JWTs from
+ * `resolverDir/<publicKey>.jwt` files at startup and accepts
+ * `$SYS.REQ.CLAIMS.UPDATE` requests at runtime — this is what makes scoped
+ * signing-key rotation propagate without bouncing the server.
+ */
 export function renderNatsConfig(inputs: NatsConfigInputs): string {
   const accounts = inputs.accounts ?? (
     inputs.accountPublicKey && inputs.accountJwt
@@ -34,6 +43,7 @@ export function renderNatsConfig(inputs: NatsConfigInputs): string {
       : []
   );
   const systemAccountPublicKey = inputs.systemAccountPublicKey ?? inputs.accountPublicKey ?? accounts[0]?.publicKey;
+  const dir = inputs.resolverDir ?? "/data/accounts";
 
   const lines: string[] = [];
   lines.push("# Managed by mini-infra — regenerated on every NATS bootstrap.");
@@ -42,13 +52,14 @@ export function renderNatsConfig(inputs: NatsConfigInputs): string {
     lines.push(`system_account: ${systemAccountPublicKey}`);
   }
   lines.push("");
-  lines.push("resolver: MEMORY");
-  lines.push("");
-  lines.push("resolver_preload: {");
-  for (const account of accounts) {
-    lines.push(`  ${account.publicKey}: ${account.jwt}`);
-  }
+  lines.push("resolver: {");
+  lines.push("  type: full");
+  lines.push(`  dir: "${dir}"`);
+  // Reject runtime delete requests — mini-infra owns the lifecycle and
+  // pushes empty/replacement JWTs through `$SYS.REQ.CLAIMS.UPDATE` instead.
+  lines.push("  allow_delete: false");
   lines.push("}");
+
   if (inputs.jetStream) {
     lines.push("");
     lines.push("jetstream {");
