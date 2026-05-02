@@ -1,6 +1,6 @@
 ---
 name: execute-next-task
-description: Execution agent. Assumes you start at the main checkout root on `main` with a clean tree. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `git pull --ff-only origin main`, creates a fresh worktree at `.claude/worktrees/alt-NN` on branch `claude/alt-NN`, runs `pnpm install`, kicks off `pnpm worktree-env start --description "..."` in the background to warm the dev env, then executes the work end-to-end inside the new worktree — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions ending in In Review with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations from the plan). On the success path it then **cleans up the worktree** (`pnpm worktree-env delete <slug>` + `git worktree remove`) so the VM/distro slot is freed; on any failure the worktree is left alive for investigation. **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
+description: Execution agent. Assumes you start at the main checkout root on `main` with a clean tree. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `git pull --ff-only origin main`, creates a fresh worktree at `.claude/worktrees/alt-NN` on branch `claude/alt-NN`, runs `pnpm install`, kicks off `pnpm worktree-env start --description "..."` in the background to warm the dev env, then executes the work end-to-end inside the new worktree — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions ending in In Review with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations from the plan). On the success path it then spawns a Sonnet subagent that runs the `session-retrospective` skill (passing the parent session ID and the Linear issue ID), which creates a new "retro"-tagged Linear issue in the Backlog referencing the original, and **cleans up the worktree** (`pnpm worktree-env delete <slug>` + `git worktree remove`) so the VM/distro slot is freed; on any failure the worktree is left alive for investigation. **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
 ---
 
 # Execute Next Task
@@ -296,9 +296,59 @@ The point of this comment is that the next person (human or agent) opens the Lin
 
 ---
 
-## Phase 12 — Clean up the worktree (success path only)
+## Phase 12 — Post a session retrospective to Linear (success path only)
 
-**Only run this if every previous phase succeeded** — build/lint/unit passed, smoke passed, the PR is open, the issue is In Review, the handoff comment posted. If anything failed or stopped earlier, **skip this phase entirely** and leave the worktree alive so the user can investigate.
+After the handoff comment is posted but before worktree cleanup, kick off a session retrospective. The `session-retrospective` skill creates a **new** "retro"-tagged Linear issue in the Backlog, linked back to the issue you just shipped — so retros accumulate as their own searchable list with their own lifecycle, separate from the contract-style handoff comment on the original ticket. Future runs of this skill (and the user, scanning retros over time) can mine that trail for lessons.
+
+If anything earlier in the run failed and the skill stopped, this phase doesn't fire — there's no successful run to retrospect on, and the human will be debugging the failure directly. Only the success path reaches Phase 12.
+
+### 12.1 Capture the parent session ID
+
+The retrospective skill takes the session ID as an explicit parameter rather than reading `$CLAUDE_SESSION_ID`, because it's invoked from a subagent and a subagent's `$CLAUDE_SESSION_ID` points at its own (effectively empty) session, not the parent's. Capture your own session ID here so you can pass it through:
+
+```bash
+echo "$CLAUDE_SESSION_ID"
+```
+
+Hold onto the value alongside the picked Linear issue ID (`ALT-NN` from Phase 2). These two are the parameters Phase 12.2 passes to the subagent.
+
+### 12.2 Spawn a Sonnet subagent that invokes the skill
+
+Use the `Agent` tool with `subagent_type: general-purpose` and `model: sonnet`. Sonnet is the right tier — by this point the parent context is huge (full task history, code reads, tool results), and Opus on top of that just to summarize JSONL is wasteful. Sonnet handles the analysis comfortably, and the heavy lifting (JSONL reads, MCP calls) stays scoped to the subagent so it doesn't bloat the parent thread. Only the new retro issue's URL flows back across the subagent boundary.
+
+Prompt the subagent (substitute the captured session ID and the Linear issue ID):
+
+```
+Invoke the session-retrospective skill with these parameters:
+
+  --session-id <PARENT_SESSION_ID>     (the parent's session ID captured in Phase 12.1)
+  --linear-issue <ALT-NN>              (the Linear issue this run was working on)
+
+The skill will:
+  1. Run scripts/get-session.sh <PARENT_SESSION_ID> to fetch the parent JSONL.
+  2. Analyze it and generate retrospective markdown per the skill's Output Format.
+  3. Create a NEW Linear issue in the Altitude Devops team's Backlog, tagged "retro",
+     titled "Retro: <ALT-NN> — <original-issue-title>", with a Source link back to
+     <ALT-NN> at the top of the description.
+
+Return ONLY the new retro issue's URL. Do NOT return the markdown body.
+```
+
+The skill itself owns the Linear posting (team / state / label resolution, `save_issue`) — the parent doesn't need to do anything else with the result.
+
+### 12.3 Relay the retro issue URL in the run report
+
+When the subagent returns the URL, append it to your final run report so the user can navigate to it directly. The structured handoff comment (Phase 11) and the retro issue (Phase 12) are deliberately separate Linear records — the handoff is the contract for the human reviewer of the PR; the retro is meta-feedback about the run itself, with a different audience and shelf-life.
+
+### 12.4 Failure handling
+
+The retrospective is a feedback loop, not a gate. If the subagent fails — script can't find the session, the `retro` label doesn't exist in Linear, the subagent returns garbage instead of a URL, the Linear MCP errors — **don't block cleanup**. Note the failure in the run report and continue to Phase 13. A broken or hollow retro issue is worse than no retro issue.
+
+---
+
+## Phase 13 — Clean up the worktree (success path only)
+
+**Only run this if every previous phase succeeded** — build/lint/unit passed, smoke passed, the PR is open, the issue is In Review, the handoff comment posted. If anything failed or stopped earlier, **skip this phase entirely** and leave the worktree alive so the user can investigate. The retrospective phase (12) is best-effort and doesn't gate this — a failed retrospective still counts as a successful run.
 
 The worktree's purpose is to host the build + smoke for this phase. Once the PR is open and in review, the work that needs the dev env is over — review happens in GitHub on the diff, not in the worktree. So we tear it down to free the VM/distro slot and keep `pnpm worktree-env list` tidy.
 
@@ -326,7 +376,7 @@ Append a final line to the run report:
 ✓ Cleaned up worktree .claude/worktrees/<slug> and the dev-env VM.
 ```
 
-**Macos users** who run the bulk `pnpm worktree-env cleanup` command (or installed the hourly launchd agent) can rely on that to clean merged-PR worktrees on a schedule and skip Phase 12 by interrupting the skill before it runs. For Windows / WSL2 users without an equivalent agent, this phase is the cleanup mechanism.
+**Macos users** who run the bulk `pnpm worktree-env cleanup` command (or installed the hourly launchd agent) can rely on that to clean merged-PR worktrees on a schedule and skip Phase 13 by interrupting the skill before it runs. For Windows / WSL2 users without an equivalent agent, this phase is the cleanup mechanism.
 
 ---
 
@@ -335,7 +385,7 @@ Append a final line to the run report:
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
 - **Never produce an ExitPlanMode block.** This is an execution agent. Planning happened in `plan-to-linear` when the ticket was created.
-- **Never run Phase 12 (cleanup) on a failure path.** If smoke failed, the PR didn't open, the In Review transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run.
+- **Never run Phase 13 (cleanup) on a failure path.** If smoke failed, the PR didn't open, the In Review transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run. (Phase 12, the retrospective, also only runs on the success path, but a failure inside Phase 12 itself does not block Phase 13 — the retrospective is best-effort.)
 - **Never edit the plan doc.** The plan doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the plan, capture the drift in the handoff comment (Phase 11 — Deviations from the plan section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that.
 - **Never merge PRs** — even if checks pass and the PR looks great. Merging is a human decision.
 - **Never create new Linear issues** or split phases on the fly. If scope is too big for one phase, stop and report — splitting is a planning decision, not an execution decision.
@@ -371,4 +421,6 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > *Commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`. Opens PR with `Closes ALT-29` in the body. Marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording — the plan doc itself is left untouched, the re-integration agent will fold this back later. Reports the PR URL.*
 >
-> *Phase 12: every prior phase succeeded, so the skill `cd`s back to the repo root, runs `pnpm worktree-env delete alt-29 --force`, then `git worktree remove .claude/worktrees/alt-29`. Reports cleanup done. The `claude/alt-29` branch stays on the remote (the PR points at it).*
+> *Phase 12: captures `$CLAUDE_SESSION_ID` (the parent session), spawns a `general-purpose` subagent on Sonnet, and tells it to invoke the `session-retrospective` skill with `--session-id <parent-id> --linear-issue ALT-29`. The skill loads the Linear MCP, runs `scripts/get-session.sh` against the parent JSONL, generates retrospective markdown, resolves the Altitude Devops team / Backlog state / `retro` label, and creates a new issue `ALT-42 — Retro: ALT-29 — Phase 4: pg-az-backup progress + result events` with the markdown body and a Source link back to ALT-29. Subagent returns the URL of ALT-42; skill appends it to the run report.*
+>
+> *Phase 13: every prior phase succeeded, so the skill `cd`s back to the repo root, runs `pnpm worktree-env delete alt-29 --force`, then `git worktree remove .claude/worktrees/alt-29`. Reports cleanup done. The `claude/alt-29` branch stays on the remote (the PR points at it).*
