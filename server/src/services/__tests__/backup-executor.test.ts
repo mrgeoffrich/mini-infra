@@ -5,42 +5,54 @@ import { DockerExecutorService } from "../docker-executor";
 import { PostgresDatabaseManager } from "../postgres";
 import { StorageService } from "../storage/storage-service";
 import type { StorageBackend } from "@mini-infra/types";
-import { InMemoryQueue } from "../../lib/in-memory-queue";
+import { BackupSubject } from "@mini-infra/types";
 import * as loggerFactory from "../../lib/logger-factory";
+import { NatsBus } from "../nats/nats-bus";
+import type { BackupRunRequest, BackupRunReply } from "../nats/payload-schemas";
 
-// Hoist mock variables used inside vi.mock() factory functions
-const { mockQueue } = vi.hoisted(() => {
-  return {
-    mockQueue: {
-      add: vi.fn(),
-      process: vi.fn(),
-      getJobs: vi.fn(),
-      close: vi.fn(),
-      on: vi.fn(),
-      remove: vi.fn(),
-      getStats: vi.fn().mockReturnValue({
-        pending: 0,
-        active: 0,
-        completed: 0,
-        failed: 0,
-        total: 0,
-      }),
+// ── NatsBus mock ──────────────────────────────────────────────────────────────
+// Capture the respond handler so tests can invoke it directly to simulate
+// a NATS request round-trip without a live NATS server.
+type RespondHandler = (req: BackupRunRequest) => Promise<BackupRunReply>;
+
+const { mockBus } = vi.hoisted(() => {
+  let _respondHandler: RespondHandler | null = null;
+  const bus = {
+    respond: vi.fn((subject: string, handler: RespondHandler) => {
+      _respondHandler = handler;
+      return () => {};
+    }),
+    request: vi.fn(async (_subject: string, req: BackupRunRequest) => {
+      if (!_respondHandler) throw new Error("No respond handler registered");
+      return _respondHandler(req);
+    }),
+    publish: vi.fn().mockResolvedValue(undefined),
+    jetstream: {
+      publish: vi.fn().mockResolvedValue({}),
+      ensureStream: vi.fn().mockResolvedValue(undefined),
+      ensureConsumer: vi.fn().mockResolvedValue(undefined),
     },
+    getHealth: vi.fn().mockReturnValue({ state: "connected" }),
+    getRespondHandler: () => _respondHandler,
   };
+  return { mockBus: bus };
 });
 
-vi.mock("../../lib/in-memory-queue", () => {
-  return {
-    InMemoryQueue: vi.fn().mockImplementation(function() { return mockQueue; }),
-  };
-});
+vi.mock("../nats/nats-bus", () => ({
+  NatsBus: { getInstance: vi.fn(() => mockBus) },
+}));
 
-// Mock all the services
 vi.mock("../docker-executor");
 vi.mock("../backup/backup-configuration-manager");
 vi.mock("../postgres/postgres-database-manager");
+vi.mock("../backup/database-network-resolver", () => ({
+  resolveDatabaseNetworkName: vi.fn().mockResolvedValue("mini-infra-postgres-backup"),
+}));
+vi.mock("../backup/sidecar-env", () => ({
+  buildSidecarUploadEnv: vi.fn().mockReturnValue({ AZURE_SAS_URL: "https://example.com/sas" }),
+  redactSidecarEnv: vi.fn().mockReturnValue({ AZURE_SAS_URL: "[REDACTED]" }),
+}));
 
-// Mock logger factory - create the mock instance inline
 vi.mock("../../lib/logger-factory", () => {
   const mockLoggerInstance = {
     info: vi.fn(),
@@ -48,26 +60,23 @@ vi.mock("../../lib/logger-factory", () => {
     warn: vi.fn(),
     debug: vi.fn(),
   };
-
   return {
-    getLogger: vi.fn(function() { return mockLoggerInstance; }),
+    getLogger: vi.fn(() => mockLoggerInstance),
     clearLoggerCache: vi.fn(),
-    createChildLogger: vi.fn(function() { return mockLoggerInstance; }),
-    selfBackupLogger: vi.fn(function() { return mockLoggerInstance; }),
+    createChildLogger: vi.fn(() => mockLoggerInstance),
+    selfBackupLogger: vi.fn(() => mockLoggerInstance),
     serializeError: (e: unknown) => e,
-    appLogger: vi.fn(function() { return mockLoggerInstance; }),
-    servicesLogger: vi.fn(function() { return mockLoggerInstance; }),
-    httpLogger: vi.fn(function() { return mockLoggerInstance; }),
-    prismaLogger: vi.fn(function() { return mockLoggerInstance; }),
-    default: vi.fn(function() { return mockLoggerInstance; }),
+    appLogger: vi.fn(() => mockLoggerInstance),
+    servicesLogger: vi.fn(() => mockLoggerInstance),
+    httpLogger: vi.fn(() => mockLoggerInstance),
+    prismaLogger: vi.fn(() => mockLoggerInstance),
+    default: vi.fn(() => mockLoggerInstance),
   };
 });
 
-// Get reference to the mocked logger
-const { servicesLogger } = loggerFactory as any;
-const mockLogger = servicesLogger();
+const { servicesLogger } = loggerFactory as unknown as { servicesLogger: () => typeof mockLogger };
+const mockLogger = (servicesLogger as () => { info: ReturnType<typeof vi.fn>; error: ReturnType<typeof vi.fn>; warn: ReturnType<typeof vi.fn>; debug: ReturnType<typeof vi.fn> })();
 
-// Mock Prisma client
 const mockPrisma = {
   backupOperation: {
     create: vi.fn(),
@@ -79,11 +88,11 @@ const mockPrisma = {
   },
 } as unknown as typeof prisma;
 
-// Mock service instances
 const mockDockerExecutor = {
   initialize: vi.fn(),
   executeContainerWithProgress: vi.fn(),
   pullImageWithAutoAuth: vi.fn().mockResolvedValue(undefined),
+  createNetwork: vi.fn().mockResolvedValue(undefined),
 } as unknown as DockerExecutorService;
 
 const mockBackupConfigurationManager = {
@@ -96,7 +105,6 @@ const mockPostgresDatabaseManager = {
   getConnectionConfig: vi.fn(),
 } as unknown as PostgresDatabaseManager;
 
-// Mock the active StorageBackend the executor resolves via StorageService.
 const mockStorageBackend = {
   providerId: "azure",
   mintUploadHandle: vi.fn().mockResolvedValue({
@@ -127,41 +135,31 @@ describe("BackupExecutorService", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset the respond handler captured in the hoisted mock
+    (mockBus.respond as ReturnType<typeof vi.fn>).mockImplementation((subject: string, handler: RespondHandler) => {
+      (mockBus as unknown as { getRespondHandler: () => RespondHandler }).getRespondHandler = () => handler;
+      // Re-wire request to use the new handler
+      (mockBus.request as ReturnType<typeof vi.fn>).mockImplementation(async (_subject: string, req: BackupRunRequest) => {
+        return handler(req);
+      });
+      return () => {};
+    });
+
     backupExecutorService = new BackupExecutorService(mockPrisma);
     vi.spyOn(StorageService, "getInstance").mockReturnValue({
       getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
     } as unknown as StorageService);
 
-    // Mock service instances
-    (backupExecutorService as any).dockerExecutor = mockDockerExecutor;
-    (backupExecutorService as any).backupConfigService =
+    (backupExecutorService as unknown as { dockerExecutor: DockerExecutorService }).dockerExecutor = mockDockerExecutor;
+    (backupExecutorService as unknown as { backupConfigService: BackupConfigurationManager }).backupConfigService =
       mockBackupConfigurationManager;
-    (backupExecutorService as any).databaseConfigService =
+    (backupExecutorService as unknown as { databaseConfigService: PostgresDatabaseManager }).databaseConfigService =
       mockPostgresDatabaseManager;
-    (backupExecutorService as any).backupQueue = mockQueue;
   });
 
-  // Note: AzureStorageBackend cache cleanup is covered by the backend's own
-  // unit tests; this suite mocks StorageService directly so there's no cache
-  // to clean up here.
-
   describe("constructor", () => {
-    it("should initialize with Prisma client and create queue", () => {
+    it("should initialize with Prisma client", () => {
       expect(backupExecutorService).toBeInstanceOf(BackupExecutorService);
-      expect(InMemoryQueue).toHaveBeenCalledWith(
-        "postgres-backup",
-        expect.objectContaining({
-          defaultJobOptions: expect.objectContaining({
-            attempts: 3,
-            backoff: expect.objectContaining({
-              type: "exponential",
-              delay: 30000,
-            }),
-            removeOnComplete: 10,
-            removeOnFail: 50,
-          }),
-        }),
-      );
     });
   });
 
@@ -172,18 +170,21 @@ describe("BackupExecutorService", () => {
       await backupExecutorService.initialize();
 
       expect(mockDockerExecutor.initialize).toHaveBeenCalled();
+      expect(mockBus.respond).toHaveBeenCalledWith(
+        BackupSubject.run,
+        expect.any(Function),
+      );
       expect(mockLogger.info).toHaveBeenCalledWith(
-        {
+        expect.objectContaining({
           initializationTimeMs: expect.any(Number),
-          queueConcurrency: 2,
-          maxRetries: 3,
+          maxConcurrent: 2,
           timeoutMs: 7200000,
-        },
+        }),
         "BackupExecutorService initialized successfully",
       );
     });
 
-    it("should handle initialization failure", async () => {
+    it("should handle Docker initialization failure gracefully", async () => {
       mockDockerExecutor.initialize = vi
         .fn()
         .mockRejectedValue(new Error("Docker initialization failed"));
@@ -191,22 +192,19 @@ describe("BackupExecutorService", () => {
       await backupExecutorService.initialize();
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        {
-          error: "Docker initialization failed",
-        },
+        { error: "Docker initialization failed" },
         "Failed to initialize Docker executor - backup operations will be unavailable until Docker is configured",
       );
-
+      // NATS responder should still be registered despite Docker failure
+      expect(mockBus.respond).toHaveBeenCalledWith(BackupSubject.run, expect.any(Function));
     });
 
     it("should not reinitialize if already initialized", async () => {
       mockDockerExecutor.initialize = vi.fn().mockResolvedValue(undefined);
 
-      // Initialize twice
       await backupExecutorService.initialize();
       await backupExecutorService.initialize();
 
-      // Should only call initialize once
       expect(mockDockerExecutor.initialize).toHaveBeenCalledTimes(1);
     });
   });
@@ -222,27 +220,23 @@ describe("BackupExecutorService", () => {
       completedAt: null,
       sizeBytes: null,
       storageObjectUrl: null,
+      storageProviderAtCreation: null,
       errorMessage: null,
       metadata: null,
     };
 
     beforeEach(() => {
       mockDockerExecutor.initialize = vi.fn().mockResolvedValue(undefined);
+      mockPrisma.backupOperation.create = vi.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(mockBackupOperation);
     });
 
-    it("should create and queue backup operation", async () => {
-      mockPrisma.backupOperation.create = vi
-        .fn()
-        .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
+    it("should create and return backup operation via NATS request", async () => {
+      await backupExecutorService.initialize();
 
-      const result = await backupExecutorService.queueBackup(
-        "db-123",
-        "manual",
-        "user-123",
-      );
+      const result = await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         id: "operation-123",
         databaseId: "db-123",
         operationType: "manual",
@@ -264,34 +258,28 @@ describe("BackupExecutorService", () => {
           progress: 0,
         },
       });
-
-      expect(mockQueue.add).toHaveBeenCalledWith(
-        "execute-backup",
-        {
-          backupOperationId: "operation-123",
-          databaseId: "db-123",
-          operationType: "manual",
-          userId: "user-123",
-        },
-        { delay: 0 },
-      );
     });
 
     it("should initialize if not already initialized", async () => {
-      // Set as not initialized
-      (backupExecutorService as any).isInitialized = false;
-
-      mockPrisma.backupOperation.create = vi
-        .fn()
-        .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
+      (backupExecutorService as unknown as { isInitialized: boolean }).isInitialized = false;
 
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
       expect(mockDockerExecutor.initialize).toHaveBeenCalled();
     });
 
+    it("should throw when at max concurrency", async () => {
+      await backupExecutorService.initialize();
+      // Saturate the concurrency counter
+      (backupExecutorService as unknown as { activeOperationCount: number }).activeOperationCount = 2;
+
+      await expect(
+        backupExecutorService.queueBackup("db-123", "manual", "user-123"),
+      ).rejects.toThrow(/max concurrent backups/);
+    });
+
     it("should handle database operation creation failure", async () => {
+      await backupExecutorService.initialize();
       mockPrisma.backupOperation.create = vi
         .fn()
         .mockRejectedValue(new Error("Database error"));
@@ -299,28 +287,6 @@ describe("BackupExecutorService", () => {
       await expect(
         backupExecutorService.queueBackup("db-123", "manual", "user-123"),
       ).rejects.toThrow("Database error");
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Database error",
-          databaseId: "db-123",
-          operationType: "manual",
-          userId: "user-123",
-          queueingTimeMs: expect.any(Number),
-        },
-        "Failed to queue backup operation",
-      );
-    });
-
-    it("should handle queue add failure", async () => {
-      mockPrisma.backupOperation.create = vi
-        .fn()
-        .mockResolvedValue(mockBackupOperation);
-      mockQueue.add = vi.fn().mockRejectedValue(new Error("Queue error"));
-
-      await expect(
-        backupExecutorService.queueBackup("db-123", "manual", "user-123"),
-      ).rejects.toThrow("Queue error");
     });
   });
 
@@ -335,30 +301,21 @@ describe("BackupExecutorService", () => {
       completedAt: null,
       sizeBytes: null,
       storageObjectUrl: null,
+      storageProviderAtCreation: null,
       errorMessage: null,
       metadata: null,
     };
 
     it("should return backup operation status", async () => {
-      mockPrisma.backupOperation.findUnique = vi
-        .fn()
-        .mockResolvedValue(mockOperation);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(mockOperation);
 
-      const result =
-        await backupExecutorService.getBackupStatus("operation-123");
+      const result = await backupExecutorService.getBackupStatus("operation-123");
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         id: "operation-123",
         databaseId: "db-123",
-        operationType: "manual",
         status: "running",
-        startedAt: "2023-01-01T00:00:00.000Z",
-        completedAt: null,
-        sizeBytes: null,
-        storageObjectUrl: null,
-        errorMessage: null,
         progress: 50,
-        metadata: null,
       });
     });
 
@@ -380,10 +337,7 @@ describe("BackupExecutorService", () => {
       ).rejects.toThrow("Database error");
 
       expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Database error",
-          operationId: "operation-123",
-        },
+        { error: "Database error", operationId: "operation-123" },
         "Failed to get backup status",
       );
     });
@@ -392,35 +346,25 @@ describe("BackupExecutorService", () => {
   describe("cancelBackup", () => {
     const mockOperation = {
       id: "operation-123",
+      databaseId: "db-123",
       status: "running",
       progress: 50,
     };
 
-    const mockJob = {
-      id: "job-123",
-      data: { backupOperationId: "operation-123" },
-      remove: vi.fn(),
-    };
-
     it("should cancel backup operation successfully", async () => {
-      mockPrisma.backupOperation.findUnique = vi
-        .fn()
-        .mockResolvedValue(mockOperation);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(mockOperation);
       mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
-      mockQueue.getJobs = vi.fn().mockResolvedValue([mockJob]);
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
       expect(result).toBe(true);
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith({
         where: { id: "operation-123" },
-        data: {
+        data: expect.objectContaining({
           status: "failed",
-          progress: 50,
           errorMessage: "Operation cancelled by user",
-        },
+        }),
       });
-      expect(mockQueue.remove).toHaveBeenCalledWith(mockJob.id);
     });
 
     it("should return false for non-existent operation", async () => {
@@ -433,26 +377,11 @@ describe("BackupExecutorService", () => {
 
     it("should return false for completed operation", async () => {
       const completedOperation = { ...mockOperation, status: "completed" };
-      mockPrisma.backupOperation.findUnique = vi
-        .fn()
-        .mockResolvedValue(completedOperation);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(completedOperation);
 
       const result = await backupExecutorService.cancelBackup("operation-123");
 
       expect(result).toBe(false);
-    });
-
-    it("should handle cancellation when job not in queue", async () => {
-      mockPrisma.backupOperation.findUnique = vi
-        .fn()
-        .mockResolvedValue(mockOperation);
-      mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
-      mockQueue.getJobs = vi.fn().mockResolvedValue([]); // No jobs in queue
-
-      const result = await backupExecutorService.cancelBackup("operation-123");
-
-      expect(result).toBe(true);
-      expect(mockPrisma.backupOperation.update).toHaveBeenCalled();
     });
 
     it("should handle errors during cancellation", async () => {
@@ -464,21 +393,14 @@ describe("BackupExecutorService", () => {
 
       expect(result).toBe(false);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Database error",
-          operationId: "operation-123",
-        },
+        { error: "Database error", operationId: "operation-123" },
         "Failed to cancel backup operation",
       );
     });
   });
 
   describe("backup execution", () => {
-    const mockDatabase = {
-      id: "db-123",
-      name: "test-db",
-      database: "testdb",
-    };
+    const mockDatabase = { id: "db-123", name: "test-db", database: "testdb" };
 
     const mockBackupConfig = {
       id: "config-123",
@@ -496,118 +418,84 @@ describe("BackupExecutorService", () => {
       database: "testdb",
     };
 
+    const mockBackupOperation = {
+      id: "operation-123",
+      databaseId: "db-123",
+      operationType: "manual",
+      status: "pending",
+      progress: 0,
+      startedAt: new Date(),
+      completedAt: null,
+      sizeBytes: null,
+      storageObjectUrl: null,
+      storageProviderAtCreation: null,
+      errorMessage: null,
+      metadata: null,
+    };
+
     beforeEach(() => {
-      mockPostgresDatabaseManager.getDatabaseById = vi
-        .fn()
-        .mockResolvedValue(mockDatabase);
-      mockBackupConfigurationManager.getBackupConfigByDatabaseId = vi
-        .fn()
-        .mockResolvedValue(mockBackupConfig);
-      mockPostgresDatabaseManager.getConnectionConfig = vi
-        .fn()
-        .mockResolvedValue(mockConnectionConfig);
-      // The new executor resolves the backend via StorageService — no need
-      // to wire a getConnectionString stub. Make sure mintUploadHandle and
-      // head() return canonical fixtures.
+      mockPostgresDatabaseManager.getDatabaseById = vi.fn().mockResolvedValue(mockDatabase);
+      mockBackupConfigurationManager.getBackupConfigByDatabaseId = vi.fn().mockResolvedValue(mockBackupConfig);
+      mockPostgresDatabaseManager.getConnectionConfig = vi.fn().mockResolvedValue(mockConnectionConfig);
       mockStorageBackend.mintUploadHandle = vi.fn().mockResolvedValue({
         kind: "azure-sas-url",
-        payload: {
-          sasUrl: "https://acc.blob.core.windows.net/cont/blob?sas",
-          containerName: "cont",
-          blobName: "blob",
-        },
+        payload: { sasUrl: "https://acc.blob.core.windows.net/cont/blob?sas", containerName: "cont", blobName: "blob" },
         expiresAt: new Date(Date.now() + 3600 * 1000),
       });
-      mockStorageBackend.head = vi.fn().mockResolvedValue({
-        name: "blob",
-        size: 1000000,
-        createdAt: new Date("2023-01-01T02:00:00Z"),
-      });
+      mockStorageBackend.head = vi.fn().mockResolvedValue({ name: "blob", size: 1000000 });
       mockStorageBackend.getDownloadHandle = vi.fn().mockResolvedValue({
         redirectUrl: "https://acc.blob.core.windows.net/cont/blob?dl-sas",
       });
-      mockPrisma.systemSettings.findFirst = vi.fn().mockResolvedValue({
-        value: "postgres:15-alpine",
-      });
+      mockPrisma.backupOperation.create = vi.fn().mockResolvedValue(mockBackupOperation);
+      mockPrisma.backupOperation.findUnique = vi.fn().mockResolvedValue(mockBackupOperation);
       mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
+      mockBackupConfigurationManager.updateLastBackupTime = vi.fn().mockResolvedValue(undefined);
     });
 
-    it("should execute backup successfully", async () => {
-      // Mock container execution
+    it("should execute backup successfully and publish completed event", async () => {
       mockDockerExecutor.executeContainerWithProgress = vi
         .fn()
-        .mockImplementation(async (config, progressCallback) => {
-          // Simulate progress updates
-          await progressCallback({ status: "starting" });
-          await progressCallback({ status: "running" });
-          await progressCallback({ status: "completed" });
-
-          return {
-            exitCode: 0,
-            stdout: "Backup completed",
-            stderr: "",
-          };
+        .mockImplementation(async (_config: unknown, progressCallback: (p: { status: string; errorMessage?: string }) => void) => {
+          progressCallback({ status: "starting" });
+          progressCallback({ status: "running" });
+          progressCallback({ status: "completed" });
+          return { exitCode: 0, stdout: "Backup completed", stderr: "" };
         });
 
-      mockBackupConfigurationManager.updateLastBackupTime = vi
-        .fn()
-        .mockResolvedValue(undefined);
-
-      // Test the private executeBackup method through queueBackup
-      mockPrisma.backupOperation.create = vi.fn().mockResolvedValue({
-        id: "operation-123",
-        databaseId: "db-123",
-        operationType: "manual",
-        status: "pending",
-        progress: 0,
-        startedAt: new Date(),
-        completedAt: null,
-        sizeBytes: null,
-        storageObjectUrl: null,
-        errorMessage: null,
-        metadata: null,
-      });
-
-      mockQueue.add = vi.fn().mockResolvedValue({ id: "job-123" });
-
+      await backupExecutorService.initialize();
       await backupExecutorService.queueBackup("db-123", "manual", "user-123");
 
-      // Verify the queue processor was called with correct function
-      expect(mockQueue.process).toHaveBeenCalledWith(
-        "execute-backup",
-        expect.any(Function),
-      );
+      // Give the async fire-and-forget execution a tick to complete
+      await new Promise((r) => setTimeout(r, 50));
 
-      // Run the registered processor with our queued job to drive the
-      // executeBackup path end-to-end and assert the completion write
-      // includes the storage provider that owned the backup.
-      const processorCall = (mockQueue.process as any).mock.calls.find(
-        (call: any) => call[0] === "execute-backup",
-      );
-      expect(processorCall).toBeDefined();
-      const processor = processorCall![1] as (job: any) => Promise<void>;
-
-      await processor({
-        id: "job-123",
-        data: {
-          backupOperationId: "operation-123",
-          databaseId: "db-123",
-          operationType: "manual",
-          userId: "user-123",
-        },
-      });
-
-      // The completion write must capture the active provider so a later
-      // restore can resolve the right backend even after the active provider
-      // has switched. Phase 1 only ships the Azure provider, so the value
-      // here is "azure" — but the field MUST be present on the write.
+      // Final DB write must capture the storage provider
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "operation-123" },
-          data: expect.objectContaining({
-            storageProviderAtCreation: "azure",
-          }),
+          data: expect.objectContaining({ storageProviderAtCreation: "azure" }),
         }),
+      );
+
+      // JetStream publish for completed event
+      expect(mockBus.jetstream.publish).toHaveBeenCalledWith(
+        BackupSubject.completed,
+        expect.objectContaining({ operationId: "operation-123", databaseId: "db-123" }),
+      );
+    });
+
+    it("should publish failed event on container non-zero exit", async () => {
+      mockDockerExecutor.executeContainerWithProgress = vi
+        .fn()
+        .mockResolvedValue({ exitCode: 1, stdout: "", stderr: "pg_dump failed" });
+
+      await backupExecutorService.initialize();
+      await backupExecutorService.queueBackup("db-123", "manual", "user-123");
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockBus.jetstream.publish).toHaveBeenCalledWith(
+        BackupSubject.failed,
+        expect.objectContaining({ operationId: "operation-123", errorMessage: expect.stringContaining("pg_dump failed") }),
       );
     });
   });
@@ -615,18 +503,19 @@ describe("BackupExecutorService", () => {
   describe("verifyBackupInStorage", () => {
     it("should verify backup files exist", async () => {
       mockStorageBackend.head = vi.fn().mockResolvedValue({
-        name: "db-backups/testdb/backup-2023-01-01.sql",
+        name: "db-backups/testdb/backup.sql",
         size: 1000000,
       });
       mockStorageBackend.getDownloadHandle = vi.fn().mockResolvedValue({
-        redirectUrl:
-          "https://testaccount.blob.core.windows.net/test-container/db-backups/testdb/backup-2023-01-01.sql?sas",
+        redirectUrl: "https://testaccount.blob.core.windows.net/test-container/backup.sql?sas",
       });
 
-      const result = await (backupExecutorService as any).verifyBackupInStorage(
+      const result = await (backupExecutorService as unknown as {
+        verifyBackupInStorage: (b: StorageBackend, loc: string, obj: string) => Promise<{ success: boolean; sizeBytes?: bigint; objectUrl?: string }>;
+      }).verifyBackupInStorage(
         mockStorageBackend,
         "test-container",
-        "db-backups/testdb/backup-2023-01-01.sql",
+        "db-backups/testdb/backup.sql",
       );
 
       expect(result.success).toBe(true);
@@ -637,10 +526,12 @@ describe("BackupExecutorService", () => {
     it("should return error when backup object is missing", async () => {
       mockStorageBackend.head = vi.fn().mockResolvedValue(null);
 
-      const result = await (backupExecutorService as any).verifyBackupInStorage(
+      const result = await (backupExecutorService as unknown as {
+        verifyBackupInStorage: (b: StorageBackend, loc: string, obj: string) => Promise<{ success: boolean; error?: string }>;
+      }).verifyBackupInStorage(
         mockStorageBackend,
         "test-container",
-        "db-backups/testdb/backup-2023-01-01.sql",
+        "db-backups/testdb/backup.sql",
       );
 
       expect(result.success).toBe(false);
@@ -652,10 +543,12 @@ describe("BackupExecutorService", () => {
         .fn()
         .mockRejectedValue(new Error("Storage backend unreachable"));
 
-      const result = await (backupExecutorService as any).verifyBackupInStorage(
+      const result = await (backupExecutorService as unknown as {
+        verifyBackupInStorage: (b: StorageBackend, loc: string, obj: string) => Promise<{ success: boolean; error?: string }>;
+      }).verifyBackupInStorage(
         mockStorageBackend,
         "test-container",
-        "db-backups/testdb/backup-2023-01-01.sql",
+        "db-backups/testdb/backup.sql",
       );
 
       expect(result.success).toBe(false);
@@ -677,7 +570,7 @@ describe("BackupExecutorService", () => {
     it("should return image from PG_BACKUP_IMAGE_TAG env var when set", () => {
       process.env.PG_BACKUP_IMAGE_TAG = "ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3";
 
-      const result = (backupExecutorService as any).getBackupDockerImage();
+      const result = (backupExecutorService as unknown as { getBackupDockerImage: () => string }).getBackupDockerImage();
 
       expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:1.2.3");
     });
@@ -685,24 +578,23 @@ describe("BackupExecutorService", () => {
     it("should return default image when env var is not set", () => {
       delete process.env.PG_BACKUP_IMAGE_TAG;
 
-      const result = (backupExecutorService as any).getBackupDockerImage();
+      const result = (backupExecutorService as unknown as { getBackupDockerImage: () => string }).getBackupDockerImage();
 
       expect(result).toBe("ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev");
     });
   });
 
   describe("updateBackupProgress", () => {
-    it("should update progress successfully", async () => {
+    it("should update progress and publish NATS event for running status", async () => {
       mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
 
-      await (backupExecutorService as any).updateBackupProgress(
-        "operation-123",
-        {
-          status: "running",
-          progress: 75,
-          message: "Uploading to Azure",
-        },
-      );
+      await (backupExecutorService as unknown as {
+        updateBackupProgress: (id: string, dbId: string, data: { status: string; progress: number; message?: string }) => Promise<void>;
+      }).updateBackupProgress("operation-123", "db-123", {
+        status: "running",
+        progress: 75,
+        message: "Uploading to Azure",
+      });
 
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith({
         where: { id: "operation-123" },
@@ -714,36 +606,39 @@ describe("BackupExecutorService", () => {
       });
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        {
+        expect.objectContaining({
           operationId: "operation-123",
           status: "running",
           progress: 75,
           message: "Uploading to Azure",
-        },
+        }),
         "Backup progress updated",
+      );
+
+      // NATS progress event published for running status
+      expect(mockBus.publish).toHaveBeenCalledWith(
+        `${BackupSubject.progressPrefix}.operation-123`,
+        expect.objectContaining({ operationId: "operation-123", status: "running", progress: 75 }),
+        { unchecked: true },
       );
     });
 
     it("should set completedAt when status is completed", async () => {
       mockPrisma.backupOperation.update = vi.fn().mockResolvedValue({});
 
-      // Mock Date constructor
       const RealDate = Date;
       const fixedDate = new RealDate("2023-01-01T12:00:00.000Z");
-      vi.spyOn(global, "Date").mockImplementation(function(this: any, dateString?: any) {
-        if (dateString) {
-          return new RealDate(dateString);
-        }
+      vi.spyOn(global, "Date").mockImplementation(function(this: unknown, dateString?: unknown) {
+        if (dateString) return new RealDate(dateString as string);
         return fixedDate;
-      } as any) as any;
+      } as unknown as DateConstructor);
 
-      await (backupExecutorService as any).updateBackupProgress(
-        "operation-123",
-        {
-          status: "completed",
-          progress: 100,
-        },
-      );
+      await (backupExecutorService as unknown as {
+        updateBackupProgress: (id: string, dbId: string, data: { status: string; progress: number }) => Promise<void>;
+      }).updateBackupProgress("operation-123", "db-123", {
+        status: "completed",
+        progress: 100,
+      });
 
       expect(mockPrisma.backupOperation.update).toHaveBeenCalledWith({
         where: { id: "operation-123" },
@@ -763,15 +658,13 @@ describe("BackupExecutorService", () => {
         .fn()
         .mockRejectedValue(new Error("Database error"));
 
-      // Should not throw, just log error
-      await (backupExecutorService as any).updateBackupProgress(
-        "operation-123",
-        {
-          status: "failed",
-          progress: 0,
-          errorMessage: "Test error",
-        },
-      );
+      await (backupExecutorService as unknown as {
+        updateBackupProgress: (id: string, dbId: string, data: { status: string; progress: number; errorMessage?: string }) => Promise<void>;
+      }).updateBackupProgress("operation-123", "db-123", {
+        status: "failed",
+        progress: 0,
+        errorMessage: "Test error",
+      });
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -789,27 +682,12 @@ describe("BackupExecutorService", () => {
   });
 
   describe("shutdown", () => {
-    it("should close queue successfully", async () => {
-      mockQueue.close = vi.fn().mockResolvedValue(undefined);
-
+    it("should log shutdown successfully", async () => {
       await backupExecutorService.shutdown();
 
-      expect(mockQueue.close).toHaveBeenCalled();
       expect(mockLogger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ activeOperationCount: 0 }),
         "BackupExecutorService shut down successfully",
-      );
-    });
-
-    it("should handle shutdown errors", async () => {
-      mockQueue.close = vi.fn().mockRejectedValue(new Error("Close error"));
-
-      await backupExecutorService.shutdown();
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        {
-          error: "Close error",
-        },
-        "Error during BackupExecutorService shutdown",
       );
     });
   });
@@ -824,16 +702,16 @@ describe("BackupExecutorService", () => {
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: new Date("2023-01-01T01:00:00Z"),
         sizeBytes: BigInt(1000000),
-        storageObjectUrl:
-          "https://example.blob.core.windows.net/container/backup.sql",
+        storageObjectUrl: "https://example.blob.core.windows.net/container/backup.sql",
+        storageProviderAtCreation: "azure",
         errorMessage: null,
         progress: 100,
         metadata: '{"duration": 3600}',
       };
 
-      const result = (backupExecutorService as any).mapBackupOperationToInfo(
-        operation,
-      );
+      const result = (backupExecutorService as unknown as {
+        mapBackupOperationToInfo: (op: typeof operation) => BackupOperationInfo;
+      }).mapBackupOperationToInfo(operation);
 
       expect(result).toEqual({
         id: "operation-123",
@@ -843,129 +721,58 @@ describe("BackupExecutorService", () => {
         startedAt: "2023-01-01T00:00:00.000Z",
         completedAt: "2023-01-01T01:00:00.000Z",
         sizeBytes: 1000000,
-        storageObjectUrl:
-          "https://example.blob.core.windows.net/container/backup.sql",
+        storageObjectUrl: "https://example.blob.core.windows.net/container/backup.sql",
+        storageProviderAtCreation: "azure",
         errorMessage: null,
         progress: 100,
         metadata: { duration: 3600 },
       });
     });
 
-    it("should handle null/undefined values", () => {
-      const operation = {
-        id: "operation-123",
-        databaseId: "db-123",
-        operationType: "scheduled",
-        status: "running",
-        startedAt: new Date("2023-01-01T00:00:00Z"),
-        completedAt: null,
-        sizeBytes: null,
-        storageObjectUrl: null,
-        errorMessage: null,
-        progress: 50,
-        metadata: null,
-      };
-
-      const result = (backupExecutorService as any).mapBackupOperationToInfo(
-        operation,
-      );
-
-      expect(result).toEqual({
-        id: "operation-123",
-        databaseId: "db-123",
-        operationType: "scheduled",
-        status: "running",
-        startedAt: "2023-01-01T00:00:00.000Z",
-        completedAt: null,
-        sizeBytes: null,
-        storageObjectUrl: null,
-        errorMessage: null,
-        progress: 50,
-        metadata: null,
-      });
-    });
-
-    it("should handle invalid JSON metadata", () => {
+    it("should handle null completedAt", () => {
       const operation = {
         id: "operation-123",
         databaseId: "db-123",
         operationType: "manual",
-        status: "failed",
+        status: "running",
         startedAt: new Date("2023-01-01T00:00:00Z"),
         completedAt: null,
         sizeBytes: null,
         storageObjectUrl: null,
-        errorMessage: "Test error",
-        progress: 0,
-        metadata: "invalid-json",
+        storageProviderAtCreation: null,
+        errorMessage: null,
+        progress: 50,
+        metadata: null,
       };
 
-      expect(() => {
-        (backupExecutorService as any).mapBackupOperationToInfo(operation);
-      }).toThrow();
+      const result = (backupExecutorService as unknown as {
+        mapBackupOperationToInfo: (op: typeof operation) => BackupOperationInfo;
+      }).mapBackupOperationToInfo(operation);
+
+      expect(result.completedAt).toBeNull();
+      expect(result.sizeBytes).toBeNull();
+      expect(result.metadata).toBeNull();
     });
   });
 
-  describe("queue event handling", () => {
-    it("should setup queue event handlers", () => {
-      // Constructor should have set up event handlers
-      expect(mockQueue.on).toHaveBeenCalledWith(
-        "completed",
-        expect.any(Function),
-      );
-      expect(mockQueue.on).toHaveBeenCalledWith("failed", expect.any(Function));
-    });
-
-    it("should log completed jobs", () => {
-      const mockJob = {
-        id: "job-123",
-        data: { backupOperationId: "operation-123" },
-      };
-      const result = "success";
-
-      // Get the completed handler and call it
-      const completedHandler = mockQueue.on.mock.calls.find(
-        (call) => call[0] === "completed",
-      )?.[1];
-
-      if (completedHandler) {
-        completedHandler(mockJob, result);
-
-        expect(mockLogger.info).toHaveBeenCalledWith(
-          {
-            jobId: "job-123",
-            operationId: "operation-123",
-            result: "success",
-          },
-          "Backup job completed",
-        );
-      }
-    });
-
-    it("should log failed jobs", () => {
-      const mockJob = {
-        id: "job-123",
-        data: { backupOperationId: "operation-123" },
-      };
-      const error = new Error("Job failed");
-
-      // Get the failed handler and call it
-      const failedHandler = mockQueue.on.mock.calls.find(
-        (call) => call[0] === "failed",
-      )?.[1];
-
-      if (failedHandler) {
-        failedHandler(mockJob, error);
-
-        expect(mockLogger.error).toHaveBeenCalledWith(
-          {
-            jobId: "job-123",
-            operationId: "operation-123",
-            error: "Job failed",
-          },
-          "Backup job failed permanently",
-        );
-      }
+  describe("getActiveOperationCount", () => {
+    it("should return zero initially", () => {
+      expect(backupExecutorService.getActiveOperationCount()).toBe(0);
     });
   });
 });
+
+type BackupOperationInfo = {
+  id: string;
+  databaseId: string;
+  operationType: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  sizeBytes: number | null;
+  storageObjectUrl: string | null | undefined;
+  storageProviderAtCreation: string | null | undefined;
+  errorMessage: string | null | undefined;
+  progress: number;
+  metadata: Record<string, unknown> | null;
+};

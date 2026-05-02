@@ -24,6 +24,71 @@ import {
 } from "@mini-infra/types";
 
 // ====================================================================
+// pg-az-backup (Phase 4, ALT-29)
+// ====================================================================
+
+/** Command payload: scheduler asks the executor to start a backup run. */
+export const backupRunRequestSchema = z.object({
+  databaseId: z.string().min(1).max(64),
+  userId: z.string().min(1).max(64),
+  operationType: z.enum(["manual", "scheduled"]),
+});
+export type BackupRunRequest = z.infer<typeof backupRunRequestSchema>;
+
+/** Reply: executor accepts or rejects the run (capacity check). */
+export const backupRunReplySchema = z.object({
+  operationId: z.string().max(64),
+  accepted: z.boolean(),
+  /** Number of operations currently executing (0–2). */
+  queueDepth: z.number().int().nonnegative(),
+  /** Human-readable rejection reason — only set when `accepted` is false. */
+  reason: z.string().max(256).optional(),
+});
+export type BackupRunReply = z.infer<typeof backupRunReplySchema>;
+
+/**
+ * Progress event published by the server during container execution.
+ * Subject is `mini-infra.backup.progress.<operationId>` — the `operationId`
+ * is also in the body so subscribers on the wildcard don't need to parse the
+ * subject token separately.
+ */
+export const backupProgressSchema = z.object({
+  operationId: z.string().min(1).max(64),
+  status: z.enum(["pending", "running"]),
+  progress: z.number().int().min(0).max(100),
+  message: z.string().max(512).optional(),
+});
+export type BackupProgress = z.infer<typeof backupProgressSchema>;
+
+/**
+ * Completion event published to JetStream `BackupHistory` stream.
+ * Durable — replayed on server restart to populate the events list on cold
+ * load and to repair DB records missed during a server outage.
+ */
+export const backupCompletedSchema = z.object({
+  operationId: z.string().min(1).max(64),
+  databaseId: z.string().min(1).max(64),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  storageObjectUrl: z.string().max(2048).optional(),
+  storageProvider: z.string().max(64).optional(),
+  completedAtMs: z.number().int().nonnegative(),
+});
+export type BackupCompleted = z.infer<typeof backupCompletedSchema>;
+
+/**
+ * Failure event published to JetStream `BackupHistory` stream.
+ * Published on both application-level failures (non-zero exit) and the
+ * hard-crash fallback path in the container watcher.
+ */
+export const backupFailedSchema = z.object({
+  operationId: z.string().min(1).max(64),
+  databaseId: z.string().min(1).max(64),
+  errorMessage: z.string().max(1024),
+  failedAtMs: z.number().int().nonnegative(),
+});
+export type BackupFailed = z.infer<typeof backupFailedSchema>;
+
+// ====================================================================
 // Egress gateway (Phase 3) — real schemas, replacing the Phase 1 stubs.
 // ====================================================================
 
@@ -418,10 +483,14 @@ export const payloadSchemas: Record<KnownNatsSubject, SubjectSchemaEntry> = {
   [EgressGwSubject.containerMapApplied]: { request: egressGwContainerMapAppliedSchema },
   [EgressGwSubject.decisions]: { request: egressGwDecisionSchema },
   [EgressGwSubject.health]: { request: egressGwHealthSchema },
-  [BackupSubject.run]: { request: z.unknown() },
-  [BackupSubject.progressPrefix]: { request: z.unknown() },
-  [BackupSubject.completed]: { request: z.unknown() },
-  [BackupSubject.failed]: { request: z.unknown() },
+  [BackupSubject.run]: {
+    request: backupRunRequestSchema,
+    reply: backupRunReplySchema,
+  },
+  // progressPrefix is a wildcard parent — callers use unchecked:true and validate inline
+  [BackupSubject.progressPrefix]: { request: backupProgressSchema },
+  [BackupSubject.completed]: { request: backupCompletedSchema },
+  [BackupSubject.failed]: { request: backupFailedSchema },
   [UpdateSubject.run]: { request: z.unknown() },
   [UpdateSubject.progressPrefix]: { request: z.unknown() },
   [UpdateSubject.completed]: { request: z.unknown() },

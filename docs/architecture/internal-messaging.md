@@ -147,12 +147,15 @@ Everything the codebase actually publishes or subscribes to today:
 | `mini-infra.egress.gw.container-map.applied.<envId>` | event | Phase 3 | core |
 | `mini-infra.egress.gw.decisions` | event (proxy decisions) | Phase 3 | JetStream `EgressGwDecisions` (work-queue) |
 | `mini-infra.egress.gw.health` | heartbeat | Phase 3 | KV `egress-gw-health` (per-env key) |
+| `mini-infra.backup.run` | cmd (req/reply) | Phase 4 | core req/reply |
+| `mini-infra.backup.progress.<runId>` | event (progress) | Phase 4 | plain pub/sub (short-lived, no replay) |
+| `mini-infra.backup.completed` | event | Phase 4 | JetStream `BackupHistory` |
+| `mini-infra.backup.failed` | event | Phase 4 | JetStream `BackupHistory` |
 
-Reserved (constants and Go mirrors exist; no producers/consumers yet — see §7):
+Reserved (constants and Go mirrors exist; no producers/consumers yet — see §9):
 
 | Subject | Phase |
 |---|---|
-| `mini-infra.backup.run`, `.progress.<runId>`, `.completed`, `.failed` | Phase 4 |
 | `mini-infra.update.run`, `.progress.<runId>`, `.completed`, `.failed`, `.health-check-passed` | Phase 5 |
 
 ### 4.4 JetStream streams, consumers, KV buckets
@@ -163,8 +166,10 @@ All ensured idempotently at server boot by [server/src/services/nats/system-nats
 |---|---|---|---|
 | Stream `EgressFwEvents` | `mini-infra.egress.fw.rules.applied`, `.events` | Limits | 1 GiB / 30 d |
 | Stream `EgressGwDecisions` | `mini-infra.egress.gw.decisions` | Work-queue | 1 GiB / 30 d |
+| Stream `BackupHistory` | `mini-infra.backup.completed`, `.failed` | Limits | 1 GiB / 30 d |
 | Consumer `EgressFwEvents-server` | on `EgressFwEvents` | durable, explicit ack, 30 s ack-wait | maxDeliver 5 |
 | Consumer `EgressGwDecisions-server` | on `EgressGwDecisions` | durable, explicit ack | server batch-flushes then acks |
+| Consumer `BackupHistory-server` | on `BackupHistory` | durable, explicit ack, 30 s ack-wait | maxDeliver 5 |
 | KV `egress-fw-health` | key `current` | 30 s TTL, 1 revision | 5 s heartbeat → freshness ≤ 10 s = healthy |
 | KV `egress-gw-health` | key `<envId>` | 10 min TTL, 1 revision | per-env latest heartbeat |
 
@@ -172,7 +177,7 @@ Names are PascalCase and don't carry the `mini-infra.` prefix — streams/bucket
 
 ## 5. Per-pair flows
 
-This section walks through every system pair that's currently on the bus. Future phases (backups, self-update) get their sections here when they land.
+This section walks through every system pair that's currently on the bus. Phase 5 (self-update) gets its section here when it lands.
 
 ### 5.1 Server ↔ `egress-fw-agent` — Phase 2 (shipped)
 
@@ -251,7 +256,42 @@ The decisions stream is **shared across all environments** — a single JetStrea
 
 ### 5.3 Server loopback — Phase 1 (shipped)
 
-`mini-infra.system.ping` is the smoke test. The server registers a responder at boot ([server/src/services/nats/nats-bus-ping.ts](../../server/src/services/nats/nats-bus-ping.ts)); `pingSelf(timeoutMs)` sends a request, verifies the nonce round-trip, and returns latency. Proves the connection, the credentials, the JSON codec, the Zod validation, and req/reply plumbing are all working. Exposed via [server/src/routes/nats.ts](../../server/src/routes/nats.ts) for ops triage.
+`mini-infra.system.ping` is the smoke test.
+
+### 5.4 Server ↔ `pg-az-backup` — Phase 4 (shipped, ALT-29)
+
+**What was bespoke before:** the `BackupExecutorService` managed an in-memory job queue (`InMemoryQueue`), started Docker containers directly, and emitted Socket.IO events by writing to channels inside the executor. Progress visibility was limited to Docker-level container state (starting/running/completed). No durable record of results existed outside the Postgres DB.
+
+**What's on NATS now:**
+
+```
+Scheduler or HTTP route         mini-infra.backup.run (req/reply)
+           │                              │
+           ▼                              ▼
+    queueBackup()          BackupExecutorService.respond()
+    bus.request()     ──▶  creates DB record, starts async
+           │               execution, returns {operationId}
+           │
+  (async execution)
+           │
+           ├─ bus.publish(backup.progress.<runId>)  ──▶  BackupNatsBridge
+           │                                               sub on progress.>
+           │                                               emits Socket.IO
+           │
+           └─ bus.jetstream.publish(backup.completed/.failed)
+                                    │
+                                    ▼
+                           BackupNatsBridge (BackupHistory-server consumer)
+                           ├─ emits Socket.IO POSTGRES_OPERATION_COMPLETED
+                           └─ repairs DB record on cold-boot replay
+```
+
+**Server side:**
+
+- [server/src/services/backup/backup-executor.ts](../../server/src/services/backup/backup-executor.ts) — registers `bus.respond(BackupSubject.run)` on `initialize()`. Concurrency cap (2) is enforced by the respond handler. Publishes `progress.<runId>` events at each Docker container state transition; publishes to `BackupHistory` stream on completion or failure (hard-crash fallback).
+- [server/src/services/backup/backup-nats-bridge.ts](../../server/src/services/backup/backup-nats-bridge.ts) — subscribes to `backup.progress.>` and emits `POSTGRES_OPERATION` to Socket.IO. Runs a durable JetStream consumer (`BackupHistory-server`) that emits `POSTGRES_OPERATION_COMPLETED` and repairs stale DB records on cold-boot replay.
+
+**Container side:** the `pg-az-backup` container does not yet publish NATS events directly — the server mediates all publishing for this phase. Container-side NATS is deferred to a follow-up once per-run credential injection for one-shot containers is established. The server registers a responder at boot ([server/src/services/nats/nats-bus-ping.ts](../../server/src/services/nats/nats-bus-ping.ts)); `pingSelf(timeoutMs)` sends a request, verifies the nonce round-trip, and returns latency. Proves the connection, the credentials, the JSON codec, the Zod validation, and req/reply plumbing are all working. Exposed via [server/src/routes/nats.ts](../../server/src/routes/nats.ts) for ops triage.
 
 ## 6. Bootstrap and credentials
 
@@ -321,17 +361,11 @@ When a new sidecar or helper container needs to talk to the server, follow the e
 6. **Server consumer**: `bus.subscribe(...)` or `bus.jetstream.consume(...)` once at boot. Subscriptions are durable across reconnects.
 7. **Bridge to Socket.IO** if the UI needs to react. Wrap the emission in try/catch — emission failures must never break the NATS handler. Use `Channel.*` and `ServerEvent.*` constants from [lib/types/socket-events.ts](../../lib/types/socket-events.ts).
 
-## 9. Future surfaces (Phase 4 and 5)
+## 9. Future surfaces (Phase 5)
 
-Subjects, schemas (currently `z.unknown()`), and Go constants are reserved. No producers or consumers exist yet. Sections will be filled in here when each phase lands.
+### Phase 4 — `pg-az-backup` (shipped, ALT-29)
 
-### Phase 4 — `pg-az-backup` (planned)
-
-- `mini-infra.backup.run` (cmd, req/reply, fired by the scheduler)
-- `mini-infra.backup.progress.<runId>` (event stream, plain pub/sub — short-lived, no replay)
-- `mini-infra.backup.completed` / `mini-infra.backup.failed` (events, JetStream `BackupHistory`)
-
-The exit-code path will stay as a fallback so a hard crash mid-run still surfaces as a `failed` event published by the server's container watcher.
+All four subjects are live. The server mediates all NATS publishing for this phase — see §5.4 for the full flow.
 
 ### Phase 5 — `update-sidecar` (planned, optional)
 

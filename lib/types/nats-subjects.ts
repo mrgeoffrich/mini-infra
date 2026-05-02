@@ -152,6 +152,7 @@ export const NatsStream = {
 export const NatsConsumer = {
   egressGwDecisionsServer: "EgressGwDecisions-server",
   egressFwEventsServer: "EgressFwEvents-server",
+  backupHistoryServer: "BackupHistory-server",
 } as const;
 
 /**
