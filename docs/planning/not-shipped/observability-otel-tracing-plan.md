@@ -223,7 +223,17 @@ Done when: opening Grafana, picking a time window, and looking at the service-gr
 
 ### Phase 6 — App-level metrics (optional, deferred)
 
-**Goal:** add custom Prometheus metrics for things the spans summarise but are easier to consume as a counter / histogram (`mini_infra_nats_publish_total`, `mini_infra_stack_apply_duration_seconds`, etc.). Out of scope for this plan; pre-listed here only so it doesn't get folded back into Phase 5 by accident.
+**Goal:** custom Prometheus metrics expose the most-queried application signals as first-class counters and histograms, complementing (not replacing) the span-derived `traces_spanmetrics_*` from Phase 5.
+
+Deliverables:
+- `prom-client` registered in the server with a small set of counters / histograms — at minimum `mini_infra_nats_publish_total{subject}`, `mini_infra_nats_request_duration_seconds{subject}`, and `mini_infra_stack_apply_duration_seconds{outcome}`. Cardinality budget agreed up front.
+- A `/metrics` endpoint scraped by the existing Prometheus instance via a new entry in `prometheus.yml` (or via the OTel Collector's Prometheus receiver if cleaner).
+- A Grafana dashboard panel set committed in `server/templates/monitoring/grafana/dashboards/` showing the new metrics alongside the Phase 5 RED panels.
+- Equivalent metrics for the Go sidecars where the publish-rate / decision-rate signal is load-bearing (`egress-fw-agent` decisions, `egress-gateway` proxy outcomes).
+
+Done when: opening the new dashboard shows live counters for NATS publishes per subject and stack-apply durations broken down by outcome, with cardinality verified against the agreed budget.
+
+Out of scope for the current plan; pre-listed here only so it doesn't get folded back into Phase 5 by accident.
 
 ## 7. Risks & open questions
 
@@ -238,11 +248,11 @@ Done when: opening Grafana, picking a time window, and looking at the service-gr
 
 ## 8. Linear tracking
 
-Phase issues will be created under a new "OTel Tracing" project on the Altitude Devops team and linked here once filed. Phase 1 blocks every later phase; Phase 4 also blocks on Phase 2 (Go side context propagation must exist before sidecar local spans are useful).
+Tracked under the [OpenTelemetry Tracing — Adding Tempo to the Monitoring Stack](https://linear.app/altitude-devops/project/opentelemetry-tracing-adding-tempo-to-the-monitoring-stack-01c8e578f25d) project on the Altitude Devops team. Phase 1 blocks every later phase; Phase 4 also blocks on Phase 2 (Go side context propagation must exist before sidecar local spans are useful).
 
-- ALT-_TBD_ — Phase 1: Tempo + OTel Collector + Grafana in monitoring stack
-- ALT-_TBD_ — Phase 2: `NatsBus` context propagation (TS + Go)
-- ALT-_TBD_ — Phase 3: Server auto-instrumentation (Express, Prisma, Socket.IO, outbound HTTP, Pino)
-- ALT-_TBD_ — Phase 4: Sidecar instrumentation (`agent-sidecar`, `update-sidecar`, `egress-fw-agent`, `egress-gateway`)
-- ALT-_TBD_ — Phase 5: Service map, Grafana dashboards, trace ↔ logs ↔ metrics correlation
-- ALT-_TBD_ — Phase 6 (deferred): App-level Prometheus metrics
+- [ALT-44](https://linear.app/altitude-devops/issue/ALT-44) — Phase 1: Tempo + Collector + Grafana in the monitoring stack
+- [ALT-45](https://linear.app/altitude-devops/issue/ALT-45) — Phase 2: `NatsBus` context propagation (TS + Go)
+- [ALT-46](https://linear.app/altitude-devops/issue/ALT-46) — Phase 3: Auto-instrumentation across the server
+- [ALT-47](https://linear.app/altitude-devops/issue/ALT-47) — Phase 4: Sidecars
+- [ALT-48](https://linear.app/altitude-devops/issue/ALT-48) — Phase 5: Service map, dashboards, and correlation polish
+- [ALT-49](https://linear.app/altitude-devops/issue/ALT-49) — Phase 6: App-level metrics (optional, deferred)
