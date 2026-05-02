@@ -192,10 +192,10 @@ Done when: a restore initiated from the UI completes against a real backup, land
 
 ## 8. Linear tracking
 
-Phase issues will be created under a new "Service Addons" project on the Altitude Devops team and linked here once filed. Phases land in order — each phase blocks the next.
+Tracked under the [Service Addons](https://linear.app/altitude-devops/project/service-addons-jobpool-service-type-for-triggered-one-shot-containers-31f632f8c571) project on the Altitude Devops team. Phases land in order — each phase blocks the next.
 
-- ALT-_TBD_ — Phase 1: `JobPool` type + spawn handler
-- ALT-_TBD_ — Phase 2: Exit watcher and per-pool history streams
-- ALT-_TBD_ — Phase 3: Trigger registries
-- ALT-_TBD_ — Phase 4: `pg-az-backup` migration
-- ALT-_TBD_ — Phase 5: `restore-executor` migration
+- [ALT-33](https://linear.app/altitude-devops/issue/ALT-33) — Phase 1: `JobPool` type + spawn handler
+- [ALT-34](https://linear.app/altitude-devops/issue/ALT-34) — Phase 2: Exit watcher and per-pool history streams
+- [ALT-35](https://linear.app/altitude-devops/issue/ALT-35) — Phase 3: Trigger registries
+- [ALT-36](https://linear.app/altitude-devops/issue/ALT-36) — Phase 4: `pg-az-backup` migration
+- [ALT-37](https://linear.app/altitude-devops/issue/ALT-37) — Phase 5: `restore-executor` migration
