@@ -339,6 +339,7 @@ export interface LoadedTemplate {
       natsCredentialRef?: string;
       natsRole?: string;
       natsSigner?: string;
+      addons?: Record<string, unknown>;
     }>;
   };
   configFiles: StackTemplateConfigFileInput[];
@@ -460,6 +461,7 @@ export function loadTemplateFromObject(
       natsCredentialRef: svc.natsCredentialRef,
       natsRole: svc.natsRole,
       natsSigner: svc.natsSigner,
+      addons: svc.addons,
     };
   });
 

@@ -324,6 +324,8 @@ export interface StackService {
   natsCredentialId: string | null;
   natsCredentialRef: string | null;
   poolManagementTokenHash: string | null;
+  /** Service Addons authoring block; null when no addons declared. */
+  addons: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -377,6 +379,8 @@ export interface StackServiceInfo {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  /** Service Addons authoring block; null when no addons declared. */
+  addons: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -139,6 +139,7 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
     natsCredentialRef: s.natsCredentialRef ?? null,
+    addons: s.addons ? (s.addons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 }
 
@@ -341,9 +342,6 @@ export async function resolveServiceConfigs(
   const authoredDefs: StackServiceDefinition[] = [];
   for (const svc of services) {
     const def = toServiceDefinition(svc);
-    if (svc.addons && typeof svc.addons === 'object') {
-      def.addons = svc.addons as Record<string, unknown>;
-    }
     authoredAddonsByName.set(svc.serviceName, def.addons);
     authoredDefs.push(def);
     resolvedConfigsMap.set(
@@ -430,6 +428,7 @@ export function toServiceDefinition(svc: {
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
   natsCredentialRef?: string | null;
+  addons?: unknown;
 }): StackServiceDefinition {
   return {
     serviceName: svc.serviceName,
@@ -448,6 +447,10 @@ export function toServiceDefinition(svc: {
     vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
     natsCredentialId: svc.natsCredentialId ?? undefined,
     natsCredentialRef: svc.natsCredentialRef ?? undefined,
+    addons:
+      svc.addons && typeof svc.addons === 'object'
+        ? (svc.addons as Record<string, unknown>)
+        : undefined,
   };
 }
 

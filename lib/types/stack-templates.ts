@@ -349,6 +349,8 @@ export interface StackTemplateServiceInfo {
   natsRole?: string | null;
   /** Symbolic signer name from nats.signers[]; auto-injects NATS_SIGNER_SEED dynamicEnv at apply time. */
   natsSigner?: string | null;
+  /** Service Addons authoring block; null when no addons declared on this template service. */
+  addons?: Record<string, unknown> | null;
 }
 
 export interface StackTemplateConfigFileInfo {

@@ -1212,6 +1212,7 @@ function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<tru
     natsCredentialRef: svc.natsCredentialRef ?? null,
     natsRole: svc.natsRole ?? null,
     natsSigner: svc.natsSigner ?? null,
+    addons: (svc.addons as unknown as Record<string, unknown> | null) ?? null,
   };
 }
 
@@ -1254,6 +1255,7 @@ function toTemplateServiceCreate(
     natsCredentialRef: s.natsCredentialRef ?? null,
     natsRole: s.natsRole ?? null,
     natsSigner: s.natsSigner ?? null,
+    addons: s.addons ? (s.addons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 }
 
@@ -1457,6 +1459,10 @@ function buildServiceDefinitionsFromVersion(version: {
       natsCredentialRef: svc.natsCredentialRef ?? undefined,
       natsRole: svc.natsRole ?? undefined,
       natsSigner: svc.natsSigner ?? undefined,
+      addons:
+        svc.addons && typeof svc.addons === 'object'
+          ? (svc.addons as unknown as Record<string, unknown>)
+          : undefined,
     };
   });
 }
