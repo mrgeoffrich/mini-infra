@@ -1,6 +1,6 @@
 ---
 name: design-task
-description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, and a rough implementation outline, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). Does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence; the worktree can be torn down later via `finish-worktree` when the design has shipped. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
+description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, a rough implementation outline, and — for UI tickets — a wireframe written to a sibling SVG file (`<issue-id>-<slug>-option-<a|b>.svg` next to the markdown, referenced via `![](…)`) plus a "UI components to use" mapping that names existing `client/src/components/ui/*` primitives and feature components to wire up, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). Does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence; the worktree can be torn down later via `finish-worktree` when the design has shipped. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
 ---
 
 # Design Task
@@ -138,7 +138,30 @@ For each chosen axis, name two or three candidate patterns and what they cost / 
 
 You don't need to memorise the GoF taxonomy — name patterns by what they do, not by their textbook label. "Strategy pattern with a registry of handlers" reads better than "Strategy" alone.
 
-### 4.3 Look for prior art in the Mini Infra codebase
+### 4.3 If the ticket has a UI surface, research the frontend conventions and catalog reusable components
+
+Skip this step entirely for backend-only tickets (no `client/` changes in the Deliverables). For tickets that touch the UI, do all four sweeps below — they're cheap individually and together they keep the design grounded in how the app actually looks and behaves.
+
+**a) Read the frontend convention docs.** These are the authoritative references for what shapes the design should fit into:
+- [`client/CLAUDE.md`](client/CLAUDE.md) — frontend conventions (state ownership, file layout, component patterns).
+- [`client/ARCHITECTURE.md`](client/ARCHITECTURE.md) — high-level frontend architecture, routing, data flow.
+- [`claude-guidance/ICONOGRAPHY.md`](claude-guidance/ICONOGRAPHY.md) — the icon set and naming conventions. Pick icons from here, don't invent. If a needed glyph isn't listed, flag that as a real decision the design owes (proposed addition + why).
+
+If any of these files have moved or are missing on the current branch, surface it and proceed without — don't fabricate the contents.
+
+**b) Survey the available controls.** Walk `client/src/components/ui/` (shadcn-derived primitives — `button`, `card`, `dialog`, `form`, `input`, `select`, `sheet`, `table`, `tabs`, `popover`, `tooltip`, etc.) and note what's actually there before designing. Don't propose a control the project doesn't have without flagging that it's a new addition.
+
+**c) Survey how pages are laid out in general.** Open two or three existing pages similar in shape to what you're designing (a list page, a detail page, a wizard, a settings page — pick the closest analogues from `client/src/pages/`). Note the recurring patterns: page header + breadcrumb shape, where actions live (top-right toolbar vs. inline), how empty / loading / error states render, where dialogs vs. sheets vs. routes are used for sub-flows. Cite one or two pages by path so the design's wireframe rhymes with the rest of the app instead of inventing a new layout language.
+
+**d) Identify the UI regions the design needs and match them to components.** For each region (page shell, list/table, form, dialog/sheet, status indicators, action buttons, empty/loading/error states):
+- Pick a primitive from `client/src/components/ui/` if one fits.
+- Pick a feature component from elsewhere in `client/src/components/` or `client/src/pages/` if one already solves a structurally similar problem (status pills, resource list pages, blue-green deploy timelines, task tracker rows, connected-service cards).
+- Note the import path and the shape of the API for each component you'll lean on. The reader of the design doc should be able to skim "what's already in the box" without grepping themselves.
+- If a region has **no good existing component**, flag it explicitly — it's a real piece of work the design owes the executor an honest estimate of.
+
+This output feeds the per-Option **Wireframe** and **UI components to use** sections in the design doc (Phase 5.2). Different design options may pick different layouts and components — that's fine and often the point.
+
+### 4.4 Look for prior art in the Mini Infra codebase
 
 This is the part that anchors the designs to the real repo. For each pattern axis, find one or two existing places in the codebase that already solve a *similar* problem — not necessarily the same problem, but a structurally similar one. Use `Grep` / `Read` / `Glob` directly, or spawn an `Explore` subagent if the search is wide ("how does the codebase generally handle progress events for long-running ops?").
 
@@ -152,7 +175,7 @@ Cite the file path and (where helpful) a line range so the user can jump to it.
 
 The point of this step is two-fold: **(a)** it grounds your proposed designs in shapes the codebase already supports — reducing "this would be lovely if we rewrote half the repo first" suggestions; **(b)** it surfaces opportunities to *deliberately diverge* from the existing pattern when there's a good reason. Both reuse and intentional divergence are legitimate design moves; the design doc should make the choice explicit either way.
 
-### 4.4 Decide on the two options
+### 4.5 Decide on the two options
 
 From the patterns you surveyed and the prior art you found, pick **two options that differ along at least one axis from §What "two distinct designs" means**. Different points on the same axis (e.g. "small refactor" vs. "bigger refactor") often *aren't* meaningfully different — push for two ideas a thoughtful reviewer would actually weigh against each other.
 
@@ -195,6 +218,40 @@ Use this structure verbatim. Omit a section only if it genuinely doesn't apply (
 
 ### Idea in one paragraph
 <The design in plain English. A reviewer should be able to picture the shape from this paragraph alone.>
+
+### Wireframe
+<**Only include this section if the option has a UI surface.** Drop it entirely for backend-only designs (no image, no placeholder).
+
+The wireframe lives in a **sibling SVG file**, not inline in the markdown — single source of truth, easy to open directly in a browser or editor. Reference it from the design doc via standard markdown image syntax:
+
+```markdown
+![Option A wireframe](<filename>-option-a.svg)
+```
+
+Filename convention: `<issue-id>-<slug>-option-<a|b>.svg`, sitting flat next to the `.md` in `docs/designs/`. For the ALT-38 example doc `alt-38-pg-az-backup-progress-events.md`, the sibling files would be `alt-38-pg-az-backup-progress-events-option-a.svg` and `…-option-b.svg`. GitHub, VS Code, and most markdown previewers render the image inline.
+
+When **writing the SVG file**, aim for wireframe fidelity — labelled rectangles for regions, plain text for labels, simple arrows for flow if needed — not pixel perfection. Keep `viewBox` ≤ ~600px wide so it fits in a doc view without horizontal scroll. Skeleton:
+
+```
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 360" width="600" font-family="system-ui, sans-serif" font-size="13">
+  <rect x="0" y="0" width="600" height="360" fill="#fafafa" stroke="#ddd"/>
+  <rect x="16" y="16" width="568" height="40" fill="#fff" stroke="#ccc"/>
+  <text x="28" y="40">PageHeader: Backups · [+ New backup]</text>
+  ...
+</svg>
+```
+
+If the two options have *the same* layout and only differ behind the scenes, write one SVG file and reference it from both Options ("Layout identical to Option A — same wireframe."), rather than producing two identical files.>
+
+### UI components to use
+<**Only include this section if the option has a UI surface.** Drop it entirely otherwise.
+
+Bullet list mapping each region from the wireframe to an existing component (or flagging where a new one is needed). Cite the import path so the executor can jump straight to it. Format:
+
+- **<Region>:** `<ComponentName>` from [`<path>`](<path>) — <one-line note on the API shape or variant being used>
+- **<Region>:** *(new)* `<ProposedName>` — <what it'll look like; why no existing component fits>
+
+Group primitives (`client/src/components/ui/*`) and feature components separately if it aids reading. Don't list a component just because it might be tangentially relevant — only the ones the executor will actually wire up.>
 
 ### Key abstractions
 - **<Name>** — <what it represents, what its responsibilities are>
@@ -256,7 +313,7 @@ lib/types/<thing>.ts                           (changed)    — <what>
 - **Voice:** match the rest of the project's docs — direct, concrete, no marketing language. The docs in `docs/architecture/` and `docs/planning/` are good tonal references.
 - **Specificity:** name files, name functions, name constants. "Add a new service" is weaker than "Add `BackupProgressEmitter` in `server/src/services/backup/`". The reader should not have to guess where things land.
 - **Length:** designs vary in size, but most should fit in 200–500 lines total. If you're heading past 700 lines, you're probably over-specifying — back off to "outline" granularity and trust the executor to fill in.
-- **No code blocks longer than ~10 lines.** The doc is a design, not an implementation. If a code snippet is essential to the idea (e.g. a particularly weird type signature), keep it tight; otherwise describe in prose.
+- **No code blocks longer than ~10 lines.** The doc is a design, not an implementation. If a code snippet is essential to the idea (e.g. a particularly weird type signature), keep it tight; otherwise describe in prose. (Wireframes don't trigger this rule — they live in sibling `.svg` files, referenced via `![]()`, not inline.)
 - **Cite prior art with file paths the editor can click** — `[server/src/services/backup/backup-executor.ts](server/src/services/backup/backup-executor.ts)`.
 
 ### 5.4 Where to write it
@@ -383,7 +440,7 @@ That's the whole skill. Keep the output short — the design doc is the substant
 - **Never open a PR for the design doc.** The doc is for review and iteration; the user opens the PR (or asks you to) once the design has settled. The worktree is torn down separately via `/finish-worktree alt-<NN>` after the design has shipped.
 - **Never collapse two options into one.** If you genuinely can't think of two distinct approaches, surface that and ask the user whether to write one with a "rejected alternatives" appendix instead. Forcing a weak second option produces noise.
 - **Never punt the recommendation back to the user.** The §Recommendation section must commit to one option. "No strong preference" / "either works" / "user picks" are invalid outputs — pick one and name what would flip the call. The skill marks the issue Done on this basis; it cannot do that if it hasn't picked.
-- **Never skip the prior-art search (Phase 4.3).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
+- **Never skip the prior-art search (Phase 4.4).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
 - **Never overwrite an existing design doc silently.** If `docs/designs/<filename>.md` already exists (or a comment from a previous design pass exists on the ticket), stop and ask.
 - **Never produce an ExitPlanMode block.** The design doc *is* the plan. ExitPlanMode is for implementation plans presented in chat; this skill writes a markdown file instead.
 
