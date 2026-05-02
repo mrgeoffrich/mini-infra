@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 720" width="600" font-family="system-ui, sans-serif" font-size="12">
+  <rect width="600" height="720" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- ===== Wizard state ===== -->
+  <text x="16" y="32" font-weight="bold" font-size="13">First-time setup (wizard)</text>
+
+  <!-- Header -->
+  <rect x="16" y="44" width="568" height="48" fill="#fff" stroke="#ddd"/>
+  <rect x="28" y="52" width="32" height="32" rx="4" fill="#ddd6fe" stroke="#a78bfa"/>
+  <text x="44" y="73" text-anchor="middle" fill="#6d28d9" font-weight="bold">T</text>
+  <text x="72" y="68" font-size="14" font-weight="bold">Tailscale Configuration · Setup</text>
+
+  <!-- Stepper -->
+  <rect x="16" y="104" width="568" height="40" fill="#fff" stroke="#ddd"/>
+  <circle cx="48" cy="124" r="12" fill="#0f172a"/>
+  <text x="48" y="128" text-anchor="middle" fill="#fff" font-size="11">1</text>
+  <text x="68" y="128" font-weight="bold">Bootstrap tailnet</text>
+  <line x1="190" y1="124" x2="318" y2="124" stroke="#ccc"/>
+  <circle cx="338" cy="124" r="12" fill="#fff" stroke="#ccc"/>
+  <text x="338" y="128" text-anchor="middle" fill="#999" font-size="11">2</text>
+  <text x="358" y="128" fill="#999">Connect OAuth client</text>
+
+  <!-- Step 1 card -->
+  <rect x="16" y="156" width="568" height="408" fill="#fff" stroke="#ccc"/>
+  <text x="32" y="180" font-weight="bold">Step 1 — Bootstrap your tailnet</text>
+  <text x="32" y="198" fill="#666" font-size="11">Pick your tags, then paste the snippet into your tailnet ACL editor.</text>
+
+  <text x="32" y="226" font-size="11">Default tags</text>
+  <rect x="32" y="232" width="536" height="36" fill="#fafafa" stroke="#ddd"/>
+  <rect x="40" y="240" width="148" height="20" rx="10" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <text x="50" y="254" fill="#3730a3" font-size="11">tag:mini-infra-managed</text>
+  <text x="178" y="254" fill="#6366f1" font-size="11">×</text>
+
+  <text x="32" y="290" font-size="11">ACL snippet (auto-generated from tags)</text>
+  <rect x="32" y="296" width="536" height="160" fill="#1e1e2e" stroke="#333"/>
+  <text x="44" y="316" fill="#a6e3a1" font-family="monospace" font-size="10">// Live preview, regenerates as you edit tags</text>
+  <text x="44" y="332" fill="#cdd6f4" font-family="monospace" font-size="10">{</text>
+  <text x="56" y="348" fill="#cdd6f4" font-family="monospace" font-size="10">"tagOwners": { "tag:mini-infra-managed": [...] },</text>
+  <text x="56" y="364" fill="#cdd6f4" font-family="monospace" font-size="10">"grants": [ /* … */ ],</text>
+  <text x="56" y="380" fill="#cdd6f4" font-family="monospace" font-size="10">"ssh": [ /* Phase-3-ready */ ]</text>
+  <text x="44" y="396" fill="#cdd6f4" font-family="monospace" font-size="10">}</text>
+  <rect x="488" y="304" width="72" height="22" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="524" y="319" text-anchor="middle" font-size="11">📋 Copy</text>
+  <text x="32" y="478" fill="#2563eb" font-size="11">→ Open tailnet ACL editor (admin/acls/file)</text>
+
+  <!-- Continue button -->
+  <rect x="408" y="510" width="160" height="36" rx="4" fill="#0f172a"/>
+  <text x="488" y="532" text-anchor="middle" fill="#fff" font-size="12">I've pasted it →</text>
+
+  <!-- ===== Summary state (post-save) — sketched smaller ===== -->
+  <text x="16" y="600" font-weight="bold" font-size="13">Configured (summary view)</text>
+  <rect x="16" y="612" width="568" height="100" fill="#fff" stroke="#ccc"/>
+  <text x="32" y="634" font-weight="bold" font-size="12">Default tags</text>
+  <text x="200" y="634" fill="#3730a3" font-size="11">tag:mini-infra-managed</text>
+  <text x="540" y="634" font-size="11" fill="#666">✎ Edit</text>
+  <line x1="32" y1="644" x2="568" y2="644" stroke="#eee"/>
+  <text x="32" y="664" font-weight="bold" font-size="12">ACL snippet</text>
+  <text x="200" y="664" font-family="monospace" font-size="10" fill="#666">{ tagOwners: …, grants: …, ssh: … }</text>
+  <text x="540" y="664" font-size="11" fill="#666">📋 Copy</text>
+  <line x1="32" y1="674" x2="568" y2="674" stroke="#eee"/>
+  <text x="32" y="694" font-weight="bold" font-size="12">Credentials</text>
+  <text x="200" y="694" font-family="monospace" font-size="11" fill="#666">••••••••</text>
+  <text x="540" y="694" font-size="11" fill="#666">↻ Re-validate</text>
+</svg>

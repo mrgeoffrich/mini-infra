@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 760" width="600" font-family="system-ui, sans-serif" font-size="12">
+  <rect width="600" height="760" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- Page header -->
+  <rect x="16" y="16" width="568" height="56" fill="#fff" stroke="#ddd"/>
+  <rect x="28" y="28" width="32" height="32" rx="4" fill="#ddd6fe" stroke="#a78bfa"/>
+  <text x="44" y="49" text-anchor="middle" fill="#6d28d9" font-weight="bold">T</text>
+  <text x="72" y="42" font-size="16" font-weight="bold">Tailscale Configuration</text>
+  <text x="72" y="60" fill="#666">Configure Tailscale OAuth, default tags, and ACL bootstrap snippet</text>
+
+  <!-- Card: Tailscale OAuth -->
+  <rect x="16" y="88" width="568" height="528" fill="#fff" stroke="#ccc"/>
+  <text x="32" y="112" font-size="14" font-weight="bold">Tailscale OAuth</text>
+  <text x="32" y="130" fill="#666" font-size="11">All three sections below are required. Sequence matches the setup order in your tailnet.</text>
+
+  <!-- Section 1: Default tags -->
+  <text x="32" y="158" font-weight="bold">1. Default tags</text>
+  <rect x="32" y="166" width="536" height="40" fill="#fafafa" stroke="#ddd"/>
+  <rect x="40" y="174" width="148" height="24" rx="12" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <text x="50" y="190" fill="#3730a3">tag:mini-infra-managed</text>
+  <text x="178" y="190" fill="#6366f1">×</text>
+  <text x="200" y="190" fill="#999">Type a tag and press Enter…</text>
+  <text x="32" y="222" fill="#666" font-size="11">Tags pre-applied to every Tailscale device the addons mint. Validates the tag:foo shape.</text>
+
+  <!-- Section 2: ACL bootstrap -->
+  <text x="32" y="252" font-weight="bold">2. ACL bootstrap snippet</text>
+  <rect x="32" y="260" width="536" height="180" fill="#1e1e2e" stroke="#333"/>
+  <text x="44" y="280" fill="#a6e3a1" font-family="monospace" font-size="11">// Paste into your tailnet ACL editor</text>
+  <text x="44" y="300" fill="#cdd6f4" font-family="monospace" font-size="11">{</text>
+  <text x="56" y="316" fill="#cdd6f4" font-family="monospace" font-size="11">"tagOwners": {</text>
+  <text x="68" y="332" fill="#cdd6f4" font-family="monospace" font-size="11">"tag:mini-infra-managed": ["autogroup:admin"]</text>
+  <text x="56" y="348" fill="#cdd6f4" font-family="monospace" font-size="11">},</text>
+  <text x="56" y="364" fill="#cdd6f4" font-family="monospace" font-size="11">"grants": [ /* … */ ],</text>
+  <text x="56" y="380" fill="#cdd6f4" font-family="monospace" font-size="11">"ssh": [ /* Phase-3-ready */ ]</text>
+  <text x="44" y="396" fill="#cdd6f4" font-family="monospace" font-size="11">}</text>
+  <text x="44" y="424" fill="#94a3b8" font-family="monospace" font-size="10">…30 lines, max-h-96 with overflow scroll…</text>
+  <!-- Copy button + side link -->
+  <rect x="488" y="268" width="72" height="22" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="524" y="283" text-anchor="middle" font-size="11">📋 Copy</text>
+  <text x="32" y="464" fill="#2563eb" font-size="11">→ Open tailnet ACL editor (admin/acls/file)</text>
+
+  <!-- Section 3: Credentials -->
+  <text x="32" y="496" font-weight="bold">3. Credentials</text>
+  <text x="32" y="514" fill="#666" font-size="11">Create OAuth client at admin/settings/oauth with auth_keys:write + devices:core:write, assign one of the tags above.</text>
+  <text x="32" y="540" font-size="11">Client ID</text>
+  <rect x="32" y="546" width="536" height="28" fill="#fff" stroke="#ccc"/>
+  <text x="32" y="592" font-size="11">Client secret</text>
+  <rect x="32" y="598" width="500" height="28" fill="#fff" stroke="#ccc"/>
+  <rect x="538" y="598" width="30" height="28" fill="#fff" stroke="#ccc"/>
+  <text x="553" y="616" text-anchor="middle">👁</text>
+
+  <!-- Validate & Save -->
+  <rect x="32" y="640" width="160" height="36" rx="4" fill="#0f172a"/>
+  <text x="112" y="662" text-anchor="middle" fill="#fff">✓ Validate & Save</text>
+
+  <!-- Card 2: Help -->
+  <rect x="16" y="632" width="568" height="112" fill="#fff" stroke="#ccc" opacity="0.4"/>
+  <text x="32" y="704" font-size="11" fill="#999">— "How to set up Tailscale" help card scrolls below —</text>
+</svg>
