@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs and posts a full session retrospective comment on Phase 1; in update mode, posts a one-line refresh-summary comment instead. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
+description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs and posts a full session retrospective comment on Phase 1; in update mode, posts a one-line refresh-summary comment instead. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
 ---
 
 # Plan to Linear
@@ -146,6 +146,100 @@ If the phase touches several components, list one recipe per. If none of these m
 
 ---
 
+## Phase 3.5 — Explore the codebase per phase (touchpoints + shared-lib opportunities)
+
+This is where the skill replaces "the executor will figure out where to make the changes" with a concrete starting map. Plans are scoping documents (`docs/planning/PLANNING.md` "What not to write") — they don't list files, and we don't want them to. Instead, we do the exploration here, once per seed/refresh, and bake the result into the ticket.
+
+For **every phase** (in both create and update mode — same logic, no skip flag), spawn an `Explore` subagent. **Fan all phases out in parallel from a single message** — they're independent, and one round-trip beats N for a multi-phase plan.
+
+### 3.5.1 Explorer prompt template
+
+The prompt for each Explore call must be self-contained — the subagent has no conversation context. Use this shape:
+
+```
+You're seeding a Linear ticket for a phase of planned work in the mini-infra repo. The plan is a SCOPING document — it doesn't name files, and that's deliberate. Your job is to translate the phase's intent into a starting map of source-code touchpoints.
+
+Phase: <Phase N — title>
+
+Goal: <verbatim from plan>
+
+Deliverables:
+<verbatim deliverables block>
+
+Reversibility: <classifier + rationale>
+UI changes: <verbatim>
+
+Other phase-specific subsections (Migration shape, Subjects, etc.):
+<verbatim, if any>
+
+Doc pointers (already attached to the ticket — for your context, not output):
+- root CLAUDE.md, ARCHITECTURE.md
+- <per-component CLAUDE.md / ARCHITECTURE.md from Phase 3.1>
+- <docs/architecture/*.md from plan-doc-level refs>
+
+Existing shared-package precedents to look for opportunities against:
+- lib/types/socket-events.ts — Socket.IO Channel/Event constants shared client↔server
+- lib/types/nats-subjects.ts — NATS subject constants shared across components
+- server/src/services/nats/payload-schemas.ts — Zod payload schemas registry
+- lib/types/permissions.ts — permission scope strings
+- egress-shared/ — code shared between egress-gateway and egress-fw-agent
+- acme/ — ACME client library (extensible)
+
+## What I want back
+
+### A. Source-code touchpoints
+Files this phase is most likely to touch. Group as:
+
+**New** — files that don't exist yet but the deliverables imply we'll add. Infer naming from sibling files in the same directory. Each entry: `path — ≤12-word what-for phrase`.
+
+**Modify** — existing files whose responsibility overlaps with the deliverables. Find them by grepping for keywords from the Goal/Deliverables, looking at the doc pointers' "Key files" sections, and reading top-level service registries. Each entry: `path — ≤12-word what-for phrase`.
+
+**Read for context** — architectural neighbours the executor should skim before writing (sibling services, the prior version of a thing being replaced, the contract a new thing must mirror). Each entry: `path — ≤12-word what-for phrase`.
+
+Cap at ~10 paths total per group. Bias toward fewer, higher-quality picks. If you can't find anything concrete in a group, write `none` for that group — don't pad. If the *whole* phase is too vague to find anything, say so explicitly: `<unable to map — phase deliverables too vague>`. That's a useful signal back to the planner.
+
+Also list the **directory clusters** (no extension) the phase will land in, for cases where files don't exist yet — e.g. `server/src/services/nats/`, `lib/types/`.
+
+### B. Shared-library opportunities
+Look across the touchpoints you just identified and flag anything that should land in a shared package rather than being duplicated:
+
+1. **Types / constants the client or sidecars will eventually consume** — enums, status string sets, event payload shapes, subject names, permission strings. These belong in `lib/types/` from day one. Reference the existing `socket-events.ts` / `nats-subjects.ts` precedents in your suggestion.
+
+2. **Code shared across the egress pair** (egress-gateway + egress-fw-agent) → `egress-shared/`. Same rule for any future Go-sidecar pair.
+
+3. **Existing shared modules to extend rather than re-implement** — e.g. if the phase needs a Zod schema and `payload-schemas.ts` already has the registry, suggest extending it.
+
+4. **Cross-component duplication risk** — same concept named differently in `server/` vs `client/`. Surface as "consider unifying via lib/" with both naming candidates.
+
+For each opportunity: `<what> → <where>` with a short rationale. If nothing applies (phase is purely server-internal, no shared interest), write `none` — don't invent.
+
+## Hard constraints
+
+- Do NOT propose concrete edits ("change line 42 to…"). Paths + ≤12-word what-for phrases only.
+- Do NOT decide. Flag opportunities; the user confirms in Phase 6.
+- Do NOT pad. Empty groups stay empty. Vague phases get `<unable to map>`.
+- Verify each path with `Read` or `Glob` before listing it under New/Modify/Read. New paths must have a real sibling directory.
+
+Return a single markdown block with the two sections (A and B), nothing else.
+```
+
+### 3.5.2 Aggregating results
+
+Collect each phase's explorer output. Hold onto two structured pieces per phase:
+
+- `touchpoints` — the `### A. Source-code touchpoints` section verbatim.
+- `sharedLibOpportunities` — the `### B. Shared-library opportunities` section verbatim.
+
+Both render directly into the ticket body in Phase 8.
+
+If a phase came back with `<unable to map — phase deliverables too vague>`, flag it for the Phase 6 confirmation prompt — that's the signal the user should consider tightening the deliverables *before* the ticket goes live.
+
+### 3.5.3 Update mode
+
+Re-run the exploration the same way on a refresh — touchpoints captured at the original seed time may have gone stale (files renamed, modules split, shared-lib precedent added since). The same fan-out, the same prompt, the same aggregation. The newly derived touchpoints + shared-lib opportunities replace whatever was in the previous body. No skip flag.
+
+---
+
 ## Phase 4 — Detect commit-area conventions
 
 Run `git log --oneline -30 main` and look for commit subjects matching the plan's slug or topic. Past PRs in the same project follow a pattern like:
@@ -195,22 +289,36 @@ Project to create: <name>
 Description: <one-line snippet>
 
 Phases (will create N issues):
-  Phase 1: <title>           [Todo]      blocked-by: —
-  Phase 2: <title>           [Todo]      blocked-by: Phase 1
-  Phase 3: <title>           [Todo]      blocked-by: Phase 2
+  Phase 1: <title>           [Todo]      blocked-by: —             touchpoints: 4N/3M/2R   shared-lib: 2 flagged
+  Phase 2: <title>           [Todo]      blocked-by: Phase 1       touchpoints: 1N/5M/1R   shared-lib: none
+  Phase 3: <title>           [Todo]      blocked-by: Phase 2       touchpoints: <unable to map — phase too vague>  ⚠
   ...
-  Phase 6: <title>           [Backlog]   blocked-by: Phase 5    (optional)
+  Phase 6: <title>           [Backlog]   blocked-by: Phase 5       touchpoints: 0N/2M/0R   shared-lib: 1 flagged    (optional)
+
+Touchpoint counts are New/Modify/Read paths the per-phase explorer found.
+Phases flagged "unable to map" mean the deliverables are too vague for the explorer
+to find concrete starting points — consider tightening before seeding.
+
+Shared-library opportunities flagged across all phases: <total>
+  - Phase 1: types → lib/types/<...>.ts (mirrors socket-events.ts pattern)
+  - Phase 1: payload schemas → extend server/src/services/nats/payload-schemas.ts
+  - Phase 6: shared egress code → egress-shared/<...>.go
+  (full per-phase list rendered into each ticket; review before confirming)
 
 Each issue will reference:
   - <plan-doc-path>#phase-<N>
   - root CLAUDE.md, ARCHITECTURE.md
   - <per-component docs detected>
+  - per-phase Source-code touchpoints (from Phase 3.5 explorer)
+  - per-phase Shared-library opportunities (from Phase 3.5 explorer)
   - prior-art commit area: <tag>
 
 Plan doc edit: replace ALT-_TBD_ in §<8> with real issue IDs.
 
 Proceed?
 ```
+
+Hold on confirmation if any phase is flagged `<unable to map>` — surface that to the user as "Phase N's deliverables are too vague for the explorer to find any concrete touchpoints. Tighten the deliverables in the plan, or proceed anyway and the executor will explore at run time?" The skill proceeds either way once the user picks; the flag is a signal, not a hard stop.
 
 ### Update mode
 
@@ -235,8 +343,17 @@ What changes per refreshed issue:
     Reversibility, UI changes, Done when, Verify in prod, plus any
     phase-specific subsections (Migration shape, Subjects, etc.)
   - Doc pointers re-derived from current touched-paths analysis
+  - **Source-code touchpoints re-explored against current repo state**
+    (files renamed since seeding will not be reflected in the old body)
+  - **Shared-library opportunities re-flagged** (precedents that landed
+    since seeding may have created new opportunities)
   - Smoke-test recipes re-derived
   - Conventions / Prior art re-derived
+
+Per-phase touchpoint deltas vs. previous body:
+  Phase 1: 3N/4M/2R (was 2N/3M/1R)   shared-lib: 2 flagged (was 1)
+  Phase 2: 0N/3M/1R (unchanged)      shared-lib: none (was none)
+  ...
 
 What is preserved:
   - State (Todo / In Progress / In Review / Done / Backlog)
@@ -330,6 +447,48 @@ For each phase, in order, create a Linear issue:
 
 ---
 
+## Source-code touchpoints
+
+> Best-guess starting map produced by the per-phase explorer at seed time.
+> **Use as a map, not a checklist.** Verify each path before editing — files may have been
+> renamed since seeding. Add anything you find missing. The list is a head-start, not a contract.
+
+**New** (files this phase is expected to add):
+- `<path>` — <≤12-word what-for phrase>
+- ...
+- (or `none` if the phase only modifies existing files)
+
+**Modify** (existing files this phase is expected to change):
+- `<path>` — <≤12-word what-for phrase>
+- ...
+- (or `none` if the phase only adds new files)
+
+**Read for context** (architectural neighbours to skim before writing):
+- `<path>` — <≤12-word what-for phrase>
+- ...
+- (or `none`)
+
+**Directory clusters this phase will land in:**
+- `<dir>/` — <≤12-word what-for phrase>
+- ...
+
+<if the explorer returned `<unable to map — phase deliverables too vague>`, replace this
+ whole section with that line and a one-line note: "Explorer couldn't find concrete
+ starting points from the deliverables. Re-explore at execution time using the doc
+ pointers above as your starting set.">
+
+## Shared-library opportunities
+
+> Flagged at seed time; **not auto-decisions**. Confirm which apply before lifting code
+> into shared packages. Default precedents to mirror: [`lib/types/socket-events.ts`](lib/types/socket-events.ts),
+> [`lib/types/nats-subjects.ts`](lib/types/nats-subjects.ts), [`server/src/services/nats/payload-schemas.ts`](server/src/services/nats/payload-schemas.ts).
+
+- **<concept>** → `<target shared-package path>` — <one-line rationale, references precedent if applicable>
+- ...
+- (or `none — phase has no shared-interest surface area` if the explorer flagged nothing)
+
+---
+
 ## Workflow
 
 This is an execution-agent ticket — no separate planning phase. Read the docs above, then:
@@ -378,7 +537,7 @@ For each phase, look up the matching Linear issue by its §8 ALT-NN ID (use `get
 
 For each matched issue:
 
-1. **Render the new body** using exactly the same template shape as create mode above (Source / Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod / extra subsections / Relevant docs / Workflow / Smoke tests / Conventions / Prior art). Re-derive doc pointers from Phase 3 against the current plan and current repo state — touched paths may have shifted.
+1. **Render the new body** using exactly the same template shape as create mode above (Source / Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod / extra subsections / Relevant docs / **Source-code touchpoints** / **Shared-library opportunities** / Workflow / Smoke tests / Conventions / Prior art). Re-derive doc pointers from Phase 3 against the current plan and current repo state — touched paths may have shifted. Re-derive touchpoints + shared-lib opportunities from Phase 3.5 against the current repo state — files renamed since seeding will not be reflected in the old body, and new shared-lib precedents may have appeared.
 2. **Compare titles.** If the plan's `### Phase N — <title>` (minus em-dash) differs from the existing issue title, update the title too. Match shape: `Phase N: <title>`.
 3. **Call `save_issue`** with the existing issue ID, the new body, and (if changed) the new title. **Do not pass `state`, `assignee`, `cycle`, `estimate`, or `labels`** — leaving them out of the call preserves them.
 4. **Do not delete or alter existing comments.** All retros, handoff notes, and manual comments survive untouched.
@@ -574,7 +733,10 @@ Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans / 
 
 ### Both modes
 
-- **Never write a pre-baked implementation plan into the issue description.** Issue descriptions carry *context* — Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod, doc pointers — not file-by-file change lists. The executor produces its concrete implementation against current code at execution time.
+- **Never write a pre-baked implementation plan into the issue description.** Issue descriptions carry *context* — Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod, doc pointers, source-code touchpoints, shared-library opportunities — not file-by-file change lists. The executor produces its concrete implementation against current code at execution time. The line: **paths + ≤12-word what-for phrases are fine**; concrete edits ("change line 42 to…", "wrap this call in a try/catch") are not.
+- **Touchpoints are best-guess at seed time, not a contract.** The Phase 3.5 explorer produces its best guess from the deliverables; files may have been renamed since seeding, the explorer may have missed something, and the deliverables may evolve. The rendered ticket section explicitly tells the executor to verify each path and add what's missing. Never present touchpoints as exhaustive.
+- **Shared-library opportunities are flags, not decisions.** The explorer surfaces candidates ("this enum will be consumed by the client → consider `lib/types/<...>.ts`"); the user confirms which apply at Phase 6 confirmation, and the executor confirms again at implementation time against current code. Never auto-promote a touchpoint into a shared package without surfacing it for confirmation first.
+- **Never invent paths.** Every `New` / `Modify` / `Read` path the explorer emits must be verifiable via `Read` or `Glob` (existing) or have a real sibling directory (new). Hallucinated paths are worse than no paths — they send the executor on a snipe hunt and erode trust in the section.
 - **Never put work-content critique in the retrospective / refresh-summary comment.** Phase 11 is meta-only — about how the skill ran. Comments about whether deliverables are right, whether the plan is good, or whether the phasing makes sense belong in a code-review pass on the eventual PR.
 - **Never fabricate retrospective content.** If the run was clean, the comment is "No notable friction this run." (Or, in update mode, just the audit-trail one-liner with no Friction line.) Padding with invented friction defeats the feedback loop.
 - **Never invent docs.** If `egress-shared/CLAUDE.md` doesn't exist, don't link it. Verify each attached doc.
