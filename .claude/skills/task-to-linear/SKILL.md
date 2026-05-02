@@ -1,11 +1,11 @@
 ---
 name: task-to-linear
-description: Turns a one-line job description into a single Linear ticket in the shape `execute-next-task` expects, without writing a full phased plan doc. The skill files the issue under a persistent **Maintenance** project (auto-created on first run) and appends a `### Phase N — <title>` entry to `docs/planning/maintenance.md` so the project still satisfies the "Plan: <doc>" convention every Linear project on Altitude Devops needs. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to Todo so `execute-next-task` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "task: ...", "queue up a linear todo for ...", or any equivalent ask to scaffold a single one-off Linear issue without a multi-phase plan. Make sure to use it even when the user doesn't say the word "Linear" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-linear`), or when they're asking about an *existing* ticket (use the Linear MCP directly).
+description: Turns a one-line job description into a single Linear ticket in the shape `execute-next-task` expects. The skill files the issue under a persistent **Maintenance** project (auto-created on first run). Linear is the single source of truth for maintenance tickets — `docs/planning/maintenance.md` is a static stub describing the project, never per-task entries. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to Todo so `execute-next-task` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "task: ...", "queue up a linear todo for ...", or any equivalent ask to scaffold a single one-off Linear issue without a multi-phase plan. Make sure to use it even when the user doesn't say the word "Linear" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-linear`), or when they're asking about an *existing* ticket (use the Linear MCP directly).
 ---
 
 # Task to Linear
 
-You're filing a single one-off ticket against the persistent **Maintenance** project on the Altitude Devops Linear team, in the exact shape that `execute-next-task` expects to consume. No plan doc per ticket — every one-off lives in one shared, evergreen plan doc at `docs/planning/maintenance.md`. New entries append a `### Phase N — <title>` section. The "Phase" wording is a contract with `execute-next-task`, not a semantic claim that one-offs are sequenced — they're independent and never block each other.
+You're filing a single one-off ticket against the persistent **Maintenance** project on the Altitude Devops Linear team, in the exact shape that `execute-next-task` expects to consume. Linear is the single source of truth — there is no per-task entry in any plan doc. The "Phase" wording in the issue title is a contract with `execute-next-task` (it matches by `Phase N` prefix), not a semantic claim that one-offs are sequenced — they're independent and never block each other.
 
 ## Why this skill exists
 
@@ -15,15 +15,13 @@ The big phased-plan flow (`plan-to-linear` → `execute-next-task`) is great for
 
 - **Team**: Altitude Devops (hardcoded, same as the other Linear skills).
 - **Project**: `Maintenance` — single, persistent, auto-created on first run.
-- **Project description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)` so `execute-next-task`'s anchor check passes.
-- **Plan doc**: `docs/planning/maintenance.md` — top-level under `docs/planning/`, **not** under `not-shipped/` or `shipped/`. It never "ships"; it's an evergreen running list. Auto-scaffolded on first run with §1 Background + an empty Phases section.
-- **Phase numbering**: monotonic, scoped to the maintenance project. Read the existing plan doc to find the highest `Phase N`, increment by one.
+- **Project description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the project — `execute-next-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
+- **Phase numbering**: monotonic, scoped to the maintenance project. Read it from Linear (issue titles in the Maintenance project), incrementing the highest existing `Phase N`. The plan doc is *not* consulted for numbering.
 - **Issue title**: `Phase N: <title>` — same pattern `plan-to-linear` writes, so `execute-next-task` matches by phase number.
 - **Issue state**: `Todo` (default — don't gate behind Backlog).
 - **Blocked-by**: never set. One-offs are independent.
-- **Plan-doc edit**: staged with `git add`, **not** committed. The user owns the commit.
 
-If any of these conventions ever stops being true (Maintenance project deleted, plan doc moved, Altitude Devops renamed), **stop and ask** — don't paper over silently.
+If any of these conventions ever stops being true (Maintenance project deleted, plan-doc stub overwritten with phase entries, Altitude Devops renamed), **stop and ask** — don't paper over silently.
 
 ---
 
@@ -41,47 +39,13 @@ Fetch the team's issue statuses once (`list_issue_statuses` for Altitude Devops)
 
 ---
 
-## Phase 2 — Ensure the Maintenance project + plan doc exist
+## Phase 2 — Ensure the Maintenance project exists
 
-This phase is **idempotent** — on every run, after the first, it's a fast no-op.
-
-### 2.1 Plan doc
-
-Check whether `docs/planning/maintenance.md` exists.
-
-**If it doesn't**, scaffold it. Use this template verbatim — the H1, the §1 Background line, and the §6 Phased rollout heading mirror the conventions `plan-to-linear` writes for phased plans, so any future Linear-side tooling can read either doc the same way.
-
-```markdown
-# Maintenance
-
-## 1. Background
-
-Catch-all evergreen plan doc for one-off maintenance and follow-up tasks
-filed via the `task-to-linear` skill. Each task is a `### Phase N` entry
-below. Tasks are independent — they do not block each other and they do
-not have to land in numerical order. The "Phase" wording is preserved so
-`execute-next-task` matches by phase number; nothing more is implied.
-
-This doc is never archived to `docs/planning/shipped/`. Tasks shipped
-long ago stay here as historical record (or are pruned manually when the
-list gets unwieldy — that's a human decision).
-
-## 6. Phased rollout
-
-<!-- task-to-linear appends new phases below this comment -->
-
-## 8. Linear tracking
-
-Tracked under the **Maintenance** project on the Altitude Devops team.
-Issue IDs are recorded inline against each phase above when the skill
-appends them.
-```
-
-### 2.2 Linear project
+This phase is **idempotent** — on every run, after the first, it's a fast no-op. The skill no longer touches `docs/planning/maintenance.md`; the doc is a static stub describing the project, maintained by humans separately.
 
 `list_projects` (filtered to Altitude Devops) and look for one named exactly `Maintenance`.
 
-**If it doesn't exist**, create it via `save_project`. Description must start with the `Plan:` line so `execute-next-task` can find the anchor:
+**If it doesn't exist**, create it via `save_project`. Description must start with the `Plan:` line:
 
 ```
 Plan: [docs/planning/maintenance.md](<github-blob-url>)
@@ -96,6 +60,8 @@ Build the GitHub URL from `git remote get-url origin` + `/blob/main/docs/plannin
 Capture the project's ID and URL — you'll need both later.
 
 **If it does exist**, fetch its description and verify the `Plan:` line still points at `docs/planning/maintenance.md`. If it's been edited to point somewhere else, **stop and ask** — that's a corruption signal worth surfacing rather than fixing silently.
+
+**Don't scaffold or modify the plan doc.** If `docs/planning/maintenance.md` is missing on disk, that's a separate problem for a human to handle (it's expected to exist as a stub) — the skill doesn't auto-create it.
 
 ---
 
@@ -214,9 +180,11 @@ If no recent commits matched the touched components, write `<choose at execution
 
 ## Phase 6 — Determine the next phase number
 
-Read `docs/planning/maintenance.md`. Find the highest existing `### Phase N — <title>` heading. Next task is `Phase N+1`. If the file was just scaffolded in Phase 2.1, next task is `Phase 1`.
+Linear is the source of truth. `list_issues` filtered to the Maintenance project (include all states — `Todo`, `In Progress`, `In Review`, `Done`, `Cancelled` — since closed tickets still occupy phase numbers). Find the highest `Phase N` in the titles, increment by one.
 
-Cross-check against Linear: `list_issues` filtered to the Maintenance project, look for the highest `Phase N` in the titles. If Linear and the doc disagree, **stop and ask** — that's a sign someone created an issue manually or the doc has been pruned, and the right resolution is human.
+If no maintenance tickets exist yet, next is `Phase 1`.
+
+The plan doc is *not* consulted here — it's a static stub and contains no per-phase entries.
 
 ---
 
@@ -235,9 +203,6 @@ About to file:
   Components: <list of detected dirs>
   Docs:       <list of CLAUDE.md / ARCHITECTURE.md links to attach>
 
-Plan-doc edit (staged, not committed):
-  + ### Phase <N> — <title>  in docs/planning/maintenance.md
-
 Proceed?
 ```
 
@@ -245,52 +210,28 @@ Don't proceed without an explicit yes. "lgtm", "go", "yes", "ship it" all count.
 
 ---
 
-## Phase 8 — Append the new phase to the plan doc
-
-Edit `docs/planning/maintenance.md`. Append a section under `## 6. Phased rollout` (after any existing phases, before any other top-level heading). Keep it tight — this is a maintenance doc, not a design doc.
-
-```markdown
-### Phase <N> — <title>
-
-**Linear:** [ALT-_TBD_](https://linear.app/altitude-devops/team/altitude-devops) *(filled in after the issue is created)*
-
-**Goal.** <one sentence — copied from Phase 3 / clarified in Phase 4>
-
-**Deliverables.**
-- <bullet>
-- <bullet>
-
-**Done when.** <one sentence — testable end state>
-
-**Smoke.** <one line — paraphrase of the recipe written into the ticket>
-```
-
-`git add docs/planning/maintenance.md` so the change is staged. **Do not commit** — the user owns the commit.
-
----
-
-## Phase 9 — Create the Linear issue
+## Phase 8 — Create the Linear issue
 
 Issue title: `Phase <N>: <title>`.
 
 State: `Todo` (canonical name from Phase 1).
 
-Description body — same shape `plan-to-linear` writes, so `execute-next-task` reads it without special-casing:
+Description body — same shape `plan-to-linear` writes, so `execute-next-task` reads it without special-casing. The `Source` line points at the maintenance plan doc (the project stub) — `execute-next-task` will tolerate the lack of a per-phase anchor under the loosened flow.
 
 ```markdown
-**Source:** [docs/planning/maintenance.md §phase-<N>](docs/planning/maintenance.md#phase-<N>--<slug-of-title>)
+**Source:** [docs/planning/maintenance.md](docs/planning/maintenance.md) — Maintenance project (one-off ticket, no per-phase doc entry)
 
 ## Goal
 
-<copied from Phase 8 verbatim>
+<from Phase 3, clarified in Phase 4>
 
 ## Deliverables
 
-<copied from Phase 8 verbatim — preserve list nesting>
+<from Phase 3, clarified in Phase 4 — preserve list nesting>
 
 ## Done when
 
-<copied from Phase 8 verbatim>
+<from Phase 3, clarified in Phase 4>
 
 ---
 
@@ -342,34 +283,21 @@ Capture the issue's `ALT-NN` ID and URL.
 
 ---
 
-## Phase 10 — Backfill the issue ID into the plan doc
-
-Edit `docs/planning/maintenance.md` once more — replace the `ALT-_TBD_` placeholder you just appended with the real issue ID:
-
-```diff
--**Linear:** [ALT-_TBD_](https://linear.app/altitude-devops/team/altitude-devops) *(filled in after the issue is created)*
-+**Linear:** [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN)
-```
-
-`git add` again so the staged diff is now complete. **Still don't commit.**
-
----
-
-## Phase 11 — Report
+## Phase 9 — Report
 
 Print a tight summary:
 
 ```
 ✓ Created Phase <N>: <title>
    <ALT-NN> — <issue URL>
-✓ Appended to docs/planning/maintenance.md (staged, uncommitted)
 ✓ Smoke approach: <UI / curl / unit-only / docs-only / custom>
 
 Next steps:
-  - review the staged plan-doc diff (`git diff --cached docs/planning/maintenance.md`)
-  - commit it with the rest of any related work
-  - run `execute-next-task` when you're ready to pick this up
+  - run `execute-next-task ALT-NN` when you're ready to pick this up,
+    or `execute-next-task` to take whatever's next in the queue
 ```
+
+The skill makes no working-tree changes — `docs/planning/maintenance.md` is a stub maintained by humans, not by this skill. There's nothing to stage or commit.
 
 ---
 
@@ -378,9 +306,9 @@ Next steps:
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
 - **Never ask more than three clarifying questions in Phase 4.** One smoke-test slot + at most two ambiguity probes. If you find yourself wanting a fourth, the request is too big for a one-off — suggest the user run `plan-to-linear` against a quick markdown plan instead.
-- **Never commit the plan-doc edit.** Stage with `git add`; the user owns the commit. Same convention as `plan-to-linear`.
+- **Never edit `docs/planning/maintenance.md`.** It's a static stub describing the Maintenance project. Per-task data lives in Linear only.
 - **Never set `blocked-by` relationships** between maintenance tickets. They're independent. If a one-off genuinely blocks another one-off, both should probably live in a small phased plan, not in maintenance.
-- **Never silently fix a corrupted Maintenance project.** If the project's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop. Same for plan-doc/Linear phase-number drift.
+- **Never silently fix a corrupted Maintenance project.** If the project's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop. (Phase numbering drift between Linear and the doc is no longer a concern — the doc is a stub and isn't consulted for numbering.)
 - **Never write a multi-phase ticket.** This skill creates exactly one Linear issue per run. If the user describes work that's clearly multiple phases, suggest `plan-to-linear`.
 - **Never invent docs.** Each `Relevant docs` link must `Read`-resolve. If `egress-shared/CLAUDE.md` doesn't exist, drop it from the attach list.
 - **Never transition the issue out of `Todo`.** That's `execute-next-task`'s job. The skill only creates.
@@ -392,7 +320,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 
 > User: "task: the cert renewer doesn't retry transient cloudflare 429s. file a maintenance ticket to add a small backoff."
 >
-> *Skill loads Linear MCP. Maintenance project exists already; plan doc exists, highest existing phase is `Phase 12`. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
+> *Skill loads Linear MCP. Maintenance project exists already; the highest existing `Phase N` in the project's Linear titles is `Phase 12`. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
 >
 > Skill: "Quick check before I file —
 >
@@ -419,21 +347,16 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >   Components: acme/, server/src/services/certificates/
 >   Docs:       CLAUDE.md, ARCHITECTURE.md, server/CLAUDE.md, server/ARCHITECTURE.md, acme/CLAUDE.md
 >
-> Plan-doc edit (staged, not committed):
->   + ### Phase 13 — Add retry-with-backoff to cert renewer on Cloudflare 429
->
 > Proceed?"
 >
 > User: "go"
 >
-> *Skill appends to `docs/planning/maintenance.md`, creates the Linear issue, captures `ALT-47`, backfills the issue ID into the plan doc, stages both edits.*
+> *Skill creates the Linear issue and captures `ALT-47`. No plan-doc edits — the doc is a stub.*
 >
 > Skill: "✓ Created Phase 13: Add retry-with-backoff to cert renewer on Cloudflare 429
 >    ALT-47 — https://linear.app/altitude-devops/issue/ALT-47
-> ✓ Appended to docs/planning/maintenance.md (staged, uncommitted)
 > ✓ Smoke approach: Unit / build / lint only
 >
 > Next steps:
->   - review `git diff --cached docs/planning/maintenance.md`
->   - commit it
->   - run `execute-next-task` when you're ready to pick this up"
+>   - run `execute-next-task ALT-47` when you're ready to pick this up,
+>     or `execute-next-task` to take whatever's next in the queue"
