@@ -48,6 +48,11 @@ const commonFieldFixture = {
   // file-loader's stricter refine; the field itself still belongs to the
   // common base).
   vaultAppRoleRef: 'web-approle',
+  // Empty addons block — exercises the field's presence on the common
+  // base without requiring a registered addon. Per-entry validation
+  // against the (empty) production registry only fires when the block
+  // has entries; a literal `{}` round-trips cleanly.
+  addons: {},
 };
 
 const COMMON_FIELDS = [
@@ -64,6 +69,7 @@ const COMMON_FIELDS = [
   'natsCredentialRef',
   'natsRole',
   'natsSigner',
+  'addons',
 ] as const;
 
 // Every key in COMMON_FIELDS must also be a key of the shared base. If

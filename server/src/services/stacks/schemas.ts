@@ -7,6 +7,7 @@ import {
   MOUNT_TYPES,
   isValidEgressPattern,
 } from '@mini-infra/types';
+import { productionAddonRegistry, type AddonRegistry } from '../stack-addons/registry';
 // Note: isValidEgressPattern uses EGRESS_FQDN_RE + EGRESS_WILDCARD_RE from
 // lib/types/egress.ts. The egress route (server/src/routes/egress.ts) has
 // equivalent inline copies (FQDN_RE / WILDCARD_RE) that predate this constant;
@@ -416,7 +417,50 @@ export const stackServiceCommonFieldsSchema = z.object({
   // Symbolic reference to a nats.signers[].name. Causes NATS_SIGNER_SEED to
   // be auto-injected as dynamicEnv at apply time.
   natsSigner: z.string().min(1).optional(),
+  // Service Addons declarations — a map of addon-id → addon-config. Per-entry
+  // validation happens in `addonsBlockSchema` below, which superRefines each
+  // entry against the registered addon's manifest configSchema.
+  addons: z.record(z.string().min(1), z.unknown()).optional(),
 });
+
+/**
+ * Per-entry validation of the `addons:` block against the configured registry.
+ *
+ * Each entry's key must reference a registered addon, and each entry's value
+ * is parsed by that addon's `configSchema`. The registry defaults to the
+ * production singleton; tests inject an isolated registry by calling this
+ * helper directly. Both `stackServiceDefinitionSchema` (HTTP boundary) and
+ * `templateServiceSchema` (file-loaded templates) chain to it so adding a
+ * new addon is one registration, not two schema edits.
+ */
+export function refineAddonsBlock(
+  addons: Record<string, unknown> | undefined,
+  ctx: z.RefinementCtx,
+  registry: AddonRegistry,
+): void {
+  if (!addons) return;
+  for (const [addonId, rawConfig] of Object.entries(addons)) {
+    const registered = registry.get(addonId);
+    if (!registered) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['addons', addonId],
+        message: `Addon "${addonId}" is not registered`,
+      });
+      continue;
+    }
+    const result = registered.configSchema.safeParse(rawConfig);
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['addons', addonId, ...issue.path],
+          message: issue.message,
+        });
+      }
+    }
+  }
+}
 
 export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
   .extend({
@@ -430,6 +474,9 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     // template/draft input. Symbolic *Ref siblings live on the common base.
     vaultAppRoleId: z.string().min(1).nullable().optional(),
     natsCredentialId: z.string().min(1).nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    refineAddonsBlock(data.addons, ctx, productionAddonRegistry);
   })
   .refine(
     (data) => {

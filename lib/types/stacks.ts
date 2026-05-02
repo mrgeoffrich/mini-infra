@@ -324,6 +324,8 @@ export interface StackService {
   natsCredentialId: string | null;
   natsCredentialRef: string | null;
   poolManagementTokenHash: string | null;
+  /** Service Addons authoring block; null when no addons declared. */
+  addons: Record<string, unknown> | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -377,11 +379,32 @@ export interface StackServiceInfo {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  /** Service Addons authoring block; null when no addons declared. */
+  addons: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
 }
 
 // Portable definition types (no DB fields — used for snapshots/export)
+
+/**
+ * Back-reference attached to rendered addon-derived services produced by the
+ * Service Addons render pipeline (`server/src/services/stack-addons/`).
+ * Authored services never carry this — its presence is the canonical
+ * "synthetic" signal that downstream UI / RBAC code branches on.
+ *
+ * Declared here (rather than in `./addons.ts`) so `stacks.ts` has no inbound
+ * dependency on the addon module — `addons.ts` re-exports this type for
+ * addon-framework consumers.
+ */
+export interface SyntheticServiceInfo {
+  /** Addon ids that produced this sidecar — multiple when merged by kind. */
+  addonIds: string[];
+  /** Merge-strategy kind for grouped addons; absent for solo applications. */
+  kind?: string;
+  /** Service name of the target this sidecar wraps. */
+  targetService: string;
+}
 
 export interface StackServiceDefinition {
   serviceName: string;
@@ -410,6 +433,20 @@ export interface StackServiceDefinition {
   /** Symbolic reference to a nats.signers[].name. Causes NATS_SIGNER_SEED to
    *  be auto-injected as dynamicEnv at apply time. */
   natsSigner?: string | null;
+  /**
+   * Service Addons declarations — a map of addon-id → addon-config. The
+   * authored stack carries only this terse block; the render pipeline
+   * (`server/src/services/stack-addons/expand-addons.ts`) materialises each
+   * declaration into one or more synthetic sidecar definitions appended to
+   * the rendered services list. With the production registry empty the
+   * render pass is a no-op for every existing stack.
+   */
+  addons?: Record<string, unknown>;
+  /**
+   * Back-reference set on rendered addon-derived services. `undefined` on
+   * authored services. See `SyntheticServiceInfo` above.
+   */
+  synthetic?: SyntheticServiceInfo;
 }
 
 export interface StackDefinition {

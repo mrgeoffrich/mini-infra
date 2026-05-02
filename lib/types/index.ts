@@ -71,6 +71,9 @@ export * from "./agent";
 // Stacks types
 export * from "./stacks";
 
+// Service Addons framework types
+export * from "./addons";
+
 // Stack Template types
 export * from "./stack-templates";
 

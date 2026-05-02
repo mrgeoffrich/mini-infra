@@ -177,6 +177,9 @@ export const ServerEvent = {
   STACK_APPLY_COMPLETED: "stack:apply:completed",
   STACK_DESTROY_STARTED: "stack:destroy:started",
   STACK_DESTROY_COMPLETED: "stack:destroy:completed",
+  // Stack Addon provisioning (Phase 1: defined; emitted from Phase 3 onward)
+  STACK_ADDON_PROVISIONED: "stack:addon:provisioned",
+  STACK_ADDON_FAILED: "stack:addon:failed",
   // HAProxy
   HAPROXY_BACKENDS_LIST: "haproxy:backends:list",
   HAPROXY_FRONTENDS_LIST: "haproxy:frontends:list",
@@ -333,6 +336,29 @@ export interface ServerToClientEvents {
   "stack:destroy:started": (data: { stackId: string; stackName: string }) => void;
   /** Stack destroy completed */
   "stack:destroy:completed": (data: DestroyResult) => void;
+  /**
+   * One addon application provisioned successfully during stack apply.
+   * Defined in Phase 1; emitted from the render pipeline starting Phase 3.
+   */
+  "stack:addon:provisioned": (data: {
+    stackId: string;
+    serviceName: string;
+    addonId: string;
+    kind?: string;
+    syntheticServiceName: string;
+  }) => void;
+  /**
+   * One addon application failed during stack apply (validation, provision,
+   * or build). Defined in Phase 1; emitted from the render pipeline starting
+   * Phase 3.
+   */
+  "stack:addon:failed": (data: {
+    stackId: string;
+    serviceName: string;
+    addonId: string;
+    kind?: string;
+    error: string;
+  }) => void;
 
   // ── HAProxy ────────────────────────────────────────
   /** HAProxy backends list updated */

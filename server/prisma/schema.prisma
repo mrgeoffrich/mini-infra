@@ -1422,6 +1422,10 @@ model StackService {
   natsCredentialId            String?
   natsCredential              NatsCredentialProfile? @relation("ServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
   natsCredentialRef           String?
+  // Service Addons authoring block (Phase 1, ALT-56). Map of addon-id →
+  // addon-config; expanded into synthetic sidecars by the render pipeline
+  // in `server/src/services/stack-addons/expand-addons.ts`.
+  addons                      Json?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -1645,6 +1649,10 @@ model StackTemplateService {
   // NATS_SIGNER_SEED dynamicEnv. Mutually exclusive with natsCredentialRef.
   natsRole          String?
   natsSigner        String?
+  // Service Addons authoring block (Phase 1, ALT-56). Map of addon-id →
+  // addon-config; rendered into synthetic sidecars at apply time when the
+  // template is instantiated into a stack.
+  addons            Json?
 
   @@unique([versionId, serviceName])
   @@index([versionId])
