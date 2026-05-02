@@ -74,6 +74,7 @@ Pull these from the input, in order:
 4. **Non-goals** — at least one bullet with a one-line *why*. If the user volunteered none, prompt explicitly: "what did you consider and reject during brainstorming?" An empty Non-goals section is almost always a planning bug — operators end up re-litigating decisions during execution because the rationale wasn't captured.
 5. **Shared concepts** — types, contracts, naming conventions, subjects, or schemas referenced by ≥ 2 phases. These belong in a `## <N>. <Concept>` section between Non-goals and Phased rollout, not inside any one phase. Surfacing shared concepts up front prevents drift across phases (one phase invents a contract, the next phase invents a parallel one).
 6. **Component surface area** — which top-level dirs the work touches (`server/`, `client/`, `lib/`, `agent-sidecar/`, `egress-*`, `pg-az-backup/`, `update-sidecar/`, `acme/`, `deployment/`). Used in Phase 4's heuristics.
+7. **Schema footprint** — every new table, new column, removed/renamed column, and new index the input implies, attributed to the phase that needs it. If the brainstorm names two or more new tables, or any new table plus new columns on existing tables, flag it for the schema-first split heuristic in Phase 4. Capture per-column type + nullability if the brainstorm gave it; if it didn't, note `<type TBD>` so the gap surfaces during rubric review rather than being silently invented at execution time. The output of this step feeds the per-phase `Schema changes:` block written in Phase 8.
 
 If §1 Background or §3 Non-goals doesn't clear the bar, **stop and ask** — don't paper over. Plans built on hand-waved scoping land vague phases.
 
@@ -93,6 +94,7 @@ Watch for these in the input. When the brainstorm is shaped like one of these, t
 | **Polish / improvements / cleanup** as a phase label | One phase per discrete UI change. Roll multiple changes into one phase only if every change is `[no design]` and shippable in <1 day total. |
 | **New connected service + first addon using it** | (1) Add connected service type — CRUD + connectivity prober + admin form, no consumers. (2) First addon that uses it. Splits the credential / OAuth / probing surface from the consumer surface. |
 | **Schema + API + UI in one phase** | Split by layer: schema-and-API in N (behind a feature flag if needed), UI in N+1. The UI phase has a real Done-when ("operator can see/do X") that the bundled phase can't have. |
+| **Schema migration sharing a phase with feature work** | Pull the schema migration forward as its own (often Phase 1) phase. New tables, new columns, new indexes, and the Prisma migration that creates them ship ahead of the API + UI phases that consume them. The schema phase's Done-when is "migration applies cleanly on dev DB and the new columns are nullable / default-valued so prior code keeps running" — a `safe` reversibility classification by construction (the columns are unused until a later phase). Subsequent phases then read/write the columns without coupling DDL to feature rollout. **Cue:** the brainstorm mentions a new table, new column, or new index alongside other work. **Exception:** trivial column additions on tables only used by the same phase (e.g. one phase adds a service and the column it needs in one go) can stay bundled — splitting a 5-line migration off makes the plan noisier without buying anything. |
 | **Pool support added to an existing feature** | Always its own phase, late in the rollout. Static services first, pool generalisation after. (Pattern from [service-addons-plan.md §6 Phase 4](docs/planning/not-shipped/service-addons-plan.md) — done correctly there.) |
 | **Docs padded onto a feature phase** | Docs ride with the feature unless the feature has multiple operator-onboarding steps (OAuth client creation, Vault path setup, ACL bootstrap). Then docs are their own slim phase. |
 | **"Foundation" phase with no concrete deliverable** | Reject — there's no such thing as a "foundation" phase. Either it lands a concrete artifact (a type, a registered service, a working endpoint) or it's not a phase. |
@@ -227,6 +229,12 @@ UI changes:
 - <user-visible change> [design needed]
 - <user-visible change> [no design]
 - (or `none`)
+
+Schema changes:
+- <table>: <column> <type> <nullable?> — <why>
+- <table>: new index on (<columns>) — <why>
+- Prisma migration: `pnpm --filter mini-infra-server exec prisma migrate dev --name <slug>`
+- (or `none` if this phase touches no DB schema)
 
 Done when: <one-sentence acceptance criterion>
 

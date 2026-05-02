@@ -91,6 +91,12 @@ UI changes:
 - <user-visible change> [no design]
 - (or the literal word `none` if this phase ships nothing user-visible)
 
+Schema changes:
+- <table>: <column> <type> <nullable?> — <why>
+- <table>: new index on (<columns>) — <why>
+- Prisma migration: `pnpm --filter mini-infra-server exec prisma migrate dev --name <slug>`
+- (or the literal word `none` if this phase touches no DB schema)
+
 Done when: <one sentence acceptance criterion>
 
 Verify in prod: <production signal that confirms the Goal materialised> (or `n/a — internal only`)
@@ -99,7 +105,7 @@ Verify in prod: <production signal that confirms the Goal materialised> (or `n/a
 …
 ```
 
-Six required parts per phase:
+Seven required parts per phase:
 
 | Part | Shape | Notes |
 |---|---|---|
@@ -107,6 +113,7 @@ Six required parts per phase:
 | **Deliverables** | bullet list | Concrete artifacts the phase ships. May nest. May include inline links to files/PRs. **Not** a file-by-file change plan — see "What not to write" below. |
 | **Reversibility** | one of `safe` / `feature-flagged` / `forward-only` / `destructive`, plus one-line rationale | What happens if this phase ships and breaks. `safe` = revert the PR cleanly. `feature-flagged` = flip a flag, no rollback PR needed. `forward-only` = a forward-fix is required (data migration, contract change, irreversible state). `destructive` = data loss or external state change that cannot be undone. The executor uses this to decide whether to gate the rollout, add a flag, or require ops sign-off before merging. |
 | **UI changes** | bullet list, or the literal word `none` | Every user-visible change this phase ships. Write in user terms ("operators see a new column on the certificates page"), not implementation terms ("add `<CertStatusBadge>` to the cert table"). For each item, tag `[design needed]` if it needs a designer to mock first, or `[no design]` if it can ship as-is (copy tweaks, new technical fields with obvious layouts). Saying `none` is fine — but say it; don't omit the line. **Why this exists:** UI changes are extracted from plans before implementation so the designer can be looped in early. A missing line is indistinguishable from "no UI changes" and leads to mid-PR surprises and rework. Grep `[design needed]` across `docs/planning/` for an instant designer-todo list. |
+| **Schema changes** | bullet list, or the literal word `none` | Every DB schema change this phase ships — new tables, new columns (with type + nullability), new indexes, removed/renamed columns. End the list with the Prisma migration command the executor will run (`pnpm --filter mini-infra-server exec prisma migrate dev --name <slug>`) so the migration name lands in the plan rather than being invented at execution time. Write the *what*, not the *why for every column* — the why belongs in Goal / Deliverables. Saying `none` is fine — but say it; don't omit the line. **Why this exists:** schema migrations are forward-only in production and high-blast-radius — surfacing them at plan time makes the phase ordering obvious (schema lands ahead of API + UI), gives reviewers a single place to spot risky DDL, and lets `execute-next-task` know up front which phases will touch `prisma/schema.prisma`. **Plan-level cue:** when a plan has multiple phases all listing schema changes, that's often a signal the schema work should be pulled into its own Phase 1 — see the "Schema migration sharing a phase with feature work" anti-pattern in `brainstorm-to-plan`. |
 | **Done when** | one sentence | The acceptance criterion. Should be testable in CI or the dev env. |
 | **Verify in prod** | one bullet, or `n/a — internal only` | The production signal that confirms the *outcome* (Goal), not just the *deliverables*. A counter that should appear, an error rate that should drop, a dashboard panel to watch, a graph that should change shape, an alert to wire up. Different from Done-when: Done-when is "the code does the right thing in CI"; Verify-in-prod is "we can tell the goal materialised after rollout." Use `n/a — internal only` for refactors and other phases with no user-visible production signal — but write it explicitly so reviewers know you considered it. |
 
