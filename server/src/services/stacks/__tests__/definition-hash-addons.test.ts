@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { StackServiceDefinition } from '@mini-infra/types';
 import { computeDefinitionHash } from '../definition-hash';
+import { resolveServiceConfigs } from '../utils';
+import { buildTemplateContext } from '../template-engine';
+import { createAddonRegistry } from '../../stack-addons';
+import { noopAddon } from '../../stack-addons/test-addons/noop';
 
 /**
  * Service Addons §7 invariant: the definition hash for an authored service
@@ -53,5 +57,62 @@ describe('definition-hash with addons block', () => {
       addons: { noop: { label: 'x' } },
     });
     expect(a).toBe(b);
+  });
+});
+
+/**
+ * §7 invariant pinned at the pipeline boundary, not just at the hash
+ * function. `expandAddons` strips the `addons:` field from the rendered
+ * output (the rendered form is post-authoring); the integration test
+ * proves `resolveServiceConfigs` re-attaches the authored block before
+ * computing the target's hash, so addon-config changes still trigger a
+ * recreate of the target.
+ */
+describe('resolveServiceConfigs — §7 hash invariant pinned end-to-end', () => {
+  function makeServiceRow(addons: Record<string, unknown> | undefined) {
+    return {
+      serviceName: 'web',
+      serviceType: 'Stateful',
+      dockerImage: 'nginx',
+      dockerTag: 'latest',
+      containerConfig: { restartPolicy: 'unless-stopped' },
+      configFiles: [],
+      initCommands: [],
+      dependsOn: [],
+      order: 1,
+      routing: null,
+      addons,
+    };
+  }
+
+  it("changes the target's service hash when the authored addons block changes", async () => {
+    const registry = createAddonRegistry();
+    registry.register(noopAddon);
+
+    const ctxA = buildTemplateContext(
+      { name: 'demo', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: { restartPolicy: 'unless-stopped' } }],
+    );
+    const ctxB = buildTemplateContext(
+      { name: 'demo', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: { restartPolicy: 'unless-stopped' } }],
+    );
+
+    const { serviceHashes: hashA } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'a' } })],
+      ctxA,
+      { addonRegistry: registry },
+    );
+    const { serviceHashes: hashB } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'b' } })],
+      ctxB,
+      { addonRegistry: registry },
+    );
+
+    const targetHashA = hashA.get('web');
+    const targetHashB = hashB.get('web');
+    expect(targetHashA).toBeDefined();
+    expect(targetHashB).toBeDefined();
+    expect(targetHashA).not.toBe(targetHashB);
   });
 });

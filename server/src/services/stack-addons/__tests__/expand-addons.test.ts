@@ -129,6 +129,34 @@ describe('expandAddons (Phase 1)', () => {
     );
   });
 
+  it('fires onFailed before re-throwing when addon validation fails (resolveGroups path)', async () => {
+    const registry = createAddonRegistry();
+    registry.register(noopAddon);
+
+    const target = makeStateful('web', {
+      addons: { 'does-not-exist': {} },
+    });
+    const failed: Array<{ serviceName: string; addonIds: string[]; error: string }> = [];
+    await expect(
+      expandAddons(
+        [target],
+        { ...baseContext, registry },
+        {
+          onFailed: (info) =>
+            failed.push({
+              serviceName: info.serviceName,
+              addonIds: info.addonIds,
+              error: info.error,
+            }),
+        },
+      ),
+    ).rejects.toBeInstanceOf(AddonExpansionError);
+    expect(failed).toHaveLength(1);
+    expect(failed[0].serviceName).toBe('web');
+    expect(failed[0].addonIds).toEqual(['does-not-exist']);
+    expect(failed[0].error).toMatch(/not registered/);
+  });
+
   it('emits onProvisioned progress callbacks per successful application', async () => {
     const registry = createAddonRegistry();
     registry.register(noopAddon);

@@ -330,12 +330,21 @@ export async function resolveServiceConfigs(
   // (with the optional addons block carried through). Configs files are
   // tracked in parallel so synthetic sidecars added by expandAddons can
   // pick up an empty bucket without disturbing authored ones.
+  //
+  // The authored `addons:` block per service is captured separately so
+  // we can re-attach it when hashing the rendered target — `expandAddons`
+  // strips the field from its output (the rendered form has no authoring
+  // artifact), but §7 of the Service Addons plan requires the hash to be
+  // computed from the *authored* definition + addon-config, not the
+  // rendered form, so addon-config changes still trigger a recreate.
+  const authoredAddonsByName = new Map<string, Record<string, unknown> | undefined>();
   const authoredDefs: StackServiceDefinition[] = [];
   for (const svc of services) {
     const def = toServiceDefinition(svc);
     if (svc.addons && typeof svc.addons === 'object') {
       def.addons = svc.addons as Record<string, unknown>;
     }
+    authoredAddonsByName.set(svc.serviceName, def.addons);
     authoredDefs.push(def);
     resolvedConfigsMap.set(
       svc.serviceName,
@@ -383,11 +392,18 @@ export async function resolveServiceConfigs(
     const resolvedDef = resolveServiceDefinition(def, templateContext);
     resolvedDefinitions.set(def.serviceName, resolvedDef);
     // Hash the resolved definition so parameter value changes trigger
-    // recreates. The authored `addons:` block is part of the canonical
-    // form (definition-hash.ts) so addon-config changes also recreate.
+    // recreates. For authored services we re-attach the original `addons:`
+    // block (stripped on the render output) so the hash includes the
+    // authoring intent — definition-hash.ts §7 invariant. Synthetic
+    // sidecars don't carry an addons block of their own.
+    const authoredAddons = authoredAddonsByName.get(def.serviceName);
+    const defForHash =
+      authoredAddons !== undefined
+        ? { ...resolvedDef, addons: authoredAddons }
+        : resolvedDef;
     serviceHashes.set(
       def.serviceName,
-      computeDefinitionHash(resolvedDef, resolvedConfigs),
+      computeDefinitionHash(defForHash, resolvedConfigs),
     );
   }
 

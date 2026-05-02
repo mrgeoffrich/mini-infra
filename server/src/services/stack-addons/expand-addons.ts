@@ -117,7 +117,33 @@ export async function expandAddons(
   for (const authored of authoredDefinitions) {
     if (!authored.addons || Object.keys(authored.addons).length === 0) continue;
 
-    const groups = await resolveGroups(authored, authored.addons, context);
+    // resolveGroups throws AddonExpansionError directly on validation /
+    // applicability / connected-service / merge-strategy issues. Surface
+    // those through progress.onFailed before re-throwing so Phase 3+
+    // socket emission of STACK_ADDON_FAILED captures the most common
+    // user-facing error class — "addon X isn't registered" or "config Y
+    // is invalid" — which fires before any provision() runs.
+    let groups: ResolvedGroup[];
+    try {
+      groups = await resolveGroups(authored, authored.addons, context);
+    } catch (err) {
+      const e =
+        err instanceof AddonExpansionError
+          ? err
+          : new AddonExpansionError(
+              authored.serviceName,
+              [],
+              err instanceof Error ? err.message : String(err),
+              err,
+            );
+      progress.onFailed?.({
+        serviceName: e.serviceName,
+        addonIds: e.addonIds,
+        error: e.message,
+      });
+      throw e;
+    }
+
     for (const group of groups) {
       try {
         await applyGroup(group, context, rendered, progress);
