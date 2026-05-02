@@ -428,6 +428,10 @@ const initializeServices = async () => {
           "./services/nats/nats-system-bootstrap"
         );
         void bootstrapNatsSystemResources();
+        // ALT-29: start the backup NATS bridge (progress → Socket.IO fan-out
+        // + BackupHistory JetStream consumer for cold-boot replay).
+        const { startBackupNatsBridge } = await import("./services/backup");
+        startBackupNatsBridge(prisma);
       } catch (busErr) {
         logger.info(
           { err: busErr instanceof Error ? busErr.message : String(busErr) },

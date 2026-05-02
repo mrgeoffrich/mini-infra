@@ -26,6 +26,7 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
 import {
+  BackupSubject,
   EgressGwSubject,
   NATS_SYSTEM_PREFIX,
   NatsConsumer as NatsConsumerName,
@@ -110,6 +111,28 @@ const SYSTEM_STREAMS: SystemStreamSpec[] = [
         // Cap redelivery so a poison message can't loop forever. After 5
         // attempts the consumer NAKs to the dead-letter side (which we
         // currently just log — a follow-up adds a real DLQ).
+        maxDeliver: 5,
+      },
+    ],
+  },
+  {
+    name: NatsStreamName.backupHistory, // "BackupHistory"
+    subjects: [BackupSubject.completed, BackupSubject.failed],
+    // Limits retention: history stream for replay on cold load and recovery
+    // from missed events during server restarts. Each backup run produces at
+    // most one message; 1 GiB / 30 d is conservative but consistent with
+    // plan §7 estimates.
+    retention: "limits",
+    maxBytes: 1024 * 1024 * 1024, // 1 GiB
+    maxAgeSeconds: 30 * 24 * 3600, // 30 d
+    description: "Phase 4 (ALT-29): backup run completed/failed events for durable replay.",
+    consumers: [
+      {
+        name: NatsConsumerName.backupHistoryServer,
+        durableName: NatsConsumerName.backupHistoryServer,
+        description:
+          "Mini Infra server consumer: emits Socket.IO events and repairs stale DB records on cold-boot replay.",
+        ackWaitSeconds: 30,
         maxDeliver: 5,
       },
     ],

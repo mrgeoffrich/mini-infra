@@ -15,7 +15,7 @@
  * landed yet is harmless — JetStream just keeps an empty stream around.
  */
 
-import { EgressFwSubject, NatsStream } from "@mini-infra/types";
+import { BackupSubject, EgressFwSubject, NatsConsumer, NatsStream } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { NatsBus } from "./nats-bus";
 
@@ -44,6 +44,9 @@ const EGRESS_FW_HEALTH_TTL_MS = 30_000;
  */
 const EGRESS_FW_EVENTS_MAX_BYTES = 1024 * 1024 * 1024;
 const EGRESS_FW_EVENTS_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const BACKUP_HISTORY_MAX_BYTES = 1024 * 1024 * 1024;
+const BACKUP_HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export async function bootstrapNatsSystemResources(): Promise<void> {
   const bus = NatsBus.getInstance();
@@ -102,6 +105,34 @@ export async function bootstrapNatsSystemResources(): Promise<void> {
     log.error(
       { err: err instanceof Error ? err.message : String(err) },
       "nats system bootstrap: egress-fw-health KV ensure failed",
+    );
+  }
+
+  // BackupHistory stream — captures completed and failed events so the
+  // events page can replay them on cold load and missed events are not
+  // lost when the server restarts mid-backup.
+  try {
+    await bus.jetstream.ensureStream({
+      name: NatsStream.backupHistory,
+      subjects: [BackupSubject.completed, BackupSubject.failed],
+      description: "Phase 4 (ALT-29): backup run completed/failed events",
+      maxBytes: BACKUP_HISTORY_MAX_BYTES,
+      maxAgeMs: BACKUP_HISTORY_MAX_AGE_MS,
+    });
+    await bus.jetstream.ensureConsumer({
+      stream: NatsStream.backupHistory,
+      durable: NatsConsumer.backupHistoryServer,
+      ackWaitMs: 30_000,
+      maxDeliver: 5,
+    });
+    log.info(
+      { stream: NatsStream.backupHistory, consumer: NatsConsumer.backupHistoryServer },
+      "nats system bootstrap: BackupHistory stream + consumer ensured",
+    );
+  } catch (err) {
+    log.error(
+      { err: err instanceof Error ? err.message : String(err) },
+      "nats system bootstrap: BackupHistory stream ensure failed",
     );
   }
 }
