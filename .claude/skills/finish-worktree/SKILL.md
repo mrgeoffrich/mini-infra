@@ -1,6 +1,6 @@
 ---
 name: finish-worktree
-description: Tears down a finished agent worktree — `cd`s back to the repo root, runs `pnpm worktree-env delete <slug> --force` to wipe the per-worktree VM/distro and registry entry, then `git worktree remove .claude/worktrees/<slug>` to remove the directory and git's tracking. The remote branch is left untouched (the PR points at it). Takes a slug or Linear issue ID as the argument (e.g. `/finish-worktree alt-32` or `/finish-worktree ALT-32`). This skill is the cleanup half of `execute-next-task` (Phase 14) extracted so it can be invoked manually after any worktree-based flow finishes — `fix-and-validate`, ad-hoc bugfixes, design exploration, anything where the worktree's purpose is over and the slot should be freed for the next run. Use this skill whenever the user says "finish worktree", "clean up worktree", "tear down worktree", "remove worktree", "done with worktree", "delete worktree alt-NN", "wrap up the alt-NN worktree", or any equivalent ask to dispose of a finished worktree. Do **not** trigger when there's still active work in the worktree, when the PR hasn't been opened yet, or when the run failed — leaving the worktree alive is the right answer in those cases. The skill itself defensively checks for uncommitted changes, unpushed commits, and missing PR before destroying anything, and stops to ask if it sees any of those.
+description: Tears down a finished agent worktree — `cd`s back to the repo root, runs `pnpm worktree-env delete <slug> --force` to wipe the per-worktree VM/distro and registry entry, then `git worktree remove .claude/worktrees/<slug>` to remove the directory and git's tracking. The remote branch is left untouched (the PR points at it). Takes a slug or `mk` issue key as the argument (e.g. `/finish-worktree mini-32` or `/finish-worktree MINI-32`). This skill is the cleanup half of `execute-next-task` (Phase 14) extracted so it can be invoked manually after any worktree-based flow finishes — `fix-and-validate`, ad-hoc bugfixes, design exploration, anything where the worktree's purpose is over and the slot should be freed for the next run. Use this skill whenever the user says "finish worktree", "clean up worktree", "tear down worktree", "remove worktree", "done with worktree", "delete worktree mini-NN", "wrap up the mini-NN worktree", or any equivalent ask to dispose of a finished worktree. Do **not** trigger when there's still active work in the worktree, when the PR hasn't been opened yet, or when the run failed — leaving the worktree alive is the right answer in those cases. The skill itself defensively checks for uncommitted changes, unpushed commits, and missing PR before destroying anything, and stops to ask if it sees any of those.
 ---
 
 # Finish Worktree
@@ -15,7 +15,7 @@ The remote branch is **left alone** — that's where the PR points; it must rema
 
 The skill takes one required argument:
 
-- **`<slug-or-issue-id>`** — either the worktree slug (`alt-32`) or the Linear issue ID it was created from (`ALT-32`). The skill normalises both to the slug `alt-NN` (lowercase). Accepts surrounding text containing the pattern.
+- **`<slug-or-issue-key>`** — either the worktree slug (`mini-32`) or the `mk` issue key it was created from (`MINI-32`). The skill normalises both to the slug `mini-NN` (lowercase). Accepts surrounding text containing the pattern.
 
 If no argument is supplied, **stop and ask**. The skill never auto-picks "the most recent worktree" — that's the kind of guess that ends with someone's WIP being deleted.
 
@@ -25,9 +25,9 @@ If no argument is supplied, **stop and ask**. The skill never auto-picks "the mo
 
 Normalise the argument to a slug:
 
-- `ALT-32` → `alt-32`
-- `alt-32` → `alt-32`
-- `pick up alt-32 please` → `alt-32` (extract the pattern)
+- `MINI-32` → `mini-32`
+- `mini-32` → `mini-32`
+- `pick up mini-32 please` → `mini-32` (extract the pattern)
 
 Then check that the worktree actually exists:
 
@@ -127,7 +127,7 @@ Mention this in the report only if it seems relevant (e.g. the user is mid-revie
 - **Never run cleanup on a failure path.** If smoke failed, the PR didn't open, the work isn't shipped, or the user is mid-investigation, leave the worktree alive. Phase 2's defensive checks catch the obvious cases; if the user invokes the skill anyway and confirms past a warning, that's their call.
 - **Never delete the remote branch.** The PR points at it. Cleanup is local-only (worktree dir + VM/distro + registry entry).
 - **Never delete a worktree you're standing in.** `cd` to the repo root before running `git worktree remove`. Otherwise git refuses and you waste a turn diagnosing.
-- **Never auto-pick a worktree to delete.** The skill needs an explicit slug or issue ID. Guessing "the latest one" is how WIP gets nuked.
+- **Never auto-pick a worktree to delete.** The skill needs an explicit slug or issue key. Guessing "the latest one" is how WIP gets nuked.
 - **Never pass `--force` to `git worktree remove` automatically.** If git refuses because the worktree is dirty, that's signal — investigate, don't override.
 - **Never produce an ExitPlanMode block.** This is a cleanup skill, not a planning skill.
 
@@ -135,21 +135,21 @@ Mention this in the report only if it seems relevant (e.g. the user is mid-revie
 
 ## Example
 
-> User: `/finish-worktree ALT-29`
+> User: `/finish-worktree MINI-29`
 >
-> *Skill normalises to slug `alt-29`. Runs `git worktree list`, sees `.claude/worktrees/alt-29` on `claude/alt-29`.*
+> *Skill normalises to slug `mini-29`. Runs `git worktree list`, sees `.claude/worktrees/mini-29` on `claude/mini-29`.*
 >
 > *Skill `cd`s into the worktree and runs the three defensive checks: `git status --porcelain` (clean), `git log @{u}..HEAD --oneline` (no unpushed commits), `gh pr view` (PR #412 open). All clear.*
 >
-> *Skill `cd`s back to the repo root. Runs `pnpm worktree-env delete alt-29 --force`, then `git worktree remove .claude/worktrees/alt-29`.*
+> *Skill `cd`s back to the repo root. Runs `pnpm worktree-env delete mini-29 --force`, then `git worktree remove .claude/worktrees/mini-29`.*
 >
-> Skill: "✓ Cleaned up worktree `.claude/worktrees/alt-29` and the dev-env VM. Branch `claude/alt-29` remains on the remote (PR #412 points at it)."
+> Skill: "✓ Cleaned up worktree `.claude/worktrees/mini-29` and the dev-env VM. Branch `claude/mini-29` remains on the remote (PR #412 points at it)."
 
-> User: `/finish-worktree alt-58`
+> User: `/finish-worktree mini-58`
 >
 > *Skill normalises (already a slug). Worktree exists. Defensive checks: `git status --porcelain` returns `M server/src/foo.ts`. **Stop.***
 >
-> Skill: "Worktree `alt-58` has uncommitted changes:
+> Skill: "Worktree `mini-58` has uncommitted changes:
 >
 > ```
 > M server/src/foo.ts

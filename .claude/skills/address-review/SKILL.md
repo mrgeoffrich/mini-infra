@@ -1,6 +1,6 @@
 ---
 name: address-review
-description: Action the findings from a `/review` Linear comment on an in-review PR. Accepts a Linear issue ID (`ALT-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/alt-32`), or **no argument** (uses the current branch's PR). Resolves the input to the triple {Linear issue, PR, branch}, transitions the issue back to **In Progress** and posts a brief claim comment, finds the most recent `**Review of …**` comment posted by `/review` on the issue, parses the severity-tagged findings out of it, **drops every `low` item entirely** (low isn't worth a fixup commit — calibration of severity is the line), and for each remaining `critical | high | medium` finding **validates that it's actually an issue** by reading the cited file and surrounding code before touching anything (`/review` is fallible — false positives must be dismissed with rationale, not silently fixed). Reloads the contract — ticket body (Goal / Deliverables / Done when), any `Design ready` comment from `design-task` pointing at a design doc under `docs/designs/`, the plan doc if any, and the project conventions that bear on the touched directories (root + server/ + client/ CLAUDE.md). Resumes the existing worktree at `.claude/worktrees/alt-NN` if it's still around, or recreates it from the existing branch (`git worktree add .claude/worktrees/alt-NN claude/alt-NN`, `pnpm install`, kicks off `pnpm worktree-env start` in the background) so live smoke is available. Applies a targeted fix per validated finding, runs `build / lint / unit` for the workspaces touched, **smoke-tests the changes live** against the dev env (reads the URL from `environment-details.xml` and uses a recipe tailored to what changed — playwright for UI fixes, curl for route fixes, unit-test exercise for pure server logic), and lands one **single fixup commit** (`fix(<area>): address review findings (ALT-NN)`) pushed to the existing PR branch. Never opens a new PR. Posts a structured response comment on the Linear issue listing **Fixed** items (with `file:line` + commit SHA), **Dismissed** items (with rationale per false-positive), **Couldn't verify** items (when the cited file/line doesn't match what the finding describes), and a one-line **Skipped (low)** note. Transitions the issue from In Progress back to **In Review**. Use this skill whenever the user says "address the review", "action the review findings", "apply the review", "fix the review on ALT-NN", "address ALT-NN review", "fix what review flagged", "act on the review comments", "go fix what /review found", "address the comments on ALT-NN", or any equivalent ask to action a posted review. Trigger even when the user doesn't say the word "address" but is clearly asking the agent to go fix what `/review` flagged. Do NOT trigger when there's no review comment on the ticket yet (run `/review` first), when the user wants a fresh review run (use `/review`), when the changes haven't been started (use `execute-next-task`), or when the request is for design exploration (use `design-task`).
+description: Action the findings from a `/review` mk comment on an in-review PR. Accepts an mk issue key (`MINI-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/mini-32`), or **no argument** (uses the current branch's PR). Resolves the input to the triple {mk issue, PR, branch}, transitions the issue back to **in_progress** and posts a brief claim comment, finds the most recent `**Review of …**` comment posted by `/review` on the issue, parses the severity-tagged findings out of it, **drops every `low` item entirely** (low isn't worth a fixup commit — calibration of severity is the line), and for each remaining `critical | high | medium` finding **validates that it's actually an issue** by reading the cited file and surrounding code before touching anything (`/review` is fallible — false positives must be dismissed with rationale, not silently fixed). Reloads the contract — ticket body (Goal / Deliverables / Done when), any `Design ready` comment from `design-task` pointing at a design doc under `docs/designs/`, the plan doc if any, and the project conventions that bear on the touched directories (root + server/ + client/ CLAUDE.md). Resumes the existing worktree at `.claude/worktrees/mini-NN` if it's still around, or recreates it from the existing branch (`git worktree add .claude/worktrees/mini-NN claude/mini-NN`, `pnpm install`, kicks off `pnpm worktree-env start` in the background) so live smoke is available. Applies a targeted fix per validated finding, runs `build / lint / unit` for the workspaces touched, **smoke-tests the changes live** against the dev env (reads the URL from `environment-details.xml` and uses a recipe tailored to what changed — playwright for UI fixes, curl for route fixes, unit-test exercise for pure server logic), and lands one **single fixup commit** (`fix(<area>): address review findings (MINI-NN)`) pushed to the existing PR branch. Never opens a new PR. Posts a structured response comment on the mk issue listing **Fixed** items (with `file:line` + commit SHA), **Dismissed** items (with rationale per false-positive), **Couldn't verify** items (when the cited file/line doesn't match what the finding describes), and a one-line **Skipped (low)** note. Transitions the issue from in_progress back to **in_review**. Use this skill whenever the user says "address the review", "action the review findings", "apply the review", "fix the review on MINI-NN", "address MINI-NN review", "fix what review flagged", "act on the review comments", "go fix what /review found", "address the comments on MINI-NN", or any equivalent ask to action a posted review. Trigger even when the user doesn't say the word "address" but is clearly asking the agent to go fix what `/review` flagged. Do NOT trigger when there's no review comment on the ticket yet (run `/review` first), when the user wants a fresh review run (use `/review`), when the changes haven't been started (use `execute-next-task`), or when the request is for design exploration (use `design-task`).
 ---
 
 # Address Review
@@ -9,53 +9,61 @@ You're a **review-fixup agent**. The work has shipped, `/review` has flagged wha
 
 You make changes only after **validating** each finding is real. The `/review` skill is fallible — it sometimes misreads context, flags conventions that are actually being followed a few files away, or suggests "fixes" that are worse than the code being fixed. Read the cited file before touching anything; dismiss with rationale when the finding doesn't hold up.
 
-The team is hardcoded as **Altitude Devops**.
+Issues live in `mk` (mini-kanban), the local CLI tracker bound to this repo. The `mk` skill at `.claude/skills/mk/SKILL.md` covers the CLI in detail; this skill calls into it.
 
 ---
 
-## Phase 1 — Load the Linear MCP tools
+## Phase 1 — Confirm `mk` is available
 
-The Linear MCP tools are deferred at session start. Load them in one bulk call:
+`mk` is a local binary, not an MCP server — there's nothing to load. Sanity-check it before starting:
 
+```bash
+mk status -o json
 ```
-ToolSearch(query: "linear", max_results: 30)
-```
 
-You should see `__list_issues`, `__get_issue`, `__list_comments`, `__save_comment`, `__save_issue`, `__list_issue_statuses`. If any are missing, stop and tell the user — without Linear we can't read the review or post the response.
+This should print the current repo, prefix (expected `MINI`), and counts. If `mk` errors with "not inside a git repository", `cd` to the repo root and retry. If the binary isn't installed, stop and tell the user — without `mk` we can't read the review or post the response.
+
+All `mk` reads in this skill use `-o json` for stable parsing. All mutations pass `--user Claude` so the audit log attributes the change correctly, and every `mk comment add` also passes `--as Claude` (the comment author).
 
 ---
 
 ## Phase 2 — Resolve the input and claim
 
-Resolve the argument to the triple {Linear issue, PR, branch}, identical to the resolution flow in `/review`. Recap of the input shapes:
+Resolve the argument to the triple {mk issue, PR, branch}, identical to the resolution flow in `/review`. Recap of the input shapes:
 
-- **`ALT-NN`** — fetch issue, find the PR via `attachments[]` or `gh pr list --search "ALT-NN" --state open --json number,headRefName -L 5`. Branch is the PR's `headRefName`.
-- **PR number** (`^\d+$` or `^#\d+$`) — `gh pr view <N> --json number,headRefName,title,body`. Pull the Linear ID from the title's `(ALT-NN)` suffix or the `Closes ALT-NN` line in the body.
-- **Branch name** — `gh pr list --head <branch> --state open --json number`, then pull the Linear ID like the PR-number flow.
-- **No argument** — `git rev-parse --abbrev-ref HEAD` for the branch, `gh pr view --json number,title,body,headRefName` for the PR, and pull the Linear ID from the branch (`claude/alt-NN`) or PR body. If the current branch is `main` or has no open PR, stop and ask.
+- **`MINI-NN`** — `mk issue show MINI-NN -o json`. Find the PR in the `prs[]` field, or fall back to `mk pr list MINI-NN -o json` to enumerate attached PRs explicitly. If none are attached, try `gh pr list --search "MINI-NN" --state open --json number,headRefName -L 5`. Branch is the PR's `headRefName`.
+- **PR number** (`^\d+$` or `^#\d+$`) — `gh pr view <N> --json number,headRefName,title,body`. Pull the mk key from the title's `(MINI-NN)` suffix or the `Closes MINI-NN` line in the body.
+- **Branch name** — `gh pr list --head <branch> --state open --json number`, then pull the mk key like the PR-number flow (or read it directly off the branch name `claude/mini-NN` → `MINI-NN`).
+- **No argument** — `git rev-parse --abbrev-ref HEAD` for the branch, `gh pr view --json number,title,body,headRefName` for the PR, and pull the mk key from the branch (`claude/mini-NN`) or PR body. If the current branch is `main` or has no open PR, stop and ask.
 
 If the resolution is ambiguous (multiple matching PRs, branch with no PR, ticket with no `Closes` link in any open PR), stop and ask. Don't guess past these.
 
 State the resolved triple before proceeding:
 
-> Addressing review on ALT-NN ("<title>") — PR #N, branch `<branch>`.
+> Addressing review on MINI-NN ("<title>") — PR #N, branch `<branch>`.
 
-### 2.1 Mark the issue In Progress and post a claim comment
+### 2.1 Mark the issue in_progress and post a claim comment
 
-The issue should currently be in **In Review** (that's the state `execute-next-task` left it in). The fixes are real work, so flip it back to In Progress before touching code — symmetric with the rest of the project's flow:
+The issue should currently be in **in_review** (that's the state `execute-next-task` left it in). The fixes are real work, so flip it back to in_progress before touching code — symmetric with the rest of the project's flow:
 
+```bash
+mk issue state MINI-NN in_progress --user Claude
+
+printf 'Addressing review findings. Validating each item before applying — full summary will follow once the fixup commit lands.\n' \
+  | mk comment add MINI-NN --as Claude --user Claude --body -
 ```
-save_issue(id: <ALT-NN>, state: "In Progress")
-save_comment(issue_id: <ALT-NN>, body: "Addressing review findings. Validating each item before applying — full summary will follow once the fixup commit lands.")
-```
 
-Don't move past Phase 2 until both succeeded. If `save_issue` errors (workspace permission, state name drift), surface and stop — fixing in the wrong board state defeats the audit trail.
+Don't move past Phase 2 until both succeeded. If `mk issue state` errors (state name drift, issue doesn't exist), surface and stop — fixing in the wrong board state defeats the audit trail.
 
 ---
 
 ## Phase 3 — Read the review comment and parse findings
 
-`list_comments(issueId: <ALT-NN>)` and look for comments whose body starts with `**Review of [` — that's the canonical opener `/review` uses. If there are multiple (someone re-ran `/review` after a previous fixup), use the **most recent** one. If there are none, stop and tell the user — the skill needs a review to action.
+```bash
+mk comment list MINI-NN -o json
+```
+
+Look for comments whose body starts with `**Review of [` — that's the canonical opener `/review` uses. If there are multiple (someone re-ran `/review` after a previous fixup), use the **most recent** one (sort by `created_at` descending). If there are none, stop and tell the user — the skill needs a review to action.
 
 Parse the findings out of the comment body. The structure is:
 
@@ -85,7 +93,7 @@ Parse the findings out of the comment body. The structure is:
 
 For each `### Critical`, `### High`, `### Medium` section, enumerate the bullet points into a structured list of `{ severity, title, file, line, detail }`. **Drop the entire `### Low` section without parsing it** — even if it's enumerated as bullets, those items don't get acted on. The "Out of scope" section is also dropped (it's already pointers to other skills).
 
-If the review comment is the empty-review form (`— no findings`), there's nothing to do. Post a one-liner on the Linear issue noting that, transition the issue back to In Review, and exit. Don't pretend to have done work.
+If the review comment is the empty-review form (`— no findings`), there's nothing to do. Post a one-liner on the mk issue noting that, transition the issue back to in_review, and exit. Don't pretend to have done work.
 
 State the parse result so the user can intercept:
 
@@ -97,9 +105,9 @@ State the parse result so the user can intercept:
 
 Same shape as `execute-next-task` Phase 3 — the executor needs the ticket as the contract before judging whether a finding is real:
 
-1. **Fetch the issue body** and pull out **Goal / Deliverables / Done when / Relevant docs / Smoke tests**. These define what the PR was supposed to do — a "drift from the contract" finding is only real if the actual ticket says so.
-2. **Skim prior comments** for a `**Design ready (PR open):**` pointer from `design-task`. If found, read the design doc under `docs/designs/<id>-<slug>.md` (on `main` if the design PR has merged, on the design branch otherwise — `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). The doc's **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections are part of the contract; findings that allege "drift from the design doc" are validated against this.
-3. **If the parent project has a `Plan:` line**, read the matching `### Phase N` section as supplemental context. The ticket body still wins on what specifically had to ship.
+1. **Fetch the issue body** via `mk issue show MINI-NN -o json` and pull out **Goal / Deliverables / Done when / Relevant docs / Smoke tests**. These define what the PR was supposed to do — a "drift from the contract" finding is only real if the actual ticket says so.
+2. **Skim prior comments** (`mk comment list MINI-NN -o json`) for a `**Design ready (PR open):**` pointer from `design-task`. If found, read the design doc under `docs/designs/<id>-<slug>.md` (on `main` if the design PR has merged, on the design branch otherwise — `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). The doc's **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections are part of the contract; findings that allege "drift from the design doc" are validated against this.
+3. **If the parent feature has a `Plan:` line** in its description (`mk feature show <slug> -o json` for the feature linked from the issue), read the matching `### Phase N` section as supplemental context. The ticket body still wins on what specifically had to ship.
 4. **Read the project conventions** for the directories the *findings* cite (not the directories the diff touches — those are usually a superset). Root [CLAUDE.md](CLAUDE.md) always; [server/CLAUDE.md](server/CLAUDE.md) if any finding cites `server/`; [client/CLAUDE.md](client/CLAUDE.md) if any cites `client/`; [claude-guidance/ICONOGRAPHY.md](claude-guidance/ICONOGRAPHY.md) if a UI finding cites a missing/wrong icon.
 
 Don't skip the contract reload. A finding like "this `any` type is unjustified" is real iff the project's "no `any`" rule applies — and you'll judge that wrong without rereading the convention doc.
@@ -127,7 +135,7 @@ git fetch origin claude/<slug>
 git worktree add .claude/worktrees/<slug> claude/<slug>
 cd .claude/worktrees/<slug>
 pnpm install                                                # required — worktrees don't share node_modules
-pnpm worktree-env start --description "address review for ALT-NN" &   # background; live smoke needs the dev env up
+pnpm worktree-env start --description "address review for MINI-NN" &   # background; live smoke needs the dev env up
 ```
 
 The dev env needs to be up because Phase 8 runs **live smoke against the changes**. Backgrounding `worktree-env start` lets you proceed with Phase 6's reads + edits while the VM/distro warms.
@@ -228,7 +236,7 @@ For findings whose fix has no observable runtime behaviour change (e.g. "extract
 One commit for the whole fixup. Title and body:
 
 ```
-fix(<area>): address review findings (ALT-NN)
+fix(<area>): address review findings (MINI-NN)
 
 - <one bullet per fixed finding: short imperative, file:line>
 - <…>
@@ -250,13 +258,13 @@ If the push fails (someone else has pushed to the branch in the meantime, or you
 
 ---
 
-## Phase 10 — Post the response comment and transition back to In Review
+## Phase 10 — Post the response comment and transition back to in_review
 
-Single response comment on the Linear issue, structured to mirror the original review's structure so reviewers can scan diff against finding:
+Single response comment on the mk issue, structured to mirror the original review's structure so reviewers can scan diff against finding. Write the body to a temp file, then:
 
-```
-save_comment(issue_id: <ALT-NN>, body: <see template>)
-save_issue(id: <ALT-NN>, state: "In Review")
+```bash
+mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/address-review-MINI-NN.md
+mk issue state MINI-NN in_review --user Claude
 ```
 
 Template — omit a section that's empty rather than write "None.":
@@ -286,7 +294,7 @@ Template — omit a section that's empty rather than write "None.":
 _Smoke: <one-line description of how the changes were verified — e.g. "Playwright walked the Tailscale settings form; the empty-tags ACL block now renders the placeholder text instead of broken JSON.">_
 ```
 
-Post the comment, then move the issue back to **In Review** so the board reflects that the PR is awaiting another review pass. If `save_issue` errors, surface and stop — the fixup commit is already on the remote, so the work isn't lost; the user can move the state manually.
+Post the comment, then move the issue back to **in_review** so the board reflects that the PR is awaiting another review pass. If `mk issue state` errors, surface and stop — the fixup commit is already on the remote, so the work isn't lost; the user can move the state manually.
 
 ---
 
@@ -295,10 +303,10 @@ Post the comment, then move the issue back to **In Review** so the board reflect
 Tight summary in chat:
 
 ```
-Addressed review on ALT-NN: <commit URL>.
+Addressed review on MINI-NN: <commit URL>.
 
 Fixed: <F>. Dismissed: <D>. Couldn't verify: <C>. Skipped (low): <L>.
-<one-line: e.g. "All real findings addressed; one false positive in `foo.ts:42` (the convention is followed by the wrapper)."  or "Pushed fix for the SQL injection finding; the duplication finding turned out to be a false positive — see Linear comment for details.">
+<one-line: e.g. "All real findings addressed; one false positive in `foo.ts:42` (the convention is followed by the wrapper)."  or "Pushed fix for the SQL injection finding; the duplication finding turned out to be a false positive — see mk comment for details.">
 
 <If Phase 6.4 surfaced out-of-scope issues you noticed but didn't fix:>
 Out-of-scope issues spotted during the run (not fixed; consider a separate ticket):
@@ -315,28 +323,31 @@ That's the run.
 - **Never act on `low` items.** They're filtered out before validation. Calibration of severity is the line; loosening that line eats the calibration.
 - **Always validate before fixing.** Read the cited file at the cited line; if the finding doesn't hold up, dismiss it with rationale. The skill applies fixes; it does not re-implement what `/review` literally said the fix should be without sanity-checking it.
 - **Always smoke-test the changes.** Phase 8 is required. A fix that builds and lints isn't verified — runtime behaviour has to be exercised somehow before push.
-- **One fixup commit, no `--force`.** A single `fix(<area>): address review findings (ALT-NN)` commit on the existing branch. Don't squash in earlier commits. Don't force-push.
+- **One fixup commit, no `--force`.** A single `fix(<area>): address review findings (MINI-NN)` commit on the existing branch. Don't squash in earlier commits. Don't force-push.
 - **Never open a new PR.** The fixup belongs on the existing PR. The diff updates automatically when the branch updates.
-- **Symmetric state flow.** The issue moves Todo → In Progress → In Review → In Progress (this skill, Phase 2.1) → In Review (Phase 10). Don't skip either transition. The board has to reflect what's actually happening.
+- **Symmetric state flow.** The issue moves todo → in_progress → in_review → in_progress (this skill, Phase 2.1) → in_review (Phase 10). Don't skip either transition. The board has to reflect what's actually happening.
 - **Don't accidentally over-scope.** Cleanups you spot but `/review` didn't flag belong in a separate ticket. Note them in the final report; don't bundle them into this fixup commit.
-- **Stop on missing inputs.** No review comment found, ambiguous PR resolution, no Linear ID resolvable from the input → stop and ask.
-- **Never produce an ExitPlanMode block.** This is an action skill; the fixup commit + Linear comment are the deliverables.
+- **Always pass `--user Claude` on `mk` mutations and `--as Claude` on `mk comment add`.** Without `--user`, the audit log silently attributes the change to whichever OS user the agent runs under — useless history.
+- **Always pass `-o json` when parsing `mk` output.** Text mode is for humans only.
+- **Never run `mk` outside a git repo** — it hard-errors. `cd` to the repo first.
+- **Stop on missing inputs.** No review comment found, ambiguous PR resolution, no mk key resolvable from the input → stop and ask.
+- **Never produce an ExitPlanMode block.** This is an action skill; the fixup commit + mk comment are the deliverables.
 
 ---
 
 ## Example end-to-end
 
-> User: `/address-review ALT-32`
+> User: `/address-review MINI-32`
 >
-> *Skill loads Linear MCP. Resolves: ALT-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/alt-32`. Confirms: "Addressing review on ALT-32 — PR #412, branch `claude/alt-32`."*
+> *Skill runs `mk status -o json` to confirm the binary is wired up and the repo prefix is `MINI`. Resolves: MINI-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/mini-32`. Confirms: "Addressing review on MINI-32 — PR #412, branch `claude/mini-32`."*
 >
-> *Phase 2.1: `save_issue(state: "In Progress")` + claim comment.*
+> *Phase 2.1: `mk issue state MINI-32 in_progress --user Claude` + claim comment via `mk comment add MINI-32 --as Claude --user Claude --body -`.*
 >
-> *Phase 3: `list_comments`. Most recent `**Review of …**` comment shows 4 findings: 1 high (error swallowing in `backup-progress-emitter.ts:47`), 1 medium (duplicated step-name normalisation in `backup-executor.ts:208`), 1 low (`console.log` leftover), 1 medium ("missing `userId` on the new metric-emit row"). Drops the low. Three to validate.*
+> *Phase 3: `mk comment list MINI-32 -o json`. Most recent `**Review of …**` comment shows 4 findings: 1 high (error swallowing in `backup-progress-emitter.ts:47`), 1 medium (duplicated step-name normalisation in `backup-executor.ts:208`), 1 low (`console.log` leftover), 1 medium ("missing `userId` on the new metric-emit row"). Drops the low. Three to validate.*
 >
-> *Phase 4: re-reads ALT-32 ticket body, server/CLAUDE.md (server-side findings), root CLAUDE.md (audit-trail rule for the `userId` finding). No design comment on this ticket — backend-only work.*
+> *Phase 4: re-reads MINI-32 ticket body via `mk issue show`, server/CLAUDE.md (server-side findings), root CLAUDE.md (audit-trail rule for the `userId` finding). No design comment on this ticket — backend-only work.*
 >
-> *Phase 5: `.claude/worktrees/alt-32` was torn down by `/finish-worktree` after the original PR shipped. Skill recreates: `git fetch origin claude/alt-32`, `git worktree add ...`, `pnpm install`, backgrounded `pnpm worktree-env start`.*
+> *Phase 5: `.claude/worktrees/mini-32` was torn down by `/finish-worktree` after the original PR shipped. Skill recreates: `git fetch origin claude/mini-32`, `git worktree add ...`, `pnpm install`, backgrounded `pnpm worktree-env start`.*
 >
 > *Phase 6:*
 > - **High — error swallowing in `backup-progress-emitter.ts:47`** → reads the file. Real. Replaces the silent `console.error` with a log + throw, with the calling site already wrapping in a try/catch as the convention requires. Adds to `fixed`.
@@ -347,8 +358,8 @@ That's the run.
 >
 > *Phase 8: dev env URL read from `environment-details.xml`. Server fix has unit-test coverage (rerun `pnpm --filter mini-infra-server exec vitest run src/services/backup/__tests__/backup-progress-emitter.test.ts` — passes, with the new error-throw branch exercised). For the duplication fix, the build + lint gates from Phase 7 are the smoke.*
 >
-> *Phase 9: commits `fix(backup): address review findings (ALT-32)` with the two fixed bullets, pushes.*
+> *Phase 9: commits `fix(backup): address review findings (MINI-32)` with the two fixed bullets, pushes.*
 >
-> *Phase 10: posts the response comment on ALT-32 with three sections (Fixed: 2; Dismissed: 1 with the user-vs-job rationale; Skipped (low): 1). Moves ALT-32 to In Review.*
+> *Phase 10: posts the response comment on MINI-32 via `mk comment add` with three sections (Fixed: 2; Dismissed: 1 with the user-vs-job rationale; Skipped (low): 1). `mk issue state MINI-32 in_review --user Claude`.*
 >
-> Skill: "Addressed review on ALT-32: <commit URL>. Fixed: 2. Dismissed: 1. Couldn't verify: 0. Skipped (low): 1. The high finding (error swallowing) and one medium (duplication) are now fixed. The other medium turned out to be a false positive — the audit-trail rule applies to user-initiated mutations, not the background job in question."
+> Skill: "Addressed review on MINI-32: <commit URL>. Fixed: 2. Dismissed: 1. Couldn't verify: 0. Skipped (low): 1. The high finding (error swallowing) and one medium (duplication) are now fixed. The other medium turned out to be a false positive — the audit-trail rule applies to user-initiated mutations, not the background job in question."
