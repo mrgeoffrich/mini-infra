@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs and posts a full session retrospective comment on Phase 1; in update mode, posts a one-line refresh-summary comment instead. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
+description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `Backlog` (designer-owned, kept out of the execute-next-task queue) and wired up as a `blocked-by` edge on the impl ticket — plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs and posts a full session retrospective comment on Phase 1; in update mode, posts a one-line refresh-summary comment instead. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
 ---
 
 # Plan to Linear
@@ -78,7 +78,7 @@ Read the doc end-to-end and extract:
    - The **Goal** line.
    - The **Deliverables** list (bullet points; can be nested).
    - The **Reversibility** line (classifier + rationale).
-   - The **UI changes** block — bullet list with `[design needed]` / `[no design]` tags, or the literal `none`. Surface a count of `[design needed]` items per phase in the Phase 6 confirmation prompt so the user can spot phases that should be deferred pending design.
+   - The **UI changes** block — bullet list with `[design needed]` / `[no design]` tags, or the literal `none`. Capture each `[design needed]` bullet verbatim per phase — these become the body of the paired design ticket created in Phase 8.1. Surface the per-phase count in the Phase 6 confirmation prompt so the user can see how many design tickets will be created (or refreshed in update mode).
    - The **Done when** line.
    - The **Verify in prod** line (production signal or `n/a — internal only`).
    - Any other phase-specific subsections (e.g. "Migration shape", "Subjects", "Subjects:") — keep verbatim.
@@ -288,12 +288,16 @@ Show a summary and wait for explicit "go". The summary differs by mode.
 Project to create: <name>
 Description: <one-line snippet>
 
-Phases (will create N issues):
-  Phase 1: <title>           [Todo]      blocked-by: —             touchpoints: 4N/3M/2R   shared-lib: 2 flagged
-  Phase 2: <title>           [Todo]      blocked-by: Phase 1       touchpoints: 1N/5M/1R   shared-lib: none
-  Phase 3: <title>           [Todo]      blocked-by: Phase 2       touchpoints: <unable to map — phase too vague>  ⚠
+Phases (will create N impl issues + M design tickets):
+  Phase 1: <title>           [Todo]      blocked-by: —             touchpoints: 4N/3M/2R   shared-lib: 2 flagged   design: 0
+  Phase 2: <title>           [Todo]      blocked-by: 1, Design#2   touchpoints: 1N/5M/1R   shared-lib: none        design: 2 [needed] → 1 paired ticket
+  Phase 3: <title>           [Todo]      blocked-by: 2             touchpoints: <unable to map — phase too vague>  ⚠
   ...
-  Phase 6: <title>           [Backlog]   blocked-by: Phase 5       touchpoints: 0N/2M/0R   shared-lib: 1 flagged    (optional)
+  Phase 6: <title>           [Backlog]   blocked-by: 5, Design#6   touchpoints: 0N/2M/0R   shared-lib: 1 flagged    (optional, deferred)   design: 1 [needed] → 1 paired ticket
+
+Design tickets to create (Backlog, designer-owned, not picked by execute-next-task):
+  Design: Phase 2 — <title>     [Backlog]   blocks: Phase 2     items: 2 [design needed]
+  Design: Phase 6 — <title>     [Backlog]   blocks: Phase 6     items: 1 [design needed]
 
 Touchpoint counts are New/Modify/Read paths the per-phase explorer found.
 Phases flagged "unable to map" mean the deliverables are too vague for the explorer
@@ -305,7 +309,7 @@ Shared-library opportunities flagged across all phases: <total>
   - Phase 6: shared egress code → egress-shared/<...>.go
   (full per-phase list rendered into each ticket; review before confirming)
 
-Each issue will reference:
+Each impl issue will reference:
   - <plan-doc-path>#phase-<N>
   - root CLAUDE.md, ARCHITECTURE.md
   - <per-component docs detected>
@@ -313,7 +317,13 @@ Each issue will reference:
   - per-phase Shared-library opportunities (from Phase 3.5 explorer)
   - prior-art commit area: <tag>
 
-Plan doc edit: replace ALT-_TBD_ in §<8> with real issue IDs.
+Each design ticket will reference:
+  - <plan-doc-path>#phase-<N> (same source as the paired impl phase)
+  - The verbatim list of [design needed] UI items
+  - A "Blocks: Phase N — <title>" pointer back to the impl ticket
+
+Plan doc edit: replace ALT-_TBD_ in §<8> with real impl issue IDs.
+Design tickets are NOT listed in §8 — they're auto-generated metadata.
 
 Proceed?
 ```
@@ -325,17 +335,27 @@ Hold on confirmation if any phase is flagged `<unable to map>` — surface that 
 ```
 Project to refresh: <name>  →  <existing project URL>
 
-Existing issues to refresh (M of N matched 1:1 with plan phases):
+Existing impl issues to refresh (M of N matched 1:1 with plan phases):
   ALT-NN  Phase 1: <title>          [In Review]    body: refresh
   ALT-NN  Phase 2: <title>          [In Progress]  body: refresh
   ALT-NN  Phase 3: <title>          [Todo]         body: refresh, title rename: "<old>" → "<new>"
   ...
 
-Phases added since seeding (will create new issues): <count>
+Paired design tickets to refresh: <count>
+  ALT-NN  Design: Phase 2 — <title>     [Backlog]   body: refresh   items now: 2 [design needed]
+  ALT-NN  Design: Phase 6 — <title>     [In Progress] body: unchanged
+
+Design tickets to create (phase newly has [design needed] items): <count>
+  Design: Phase N — <title>             [Backlog]   blocks: Phase N
+
+Design tickets orphaned (phase no longer has [design needed] items; not deleted): <count>
+  ALT-NN  Design: Phase X — <title>     [<state>]   ← reported only; no auto-delete
+
+Phases added since seeding (will create new impl issues): <count>
   Phase N: <title>           [Todo]
   ...
 
-Orphan issues (in Linear but not in plan; will NOT be touched): <count>
+Orphan impl issues (in Linear but not in plan; will NOT be touched): <count>
   ALT-NN  <title>            [<state>]   ← reported only; no auto-delete
 
 What changes per refreshed issue:
@@ -531,6 +551,44 @@ If none of the recipes match, the populator emits `<no recipe — confirm with u
 
 Capture each issue's ID (`ALT-NN`) and URL.
 
+### Create mode — paired design tickets (Phase 8.1)
+
+After the impl ticket is created, scan its UI changes block for items tagged `[design needed]`. **If any exist**, create a paired design ticket:
+
+**Title:** `Design: Phase N: <title>` — same shape as the impl title with a `Design:` prefix, so they sort adjacent in any title-sorted view.
+
+**State:** `Backlog`. Designers own these tickets; `execute-next-task` only picks from `Todo`, so `Backlog` keeps the design ticket out of the execution queue while letting designers transition through their own states normally.
+
+**Description body:**
+
+```markdown
+**Source:** [<plan-doc-path> §<phase-anchor>](<plan-doc-path>#phase-N)
+
+This design ticket was auto-generated by `plan-to-linear` from the
+`[design needed]` items in Phase N's UI changes block. Once Figma frames are
+signed off and linked, mark this issue Done — the impl ticket unblocks
+automatically.
+
+## Design needed
+
+<verbatim copy of every UI-changes bullet tagged `[design needed]`, including the tag itself>
+
+## Done when
+
+Figma link attached to this ticket and signed off by the designer; any new
+design tokens merged into the design system.
+
+## Blocks
+
+- [<impl-ALT-NN>](https://linear.app/altitude-devops/issue/<impl-ALT-NN>) — Phase N: <phase title>
+```
+
+Capture the design ticket's ALT-NN and URL — Phase 9 uses it as a `blocked-by` edge on the impl ticket.
+
+**Skip the scan entirely** when the phase's UI changes block is the literal `none` or contains zero `[design needed]` items.
+
+**Cross-phase design dedupe is out of scope.** If Phases 4 and 12 both reference the same visual treatment (e.g., the addon visual language used on multiple pages), each gets its own design ticket. Designers can mark one Done and immediately Done the duplicate — auto-deduping at seed time would require parsing and comparing the design items across phases, and that's a fragility we don't need.
+
 ### Update mode — refresh existing issue bodies
 
 For each phase, look up the matching Linear issue by its §8 ALT-NN ID (use `get_issue`). Match by ID, **not** by title — titles can change between seed and refresh, and ID is the stable key.
@@ -546,28 +604,48 @@ For phases newly added to the plan since seeding (detected in Phase 5 update-mod
 
 For orphan issues (Phase 5 update-mode pre-flight, step 3 case "Project has more issues than plan"), do nothing — they were already surfaced to the user. Just remember the list for the Phase 12 report.
 
+### Update mode — paired design ticket reconciliation
+
+After refreshing each impl ticket, reconcile its paired design ticket against the current `[design needed]` items in the phase's UI changes block.
+
+1. **Lookup.** Find the existing design ticket by walking the impl ticket's `blocked-by` graph and matching against issues whose title starts with `Design: Phase N` (where `N` matches the impl phase). At most one paired design ticket per phase.
+
+2. **Reconcile against current `[design needed]` items:**
+   | Plan has items? | Design ticket exists? | Action |
+   |---|---|---|
+   | yes | yes | Refresh design body (regenerate `## Design needed` from the current verbatim items; preserve `## Source` and `## Done when`). |
+   | yes | no | Create the design ticket fresh (same template as Phase 8.1 create mode); add the design→impl `blocked-by` edge in Phase 9. |
+   | no | yes | **Leave alone.** Surface as orphan in the Phase 12 report. Designers may still be working on it; auto-delete is never the right call. |
+   | no | no | No-op. |
+
+3. **State preservation** — same rules as impl tickets. Pass only `body` and (if changed) `title` to `save_issue`. State, assignee, comments survive untouched.
+
 Capture, for the Phase 12 report:
 
-- Which issues had body refreshed (all matched issues, by ID).
-- Which issues had a title rename (and old → new).
-- Which issues were newly created (with ALT-NN).
-- The orphan list, unchanged.
+- Which impl issues had body refreshed (all matched issues, by ID).
+- Which impl issues had a title rename (and old → new).
+- Which impl issues were newly created (with ALT-NN).
+- The impl orphan list, unchanged.
+- Design tickets refreshed (count + IDs).
+- Design tickets newly created (count + IDs + which impl phase they pair).
+- Design tickets orphaned (count + IDs; not deleted).
 
 ---
 
 ## Phase 9 — Set blocking relationships
 
-Use the dependency graph you parsed in Phase 2 to compute the **desired** set of `blocked-by` edges:
+Use the dependency graph you parsed in Phase 2, plus the design pairings from Phase 8.1, to compute the **desired** set of `blocked-by` edges for each impl ticket — the union of:
 
-- If §8 has `[blocks-by: N, M]` brackets, that's the source of truth — each phase wants a `blocked-by` edge to each listed phase.
-- Else if prose hints exist, apply them ("Phase 1 blocks all later phases", "Phase N also blocks on Phase M").
-- Else default to **strictly sequential** — each phase from 2 onward is `blocked-by` the previous.
+- **Inter-phase edges from §8.** If §8 has `[blocks-by: N, M]` brackets, that's the source of truth — each phase wants a `blocked-by` edge to each listed phase. Else if prose hints exist, apply them ("Phase 1 blocks all later phases", "Phase N also blocks on Phase M"). Else default to **strictly sequential** — each phase from 2 onward is `blocked-by` the previous.
+- **Design pairing edge from Phase 8.1.** If the phase has a paired design ticket, the impl ticket also gets a `blocked-by` edge to that design ticket's ALT-NN.
 
 Optional/deferred phases still get blocked-by relationships — being in `Backlog` doesn't mean unblocked. The blocker just means "even when promoted to Todo, wait for the predecessor".
 
+Design tickets themselves have **no `blocked-by` edges** — designers can start the moment the ticket is filed.
+
 ### Create mode
 
-Add the desired edges in order via the Linear API. There's nothing to compare against — the issues were just created and have no relationships yet.
+Add the desired edges in order via the Linear API. There's nothing to compare against — the issues were just created and have no relationships yet. The design→impl pairing edges are added alongside the inter-phase edges in the same pass.
 
 ### Update mode
 
@@ -583,6 +661,8 @@ Existing edges may not match the desired graph — §8 brackets may have changed
 4. **Cross-project edges** (issues in this project blocked by issues in *other* projects) are out of scope for this skill — leave them untouched even if §8 makes no mention of them. They were added deliberately; we won't second-guess.
 
 For phases newly created during this update run (Phase 8 update-mode tail), apply their desired edges from scratch (same as create mode for those issues).
+
+For design tickets newly created during the Phase 8 update-mode design reconciliation (a phase newly has `[design needed]` items), add the design→impl `blocked-by` edge from scratch. For impl tickets whose paired design ticket was just created, add the new design→impl edge alongside any other edge changes — the impl ticket's `blocked-by` set is recomputed end-to-end (inter-phase from §8 ∪ design pairing), and the delta logic above handles add/remove/leave-alone uniformly.
 
 ---
 
@@ -742,6 +822,9 @@ Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans / 
 - **Never invent docs.** If `egress-shared/CLAUDE.md` doesn't exist, don't link it. Verify each attached doc.
 - **Never guess at convention.** If §8 has no placeholder list (create mode) or has mixed placeholders + real IDs (either mode), the H1 is missing, or no `### Phase N` headings parse — stop and report. The conventions exist for a reason.
 - **Never commit the plan-doc edit.** Leave it staged. The user owns the commit.
+- **Design tickets are auto-generated from `[design needed]` tags, not from explicit plan phases.** Plan authors don't write standalone "Phase N — Design: …" phases (the brainstorm-to-plan skill warns against this). Each phase whose UI changes block contains one or more `[design needed]` items gets exactly one paired design ticket; no `[design needed]` items means no design ticket. If the plan doc contains a phase whose title starts with "Design:", treat it as a regular impl phase (the user wrote it deliberately) and skip the design-pairing scan for that phase.
+- **Design tickets are not listed in §8.** They're auto-generated metadata, found via Linear's `blocked-by` graph from the impl ticket. The §8 list keeps its 1:1 phase-to-line invariant; never inject design tickets into §8 (neither as siblings nor as sub-bullets).
+- **Never auto-delete design tickets.** Same surface-don't-delete rule as impl tickets — designers may still be working on them, and history (Figma link comments, sign-off comments) is valuable. Phases that lose all `[design needed]` items produce orphan design tickets that get reported, never deleted.
 - **Never skip optional phases.** They go in as `Backlog` so the project is complete and the §8 list reconciles 1:1.
 
 ### Create mode only
