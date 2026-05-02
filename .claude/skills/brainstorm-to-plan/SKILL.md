@@ -97,6 +97,7 @@ Watch for these in the input. When the brainstorm is shaped like one of these, t
 | **Docs padded onto a feature phase** | Docs ride with the feature unless the feature has multiple operator-onboarding steps (OAuth client creation, Vault path setup, ACL bootstrap). Then docs are their own slim phase. |
 | **"Foundation" phase with no concrete deliverable** | Reject — there's no such thing as a "foundation" phase. Either it lands a concrete artifact (a type, a registered service, a working endpoint) or it's not a phase. |
 | **Cross-cutting concern (auth, observability, error handling) bolted onto every phase** | Surface as a §`<N>` shared-concept section *and* check whether one early phase should land the convention before any consumer phase. |
+| **Design / mockup work split out as its own phase** | Don't write standalone `Phase N — Design: …` phases. `plan-to-linear` auto-creates a paired `Backlog` design ticket per phase from each `[design needed]` tag in that phase's UI changes block, and wires it up as a `blocked-by` edge on the phase ticket. Keep design items as `[design needed]` tags inline on the impl phase — the skill materialises them. |
 
 ### Optional / deferred phases
 
@@ -137,7 +138,7 @@ For every ✗, emit a concrete reject sentence and a concrete split suggestion. 
 
 **5. Reversibility-classifiable.** Pass: one of `safe` / `feature-flagged` / `forward-only` / `destructive` fits without weasel words ("mostly safe except…"). Reject: "Phase N's reversibility doesn't classify cleanly — its rollback story has '<quote of weasel clause>'. That's a sign it's doing two things; split the destructive part out."
 
-**6. UI-extractable.** Pass: every user-visible change is a bullet tagged `[design needed]` or `[no design]`, or the literal word `none`. Never `TBD`. Reject: "Phase N's UI changes include 'TBD' or untagged items. Either tag each item explicitly (a clean [no design] is fine) or split out the UI-bearing slice as its own phase so the design ask is scoped."
+**6. UI-extractable.** Pass: every user-visible change is a bullet tagged `[design needed]` or `[no design]`, or the literal word `none`. Never `TBD`. Reject: "Phase N's UI changes include 'TBD' or untagged items. Either tag each item explicitly (a clean [no design] is fine) or split out the UI-bearing slice as its own phase so the design ask is scoped." (Note: `[design needed]` tags become paired `Backlog` design tickets at seed time via `plan-to-linear` — don't pre-split design out as its own phase; just tag the items.)
 
 **7. Verify-in-prod-statable.** Pass: a production signal that confirms the *outcome* (the Goal), not just that the artifacts exist. Or `n/a — internal only` and the phase actually is. Reject: "Phase N's Verify-in-prod restates Done-when ('<quote>'). Done-when is 'the code does the right thing in CI'; Verify-in-prod is 'the goal materialised in production'. They should be different signals — what counter / dashboard / log line / user-visible state confirms the *Goal* in prod?"
 
