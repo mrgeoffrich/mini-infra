@@ -202,9 +202,9 @@ export async function initApiReference(maxRetries = 5, delayMs = 3000): Promise<
         return;
       }
       throw new Error("Unexpected response shape from /api/routes");
-    } catch (err: any) {
+    } catch (err) {
       logger.warn(
-        { attempt, maxRetries, error: err.message },
+        { attempt, maxRetries, error: err instanceof Error ? err.message : String(err) },
         "Failed to fetch API reference from server, will retry",
       );
       if (attempt < maxRetries) {
