@@ -14,21 +14,30 @@ Reference examples in this repo:
 - `docs/planning/not-shipped/observability-otel-tracing-plan.md` — has `ALT-_TBD_` placeholders waiting for this skill.
 - `docs/planning/shipped/nats-app-roles-plan.md` — same shape, already shipped.
 
-The conventions you depend on (also documented in `execute-next-task/SKILL.md`):
+The conventions you depend on (full spec in [`docs/planning/PLANNING.md`](../../../docs/planning/PLANNING.md); also referenced from `execute-next-task/SKILL.md`):
 
 - **H1** (`# <feature title>`) is the Linear project name.
 - **§1 Background** — first paragraph is the project description body.
-- **A "Phased rollout" section** (usually §6) with `### Phase N — <title>` subsections. Each phase has **Goal**, **Deliverables**, and **Done when** lines (sometimes with extra subsections like "Migration shape").
-- **A Linear-tracking section** (usually §8) with a placeholder list:
+- **§2 Goals** and **§3 Non-goals** — required scoping sections.
+- **A "Phased rollout" section** (usually §6) with `### Phase N — <title>` subsections. Each phase has **six required parts**:
+  - **Goal** — one-sentence outcome.
+  - **Deliverables** — bullet list.
+  - **Reversibility** — `safe` / `feature-flagged` / `forward-only` / `destructive`, plus rationale.
+  - **UI changes** — bullet list (each item tagged `[design needed]` or `[no design]`) or the literal `none`.
+  - **Done when** — testable acceptance criterion.
+  - **Verify in prod** — production signal, or `n/a — internal only`.
+  Phases may have extra subsections like "Migration shape" or "Subjects" — keep them.
+- **A Linear-tracking section** (usually §8) with a placeholder list and optional `[blocks-by: …]` brackets:
   ```
   - ALT-_TBD_ — Phase 1: <title>
-  - ALT-_TBD_ — Phase 2: <title>
+  - ALT-_TBD_ — Phase 2: <title>  [blocks-by: 1]
+  - ALT-_TBD_ — Phase 3: <title>  [blocks-by: 1, 2]
   ```
-  This list is the contract — the skill writes back into it.
-- **Phase ordering** — the plan text says "phases land in order" or "Phase 1 blocks all later phases" or similar. Translate that to `blocked-by` relationships.
+  This list is the contract — the skill writes back into it. Brackets are preserved through seeding.
+- **Phase ordering** — preferred form is `[blocks-by: N, M]` brackets in §8 (above). Fallback is prose hints in the §6 preamble or §8 intro line ("phases land in order", "Phase 1 blocks all later phases", "Phase N also blocks on Phase M"). Brackets win if both are present. If neither is present, default to **strictly sequential** (each phase blocks-by the previous).
 - **Optional / deferred phases** — marked in the heading or first line ("optional", "deferred", "(optional, deferred)"). They go into Linear as `Backlog`, not `Todo`.
 
-If the doc doesn't follow this shape, **stop and report**. Don't guess.
+If the doc doesn't follow this shape, **stop and report**. Don't guess. Older plans (pre-Reversibility / UI changes / Verify-in-prod) may be missing those fields — surface that to the user and ask whether to backfill before seeding rather than silently dropping the new sections from the issue body.
 
 The team is hardcoded as **Altitude Devops**.
 
@@ -61,12 +70,17 @@ Read the doc end-to-end and extract:
    - **Optional flag** — true if the heading or first line contains "optional", "deferred", or both. (Plan §6 in the OTel doc has "Phase 6 — App-level metrics (optional, deferred)" as a deliberate example.)
    - The **Goal** line.
    - The **Deliverables** list (bullet points; can be nested).
+   - The **Reversibility** line (classifier + rationale).
+   - The **UI changes** block — bullet list with `[design needed]` / `[no design]` tags, or the literal `none`. Surface a count of `[design needed]` items per phase in the Phase 6 confirmation prompt so the user can spot phases that should be deferred pending design.
    - The **Done when** line.
+   - The **Verify in prod** line (production signal or `n/a — internal only`).
    - Any other phase-specific subsections (e.g. "Migration shape", "Subjects", "Subjects:") — keep verbatim.
    - File paths mentioned in any of the above (anything matching `[\w-]+/[\w/.-]+\.\w+` or markdown links to repo paths). Used in Phase 3.
+
+   If a phase is missing any of the six required parts, **stop and report which phase / which field**. Do not silently fill in defaults — the convention is the convention. (Older pre-spec plans that genuinely have no UI/Reversibility/Verify lines are the one exception: ask the user whether to seed anyway with empty placeholders, or pause to backfill the plan first.)
 4. **Plan-doc-level architecture references** — any links to `docs/architecture/*.md` anywhere in the doc. Surface them to every phase as background.
 5. **Linear-tracking section** — confirm a placeholder list exists with the same number of phases as you found. If the count doesn't match, **stop and report** — the doc and §8 are out of sync.
-6. **Ordering hints** — scan for phrases like "phases land in order", "Phase 1 blocks all later phases", "Phase N also blocks on Phase M". Use these to build the `blocked-by` graph in Phase 5. If no hints exist, default to **strictly sequential** (each phase blocked by the previous).
+6. **Ordering** — preferred is `[blocks-by: N, M]` brackets on each §8 line; parse them first. If no brackets are present anywhere in §8, fall back to prose hints elsewhere in the doc ("phases land in order", "Phase 1 blocks all later phases", "Phase N also blocks on Phase M"). If neither brackets nor prose are present, default to **strictly sequential** (each phase blocked by the previous). If both brackets and prose are present, brackets win — log it and continue.
 
 ---
 
@@ -213,8 +227,17 @@ For each phase, in order, create a Linear issue:
 ## Deliverables
 <copied verbatim — preserve list nesting and inline links>
 
+## Reversibility
+<copied verbatim — classifier + rationale>
+
+## UI changes
+<copied verbatim — bullet list with [design needed] / [no design] tags, or `none`>
+
 ## Done when
 <copied verbatim>
+
+## Verify in prod
+<copied verbatim — production signal or `n/a — internal only`>
 
 <copy any other phase-specific subsections like "Migration shape", "Subjects", verbatim>
 
@@ -280,7 +303,13 @@ Capture each issue's ID (`ALT-NN`) and URL.
 
 ## Phase 9 — Set blocking relationships
 
-For each phase in order from 2 onward, add a `blocked-by` relationship to the previous phase using the Linear API. If the plan-doc text specified extra blockers (e.g. "Phase 5 also blocks on Phase 4"), add those too.
+Use the dependency graph you parsed in Phase 2:
+
+- If §8 has `[blocks-by: N, M]` brackets, that's the source of truth — add a `blocked-by` edge to each listed phase.
+- Else if prose hints exist, apply them ("Phase 1 blocks all later phases", "Phase N also blocks on Phase M").
+- Else default to **strictly sequential** — each phase from 2 onward is `blocked-by` the previous.
+
+Add the edges in order via the Linear API.
 
 Optional/deferred phases still get blocked-by relationships — being in `Backlog` doesn't mean unblocked. The blocker just means "even when promoted to Todo, wait for the predecessor".
 

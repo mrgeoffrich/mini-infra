@@ -47,6 +47,28 @@ The H1 (stripped of trailing punctuation) becomes the Linear **project name**. D
 
 The **first paragraph of §1** is copied verbatim into the Linear project description. Make it self-contained — no "see above" references — and fit the gist of the project in 3-6 sentences.
 
+### §2 Goals
+
+```markdown
+## 2. Goals
+
+1. <numbered point — what success looks like, stated as an outcome>
+2. ...
+```
+
+3-6 numbered points. Each point states an *outcome*, not a deliverable. Goals scope what the **project** is for; per-phase Done-when scopes what each **phase** ships. The two should reinforce each other — if a Goal isn't testable from at least one phase's Done-when or Verify-in-prod line, either the Goal is too vague or the plan is missing a phase.
+
+### §3 Non-goals
+
+```markdown
+## 3. Non-goals
+
+- **<thing>.** <one-line rationale for why it's out of scope>
+- ...
+```
+
+The single most important section for preventing scope creep. Anything you've considered and decided not to do belongs here, with a one-line *why*. Without the rationale, future readers (and the executor) will re-litigate the decision. If you find yourself writing more than ~6 non-goals, the project is probably too broad — consider splitting.
+
 ### Phased rollout section (typically §6)
 
 ```markdown
@@ -62,19 +84,31 @@ Deliverables:
 - <bullet>
 - <bullet>
 
+Reversibility: <safe | feature-flagged | forward-only | destructive> — <one-line rationale>
+
+UI changes:
+- <user-visible change — page/screen + what changes + what the user sees> [design needed]
+- <user-visible change> [no design]
+- (or the literal word `none` if this phase ships nothing user-visible)
+
 Done when: <one sentence acceptance criterion>
+
+Verify in prod: <production signal that confirms the Goal materialised> (or `n/a — internal only`)
 
 ### Phase 2 — <title>
 …
 ```
 
-Three required parts per phase:
+Six required parts per phase:
 
 | Part | Shape | Notes |
 |---|---|---|
 | **Goal** | one-sentence headline | Becomes the issue's Goal section. State the *outcome*, not the steps. |
 | **Deliverables** | bullet list | Concrete artifacts the phase ships. May nest. May include inline links to files/PRs. **Not** a file-by-file change plan — see "What not to write" below. |
-| **Done when** | one sentence | The acceptance criterion. Should be testable. |
+| **Reversibility** | one of `safe` / `feature-flagged` / `forward-only` / `destructive`, plus one-line rationale | What happens if this phase ships and breaks. `safe` = revert the PR cleanly. `feature-flagged` = flip a flag, no rollback PR needed. `forward-only` = a forward-fix is required (data migration, contract change, irreversible state). `destructive` = data loss or external state change that cannot be undone. The executor uses this to decide whether to gate the rollout, add a flag, or require ops sign-off before merging. |
+| **UI changes** | bullet list, or the literal word `none` | Every user-visible change this phase ships. Write in user terms ("operators see a new column on the certificates page"), not implementation terms ("add `<CertStatusBadge>` to the cert table"). For each item, tag `[design needed]` if it needs a designer to mock first, or `[no design]` if it can ship as-is (copy tweaks, new technical fields with obvious layouts). Saying `none` is fine — but say it; don't omit the line. **Why this exists:** UI changes are extracted from plans before implementation so the designer can be looped in early. A missing line is indistinguishable from "no UI changes" and leads to mid-PR surprises and rework. Grep `[design needed]` across `docs/planning/` for an instant designer-todo list. |
+| **Done when** | one sentence | The acceptance criterion. Should be testable in CI or the dev env. |
+| **Verify in prod** | one bullet, or `n/a — internal only` | The production signal that confirms the *outcome* (Goal), not just the *deliverables*. A counter that should appear, an error rate that should drop, a dashboard panel to watch, a graph that should change shape, an alert to wire up. Different from Done-when: Done-when is "the code does the right thing in CI"; Verify-in-prod is "we can tell the goal materialised after rollout." Use `n/a — internal only` for refactors and other phases with no user-visible production signal — but write it explicitly so reviewers know you considered it. |
 
 Optional per-phase subsections (used when they help):
 
@@ -89,11 +123,11 @@ Heading convention: `### Phase N — <title>` with an em-dash (`—`), not a hyp
 ```markdown
 ## 8. Linear tracking
 
-<one-line pointer to where these issues will live, plus any blocking-relationship hints>
+<one-line pointer to where these issues will live>
 
 - ALT-_TBD_ — Phase 1: <title>
-- ALT-_TBD_ — Phase 2: <title>
-- ALT-_TBD_ — Phase 3: <title>
+- ALT-_TBD_ — Phase 2: <title>  [blocks-by: 1]
+- ALT-_TBD_ — Phase 3: <title>  [blocks-by: 1, 2]
 ```
 
 Required:
@@ -101,17 +135,18 @@ Required:
 - One line per phase, in order, count must equal the number of `### Phase N` headings.
 - Placeholder is exactly `ALT-_TBD_` (with underscores). `plan-to-linear` rewrites these to real Linear-linked references after seeding.
 - Phase title after the colon should match the heading title (minus the em-dash).
+- **`[blocks-by: N, M]` brackets** encode the dependency graph (see "Phase ordering" below). Omit the brackets entirely on every line to fall back to strict-sequential default. Brackets are preserved through seeding so the graph stays readable from the doc.
 
 After seeding, this section is rewritten in place to:
 
 ```markdown
-Tracked under the [<Project Name>](<linear project URL>) project on the Altitude Devops team. Phase 1 blocks all later phases.
+Tracked under the [<Project Name>](<linear project URL>) project on the Altitude Devops team.
 
 - [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN) — Phase 1: <title>
-- [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN) — Phase 2: <title>
+- [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN) — Phase 2: <title>  [blocks-by: 1]
 ```
 
-Don't pre-write that shape — leave the placeholders, let `plan-to-linear` write them.
+`[blocks-by: …]` brackets are preserved verbatim through seeding so the dependency graph remains readable in the doc without opening Linear. Don't pre-write the linked shape — leave the placeholders, let `plan-to-linear` write them.
 
 ---
 
@@ -122,24 +157,33 @@ These don't affect Linear seeding but are common and worth knowing.
 | Section | Purpose |
 |---|---|
 | `**Status:** …`, `**Builds on:** …`, `**Excludes:** …` lines under the H1 | Quick orientation for readers. The "Builds on" line is especially useful — link prior PRs or shipped plans. |
-| `## 2. Goals` | What success looks like. 3-6 numbered points. |
-| `## 3. Non-goals` | Things the plan deliberately doesn't cover, with one-line rationale each. The most important section for preventing scope creep. |
-| `## <N>. <Architecture / concept section>` | Type definitions, subject naming conventions, or other shared concepts referenced across multiple phases. Lives between Goals and Phased rollout. |
+| `## <N>. <Architecture / concept section>` | Type definitions, subject naming conventions, or other shared concepts referenced across multiple phases. Lives between Non-goals and Phased rollout. Worth writing whenever ≥2 phases share a contract or convention — without it the same decision gets baked into each phase implicitly and drifts. |
 | `## 7. Risks & open questions` | Bullets that survived planning unresolved. Honest ambiguity > false confidence. |
 
 ---
 
 ## Phase ordering
 
-`plan-to-linear` builds Linear `blocked-by` relationships from prose hints in the plan doc. Default is **strictly sequential** (each phase blocks the next) if no hints exist.
+`plan-to-linear` builds Linear `blocked-by` relationships from the §8 list. Two ways to express ordering, in order of preference:
 
-Patterns that get parsed:
+**Preferred — explicit `[blocks-by: N, M]` brackets in §8.** Mechanical, unambiguous, survives copy-paste and review:
+
+```markdown
+- ALT-_TBD_ — Phase 1: foundation
+- ALT-_TBD_ — Phase 2: migration A   [blocks-by: 1]
+- ALT-_TBD_ — Phase 3: migration B   [blocks-by: 1]
+- ALT-_TBD_ — Phase 4: cleanup       [blocks-by: 2, 3]
+```
+
+Phases 2 and 3 fan out from Phase 1 in parallel; Phase 4 waits for both. Omit the brackets entirely on every line to fall back to **strict sequential** (each phase blocks-by the previous).
+
+**Fallback — prose hints.** Still parsed for back-compat with older plans:
 
 - "Phases land in order" → strictly sequential.
 - "Phase 1 blocks all later phases" → fan-out from Phase 1.
 - "Phase N also blocks on Phase M" → extra `blocked-by` edge.
 
-Put one explicit ordering sentence in the §6 preamble or §8 intro line. Don't make the skill guess.
+Brackets win if both forms are present. Don't mix them in the same plan.
 
 ### Optional / deferred phases
 
@@ -177,19 +221,23 @@ What's good to write:
 ## Workflow
 
 1. Author the plan in `docs/planning/not-shipped/<slug>.md` with `ALT-_TBD_` placeholders in §8.
-2. Run `plan-to-linear` (or ask Claude to). It creates the Linear project, files one issue per phase, sets blocked-by edges, and rewrites §8 with the real IDs. The plan-doc edit is staged but not committed — review the diff before committing.
-3. Use `execute-next-task` to pick up phases one at a time. Each phase ships as its own PR with `Closes ALT-NN`.
-4. When the project is fully shipped, move the plan to `docs/planning/shipped/`.
+2. **If any phase has `[design needed]` UI changes**, brief the designer with those phases extracted before seeding to Linear. Either delay seeding the design-blocked phases until designs land, or seed them as `(deferred)` so they go into Linear `Backlog` rather than `Todo`. Grep across all in-flight plans for outstanding designer work with `grep -r "\[design needed\]" docs/planning/`.
+3. Run `plan-to-linear` (or ask Claude to). It creates the Linear project, files one issue per phase, sets blocked-by edges, and rewrites §8 with the real IDs. The plan-doc edit is staged but not committed — review the diff before committing.
+4. Use `execute-next-task` to pick up phases one at a time. Each phase ships as its own PR with `Closes ALT-NN`.
+5. When the project is fully shipped, move the plan to `docs/planning/shipped/`.
 
 ---
 
 ## Quick checklist before running `plan-to-linear`
 
 - [ ] H1 present, single-line, no trailing punctuation.
-- [ ] §1 Background first paragraph reads standalone.
+- [ ] §1 Background first paragraph reads standalone in 3-6 sentences.
+- [ ] §2 Goals and §3 Non-goals present.
 - [ ] Every phase has a `### Phase N — <title>` heading with an em-dash.
-- [ ] Every phase has Goal, Deliverables, Done when.
-- [ ] §8 has exactly one `ALT-_TBD_ — Phase N: <title>` line per phase.
+- [ ] Every phase has all six required parts: Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod.
+- [ ] UI changes is either a bullet list (each item tagged `[design needed]` or `[no design]`) or the literal word `none`. Don't omit the line.
+- [ ] Verify in prod is a production signal or the literal `n/a — internal only`.
+- [ ] §8 has exactly one `ALT-_TBD_ — Phase N: <title>[ [blocks-by: …]]` line per phase.
 - [ ] Optional/deferred phases say so in the heading.
-- [ ] Phase ordering is stated in prose somewhere (or you accept strict sequencing).
+- [ ] Phase ordering uses `[blocks-by: …]` brackets, prose hints, or strict-sequential default — pick one, don't mix.
 - [ ] No pre-baked implementation steps in Deliverables.
