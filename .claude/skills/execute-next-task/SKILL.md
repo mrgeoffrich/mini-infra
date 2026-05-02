@@ -132,7 +132,14 @@ The Linear ticket body is your contract. Read it end to end and treat it as auth
    - **Plan doc itself missing on disk** → same as above. Proceed.
 
 4. **Read every doc the ticket lists under "Relevant docs."** Don't skim — these were chosen because they're the conventions you must follow. The ticket points at them so you don't have to guess what's relevant.
-5. **Read prior art** — `git log --oneline -20 main` plus any commits matching the project's area tag from the ticket. Shipped commits tell you the commit subject style and the rough size of a phase/task PR.
+
+5. **Skim prior comments for a designer hand-off.** Call `list_comments(issueId: <ALT-NN>)` and look for a comment from the `design-task` skill — its body starts with `**Design ready (PR open):**` or `**Design ready:**` and links to a design PR plus a doc path under `docs/designs/`. If you find one:
+   - **Expect a design doc + sibling SVG wireframes from the designer.** The doc lives at `docs/designs/<design-issue-id>-<slug>.md`; option-A and option-B wireframes (when the ticket has a UI surface) live next to it as `<base>-option-a.svg` / `<base>-option-b.svg`. The doc commits to a recommendation (Option A or B) — that recommendation is the design contract for fields the ticket body leaves under-specified (component layout, file/component sketch, key abstractions, named error wording, configured-state lifecycle).
+   - **Find the files.** If the design PR has merged (the design ticket auto-closes via its `Closes <design-ALT>` line), the doc + SVGs are on `main` and you read them at the relative path. If the design PR is still open, fetch it (`gh pr checkout <design-PR>` is overkill — instead read the file at the design branch via `gh pr view <design-PR> --json headRefName -q .headRefName`, then `git fetch origin <branch> && git show origin/<branch>:docs/designs/<filename>.md`). If the design PR is open and you can't find the file, **stop and ask** — the ticket says design exists but the artefact doesn't, which is a contradiction worth surfacing rather than guessing past.
+   - **Read the doc end-to-end before any code changes.** Pay particular attention to: the **Recommendation** (which option won), the **Key abstractions** + **File / component sketch** (these name files and types the implementation should produce), the **Implementation outline** (a rough order of operations), and the **States, failure modes & lifecycle** section if present (specific error categories and wording the executor should follow verbatim, plus per-field reversibility classifications). The **Open questions** section names choices the design didn't resolve — flag those in your handoff comment (Phase 12) if you ended up making a call on one.
+   - **No designer comment found** → fine. The ticket either had no UI surface, the design phase was skipped, or the design pre-dates this convention. Proceed without.
+
+6. **Read prior art** — `git log --oneline -20 main` plus any commits matching the project's area tag from the ticket. Shipped commits tell you the commit subject style and the rough size of a phase/task PR.
 
 ---
 
