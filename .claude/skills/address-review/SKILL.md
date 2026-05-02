@@ -183,7 +183,17 @@ For pure-docs fixes (no source files changed) the gate set may collapse to nothi
 
 ## Phase 8 — Live smoke the changes against the dev env
 
-This step is **required**. The fixup commit shouldn't push without verifying the changes actually work. Pick the recipe based on what was fixed:
+This step is **required**. The fixup commit shouldn't push without verifying the changes actually work. Build/lint/unit pass means the code compiles and the unit suite is green — it does **not** mean the fix is correct against the running app. Pick the channel(s) based on what was fixed; if a fix spans surfaces, hit all of them.
+
+**Validation channels available in the worktree dev env:**
+
+1. **Browser** via `playwright-cli` (or the `test-dev` skill that wraps it) — **mandatory** for any fix that touches `client/` or otherwise changes user-visible behaviour. Type-check + lint is **not** a substitute. URL comes from `environment-details.xml`.
+2. **API** via `curl` against the URL in `environment-details.xml`, with the admin key from `//admin/apiKey`. Best for route-only fixes or asserting response shape/status.
+3. **Server logs** — `grep '"subcomponent":"<name>"' logs/app.*.log`, or `docker logs mini-infra-<worktree>-server` — for boot-time / scheduled / background-emit fixes that don't surface through a route.
+4. **Container state** — `docker ps`, `docker logs <container>`, `docker exec <container> …` for stack-template, sidecar, and infra-container fixes. The dev env is a real Docker host; poke directly.
+5. **Full env rebuild** — `pnpm worktree-env delete <slug> --force && pnpm worktree-env start` blows the VM/distro away and provisions a fresh one. Use when the fix changed seeded data, migrations, or first-boot reconciliation; a warm env won't replay those paths.
+
+**Recipe by fix shape:**
 
 1. **Read the dev env URL from `environment-details.xml`** at the worktree root:
 
@@ -191,17 +201,21 @@ This step is **required**. The fixup commit shouldn't push without verifying the
    MINI_INFRA_URL=$(xmllint --xpath 'string(//environment/endpoints/ui)' environment-details.xml)
    ```
 
-2. **UI-side fixes** — use the `playwright-cli` skill to drive the change in a browser. Walk the user flow that exercises the fixed surface; check that the bug `/review` flagged is no longer reproducible. If the fix was a button-disabled rule, click the button. If the fix was an empty-state placeholder, clear the input. Match the verification to the fix.
+2. **UI-side fixes (anything in `client/`)** — **mandatory** browser smoke via `playwright-cli` (or invoke `test-dev`). Walk the user flow that exercises the fixed surface; check that the bug `/review` flagged is no longer reproducible. If the fix was a button-disabled rule, click the button. If the fix was an empty-state placeholder, clear the input. Match the verification to the fix. Build + lint passing does not count.
 
-3. **Route / API fixes** — `curl` against the relevant endpoint, with auth if needed. Verify the response shape, status code, side-effects.
+3. **Route / API fixes** — `curl` against the relevant endpoint, with auth if needed. Verify the response shape, status code, side-effects. If the fixed route is consumed by an existing UI page, also drive that page via `playwright-cli` so the wire-up is exercised end-to-end.
 
    ```bash
-   curl -fsSL "$MINI_INFRA_URL/api/<route>" -H "..." | jq .
+   curl -fsSL "$MINI_INFRA_URL/api/<route>" -H "x-api-key: $(xmllint --xpath 'string(//admin/apiKey)' environment-details.xml)" | jq .
    ```
 
-4. **Pure server logic / library changes** — re-run the unit test that covers the fixed path (`pnpm --filter mini-infra-server exec vitest run <file>`) and assert it now exercises the new behaviour. If no unit test covers it, write a focused one as part of this fixup commit — the codebase rule is "don't add tests for impossible cases", but a fix that lacks any verification is a different problem.
+4. **Server-service fixes (no route change)** — if the service is invoked from an existing route, hit that route. If it runs at boot or on a schedule, watch the server logs for the relevant subcomponent (`grep '"subcomponent":"<name>"' logs/app.*.log`, or `docker logs mini-infra-<worktree>-server`). Re-run the targeted unit test as well (`pnpm --filter mini-infra-server exec vitest run <file>`) — if no unit test covers the fixed path, write a focused one as part of this fixup commit.
 
-5. **Migration fixes** — apply the migration locally (`pnpm --filter mini-infra-server exec prisma migrate dev`) and check that the resulting schema matches the intent. If the fix was about migration safety, additionally run a load simulation appropriate to the table size.
+5. **Stack-template / infra-container fixes** — apply the affected stack from the dev UI (drive via `playwright-cli`) or via the API, then confirm `docker ps` shows the new containers in the expected state and `docker logs <container>` is clean. For destructive template changes, do a full rebuild (`pnpm worktree-env delete <slug> --force && pnpm worktree-env start`) so first-boot reconciliation is exercised.
+
+6. **Pure server logic / library changes (no surface)** — re-run the unit test that covers the fixed path (`pnpm --filter mini-infra-server exec vitest run <file>`) and assert it now exercises the new behaviour. If no unit test covers it, write a focused one as part of this fixup commit — the codebase rule is "don't add tests for impossible cases", but a fix that lacks any verification is a different problem.
+
+7. **Migration / seeded-data fixes** — apply the migration locally (`pnpm --filter mini-infra-server exec prisma migrate dev` then `prisma migrate status`) and check the resulting schema matches the intent. For destructive migrations, also do a full env rebuild and re-validate the affected feature through its primary channel (browser/API). If the fix was about migration safety, additionally run a load simulation appropriate to the table size.
 
 If the smoke fails, the fix is wrong. Iterate — re-read the code, refine the fix, re-smoke. Don't push something the smoke disagreed with.
 

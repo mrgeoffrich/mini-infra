@@ -132,16 +132,27 @@ This is the difference between Reading 1 and Reading 2 of the populator design: 
 
 Map the same touched paths to the live-smoke recipe the executor should run after build/lint/unit tests pass. These go into the ticket's "Smoke tests" section. Pick whichever apply — multiple components → multiple recipes.
 
+**Validation channels available in the worktree dev env** — every recipe should explicitly say which channel(s) to use, not hand-wave with "verify it works":
+
+1. **Browser (mandatory for any user-visible UI change)** — drive the running dev UI with the `playwright-cli` skill (or the higher-level `test-dev` skill, which wraps it). Read the URL from `environment-details.xml`. Type checks and unit tests do **not** count as UI validation — if a phase touches `client/src/` or `client/public/` and the change is user-visible, the smoke recipe must drive a real browser. The only exception is pure refactors with zero rendered-output delta.
+2. **API (direct)** — `curl` against the URL in `environment-details.xml`, using the admin API key from `//admin/apiKey`. Best for route-only changes, headless service triggers, or asserting response shape.
+3. **Server logs** — `grep '"subcomponent":"<name>"' logs/app.*.log` (or `docker logs mini-infra-<worktree>-server`) for boot-time/scheduled work that doesn't surface through a route.
+4. **Container state** — `docker ps`, `docker logs <container>`, `docker exec <container> …` for stack-template, sidecar, and infra-container changes. The dev env is a real Docker host; you can poke at containers directly.
+5. **Full env rebuild (last-resort regression check)** — `pnpm worktree-env delete <slug> --force && pnpm worktree-env start` blows the VM/distro away and provisions a fresh one from scratch. Use this when the phase changes seeded data, migrations, or first-boot behaviour that wouldn't replay against a warm env. Document it in the recipe rather than expecting the executor to guess.
+
+For multi-channel changes (e.g. a new endpoint *and* a UI surface that calls it) list **all** the channels the executor should hit — API + browser, not just one.
+
 | Touched path pattern | Smoke recipe to recommend |
 |---|---|
-| `client/src/`, `client/public/` | Invoke the `test-dev` skill walking the affected user flow in the dev environment. Don't re-implement what `test-dev` does. |
-| `server/src/routes/` | Hit the affected endpoint(s) with `curl` against the URL in `environment-details.xml`. Use the admin API key from `//admin/apiKey` in the same file. |
-| `server/src/services/` (no route change) | If the service runs at boot or on a schedule, watch the server logs for the relevant subcomponent (`grep '"subcomponent":"<name>"' logs/app.*.log`). If it's invoked from a route that already exists, hit that route. |
-| `server/templates/` | Confirm the affected stack reconciles cleanly: `docker ps` shows the new containers, no errors in the relevant container's logs (`docker logs <container>`). |
-| `egress-gateway/`, `egress-fw-agent/`, `egress-shared/` | Confirm the binary builds, the container starts, and the egress page in dev shows the agent/gateway healthy. |
-| Server NATS subjects (`server/src/services/nats/`, `lib/types/nats-subjects.ts`) | Publish a test message via `NatsBus` (or the smoke ping `mini-infra.system.ping`) and verify the consumer side fires. Reference `docs/architecture/internal-messaging.md` for the subject inventory. |
-| `update-sidecar/`, `agent-sidecar/` | Run the sidecar's npm tests (`cd <dir> && npm test`). Live smoke is component-specific; if the phase exercises a runtime path, drive it from the server side. |
-| `pg-az-backup/` | Trigger a backup from the dev UI (or via the API) and confirm the run completes; check Azure Blob if the env has Azure configured, otherwise just confirm the runner exited cleanly. |
+| `client/src/`, `client/public/` | **Mandatory:** drive the browser via `playwright-cli` (or invoke the `test-dev` skill, which wraps it) walking the affected user flow against the URL in `environment-details.xml`. Don't re-implement what `test-dev` does. Type-check + lint pass is **not** a substitute. If the phase also adds an API surface, validate that with `curl` first, then assert the UI consumes it correctly. |
+| `server/src/routes/` | Hit the affected endpoint(s) with `curl` against the URL in `environment-details.xml`. Use the admin API key from `//admin/apiKey` in the same file. If the route is reachable from a UI page that exists today, also smoke that page via `playwright-cli` to confirm the wire-up. |
+| `server/src/services/` (no route change) | If the service runs at boot or on a schedule, watch the server logs for the relevant subcomponent (`grep '"subcomponent":"<name>"' logs/app.*.log`, or `docker logs mini-infra-<worktree>-server` if file logs aren't mounted). If it's invoked from a route that already exists, hit that route with `curl`. If the change only takes effect on first boot, do a full rebuild (`pnpm worktree-env delete <slug> --force && pnpm worktree-env start`) and re-check the logs. |
+| `server/templates/` | Apply the affected stack from the dev UI (or via the API), then confirm: `docker ps` shows the new containers in the expected state, `docker logs <container>` is clean, and `docker exec <container> …` can probe runtime config if the template wires any. For destructive template changes (volumes, schema), include a full rebuild step so first-boot reconciliation is exercised. |
+| `egress-gateway/`, `egress-fw-agent/`, `egress-shared/` | Confirm the binary builds, the container starts (`docker ps`, `docker logs <container>` clean), and the egress page in the dev UI (drive via `playwright-cli`) shows the agent/gateway healthy. |
+| Server NATS subjects (`server/src/services/nats/`, `lib/types/nats-subjects.ts`) | Publish a test message via `NatsBus` (or the smoke ping `mini-infra.system.ping`) and verify the consumer side fires — assert via server logs (`grep '"subject":"<subject>"' logs/app.*.log`) or by tailing `docker logs` on the consumer container. Reference `docs/architecture/internal-messaging.md` for the subject inventory. |
+| `update-sidecar/`, `agent-sidecar/` | Run the sidecar's npm tests (`cd <dir> && npm test`). Live smoke is component-specific; if the phase exercises a runtime path, drive it from the server side (API + log inspection). UI surfaces in the agent sidecar still need `playwright-cli` validation. |
+| `pg-az-backup/` | Trigger a backup from the dev UI (drive via `playwright-cli`) or via the API and confirm the run completes; check Azure Blob if the env has Azure configured, otherwise just confirm the runner exited cleanly via `docker logs`. |
+| Prisma schema / migrations (`server/prisma/`) | Run `pnpm --filter mini-infra-server exec prisma migrate status` to confirm the migration applied cleanly. For destructive migrations, do a full rebuild (`pnpm worktree-env delete <slug> --force && pnpm worktree-env start`) so the migration replays against a fresh DB. |
 | `lib/types/` only | No live smoke needed; build pass = types compile. |
 | `docs/`, README, SKILL.md, root configs only | No live smoke; build/lint is enough. The phase is docs-only — also tell the executor to skip the backgrounded `pnpm worktree-env start`. |
 
@@ -524,13 +535,23 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 
 ## Smoke tests (run after build/lint/unit tests pass)
 
+Build/lint/unit pass means the code compiles and the unit suite is green — it does **not** mean the feature works. Every recipe below names the validation channel(s) the executor must use; don't substitute one for another.
+
+Available channels in the worktree dev env:
+- **Browser** via `playwright-cli` (or the `test-dev` skill that wraps it) — **mandatory** for any user-visible UI change. URL comes from `environment-details.xml`.
+- **API** via `curl` against the same URL, with the admin key from `//admin/apiKey` in `environment-details.xml`.
+- **Server logs** — `grep '"subcomponent":"<name>"' logs/app.*.log`, or `docker logs mini-infra-<worktree>-server`.
+- **Container state** — `docker ps`, `docker logs <container>`, `docker exec <container> …`.
+- **Full env rebuild** — `pnpm worktree-env delete <slug> --force && pnpm worktree-env start` for first-boot / migration / seeded-data regressions.
+
 <bullets generated from Phase 3.2's smoke-recipe map for this phase's touched components.
  Examples by component:>
 
-- **Server route changes** → `curl -H "x-api-key: <admin>" $MINI_INFRA_URL/api/<route>` and verify response shape.
-- **UI changes** → invoke the `test-dev` skill on the affected page; walk the golden path.
-- **Stack template changes** → `docker ps` shows the new containers, `docker logs <container>` clean.
-- **NATS subject changes** → publish via `NatsBus`, confirm consumer fires; baseline with `mini-infra.system.ping`.
+- **Server route changes** → `curl -H "x-api-key: <admin>" $MINI_INFRA_URL/api/<route>` and verify response shape. If a UI page already consumes this route, also drive that page with `playwright-cli`.
+- **UI changes** → drive the affected page with `playwright-cli` (or invoke the `test-dev` skill); walk the golden path. Type-check + lint is **not** a substitute.
+- **Stack template changes** → apply the stack, then `docker ps` shows the new containers in the expected state and `docker logs <container>` is clean. For destructive template changes, also do a full rebuild and re-check.
+- **NATS subject changes** → publish via `NatsBus`, confirm consumer fires via server logs or `docker logs` on the consumer; baseline with `mini-infra.system.ping`.
+- **Migration / seeded-data changes** → full rebuild (`pnpm worktree-env delete <slug> --force && pnpm worktree-env start`), then `prisma migrate status` clean and the affected feature validated through its primary channel (browser/API).
 - ...
 
 If none of the recipes match, the populator emits `<no recipe — confirm with user before merging>` here and the executor will surface that.
