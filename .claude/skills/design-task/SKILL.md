@@ -1,6 +1,6 @@
 ---
 name: design-task
-description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, a rough implementation outline, and — for UI tickets — an inline SVG wireframe plus a "UI components to use" mapping that names existing `client/src/components/ui/*` primitives and feature components to wire up, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). Does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence; the worktree can be torn down later via `finish-worktree` when the design has shipped. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
+description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, a rough implementation outline, and — for UI tickets — a wireframe written to a sibling SVG file (`<issue-id>-<slug>-option-<a|b>.svg` next to the markdown, referenced via `![](…)`) plus a "UI components to use" mapping that names existing `client/src/components/ui/*` primitives and feature components to wire up, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). Does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence; the worktree can be torn down later via `finish-worktree` when the design has shipped. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
 ---
 
 # Design Task
@@ -220,11 +220,17 @@ Use this structure verbatim. Omit a section only if it genuinely doesn't apply (
 <The design in plain English. A reviewer should be able to picture the shape from this paragraph alone.>
 
 ### Wireframe
-<**Only include this section if the option has a UI surface.** Drop it entirely for backend-only designs (no `<svg>`, no placeholder).
+<**Only include this section if the option has a UI surface.** Drop it entirely for backend-only designs (no image, no placeholder).
 
-Inline a single SVG block — raw `<svg>` tags, not fenced. GitHub renders inline SVG in markdown, so the wireframe shows up directly when the file is viewed on GitHub or in any markdown previewer that allows HTML. Aim for wireframe-fidelity, not pixel-perfect: labelled rectangles for regions, plain text for labels, simple arrows for flow if needed. Keep it ≤ ~600px wide so it fits in a doc view without horizontal scroll.
+The wireframe lives in a **sibling SVG file**, not inline in the markdown — single source of truth, easy to open directly in a browser or editor. Reference it from the design doc via standard markdown image syntax:
 
-Example shape (do not copy verbatim — design the layout for the actual ticket):
+```markdown
+![Option A wireframe](<filename>-option-a.svg)
+```
+
+Filename convention: `<issue-id>-<slug>-option-<a|b>.svg`, sitting flat next to the `.md` in `docs/designs/`. For the ALT-38 example doc `alt-38-pg-az-backup-progress-events.md`, the sibling files would be `alt-38-pg-az-backup-progress-events-option-a.svg` and `…-option-b.svg`. GitHub, VS Code, and most markdown previewers render the image inline.
+
+When **writing the SVG file**, aim for wireframe fidelity — labelled rectangles for regions, plain text for labels, simple arrows for flow if needed — not pixel perfection. Keep `viewBox` ≤ ~600px wide so it fits in a doc view without horizontal scroll. Skeleton:
 
 ```
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 360" width="600" font-family="system-ui, sans-serif" font-size="13">
@@ -235,7 +241,7 @@ Example shape (do not copy verbatim — design the layout for the actual ticket)
 </svg>
 ```
 
-If the two options have *the same* layout and only differ behind the scenes, say so once in the section ("Layout identical to Option A — see above") rather than repeating the SVG.>
+If the two options have *the same* layout and only differ behind the scenes, write one SVG file and reference it from both Options ("Layout identical to Option A — same wireframe."), rather than producing two identical files.>
 
 ### UI components to use
 <**Only include this section if the option has a UI surface.** Drop it entirely otherwise.
@@ -307,7 +313,7 @@ lib/types/<thing>.ts                           (changed)    — <what>
 - **Voice:** match the rest of the project's docs — direct, concrete, no marketing language. The docs in `docs/architecture/` and `docs/planning/` are good tonal references.
 - **Specificity:** name files, name functions, name constants. "Add a new service" is weaker than "Add `BackupProgressEmitter` in `server/src/services/backup/`". The reader should not have to guess where things land.
 - **Length:** designs vary in size, but most should fit in 200–500 lines total. If you're heading past 700 lines, you're probably over-specifying — back off to "outline" granularity and trust the executor to fill in.
-- **No code blocks longer than ~10 lines.** The doc is a design, not an implementation. If a code snippet is essential to the idea (e.g. a particularly weird type signature), keep it tight; otherwise describe in prose. **Exception:** the `<svg>` block in the Wireframe section — those need the markup to render, and 30–80 lines of SVG is normal.
+- **No code blocks longer than ~10 lines.** The doc is a design, not an implementation. If a code snippet is essential to the idea (e.g. a particularly weird type signature), keep it tight; otherwise describe in prose. (Wireframes don't trigger this rule — they live in sibling `.svg` files, referenced via `![]()`, not inline.)
 - **Cite prior art with file paths the editor can click** — `[server/src/services/backup/backup-executor.ts](server/src/services/backup/backup-executor.ts)`.
 
 ### 5.4 Where to write it
