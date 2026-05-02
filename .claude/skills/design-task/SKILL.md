@@ -161,6 +161,25 @@ If any of these files have moved or are missing on the current branch, surface i
 
 This output feeds the per-Option **Wireframe** and **UI components to use** sections in the design doc (Phase 5.2). Different design options may pick different layouts and components — that's fine and often the point.
 
+**e) Pre-decide states, failure modes, and live-input feasibility.** A wireframe shows the happy path. The states a real operator hits — empty, errored, mid-typing — are usually the highest-effort surface to retrofit and the lowest-attention surface during design. Pre-deciding them is one of the cheapest design moves available. For each interactive region, commit to:
+
+- **Empty state.** What renders when there's no data — never-configured, freshly-cleared, no items yet? Placeholder text, hidden block, an explicit "no X yet" message? If a derived preview depends on input, what does it show when the input is empty (e.g. an ACL snippet built from zero tags — `tagOwners: {}` is broken HuJSON; pick: render a placeholder, hide the block, or disable copy).
+- **Failure mode.** For any form that calls a server or third-party API, list the *specific* error categories the underlying call returns (auth, scope/permissions, quota, network/timeout, conflict). Pick one of: **(i)** surface each specifically with actionable wording; **(ii)** collapse to one generic error and tell the operator to check their setup; **(iii)** show a tier-1 generic error with a "show details" affordance exposing the raw vendor response. Pick one — don't leave the failure UX to the executor; it's the most likely real-world experience and the easiest to under-design.
+- **Mid-typed / invalid input.** For any field driving a downstream preview or derivation (live-snippet, computed totals, generated config), pick: render-on-valid only / render with placeholder for invalid parts / debounce + render last-valid. Same call for what the submit button shows when the form is invalid (disabled vs. enabled-with-message).
+- **Live input feasibility.** If a field's correctness can be checked client-side (regex, zod schema), inline feedback as they type is essentially free — propose it. If it requires a server call (DNS resolves, OAuth client exists, name uniqueness), weigh debounced lookup with a "checking…" indicator against the server-load and rate-limit cost; flag the trade-off explicitly so the executor isn't re-deriving it. For tickets where live feedback is genuinely infeasible (expensive call, no rate budget, async-only API), say so and commit to validate-on-submit.
+
+**f) Task-sequence fidelity — order the regions to match the operator's real-world setup flow.** Schemas drive *backend-shaped* forms (fields ordered by entity); operators need *user-shaped* forms (fields ordered by the order they can fill them). For any design that wraps an external integration (DNS provider, OAuth client, third-party API, ACME), read the vendor's setup doc and walk through the operator's real setup steps before drafting the wireframe — the natural form ordering is often *inverted* from the schema's field order. Specifically: if step N produces an artefact (a tag, a snippet, an ID) that step N+1 depends on, step N's region must precede step N+1's region in the form, even if the schema declares the fields in the opposite order. Failure mode: an operator who fills the form top-to-bottom hits a wall at the bottom because the prerequisite for the last field was a copy-paste action they should have done in the middle.
+
+For internal-only forms (no external dependencies), this step is a no-op — the schema order is fine. Flag explicitly when you decide it's a no-op so a reviewer sees you considered it.
+
+**g) Pre-decide configured-state, latency, and reversibility.** Three more commitments the wireframe can't show and the executor will otherwise have to make under deadline pressure:
+
+- **Configured state (re-edit-six-months-later).** Settings pages are visited *more often* in the re-edit case than in the first-time case. A first-time form (clear inputs, big primary button) is the wrong UX once the page is configured. Pick: **(i)** same form, pre-filled — simplest, fine for low-touch settings; **(ii)** read-only summary with per-section edit affordances — better when re-edit is rare and credentials/secrets should stay masked; **(iii)** banner-with-edit-toggle on top of the form — middle ground. Pick one and describe what the page looks like in three states: never-configured, just-saved, re-edit-after-N-months.
+- **Latency window for slow server calls.** "Validate & Save" against a third-party API is 1–30s of wall-clock; ACME issuance is minutes; container apply is seconds-to-minutes. Spec the during-action UX: button label sequence ("Validate" → "Validating…" → "Saving…" → "Saved"), whether the form is locked while pending, what cancellation looks like (or whether it's not supported — say so), and what the operator sees if the call exceeds expected duration. "Show a spinner" is not enough — name the label sequence and the lock posture.
+- **Reversibility classification.** For each editable field, classify the edit as **safe** (no side effects on existing resources), **breaks-existing-resources** (e.g. removing `tag:mini-infra-managed` orphans devices already minted with that tag; rotating credentials invalidates active sessions; renaming an environment may cascade to network names), or **requires-re-validation** (changing the OAuth scope means the next API call may fail until the operator re-validates; changing the cert challenge type may break renewal). For non-safe classes, surface the consequence at edit time — confirmation dialog, inline warning, "this will affect N existing X" indicator. Don't trust the operator to know which edits cascade; the design owes an explicit list.
+
+This output feeds the per-Option **States & failure modes** section in the design doc (Phase 5.2). Two options may legitimately pick different state strategies (e.g. a wizard surfaces "step 1 incomplete" differently than a flat form; a summary-view design handles re-edit natively while a flat-form design doesn't) — call that out.
+
 ### 4.4 Look for prior art in the Mini Infra codebase
 
 This is the part that anchors the designs to the real repo. For each pattern axis, find one or two existing places in the codebase that already solve a *similar* problem — not necessarily the same problem, but a structurally similar one. Use `Grep` / `Read` / `Glob` directly, or spawn an `Explore` subagent if the search is wide ("how does the codebase generally handle progress events for long-running ops?").
@@ -220,7 +239,16 @@ Use this structure verbatim. Omit a section only if it genuinely doesn't apply (
 <The design in plain English. A reviewer should be able to picture the shape from this paragraph alone.>
 
 ### Wireframe
-<**Only include this section if the option has a UI surface.** Drop it entirely for backend-only designs (no image, no placeholder).
+<**Only include this section if the option has a UI surface AND a wireframe earns its keep.** Drop it entirely for backend-only designs (no image, no placeholder).
+
+**Earns-its-keep test.** A wireframe pays off when there's something prose can't easily say:
+- **Multiple states in one frame** — wizard vs. summary, before vs. after, populated vs. empty side-by-side.
+- **Novel spatial layout** — split panes, asymmetric grids, anything that doesn't reduce to "header + card + form".
+- **Structurally differs from cited prior art** — if the design is *not* "looks like `cloudflare/page.tsx` with X added", a wireframe is worth drawing because the reader can't picture it from the prior-art reference alone.
+
+If the layout is fully describable as "looks like `<existing-page>` with these additions in this order", **skip the SVG** and lean on the prior-art reference in `UI components to use` instead. Drawing a wireframe that the prose already narrates verbatim wastes both the writer's time and the reader's — the SVG ends up restating the section ordering, copy-button placement, and chip styling that the prose already covers, so the reader looks at it once and never returns. The prior-art page is a higher-fidelity reference than any wireframe you can draw in 60 SVG lines.
+
+When in doubt: write the prose first, then ask whether the SVG would say something the prose doesn't. If the answer is no, drop the wireframe section for that option.
 
 The wireframe lives in a **sibling SVG file**, not inline in the markdown — single source of truth, easy to open directly in a browser or editor. Reference it from the design doc via standard markdown image syntax:
 
@@ -253,6 +281,26 @@ Bullet list mapping each region from the wireframe to an existing component (or 
 
 Group primitives (`client/src/components/ui/*`) and feature components separately if it aids reading. Don't list a component just because it might be tangentially relevant — only the ones the executor will actually wire up.>
 
+### States, failure modes & lifecycle
+<**Only include this section if the option has a UI surface.** Drop it entirely otherwise.
+
+The wireframe shows the happy path. This section captures the commitments the wireframe *can't* show — the surfaces that hit operators most often in real-world use and get the least design attention. Don't punt to "the executor will handle it"; the executor has less context than the designer does.
+
+**Per-region states** (for each interactive region in the wireframe):
+
+- **<Region>:**
+  - **Empty:** <what renders when there's no data / never-configured / freshly-cleared>
+  - **Failure:** <which API errors get surfaced specifically vs. folded into a generic catch-all; for third-party calls, name the vendor error categories you're branching on>
+  - **Live input:** <inline feedback as the user types — regex/zod check, debounced server call, derived preview update — or "none — validates on submit only" with a one-line reason if a live affordance was infeasible>
+
+**Page-level lifecycle:**
+
+- **Configured state.** Describe the page in three states: **never-configured** (first-time setup), **just-saved** (immediately after the operator's first successful Save), **re-edit-after-N-months** (the operator returns to change one thing). Pick the layout strategy for the configured state — same form pre-filled / read-only summary with per-section edit / banner-with-edit-toggle — and say which.
+- **Latency window.** For each slow server call the page can trigger (validate, save, third-party round-trip), name the button-label sequence, whether the form locks while pending, and cancellation posture (or "no cancellation").
+- **Reversibility.** Per editable field: **safe** / **breaks-existing-resources** / **requires-re-validation**. For non-safe edits, name the surface (confirmation dialog, inline warning, "will affect N existing X" indicator).
+
+If the two options differ on any of these (a wizard surfaces step-1 incompleteness differently than a flat form; a summary-view design handles re-edit natively while a flat-form design glosses it; one option has a faster validate path), make that explicit — these are often more honest axes of difference than the surface form-shape.>
+
 ### Key abstractions
 - **<Name>** — <what it represents, what its responsibilities are>
 - **<Name>** — <…>
@@ -283,10 +331,6 @@ lib/types/<thing>.ts                           (changed)    — <what>
 - <bullet>
 - <bullet>
 
-### Prior art it leans on
-- [`<file>`](<file>) — <what pattern it borrows; why it's a good fit>
-- [`<file>`](<file>) — <…>
-
 ---
 
 ## Option B — <Short evocative name>
@@ -314,7 +358,11 @@ lib/types/<thing>.ts                           (changed)    — <what>
 - **Specificity:** name files, name functions, name constants. "Add a new service" is weaker than "Add `BackupProgressEmitter` in `server/src/services/backup/`". The reader should not have to guess where things land.
 - **Length:** designs vary in size, but most should fit in 200–500 lines total. If you're heading past 700 lines, you're probably over-specifying — back off to "outline" granularity and trust the executor to fill in.
 - **No code blocks longer than ~10 lines.** The doc is a design, not an implementation. If a code snippet is essential to the idea (e.g. a particularly weird type signature), keep it tight; otherwise describe in prose. (Wireframes don't trigger this rule — they live in sibling `.svg` files, referenced via `![]()`, not inline.)
-- **Cite prior art with file paths the editor can click** — `[server/src/services/backup/backup-executor.ts](server/src/services/backup/backup-executor.ts)`.
+- **No preamble.** Start at `## Context`. Don't write a meta paragraph about the skill, the template, the design process, or how this doc relates to a previous one — those facts decay fast and add nothing for the reader implementing the page.
+- **Cite prior art with file paths the editor can click** — `[server/src/services/backup/backup-executor.ts](server/src/services/backup/backup-executor.ts)`. Include a **line range** when the relevant pattern is in a small section of a larger file (`cloudflare/page.tsx:283-329`) — the executor will copy from those exact lines, so naming them saves a grep.
+- **Cite each prior-art reference once per option, in the section where it actually helps** (usually `UI components to use`, `Key abstractions`, or one specific step in `Implementation outline`). The same `cloudflare/page.tsx` link appearing in three sections is the single most common form of padding — don't.
+- **Don't narrate the wireframe in prose.** The SVG already shows section ordering, copy-button placement, what's a chip vs. a code block. Prose should cover what the SVG can't: *why* the layout, what changes between options, interactions a static image can't convey. If a paragraph is restating what the reader can see in the SVG, delete it.
+- **`Implementation outline` is action-density only.** Each step describes what to *do* — "Stand up `useTailscaleSettings` hooks", "Wire `buildAclSnippet` to `form.watch('tags')`". Steps that reduce to "read file X" or "build skeleton from page Y" are prior-art references in disguise; cite the file inline in `UI components to use` or `Key abstractions` instead and drop the step.
 
 ### 5.4 Where to write it
 
@@ -456,7 +504,7 @@ That's the whole skill. Keep the output short — the design doc is the substant
 >
 > *Phase 5.4: invokes `Skill(setup-worktree, args: "ALT-38 --no-env")`. The setup-worktree skill pre-flights main, pulls, creates the worktree at `.claude/worktrees/alt-38` on `claude/alt-38`, runs `pnpm install`, and skips the dev-env spin-up. Returns control with cwd = the worktree.*
 >
-> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md` inside the worktree. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons / Prior art. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it). File left unstaged.*
+> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md` inside the worktree. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it). File left unstaged.*
 >
 > *Phase 6.1: posts a comment on ALT-38 (the design ticket): "Designs drafted: …relative-path… A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Marking this design ticket Done — `/execute-next-task ALT-39` (the impl ticket) is unblocked."*
 >
