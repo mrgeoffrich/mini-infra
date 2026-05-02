@@ -234,11 +234,11 @@ Done when: an admin can add a new IdP through the UI, attach it to a service via
 
 ## 8. Linear tracking
 
-Phase issues will be created under a new "Service Addons — Tailscale and Caddy ingress" project on the Altitude Devops team and linked here once filed. Phases land in order; each phase blocks the next.
+Tracked under the [Service Addons — Tailscale and Caddy ingress addons](https://linear.app/altitude-devops/project/service-addons-tailscale-and-caddy-ingress-addons-a171d68a60ae) project on the Altitude Devops team. Phases land in order; each phase blocks the next.
 
-- ALT-_TBD_ — Phase 1: Addon framework + Tailscale connected service + `tailscale-ssh`
-- ALT-_TBD_ — Phase 2: `tailscale-web` and tailscale addon merging
-- ALT-_TBD_ — Phase 3: `caddy-auth` v1
-- ALT-_TBD_ — Phase 4: Pool integration
-- ALT-_TBD_ — Phase 5: UI polish and status surfacing
-- ALT-_TBD_ — Phase 6 (deferred): OIDC provider management UI
+- [ALT-38](https://linear.app/altitude-devops/issue/ALT-38) — Phase 1: Addon framework + Tailscale connected service + `tailscale-ssh`
+- [ALT-39](https://linear.app/altitude-devops/issue/ALT-39) — Phase 2: `tailscale-web` and tailscale addon merging
+- [ALT-40](https://linear.app/altitude-devops/issue/ALT-40) — Phase 3: `caddy-auth` v1
+- [ALT-41](https://linear.app/altitude-devops/issue/ALT-41) — Phase 4: Pool integration
+- [ALT-42](https://linear.app/altitude-devops/issue/ALT-42) — Phase 5: UI polish and status surfacing
+- [ALT-43](https://linear.app/altitude-devops/issue/ALT-43) — Phase 6 (deferred): OIDC provider management UI
