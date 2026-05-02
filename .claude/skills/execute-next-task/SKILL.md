@@ -242,9 +242,9 @@ If everything passes, move on. If anything fails, **fix it before continuing** �
 
 ---
 
-## Phase 10 — Commit, push, and run a code review
+## Phase 10 — Commit and push
 
-Smoke tests passed. Before opening the PR, the diff goes through a Sonnet-backed review pass so obvious issues get caught locally instead of becoming review noise on GitHub. The phase commits the implementation, pushes the branch (so the work is safely on the remote regardless of what happens next), runs the review subagent, then applies fixes for any medium / high / critical findings that hold up under scrutiny.
+Smoke tests passed. Commit the implementation and push the branch so the work is safely on the remote before the PR is opened. Code review is a separate concern — the user runs the `/review` skill against the PR or Linear ticket on their own cadence after this phase ships.
 
 ### 10.1 Commit the implementation
 
@@ -271,100 +271,13 @@ Stage and commit. Don't push yet — keep all of 10.1's commits local until 10.2
 git push -u origin claude/<slug>
 ```
 
-`-u` sets upstream so subsequent `git push` calls are bare. The work is now safe on the remote — even if the review phase explodes, nothing is lost.
-
-### 10.3 Spawn a Sonnet subagent to review the diff
-
-Use the `Agent` tool with `subagent_type: general-purpose` and `model: sonnet`. Sonnet is the right tier for review — fast, cheap, and the diff fits comfortably in its window.
-
-Prompt the subagent (substitute the branch name and the picked Linear issue ID):
-
-```
-Review the changes on branch `claude/<slug>` for issue <ALT-NN>.
-
-Compute the diff vs main with:
-  git fetch origin main
-  git diff origin/main...HEAD
-
-Read the relevant project conventions before reviewing:
-  - root CLAUDE.md (pnpm, worktree workflow, build invariants)
-  - server/CLAUDE.md if any server/ files changed (DockerService, ConfigurationServiceFactory, Channel.*/ServerEvent.*, userId on mutations, never raw dockerode)
-  - client/CLAUDE.md if any client/ files changed (TanStack Query patterns, no polling when socket connected, task tracker)
-  - any per-component CLAUDE.md / ARCHITECTURE.md that the touched dirs map to
-  - the Linear issue body for <ALT-NN> (Goal / Deliverables / Done when) so you can judge whether the diff actually does what was asked
-
-Look for:
-  - bugs (logic errors, off-by-one, null-deref, race conditions)
-  - security issues (injection, secrets, auth bypass, OWASP-top-10 patterns)
-  - convention violations (raw SDK calls bypassing service wrappers, raw dockerode, raw socket strings, missing userId on mutations, missing Plan: line patterns the codebase relies on)
-  - dead code / unused imports / leftover debug logging
-  - missing tests where the convention says they're required
-  - drift from the ticket's Deliverables (something asked for that didn't land, something landed that wasn't asked for)
-
-DO NOT flag:
-  - style nits the linter would catch
-  - opinions about "could be cleaner" without a concrete bug or convention violation
-  - missing comments or docstrings (the codebase defaults to no comments unless WHY is non-obvious)
-  - hypothetical future-extensibility concerns
-
-Return findings as a JSON array. One object per finding:
-  {
-    "severity": "critical" | "high" | "medium" | "low",
-    "file": "<path relative to repo root>",
-    "line": <line number on the new side, or null if file-level>,
-    "title": "<short imperative phrase>",
-    "detail": "<1-3 sentences: what's wrong, why it matters>",
-    "suggested_fix": "<concrete change — file/line + before/after, or null if non-obvious>"
-  }
-
-If you find nothing actionable, return an empty array `[]`. Do NOT pad with low-severity nits to look thorough. Empty is a great result.
-
-Return ONLY the JSON array. No preamble, no summary, no markdown fences.
-```
-
-### 10.4 Triage and apply fixes
-
-Parse the subagent's JSON. Filter to `severity in ["critical", "high", "medium"]`. Drop `low` — they're not worth a follow-up commit unless they coincidentally fall out of a higher-severity fix.
-
-For each remaining finding, **sanity-check before applying**. The subagent is right most of the time but occasionally:
-
-- Misreads a convention (e.g. flags `dockerode.getContainer()` when the wrapper *is* the surrounding code).
-- Misses context that's a few files away (e.g. flags a missing null-check that's enforced upstream).
-- Suggests a "fix" that's worse than the code it's fixing.
-
-Read the cited file, decide whether the finding is real:
-
-- **Holds up** → apply the suggested fix (or a better one). Add to a fixups list.
-- **Doesn't apply** → skip. Note it in the handoff comment (Phase 12) under "Review findings consciously dismissed" so the human reviewer knows the agent considered it.
-
-If every finding gets dismissed as not-applicable, that's fine — the code is fine. Move to 10.5 with no fixups.
-
-### 10.5 Commit and push the fixups (only if you applied any)
-
-If 10.4 produced changes, commit them as a separate commit so the diff history shows the implementation and the review-driven cleanup separately. Use a body that lists what was addressed:
-
-```
-review: address sonnet review findings (Phase N, ALT-NN)
-
-- <one bullet per applied finding>
-- <...>
-
-Co-Authored-By: <as configured>
-```
-
-Then push:
-
-```bash
-git push
-```
-
-If 10.4 produced no changes, this sub-phase is a no-op — proceed to Phase 11.
+`-u` sets upstream so subsequent `git push` calls are bare. The work is now safe on the remote.
 
 ---
 
 ## Phase 11 — Open the PR
 
-The branch is committed, pushed, and (where applicable) cleaned up by review. Now create the PR:
+The branch is committed and pushed. Now create the PR:
 
 ```bash
 gh pr create --title "<commit subject from Phase 10.1>" --body @- <<'EOF'
@@ -378,7 +291,7 @@ Closes ALT-NN
 EOF
 ```
 
-PR title matches the implementation commit's subject (not the `review:` follow-up). PR body must:
+PR title matches the implementation commit's subject. PR body must:
 
 - Have a Summary section (1–3 bullets) describing the change.
 - Have a Test plan section (markdown checklist).
@@ -412,9 +325,6 @@ Use this template. Omit any section that genuinely has nothing to report — don
 
 ## Deviations from the spec
 <places where what you shipped diverges from the ticket's Deliverables or Done-when (and, if a plan doc was loaded in Phase 3, from its `### Phase N` section). For each: what the spec said, what you shipped, why. When a plan doc is in play, this section is also the input a re-integration agent uses to fold the drift back into the doc — keep it precise. **Omit this section entirely** when there's no spec drift to report.>
-
-## Review findings consciously dismissed
-<medium / high / critical findings the Phase 10 review subagent surfaced but you decided not to apply. For each: what the subagent said, why you concluded it didn't apply (e.g. it misread the surrounding context, the convention is actually being followed a few files away, the suggested fix was worse than the original). One bullet each. **Omit this section entirely** when the review returned no findings, or when every finding was applied.>
 ```
 
 If Phase 3 found no plan doc (standalone ticket), the handoff still uses this template — the "Deviations from the spec" wording covers both cases. There's just no re-integration agent involvement to plan for; the comment is purely for the human reviewer.
@@ -485,7 +395,7 @@ The retrospective is a feedback loop, not a gate. If the subagent fails — scri
 
 ## Phase 14 — Clean up the worktree (success path only, delegated to `finish-worktree`)
 
-**Only run this if every previous phase succeeded** — build/lint/unit passed, smoke passed, review fixups applied (if any), the PR is open, the issue is In Review, the handoff comment posted. If anything failed or stopped earlier, **skip this phase entirely** and leave the worktree alive so the user can investigate. The retrospective phase (13) is best-effort and doesn't gate this — a failed retrospective still counts as a successful run.
+**Only run this if every previous phase succeeded** — build/lint/unit passed, smoke passed, the PR is open, the issue is In Review, the handoff comment posted. If anything failed or stopped earlier, **skip this phase entirely** and leave the worktree alive so the user can investigate. The retrospective phase (13) is best-effort and doesn't gate this — a failed retrospective still counts as a successful run.
 
 The worktree's purpose is to host the build + smoke for this phase. Once the PR is open and in review, the work that needs the dev env is over — review happens in GitHub on the diff, not in the worktree. Tear it down to free the VM/distro slot and keep `pnpm worktree-env list` tidy.
 
@@ -516,9 +426,8 @@ Append a final line to the run report:
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
 - **Never produce an ExitPlanMode block.** This is an execution agent. Planning happened when the ticket was created (in `plan-to-linear` for phased tickets, in `task-to-linear` for standalone ones, or by the user filing it directly).
-- **Never run Phase 14 (cleanup) on a failure path.** If smoke failed, the review subagent errored fatally, the PR didn't open, the In Review transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run. (Phase 13, the retrospective, also only runs on the success path, but a failure inside Phase 13 itself does not block Phase 14 — the retrospective is best-effort.)
+- **Never run Phase 14 (cleanup) on a failure path.** If smoke failed, the PR didn't open, the In Review transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run. (Phase 13, the retrospective, also only runs on the success path, but a failure inside Phase 13 itself does not block Phase 14 — the retrospective is best-effort.)
 - **Never edit the plan doc.** When a plan doc was loaded in Phase 3, the doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the spec, capture the drift in the handoff comment (Phase 12 — Deviations from the spec section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that. (When no plan doc was loaded, this rule is vacuous — there's nothing to edit.)
-- **Never blindly apply review subagent findings.** Phase 10.4 requires a sanity check on every medium/high/critical finding before fixing. The subagent is a second pair of eyes, not an oracle — if a finding misreads context, dismiss it (and note it in the handoff comment). Equally, never *skip* a finding because the fix is inconvenient — the dismissal must be justifiable.
 - **Never auto-roll-back the In Progress transition.** Phase 2.1 marks the issue In Progress before any other work begins. If the run later hard-fails, leave it In Progress and report — don't quietly flip it back to Todo. The user decides whether to retry, hand off, or revert state.
 - **Never merge PRs** — even if checks pass and the PR looks great. Merging is a human decision.
 - **Never create new Linear issues** or split phases on the fly. If scope is too big for one phase, stop and report — splitting is a planning decision, not an execution decision.
@@ -554,11 +463,11 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > *Implements. Runs build/lint/unit tests. Backgrounded env is up by now — runs the ticket's smoke test (publish a test backup-run request, confirm the consumer side fires).*
 >
-> *Phase 10: commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`, pushes the branch with `-u`. Spawns a Sonnet review subagent prompted to diff `claude/alt-29` against main. Subagent returns two findings: one `medium` (a missing try/catch around a socket emit, which is real) and one `high` (a "raw dockerode call bypassing DockerService" — but on inspection that's actually inside a test helper that intentionally pokes the daemon, so it's dismissed). Skill applies the medium fix, commits as `review: address sonnet review findings (Phase 4, ALT-29)`, and pushes again.*
+> *Phase 10: commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`, pushes the branch with `-u`. Code review is left to a separate `/review` run that the user kicks off after the PR is open.*
 >
 > *Phase 11: opens PR with the implementation commit's title and `Closes ALT-29` in the body.*
 >
-> *Phase 12: marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording, plus a "Review findings consciously dismissed" section explaining the test-helper carve-out. The plan doc itself is left untouched; the re-integration agent will fold the Deviations back later. Reports the PR URL.*
+> *Phase 12: marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording. The plan doc itself is left untouched; the re-integration agent will fold the Deviations back later. Reports the PR URL.*
 >
 > *Phase 13: captures `$CLAUDE_SESSION_ID` (the parent session), spawns a `general-purpose` subagent on Sonnet, and tells it to invoke the `session-retrospective` skill with `--session-id <parent-id> --linear-issue ALT-29`. The skill loads the Linear MCP, runs `scripts/get-session.sh` against the parent JSONL, generates retrospective markdown, resolves the Altitude Devops team / Backlog state / `retro` label, and creates a new issue `ALT-42 — Retro: ALT-29 — Phase 4: pg-az-backup progress + result events` with the markdown body and a Source link back to ALT-29. Then adds a `relatedTo` relation between ALT-42 and ALT-29 so both issues show the link in their Linear side panel. Subagent returns the URL of ALT-42; skill appends it to the run report.*
 >
