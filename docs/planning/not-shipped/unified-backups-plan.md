@@ -200,7 +200,7 @@ The new domain and channel land in Phase 1 alongside the new framework. Existing
 
 ## 5. Phased rollout
 
-Phases land in order; each phase blocks the next. Phase 5 also blocks on JobPool landing in the Service Addons project. Phase 6 is independent and may be picked up at any time after Phase 4.
+Phases land in order; each phase blocks the next. Phase 5 also blocks on JobPool landing in the Service Addons project.
 
 ### Phase 1 — Mini Infra control-plane backup and onboarding restore from storage
 
@@ -318,5 +318,5 @@ Tracked under the [Unified Backups — Strategy-based backup and restore framewo
 - ALT-_TBD_ — Phase 2: OpenBao Vault strategy and client-side encryption
 - ALT-_TBD_ — Phase 3: Stack-template `backups:` block and Docker volume strategies
 - ALT-_TBD_ — Phase 4: pg-az-backup cutover
-- ALT-_TBD_ — Phase 5 (deferred): JobPool integration
-- ALT-_TBD_ — Phase 6 (deferred): Additional strategies and targets
+- ALT-_TBD_ — Phase 5: JobPool integration (optional, deferred)
+- ALT-_TBD_ — Phase 6: Additional strategies and targets (optional, deferred)
