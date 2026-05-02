@@ -11,7 +11,9 @@ import {
   stackResourceOutputSchema,
   stackResourceInputSchema,
   stackServiceCommonFieldsSchema,
+  refineAddonsBlock,
 } from "./schemas";
+import { productionAddonRegistry } from "../stack-addons/registry";
 import {
   templateInputDeclSchema,
   templateVaultPolicySchema,
@@ -56,15 +58,19 @@ const templateConfigFileSchema = z.object({
 // `stackServiceCommonFieldsSchema` so adding a new common field can't drift
 // silently (customer feedback #1). Leaf-specific fields and the
 // stricter-than-HTTP refine (Stateful must not have routing) stay here.
-const templateServiceSchema = stackServiceCommonFieldsSchema.refine(
-  (data) => {
-    if (data.serviceType === "StatelessWeb" && !data.routing) return false;
-    if (data.serviceType === "AdoptedWeb" && !data.routing) return false;
-    if (data.serviceType === "Stateful" && data.routing) return false;
-    return true;
-  },
-  { message: "StatelessWeb/AdoptedWeb services must have routing; Stateful services must not have routing" }
-);
+const templateServiceSchema = stackServiceCommonFieldsSchema
+  .refine(
+    (data) => {
+      if (data.serviceType === "StatelessWeb" && !data.routing) return false;
+      if (data.serviceType === "AdoptedWeb" && !data.routing) return false;
+      if (data.serviceType === "Stateful" && data.routing) return false;
+      return true;
+    },
+    { message: "StatelessWeb/AdoptedWeb services must have routing; Stateful services must not have routing" }
+  )
+  .superRefine((data, ctx) => {
+    refineAddonsBlock(data.addons, ctx, productionAddonRegistry);
+  });
 
 // =====================
 // Vault Section Schema (composed from canonical sub-schemas)

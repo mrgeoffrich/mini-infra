@@ -15,6 +15,12 @@ import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition
 import { computeDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 import { decryptInputValues } from './stack-input-values-service';
+import {
+  expandAddons,
+  productionAddonRegistry,
+  type AddonRegistry,
+  type ExpansionProgress,
+} from '../stack-addons';
 
 /**
  * Loose shape of a Prisma stack record extended with optional relations.
@@ -261,10 +267,35 @@ export function buildStackTemplateContext(
   );
 }
 
+export interface ResolveServiceConfigsOptions {
+  /**
+   * Override the addon registry — tests use this to inject a registry
+   * pre-populated with the no-op test addon. Defaults to
+   * `productionAddonRegistry`, which is empty at Phase 1.
+   */
+  addonRegistry?: AddonRegistry;
+  /** Per-(service, addon) progress callback; see `ExpansionProgress`. */
+  expansionProgress?: ExpansionProgress;
+  /** Pool-instance id when this expansion is for a single pool spawn. */
+  instance?: { instanceId: string };
+}
+
 /**
- * Resolve config files and compute definition hashes for all services in a stack.
+ * Resolve config files, run the Service Addons render pass, and compute
+ * definition hashes for every rendered service in a stack.
+ *
+ * The addon expansion runs **before** template substitution and hashing so
+ * that:
+ *   - synthetic sidecars produced by addons flow through the same
+ *     `{{params.X}}` / `{{volumes.Y}}` resolution as authored services;
+ *   - the hash of the *authored* service includes the `addons:` block per
+ *     §7 of the Service Addons plan (mint-once authkeys never leak in).
+ *
+ * With the production registry empty (Phase 1), the expansion is a
+ * pass-through for every existing stack — output equals input modulo the
+ * rendered services Map's iteration order.
  */
-export function resolveServiceConfigs(
+export async function resolveServiceConfigs(
   services: Array<{
     serviceName: string;
     serviceType: string;
@@ -282,30 +313,82 @@ export function resolveServiceConfigs(
     vaultAppRoleRef?: string | null;
     natsCredentialId?: string | null;
     natsCredentialRef?: string | null;
+    addons?: unknown;
   }>,
-  templateContext: ReturnType<typeof buildTemplateContext>
-): {
+  templateContext: ReturnType<typeof buildTemplateContext>,
+  options: ResolveServiceConfigsOptions = {},
+): Promise<{
   resolvedConfigsMap: Map<string, StackConfigFile[]>;
   resolvedDefinitions: Map<string, StackServiceDefinition>;
   serviceHashes: Map<string, string>;
-} {
+}> {
   const resolvedConfigsMap = new Map<string, StackConfigFile[]>();
   const resolvedDefinitions = new Map<string, StackServiceDefinition>();
   const serviceHashes = new Map<string, string>();
 
+  // Step 1 — convert each Prisma row into the portable definition shape
+  // (with the optional addons block carried through). Configs files are
+  // tracked in parallel so synthetic sidecars added by expandAddons can
+  // pick up an empty bucket without disturbing authored ones.
+  const authoredDefs: StackServiceDefinition[] = [];
   for (const svc of services) {
-    const resolvedConfigs = resolveStackConfigFiles(
-      (svc.configFiles as unknown as StackConfigFile[]) ?? [],
-      templateContext
-    );
-    resolvedConfigsMap.set(svc.serviceName, resolvedConfigs);
-
     const def = toServiceDefinition(svc);
-    const resolvedDef = resolveServiceDefinition(def, templateContext);
-    resolvedDefinitions.set(svc.serviceName, resolvedDef);
+    if (svc.addons && typeof svc.addons === 'object') {
+      def.addons = svc.addons as Record<string, unknown>;
+    }
+    authoredDefs.push(def);
+    resolvedConfigsMap.set(
+      svc.serviceName,
+      resolveStackConfigFiles(
+        (svc.configFiles as unknown as StackConfigFile[]) ?? [],
+        templateContext,
+      ),
+    );
+  }
 
-    // Hash the resolved definition so parameter value changes trigger recreates
-    serviceHashes.set(svc.serviceName, computeDefinitionHash(resolvedDef, resolvedConfigs));
+  // Step 2 — addon expansion. With the production registry empty (Phase 1),
+  // this is a pass-through that just strips the (also-absent) `addons:`
+  // field from each output service. Tests opt-in by passing a populated
+  // registry via `options.addonRegistry`.
+  const renderedDefs = await expandAddons(
+    authoredDefs,
+    {
+      registry: options.addonRegistry ?? productionAddonRegistry,
+      stack: {
+        id: templateContext.stack.id ?? '',
+        name: templateContext.stack.name,
+      },
+      environment: templateContext.environment
+        ? {
+            id: templateContext.environment.id,
+            name: templateContext.environment.name,
+            networkType: templateContext.environment.networkType,
+          }
+        : { id: '', name: '', networkType: 'local' },
+      instance: options.instance,
+    },
+    options.expansionProgress,
+  );
+
+  // Step 3 — template-resolve and hash each rendered service. Synthetic
+  // sidecars share the per-stack template context with the authored ones
+  // they wrap.
+  for (const def of renderedDefs) {
+    const resolvedConfigs =
+      resolvedConfigsMap.get(def.serviceName) ??
+      resolveStackConfigFiles(def.configFiles ?? [], templateContext);
+    if (!resolvedConfigsMap.has(def.serviceName)) {
+      resolvedConfigsMap.set(def.serviceName, resolvedConfigs);
+    }
+    const resolvedDef = resolveServiceDefinition(def, templateContext);
+    resolvedDefinitions.set(def.serviceName, resolvedDef);
+    // Hash the resolved definition so parameter value changes trigger
+    // recreates. The authored `addons:` block is part of the canonical
+    // form (definition-hash.ts) so addon-config changes also recreate.
+    serviceHashes.set(
+      def.serviceName,
+      computeDefinitionHash(resolvedDef, resolvedConfigs),
+    );
   }
 
   return { resolvedConfigsMap, resolvedDefinitions, serviceHashes };

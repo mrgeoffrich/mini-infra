@@ -52,7 +52,7 @@ export class StackPlanComputer {
     );
     const templateContext = buildStackTemplateContext(stack, params);
 
-    const { resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
+    const { resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
 
     const docker = this.dockerExecutor.getDockerClient();
     const rawContainers = await docker.listContainers({

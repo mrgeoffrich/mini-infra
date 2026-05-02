@@ -60,6 +60,12 @@ export function computeDefinitionHash(
       configFiles: sortedConfigFiles,
       initCommands: sortedInitCommands,
       routing: service.routing ?? null,
+      // Service Addons §7: hash the *authored* `addons:` block, not the
+      // rendered sidecars. Rendered (synthetic) services are hashed
+      // independently by the reconciler; including the authored block here
+      // means changing addon-config triggers a recreate of the target while
+      // mint-on-render values (authkeys, secrets) never enter this hash.
+      addons: service.addons ?? null,
     };
   }
 

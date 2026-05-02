@@ -136,7 +136,7 @@ export class StackReconciler {
 
       // Build maps for service definitions, hashes, and resolved configs
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
+      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
 
       // 5a-i. Reconcile infra resource outputs (creates Docker networks + InfraResource records)
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
@@ -481,7 +481,7 @@ export class StackReconciler {
       );
       const templateContext = buildStackTemplateContext(stack, params);
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = resolveServiceConfigs(stack.services, templateContext);
+      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
 
       // Reconcile infra resource outputs and inputs
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
@@ -819,7 +819,7 @@ export class StackReconciler {
       (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
     );
     const templateContext = buildStackTemplateContext(stack, params);
-    const { resolvedDefinitions } = resolveServiceConfigs(stack.services, templateContext);
+    const { resolvedDefinitions } = await resolveServiceConfigs(stack.services, templateContext);
 
     const serviceImageMap = new Map<string, string>();
     for (const [serviceName, def] of resolvedDefinitions.entries()) {

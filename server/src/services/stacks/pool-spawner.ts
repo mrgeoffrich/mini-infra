@@ -112,7 +112,7 @@ export async function spawnPoolInstance(
     (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {},
   );
   const templateContext = buildStackTemplateContext(stack, params);
-  const { resolvedDefinitions } = resolveServiceConfigs(stack.services, templateContext);
+  const { resolvedDefinitions } = await resolveServiceConfigs(stack.services, templateContext);
   const resolvedDef = resolvedDefinitions.get(ctx.serviceName);
   if (!resolvedDef) {
     return { success: false, error: 'Pool service missing from resolved definitions' };
