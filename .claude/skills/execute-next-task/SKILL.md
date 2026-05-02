@@ -1,6 +1,6 @@
 ---
 name: execute-next-task
-description: Execution agent. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `pnpm install`, kicks off `pnpm worktree-env start` in the background to warm the dev env, then executes the work end-to-end — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions ending in In Review with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations from the plan). **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
+description: Execution agent. Assumes you start at the main checkout root on `main` with a clean tree. Picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), reads the ticket (which was pre-populated by `plan-to-linear` with Goal/Deliverables/Done-when, per-component CLAUDE.md and ARCHITECTURE.md pointers, and phase-specific smoke tests), runs `git pull --ff-only origin main`, creates a fresh worktree at `.claude/worktrees/alt-NN` on branch `claude/alt-NN`, runs `pnpm install`, kicks off `pnpm worktree-env start --description "..."` in the background to warm the dev env, then executes the work end-to-end inside the new worktree — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes ALT-NN`, and Linear state transitions ending in In Review with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations from the plan). On the success path it then **cleans up the worktree** (`pnpm worktree-env delete <slug>` + `git worktree remove`) so the VM/distro slot is freed; on any failure the worktree is left alive for investigation. **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next in linear", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", or any equivalent request to advance through a Linear-tracked migration. Do NOT trigger for one-off non-Linear tasks or for "what should I work on?" without an obvious Linear context.
 ---
 
 # Execute Next Task
@@ -72,7 +72,7 @@ The Linear ticket is your contract. Read it end to end and treat it as authorita
    Extract the **relative path** in all cases. If the project description has none of these, **stop** with a clear "no `Plan:` line in project description" message.
 
    Confirm the path resolves to the same plan doc the ticket cites in its **Source** section. If they disagree, **stop** — that's a corruption signal.
-3. **Read the plan doc's matching `### Phase N` section.** The ticket has the same content but the plan doc is the source of truth — if they've drifted, side with the doc and capture the drift in your handoff comment (Phase 10).
+3. **Read the plan doc's matching `### Phase N` section.** The ticket has the same content but the plan doc is the source of truth — if they've drifted, side with the doc and capture the drift in your handoff comment (Phase 11).
 4. **Read every doc the ticket lists under "Relevant docs."** Don't skim — these were chosen because they're the conventions you must follow. The ticket points at them so you don't have to guess what's relevant.
 5. **Read prior art** — `git log --oneline -20 main` plus any commits matching the project's area tag from the ticket. Shipped phases tell you the commit subject style and the rough size of a phase PR.
 
@@ -80,29 +80,60 @@ If the ticket is missing the Goal / Deliverables / Done when sections, or the pr
 
 ---
 
-## Phase 4 — Pre-flight checks
+## Phase 4 — Pre-flight on main
+
+The skill assumes you start at the **main checkout root**, on `main`, with a clean tree. The first job is to confirm that and pull the latest.
 
 ```bash
-git status
-git rev-parse --abbrev-ref HEAD
 pwd
+git rev-parse --abbrev-ref HEAD
+git status
 ```
 
 Required state:
 
-- **Clean working tree** — no uncommitted changes.
-- **A feature branch** — not `main`.
-- **You're in a worktree path** under `.claude/worktrees/` (or wherever the repo's worktrees live for this user). `pwd` should not be the main checkout.
+- **`pwd` is the repo root**, not under `.claude/worktrees/`. If you're already in a worktree, you don't need this skill — exit to the root and re-run.
+- **Branch is the repo's default** (usually `main`; confirm with `git symbolic-ref refs/remotes/origin/HEAD --short` if you need to be sure).
+- **Working tree is clean** — no uncommitted changes.
 
-If any of these fail, **stop with a clear message**. Do not auto-stash, auto-create a branch, or auto-checkout. Worktree lifecycle is the user's responsibility — see root `CLAUDE.md` `pnpm worktree-env` workflow.
+If any of these fail, **stop with a clear message**. Don't auto-stash, auto-checkout, or guess.
+
+Then update main:
+
+```bash
+git pull --ff-only origin main
+```
+
+Use `--ff-only` so a stale local main with non-pushed commits surfaces as an error instead of being merged silently. If it fails, stop and tell the user.
 
 ---
 
-## Phase 5 — Set up the environment (in parallel with starting work)
+## Phase 5 — Create the worktree
+
+Derive the worktree slug from the picked Linear issue ID:
+
+- **Slug**: `alt-<NN>` (lowercase). For `ALT-29`, slug is `alt-29`.
+- **Worktree path**: `.claude/worktrees/<slug>` — relative to the repo root. (The repo's existing convention puts worktrees here; root `CLAUDE.md` walks through the layout.)
+- **Branch**: `claude/<slug>` — namespaces it as agent-created, matching the other `claude/...` branches.
+
+Create the worktree off the freshly-pulled main:
+
+```bash
+git worktree add .claude/worktrees/<slug> -b claude/<slug>
+cd .claude/worktrees/<slug>
+```
+
+`cd` into it for the rest of the skill. Every later step runs from this directory.
+
+If the directory or branch already exists, **stop and ask** — don't auto-resume someone else's worktree, and don't reuse a stale branch name silently. The user's `pnpm worktree-env delete` (root `CLAUDE.md`) is the right tool to clean up first.
+
+---
+
+## Phase 6 — Set up the environment (in parallel with starting work)
 
 This phase runs **before** marking In Progress so the env is warming while you read more code and start writing.
 
-### 5.1 Install dependencies
+### 6.1 Install dependencies
 
 Fresh worktrees do not share `node_modules` with the main checkout (per root `CLAUDE.md`). Always run:
 
@@ -110,23 +141,23 @@ Fresh worktrees do not share `node_modules` with the main checkout (per root `CL
 pnpm install
 ```
 
-This is fast (a no-op if already installed) and required before any other `pnpm` command including `pnpm worktree-env`. Run it synchronously — you need it to finish before anything else.
+This is required before any other `pnpm` command including `pnpm worktree-env` (which runs through `tsx`, which lives in `node_modules`). Run it synchronously — you need it to finish before anything else.
 
-### 5.2 Spin up the dev environment in the background
+### 6.2 Spin up the dev environment in the background
 
-`pnpm worktree-env start` takes a few minutes the first time. Kick it off in the background **now** so it's ready when smoke tests need it later. Use the `Bash` tool's `run_in_background: true` and capture the shell id:
+`pnpm worktree-env start` takes a few minutes the first time, building the per-worktree VM/distro. Kick it off in the background **now** so it's ready when smoke tests need it later. Use the `Bash` tool's `run_in_background: true` and capture the shell id:
 
 ```bash
-pnpm worktree-env start
+pnpm worktree-env start --description "<short summary, ≤10 words>"
 ```
 
-Don't wait for it. Move on to the work; you'll check the status before running smoke tests in Phase 8. If `environment-details.xml` already exists at the worktree root and the env is up, the command is idempotent — still safe.
+Derive the description from the Linear issue title (truncate to ≤10 words; the CLI requires it on first run). Don't wait for it. Move on to the work; you'll check the status before running smoke tests in Phase 9. The command is idempotent — safe to re-run.
 
-If the phase is **docs-only** (e.g. only touches `docs/`, README, or a SKILL.md), skip 5.2 — no smoke tests will need a running env.
+If the phase is **docs-only** (e.g. only touches `docs/`, a README, or a SKILL.md), skip 6.2 — no smoke tests will need a running env.
 
 ---
 
-## Phase 6 — Mark the issue In Progress
+## Phase 7 — Mark the issue In Progress
 
 ```
 save_issue(id: <issue-id>, state: "In Progress")
@@ -137,7 +168,7 @@ Fetch the team's issue statuses first if you don't already know the canonical na
 
 ---
 
-## Phase 7 — Execute
+## Phase 8 — Execute
 
 Before writing any file, **state in one or two sentences** what you're about to do — file pointers and the rough order. This is for visibility, not approval; don't wait for a response. If the user wants to redirect they'll interrupt.
 
@@ -159,11 +190,11 @@ Refer back to the ticket's **Deliverables** list as you go — those are the thi
 
 ---
 
-## Phase 8 — Verify with smoke tests
+## Phase 9 — Verify with smoke tests
 
 The ticket's **Smoke tests** section tells you specifically what to run for this phase. Use it as the spec; the layered checklist below is the default if the ticket says "standard smoke" or doesn't specify.
 
-### 8.1 Build / lint / unit tests (always)
+### 9.1 Build / lint / unit tests (always)
 
 ```bash
 pnpm build:lib                              # if lib/ changed (always required if so)
@@ -187,9 +218,9 @@ For sidecars that use npm rather than pnpm (`update-sidecar/`, `agent-sidecar/`)
 cd update-sidecar && npm install && npm run build && npm test && cd ..
 ```
 
-### 8.2 Live smoke against the dev env
+### 9.2 Live smoke against the dev env
 
-Once 8.1 passes, **wait for the backgrounded `pnpm worktree-env start` to finish** (or confirm `environment-details.xml` is current and the env is healthy). Then run the phase-specific smoke from the ticket:
+Once 9.1 passes, **wait for the backgrounded `pnpm worktree-env start` to finish** (or confirm `environment-details.xml` is current and the env is healthy). Then run the phase-specific smoke from the ticket:
 
 - **UI changes** → invoke the `test-dev` skill on the affected user flow. Don't re-implement what `test-dev` does.
 - **Server route changes** → hit the affected endpoint(s) via `curl` against the URL in `environment-details.xml`, or `diagnose-dev` if a runtime check is needed.
@@ -198,13 +229,13 @@ Once 8.1 passes, **wait for the backgrounded `pnpm worktree-env start` to finish
 - **NATS-subject changes** → publish a test message via the bus and verify the consumer side picks it up. The smoke ping (`mini-infra.system.ping`) is a good baseline that the bus is alive.
 - **Docs-only changes** → skip live smoke; build + lint is enough.
 
-### 8.3 Report
+### 9.3 Report
 
 If everything passes, move on. If anything fails, **fix it before continuing** — don't paper over with `--no-verify`, `--skip-tests`, or weakened assertions. If a fix isn't obvious, stop and surface the failure with full output.
 
 ---
 
-## Phase 9 — Commit and open the PR
+## Phase 10 — Commit and open the PR
 
 Match the most recent shipped phase's commit format from the same project. Typical:
 
@@ -232,7 +263,7 @@ Push the branch, then `gh pr create`. PR title matches the commit title. PR body
 
 ---
 
-## Phase 10 — Mark the issue In Review and leave a structured handoff comment
+## Phase 11 — Mark the issue In Review and leave a structured handoff comment
 
 Move the issue to `In Review` (canonical state name from Phase 1's status fetch) and post a single structured comment summarising the run. The comment is the handoff to the human reviewer — and to the future re-integration agent that will fold drift back into the plan doc — so it captures everything the PR diff doesn't show. **The plan doc itself is read-only for this skill** (see hard rules); drift goes here.
 
@@ -265,12 +296,47 @@ The point of this comment is that the next person (human or agent) opens the Lin
 
 ---
 
+## Phase 12 — Clean up the worktree (success path only)
+
+**Only run this if every previous phase succeeded** — build/lint/unit passed, smoke passed, the PR is open, the issue is In Review, the handoff comment posted. If anything failed or stopped earlier, **skip this phase entirely** and leave the worktree alive so the user can investigate.
+
+The worktree's purpose is to host the build + smoke for this phase. Once the PR is open and in review, the work that needs the dev env is over — review happens in GitHub on the diff, not in the worktree. So we tear it down to free the VM/distro slot and keep `pnpm worktree-env list` tidy.
+
+```bash
+cd <repo-root>                                      # back out of the worktree
+pnpm worktree-env delete <slug> --force             # wipes VM/distro + registry entry
+git worktree remove .claude/worktrees/<slug>        # removes the directory + git's tracking
+```
+
+`<repo-root>` is the directory you started from in Phase 4. `<slug>` is the `alt-<NN>` from Phase 5. `--force` skips the interactive confirmation. The branch on the remote stays untouched — that's where the PR points; it must remain.
+
+If review feedback arrives later and you need to address it, recreate the worktree from the same branch:
+
+```bash
+git fetch origin claude/<slug>
+git worktree add .claude/worktrees/<slug> claude/<slug>
+cd .claude/worktrees/<slug>
+pnpm install
+pnpm worktree-env start
+```
+
+Append a final line to the run report:
+
+```
+✓ Cleaned up worktree .claude/worktrees/<slug> and the dev-env VM.
+```
+
+**Macos users** who run the bulk `pnpm worktree-env cleanup` command (or installed the hourly launchd agent) can rely on that to clean merged-PR worktrees on a schedule and skip Phase 12 by interrupting the skill before it runs. For Windows / WSL2 users without an equivalent agent, this phase is the cleanup mechanism.
+
+---
+
 ## Hard rules
 
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
 - **Never produce an ExitPlanMode block.** This is an execution agent. Planning happened in `plan-to-linear` when the ticket was created.
-- **Never edit the plan doc.** The plan doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the plan, capture the drift in the handoff comment (Phase 10 — Deviations from the plan section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that.
+- **Never run Phase 12 (cleanup) on a failure path.** If smoke failed, the PR didn't open, the In Review transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run.
+- **Never edit the plan doc.** The plan doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the plan, capture the drift in the handoff comment (Phase 11 — Deviations from the plan section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that.
 - **Never merge PRs** — even if checks pass and the PR looks great. Merging is a human decision.
 - **Never create new Linear issues** or split phases on the fly. If scope is too big for one phase, stop and report — splitting is a planning decision, not an execution decision.
 - **Never override plan-doc conventions.** If the plan section says "Defer X to follow-up", that X is deferred. Don't quietly include it because it seemed easy.
@@ -295,12 +361,14 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "ALT-29"
 >
-> *Skill fetches ALT-29 + parent project. Project description: `Plan: docs/planning/not-shipped/internal-nats-messaging-plan.md`. Skill reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). Reads each linked CLAUDE.md / ARCHITECTURE.md. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
+> *Skill fetches ALT-29 + parent project. Project description: `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Skill reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). Reads each linked CLAUDE.md / ARCHITECTURE.md. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
 >
-> *Skill runs pre-flight (clean tree, feature branch, in worktree). Runs `pnpm install` synchronously, then kicks off `pnpm worktree-env start` in the background. Marks ALT-29 In Progress, comments worktree path + branch.*
+> *Pre-flight: pwd is the repo root, branch is main, tree clean. Runs `git pull --ff-only origin main`. Creates worktree: `git worktree add .claude/worktrees/alt-29 -b claude/alt-29`, then `cd` into it. Runs `pnpm install` synchronously, then kicks off `pnpm worktree-env start --description "Phase 4 — pg-az-backup progress + result events"` in the background. Marks ALT-29 In Progress, comments worktree path + branch.*
 >
 > Skill: "Implementing Phase 4 — adding `mini-infra.backup.run` request handler and JetStream `BackupHistory` stream. Touching `server/src/services/backup/backup-executor.ts` first, then `server/src/services/nats/payload-schemas.ts`, then the boot sequence."
 >
 > *Implements. Runs build/lint/unit tests. Backgrounded env is up by now — runs the ticket's smoke test (publish a test backup-run request, confirm the consumer side fires).*
 >
 > *Commits with `feat(nats): pg-az-backup progress + result events (Phase 4, ALT-29)`. Opens PR with `Closes ALT-29` in the body. Marks ALT-29 In Review. Posts the handoff comment: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording — the plan doc itself is left untouched, the re-integration agent will fold this back later. Reports the PR URL.*
+>
+> *Phase 12: every prior phase succeeded, so the skill `cd`s back to the repo root, runs `pnpm worktree-env delete alt-29 --force`, then `git worktree remove .claude/worktrees/alt-29`. Reports cleanup done. The `claude/alt-29` branch stays on the remote (the PR points at it).*
