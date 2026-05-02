@@ -1,13 +1,13 @@
 ---
 name: design-task
-description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, and a rough implementation outline, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Does NOT create a worktree, does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
+description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, and a rough implementation outline, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). Does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence; the worktree can be torn down later via `finish-worktree` when the design has shipped. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
 ---
 
 # Design Task
 
 You're a **design-exploration agent**. The Linear ticket describes *what* needs to happen (Goal, Deliverables, Done when). Your job is to propose *how* — by surveying relevant design patterns, finding what's already in the Mini Infra codebase that fits, writing up **two distinct design options**, and **committing to a recommendation**.
 
-This skill is the planning step that sits **between** ticket creation (`task-to-linear` / `plan-to-linear`) and execution (`execute-next-task`). It produces a design doc, posts a Linear comment pointing at it, and marks the design ticket **Done** so the impl ticket unblocks immediately. The recommendation in the doc is the call — there's no "user picks an option" step. If the user disagrees, they can edit the doc and re-comment; the default flow assumes the recommendation stands. **The skill creates no worktree and opens no PR** — the user reviews the doc and commits/PRs it at their own pace.
+This skill is the planning step that sits **between** ticket creation (`task-to-linear` / `plan-to-linear`) and execution (`execute-next-task`). It produces a design doc, posts a Linear comment pointing at it, and marks the design ticket **Done** so the impl ticket unblocks immediately. The recommendation in the doc is the call — there's no "user picks an option" step. If the user disagrees, they can edit the doc and re-comment; the default flow assumes the recommendation stands. **The skill creates a worktree** (via `setup-worktree --no-env`) so the design doc lives on its own branch in its own checkout — but it **opens no PR** and **does not commit** the doc. The user reviews and commits/PRs at their own pace, then runs `/finish-worktree alt-NN` to free the slot once the design has shipped.
 
 The Done-when in the ticket body (often "Figma frames signed off") is informational. The skill considers the design doc + recommendation to be the actual deliverable, and marks the Linear issue Done on that basis. If the team starts wanting Figma frames again, that's a future change to this skill.
 
@@ -261,17 +261,21 @@ lib/types/<thing>.ts                           (changed)    — <what>
 
 ### 5.4 Where to write it
 
-The user's repo policy: if you're on `main`, switch to a branch before writing. If you're already on a non-main branch (including a worktree branch like `claude/alt-NN`), just write the file on the current branch.
+Delegate worktree creation to the **`setup-worktree`** skill with `--no-env` (design is markdown-only, no dev env required):
 
-**Do not commit** the file automatically. The point of the design doc is to be reviewed and iterated on — committing it locks it in before that happens. Leave the file unstaged; the user will commit (or ask you to) after they've read it.
-
-If the user is on `main`, before writing the file:
-
-```bash
-git checkout -b design/alt-NN-<slug>
+```
+Skill(skill: "setup-worktree", args: "<ALT-NN> --no-env")
 ```
 
-Use `design/` as the branch prefix (parallel to `claude/` for execution branches) so it's obvious from the branch name what kind of work is in flight.
+When the skill returns, you're `cd`ed into `.claude/worktrees/alt-<NN>` on branch `claude/alt-<NN>`, with `pnpm install` complete. Write the design doc inside that worktree at `docs/designs/<filename>.md`.
+
+If `setup-worktree` stops because the worktree or branch already exists, that's almost always a previous design or execution session. Surface the collision and ask the user how to proceed (resume the existing worktree if the design was in flight, or run `/finish-worktree alt-<NN>` to clear the stale one). Don't auto-recover.
+
+If `setup-worktree` stops for any other reason (dirty tree, non-default branch on the calling shell, `pnpm install` failure), surface the failure and stop — don't fall back to writing the doc on the current branch.
+
+**Do not commit** the file automatically. The design doc is meant to be reviewed and iterated on — committing locks it in before that happens. Leave the file unstaged; the user commits (or asks you to) after reading.
+
+The branch is `claude/alt-<NN>` (matching execute-next-task's convention), not the legacy `design/...` shape — using one prefix for both flows simplifies cleanup via `/finish-worktree`.
 
 ---
 
@@ -350,7 +354,7 @@ The Done-when on the ticket body (often "Figma frames signed off") is **informat
 End the run with a tight summary so the user knows what landed:
 
 ```
-✓ Design doc written: docs/designs/<filename>.md
+✓ Design doc written: docs/designs/<filename>.md (in worktree .claude/worktrees/alt-<NN>, branch claude/alt-<NN>, unstaged)
 ✓ Linear comment posted on design ticket <ALT-NN>
 ✓ "Design ready" comment posted on impl ticket <ALT-MM>
 ✓ <ALT-NN> marked Done (impl ticket <ALT-MM> unblocked)
@@ -361,6 +365,7 @@ Two options:
 
 Picked: Option <X> — <one-line reason>.
 
+Next: review the doc, commit + PR + merge it on your cadence, then run /finish-worktree alt-<NN> to free the slot.
 If you disagree with the pick, edit the doc and re-comment / reopen the ticket.
 ```
 
@@ -373,9 +378,9 @@ That's the whole skill. Keep the output short — the design doc is the substant
 ## Hard rules
 
 - **Only one Linear state transition per run, and only at the end.** The skill calls `save_issue` exactly once, in Phase 7, to set the issue to `Done`. Never set `In Progress`, never re-transition during the run, never call `save_issue` for any other field.
-- **Never create a worktree.** This is a planning step. The user runs `execute-next-task` later, which handles worktree creation. If the design surfaces something the executor needs to know, capture it in the design doc — not in environment setup.
+- **Never create a worktree manually.** Worktree creation is delegated to `setup-worktree --no-env` (Phase 5.4). Don't run `git worktree add`, `git checkout -b`, or any other branch/worktree operation directly — the delegated skill owns the convention.
 - **Never auto-commit the design doc.** The user reviews + commits + PRs at their own pace; pre-committing locks the doc in before they've seen it. Stage nothing.
-- **Never `git checkout main` or modify other branches.** The only branch operation allowed is `git checkout -b design/alt-NN-<slug>` from a clean main, and only when on main.
+- **Never open a PR for the design doc.** The doc is for review and iteration; the user opens the PR (or asks you to) once the design has settled. The worktree is torn down separately via `/finish-worktree alt-<NN>` after the design has shipped.
 - **Never collapse two options into one.** If you genuinely can't think of two distinct approaches, surface that and ask the user whether to write one with a "rejected alternatives" appendix instead. Forcing a weak second option produces noise.
 - **Never punt the recommendation back to the user.** The §Recommendation section must commit to one option. "No strong preference" / "either works" / "user picks" are invalid outputs — pick one and name what would flip the call. The skill marks the issue Done on this basis; it cannot do that if it hasn't picked.
 - **Never skip the prior-art search (Phase 4.3).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
@@ -392,9 +397,9 @@ That's the whole skill. Keep the output short — the design doc is the substant
 >
 > *Phase 4: identifies the dominant pattern axis as "where does the override live and how does it propagate to apply-time" — i.e. a state-placement + propagation question. Surveys two candidate shapes: (i) override stored on the StackService row, propagated through the existing apply pipeline; (ii) override stored on a new `EgressOverride` table keyed by service, looked up at apply-time. Searches the codebase for similar override patterns: finds `server/src/services/networking/haproxy-frontend-overrides.ts` (per-frontend overrides on the frontend row, similar to option (i)) and `server/src/services/registry/registry-credential-resolver.ts` (separate-table indirection lookup, similar to option (ii)). Cites both.*
 >
-> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md`. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons / Prior art. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it).*
+> *Phase 5.4: invokes `Skill(setup-worktree, args: "ALT-38 --no-env")`. The setup-worktree skill pre-flights main, pulls, creates the worktree at `.claude/worktrees/alt-38` on `claude/alt-38`, runs `pnpm install`, and skips the dev-env spin-up. Returns control with cwd = the worktree.*
 >
-> *Skill is on the goofy-thompson worktree branch (not main), so no branch switch needed. File written, not staged.*
+> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md` inside the worktree. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons / Prior art. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it). File left unstaged.*
 >
 > *Phase 6.1: posts a comment on ALT-38 (the design ticket): "Designs drafted: …relative-path… A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Marking this design ticket Done — `/execute-next-task ALT-39` (the impl ticket) is unblocked."*
 >

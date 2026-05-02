@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `Backlog` (designer-owned, kept out of the execute-next-task queue) and wired up as a `blocked-by` edge on the impl ticket — plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
+description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `Backlog` (designer-owned, kept out of the execute-next-task queue), tagged with the team's `design` label so designers can filter their queue with one chip, and wired up to the impl ticket via two relation edges — a `blocked-by` (the hard ordering constraint the picker reads) and a `related` (the soft "this design is for that work" link that stays visible in both issues' side panels even after the design has shipped). Plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
 ---
 
 # Plan to Linear
@@ -58,9 +58,12 @@ Linear MCP tools are deferred. Load them in bulk before doing anything else:
 ToolSearch(query: "linear", max_results: 30)
 ```
 
-You need at minimum: `list_issues`, `get_issue`, `list_projects`, `get_project`, `save_project`, `save_issue`, `list_issue_statuses`. If any are missing, stop and tell the user.
+You need at minimum: `list_issues`, `get_issue`, `list_projects`, `get_project`, `save_project`, `save_issue`, `list_issue_statuses`, `list_issue_labels`. If any are missing, stop and tell the user.
 
-Also fetch the team's issue statuses once (`list_issue_statuses` for Altitude Devops) — you'll need the canonical names for `Todo` and `Backlog`. Different teams capitalise / name them differently.
+Also fetch, once each:
+
+- **Team issue statuses** via `list_issue_statuses` for Altitude Devops — you'll need the canonical names for `Todo` and `Backlog`. Different teams capitalise / name them differently.
+- **The `design` label** via `list_issue_labels` for Altitude Devops — used to tag every paired design ticket created in Phase 8.1 so designers can filter their queue with one label. If a label literally named `design` (case-insensitive) doesn't exist on the team, **create it** via `create_issue_label` with name `design` and a sensible colour (use the same blue/purple family Linear's UI suggests; if unsure, omit `color` and let Linear pick). Capture the label's ID — every design-ticket `save_issue` call in Phase 8.1 (and Phase 8 update-mode reconciliation when a new design ticket is born) will pass `labels: [<design-label-id>]`.
 
 ---
 
@@ -559,6 +562,8 @@ After the impl ticket is created, scan its UI changes block for items tagged `[d
 
 **State:** `Backlog`. Designers own these tickets; `execute-next-task` only picks from `Todo`, so `Backlog` keeps the design ticket out of the execution queue while letting designers transition through their own states normally.
 
+**Labels:** include the `design` label resolved in Phase 1 — pass `labels: [<design-label-id>]` on the `save_issue` call. Every paired design ticket carries this label so designers can filter their queue with one chip across all projects (and the user can build a single saved view for "what's on my plate"). The `execute-next-task` picker doesn't filter on this label — it filters on state — so the label is purely for designer ergonomics.
+
 **Description body:**
 
 ```markdown
@@ -632,37 +637,47 @@ Capture, for the Phase 11 report:
 
 ---
 
-## Phase 9 — Set blocking relationships
+## Phase 9 — Set blocking relationships and design↔impl relations
 
-Use the dependency graph you parsed in Phase 2, plus the design pairings from Phase 8.1, to compute the **desired** set of `blocked-by` edges for each impl ticket — the union of:
+Use the dependency graph you parsed in Phase 2, plus the design pairings from Phase 8.1, to compute the **desired** set of relationship edges. There are two relation types in play, and they answer different questions:
+
+- **`blocked-by`** — hard ordering constraint. The impl ticket cannot start until its blockers are Done. This is what the `execute-next-task` picker reads.
+- **`related`** (Linear's `relatedTo`) — soft "these belong together" link. Doesn't gate work; just makes the connection visible in both issues' side panels and queryable as a relation. Designers viewing a design ticket immediately see *which impl ticket consumes this design*, even after the design has shipped (and the blocked-by edge has resolved).
+
+Compute the **desired blocked-by set** for each impl ticket as the union of:
 
 - **Inter-phase edges from §8.** If §8 has `[blocks-by: N, M]` brackets, that's the source of truth — each phase wants a `blocked-by` edge to each listed phase. Else if prose hints exist, apply them ("Phase 1 blocks all later phases", "Phase N also blocks on Phase M"). Else default to **strictly sequential** — each phase from 2 onward is `blocked-by` the previous.
 - **Design pairing edge from Phase 8.1.** If the phase has a paired design ticket, the impl ticket also gets a `blocked-by` edge to that design ticket's ALT-NN.
 
+Compute the **desired related set** for each design↔impl pair created in Phase 8.1: a single `related` edge between the design ticket and the impl ticket. Linear treats `related` as symmetric, so adding it once on either side surfaces it on both. Add it on the design ticket pointing at the impl ticket — that mirrors the doc-style "this design is *for* that work" reading.
+
 Optional/deferred phases still get blocked-by relationships — being in `Backlog` doesn't mean unblocked. The blocker just means "even when promoted to Todo, wait for the predecessor".
 
-Design tickets themselves have **no `blocked-by` edges** — designers can start the moment the ticket is filed.
+Design tickets themselves have **no `blocked-by` edges** — designers can start the moment the ticket is filed. They only carry the `related` edge to their impl ticket.
 
 ### Create mode
 
-Add the desired edges in order via the Linear API. There's nothing to compare against — the issues were just created and have no relationships yet. The design→impl pairing edges are added alongside the inter-phase edges in the same pass.
+Add the desired edges in order via the Linear API. There's nothing to compare against — the issues were just created and have no relationships yet. The design→impl `blocked-by` edges and the design↔impl `related` edges are added in the same pass alongside the inter-phase edges.
 
 ### Update mode
 
-Existing edges may not match the desired graph — §8 brackets may have changed since seeding. Compute and apply the delta:
+Existing edges may not match the desired graph — §8 brackets may have changed since seeding. Compute and apply the delta for **both relation types** (`blocked-by` and `related`) independently:
 
-1. **Fetch existing relationships** for each issue in the project (`get_issue` returns relations on most Linear MCP implementations; otherwise use whatever relation-listing tool is loaded).
-2. **Compute the desired edge set** as above (from current §8 / prose / strict-sequential default).
-3. **Apply the delta**:
+1. **Fetch existing relationships** for each issue in the project (`get_issue` returns relations on most Linear MCP implementations; otherwise use whatever relation-listing tool is loaded). Read both relation types — `blocked-by` and `related` — into separate sets.
+2. **Compute the desired edge sets** as above:
+   - desired `blocked-by` set per impl ticket (inter-phase from §8 ∪ design pairing)
+   - desired `related` set per design↔impl pair from Phase 8.1
+3. **Apply the delta** independently per relation type:
    - **Add** edges that are desired but missing.
-   - **Remove** edges that exist but are no longer desired.
+   - **Remove** `blocked-by` edges that exist but are no longer desired (e.g. §8 brackets changed).
+   - For `related` edges: **add** when missing, **never remove**. The `related` link is cheap to keep around even if the impl ticket gets repurposed; deleting it costs context for designers, and Linear's UI lets users manually unrelate if they truly want to.
    - **Leave alone** edges that are correct.
    If the loaded MCP toolkit doesn't expose edge removal, surface the unremoved edges in the Phase 11 report and proceed — the user can clean them up manually rather than having the run fail.
-4. **Cross-project edges** (issues in this project blocked by issues in *other* projects) are out of scope for this skill — leave them untouched even if §8 makes no mention of them. They were added deliberately; we won't second-guess.
+4. **Cross-project edges** (issues in this project blocked by issues in *other* projects) are out of scope for this skill — leave them untouched even if §8 makes no mention of them. They were added deliberately; we won't second-guess. Same rule for cross-project `related` edges — humans add those; the skill doesn't touch them.
 
 For phases newly created during this update run (Phase 8 update-mode tail), apply their desired edges from scratch (same as create mode for those issues).
 
-For design tickets newly created during the Phase 8 update-mode design reconciliation (a phase newly has `[design needed]` items), add the design→impl `blocked-by` edge from scratch. For impl tickets whose paired design ticket was just created, add the new design→impl edge alongside any other edge changes — the impl ticket's `blocked-by` set is recomputed end-to-end (inter-phase from §8 ∪ design pairing), and the delta logic above handles add/remove/leave-alone uniformly.
+For design tickets newly created during the Phase 8 update-mode design reconciliation (a phase newly has `[design needed]` items), add both the design→impl `blocked-by` edge and the design↔impl `related` edge from scratch. For impl tickets whose paired design ticket was just created, the impl ticket's `blocked-by` set is recomputed end-to-end (inter-phase from §8 ∪ design pairing), and the delta logic above handles add/remove/leave-alone uniformly.
 
 ---
 
