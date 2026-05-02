@@ -1,65 +1,74 @@
 ---
-name: task-to-linear
-description: Turns a one-line job description into a single Linear ticket in the shape `execute-next-task` expects. The skill files the issue under a persistent **Maintenance** project (auto-created on first run). Linear is the single source of truth for maintenance tickets — `docs/planning/maintenance.md` is a static stub describing the project, never per-task entries. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to Todo so `execute-next-task` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "task: ...", "queue up a linear todo for ...", or any equivalent ask to scaffold a single one-off Linear issue without a multi-phase plan. Make sure to use it even when the user doesn't say the word "Linear" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-linear`), or when they're asking about an *existing* ticket (use the Linear MCP directly).
+name: task-to-mk
+description: Turns a one-line job description into a single mk ticket in the shape `execute-next-task` expects. The skill files the issue under a persistent **Maintenance** feature (slug `maintenance`, auto-created on first run). mk is the single source of truth for maintenance tickets — `docs/planning/maintenance.md` is a static stub describing the feature, never per-task entries. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to `todo` so `execute-next-task` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "create an mk task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "spin up an mk issue for ...", "make a kanban ticket for ...", "track this", "task: ...", "queue up a linear todo for ...", "queue an mk todo", or any equivalent ask to scaffold a single one-off ticket without a multi-phase plan. Make sure to use it even when the user doesn't say the word "linear" or "mk" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-mk`), or when they're asking about an *existing* ticket (use `mk` directly).
 ---
 
-# Task to Linear
+# Task to mk
 
-You're filing a single one-off ticket against the persistent **Maintenance** project on the Altitude Devops Linear team, in the exact shape that `execute-next-task` expects to consume. Linear is the single source of truth — there is no per-task entry in any plan doc. The "Phase" wording in the issue title is a contract with `execute-next-task` (it matches by `Phase N` prefix), not a semantic claim that one-offs are sequenced — they're independent and never block each other.
+You're filing a single one-off ticket against the persistent **Maintenance** feature in this repo's `mk` (mini-kanban) tracker, in the exact shape that `execute-next-task` expects to consume. mk is the single source of truth — there is no per-task entry in any plan doc. The "Phase" wording in the issue title is a contract with `execute-next-task` (it matches by `Phase N` prefix), not a semantic claim that one-offs are sequenced — they're independent and never block each other.
 
 ## Why this skill exists
 
-The big phased-plan flow (`plan-to-linear` → `execute-next-task`) is great for migrations and multi-phase features. For day-to-day one-offs — "fix the broken tooltip", "add a retry to the cert renewer", "drop the unused `legacy_*` columns" — it's overkill. This skill collapses the planning ceremony into a 30-second conversation: rough description in, runtime questions where there's genuine ambiguity, populated ticket out, ready to be picked up by `execute-next-task` whenever you next run it.
+The big phased-plan flow (`plan-to-mk` → `execute-next-task`) is great for migrations and multi-phase features. For day-to-day one-offs — "fix the broken tooltip", "add a retry to the cert renewer", "drop the unused `legacy_*` columns" — it's overkill. This skill collapses the planning ceremony into a 30-second conversation: rough description in, runtime questions where there's genuine ambiguity, populated ticket out, ready to be picked up by `execute-next-task` whenever you next run it.
 
 ## Conventions
 
-- **Team**: Altitude Devops (hardcoded, same as the other Linear skills).
-- **Project**: `Maintenance` — single, persistent, auto-created on first run.
-- **Project description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the project — `execute-next-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
-- **Phase numbering**: monotonic, scoped to the maintenance project. Read it from Linear (issue titles in the Maintenance project), incrementing the highest existing `Phase N`. The plan doc is *not* consulted for numbering.
-- **Issue title**: `Phase N: <title>` — same pattern `plan-to-linear` writes, so `execute-next-task` matches by phase number.
-- **Issue state**: `Todo` (default — don't gate behind Backlog).
-- **Blocked-by**: never set. One-offs are independent.
+- **Repo**: scoped automatically by `mk` from the current git toplevel. Always `cd` to the repo root before invoking `mk`.
+- **Feature**: `Maintenance` (slug `maintenance`) — single, persistent, auto-created on first run.
+- **Feature description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the feature — `execute-next-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
+- **Phase numbering**: monotonic, scoped to the maintenance feature. Read it from mk (issue titles in the Maintenance feature), incrementing the highest existing `Phase N`. The plan doc is *not* consulted for numbering.
+- **Issue title**: `Phase N: <title>` — same pattern `plan-to-mk` writes, so `execute-next-task` matches by phase number.
+- **Issue state**: `todo` (default — don't gate behind backlog).
+- **Blocks/blocked-by**: never set. One-offs are independent.
 
-If any of these conventions ever stops being true (Maintenance project deleted, plan-doc stub overwritten with phase entries, Altitude Devops renamed), **stop and ask** — don't paper over silently.
-
----
-
-## Phase 1 — Load the Linear MCP tools
-
-The Linear MCP tools are deferred. Load them in bulk before doing anything else:
-
-```
-ToolSearch(query: "linear", max_results: 30)
-```
-
-Need at minimum: `list_issues`, `list_projects`, `get_project`, `save_project`, `save_issue`, `save_comment`, `list_issue_statuses`, `list_teams`. If any are missing, stop and tell the user — don't fall back.
-
-Fetch the team's issue statuses once (`list_issue_statuses` for Altitude Devops) so you know the canonical name of `Todo` for this team.
+If any of these conventions ever stops being true (Maintenance feature deleted, plan-doc stub overwritten with phase entries, the `mk` binary missing), **stop and ask** — don't paper over silently.
 
 ---
 
-## Phase 2 — Ensure the Maintenance project exists
+## Phase 1 — Confirm `mk` is available
 
-This phase is **idempotent** — on every run, after the first, it's a fast no-op. The skill no longer touches `docs/planning/maintenance.md`; the doc is a static stub describing the project, maintained by humans separately.
+`mk` is a local CLI — no MCP loading needed. Confirm it's installed and the current cwd is a tracked repo:
 
-`list_projects` (filtered to Altitude Devops) and look for one named exactly `Maintenance`.
-
-**If it doesn't exist**, create it via `save_project`. Description must start with the `Plan:` line:
-
+```bash
+mk --help >/dev/null 2>&1 || { echo "mk not installed"; exit 1; }
+mk status -o json
 ```
+
+`mk status` prints the current repo's prefix and quick stats. The prefix should be `MINI` for this repo — if it's something else, surface it; the user may be in the wrong cwd. Outside any git repo, `mk` hard-errors with "not inside a git repository" — `cd` to the repo root before running anything else in this skill.
+
+State names (`todo`, `in_progress`, `in_review`, `done`, `cancelled`, `backlog`, `duplicate`) are fixed by `mk` — no need to fetch a vocabulary.
+
+---
+
+## Phase 2 — Ensure the Maintenance feature exists
+
+This phase is **idempotent** — on every run, after the first, it's a fast no-op. The skill no longer touches `docs/planning/maintenance.md`; the doc is a static stub describing the feature, maintained by humans separately.
+
+```bash
+mk feature show maintenance -o json
+```
+
+**If it doesn't exist** (the call exits non-zero), create it. Build the feature description starting with the `Plan:` line, write it to a temp file, then create:
+
+```bash
+cat <<EOF > /tmp/maintenance-feature.md
 Plan: [docs/planning/maintenance.md](<github-blob-url>)
 
-Catch-all project for one-off maintenance and follow-up tickets filed via the
-`task-to-linear` skill. Tasks are independent — they don't block each other
-and don't have to ship in numerical order.
+Catch-all feature for one-off maintenance and follow-up tickets filed via the
+\`task-to-mk\` skill. Tasks are independent — they don't block each other and
+don't have to ship in numerical order.
+EOF
+
+mk feature add "Maintenance" --slug maintenance \
+  --description-file /tmp/maintenance-feature.md \
+  --user Claude
 ```
 
-Build the GitHub URL from `git remote get-url origin` + `/blob/main/docs/planning/maintenance.md`. Don't use absolute filesystem paths or `./`-prefixed relative paths — they break the link in Linear's UI.
+Build the GitHub URL from `git remote get-url origin` + `/blob/main/docs/planning/maintenance.md`. Don't use absolute filesystem paths or `./`-prefixed relative paths — they break the link in renderers.
 
-Capture the project's ID and URL — you'll need both later.
+Capture the feature slug (`maintenance`) — you'll use it on `mk issue add --feature maintenance` later.
 
-**If it does exist**, fetch its description and verify the `Plan:` line still points at `docs/planning/maintenance.md`. If it's been edited to point somewhere else, **stop and ask** — that's a corruption signal worth surfacing rather than fixing silently.
+**If it does exist**, parse the JSON and verify the `Plan:` line in the description still points at `docs/planning/maintenance.md`. If it's been edited to point somewhere else, **stop and ask** — that's a corruption signal worth surfacing rather than fixing silently.
 
 **Don't scaffold or modify the plan doc.** If `docs/planning/maintenance.md` is missing on disk, that's a separate problem for a human to handle (it's expected to exist as a stub) — the skill doesn't auto-create it.
 
@@ -75,7 +84,7 @@ Pull out (or note as missing):
 2. **Goal** — one sentence. What does success look like?
 3. **Deliverables** — concrete things that change (files, behaviours, UI flows). Often the user implies these by naming components.
 4. **Done-when** — testable outcome. *How will we know it's actually fixed?* This is the most commonly missing piece in casual requests.
-5. **Component scope** — which top-level dirs are touched. Use the same map `plan-to-linear` uses (see Phase 5 below).
+5. **Component scope** — which top-level dirs are touched. Use the same map `plan-to-mk` uses (see Phase 5 below).
 6. **Smoke-test approach** — UI flow via `test-dev`, `curl` against a route, unit-only, or none. Always confirmed in Phase 4.
 7. **Area tag for the eventual commit** — `nats`, `egress`, `monitoring`, `docs`, etc. Auto-derived from `git log --oneline -30 main` against the touched components if the description doesn't pin it.
 
@@ -123,7 +132,7 @@ After the user answers, you have everything you need. Move to Phase 5.
 
 ## Phase 5 — Detect components, doc pointers, and area tag
 
-This is the same logic `plan-to-linear` uses, narrowed to a single phase. Run it once for the touched components you identified in Phase 3 (or the user clarified in Phase 4).
+This is the same logic `plan-to-mk` uses, narrowed to a single phase. Run it once for the touched components you identified in Phase 3 (or the user clarified in Phase 4).
 
 ### 5.1 Component → docs map
 
@@ -149,7 +158,7 @@ If the request mentions a topic-specific doc (`docs/architecture/internal-messag
 
 ### 5.2 Smoke recipe
 
-Map the smoke-test answer from Phase 4 + touched components to the recipe that goes in the ticket's "Smoke tests" section. Reuse `plan-to-linear`'s table — same rules, single phase:
+Map the smoke-test answer from Phase 4 + touched components to the recipe that goes in the ticket's "Smoke tests" section. Reuse `plan-to-mk`'s table — same rules, single phase:
 
 | Touched | Recipe to write |
 |---|---|
@@ -180,7 +189,15 @@ If no recent commits matched the touched components, write `<choose at execution
 
 ## Phase 6 — Determine the next phase number
 
-Linear is the source of truth. `list_issues` filtered to the Maintenance project (include all states — `Todo`, `In Progress`, `In Review`, `Done`, `Cancelled` — since closed tickets still occupy phase numbers). Find the highest `Phase N` in the titles, increment by one.
+mk is the source of truth. List issues in the Maintenance feature, including all states (closed tickets still occupy phase numbers):
+
+```bash
+mk issue list --feature maintenance \
+  --state todo,in_progress,in_review,done,cancelled,backlog,duplicate \
+  -o json
+```
+
+Parse the JSON, find the highest `Phase N` in the issue titles, increment by one.
 
 If no maintenance tickets exist yet, next is `Phase 1`.
 
@@ -190,16 +207,16 @@ The plan doc is *not* consulted here — it's a static stub and contains no per-
 
 ## Phase 7 — Confirm with the user
 
-Show a one-screen summary and wait for an explicit yes. The Linear write is irreversible (well, it's `delete_issue`-able, but that's not free), so the no-confirmation cost of getting it wrong is higher than a one-line round-trip with the user.
+Show a one-screen summary and wait for an explicit yes. The mk write is reversible (`mk issue rm`), but it leaves an audit-log trail and the no-confirmation cost of getting it wrong is higher than a one-line round-trip with the user.
 
 ```
 About to file:
 
-  Project:    Maintenance
+  Feature:    Maintenance (slug: maintenance)
   Issue:      Phase <N>: <title>
-  State:      Todo
+  State:      todo
   Smoke:      <UI / curl / unit-only / docs-only / custom>
-  Area tag:   <tag> (commit format: <area>(<scope>): ... (Phase N, ALT-NN))
+  Area tag:   <tag> (commit format: <area>(<scope>): ... (Phase N, MINI-NN))
   Components: <list of detected dirs>
   Docs:       <list of CLAUDE.md / ARCHITECTURE.md links to attach>
 
@@ -210,16 +227,19 @@ Don't proceed without an explicit yes. "lgtm", "go", "yes", "ship it" all count.
 
 ---
 
-## Phase 8 — Create the Linear issue
+## Phase 8 — Create the mk issue
 
 Issue title: `Phase <N>: <title>`.
 
-State: `Todo` (canonical name from Phase 1).
+State: `todo`.
 
-Description body — same shape `plan-to-linear` writes, so `execute-next-task` reads it without special-casing. The `Source` line points at the maintenance plan doc (the project stub) — `execute-next-task` will tolerate the lack of a per-phase anchor under the loosened flow.
+Description body — same shape `plan-to-mk` writes, so `execute-next-task` reads it without special-casing. The first line points at the maintenance plan doc (the feature stub) — `execute-next-task` will tolerate the lack of a per-phase anchor under the loosened flow.
 
-```markdown
-**Source:** [docs/planning/maintenance.md](docs/planning/maintenance.md) — Maintenance project (one-off ticket, no per-phase doc entry)
+Write the body to a temp file first (long markdown can't go inline through `--description`):
+
+```bash
+cat <<'EOF' > /tmp/mini-task-body.md
+**Source:** [docs/planning/maintenance.md](docs/planning/maintenance.md) — Maintenance feature (one-off ticket, no per-phase doc entry)
 
 ## Goal
 
@@ -267,9 +287,9 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 
 ## Conventions
 
-- Commit format: `<area>(<scope>): <subject> (Phase <N>, ALT-NN)` — area tag for this task: `<tag from Phase 5.3>`.
-- PR body must include `Closes ALT-NN` so merging the PR auto-closes this issue.
-- This is a one-off ticket — no blocked-by relationships, no follow-up phases. If the work expands, file a separate ticket.
+- Commit format: `<area>(<scope>): <subject> (Phase <N>, MINI-NN)` — area tag for this task: `<tag from Phase 5.3>`.
+- PR body must include `Closes MINI-NN` so the merging human can manually transition the ticket to `done`.
+- This is a one-off ticket — no blocks/blocked-by relationships, no follow-up phases. If the work expands, file a separate ticket.
 - When done, the executor leaves a structured handoff comment on this issue covering Known issues / Work deferred / Blockers / Deviations.
 
 ## Prior art
@@ -277,9 +297,17 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 <list of relevant shipped commits from `git log` matching the area tag, most recent first, max 3>
 
 (no prior commits matching the area tag yet)   <-- only if applicable
+EOF
+
+mk issue add "Phase <N>: <title>" \
+  --feature maintenance \
+  --state todo \
+  --description-file /tmp/mini-task-body.md \
+  --user Claude \
+  -o json
 ```
 
-Capture the issue's `ALT-NN` ID and URL.
+Capture the issue's `MINI-NN` ID and (if you want a clickable reference) the local key — there's no remote URL, since `mk` is a local tracker.
 
 ---
 
@@ -289,11 +317,11 @@ Print a tight summary:
 
 ```
 ✓ Created Phase <N>: <title>
-   <ALT-NN> — <issue URL>
+   <MINI-NN>  (run `mk issue show <MINI-NN>` to view)
 ✓ Smoke approach: <UI / curl / unit-only / docs-only / custom>
 
 Next steps:
-  - run `execute-next-task ALT-NN` when you're ready to pick this up,
+  - run `execute-next-task MINI-NN` when you're ready to pick this up,
     or `execute-next-task` to take whatever's next in the queue
 ```
 
@@ -305,14 +333,16 @@ The skill makes no working-tree changes — `docs/planning/maintenance.md` is a 
 
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
-- **Never ask more than three clarifying questions in Phase 4.** One smoke-test slot + at most two ambiguity probes. If you find yourself wanting a fourth, the request is too big for a one-off — suggest the user run `plan-to-linear` against a quick markdown plan instead.
-- **Never edit `docs/planning/maintenance.md`.** It's a static stub describing the Maintenance project. Per-task data lives in Linear only.
-- **Never set `blocked-by` relationships** between maintenance tickets. They're independent. If a one-off genuinely blocks another one-off, both should probably live in a small phased plan, not in maintenance.
-- **Never silently fix a corrupted Maintenance project.** If the project's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop. (Phase numbering drift between Linear and the doc is no longer a concern — the doc is a stub and isn't consulted for numbering.)
-- **Never write a multi-phase ticket.** This skill creates exactly one Linear issue per run. If the user describes work that's clearly multiple phases, suggest `plan-to-linear`.
+- **Never ask more than three clarifying questions in Phase 4.** One smoke-test slot + at most two ambiguity probes. If you find yourself wanting a fourth, the request is too big for a one-off — suggest the user run `plan-to-mk` against a quick markdown plan instead.
+- **Never edit `docs/planning/maintenance.md`.** It's a static stub describing the Maintenance feature. Per-task data lives in mk only.
+- **Never set blocks/blocked-by relationships** between maintenance tickets. They're independent. If a one-off genuinely blocks another one-off, both should probably live in a small phased plan, not in maintenance.
+- **Never silently fix a corrupted Maintenance feature.** If the feature's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop. (Phase numbering drift between mk and the doc is no longer a concern — the doc is a stub and isn't consulted for numbering.)
+- **Never write a multi-phase ticket.** This skill creates exactly one mk issue per run. If the user describes work that's clearly multiple phases, suggest `plan-to-mk`.
 - **Never invent docs.** Each `Relevant docs` link must `Read`-resolve. If `egress-shared/CLAUDE.md` doesn't exist, drop it from the attach list.
-- **Never transition the issue out of `Todo`.** That's `execute-next-task`'s job. The skill only creates.
-- **Never skip Phase 7's confirmation.** Linear writes are user-visible side effects — confirm before, not after.
+- **Never transition the issue out of `todo`.** That's `execute-next-task`'s job. The skill only creates.
+- **Never skip Phase 7's confirmation.** mk writes are user-visible side effects (and audit-logged) — confirm before, not after.
+- **Always pass `--user Claude` on every mutating `mk` command.** The audit log records the actor; without it the entry attributes to the OS user.
+- **Always pass `-o json` on reads you parse.** Text output is for humans and can shift.
 
 ---
 
@@ -320,7 +350,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 
 > User: "task: the cert renewer doesn't retry transient cloudflare 429s. file a maintenance ticket to add a small backoff."
 >
-> *Skill loads Linear MCP. Maintenance project exists already; the highest existing `Phase N` in the project's Linear titles is `Phase 12`. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
+> *Skill confirms `mk` is installed (`mk status`). Maintenance feature exists already; `mk issue list --feature maintenance` shows the highest existing `Phase N` is `Phase 12`. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
 >
 > Skill: "Quick check before I file —
 >
@@ -339,9 +369,9 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > Skill: "About to file:
 >
->   Project:    Maintenance
+>   Feature:    Maintenance (slug: maintenance)
 >   Issue:      Phase 13: Add retry-with-backoff to cert renewer on Cloudflare 429
->   State:      Todo
+>   State:      todo
 >   Smoke:      Unit / build / lint only
 >   Area tag:   acme
 >   Components: acme/, server/src/services/certificates/
@@ -351,12 +381,12 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "go"
 >
-> *Skill creates the Linear issue and captures `ALT-47`. No plan-doc edits — the doc is a stub.*
+> *Skill writes the body to a temp file and runs `mk issue add "Phase 13: …" --feature maintenance --state todo --description-file /tmp/mini-task-body.md --user Claude -o json`. Captures `MINI-47`. No plan-doc edits — the doc is a stub.*
 >
 > Skill: "✓ Created Phase 13: Add retry-with-backoff to cert renewer on Cloudflare 429
->    ALT-47 — https://linear.app/altitude-devops/issue/ALT-47
+>    MINI-47  (run `mk issue show MINI-47` to view)
 > ✓ Smoke approach: Unit / build / lint only
 >
 > Next steps:
->   - run `execute-next-task ALT-47` when you're ready to pick this up,
+>   - run `execute-next-task MINI-47` when you're ready to pick this up,
 >     or `execute-next-task` to take whatever's next in the queue"

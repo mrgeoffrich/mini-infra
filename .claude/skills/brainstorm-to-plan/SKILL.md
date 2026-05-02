@@ -1,13 +1,13 @@
 ---
 name: brainstorm-to-plan
-description: Turns a brainstorming session — a scratch markdown file, in-conversation ideation, inline notes, or an already-seeded plan that needs re-phasing — into a phased planning document at `docs/planning/not-shipped/<slug>-plan.md` that conforms to `docs/planning/PLANNING.md`. Drives a rubric-driven phase split rather than dumping the brainstorm into a template verbatim. Each phase must pass seven checks — Concrete (noun-form deliverables), Testable (one-sentence Done-when), Isolated (one shippable PR with no scaffolding leaking forward), One-concern (single component or capability slice), Reversibility-classifiable (`safe`/`feature-flagged`/`forward-only`/`destructive` without weasel words), UI-extractable (every user-visible change tagged `[design needed]` or `[no design]`, never `TBD`), Verify-in-prod-statable (production signal that confirms the *outcome*, not just artifact existence). Surfaces failing phases with concrete split suggestions and iterates until every phase passes or the user explicitly waives a check; waivers are logged as a one-line note in §1 Background so future readers know the rubric was bypassed. Applies pre-emptive split heuristics for known anti-patterns — framework-plus-first-user, polish-catch-all, new-connected-service-plus-first-consumer, schema-and-API-and-UI-in-one-phase, pool-support-bolted-onto-feature, docs-padded-onto-feature — so the first proposal is already close before the rubric runs. Re-phase mode (input is an already-seeded plan with real `ALT-NN` IDs in §8) preserves IDs for phases whose scope didn't materially change and emits `ALT-_TBD_` for new phases from splits, with a Linear-impact preview before writing. Use this skill whenever the user says "turn this brainstorm into a plan", "draft a planning doc from these notes", "split this idea into phases", "phase this out for me", "write up a plan for X", "fix the phasing of this plan", "this plan's phases are too big — re-split them", or has clearly been ideating in-session and asks for a plan doc. Do NOT use for ad-hoc one-liner planning, for plans that are already well-phased and only need wording tweaks (edit the doc directly), or for execution planning at the file level (that's `plan-to-linear`'s Phase 3.5 explorer).
+description: Turns a brainstorming session — a scratch markdown file, in-conversation ideation, inline notes, or an already-seeded plan that needs re-phasing — into a phased planning document at `docs/planning/not-shipped/<slug>-plan.md` that conforms to `docs/planning/PLANNING.md`. Drives a rubric-driven phase split rather than dumping the brainstorm into a template verbatim. Each phase must pass seven checks — Concrete (noun-form deliverables), Testable (one-sentence Done-when), Isolated (one shippable PR with no scaffolding leaking forward), One-concern (single component or capability slice), Reversibility-classifiable (`safe`/`feature-flagged`/`forward-only`/`destructive` without weasel words), UI-extractable (every user-visible change tagged `[design needed]` or `[no design]`, never `TBD`), Verify-in-prod-statable (production signal that confirms the *outcome*, not just artifact existence). Surfaces failing phases with concrete split suggestions and iterates until every phase passes or the user explicitly waives a check; waivers are logged as a one-line note in §1 Background so future readers know the rubric was bypassed. Applies pre-emptive split heuristics for known anti-patterns — framework-plus-first-user, polish-catch-all, new-connected-service-plus-first-consumer, schema-and-API-and-UI-in-one-phase, pool-support-bolted-onto-feature, docs-padded-onto-feature — so the first proposal is already close before the rubric runs. Re-phase mode (input is an already-seeded plan with real `MINI-NN` IDs in §8) preserves IDs for phases whose scope didn't materially change and emits `MINI-_TBD_` for new phases from splits, with an mk-impact preview before writing. Use this skill whenever the user says "turn this brainstorm into a plan", "draft a planning doc from these notes", "split this idea into phases", "phase this out for me", "write up a plan for X", "fix the phasing of this plan", "this plan's phases are too big — re-split them", or has clearly been ideating in-session and asks for a plan doc. Do NOT use for ad-hoc one-liner planning, for plans that are already well-phased and only need wording tweaks (edit the doc directly), or for execution planning at the file level (that's `plan-to-mk`'s Phase 3.5 explorer).
 ---
 
 # Brainstorm to Plan
 
-You're turning a brainstorming session into a phased planning document under `docs/planning/not-shipped/`. The output is consumed by `plan-to-linear` (which seeds Linear) and then by `execute-next-task` (which executes phases one PR at a time). The phased rollout is the load-bearing artifact — get the splits right and the downstream skills work; get them wrong (phases too big, deliverables vague, Done-when untestable) and the executor wastes runs trying to figure out what "done" means.
+You're turning a brainstorming session into a phased planning document under `docs/planning/not-shipped/`. The output is consumed by `plan-to-mk` (which seeds mk) and then by `execute-next-task` (which executes phases one PR at a time). The phased rollout is the load-bearing artifact — get the splits right and the downstream skills work; get them wrong (phases too big, deliverables vague, Done-when untestable) and the executor wastes runs trying to figure out what "done" means.
 
-Plans are **scoping** documents, not implementations. You write goals, deliverables in noun form, reversibility classifiers, UI changes, Done-when, and Verify-in-prod — not file-by-file change lists. The executor's `plan-to-linear` Phase 3.5 explorer maps phases to source-code touchpoints at seed time; this skill never preempts that.
+Plans are **scoping** documents, not implementations. You write goals, deliverables in noun form, reversibility classifiers, UI changes, Done-when, and Verify-in-prod — not file-by-file change lists. The executor's `plan-to-mk` Phase 3.5 explorer maps phases to source-code touchpoints at seed time; this skill never preempts that.
 
 ---
 
@@ -44,11 +44,11 @@ Anything the user can't or won't answer goes into §7 Risks & open questions in 
 
 ### Mode D — Re-phase an already-seeded plan
 
-The user points at an existing plan whose §8 has real `ALT-NN` IDs (i.e. `plan-to-linear` already ran). The phasing is broken — phases too big, Done-when untestable, "polish" catch-all phases — and the user wants the plan re-split.
+The user points at an existing plan whose §8 has real `MINI-NN` IDs (i.e. `plan-to-mk` already ran). The phasing is broken — phases too big, Done-when untestable, "polish" catch-all phases — and the user wants the plan re-split.
 
-In this mode, the existing plan **is the brainstorming input**. Read it like a scratch doc, but also extract the existing phase → ALT-NN map from §8 — you'll need it in Phase 8 to preserve IDs where possible. Surface a clear Linear-impact preview before writing (see Phase 8 for the shape).
+In this mode, the existing plan **is the brainstorming input**. Read it like a scratch doc, but also extract the existing phase → MINI-NN map from §8 — you'll need it in Phase 8 to preserve IDs where possible. Surface a clear mk-impact preview before writing (see Phase 8 for the shape).
 
-**Confirm the mode with the user before proceeding.** A one-liner is enough: "Reading `<path>` as a Mode A scratch file" or "Re-phasing `<path>` (Mode D) — its §8 has 6 seeded ALT IDs."
+**Confirm the mode with the user before proceeding.** A one-liner is enough: "Reading `<path>` as a Mode A scratch file" or "Re-phasing `<path>` (Mode D) — its §8 has 6 seeded MINI IDs."
 
 ---
 
@@ -58,7 +58,7 @@ Before drafting, read these — both for format conformance and for tone match. 
 
 - [`docs/planning/PLANNING.md`](docs/planning/PLANNING.md) — the mechanical format the plan must conform to. Section numbering, the six-required-parts-per-phase rule, §8 placeholder shape, "What not to write."
 - [`docs/planning/not-shipped/internal-nats-messaging-plan.md`](docs/planning/not-shipped/internal-nats-messaging-plan.md) — fully-populated reference plan. Tone, depth, level of detail per section.
-- [`.claude/skills/plan-to-linear/SKILL.md`](.claude/skills/plan-to-linear/SKILL.md) — only the §8 / mode-detection bits. You write §8; `plan-to-linear` reads it. The contract is shared.
+- [`.claude/skills/plan-to-mk/SKILL.md`](.claude/skills/plan-to-mk/SKILL.md) — only the §8 / mode-detection bits. You write §8; `plan-to-mk` reads it. The contract is shared.
 
 If the user's input includes paths to other planning docs (e.g. "build on auth-proxy-sidecar-plan.md"), read those too — they may set context or constraints for shared concepts.
 
@@ -99,7 +99,7 @@ Watch for these in the input. When the brainstorm is shaped like one of these, t
 | **Docs padded onto a feature phase** | Docs ride with the feature unless the feature has multiple operator-onboarding steps (OAuth client creation, Vault path setup, ACL bootstrap). Then docs are their own slim phase. |
 | **"Foundation" phase with no concrete deliverable** | Reject — there's no such thing as a "foundation" phase. Either it lands a concrete artifact (a type, a registered service, a working endpoint) or it's not a phase. |
 | **Cross-cutting concern (auth, observability, error handling) bolted onto every phase** | Surface as a §`<N>` shared-concept section *and* check whether one early phase should land the convention before any consumer phase. |
-| **Design / mockup work split out as its own phase** | Don't write standalone `Phase N — Design: …` phases. `plan-to-linear` auto-creates a paired `Backlog` design ticket per phase from each `[design needed]` tag in that phase's UI changes block, and wires it up as a `blocked-by` edge on the phase ticket. Keep design items as `[design needed]` tags inline on the impl phase — the skill materialises them. |
+| **Design / mockup work split out as its own phase** | Don't write standalone `Phase N — Design: …` phases. `plan-to-mk` auto-creates a paired `backlog` design ticket per phase from each `[design needed]` tag in that phase's UI changes block, and wires it up as a `blocks` relation on the phase ticket. Keep design items as `[design needed]` tags inline on the impl phase — the skill materialises them. |
 
 ### Optional / deferred phases
 
@@ -109,7 +109,7 @@ Mark phases as `### Phase N — <title> (optional, deferred)` when:
 - The phase depends on external work not in scope (a new external API, a planned org change)
 - The phase is for v2 polish that doesn't block v1 outcomes
 
-Optional phases still go through the rubric. They land in Linear `Backlog` instead of `Todo` (handled by `plan-to-linear`).
+Optional phases still go through the rubric. They land in mk `backlog` instead of `todo` (handled by `plan-to-mk`).
 
 ---
 
@@ -140,7 +140,7 @@ For every ✗, emit a concrete reject sentence and a concrete split suggestion. 
 
 **5. Reversibility-classifiable.** Pass: one of `safe` / `feature-flagged` / `forward-only` / `destructive` fits without weasel words ("mostly safe except…"). Reject: "Phase N's reversibility doesn't classify cleanly — its rollback story has '<quote of weasel clause>'. That's a sign it's doing two things; split the destructive part out."
 
-**6. UI-extractable.** Pass: every user-visible change is a bullet tagged `[design needed]` or `[no design]`, or the literal word `none`. Never `TBD`. Reject: "Phase N's UI changes include 'TBD' or untagged items. Either tag each item explicitly (a clean [no design] is fine) or split out the UI-bearing slice as its own phase so the design ask is scoped." (Note: `[design needed]` tags become paired `Backlog` design tickets at seed time via `plan-to-linear` — don't pre-split design out as its own phase; just tag the items.)
+**6. UI-extractable.** Pass: every user-visible change is a bullet tagged `[design needed]` or `[no design]`, or the literal word `none`. Never `TBD`. Reject: "Phase N's UI changes include 'TBD' or untagged items. Either tag each item explicitly (a clean [no design] is fine) or split out the UI-bearing slice as its own phase so the design ask is scoped." (Note: `[design needed]` tags become paired `backlog` design tickets at seed time via `plan-to-mk` — don't pre-split design out as its own phase; just tag the items.)
 
 **7. Verify-in-prod-statable.** Pass: a production signal that confirms the *outcome* (the Goal), not just that the artifacts exist. Or `n/a — internal only` and the phase actually is. Reject: "Phase N's Verify-in-prod restates Done-when ('<quote>'). Done-when is 'the code does the right thing in CI'; Verify-in-prod is 'the goal materialised in production'. They should be different signals — what counter / dashboard / log line / user-visible state confirms the *Goal* in prod?"
 
@@ -170,9 +170,9 @@ Default to **strictly sequential** — each phase from 2 onward `[blocks-by: N-1
 
 > "Default ordering is strict sequential. Do any phases fan out in parallel — i.e., can Phase B and Phase C both start as soon as Phase A is done? Examples: independent migrations of different subsystems, UI work that can land alongside backend work."
 
-Apply the user's parallel edges as `[blocks-by: N, M]` brackets in §8. If the user says "no, sequential", keep the default and don't render brackets at all (per [PLANNING.md](docs/planning/PLANNING.md) — bracket-free §8 means strict sequential to `plan-to-linear`).
+Apply the user's parallel edges as `[blocks-by: N, M]` brackets in §8. If the user says "no, sequential", keep the default and don't render brackets at all (per [PLANNING.md](docs/planning/PLANNING.md) — bracket-free §8 means strict sequential to `plan-to-mk`).
 
-Optional/deferred phases keep their `[blocks-by: …]` edge from the predecessor phase — being in `Backlog` doesn't mean unblocked.
+Optional/deferred phases keep their `[blocks-by: …]` edge from the predecessor phase — being in `backlog` doesn't mean unblocked.
 
 ---
 
@@ -187,7 +187,7 @@ Match the structure from [PLANNING.md](docs/planning/PLANNING.md) and the popula
 ```markdown
 # <H1 — feature title>
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
+**Status:** planned, not implemented. Phased rollout — each phase is a separate mk issue.
 **Builds on:** <optional, if the plan extends a prior shipped or in-flight feature — link the relevant docs/PRs>
 **Excludes:** <optional, if there's a related plan whose scope is intentionally separate — link it>
 
@@ -250,50 +250,50 @@ Verify in prod: <production signal confirming the Goal> (or `n/a — internal on
 - <unresolved tradeoff or ambiguity captured during brainstorming>
 - ...
 
-## <N+3>. Linear tracking
+## <N+3>. mk tracking
 
 <one-line pointer to where these issues will live>
 
-- ALT-_TBD_ — Phase 1: <title>
-- ALT-_TBD_ — Phase 2: <title>  [blocks-by: 1]
+- MINI-_TBD_ — Phase 1: <title>
+- MINI-_TBD_ — Phase 2: <title>  [blocks-by: 1]
 - ...
 ```
 
-### Re-phase mode (Mode D) — preserve IDs and preview Linear impact
+### Re-phase mode (Mode D) — preserve IDs and preview mk impact
 
 When the input was a seeded plan, §8 must reflect both the existing IDs and any new phases from splits. Before writing, surface this preview to the user:
 
 ```
-Re-phasing detected. Existing Linear issues:
-  ALT-NN — Phase 1: <old title>
-  ALT-NN — Phase 2: <old title>
+Re-phasing detected. Existing mk issues:
+  MINI-NN — Phase 1: <old title>
+  MINI-NN — Phase 2: <old title>
   ...
 
 Proposed re-phasing:
-  Phase 1: <new title> — keeps ALT-NN  (subset of old Phase 1 scope)
-  Phase 2: <new title> — NEW (ALT-_TBD_)
-  Phase 3: <new title> — NEW (ALT-_TBD_)
-  Phase 4: <new title> — keeps ALT-NN  (was old Phase 2, unchanged)
+  Phase 1: <new title> — keeps MINI-NN  (subset of old Phase 1 scope)
+  Phase 2: <new title> — NEW (MINI-_TBD_)
+  Phase 3: <new title> — NEW (MINI-_TBD_)
+  Phase 4: <new title> — keeps MINI-NN  (was old Phase 2, unchanged)
   ...
 
-Linear impact when you next run plan-to-linear update mode:
+mk impact when you next run plan-to-mk update mode:
   - <count> new issues will be created
   - <count> existing issues will have their bodies refreshed against the new (narrower) scope
   - <count> orphan issues from phases that were merged or dropped (surfaced, not auto-deleted)
-  - Phase numbering shifts; ALT-NN ↔ Phase-N alignment is no longer stable
+  - Phase numbering shifts; MINI-NN ↔ Phase-N alignment is no longer stable
 
-Note: plan-to-linear currently rejects mixed §8 (placeholders + real IDs). Until that's
+Note: plan-to-mk currently rejects mixed §8 (placeholders + real IDs). Until that's
 relaxed, you may need to either (a) hand-reconcile §8 to all real IDs or all placeholders,
-or (b) update plan-to-linear to accept mixed §8 in update mode (placeholders = new phases).
+or (b) update plan-to-mk to accept mixed §8 in update mode (placeholders = new phases).
 
 Confirm to write the updated plan?
 ```
 
-Heuristic for ID preservation: a re-shaped phase **inherits the original `ALT-NN`** if its new scope is a recognisable subset of the original (≥ half the original deliverables retained, same Goal direction). A re-shaped phase **gets `ALT-_TBD_`** if it's effectively new (split-off scope, new component, new capability). When in doubt, ask the user — don't guess on ID preservation. Old IDs that have no successor become orphans (already handled by `plan-to-linear` update mode — surfaced not deleted).
+Heuristic for ID preservation: a re-shaped phase **inherits the original `MINI-NN`** if its new scope is a recognisable subset of the original (≥ half the original deliverables retained, same Goal direction). A re-shaped phase **gets `MINI-_TBD_`** if it's effectively new (split-off scope, new component, new capability). When in doubt, ask the user — don't guess on ID preservation. Old IDs that have no successor become orphans (already handled by `plan-to-mk` update mode — surfaced not deleted).
 
 ### Don't commit
 
-Leave the file untracked / staged. The user reviews, then runs `plan-to-linear` (create mode for fresh plans, update mode for re-phased ones).
+Leave the file untracked / staged. The user reviews, then runs `plan-to-mk` (create mode for fresh plans, update mode for re-phased ones).
 
 ---
 
@@ -310,11 +310,11 @@ Phases: <total>
   - Rubric waivers: <count> (logged in §1 Background)
 
 <for re-phase mode:>
-  - Existing ALT IDs preserved: <count>
-  - New phases (ALT-_TBD_): <count>
-  - Phases dropped (will become orphans in plan-to-linear update): <count>
+  - Existing MINI IDs preserved: <count>
+  - New phases (MINI-_TBD_): <count>
+  - Phases dropped (will become orphans in plan-to-mk update): <count>
 
-Next step: read through the plan, then `plan-to-linear` (<create|update> mode based on §8 state).
+Next step: read through the plan, then `plan-to-mk` (<create|update> mode based on §8 state).
 ```
 
 If iteration produced zero re-splits (the brainstorm was already well-shaped), say so explicitly — that's a good signal the user can trust the rubric was real, not a rubber stamp.
@@ -325,7 +325,7 @@ If iteration produced zero re-splits (the brainstorm was already well-shaped), s
 
 These are non-negotiable. The skill enforces them.
 
-- **Plans are scoping documents, not implementations.** No file-by-file change lists, no "edit foo.ts to do X." Source-code touchpoints get derived at seed time by `plan-to-linear`'s Phase 3.5 explorer — never preempt that.
+- **Plans are scoping documents, not implementations.** No file-by-file change lists, no "edit foo.ts to do X." Source-code touchpoints get derived at seed time by `plan-to-mk`'s Phase 3.5 explorer — never preempt that.
 - **Don't dump the brainstorm verbatim into the plan template.** The whole point is the rubric-driven split. If the user pushes back ("just write it up"), confirm once and proceed, but every failing rubric cell is logged as a `~waived` bullet in §1 Background. Future readers must be able to see the rubric was bypassed and why.
 - **§1 Background is standalone-readable in 3-6 sentences.** Too long → distil and ask. Too vague ("we should improve X") → flag back; the project description body needs to read as self-contained motivation.
 - **§3 Non-goals has at least one item with a one-line *why*.** If the user volunteered none, prompt: "what did you consider and reject during brainstorming?" An empty Non-goals section is almost always a planning bug.
@@ -333,5 +333,5 @@ These are non-negotiable. The skill enforces them.
 - **Never invent.** If the user hasn't said how to verify a phase in prod, ask. If a non-goal is missing rationale, ask. If a contract is referenced but not defined, ask. Don't paper over with reasonable-sounding defaults — the plan becomes a lie about what was actually decided.
 - **Don't commit.** Leave the plan-doc edit untracked or staged. The user owns the commit and decides whether to bundle it with related work.
 - **The 7 rubric checks are the rubric, not suggestions.** Every cell is ✓ or `~waived` (with rationale). No silent fixes, no "I'll just clean this up while writing."
-- **Re-phase mode never deletes Linear issues.** Phases dropped from the plan become orphans in `plan-to-linear` update mode — surfaced for manual handling, never auto-deleted. Old issues may have retro comments, deferred-then-cancelled context, or scheduled-for-later state that this skill can't safely reason about.
+- **Re-phase mode never deletes mk issues.** Phases dropped from the plan become orphans in `plan-to-mk` update mode — surfaced for manual handling, never auto-deleted. Old issues may have retro comments, deferred-then-cancelled context, or scheduled-for-later state that this skill can't safely reason about.
 - **The skill writes plans, not retrospectives.** Don't comment on the brainstorm's quality, don't critique past decisions, don't add unsolicited "consider also…" bullets. The plan reflects what the user wants to ship; refinement of the *idea* is the brainstorming step that came before this skill.

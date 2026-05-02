@@ -1,25 +1,25 @@
 ---
 name: session-retrospective
 description: |
-  Analyze a Claude Code session JSONL and post a retrospective to Linear as a new issue
-  tagged "retro" in the Backlog, referencing the original issue the run was working on.
+  Analyze a Claude Code session JSONL and post a retrospective to `mk` as a new issue
+  tagged "retro" in the backlog state, linked back to the original issue the run was working on.
   Use when the user (or another skill, e.g. `execute-next-task`) wants to capture lessons
-  learned from a Linear-tracked execution run so a retrospective trail builds up over time.
+  learned from an `mk`-tracked execution run so a retrospective trail builds up over time.
   Triggers: "retrospective", "what did we learn", "session summary", "lessons learned", "retro".
 
   Project-specific fork of github.com/accidentalrebel/claude-skill-session-retrospective —
-  the upstream skill prints markdown to console; this version posts to the Altitude Devops
-  Linear team.
+  the upstream skill prints markdown to console; this version posts to the local `mk`
+  (mini-kanban) issue tracker for the current repo.
 ---
 
 # Session Retrospective
 
 Analyze a Claude Code session JSONL, generate a reflective summary of what happened, and
-post it as a new "retro"-tagged Linear issue in the Backlog, linked back to the original
-issue the run was working on. The point of writing each retro to its own issue (rather than
-a comment on the original) is that retros accumulate in their own searchable list and have
-their own lifecycle — separate from the contract-style handoff comment the executor leaves
-on the original.
+post it as a new "retro"-tagged `mk` issue in the `backlog` state, linked back to the
+original issue the run was working on. The point of writing each retro to its own issue
+(rather than a comment on the original) is that retros accumulate in their own searchable
+list and have their own lifecycle — separate from the contract-style handoff comment the
+executor leaves on the original.
 
 ## Parameters
 
@@ -27,7 +27,7 @@ The skill is invoked with two **required** parameters, parsed from the args stri
 
 - `--session-id <UUID>` — the Claude Code session ID to retrospect on. Must be passed
   explicitly.
-- `--linear-issue <ALT-NN>` — the Linear issue ID the parent run was working on. The retro
+- `--issue <MINI-NN>` — the `mk` issue key the parent run was working on. The retro
   issue's title and description reference this so the trail is navigable.
 
 If either parameter is missing, **stop and report**. Do not fall back to defaults — silently
@@ -36,17 +36,18 @@ worthless retro.
 
 ## Workflow
 
-1. **Validate parameters.** Both `--session-id` and `--linear-issue` are required. Stop if
+1. **Validate parameters.** Both `--session-id` and `--issue` are required. Stop if
    either is missing.
 
-2. **Load Linear MCP tools.** They're deferred at session start. One bulk call:
+2. **Confirm `mk` is available.** A one-line sanity check from the repo root is enough:
 
-   ```
-   ToolSearch(query: "linear", max_results: 30)
+   ```bash
+   mk status
    ```
 
-   You need at minimum: `list_teams`, `list_issue_statuses`, `list_issue_labels`,
-   `get_issue`, `save_issue`. Stop and report if any are missing.
+   If `mk` is missing or errors out (not in a git repo, etc.), stop and surface the
+   error — don't try to continue. Tags are free-form in `mk`, so there is no label
+   pre-flight to do; the `retro` tag is created implicitly the first time it's used.
 
 3. **Retrieve the session JSONL.** Run the helper script with the session ID as a positional
    arg (do not rely on env):
@@ -64,39 +65,65 @@ worthless retro.
    - `tool_result` blocks with `is_error: true` for rejected/failed actions
    - User messages immediately following an assistant turn (often corrections)
 
-5. **Resolve Linear references** for posting:
-   - **Team**: `Altitude Devops` (project-specific to this fork). Look it up via
-     `list_teams` to get the team ID.
-   - **Backlog state**: fetch `list_issue_statuses` for the team and pick the entry whose
-     name maps to Backlog (canonical name varies — `Backlog` is the common case).
-   - **`retro` label**: fetch `list_issue_labels` for the team. If the label does not exist,
-     **stop and report** with a clear message (`retro label missing — create it in Linear
-     settings first`). Do not auto-create labels silently; that's a setup decision.
-   - **Original issue**: `get_issue(<linear-issue>)` to grab its title and URL — needed for
-     the retro's title and the Source line.
+5. **Resolve the original issue** for posting:
+   - Run `mk issue show <MINI-NN> -o json` to grab its title — needed for the retro's
+     title.
+   - The retro lives in the same repo as the original (the current repo, auto-scoped by
+     `mk` from `cwd`). No team or label resolution is required.
 
 6. **Generate the retrospective markdown** per the Output Format below.
 
-7. **Create the retro issue** via `save_issue`:
-   - **Title**: `Retro: <ALT-NN> — <original-issue-title>` (truncate the original title to
-     keep the combined length under ~80 chars)
-   - **Team**: Altitude Devops
-   - **State**: Backlog
-   - **Labels**: `["retro"]`
-   - **Description**: a `**Source:** <link-to-original-issue>` line, then a blank line, then
-     the retrospective markdown body
+7. **Create the retro issue** via `mk issue add`. Write the body to a temp file first
+   (long-text inputs in `mk` come from a file or stdin — there is no inline editor):
 
-8. **Return only** the new retro issue's ID and URL. Do not echo the markdown body — the
-   caller (typically a subagent in `execute-next-task`) just needs the URL to relay back.
+   ```bash
+   cat > /tmp/retro-body.md <<'EOF'
+   <retrospective markdown body, per Output Format below>
+   EOF
+
+   mk issue add "Retro: MINI-NN — <original-issue-title>" \
+     --description-file /tmp/retro-body.md \
+     --state backlog \
+     --tag retro \
+     --user Claude
+   ```
+
+   - **Title**: `Retro: MINI-NN — <original-issue-title>` (truncate the original title to
+     keep the combined length under ~80 chars).
+   - **State**: `backlog`.
+   - **Tag**: `retro` (free-form; created on first use).
+   - **`--user Claude`** is **mandatory** for AI-driven calls — without it the audit log
+     silently attributes the change to the OS user.
+   - Capture the new issue key from the command output (use `-o json` if you need to
+     parse it programmatically).
+
+8. **Link the retro back to the original** so `mk issue show` on either side surfaces the
+   relation:
+
+   ```bash
+   mk link <NEW-RETRO-KEY> relates-to MINI-NN --user Claude
+   ```
+
+   Optionally, drop a one-line pointer comment on the original so a human reading just
+   that issue can find the retro:
+
+   ```bash
+   printf 'Retro filed: <NEW-RETRO-KEY>\n' \
+     | mk comment add MINI-NN --as Claude --body - --user Claude
+   ```
+
+   `--as` is required on every `mk comment add`; `--user Claude` is the audit-log
+   attribution and is mandatory for agent-driven calls.
+
+9. **Return only** the new retro issue's key (e.g. `MINI-83`). Do not echo the markdown
+   body — the caller (typically a subagent in `execute-next-task`) just needs the key
+   to relay back.
 
 ## Output Format
 
-The retrospective markdown that goes into the issue description (after the `**Source:**`
-line):
+The retrospective markdown that goes into the issue description:
 
 ```markdown
-**Source:** <https://linear.app/.../ALT-NN>
-
 ## TL;DR
 
 [2-3 sentence summary of what was accomplished and the key takeaway]

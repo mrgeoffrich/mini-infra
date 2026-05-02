@@ -1,58 +1,60 @@
 ---
 name: review
-description: Independent code-review skill for a Linear-tracked PR. Accepts a Linear issue ID (`ALT-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/alt-32`), or **no argument** (reviews the current branch's open PR). Resolves the input to the triple {Linear issue, PR, branch}, reads the ticket as the contract — Goal / Deliverables / Done when, plus any **Design ready** comment from `design-task` pointing at a design doc under `docs/designs/` — pulls `gh pr diff <PR>`, reads the project conventions that bear on the touched directories (root CLAUDE.md always; server/CLAUDE.md when `server/` files change; client/CLAUDE.md when `client/` files change; per-component pointers from the ticket's "Relevant docs"; ICONOGRAPHY.md when UI changes), and reviews the diff for **bugs and logic errors** (off-by-one, null-deref, race conditions, broken control flow, swapped arguments, error-swallowing `try/catch`), **security** (injection, secret leakage, auth bypass, OWASP-top-10 patterns), **convention violations** (raw `dockerode` vs `DockerService.getInstance()`, raw `docker.pull()` vs `pullImageWithAutoAuth()`, raw socket strings vs `Channel.*`/`ServerEvent.*`, missing `userId` on config-service mutations, polling when a socket is connected, missing task-tracker registry entries for new long-running ops, `any`-typed code), **duplication** (logic that was inlined when an existing helper or shared type would have done, types duplicated client-side and server-side instead of pulled from `@mini-infra/types`), **drift from the contract** (deliverables that didn't land, scope creep that wasn't asked for, design doc's recommendation not followed), and **dead code / debug leftovers** (commented blocks, `console.log`, unused imports, narration-style comments). Posts a single structured comment on the Linear issue with severity-labelled findings (`critical | high | medium | low`), an empty review when the diff is fine, and a closing one-liner verdict. **Makes no code changes** — auto-fixing was deliberately separated from this skill so a fix-up pass can be done by hand or by a different skill afterwards. **Does not check test coverage** — that's a separate concern. **Does not check doc-artefact drift** beyond a one-line pointer; `api-change-check` owns that sweep. Use this skill whenever the user says "review ALT-NN", "review PR 372", "review the current branch", "review my PR", "code review for ALT-NN", "have a look at the changes for ALT-NN", "what's wrong with this PR", "any bugs in ALT-32", "did I break anything", "would you ship this", or any equivalent ask to get an independent pair of eyes on a change. Trigger even when the user doesn't say the word "review" but is clearly asking for one. Do NOT trigger for ad-hoc "look at this code" without a Linear issue or PR / branch reference, for tasks about producing changes (use `execute-next-task` or `fix-and-validate` for that), or for design exploration (use `design-task`).
+description: Independent code-review skill for an mk-tracked PR. Accepts an mk issue key (`MINI-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/mini-32`), or **no argument** (reviews the current branch's open PR). Resolves the input to the triple {mk issue, PR, branch}, reads the ticket as the contract — Goal / Deliverables / Done when, plus any **Design ready** comment from `design-task` pointing at a design doc under `docs/designs/` — pulls `gh pr diff <PR>`, reads the project conventions that bear on the touched directories (root CLAUDE.md always; server/CLAUDE.md when `server/` files change; client/CLAUDE.md when `client/` files change; per-component pointers from the ticket's "Relevant docs"; ICONOGRAPHY.md when UI changes), and reviews the diff for **bugs and logic errors** (off-by-one, null-deref, race conditions, broken control flow, swapped arguments, error-swallowing `try/catch`), **security** (injection, secret leakage, auth bypass, OWASP-top-10 patterns), **convention violations** (raw `dockerode` vs `DockerService.getInstance()`, raw `docker.pull()` vs `pullImageWithAutoAuth()`, raw socket strings vs `Channel.*`/`ServerEvent.*`, missing `userId` on config-service mutations, polling when a socket is connected, missing task-tracker registry entries for new long-running ops, `any`-typed code), **duplication** (logic that was inlined when an existing helper or shared type would have done, types duplicated client-side and server-side instead of pulled from `@mini-infra/types`), **drift from the contract** (deliverables that didn't land, scope creep that wasn't asked for, design doc's recommendation not followed), and **dead code / debug leftovers** (commented blocks, `console.log`, unused imports, narration-style comments). Posts a single structured comment on the mk issue with severity-labelled findings (`critical | high | medium | low`), an empty review when the diff is fine, and a closing one-liner verdict. **Makes no code changes** — auto-fixing was deliberately separated from this skill so a fix-up pass can be done by hand or by a different skill afterwards. **Does not check test coverage** — that's a separate concern. **Does not check doc-artefact drift** beyond a one-line pointer; `api-change-check` owns that sweep. Use this skill whenever the user says "review MINI-NN", "review PR 372", "review the current branch", "review my PR", "code review for MINI-NN", "have a look at the changes for MINI-NN", "what's wrong with this PR", "any bugs in MINI-32", "did I break anything", "would you ship this", or any equivalent ask to get an independent pair of eyes on a change. Trigger even when the user doesn't say the word "review" but is clearly asking for one. Do NOT trigger for ad-hoc "look at this code" without an mk issue or PR / branch reference, for tasks about producing changes (use `execute-next-task` or `fix-and-validate` for that), or for design exploration (use `design-task`).
 ---
 
 # Review
 
-You're a **code-review agent**. The Linear ticket says what was supposed to ship; the PR diff says what actually shipped. Your job is to read both and surface anything that looks wrong — bugs, logic errors, security holes, convention violations, duplication, drift from the contract, dead code — as a single structured comment on the Linear issue.
+You're a **code-review agent**. The mk ticket says what was supposed to ship; the PR diff says what actually shipped. Your job is to read both and surface anything that looks wrong — bugs, logic errors, security holes, convention violations, duplication, drift from the contract, dead code — as a single structured comment on the mk issue.
 
 You make **no code changes**. The findings are for the user (or a separate fix-up skill) to act on later. Empty findings is a great result — don't pad with low-severity nits to look thorough.
 
-The team is hardcoded as **Altitude Devops**.
+Issues live in `mk` (mini-kanban), the local CLI tracker bound to this repo. The `mk` skill at `.claude/skills/mk/SKILL.md` covers the CLI in detail; this skill calls into it.
 
 ---
 
-## Phase 1 — Load the Linear MCP tools
+## Phase 1 — Confirm `mk` is available
 
-The Linear MCP tools are deferred at session start. Load them in one bulk call:
+`mk` is a local binary, not an MCP server — there's nothing to load. Sanity-check it before starting:
 
+```bash
+mk status -o json
 ```
-ToolSearch(query: "linear", max_results: 30)
-```
 
-You should see `__list_issues`, `__get_issue`, `__get_project`, `__list_comments`, `__save_comment`. If any of these are missing, stop and tell the user — without Linear we can't post the deliverable.
+This should print the current repo, prefix (expected `MINI`), and counts. If `mk` errors with "not inside a git repository", `cd` to the repo root and retry. If the binary isn't installed, stop and tell the user — without `mk` we can't read the contract or post the deliverable.
+
+All `mk` reads in this skill use `-o json` for stable parsing. All mutations pass `--user Claude` so the audit log attributes the change correctly.
 
 ---
 
-## Phase 2 — Resolve the input to {Linear issue, PR, branch}
+## Phase 2 — Resolve the input to {mk issue, PR, branch}
 
 The skill needs all three: the **issue** is the contract, the **PR** is the diff, the **branch** is the ref. Resolve them by argument shape.
 
-**`ALT-NN`** (matches `ALT-\d+` case-insensitive, surrounding text fine):
-1. `get_issue(id: <ALT-NN>)`. If 404, stop.
-2. Find the PR: scan `attachments[]` on the issue for a GitHub URL (`design-task` and `execute-next-task` post the PR as an attachment when they ship). If none, fall back to `gh pr list --search "ALT-NN" --state open --json number,headRefName,title -L 5` and take the most recent open match. If multiple match and the choice isn't obvious, list them and ask.
+**`MINI-NN`** (matches `MINI-\d+` case-insensitive, surrounding text fine):
+1. `mk issue show MINI-NN -o json`. If it errors with "issue not found", stop.
+2. Find the PR: read `prs[]` (or equivalent) from the JSON — `design-task` and `execute-next-task` attach the PR via `mk pr attach` when they ship. If the issue has no attached PR, fall back to `gh pr list --search "MINI-NN" --state open --json number,headRefName,title -L 5` and take the most recent open match. If multiple match and the choice isn't obvious, list them and ask.
 3. The PR's `headRefName` is the branch.
 
-**PR number** (matches `^\d+$` or `^#\d+$`): `gh pr view <N> --json number,headRefName,title,body`. Pull the Linear ID from the PR title (the `(ALT-NN)` suffix the project's commit convention uses) or the `Closes ALT-NN` line in the body. If neither is present, ask which Linear issue this PR belongs to — don't guess.
+**PR number** (matches `^\d+$` or `^#\d+$`): `gh pr view <N> --json number,headRefName,title,body`. Pull the mk key from the PR title (the `(MINI-NN)` suffix the project's commit convention uses) or the `Closes MINI-NN` line in the body. If neither is present, ask which mk issue this PR belongs to — don't guess.
 
-**Branch name** (anything else looking like a ref, e.g. `claude/alt-32`): `gh pr list --head <branch> --state open --json number`. Pull the Linear ID the same way as the PR-number flow.
+**Branch name** (anything else looking like a ref, e.g. `claude/mini-32`): `gh pr list --head <branch> --state open --json number`. Pull the mk key from the branch (`claude/mini-NN` → `MINI-NN`) or the PR body, same as the PR-number flow.
 
 **No argument**: resolve from the current shell.
 - `git rev-parse --abbrev-ref HEAD` — current branch.
 - `gh pr view --json number,title,body,headRefName` from inside the worktree — finds the PR for that branch.
-- Pull the Linear ID from the branch (`claude/alt-NN` → `ALT-NN`) or the PR body.
+- Pull the mk key from the branch (`claude/mini-NN` → `MINI-NN`) or the PR body.
 - If the current branch is `main` or has no open PR, stop and ask which target to review.
 
 **State the resolved triple before proceeding** so the user can intercept if the resolution is wrong:
 
-> Reviewing ALT-NN ("<ticket title>") — PR #N, branch `<branch>`.
+> Reviewing MINI-NN ("<ticket title>") — PR #N, branch `<branch>`.
 
 ---
 
 ## Phase 3 — Read the contract
 
-The Linear ticket is the contract. Pull these from the issue body:
+The mk ticket is the contract. Fetch it with `mk issue show MINI-NN -o json` and pull these from the issue body:
 
 - **Goal** — what outcome the work is supposed to achieve
 - **Deliverables** — the concrete things that have to exist
@@ -60,7 +62,7 @@ The Linear ticket is the contract. Pull these from the issue body:
 - **Source** — plan-doc anchor, if present
 - **Relevant docs** — per-component CLAUDE.md / ARCHITECTURE.md pointers
 
-Then skim `list_comments(issueId: <ALT-NN>)` for two things:
+Then skim `mk comment list MINI-NN -o json` for two things:
 
 1. **A `**Design ready (PR open):**` comment from `design-task`** — pointer to a design doc under `docs/designs/<id>-<slug>.md`. If you find one, the doc's **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Drift between the design doc's recommendation and the actual diff is a finding worth flagging at `medium` or `high` depending on how load-bearing the divergence is.
 
@@ -68,7 +70,7 @@ Then skim `list_comments(issueId: <ALT-NN>)` for two things:
 
 2. **Any `execute-next-task` handoff comment** — has sections like "Deviations from the spec" and "Work deferred". These name choices the executor consciously made; if you flag something the handoff already explained as a deliberate deviation, mention that you saw the explanation rather than restating the finding as if it weren't disclosed.
 
-If the parent project has a `Plan:` line (`get_project` → `description`), and the ticket's **Source** points at a `### Phase N` section in that plan doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
+If the parent feature has a `Plan:` line in its description (`mk feature show <slug> -o json` for the feature linked from the issue), and the ticket's **Source** points at a `### Phase N` section in that plan doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
 
 ---
 
@@ -157,13 +159,17 @@ If you have to debate `medium` vs `low`, default to `low`.
 
 ---
 
-## Phase 7 — Format and post the Linear comment
+## Phase 7 — Format and post the mk comment
 
-The comment is the deliverable. One comment per review run, posted on the Linear issue.
+The comment is the deliverable. One comment per review run, posted on the mk issue.
 
+Write the body to a temp file, then post:
+
+```bash
+mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/review-MINI-NN.md
 ```
-save_comment(issueId: <ALT-NN>, body: <see template>)
-```
+
+`--as Claude` is the comment author (mandatory on every `mk comment add`). `--user Claude` is the audit-log actor (mandatory for every agent-driven mutation). `mk comment add` requires the body via `--body-file <path>` or `--body -` from stdin — there's no inline editor, and `--body "two\nlines"` does not interpret `\n`.
 
 Template — omit a section that's empty rather than write "None.":
 
@@ -215,7 +221,7 @@ Don't pad an empty review with low-priority "I noticed an unused import" finding
 Tight summary in chat:
 
 ```
-Review posted on ALT-NN (<finding count> finding(s)): <Linear comment URL>
+Review posted on MINI-NN (<finding count> finding(s)).
 
 Breakdown: <C> critical, <H> high, <M> medium, <L> low.
 <one-line top finding if there is one — "Highest-severity: SQL injection in server/src/services/foo.ts:142.">
@@ -226,7 +232,7 @@ Run /review again after fixes land to re-check.
 If empty:
 
 ```
-Review posted on ALT-NN (no findings): <Linear comment URL>.
+Review posted on MINI-NN (no findings).
 Looks ready to ship.
 ```
 
@@ -236,24 +242,27 @@ That's the run.
 
 ## Hard rules
 
-- **Make no code changes.** The skill reads, reviews, and writes one Linear comment. It does not edit files, run `git add`, commit, push, or open / merge / close PRs. Auto-fixing was deliberately separated out of this flow.
+- **Make no code changes.** The skill reads, reviews, and writes one mk comment. It does not edit files, run `git add`, commit, push, or open / merge / close PRs. Auto-fixing was deliberately separated out of this flow.
 - **Be honest about empty.** If the diff is fine, post an empty review. Padding produces noise that makes future reviews easier to ignore.
 - **Calibrate severity.** Critical means "breaks production" — everything else is below that. A spurious `critical` finding burns trust and makes the user re-derive whether to take the next one seriously.
 - **Don't flag what you didn't read.** If a hunk is too noisy to follow without reading the whole file, read the whole file. Findings based on incomplete reading are worse than findings on a smaller set you actually understood.
 - **Cite file + line, always.** `<file>:<line>` notation; the user copies it straight into their editor. A finding without a path is not actionable.
 - **One comment per run.** Don't post multiple comments for one review. If you re-run after fixes, post a fresh comment — don't edit the previous one.
-- **Stop on missing inputs.** No Linear ID, no PR, ambiguous resolution → stop and ask. Don't guess past these.
-- **Never produce an ExitPlanMode block.** This is a review skill; the Linear comment is the deliverable.
+- **Always pass `--user Claude` on `mk` mutations and `--as Claude` on `mk comment add`.** Without `--user`, the audit log silently attributes the change to whichever OS user the agent runs under — useless history.
+- **Always pass `-o json` when parsing `mk` output.** Text mode is for humans only.
+- **Never run `mk` outside a git repo** — it hard-errors. `cd` to the repo first.
+- **Stop on missing inputs.** No mk key, no PR, ambiguous resolution → stop and ask. Don't guess past these.
+- **Never produce an ExitPlanMode block.** This is a review skill; the mk comment is the deliverable.
 
 ---
 
 ## Example
 
-> User: `/review ALT-32`
+> User: `/review MINI-32`
 >
-> *Skill loads Linear MCP. Resolves: ALT-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/alt-32`. Confirms: "Reviewing ALT-32 — PR #412, branch `claude/alt-32`."*
+> *Skill runs `mk status -o json` to confirm the binary is wired up and the repo prefix is `MINI`. Resolves: MINI-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/mini-32`. Confirms: "Reviewing MINI-32 — PR #412, branch `claude/mini-32`."*
 >
-> *Phase 3: reads the ticket. Goal: emit progress + result events for pg-az-backup. Deliverables: three new socket events, task-tracker registry entry, server emitter. No design comment on this ticket — backend-only work. One handoff comment from execute-next-task notes the optional retry-on-transient-failure deliverable was deferred to a follow-up.*
+> *Phase 3: `mk issue show MINI-32 -o json`. Goal: emit progress + result events for pg-az-backup. Deliverables: three new socket events, task-tracker registry entry, server emitter. `mk comment list MINI-32 -o json` shows no design comment on this ticket — backend-only work. One handoff comment from execute-next-task notes the optional retry-on-transient-failure deliverable was deferred to a follow-up.*
 >
 > *Phase 4: `gh pr diff 412 > /tmp/review-412.diff`. 7 files changed, mostly under `server/src/services/backup/` plus one update to `client/src/lib/task-type-registry.ts`.*
 >
@@ -264,6 +273,6 @@ That's the run.
 > - **Medium** — `server/src/services/backup/backup-executor.ts:208` — duplicates the step-name normalisation already at `cert-issuance/cert-issuance-executor.ts:412`; should be extracted into `server/src/services/operation-step.ts`.
 > - **Low** — leftover `console.log("emitter wired up")` in `backup-progress-emitter.ts:12`.
 >
-> *Phase 7: posts the comment. Three sections (High / Medium / Low), closing line "Looks ready to ship after the high finding is addressed."*
+> *Phase 7: writes the comment body to `/tmp/review-MINI-32.md`, then `mk comment add MINI-32 --as Claude --user Claude --body-file /tmp/review-MINI-32.md`. Three sections (High / Medium / Low), closing line "Looks ready to ship after the high finding is addressed."*
 >
-> Skill: "Review posted on ALT-32 (3 findings): <link>. Breakdown: 0 critical, 1 high, 1 medium, 1 low. Highest-severity: error swallowing in `backup-progress-emitter.ts:47`. Run /review again after fixes land to re-check."
+> Skill: "Review posted on MINI-32 (3 findings). Breakdown: 0 critical, 1 high, 1 medium, 1 low. Highest-severity: error swallowing in `backup-progress-emitter.ts:47`. Run /review again after fixes land to re-check."

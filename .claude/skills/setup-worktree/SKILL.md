@@ -1,11 +1,11 @@
 ---
 name: setup-worktree
-description: Sets up a fresh git worktree — pre-flights main, pulls latest, creates the worktree at `.claude/worktrees/<slug>` on branch `claude/<slug>`, runs `pnpm install`, and (by default) kicks off `pnpm worktree-env start` in the background to warm the dev VM/distro. Takes an optional Linear issue ID as the argument (e.g. `/setup-worktree ALT-32`); when omitted, generates a random `adjective-animal` slug (e.g. `swift-otter`) for ad-hoc work that isn't tracked in Linear. Pass `--no-env` to skip the dev-env spin-up — useful for docs-only changes or when the caller doesn't need a running stack. This skill is the worktree-prep half of `execute-next-task` (Phases 4 through 6) extracted so it can be reused by other skills (e.g. `fix-and-validate`, ad-hoc bugfix flows) and called directly by the user when they want a worktree without the full execute-end-to-end loop. Use this skill whenever the user says "set up a worktree", "setup a worktree for ALT-NN", "create a worktree", "spin up a worktree", "new worktree for ALT-NN", "worktree for ALT-NN", "make me a worktree", or any equivalent ask to scaffold a fresh agent worktree from main. Do **not** trigger when the user is already inside a worktree and wants to keep working there, or when they want the full execute-next-task flow (which already calls this internally).
+description: Sets up a fresh git worktree — pre-flights main, pulls latest, creates the worktree at `.claude/worktrees/<slug>` on branch `claude/<slug>`, runs `pnpm install`, and (by default) kicks off `pnpm worktree-env start` in the background to warm the dev VM/distro. Takes an optional `mk` issue key as the argument (e.g. `/setup-worktree MINI-32`); when omitted, generates a random `adjective-animal` slug (e.g. `swift-otter`) for ad-hoc work that isn't tracked in `mk`. Pass `--no-env` to skip the dev-env spin-up — useful for docs-only changes or when the caller doesn't need a running stack. This skill is the worktree-prep half of `execute-next-task` (Phases 4 through 6) extracted so it can be reused by other skills (e.g. `fix-and-validate`, ad-hoc bugfix flows) and called directly by the user when they want a worktree without the full execute-end-to-end loop. Use this skill whenever the user says "set up a worktree", "setup a worktree for MINI-NN", "create a worktree", "spin up a worktree", "new worktree for MINI-NN", "worktree for MINI-NN", "make me a worktree", or any equivalent ask to scaffold a fresh agent worktree from main. Do **not** trigger when the user is already inside a worktree and wants to keep working there, or when they want the full execute-next-task flow (which already calls this internally).
 ---
 
 # Setup Worktree
 
-This is a **scaffolding skill**, not an execution agent. It gets a fresh worktree from `main` ready for work — pre-flights, pulls, creates the worktree and branch, installs deps, and (by default) warms the dev environment in the background — then hands control back to the caller. It does **not** read Linear tickets, do code changes, or open PRs.
+This is a **scaffolding skill**, not an execution agent. It gets a fresh worktree from `main` ready for work — pre-flights, pulls, creates the worktree and branch, installs deps, and (by default) warms the dev environment in the background — then hands control back to the caller. It does **not** read `mk` tickets, do code changes, or open PRs.
 
 It's the worktree-prep half of `execute-next-task` (Phases 4–6) carved out so other flows can reuse it: `fix-and-validate` for issue-driven bugfixes, ad-hoc "fix this thing" sessions, design-doc PR flows, anything that needs an isolated worktree without the full execute-end-to-end loop.
 
@@ -13,9 +13,9 @@ It's the worktree-prep half of `execute-next-task` (Phases 4–6) carved out so 
 
 The skill takes one optional argument and two optional flags:
 
-- **`<ALT-NN>`** (optional) — the Linear issue ID this worktree is for. When supplied, the slug is `alt-NN` (lowercased) and the branch is `claude/alt-NN`. Accepts `ALT-32`, `alt-32`, or surrounding text containing the pattern. **When omitted**, the skill generates a random `adjective-animal` slug (e.g. `swift-otter`, `bold-lynx`) for ad-hoc work that isn't tracked in a ticket.
+- **`<MINI-NN>`** (optional) — the `mk` issue key this worktree is for. When supplied, the slug is `mini-NN` (lowercased) and the branch is `claude/mini-NN`. Accepts `MINI-32`, `mini-32`, or surrounding text containing the pattern. **When omitted**, the skill generates a random `adjective-animal` slug (e.g. `swift-otter`, `bold-lynx`) for ad-hoc work that isn't tracked in a ticket.
 - **`--no-env`** (optional) — skip Phase 4 (the `pnpm worktree-env start` background warm-up). Use this when the caller knows the change is docs-only or when they explicitly don't want a running dev stack.
-- **`--description "<short summary>"`** (optional) — pass-through to `pnpm worktree-env start`. If omitted, the skill tries to fetch the Linear issue title (when an `ALT-NN` was supplied and the Linear MCP is loaded) and derives a ≤10-word description from it. If neither is available, prompt the user once for one — `pnpm worktree-env start` requires a description on first run for a new worktree.
+- **`--description "<short summary>"`** (optional) — pass-through to `pnpm worktree-env start`. If omitted, the skill tries to fetch the `mk` issue title (when a `MINI-NN` was supplied) and derives a ≤10-word description from it. If neither is available, prompt the user once for one — `pnpm worktree-env start` requires a description on first run for a new worktree.
 
 ---
 
@@ -51,8 +51,8 @@ git pull --ff-only origin main
 
 Derive the worktree slug:
 
-- **If `ALT-NN` was supplied**: slug is `alt-<NN>` (lowercase). For `ALT-29`, slug is `alt-29`.
-- **If `ALT-NN` was omitted**: pick a random `<adjective>-<animal>` slug, e.g. `swift-otter`, `bold-lynx`, `quiet-heron`, `merry-badger`. Keep both words short (≤8 chars each), all lowercase, single hyphen separator, no digits. State the chosen slug to the user up-front so they can `cd` to it later.
+- **If `MINI-NN` was supplied**: slug is `mini-<NN>` (lowercase). For `MINI-29`, slug is `mini-29`.
+- **If `MINI-NN` was omitted**: pick a random `<adjective>-<animal>` slug, e.g. `swift-otter`, `bold-lynx`, `quiet-heron`, `merry-badger`. Keep both words short (≤8 chars each), all lowercase, single hyphen separator, no digits. State the chosen slug to the user up-front so they can `cd` to it later.
 - **Worktree path**: `.claude/worktrees/<slug>` — relative to the repo root. (The repo's existing convention puts worktrees here; root `CLAUDE.md` walks through the layout.)
 - **Branch**: `claude/<slug>` — namespaces it as agent-created, matching the other `claude/...` branches.
 
@@ -66,7 +66,7 @@ git rev-parse --verify --quiet refs/heads/claude/<slug>
 If either exists:
 
 - **Random slug**: silently regenerate (different adjective/animal pair) and re-check. Up to ~3 attempts, then stop and ask.
-- **Linear-derived slug**: stop and ask — don't auto-resume someone else's worktree, and don't reuse a stale branch silently. The user's `pnpm worktree-env delete <slug>` (root `CLAUDE.md`) is the right tool to clean up first; or, if there's actual work on the existing branch, the user may want to `cd` into the existing worktree and continue rather than recreate.
+- **`mk`-derived slug**: stop and ask — don't auto-resume someone else's worktree, and don't reuse a stale branch silently. The user's `pnpm worktree-env delete <slug>` (root `CLAUDE.md`) is the right tool to clean up first; or, if there's actual work on the existing branch, the user may want to `cd` into the existing worktree and continue rather than recreate.
 
 Create the worktree off the freshly-pulled main:
 
@@ -106,8 +106,14 @@ pnpm worktree-env start --description "<short summary, ≤10 words>"
 Pick the description in this order:
 
 1. If the caller passed `--description "..."`, use it verbatim.
-2. Otherwise, if `ALT-NN` was supplied and the Linear MCP is loaded, fetch the issue title with `mcp__claude_ai_Linear__get_issue` and truncate to ≤10 words.
-3. Otherwise (random-slug flow, or Linear lookup unavailable), prompt the user once for a description.
+2. Otherwise, if `MINI-NN` was supplied, fetch the issue title via `mk`:
+
+   ```bash
+   mk issue show MINI-NN -o json | jq -r .title
+   ```
+
+   Truncate to ≤10 words.
+3. Otherwise (random-slug flow, or `mk` lookup failed), prompt the user once for a description.
 
 Don't wait for the background task to finish — the caller will check on it (or use the smoke-test phase of whichever flow invoked this skill). The command is idempotent and safe to re-run.
 
@@ -142,37 +148,37 @@ These mirror the rules in `execute-next-task` for the same reasons:
 
 ## Example
 
-> User: `/setup-worktree ALT-47`
+> User: `/setup-worktree MINI-47`
 >
 > *Skill runs `pwd`, `git rev-parse --abbrev-ref HEAD`, `git status`. Repo root, on `main`, clean.*
 >
 > *Skill runs `git pull --ff-only origin main`. Already up to date.*
 >
-> *Skill runs `git worktree add .claude/worktrees/alt-47 -b claude/alt-47`, then `cd .claude/worktrees/alt-47`.*
+> *Skill runs `git worktree add .claude/worktrees/mini-47 -b claude/mini-47`, then `cd .claude/worktrees/mini-47`.*
 >
 > *Skill runs `pnpm install` synchronously. Done in 12s.*
 >
-> *Skill calls `mcp__claude_ai_Linear__get_issue(id: "ALT-47")` to get the title — "Phase 2: tunnel reconciler retry budget" — and truncates to "tunnel reconciler retry budget".*
+> *Skill runs `mk issue show MINI-47 -o json | jq -r .title` to get the title — "Phase 2: tunnel reconciler retry budget" — and truncates to "tunnel reconciler retry budget".*
 >
 > *Skill runs `pnpm worktree-env start --description "tunnel reconciler retry budget"` in the background.*
 >
-> Skill: "Worktree ready at `.claude/worktrees/alt-47` on branch `claude/alt-47`. `pnpm install` done. Dev env warming in the background. Working directory is the worktree."
+> Skill: "Worktree ready at `.claude/worktrees/mini-47` on branch `claude/mini-47`. `pnpm install` done. Dev env warming in the background. Working directory is the worktree."
 
-> User: `/setup-worktree ALT-58 --no-env`
+> User: `/setup-worktree MINI-58 --no-env`
 >
 > *Skill runs Phases 1–3 as above, then skips Phase 4.*
 >
-> Skill: "Worktree ready at `.claude/worktrees/alt-58` on branch `claude/alt-58`. `pnpm install` done. Dev env startup skipped (`--no-env`). Working directory is the worktree."
+> Skill: "Worktree ready at `.claude/worktrees/mini-58` on branch `claude/mini-58`. `pnpm install` done. Dev env startup skipped (`--no-env`). Working directory is the worktree."
 
 > User: `/setup-worktree`
 >
-> *No `ALT-NN` supplied — skill picks a random slug `bold-lynx`, runs `ls .claude/worktrees/bold-lynx` and `git rev-parse --verify --quiet refs/heads/claude/bold-lynx` — neither exists.*
+> *No `MINI-NN` supplied — skill picks a random slug `bold-lynx`, runs `ls .claude/worktrees/bold-lynx` and `git rev-parse --verify --quiet refs/heads/claude/bold-lynx` — neither exists.*
 >
 > *Skill runs Phase 1 pre-flight, then `git worktree add .claude/worktrees/bold-lynx -b claude/bold-lynx` and `cd` into it.*
 >
 > *Skill runs `pnpm install` synchronously.*
 >
-> *No Linear ID and no `--description`, so skill prompts: "What's this worktree for? (≤10 words for the dev env description)". User answers "spike on haproxy reload latency".*
+> *No `mk` issue and no `--description`, so skill prompts: "What's this worktree for? (≤10 words for the dev env description)". User answers "spike on haproxy reload latency".*
 >
 > *Skill runs `pnpm worktree-env start --description "spike on haproxy reload latency"` in the background.*
 >
