@@ -80,7 +80,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-scheduled_tasks.lock
+.claude/scheduled_tasks.lock
 
 # Per-worktree dev environment snapshot written by deployment/development/worktree_start.sh
 environment-details.xml
