@@ -507,17 +507,17 @@ Verify in prod: at least one production IdP admin uses the Test sign-in button a
 
 ## 8. Linear tracking
 
-Phase issues will be created under the [Service Addons Framework](https://linear.app/altitude-devops/project/service-addons-framework-a171d68a60ae) project on the Altitude Devops team and linked here once filed.
+Tracked under the [Service Addons Framework](https://linear.app/altitude-devops/project/service-addons-framework-0391849444a5) project on the Altitude Devops team.
 
-- ALT-_TBD_ — Phase 1: Addon framework
-- ALT-_TBD_ — Phase 2: Tailscale connected service  [blocks-by: 1]
-- ALT-_TBD_ — Phase 3: `tailscale-ssh` addon  [blocks-by: 1, 2]
-- ALT-_TBD_ — Phase 4: `tailscale-web` and tailscale addon merging  [blocks-by: 3]
-- ALT-_TBD_ — Phase 5: Connect panel + Tailscale device-status poller  [blocks-by: 4]
-- ALT-_TBD_ — Phase 6: `caddy-auth-sidecar` image package
-- ALT-_TBD_ — Phase 7: `caddy-auth` addon  [blocks-by: 1, 6]
-- ALT-_TBD_ — Phase 8: `caddy-auth` ↔ `tailscale-web` cross-addon composition  [blocks-by: 4, 7]
-- ALT-_TBD_ — Phase 9: Pool integration  [blocks-by: 3]
-- ALT-_TBD_ — Phase 10: `OidcProvider` model + admin UI (deferred)
-- ALT-_TBD_ — Phase 11: `caddy-auth` provider-resolution swap (deferred)  [blocks-by: 7, 10]
-- ALT-_TBD_ — Phase 12: Per-provider Test sign-in flow (deferred)  [blocks-by: 10]
+- [ALT-56](https://linear.app/altitude-devops/issue/ALT-56) — Phase 1: Addon framework
+- [ALT-57](https://linear.app/altitude-devops/issue/ALT-57) — Phase 2: Tailscale connected service  [blocks-by: 1]
+- [ALT-58](https://linear.app/altitude-devops/issue/ALT-58) — Phase 3: `tailscale-ssh` addon  [blocks-by: 1, 2]
+- [ALT-59](https://linear.app/altitude-devops/issue/ALT-59) — Phase 4: `tailscale-web` and tailscale addon merging  [blocks-by: 3]
+- [ALT-60](https://linear.app/altitude-devops/issue/ALT-60) — Phase 5: Connect panel + Tailscale device-status poller  [blocks-by: 4]
+- [ALT-61](https://linear.app/altitude-devops/issue/ALT-61) — Phase 6: `caddy-auth-sidecar` image package
+- [ALT-62](https://linear.app/altitude-devops/issue/ALT-62) — Phase 7: `caddy-auth` addon  [blocks-by: 1, 6]
+- [ALT-63](https://linear.app/altitude-devops/issue/ALT-63) — Phase 8: `caddy-auth` ↔ `tailscale-web` cross-addon composition  [blocks-by: 4, 7]
+- [ALT-64](https://linear.app/altitude-devops/issue/ALT-64) — Phase 9: Pool integration  [blocks-by: 3]
+- [ALT-65](https://linear.app/altitude-devops/issue/ALT-65) — Phase 10: `OidcProvider` model + admin UI (deferred)
+- [ALT-66](https://linear.app/altitude-devops/issue/ALT-66) — Phase 11: `caddy-auth` provider-resolution swap (deferred)  [blocks-by: 7, 10]
+- [ALT-67](https://linear.app/altitude-devops/issue/ALT-67) — Phase 12: Per-provider Test sign-in flow (deferred)  [blocks-by: 10]
