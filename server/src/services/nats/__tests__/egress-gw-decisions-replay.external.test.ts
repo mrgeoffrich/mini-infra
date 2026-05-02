@@ -115,7 +115,7 @@ describe("Egress gateway decisions — replay across consumer restart (external)
 
     // Phase 1 — register a consumer and start draining.
     const received1: string[] = [];
-    let cancel1: (() => void) | null = bus.jsConsume<EgressGwDecision>(
+    const cancel1 = bus.jsConsume<EgressGwDecision>(
       STREAM_NAME,
       CONSUMER_NAME,
       async (d, msg) => {
@@ -133,7 +133,6 @@ describe("Egress gateway decisions — replay across consumer restart (external)
 
     // Phase 2 — kill the consumer iterator (simulates server crash).
     cancel1();
-    cancel1 = null;
 
     // Publish the remaining decisions while there's no live consumer.
     // These are the messages that the legacy `docker logs` follower would

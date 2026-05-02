@@ -6,7 +6,7 @@
  * yet, and surfaces validation errors without crashing the rest of the run.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createId } from "@paralleldrive/cuid2";
 import { testPrisma } from "./integration-test-helpers";
 
@@ -37,13 +37,6 @@ async function makeTemplate(name: string): Promise<string> {
 }
 
 describe("seedSystemPrefixAllowlist", () => {
-  beforeEach(async () => {
-    await testPrisma.systemSettings.deleteMany({
-      where: { category: "nats-prefix-allowlist" },
-    });
-    await testPrisma.stackTemplate.deleteMany({});
-  });
-
   it("seed registry includes the Phase 2 fw-agent entry", () => {
     const fw = SYSTEM_PREFIX_ALLOWLIST_SEEDS.find((s) => s.prefix === FW_PREFIX);
     expect(fw).toBeDefined();

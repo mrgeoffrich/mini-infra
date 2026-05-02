@@ -54,7 +54,7 @@
         "vitest": "^4.1.4"
     },
     "dependencies": {
-        "@anthropic-ai/claude-agent-sdk": "^0.2.123",
+        "@anthropic-ai/claude-agent-sdk": "^0.2.126",
         "@asteasolutions/zod-to-openapi": "^8.5.0",
         "@azure/identity": "^4.13.1",
         "@azure/keyvault-certificates": "^4.10.3",

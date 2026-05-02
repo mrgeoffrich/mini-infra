@@ -324,7 +324,6 @@ describe('EgressLogIngester', () => {
     const ingester = new EgressLogIngester(prisma);
     // Don't start the ingester (would require docker mocks). Instead
     // reach into the orchestrator's seam: spawn a JS consumer directly.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const Ctor = (mod as any).FwAgentJsConsumer ?? null;
     if (!Ctor) {
       // Fallback — reach via the orchestrator's start path. We only
@@ -332,12 +331,9 @@ describe('EgressLogIngester', () => {
       void ingester;
       throw new Error("FwAgentJsConsumer not exported from egress-log-ingester");
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const consumer = new Ctor(prisma);
     // Start the batch timer so flushes happen on the existing 1s cadence.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (consumer as any)._startBatchTimer();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return consumer as { _handleJsEvent: (e: object) => Promise<void>; stop(): void };
   }
 
