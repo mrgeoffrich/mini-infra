@@ -26,8 +26,7 @@ on the original.
 The skill is invoked with two **required** parameters, parsed from the args string:
 
 - `--session-id <UUID>` — the Claude Code session ID to retrospect on. Must be passed
-  explicitly because if this skill is invoked from a subagent, `$CLAUDE_SESSION_ID` would
-  point at the subagent's own (effectively empty) session, not the parent's.
+  explicitly.
 - `--linear-issue <ALT-NN>` — the Linear issue ID the parent run was working on. The retro
   issue's title and description reference this so the trail is navigable.
 

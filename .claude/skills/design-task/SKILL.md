@@ -1,13 +1,15 @@
 ---
 name: design-task
-description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, and a rough implementation outline, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side). Posts a comment on the Linear ticket pointing to the generated file. **Does NOT change the issue status, does NOT create a worktree, does NOT open a PR** — this is a planning/design step that runs before execution. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
+description: Design-exploration agent for a Linear ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task ALT-38`) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked Todo issue from the user's Linear team (Altitude Devops), the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent project has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, and a rough implementation outline, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, posts a "design ready" comment on the impl ticket pointing at the file (so a future `execute-next-task` run finds it), and **marks the design ticket Done** — the design doc + recommendation are the deliverable, and the impl ticket unblocks immediately. Does NOT create a worktree, does NOT open a PR — the user reviews the doc and commits/PRs it on their own cadence. Use this skill whenever the user says "design ALT-NN", "design the next task", "explore design options for ALT-NN", "give me two designs for ALT-NN", "what are the design options for ALT-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for a Linear-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for non-Linear design questions, or for ad-hoc architecture discussions without a Linear ticket attached.
 ---
 
 # Design Task
 
-You're a **design-exploration agent**. The Linear ticket describes *what* needs to happen (Goal, Deliverables, Done when). Your job is to propose *how* — by surveying relevant design patterns, finding what's already in the Mini Infra codebase that fits, and writing up **two distinct design options** the user (or a future executor) can pick between.
+You're a **design-exploration agent**. The Linear ticket describes *what* needs to happen (Goal, Deliverables, Done when). Your job is to propose *how* — by surveying relevant design patterns, finding what's already in the Mini Infra codebase that fits, writing up **two distinct design options**, and **committing to a recommendation**.
 
-This skill is the planning step that sits **between** ticket creation (`task-to-linear` / `plan-to-linear`) and execution (`execute-next-task`). It produces a design doc and a Linear comment pointing at it. **It never modifies issue state, never creates a worktree, never opens a PR.** The user reviews the design, picks an option (or merges them, or sends you back to the drawing board), and only then runs `execute-next-task`.
+This skill is the planning step that sits **between** ticket creation (`task-to-linear` / `plan-to-linear`) and execution (`execute-next-task`). It produces a design doc, posts a Linear comment pointing at it, and marks the design ticket **Done** so the impl ticket unblocks immediately. The recommendation in the doc is the call — there's no "user picks an option" step. If the user disagrees, they can edit the doc and re-comment; the default flow assumes the recommendation stands. **The skill creates no worktree and opens no PR** — the user reviews the doc and commits/PRs it at their own pace.
+
+The Done-when in the ticket body (often "Figma frames signed off") is informational. The skill considers the design doc + recommendation to be the actual deliverable, and marks the Linear issue Done on that basis. If the team starts wanting Figma frames again, that's a future change to this skill.
 
 ## What "two distinct designs" means
 
@@ -36,9 +38,9 @@ The Linear MCP tools are deferred at session start. Load the toolkit in one bulk
 ToolSearch(query: "linear", max_results: 30)
 ```
 
-You should see tools like `mcp__cd9fab4e-...__list_issues`, `__get_issue`, `__get_project`, `__list_comments`, `__save_comment`, `__list_issue_statuses`. If any of these are missing, stop and tell the user — don't fall back to anything else.
+You should see tools like `mcp__cd9fab4e-...__list_issues`, `__get_issue`, `__get_project`, `__list_comments`, `__save_comment`, `__save_issue`, `__list_issue_statuses`. If any of these are missing, stop and tell the user — don't fall back to anything else.
 
-Note: this skill does **not** call `save_issue`. State transitions are out of scope.
+Note: this skill calls `save_issue` exactly once, at the very end (Phase 8), to mark the issue Done. No other state transitions.
 
 ---
 
@@ -71,11 +73,11 @@ Same rule as `execute-next-task`: state = `Todo`, no unfinished `blocked-by`. No
    - **1 unblocked** → use it. State the pick: id, title, project name.
    - **>1 unblocked** → list them with `id | title | project` and ask the user to pick. Don't infer.
 
-### 2.1 Do NOT change issue state
+### 2.1 No state transition at the start
 
-Unlike `execute-next-task`, this skill does **not** transition the issue to In Progress. The ticket stays in Todo (or whatever state it was in) until the user actually starts execution. A design step is not a claim on the ticket — multiple designs from different angles are legitimate, and design exploration shouldn't block another agent or human from picking up the work.
+Unlike `execute-next-task`, this skill does **not** transition the issue to In Progress when it picks the ticket. Design exploration is fast and one-shot — the only state change happens at the very end (Phase 8), when the doc is written and the recommendation is settled, and the issue moves straight from `Todo` to `Done`. There's no "In Progress" leg because there's no useful window where the design ticket is half-done.
 
-If the user wants to signal "I'm thinking about this," they can do so manually. The skill stays out of the state machine.
+If the user is re-running design on a ticket that is already `In Progress` or `Done` (per the soft validations above), respect their confirmation and proceed — the final Phase 8 transition still runs and re-asserts `Done`.
 
 ---
 
@@ -238,7 +240,7 @@ lib/types/<thing>.ts                           (changed)    — <what>
 
 ## Recommendation
 
-<Optional but encouraged. 1–2 paragraphs naming which option you'd lean toward and why, framed as "for the ticket as currently scoped". If the two options are genuinely close, say so and list the one or two questions that would tip the balance. Don't hedge endlessly — the user wants your judgment, not a dispassionate side-by-side.>
+<**Required, not optional.** 1–2 paragraphs naming the picked option and why, framed as "for the ticket as currently scoped". The user does not pick afterwards — this is the call. If the two options are genuinely close, still pick one and name the one or two facts that would flip the call (so a future reader can spot if the world changed). Don't hedge — "no strong preference" is not a valid output of this skill.>
 
 ## Open questions
 
@@ -273,12 +275,14 @@ Use `design/` as the branch prefix (parallel to `claude/` for execution branches
 
 ---
 
-## Phase 6 — Comment on the Linear ticket
+## Phase 6 — Comment on the design ticket *and* the impl ticket
 
-Post a single comment on the issue pointing at the new file. Keep it short — the design doc itself is the artefact; this comment is just a navigation aid.
+Two comments here, not one. Both are short navigation aids — the design doc itself is the artefact.
+
+### 6.1 Comment on the design ticket
 
 ```
-save_comment(issue_id: <ALT-NN>, body: <comment, see template>)
+save_comment(issueId: <design-ALT-NN>, body: <see template>)
 ```
 
 Template:
@@ -290,35 +294,77 @@ Two options explored:
 - **Option A — <name>** — <one-line gist>
 - **Option B — <name>** — <one-line gist>
 
-<Optional: one sentence on the recommendation, if you made one in §Recommendation.>
+**Picked: Option <X>** — <one-sentence reason from §Recommendation>.
 
-Designed by Claude. Pick an option (or send back for another pass) before running `/execute-next-task <ALT-NN>`.
+Marking this design ticket Done — `/execute-next-task <impl-ALT-NN>` is unblocked. If you disagree with the pick, edit the doc and reopen the ticket.
 ```
 
-If the design branch has been pushed to the remote, link to the file via its GitHub URL (`https://github.com/<owner>/<repo>/blob/<branch>/docs/designs/...md`) so the comment is clickable from Linear. If it hasn't been pushed, the relative path is fine — the user can always view it locally.
+If the parent ticket lists an impl ticket it blocks (look at the issue's `relations.blocks[]` from the original `get_issue` call), name that ticket explicitly so the user has a one-click follow-up. If there's no blocked impl ticket, drop that clause.
+
+### 6.2 Comment on the impl ticket (if there is one)
+
+`execute-next-task` reads the impl ticket's body as the contract and skims its comments. The impl ticket needs a pointer to the design doc, otherwise a future executor opens the ticket cold and has no idea a design pass happened. Don't edit the impl ticket's body — comments are sufficient and don't risk corrupting the contract.
+
+If `relations.blocks[]` on the design issue contains exactly one impl ticket (the typical shape produced by `plan-to-linear`), post:
+
+```
+save_comment(issueId: <impl-ALT-NN>, body: <see template>)
+```
+
+Template:
+
+```markdown
+**Design ready:** [`docs/designs/<filename>.md`](<https URL on design branch, if pushed; else relative path>)
+
+**Picked: Option <X>** — <one-sentence reason from §Recommendation>.
+
+Read this before starting implementation — it includes Key abstractions, File / component sketch, and Implementation outline that the design doc commits to. Open questions in the doc are unresolved choices that may matter at implementation time.
+```
+
+If `relations.blocks[]` is empty (standalone design, no impl ticket), skip 6.2. If it contains more than one impl ticket (rare — usually a planning mistake), post the comment on each one and surface the multi-target case to the user in the final report.
+
+### 6.3 URL derivation
+
+If the design branch has been pushed to the remote, link to the file via its GitHub URL (`https://github.com/<owner>/<repo>/blob/<branch>/docs/designs/...md`) so both comments are clickable from Linear. If it hasn't been pushed, the relative path is fine — the user can always view it locally.
 
 Derive the GitHub URL by reading `git remote get-url origin` and combining with the current branch name.
 
 ---
 
-## Phase 7 — Final report to the user
+## Phase 7 — Mark the issue Done
 
-End the run with a tight summary so the user knows exactly what to do next:
+The design doc + recommendation are the deliverable, so the design ticket is now finished. Transition the issue from its current state straight to `Done`:
+
+```
+save_issue(id: <ALT-NN>, state: "Done")
+```
+
+That single call is all this phase does. It unblocks any impl ticket that had this design ticket as a `blocked-by` edge — `execute-next-task` can pick the impl ticket up immediately. If `save_issue` errors (e.g. workspace permissions changed), surface the error to the user and tell them to mark Done manually; do not retry silently.
+
+The Done-when on the ticket body (often "Figma frames signed off") is **informational, not gating**. The recommendation in the doc is what the team is going to ship; treating Figma sign-off as a hard gate would only stall the impl ticket. If a future user wants Figma in the loop they'll change the skill, not the per-run behaviour.
+
+---
+
+## Phase 8 — Final report to the user
+
+End the run with a tight summary so the user knows what landed:
 
 ```
 ✓ Design doc written: docs/designs/<filename>.md
-✓ Linear comment posted on <ALT-NN>: <comment URL or just "the issue">
+✓ Linear comment posted on design ticket <ALT-NN>
+✓ "Design ready" comment posted on impl ticket <ALT-MM>
+✓ <ALT-NN> marked Done (impl ticket <ALT-MM> unblocked)
 
 Two options:
   A) <name> — <one-line>
   B) <name> — <one-line>
 
-Recommendation: <option, or "no strong preference — see Open questions">.
+Picked: Option <X> — <one-line reason>.
 
-Next steps:
-  1. Read the design doc and pick (or refine) an option.
-  2. When ready, run `/execute-next-task <ALT-NN>` to ship it.
+If you disagree with the pick, edit the doc and re-comment / reopen the ticket.
 ```
+
+If there's no impl ticket the design ticket was blocking, drop both the impl-ticket comment line and the "(impl ticket … unblocked)" clause.
 
 That's the whole skill. Keep the output short — the design doc is the substantive thing; the chat reply just navigates to it.
 
@@ -326,11 +372,12 @@ That's the whole skill. Keep the output short — the design doc is the substant
 
 ## Hard rules
 
-- **Never change the Linear issue state.** No `save_issue` calls. The state machine belongs to `execute-next-task`. (Soft validations in Phase 2 only *read* the state.)
+- **Only one Linear state transition per run, and only at the end.** The skill calls `save_issue` exactly once, in Phase 7, to set the issue to `Done`. Never set `In Progress`, never re-transition during the run, never call `save_issue` for any other field.
 - **Never create a worktree.** This is a planning step. The user runs `execute-next-task` later, which handles worktree creation. If the design surfaces something the executor needs to know, capture it in the design doc — not in environment setup.
-- **Never auto-commit the design doc.** The user reviews and iterates on it; pre-committing locks it in. Stage nothing; let the user commit when they're happy.
+- **Never auto-commit the design doc.** The user reviews + commits + PRs at their own pace; pre-committing locks the doc in before they've seen it. Stage nothing.
 - **Never `git checkout main` or modify other branches.** The only branch operation allowed is `git checkout -b design/alt-NN-<slug>` from a clean main, and only when on main.
 - **Never collapse two options into one.** If you genuinely can't think of two distinct approaches, surface that and ask the user whether to write one with a "rejected alternatives" appendix instead. Forcing a weak second option produces noise.
+- **Never punt the recommendation back to the user.** The §Recommendation section must commit to one option. "No strong preference" / "either works" / "user picks" are invalid outputs — pick one and name what would flip the call. The skill marks the issue Done on this basis; it cannot do that if it hasn't picked.
 - **Never skip the prior-art search (Phase 4.3).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
 - **Never overwrite an existing design doc silently.** If `docs/designs/<filename>.md` already exists (or a comment from a previous design pass exists on the ticket), stop and ask.
 - **Never produce an ExitPlanMode block.** The design doc *is* the plan. ExitPlanMode is for implementation plans presented in chat; this skill writes a markdown file instead.
@@ -345,10 +392,14 @@ That's the whole skill. Keep the output short — the design doc is the substant
 >
 > *Phase 4: identifies the dominant pattern axis as "where does the override live and how does it propagate to apply-time" — i.e. a state-placement + propagation question. Surveys two candidate shapes: (i) override stored on the StackService row, propagated through the existing apply pipeline; (ii) override stored on a new `EgressOverride` table keyed by service, looked up at apply-time. Searches the codebase for similar override patterns: finds `server/src/services/networking/haproxy-frontend-overrides.ts` (per-frontend overrides on the frontend row, similar to option (i)) and `server/src/services/registry/registry-credential-resolver.ts` (separate-table indirection lookup, similar to option (ii)). Cites both.*
 >
-> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md`. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons / Prior art. Recommendation: Option A unless the team already plans to add other override types soon. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it).*
+> *Phase 5: writes `docs/designs/alt-38-egress-per-container-override.md`. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons / Prior art. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it).*
 >
 > *Skill is on the goofy-thompson worktree branch (not main), so no branch switch needed. File written, not staged.*
 >
-> *Phase 6: posts a comment on ALT-38: "Designs drafted: …relative-path… Two options explored: A — Service-row column (cheap, leans on haproxy override pattern); B — Separate EgressOverride table (heavier, cleaner audit trail). Recommendation: A unless we expect more override types soon. Designed by Claude — pick an option before running /execute-next-task ALT-38."*
+> *Phase 6.1: posts a comment on ALT-38 (the design ticket): "Designs drafted: …relative-path… A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Marking this design ticket Done — `/execute-next-task ALT-39` (the impl ticket) is unblocked."*
 >
-> Skill: "✓ Design doc written: `docs/designs/alt-38-egress-per-container-override.md`. ✓ Linear comment posted on ALT-38. Two options: A) Service-row column. B) Separate EgressOverride table. Recommendation: A unless we expect more override types soon. Next: read the doc, pick an option, run `/execute-next-task ALT-38`."
+> *Phase 6.2: ALT-38 has `relations.blocks: [ALT-39]`. Posts a comment on ALT-39 (the impl ticket): "**Design ready:** `docs/designs/alt-38-egress-per-container-override.md`. Picked: Option A — Service-row column. Read this before starting implementation — it includes Key abstractions, File / component sketch, and Implementation outline. Open questions in the doc are unresolved choices that may matter at implementation time." A future `/execute-next-task ALT-39` skim of comments will see this immediately.*
+>
+> *Phase 7: `save_issue(id: "ALT-38", state: "Done")`. The single state transition. Impl ticket ALT-39 is now picker-eligible.*
+>
+> Skill: "✓ Design doc written: `docs/designs/alt-38-egress-per-container-override.md`. ✓ Linear comment posted on design ticket ALT-38. ✓ 'Design ready' comment posted on impl ticket ALT-39. ✓ ALT-38 marked Done (impl ticket ALT-39 unblocked). Two options: A) Service-row column. B) Separate EgressOverride table. Picked: A — cheap, leans on the haproxy override pattern. If you disagree, edit the doc and reopen the ticket."

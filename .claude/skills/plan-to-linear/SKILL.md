@@ -1,6 +1,6 @@
 ---
 name: plan-to-linear
-description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `Backlog` (designer-owned, kept out of the execute-next-task queue) and wired up as a `blocked-by` edge on the impl ticket — plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs and posts a full session retrospective comment on Phase 1; in update mode, posts a one-line refresh-summary comment instead. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
+description: Reads a phased markdown planning document under `docs/planning/` and either seeds Linear with a matching project plus one issue per phase (**create mode** — §8 has `ALT-_TBD_` placeholders) or refreshes an already-seeded project's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `ALT-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `Backlog` (designer-owned, kept out of the execute-next-task queue) and wired up as a `blocked-by` edge on the impl ticket — plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, assignee, cycle, estimate, labels, and all prior comments (retros, handoff notes); only the body, title (if changed), and blocked-by edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `ALT-_TBD_` placeholders with real issue IDs. Use this skill whenever the user says "populate linear from plan", "create the linear tickets", "plan to linear", "scaffold linear from this plan", "turn this plan into linear issues", "refresh linear from plan", "update linear issues", "re-sync linear from plan", "plan-to-linear refresh", or any equivalent request to seed *or* refresh Linear from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single Linear issue (use the Linear UI directly).
 ---
 
 # Plan to Linear
@@ -9,8 +9,8 @@ You're either **seeding** Linear with a project and per-phase issues from an exi
 
 The mode is detected from §8 of the plan doc:
 
-- **Create mode** — §8 has `ALT-_TBD_` placeholders. Default flow: create the project, file one issue per phase, set blocked-by edges, rewrite §8 with real IDs, post a full session retrospective.
-- **Update mode** — §8 has real `ALT-NN` IDs. Refresh the body of each existing issue from the plan, recompute blocked-by edges as a delta, leave state / assignee / cycle / estimate / labels / comments alone, post a one-line refresh-summary comment. Never delete issues — if the plan dropped a phase, surface it for manual handling.
+- **Create mode** — §8 has `ALT-_TBD_` placeholders. Default flow: create the project, file one issue per phase, set blocked-by edges, rewrite §8 with real IDs.
+- **Update mode** — §8 has real `ALT-NN` IDs. Refresh the body of each existing issue from the plan, recompute blocked-by edges as a delta, leave state / assignee / cycle / estimate / labels / comments alone. Never delete issues — if the plan dropped a phase, surface it for manual handling.
 
 Throughout the rest of this doc, **default behaviour is create mode** unless a step is explicitly tagged with an *Update mode* sub-section. When both branches exist for a phase, follow only the one matching the detected mode.
 
@@ -58,7 +58,7 @@ Linear MCP tools are deferred. Load them in bulk before doing anything else:
 ToolSearch(query: "linear", max_results: 30)
 ```
 
-You need at minimum: `list_issues`, `get_issue`, `list_projects`, `get_project`, `save_project`, `save_issue`, `save_comment`, `list_issue_statuses`. If any are missing, stop and tell the user.
+You need at minimum: `list_issues`, `get_issue`, `list_projects`, `get_project`, `save_project`, `save_issue`, `list_issue_statuses`. If any are missing, stop and tell the user.
 
 Also fetch the team's issue statuses once (`list_issue_statuses` for Altitude Devops) — you'll need the canonical names for `Todo` and `Backlog`. Different teams capitalise / name them differently.
 
@@ -412,7 +412,7 @@ Derive the GitHub URL by reading `git remote get-url origin` (e.g. `https://gith
 
 The bare-path variant (`Plan: docs/planning/...md`) is also accepted by `execute-next-task` as a legacy fallback for projects authored before this convention firmed up — but new projects use the combined format.
 
-Capture the project's URL and ID from the response — you'll need them for Phase 9 and the retrospective in Phase 11.
+Capture the project's URL and ID from the response — you'll need them for Phase 9.
 
 ---
 
@@ -602,7 +602,7 @@ For each matched issue:
 
 For phases newly added to the plan since seeding (detected in Phase 5 update-mode pre-flight, step 3 case "Plan has more phases than project"), create the issue using the create-mode template above with state `Todo` (or `Backlog` if optional/deferred). Append the new ALT-NN line to §8 in Phase 10.
 
-For orphan issues (Phase 5 update-mode pre-flight, step 3 case "Project has more issues than plan"), do nothing — they were already surfaced to the user. Just remember the list for the Phase 12 report.
+For orphan issues (Phase 5 update-mode pre-flight, step 3 case "Project has more issues than plan"), do nothing — they were already surfaced to the user. Just remember the list for the Phase 11 report.
 
 ### Update mode — paired design ticket reconciliation
 
@@ -615,12 +615,12 @@ After refreshing each impl ticket, reconcile its paired design ticket against th
    |---|---|---|
    | yes | yes | Refresh design body (regenerate `## Design needed` from the current verbatim items; preserve `## Source` and `## Done when`). |
    | yes | no | Create the design ticket fresh (same template as Phase 8.1 create mode); add the design→impl `blocked-by` edge in Phase 9. |
-   | no | yes | **Leave alone.** Surface as orphan in the Phase 12 report. Designers may still be working on it; auto-delete is never the right call. |
+   | no | yes | **Leave alone.** Surface as orphan in the Phase 11 report. Designers may still be working on it; auto-delete is never the right call. |
    | no | no | No-op. |
 
 3. **State preservation** — same rules as impl tickets. Pass only `body` and (if changed) `title` to `save_issue`. State, assignee, comments survive untouched.
 
-Capture, for the Phase 12 report:
+Capture, for the Phase 11 report:
 
 - Which impl issues had body refreshed (all matched issues, by ID).
 - Which impl issues had a title rename (and old → new).
@@ -657,7 +657,7 @@ Existing edges may not match the desired graph — §8 brackets may have changed
    - **Add** edges that are desired but missing.
    - **Remove** edges that exist but are no longer desired.
    - **Leave alone** edges that are correct.
-   If the loaded MCP toolkit doesn't expose edge removal, surface the unremoved edges in the Phase 12 report and proceed — the user can clean them up manually rather than having the run fail.
+   If the loaded MCP toolkit doesn't expose edge removal, surface the unremoved edges in the Phase 11 report and proceed — the user can clean them up manually rather than having the run fail.
 4. **Cross-project edges** (issues in this project blocked by issues in *other* projects) are out of scope for this skill — leave them untouched even if §8 makes no mention of them. They were added deliberately; we won't second-guess.
 
 For phases newly created during this update run (Phase 8 update-mode tail), apply their desired edges from scratch (same as create mode for those issues).
@@ -699,70 +699,7 @@ If neither case applies, leave §8 unchanged. Do **not** commit.
 
 ---
 
-## Phase 11 — Session retrospective
-
-### Create mode
-
-Leave a single comment on **Phase 1's issue** capturing meta-feedback about the run: ambiguities you had to resolve, friction in the skill or the conventions, and concrete suggestions. This is the feedback loop — read accumulated retrospectives to spot patterns and improve the skill (or the plan-doc convention) over time.
-
-**Crucially this is *meta*** — about how the skill ran, not about the *contents* of the tickets. If you want to flag something about a phase's deliverables, that belongs in the ticket itself or in a code-review pass on the eventual PR.
-
-Use this template. Omit any section that genuinely has nothing to report — don't pad with "N/A" or invent observations. If the entire run was uneventful, the comment is one line: "No notable friction this run."
-
-```markdown
-### Session notes — `plan-to-linear` retrospective
-
-*Meta: about how the skill ran, not the work itself. Drop a code-review pass on the ticket content separately if you want to comment on deliverables.*
-
-**Ambiguities resolved**
-- <plan-doc § / file path>: <what was unclear> → <judgment call I made>
-- ...
-
-**Workflow friction**
-- <observation about the skill, the MCP roundtrips, the plan-doc shape, or the codebase context the skill relied on>
-- ...
-
-**Suggestions** *(tag with `skill:`, `convention:`, or `project:` so they're greppable)*
-- skill: <improvement to the skill prompt or its phases>
-- convention: <improvement to the plan-doc / Linear conventions>
-- project: <improvement to this specific project's setup>
-- ...
-
-**What worked well** *(optional, short bullets)*
-- ...
-```
-
-Examples of *good* meta-feedback (concrete, actionable, about the loop):
-- `convention: Phase 4 had no "Migration shape" subsection — copying it forward to the ticket left a thin Goal/Deliverables-only body. Either the convention should require it for non-trivial phases or the skill should infer it.`
-- `skill: When the plan doc's §8 list and the §6 phase headings disagree on count, the skill stops with "out of sync" but doesn't surface the diff. Print both lists side by side.`
-- `project: No prior commits matching the area tag yet — area-tag detection fell back to "no prior commits" branch. Worked, but a hint in the plan doc would have been faster than scanning git log.`
-
-Examples of *bad* meta-feedback (about the work, not the loop) — don't include these:
-- ❌ `Phase 4 deliverables look thin. Should add a deliverable for log redaction.` — that's a code review, not retrospective.
-- ❌ `The plan is good and the phasing makes sense.` — content compliment, not workflow.
-
-Echo the comment to the user in the chat when reporting (Phase 12) so they don't have to switch contexts to read it.
-
-### Update mode
-
-Skip the full retrospective format. Post a single short comment on Phase 1's issue:
-
-```markdown
-### Refreshed from plan doc — <YYYY-MM-DD>
-
-- Issue bodies refreshed: N
-- Title renames: <count>
-- Phases added: <count> (<ALT-NN list>)
-- Orphan issues flagged (not deleted): <count> (<ALT-NN list>)
-- Dependency edges: +<X> added, -<Y> removed
-<- Friction: <only include if something genuinely surprised you — toolkit limitation, hand-edited §8 inconsistency, missing field a phase should have had after the spec change>
-```
-
-The full retrospective format is high signal at seeding (lots of new judgment calls about doc pointers, smoke recipes, area tags). On a refresh it's mostly mechanical, so a one-line audit-trail comment is enough. Only include `Friction:` if there's a genuine observation worth surfacing — invented friction defeats the feedback loop.
-
----
-
-## Phase 12 — Report
+## Phase 11 — Report
 
 Print a summary. Shape differs by mode.
 
@@ -777,7 +714,6 @@ Print a summary. Shape differs by mode.
    - <ALT-NN> Phase M: <title>           [Backlog]
 ✓ Set blocked-by relationships per plan ordering.
 ✓ Updated <plan-doc-path> §<8> with real issue IDs (uncommitted).
-✓ Posted session retrospective to <Phase 1 ALT-NN URL>.
 
 Next step: review the plan-doc diff, commit it, then run `execute-next-task` when you're ready to start Phase 1.
 ```
@@ -802,7 +738,6 @@ Next step: review the plan-doc diff, commit it, then run `execute-next-task` whe
    - <ALT-NN> blocked-by <ALT-NN>  ← please remove via Linear UI
    (or "✓ No manual cleanup needed.")
 ✓ Updated <plan-doc-path> §<8> with <added phases | no changes>.
-✓ Posted refresh-summary comment to <Phase 1 ALT-NN URL>.
 
 Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans / manual edges flagged, "address them in Linear"; else "done — issues are now in sync with the plan">.
 ```
@@ -817,8 +752,6 @@ Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans / 
 - **Touchpoints are best-guess at seed time, not a contract.** The Phase 3.5 explorer produces its best guess from the deliverables; files may have been renamed since seeding, the explorer may have missed something, and the deliverables may evolve. The rendered ticket section explicitly tells the executor to verify each path and add what's missing. Never present touchpoints as exhaustive.
 - **Shared-library opportunities are flags, not decisions.** The explorer surfaces candidates ("this enum will be consumed by the client → consider `lib/types/<...>.ts`"); the user confirms which apply at Phase 6 confirmation, and the executor confirms again at implementation time against current code. Never auto-promote a touchpoint into a shared package without surfacing it for confirmation first.
 - **Never invent paths.** Every `New` / `Modify` / `Read` path the explorer emits must be verifiable via `Read` or `Glob` (existing) or have a real sibling directory (new). Hallucinated paths are worse than no paths — they send the executor on a snipe hunt and erode trust in the section.
-- **Never put work-content critique in the retrospective / refresh-summary comment.** Phase 11 is meta-only — about how the skill ran. Comments about whether deliverables are right, whether the plan is good, or whether the phasing makes sense belong in a code-review pass on the eventual PR.
-- **Never fabricate retrospective content.** If the run was clean, the comment is "No notable friction this run." (Or, in update mode, just the audit-trail one-liner with no Friction line.) Padding with invented friction defeats the feedback loop.
 - **Never invent docs.** If `egress-shared/CLAUDE.md` doesn't exist, don't link it. Verify each attached doc.
 - **Never guess at convention.** If §8 has no placeholder list (create mode) or has mixed placeholders + real IDs (either mode), the H1 is missing, or no `### Phase N` headings parse — stop and report. The conventions exist for a reason.
 - **Never commit the plan-doc edit.** Leave it staged. The user owns the commit.
