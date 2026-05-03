@@ -142,11 +142,59 @@ The mk ticket body is your contract. Read it end to end and treat it as authorit
 
 4. **Read every doc the ticket lists under "Relevant docs."** Don't skim — these were chosen because they're the conventions you must follow. The ticket points at them so you don't have to guess what's relevant.
 
-5. **Skim prior comments for a designer hand-off.** Call `mk comment list MINI-NN -o json` and look for a comment from the `design-task` skill — its body starts with `**Design ready (PR open):**` or `**Design ready:**` and links to a design PR plus a doc path under `docs/designs/`. If you find one:
-   - **Expect a design doc + sibling SVG wireframes from the designer.** The doc lives at `docs/designs/<design-issue-id>-<slug>.md` (issue id is lowercase, e.g. `mini-38`); option-A and option-B wireframes (when the ticket has a UI surface) live next to it as `<base>-option-a.svg` / `<base>-option-b.svg`. The doc commits to a recommendation (Option A or B) — that recommendation is the design contract for fields the ticket body leaves under-specified (component layout, file/component sketch, key abstractions, named error wording, configured-state lifecycle).
-   - **Find the files.** If the design PR has merged, the doc + SVGs are on `main` and you read them at the relative path. If the design PR is still open, fetch it (`gh pr checkout <design-PR>` is overkill — instead read the file at the design branch via `gh pr view <design-PR> --json headRefName -q .headRefName`, then `git fetch origin <branch> && git show origin/<branch>:docs/designs/<filename>.md`). If the design PR is open and you can't find the file, **stop and ask** — the ticket says design exists but the artefact doesn't, which is a contradiction worth surfacing rather than guessing past.
-   - **Read the doc end-to-end before any code changes.** Pay particular attention to: the **Recommendation** (which option won), the **Key abstractions** + **File / component sketch** (these name files and types the implementation should produce), the **Implementation outline** (a rough order of operations), and the **States, failure modes & lifecycle** section if present (specific error categories and wording the executor should follow verbatim, plus per-field reversibility classifications). The **Open questions** section names choices the design didn't resolve — flag those in your handoff comment (Phase 12) if you ended up making a call on one.
-   - **No designer comment found** → fine. The ticket either had no UI surface, the design phase was skipped, or the design pre-dates this convention. Proceed without.
+5. **Fetch every mk doc linked to the issue and to the parent feature.** This is how `design-task` and `plan-to-mk` deliver supplemental context (design exploration with recommendation; plan-doc snapshot for the larger arc). The link is the machine-readable contract — read all of them.
+
+   ```bash
+   # Issue-level docs (designs, ad-hoc references attached by hand)
+   ISSUE_DOCS=$(mk issue show MINI-NN -o json | jq -r '.documents[]?.document_filename')
+
+   # Feature-level docs (plan doc, vendor refs, architecture pointers)
+   FEATURE_SLUG=$(mk issue show MINI-NN -o json | jq -r '.issue.feature_slug // empty')
+   FEATURE_DOCS=""
+   if [ -n "$FEATURE_SLUG" ]; then
+     FEATURE_DOCS=$(mk feature show "$FEATURE_SLUG" -o json | jq -r '.documents[]?.document_filename')
+   fi
+
+   # Read each one (no metadata, just content):
+   for doc in $ISSUE_DOCS $FEATURE_DOCS; do
+     echo "==== $doc ===="
+     mk doc show "$doc" --raw
+   done
+   ```
+
+   **What you'll typically find:**
+   - **Issue-linked, type `designs`** → the design doc from `design-task`. Its **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Its **Open questions** section names choices the design didn't resolve — flag those in your Phase 12 handoff comment if you ended up making a call on one.
+   - **Feature-linked, type `project_in_planning` / `project_complete`** → the plan doc snapshot. This is a synchronised mirror of the on-disk plan doc — same content as reading `docs/planning/.../<slug>-plan.md` directly. Use it as supplemental context for the larger arc; the ticket body still wins on what specifically has to ship.
+
+   **SVG wireframes are also linked as `designs`-typed docs** (filenames end in `.svg`). Normal case: by the time this skill runs the design PR has merged and the SVGs are already in the worktree at `docs/designs/<filename>-option-a.svg` etc. — just read them. Edge case: if the SVG is linked in mk but missing from disk (executor was unblocked manually before the design PR merged, or the SVG was excluded from the design commit by accident), materialise it from mk before reading. The mk doc filename mirrors the on-disk path with `/` → `-` (e.g. `docs-designs-mini-38-foo-option-a.svg` ↔ `docs/designs/mini-38-foo-option-a.svg`):
+
+   ```bash
+   for doc in $ISSUE_DOCS $FEATURE_DOCS; do
+     case "$doc" in
+       docs-*.svg)
+         # Reverse the `/` → `-` translation that --from-path applied. Only the first
+         # two dashes are slashes (docs-<type>-…); the rest of the filename can contain
+         # legitimate dashes (e.g. `option-a`).
+         on_disk=$(echo "$doc" | sed -E 's|^docs-([^-]+)-|docs/\1/|')
+         if [ ! -f "$on_disk" ]; then
+           mkdir -p "$(dirname "$on_disk")"
+           mk doc show "$doc" --raw > "$on_disk"
+         fi
+         ;;
+     esac
+   done
+   ```
+
+   That regex is correct for every path mk's `--from-path` derivation produces today (one nesting level under `docs/`, e.g. `docs/designs/...`). If a future doc lives deeper, broaden the pattern.
+
+   **No documents linked** → fine. Skip step 5b unless step 5b finds a stale-but-informative comment from a pre-`mk-doc` design pass.
+
+5b. **Backward-compat fallback: skim prior comments for a designer hand-off.** Older design passes (before the doc-link mechanism was wired up) only posted a comment without linking the doc to mk. Call `mk comment list MINI-NN -o json` and look for a comment whose body starts with `**Design ready (PR open):**` or `**Design ready:**` and links to a doc path under `docs/designs/`. If you find one **and** step 5 returned no design-typed doc, treat it as the design contract:
+   - If the design PR has merged, the doc + SVGs are on `main` — read at the relative path from the worktree.
+   - If the design PR is still open, fetch via `gh pr view <design-PR> --json headRefName -q .headRefName`, then `git fetch origin <branch> && git show origin/<branch>:docs/designs/<filename>.md`.
+   - If the comment exists but you can't locate the file via either path, **stop and ask** — the ticket claims design exists but the artefact is missing, which is a contradiction worth surfacing.
+
+   If step 5 already returned a design-typed doc, the comment is purely informational — the linked doc is authoritative.
 
 6. **Read prior art** — `git log --oneline -20 main` plus any commits matching the feature's area tag from the ticket. Shipped commits tell you the commit subject style and the rough size of a phase/task PR.
 
@@ -500,7 +548,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > *Skill runs `mk issue state MINI-29 in_progress --user Claude` and posts a "Claimed by Claude. Reading ticket and preparing the worktree…" comment via `mk comment add MINI-29 --as Claude --user Claude --body -` (Phase 2.1) so the mk board reflects the claim before any setup runs.*
 >
-> *Skill fetches MINI-29 with `mk issue show MINI-29 -o json` + parent feature with `mk feature show internal-nats-messaging -o json`. Feature description: `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Skill reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). The plan-doc resolves and its `### Phase 4` section matches the ticket — read as supplemental context. Reads each linked CLAUDE.md / ARCHITECTURE.md. Skims comments via `mk comment list MINI-29 -o json` — no designer hand-off. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
+> *Skill fetches MINI-29 with `mk issue show MINI-29 -o json` + parent feature with `mk feature show internal-nats-messaging -o json`. Feature description: `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Skill reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). The feature has one linked mk doc — `docs-planning-not-shipped-internal-nats-messaging-plan.md` (type `project_in_planning`); the skill fetches it via `mk doc show … --raw` and reads its `### Phase 4` section as supplemental context. The issue itself has no linked docs (no design phase for this ticket). Reads each linked CLAUDE.md / ARCHITECTURE.md. Skims comments via `mk comment list MINI-29 -o json` — no designer hand-off. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
 >
 > *Phase 4: invokes `Skill(setup-worktree, args: "MINI-29")`. The setup-worktree skill pre-flights main, runs `git pull --ff-only origin main`, creates the worktree at `.claude/worktrees/mini-29` on `claude/mini-29`, runs `pnpm install` synchronously, then backgrounds `pnpm worktree-env start --description "Phase 4 — pg-az-backup progress + result events"` (description derived from the mk title). Returns control with cwd = the worktree. Skill posts the worktree-details follow-up comment on MINI-29 via `mk comment add … --body-file`.*
 >

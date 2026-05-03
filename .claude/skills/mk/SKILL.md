@@ -184,7 +184,7 @@ mk history                           Last 50 mutations in the current repo
 
 `--from` / `--to` accept either local-time stamps (`YYYY-MM-DD`, `YYYY-MM-DD HH:MM`, `YYYY-MM-DD HH:MM:SS`) or RFC 3339 (e.g. `2026-05-03T07:27:14Z`). Bare dates start at 00:00 in the local timezone.
 
-Op naming is dotted: `repo.create`, `feature.{create,update,delete}`, `issue.{create,update,state,delete}`, `comment.add`, `relation.{create,delete}`, `pr.{attach,detach}`, `tag.{add,remove}`, `document.{create,update,delete,link,unlink}`. Filtering by op prefix is not currently supported — match exactly, or use `--kind` for an entity-level cut.
+Op naming is dotted: `repo.create`, `feature.{create,update,delete}`, `issue.{create,update,state,delete}`, `comment.add`, `relation.{create,delete}`, `pr.{attach,detach}`, `tag.{add,remove}`, `document.{create,update,rename,delete,link,unlink}` (`mk doc upsert` records `document.create` or `document.update` depending on whether it created the row). Filtering by op prefix is not currently supported — match exactly, or use `--kind` for an entity-level cut.
 
 **Examples:**
 ```bash
@@ -204,10 +204,17 @@ A per-repo store of named text documents (markdown specs, design notes, vendor d
 `user_docs | project_in_planning | project_in_progress | project_complete | vendor_docs | architecture | designs | testing_plans`. The list is extensible — additional types may appear over time.
 
 ```
-mk doc add <filename>                Create a document
-  --type <type>                         Required
+mk doc add [filename]                Create a document
+  --type <type>                         Required (unless derivable from --from-path)
   --content <text|->                    Body, or '-' for stdin
   --content-file <path>                 Read body from a file (UTF-8 text)
+  --from-path <repo-relative-path>      Derive filename (and optionally type
+                                         and content) from a path on disk
+
+mk doc upsert [filename]             Create or update — same flag surface as add.
+                                     Use this from skills to skip the
+                                     "show, branch on exit code, then add or
+                                     edit" shell dance.
 
 mk doc list [--type <type>]          List documents in the current repo
 mk doc show <filename> [--raw]       Print metadata + content + links
@@ -216,6 +223,10 @@ mk doc edit <filename>
   --type <type>                         Change type
   --content <text|->
   --content-file <path>
+mk doc rename <old> <new>            Rename in place. Links are preserved
+  --type <new-type>                      Optionally also change the type
+                                          (handy when a plan moves
+                                           not-shipped/ → shipped/)
 mk doc rm <filename>                 Delete a document (and its links)
 
 mk doc link   <filename> <ISSUE-KEY|feature-slug> [--why <text>]
@@ -225,10 +236,36 @@ mk doc unlink <filename> <ISSUE-KEY|feature-slug>
 
 `<ISSUE-KEY|feature-slug>` auto-detects: anything matching `PREFIX-N` is an issue key, otherwise it's a feature slug in the current repo.
 
-`mk issue show` and `mk feature show` both surface a "Linked documents:" section listing the documents that link to the entity, along with the per-link `--why` description.
+`mk issue show` and `mk feature show` both surface a "Linked documents:" section listing each document with its type and the per-link `--why` description (e.g. `auth-spec.md (architecture) — Source of truth for the JWT switch`).
+
+**`--from-path` filename derivation:** replaces `/` with `-`, so
+`docs/planning/not-shipped/foo-plan.md` → `docs-planning-not-shipped-foo-plan.md`.
+
+**`--from-path` type derivation** (skip `--type` when one of these matches):
+
+| path prefix                       | derived type           |
+| --------------------------------- | ---------------------- |
+| `docs/planning/not-shipped/`      | `project_in_planning`  |
+| `docs/planning/in-progress/`      | `project_in_progress`  |
+| `docs/planning/shipped/`          | `project_complete`     |
+
+For any other path, pass `--type` explicitly. Explicit `--type` / `--content-file` always wins over derivation. When `--from-path` is given without `--content`/`--content-file`, the path itself is used as the content file.
 
 **Example:**
 ```bash
+# One-liner add: filename and type both derived, content read from disk.
+mk doc add --from-path docs/planning/not-shipped/auth-plan.md
+
+# Idempotent maintenance from a skill — no probe-then-branch shell dance.
+mk doc upsert --from-path docs/planning/not-shipped/auth-plan.md
+
+# Plan shipped: rename and bump the type in one step. Links survive.
+mk doc rename \
+  docs-planning-not-shipped-auth-plan.md \
+  docs-planning-shipped-auth-plan.md \
+  --type project_complete
+
+# Manual filename / type still works.
 mk doc add auth-spec.md --type architecture --content-file docs/auth.md
 mk doc link auth-spec.md auth-rewrite --why "Source of truth for the JWT switch"
 mk doc link auth-spec.md MINI-42 --why "Reference for the 500 fix"
