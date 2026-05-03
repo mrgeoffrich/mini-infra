@@ -106,9 +106,20 @@ State the parse result so the user can intercept:
 Same shape as `execute-next-task` Phase 3 — the executor needs the ticket as the contract before judging whether a finding is real:
 
 1. **Fetch the issue body** via `mk issue show MINI-NN -o json` and pull out **Goal / Deliverables / Done when / Relevant docs / Smoke tests**. These define what the PR was supposed to do — a "drift from the contract" finding is only real if the actual ticket says so.
-2. **Skim prior comments** (`mk comment list MINI-NN -o json`) for a `**Design ready (PR open):**` pointer from `design-task`. If found, read the design doc under `docs/designs/<id>-<slug>.md` (on `main` if the design PR has merged, on the design branch otherwise — `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). The doc's **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections are part of the contract; findings that allege "drift from the design doc" are validated against this.
-3. **If the parent feature has a `Plan:` line** in its description (`mk feature show <slug> -o json` for the feature linked from the issue), read the matching `### Phase N` section as supplemental context. The ticket body still wins on what specifically had to ship.
-4. **Read the project conventions** for the directories the *findings* cite (not the directories the diff touches — those are usually a superset). Root [CLAUDE.md](CLAUDE.md) always; [server/CLAUDE.md](server/CLAUDE.md) if any finding cites `server/`; [client/CLAUDE.md](client/CLAUDE.md) if any cites `client/`; [claude-guidance/ICONOGRAPHY.md](claude-guidance/ICONOGRAPHY.md) if a UI finding cites a missing/wrong icon.
+2. **Fetch every mk doc linked to the issue and to the parent feature.** Same mechanism `execute-next-task` Phase 3 step 5 uses — the doc-link is the machine-readable contract for design recommendations and plan-doc context.
+   ```bash
+   ISSUE_DOCS=$(mk issue show MINI-NN -o json | jq -r '.documents[]?.document_filename')
+   FEATURE_SLUG=$(mk issue show MINI-NN -o json | jq -r '.issue.feature_slug // empty')
+   FEATURE_DOCS=""
+   if [ -n "$FEATURE_SLUG" ]; then
+     FEATURE_DOCS=$(mk feature show "$FEATURE_SLUG" -o json | jq -r '.documents[]?.document_filename')
+   fi
+   for doc in $ISSUE_DOCS $FEATURE_DOCS; do mk doc show "$doc" --raw; done
+   ```
+   The design doc (issue-linked, type `designs`) carries the **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections that "drift from the design doc" findings are validated against. The plan doc (feature-linked, type `project_in_planning` / `project_complete`) is supplemental context for the larger arc.
+
+   **Backward-compat fallback:** if no design-typed doc is linked, skim `mk comment list MINI-NN -o json` for a `**Design ready (PR open):**` pointer and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). Older tickets that pre-date the doc-link mechanism only have the comment.
+3. **Read the project conventions** for the directories the *findings* cite (not the directories the diff touches — those are usually a superset). Root [CLAUDE.md](CLAUDE.md) always; [server/CLAUDE.md](server/CLAUDE.md) if any finding cites `server/`; [client/CLAUDE.md](client/CLAUDE.md) if any cites `client/`; [claude-guidance/ICONOGRAPHY.md](claude-guidance/ICONOGRAPHY.md) if a UI finding cites a missing/wrong icon.
 
 Don't skip the contract reload. A finding like "this `any` type is unjustified" is real iff the project's "no `any`" rule applies — and you'll judge that wrong without rereading the convention doc.
 

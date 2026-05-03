@@ -468,6 +468,33 @@ mk pr attach MINI-NN <PR_URL> --user Claude
 
 If `gh pr create` fails (no `gh` auth, repo settings, branch-protection rules), surface the error and stop. Don't retry silently. The user can authenticate `gh` and re-run the skill, or open the PR manually and paste the URL into Phase 7's comments — but don't try to half-ship by posting mk comments without a PR.
 
+### 6.4 Register the design doc + sibling SVGs with mk and link them
+
+Why: downstream skills (`execute-next-task`, `address-review`, `review`) fetch the design doc as supplemental context for the impl ticket. Linking via `mk doc link` gives them a single uniform fetch (`mk doc show <name> --raw`) instead of having to know which branch the doc lives on. SVG wireframes go in too (they're just XML — mk's `doc` subsystem stores arbitrary text content), so the executor can materialise them on demand even when the design PR hasn't merged yet.
+
+`mk doc upsert --from-path` derives the mk filename (path with `/` → `-`) and reads the file content in one shot. Pass `--type designs` because `--from-path` only auto-derives type for plan-doc paths; design paths need an explicit type.
+
+```bash
+register_and_link() {
+  local path="$1"
+  [ -f "$path" ] || return 0                            # skip artefacts not produced
+  local name="${path//\//-}"                            # docs/designs/foo.md → docs-designs-foo.md
+  mk doc upsert --from-path "$path" --type designs --user Claude
+  mk doc link "$name" MINI-NN \
+    --why "Design exploration artefacts for this design ticket" --user Claude
+  if [ -n "<impl-MINI-NN>" ]; then
+    mk doc link "$name" <impl-MINI-NN> \
+      --why "Design recommendation + wireframes for this implementation" --user Claude
+  fi
+}
+
+register_and_link "docs/designs/<filename>.md"
+register_and_link "docs/designs/<filename>-option-a.svg"
+register_and_link "docs/designs/<filename>-option-b.svg"
+```
+
+`mk doc upsert` and `mk doc link` are both upserts — re-running the whole block on a re-design pass is safe (content refreshes, `--why` refreshes, no duplicate rows). The mk docs are the authoritative copies for downstream skills; the `.md` + `.svg` files on disk and the merged design PR are the source of truth for humans browsing the repo.
+
 ---
 
 ## Phase 7 — Post mk comments linking to the PR
@@ -504,11 +531,11 @@ If the design issue's relations include exactly one outgoing `blocks` edge to an
 
 ```bash
 cat <<'EOF' > /tmp/impl-comment.md
-**Design ready (PR open):** [<PR title>](<PR URL captured in Phase 6.3>) — design doc at `docs/designs/<filename>.md` once merged.
+**Design ready (PR open):** [<PR title>](<PR URL captured in Phase 6.3>) — design doc at `docs/designs/<filename>.md` (also attached to this issue as mk doc `docs-designs-<filename>.md` along with any sibling SVG wireframes; `/execute-next-task` fetches them via `mk doc show`).
 
 **Picked: Option <X>** — <one-sentence reason from §Recommendation>.
 
-Read this before starting implementation — it includes Key abstractions, File / component sketch, and Implementation outline that the design doc commits to. Open questions in the doc are unresolved choices that may matter at implementation time. Wait for the design PR to merge before kicking off `/execute-next-task` — the doc lands on `main` at that point, and once the human flips the design ticket to `done` the impl ticket becomes pickable.
+Read this before starting implementation — it includes Key abstractions, File / component sketch, and Implementation outline that the design doc commits to. Open questions in the doc are unresolved choices that may matter at implementation time. Wait for the design PR to merge before kicking off `/execute-next-task` so the doc + SVGs land on `main`; the executor can technically run sooner because the design artefacts are also linked as mk docs, but the design hasn't been reviewed by a human yet.
 EOF
 
 mk comment add <impl-MINI-NN> --as Claude --user Claude --body-file /tmp/impl-comment.md
@@ -530,7 +557,7 @@ That single call is all this phase does. The terminal `done` transition is **not
 
 If `mk issue state` errors (e.g. invalid state name — verify the canonical states with `mk status -o json` or by reading the `mk` skill's reference), surface the error to the user and tell them to move the issue manually; do not retry silently and do not fall back to a different state without asking.
 
-The Done-when on the ticket body (often "Figma frames signed off") is **informational, not gating**. The recommendation in the doc is what the team is going to ship; treating Figma sign-off as a hard gate would only stall the impl ticket. If a future user wants Figma in the loop they'll change the skill, not the per-run behaviour.
+The Done-when on the ticket body (often "Design doc attached and recommendation merged" since the plan-to-mk template was updated; older tickets may still say "Figma frames signed off") is **informational, not gating**. The recommendation in the doc is what the team is going to ship; treating sign-off as a hard gate would only stall the impl ticket.
 
 ---
 
@@ -541,6 +568,7 @@ End the run with a tight summary so the user knows what landed:
 ```
 Design doc written + committed: docs/designs/<filename>.md (worktree .claude/worktrees/mini-NN, branch claude/mini-NN)
 PR opened: <PR URL>
+mk docs registered + linked: docs-designs-<filename>.md + sibling SVG wireframes (linked to design <MINI-NN> and impl <MINI-MM>)
 mk comment posted on design ticket <MINI-NN>
 "Design ready" comment posted on impl ticket <MINI-MM>
 <MINI-NN> moved to in_review (human flips to done after merge; impl ticket <MINI-MM> unblocks then)

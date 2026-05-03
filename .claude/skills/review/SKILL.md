@@ -62,15 +62,25 @@ The mk ticket is the contract. Fetch it with `mk issue show MINI-NN -o json` and
 - **Source** — plan-doc anchor, if present
 - **Relevant docs** — per-component CLAUDE.md / ARCHITECTURE.md pointers
 
-Then skim `mk comment list MINI-NN -o json` for two things:
+**Fetch every mk doc linked to the issue and to the parent feature** — this is how `design-task` and `plan-to-mk` deliver supplemental context:
 
-1. **A `**Design ready (PR open):**` comment from `design-task`** — pointer to a design doc under `docs/designs/<id>-<slug>.md`. If you find one, the doc's **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Drift between the design doc's recommendation and the actual diff is a finding worth flagging at `medium` or `high` depending on how load-bearing the divergence is.
+```bash
+ISSUE_DOCS=$(mk issue show MINI-NN -o json | jq -r '.documents[]?.document_filename')
+FEATURE_SLUG=$(mk issue show MINI-NN -o json | jq -r '.issue.feature_slug // empty')
+FEATURE_DOCS=""
+if [ -n "$FEATURE_SLUG" ]; then
+  FEATURE_DOCS=$(mk feature show "$FEATURE_SLUG" -o json | jq -r '.documents[]?.document_filename')
+fi
+for doc in $ISSUE_DOCS $FEATURE_DOCS; do mk doc show "$doc" --raw; done
+```
 
-   Read the doc. If the design PR has merged, it's on `main`; if still open, fetch via `gh pr view <design-PR> --json headRefName -q .headRefName`, then `git fetch origin <branch> && git show origin/<branch>:docs/designs/<filename>.md`.
+For each linked doc:
+- **Issue-linked, type `designs`** → the design doc from `design-task`. Its **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Drift between the design doc's recommendation and the actual diff is a finding worth flagging at `medium` or `high` depending on how load-bearing the divergence is.
+- **Feature-linked, type `project_in_planning` / `project_complete`** → the plan doc snapshot. If the ticket's **Source** points at a `### Phase N` section in this doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
 
-2. **Any `execute-next-task` handoff comment** — has sections like "Deviations from the spec" and "Work deferred". These name choices the executor consciously made; if you flag something the handoff already explained as a deliberate deviation, mention that you saw the explanation rather than restating the finding as if it weren't disclosed.
+**Backward-compat fallback for older tickets:** if no design-typed doc is linked, skim `mk comment list MINI-NN -o json` for a `**Design ready (PR open):**` pointer and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:docs/designs/<filename>.md`).
 
-If the parent feature has a `Plan:` line in its description (`mk feature show <slug> -o json` for the feature linked from the issue), and the ticket's **Source** points at a `### Phase N` section in that plan doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
+Then skim `mk comment list MINI-NN -o json` for **any `execute-next-task` handoff comment** — it has sections like "Deviations from the spec" and "Work deferred". These name choices the executor consciously made; if you flag something the handoff already explained as a deliberate deviation, mention that you saw the explanation rather than restating the finding as if it weren't disclosed.
 
 ---
 
