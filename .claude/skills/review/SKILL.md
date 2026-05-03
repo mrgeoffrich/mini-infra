@@ -32,8 +32,8 @@ All `mk` reads in this skill use `-o json` for stable parsing. All mutations pas
 The skill needs all three: the **issue** is the contract, the **PR** is the diff, the **branch** is the ref. Resolve them by argument shape.
 
 **`MINI-NN`** (matches `MINI-\d+` case-insensitive, surrounding text fine):
-1. `mk issue show MINI-NN -o json`. If it errors with "issue not found", stop.
-2. Find the PR: read `prs[]` (or equivalent) from the JSON — `design-task` and `execute-next-task` attach the PR via `mk pr attach` when they ship. If the issue has no attached PR, fall back to `gh pr list --search "MINI-NN" --state open --json number,headRefName,title -L 5` and take the most recent open match. If multiple match and the choice isn't obvious, list them and ask.
+1. `mk issue brief MINI-NN > /tmp/brief-MINI-NN.json`. If it errors with "issue not found", stop. (`brief` is the same call Phase 3 needs — capture it now and reuse, no double-fetch.)
+2. Find the PR: read `.pull_requests[]` from the brief — `design-task` and `execute-next-task` attach the PR via `mk pr attach` when they ship. If the issue has no attached PR, fall back to `gh pr list --search "MINI-NN" --state open --json number,headRefName,title -L 5` and take the most recent open match. If multiple match and the choice isn't obvious, list them and ask.
 3. The PR's `headRefName` is the branch.
 
 **PR number** (matches `^\d+$` or `^#\d+$`): `gh pr view <N> --json number,headRefName,title,body`. Pull the mk key from the PR title (the `(MINI-NN)` suffix the project's commit convention uses) or the `Closes MINI-NN` line in the body. If neither is present, ask which mk issue this PR belongs to — don't guess.
@@ -54,7 +54,15 @@ The skill needs all three: the **issue** is the contract, the **PR** is the diff
 
 ## Phase 3 — Read the contract
 
-The mk ticket is the contract. Fetch it with `mk issue show MINI-NN -o json` and pull these from the issue body:
+The mk ticket is the contract. If you arrived via the `MINI-NN` resolution path you already have `/tmp/brief-MINI-NN.json` from Phase 2 — reuse it. Otherwise fetch now:
+
+```bash
+mk issue brief MINI-NN > /tmp/brief-MINI-NN.json
+```
+
+`mk issue brief` always emits JSON regardless of `--output`. Shape: `.issue` (with description), `.feature` (with description, may be null), `.documents[]` (each with `filename`, `type`, `content`, `linked_via`), `.comments[]`, `.relations.{incoming,outgoing}[]`, `.pull_requests[]`, `.warnings[]`. This collapses what used to be four `mk` calls into one.
+
+From `.issue.description` pull these sections:
 
 - **Goal** — what outcome the work is supposed to achieve
 - **Deliverables** — the concrete things that have to exist
@@ -62,25 +70,19 @@ The mk ticket is the contract. Fetch it with `mk issue show MINI-NN -o json` and
 - **Source** — plan-doc anchor, if present
 - **Relevant docs** — per-component CLAUDE.md / ARCHITECTURE.md pointers
 
-**Fetch every mk doc linked to the issue and to the parent feature** — this is how `design-task` and `plan-to-mk` deliver supplemental context:
+The `.documents[]` array already contains the *content* of every doc linked to the issue and to the parent feature — no follow-up `mk doc show` calls needed. Each doc carries `linked_via` (e.g. `["issue"]`, `["feature/<slug>"]`, or both):
 
 ```bash
-ISSUE_DOCS=$(mk issue show MINI-NN -o json | jq -r '.documents[]?.document_filename')
-FEATURE_SLUG=$(mk issue show MINI-NN -o json | jq -r '.issue.feature_slug // empty')
-FEATURE_DOCS=""
-if [ -n "$FEATURE_SLUG" ]; then
-  FEATURE_DOCS=$(mk feature show "$FEATURE_SLUG" -o json | jq -r '.documents[]?.document_filename')
-fi
-for doc in $ISSUE_DOCS $FEATURE_DOCS; do mk doc show "$doc" --raw; done
+jq -r '.documents[] | "==== " + .filename + " (type=" + .type + ", linked_via=" + (.linked_via | join(",")) + ") ====\n" + .content + "\n"' /tmp/brief-MINI-NN.json
 ```
 
 For each linked doc:
-- **Issue-linked, type `designs`** → the design doc from `design-task`. Its **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Drift between the design doc's recommendation and the actual diff is a finding worth flagging at `medium` or `high` depending on how load-bearing the divergence is.
-- **Feature-linked, type `project_in_planning` / `project_complete`** → the plan doc snapshot. If the ticket's **Source** points at a `### Phase N` section in this doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
+- **`linked_via` contains `"issue"`, type `designs`** → the design doc from `design-task`. Its **Recommendation** + **Key abstractions** + **File / component sketch** + **States, failure modes & lifecycle** sections are part of the contract. Drift between the design doc's recommendation and the actual diff is a finding worth flagging at `medium` or `high` depending on how load-bearing the divergence is.
+- **`linked_via` contains `"feature/<slug>"`, type `project_in_planning` / `project_complete`** → the plan doc snapshot. If the ticket's **Source** points at a `### Phase N` section in this doc, read the matching section as supplemental context. The ticket body still wins on what specifically was supposed to ship.
 
-**Backward-compat fallback for older tickets:** if no design-typed doc is linked, skim `mk comment list MINI-NN -o json` for a `**Design ready (PR open):**` pointer and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:docs/designs/<filename>.md`).
+**Backward-compat fallback for older tickets:** if no design-typed doc is linked, iterate `.comments[]` from the brief looking for a `**Design ready (PR open):**` pointer and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:docs/designs/<filename>.md`).
 
-Then skim `mk comment list MINI-NN -o json` for **any `execute-next-task` handoff comment** — it has sections like "Deviations from the spec" and "Work deferred". These name choices the executor consciously made; if you flag something the handoff already explained as a deliberate deviation, mention that you saw the explanation rather than restating the finding as if it weren't disclosed.
+Then iterate `.comments[]` from the brief for **any `execute-next-task` handoff comment** — it has sections like "Deviations from the spec" and "Work deferred". These name choices the executor consciously made; if you flag something the handoff already explained as a deliberate deviation, mention that you saw the explanation rather than restating the finding as if it weren't disclosed.
 
 ---
 
