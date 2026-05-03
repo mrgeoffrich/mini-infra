@@ -63,10 +63,10 @@ Look at the arguments the user passed. If they contain an mk issue identifier ma
 
 #### Explicit-ID path
 
-1. Fetch the issue with `mk issue show <KEY> -o json` (a bare number works — `mk` resolves it against the current repo's prefix). If it doesn't exist, the command exits non-zero — stop and tell the user.
+1. Fetch the issue with `mk issue brief <KEY>` (a bare number works — `mk` resolves it against the current repo's prefix). `brief` always emits JSON regardless of `--output`, returning the issue + parent feature + linked docs (with content) + comments + relations + PRs in one read — exactly what Phase 3 needs, so capture it to disk (`/tmp/brief-<KEY>.json`) and reuse. If it doesn't exist, the command exits non-zero — stop and tell the user.
 2. **Soft validations.** Warnings, not stops:
-   - If the issue is **not in `todo` state** (e.g. `backlog`, `in_progress`, `done`, `in_review`), surface that and ask "still proceed?". A user might want to redesign an in-progress ticket, but they should consciously confirm.
-   - If the issue has **incomplete `blocks` relations pointing in** (i.e. another open issue blocks this one), list them and ask "still proceed?". Designs for blocked tickets are sometimes worth doing ahead of time, but the user should know. The JSON from `mk issue show` exposes both directions of every relation — look for any `blocks`-typed edge whose other side is in a non-terminal state (`backlog`, `todo`, `in_progress`, `in_review`).
+   - If the issue is **not in `todo` state** (e.g. `backlog`, `in_progress`, `done`, `in_review`), surface that and ask "still proceed?". A user might want to redesign an in-progress ticket, but they should consciously confirm. Read `.issue.state` from the brief.
+   - If the issue has **incomplete `blocks` relations pointing in** (i.e. another open issue blocks this one), list them and ask "still proceed?". Designs for blocked tickets are sometimes worth doing ahead of time, but the user should know. `.relations.incoming[]` in the brief exposes every incoming edge with its type and the other side's state — look for any `blocks`-typed edge whose other side is in a non-terminal state (`backlog`, `todo`, `in_progress`, `in_review`).
 3. Once confirmation lands (or the soft validations passed cleanly), proceed to Phase 3.
 
 State the pick the same way as the auto-pick path: id, title, feature slug.
@@ -94,26 +94,48 @@ If the user is re-running design on a ticket that is already `in_progress`, `in_
 
 The ticket body is your input contract. Read it end to end.
 
-1. **Fetch the issue body** with `mk issue show MINI-NN -o json` and pull out:
-   - **Goal** — what outcome the ticket is trying to achieve. **Required.**
-   - **Deliverables** — the concrete things that have to exist when the work is done. **Required.**
-   - **Done when** — the testable acceptance criterion. **Required.**
-   - **Source** — plan-doc anchor, if present (stored as text in the description, not a separate field).
-   - **Relevant docs** — the per-component CLAUDE.md / ARCHITECTURE.md pointers attached at ticket-creation time. You may glance at these for context (which components are in scope) but **do not lean on them as the design authority** — your job is to think in patterns, not retrace the conventions doc.
+### 3.1 Bulk-fetch with `mk issue brief`
 
-   If **Goal / Deliverables / Done when** are missing, **stop and report**. The ticket isn't shaped right for design work.
+If you arrived via the explicit-ID path you already have `/tmp/brief-<KEY>.json` from Phase 2 — reuse it. Otherwise, fetch now:
 
-2. **Try to fetch the parent feature's `Plan:` line.** If the issue's JSON exposes a `feature` slug, run `mk feature show <slug> -o json` and read its description. Same parser as `execute-next-task`:
-   - `Plan: [docs/planning/.../<slug>.md](https://...)` — preferred combined form
-   - `Plan: docs/planning/.../<slug>.md` — bare path fallback
-   - `**Plan doc:** [docs/planning/.../<slug>.md](https://...)` — legacy fallback
-   - **No `Plan:` line** is fine — many standalone tickets (e.g. under the `maintenance` feature) won't have one. Note "no plan doc" and skip step 3.
+```bash
+mk issue brief MINI-NN > /tmp/brief-MINI-NN.json
+```
 
-3. **If a plan doc was located**, read its matching `### Phase N` section if one exists. Treat it as supplemental context for *why* the work matters and how it fits into a larger arc. The ticket body still wins on what specifically has to ship — the plan doc helps you understand the surrounding intent so the designs you propose are coherent with the larger plan.
+`mk issue brief` returns a single JSON blob with the issue + parent feature + linked docs (with content) + comments + relations + PRs. Always JSON, regardless of `--output`. This collapses what used to be four `mk` calls (`issue show` + `feature show` + per-doc `doc show` + `comment list`) into one.
 
-4. **Skim prior comments on the ticket** with `mk comment list MINI-NN -o json`. If a previous design pass already happened (you'll see a comment from this skill pointing at a `docs/designs/...md` file), surface it to the user immediately: "MINI-NN already has a design doc at `<path>` — open it instead, or generate a fresh pair?". Don't silently overwrite a previous pass.
+The shape: `.issue` (with description), `.feature` (with description, may be null), `.documents[]` (each with `filename`, `type`, `content`, `linked_via`), `.comments[]`, `.relations.{incoming,outgoing}[]`, `.pull_requests[]`, `.warnings[]`.
 
-5. **Do not** read every per-component CLAUDE.md / ARCHITECTURE.md pointer the ticket lists. They tell you what *conventions* a future executor must follow; they don't help you compare design patterns. The next phase is where you do the real research.
+### 3.2 Pull the ticket sections
+
+From `.issue.description` in the brief, pull out:
+- **Goal** — what outcome the ticket is trying to achieve. **Required.**
+- **Deliverables** — the concrete things that have to exist when the work is done. **Required.**
+- **Done when** — the testable acceptance criterion. **Required.**
+- **Source** — plan-doc anchor, if present (stored as text in the description, not a separate field).
+- **Relevant docs** — the per-component CLAUDE.md / ARCHITECTURE.md pointers attached at ticket-creation time. You may glance at these for context (which components are in scope) but **do not lean on them as the design authority** — your job is to think in patterns, not retrace the conventions doc.
+
+If **Goal / Deliverables / Done when** are missing, **stop and report**. The ticket isn't shaped right for design work.
+
+### 3.3 Locate the plan doc from the parent feature's `Plan:` line
+
+Read `.feature.description` from the brief and look for a `Plan:` line. Same parser as `execute-next-task`:
+- `Plan: [docs/planning/.../<slug>.md](https://...)` — preferred combined form
+- `Plan: docs/planning/.../<slug>.md` — bare path fallback
+- `**Plan doc:** [docs/planning/.../<slug>.md](https://...)` — legacy fallback
+- **No `Plan:` line** is fine — many standalone tickets (e.g. under the `maintenance` feature) won't have one. Note "no plan doc" and skip step 3.4.
+
+### 3.4 If a plan doc was located, read its matching `### Phase N` section
+
+Read it from disk in the worktree (or, equivalently, from `.documents[]` in the brief — the plan-doc snapshot is feature-linked with type `project_in_planning` / `project_complete`). Treat it as supplemental context for *why* the work matters and how it fits into a larger arc. The ticket body still wins on what specifically has to ship — the plan doc helps you understand the surrounding intent so the designs you propose are coherent with the larger plan.
+
+### 3.5 Skim prior comments
+
+The brief's `.comments[]` already contains every comment on the ticket — no extra `mk comment list` call needed. If a previous design pass already happened (you'll see a comment from this skill pointing at a `docs/designs/...md` file), surface it to the user immediately: "MINI-NN already has a design doc at `<path>` — open it instead, or generate a fresh pair?". Don't silently overwrite a previous pass.
+
+### 3.6 Skip the convention docs
+
+**Do not** read every per-component CLAUDE.md / ARCHITECTURE.md pointer the ticket lists. They tell you what *conventions* a future executor must follow; they don't help you compare design patterns. The next phase is where you do the real research.
 
 ---
 
@@ -470,7 +492,7 @@ If `gh pr create` fails (no `gh` auth, repo settings, branch-protection rules), 
 
 ### 6.4 Register the design doc + sibling SVGs with mk and link them
 
-Why: downstream skills (`execute-next-task`, `address-review`, `review`) fetch the design doc as supplemental context for the impl ticket. Linking via `mk doc link` gives them a single uniform fetch (`mk doc show <name> --raw`) instead of having to know which branch the doc lives on. SVG wireframes go in too (they're just XML — mk's `doc` subsystem stores arbitrary text content), so the executor can materialise them on demand even when the design PR hasn't merged yet.
+Why: downstream skills (`execute-next-task`, `address-review`, `review`) fetch the design doc as supplemental context for the impl ticket. Linking via `mk doc link` gives them a single uniform fetch — they pull every linked doc's content out of the `documents[]` array of `mk issue brief` in one bulk read — instead of having to know which branch the doc lives on. SVG wireframes go in too (they're just XML — mk's `doc` subsystem stores arbitrary text content), so the executor can materialise them on demand even when the design PR hasn't merged yet.
 
 `mk doc upsert --from-path` derives the mk filename (path with `/` → `-`) and reads the file content in one shot. Pass `--type designs` because `--from-path` only auto-derives type for plan-doc paths; design paths need an explicit type.
 

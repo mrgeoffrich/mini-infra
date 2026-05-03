@@ -31,7 +31,7 @@ All `mk` reads in this skill use `-o json` for stable parsing. All mutations pas
 
 Resolve the argument to the triple {mk issue, PR, branch}, identical to the resolution flow in `/review`. Recap of the input shapes:
 
-- **`MINI-NN`** — `mk issue show MINI-NN -o json`. Find the PR in the `prs[]` field, or fall back to `mk pr list MINI-NN -o json` to enumerate attached PRs explicitly. If none are attached, try `gh pr list --search "MINI-NN" --state open --json number,headRefName -L 5`. Branch is the PR's `headRefName`.
+- **`MINI-NN`** — `mk issue brief MINI-NN > /tmp/brief-MINI-NN.json` (same call Phase 3/4 reuse — capture once, reuse). Find the PR in `.pull_requests[]`, or fall back to `mk pr list MINI-NN -o json` to enumerate attached PRs explicitly. If none are attached, try `gh pr list --search "MINI-NN" --state open --json number,headRefName -L 5`. Branch is the PR's `headRefName`.
 - **PR number** (`^\d+$` or `^#\d+$`) — `gh pr view <N> --json number,headRefName,title,body`. Pull the mk key from the title's `(MINI-NN)` suffix or the `Closes MINI-NN` line in the body.
 - **Branch name** — `gh pr list --head <branch> --state open --json number`, then pull the mk key like the PR-number flow (or read it directly off the branch name `claude/mini-NN` → `MINI-NN`).
 - **No argument** — `git rev-parse --abbrev-ref HEAD` for the branch, `gh pr view --json number,title,body,headRefName` for the PR, and pull the mk key from the branch (`claude/mini-NN`) or PR body. If the current branch is `main` or has no open PR, stop and ask.
@@ -59,11 +59,15 @@ Don't move past Phase 2 until both succeeded. If `mk issue state` errors (state 
 
 ## Phase 3 — Read the review comment and parse findings
 
+Bulk-fetch the issue + comments in one call with `mk issue brief` — this replaces the legacy `mk comment list` + per-doc `mk doc show` + `mk feature show` dance, and the same brief feeds Phase 4's contract reload too:
+
 ```bash
-mk comment list MINI-NN -o json
+mk issue brief MINI-NN > /tmp/brief-MINI-NN.json
 ```
 
-Look for comments whose body starts with `**Review of [` — that's the canonical opener `/review` uses. If there are multiple (someone re-ran `/review` after a previous fixup), use the **most recent** one (sort by `created_at` descending). If there are none, stop and tell the user — the skill needs a review to action.
+`mk issue brief` always emits JSON regardless of `--output`. The shape: `.issue`, `.feature` (may be null), `.documents[]` (each with `filename`, `type`, `content`, `linked_via`), `.comments[]`, `.relations.{incoming,outgoing}[]`, `.pull_requests[]`, `.warnings[]`.
+
+Iterate `.comments[]` and look for entries whose `body` starts with `**Review of [` — that's the canonical opener `/review` uses. If there are multiple (someone re-ran `/review` after a previous fixup), use the **most recent** one (sort by `created_at` descending). If there are none, stop and tell the user — the skill needs a review to action.
 
 Parse the findings out of the comment body. The structure is:
 
@@ -103,22 +107,18 @@ State the parse result so the user can intercept:
 
 ## Phase 4 — Reload the contract
 
-Same shape as `execute-next-task` Phase 3 — the executor needs the ticket as the contract before judging whether a finding is real:
+Same shape as `execute-next-task` Phase 3 — the executor needs the ticket as the contract before judging whether a finding is real. The brief from Phase 3 already has everything the contract reload needs in one read; reuse it:
 
-1. **Fetch the issue body** via `mk issue show MINI-NN -o json` and pull out **Goal / Deliverables / Done when / Relevant docs / Smoke tests**. These define what the PR was supposed to do — a "drift from the contract" finding is only real if the actual ticket says so.
-2. **Fetch every mk doc linked to the issue and to the parent feature.** Same mechanism `execute-next-task` Phase 3 step 5 uses — the doc-link is the machine-readable contract for design recommendations and plan-doc context.
+1. **Pull the issue body sections** from `.issue.description` in the brief: **Goal / Deliverables / Done when / Relevant docs / Smoke tests**. These define what the PR was supposed to do — a "drift from the contract" finding is only real if the actual ticket says so.
+2. **Read the linked mk docs from the brief.** `.documents[]` already contains the *content* of every doc linked to the issue and to the parent feature — no follow-up `mk doc show` calls needed. Each doc carries `linked_via` (e.g. `["issue"]`, `["feature/<slug>"]`, or both) so you can distinguish:
+   - **`linked_via` contains `"issue"`, type `designs`** → the design doc from `design-task`. Its **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections are what "drift from the design doc" findings are validated against.
+   - **`linked_via` contains `"feature/<slug>"`, type `project_in_planning` / `project_complete`** → the plan doc snapshot. Supplemental context for the larger arc.
+
    ```bash
-   ISSUE_DOCS=$(mk issue show MINI-NN -o json | jq -r '.documents[]?.document_filename')
-   FEATURE_SLUG=$(mk issue show MINI-NN -o json | jq -r '.issue.feature_slug // empty')
-   FEATURE_DOCS=""
-   if [ -n "$FEATURE_SLUG" ]; then
-     FEATURE_DOCS=$(mk feature show "$FEATURE_SLUG" -o json | jq -r '.documents[]?.document_filename')
-   fi
-   for doc in $ISSUE_DOCS $FEATURE_DOCS; do mk doc show "$doc" --raw; done
+   jq -r '.documents[] | "==== " + .filename + " (type=" + .type + ", linked_via=" + (.linked_via | join(",")) + ") ====\n" + .content + "\n"' /tmp/brief-MINI-NN.json
    ```
-   The design doc (issue-linked, type `designs`) carries the **Recommendation** + **Key abstractions** + **States, failure modes & lifecycle** sections that "drift from the design doc" findings are validated against. The plan doc (feature-linked, type `project_in_planning` / `project_complete`) is supplemental context for the larger arc.
 
-   **Backward-compat fallback:** if no design-typed doc is linked, skim `mk comment list MINI-NN -o json` for a `**Design ready (PR open):**` pointer and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). Older tickets that pre-date the doc-link mechanism only have the comment.
+   **Backward-compat fallback:** if no design-typed doc is linked, iterate `.comments[]` from the brief looking for `**Design ready (PR open):**` and read the doc from disk (on `main` if the design PR merged, otherwise via `gh pr view <design-PR> --json headRefName -q .headRefName` then `git show origin/<branch>:<path>`). Older tickets that pre-date the doc-link mechanism only have the comment.
 3. **Read the project conventions** for the directories the *findings* cite (not the directories the diff touches — those are usually a superset). Root [CLAUDE.md](CLAUDE.md) always; [server/CLAUDE.md](server/CLAUDE.md) if any finding cites `server/`; [client/CLAUDE.md](client/CLAUDE.md) if any cites `client/`; [claude-guidance/ICONOGRAPHY.md](claude-guidance/ICONOGRAPHY.md) if a UI finding cites a missing/wrong icon.
 
 Don't skip the contract reload. A finding like "this `any` type is unjustified" is real iff the project's "no `any`" rule applies — and you'll judge that wrong without rereading the convention doc.
