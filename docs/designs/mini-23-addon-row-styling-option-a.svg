@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 460" width="600" font-family="system-ui, sans-serif" font-size="12">
+  <rect x="0" y="0" width="600" height="460" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- Stack detail header -->
+  <text x="16" y="22" font-size="13" font-weight="600">Stack detail · Services</text>
+  <text x="16" y="38" fill="#666">Indented child rows; lineage hairline; no chevron / Edit on synthetic.</text>
+
+  <!-- Table header -->
+  <rect x="16" y="48" width="568" height="22" fill="#f1f1f1" stroke="#ddd"/>
+  <text x="60" y="63" fill="#666">Name</text>
+  <text x="220" y="63" fill="#666">Type</text>
+  <text x="320" y="63" fill="#666">Image</text>
+  <text x="470" y="63" fill="#666">Status</text>
+
+  <!-- Parent row: web-app -->
+  <rect x="16" y="70" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="91" font-weight="600">▸</text>
+  <text x="60" y="91" font-weight="600">web-app</text>
+  <rect x="220" y="78" width="74" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="228" y="91">🌐 StatelessWeb</text>
+  <text x="320" y="91" font-family="monospace" font-size="11">nginx:1.27</text>
+  <text x="470" y="91" fill="#0a8a3a">2/2 up</text>
+
+  <!-- Lineage hairline + indented synthetic row -->
+  <line x1="40" y1="104" x2="40" y2="146" stroke="#bbb" stroke-width="1"/>
+  <line x1="40" y1="125" x2="56" y2="125" stroke="#bbb" stroke-width="1"/>
+  <rect x="16" y="108" width="568" height="34" fill="#fcfaff" stroke="#e5e5e5"/>
+  <text x="60" y="123" font-size="13">🧩 web-app-tailscale</text>
+  <text x="60" y="135" fill="#666" font-size="10">from tailscale-ssh</text>
+  <rect x="220" y="116" width="74" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="228" y="129">🔌 Sidecar</text>
+  <text x="320" y="129" font-family="monospace" font-size="11">tailscale:stable</text>
+  <text x="470" y="129" fill="#0a8a3a">1/1 up</text>
+
+  <!-- Parent row: db -->
+  <rect x="16" y="142" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="163" font-weight="600">▸</text>
+  <text x="60" y="163" font-weight="600">db</text>
+  <rect x="220" y="150" width="64" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="228" y="163">🗄 Stateful</text>
+  <text x="320" y="163" font-family="monospace" font-size="11">postgres:16</text>
+  <text x="470" y="163" fill="#0a8a3a">1/1 up</text>
+
+  <!-- Lineage + synthetic under db -->
+  <line x1="40" y1="176" x2="40" y2="218" stroke="#bbb" stroke-width="1"/>
+  <line x1="40" y1="197" x2="56" y2="197" stroke="#bbb" stroke-width="1"/>
+  <rect x="16" y="180" width="568" height="34" fill="#fcfaff" stroke="#e5e5e5"/>
+  <text x="60" y="195" font-size="13">🧩 db-tailscale</text>
+  <text x="60" y="207" fill="#666" font-size="10">from tailscale-ssh</text>
+  <rect x="220" y="188" width="74" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="228" y="201">🔌 Sidecar</text>
+  <text x="320" y="201" font-family="monospace" font-size="11">tailscale:stable</text>
+  <text x="470" y="201" fill="#0a8a3a">1/1 up</text>
+
+  <!-- Containers page header -->
+  <text x="16" y="252" font-size="13" font-weight="600">Containers page</text>
+  <text x="16" y="268" fill="#666">Flat rows + violet "from addon · target" pill (containers page can't host a tree).</text>
+
+  <!-- Container table header -->
+  <rect x="16" y="278" width="568" height="22" fill="#f1f1f1" stroke="#ddd"/>
+  <text x="28" y="293" fill="#666">Container Name</text>
+  <text x="320" y="293" fill="#666">Status</text>
+  <text x="430" y="293" fill="#666">Image</text>
+
+  <!-- Container rows -->
+  <rect x="16" y="300" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="321" font-weight="500">web-app</text>
+  <rect x="320" y="308" width="62" height="18" rx="4" fill="#dcfce7"/>
+  <text x="328" y="321" fill="#0a8a3a">running</text>
+  <text x="430" y="321" font-family="monospace" font-size="11">nginx:1.27</text>
+
+  <rect x="16" y="334" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="355" font-weight="500">web-app-tailscale</text>
+  <rect x="160" y="342" width="170" height="18" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="168" y="355" fill="#5b21b6">🧩 from tailscale-ssh · web-app</text>
+  <rect x="350" y="342" width="62" height="18" rx="4" fill="#dcfce7"/>
+  <text x="358" y="355" fill="#0a8a3a">running</text>
+
+  <rect x="16" y="368" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="389" font-weight="500">db</text>
+  <rect x="320" y="376" width="62" height="18" rx="4" fill="#dcfce7"/>
+  <text x="328" y="389" fill="#0a8a3a">running</text>
+  <text x="430" y="389" font-family="monospace" font-size="11">postgres:16</text>
+
+  <rect x="16" y="402" width="568" height="34" fill="#fff" stroke="#e5e5e5"/>
+  <text x="28" y="423" font-weight="500">db-tailscale</text>
+  <rect x="120" y="410" width="170" height="18" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="128" y="423" fill="#5b21b6">🧩 from tailscale-ssh · db</text>
+  <rect x="310" y="410" width="62" height="18" rx="4" fill="#dcfce7"/>
+  <text x="318" y="423" fill="#0a8a3a">running</text>
+</svg>
