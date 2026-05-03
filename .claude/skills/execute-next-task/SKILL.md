@@ -55,7 +55,7 @@ You should see a JSON blob with the repo's prefix (`MINI`) and per-state issue c
 
 **Critical agent-mode rules** (these apply to every `mk` call you make in this run):
 
-- **Always pass `--user Claude` on every mutating command** (`mk issue add`, `mk issue state`, `mk issue edit`, `mk comment add`, `mk tag add`, `mk link`, `mk pr attach`). Without it the audit log silently attributes the change to `geoff`.
+- **Always pass `--user Claude` on every mutating command** (`mk issue add`, `mk issue state`, `mk issue edit`, `mk comment add`, `mk tag add`, `mk link`, `mk pr attach`). Without it the audit log silently attributes the change to the current user.
 - **Always pass `--as Claude` on `mk comment add`** — required by the binary.
 - **Always pass `-o json` when parsing output.** Text mode is for humans only.
 - **Always pass long text via `--description-file <path>` / `--body-file <path>` / `--body -` (stdin).** There is no inline editor; inline `\n` is not interpreted.

@@ -1,6 +1,6 @@
 ---
 name: mk
-description: Use this skill whenever you need to create, read, update, or organise tasks/issues/tickets/todos using the `mk` CLI (mini-kanban) — a local issue tracker that ships with this repo. Triggers on any mention of issues, features, kanban work, tags, blocks/blocked-by relations, attached pull requests, project documents, or audit-log/history queries managed by `mk`. Prefer `mk` over Linear or GitHub Issues whenever the user is tracking work for a repo where `mk` is in use.
+description: Use this skill whenever you need to create, read, update, or organise tasks/issues/tickets/todos using the `mk` CLI (mini-kanban) — a local issue tracker that ships with this repo. Triggers on any mention of issues, features, kanban work, tags, blocks/blocked-by relations, attached pull requests, project documents, or audit-log/history queries managed by `mk`. Prefer `mk` over external trackers (e.g. GitHub Issues) whenever the user is tracking work for a repo where `mk` is in use.
 ---
 
 # Working with `mk` (mini-kanban)
@@ -12,11 +12,11 @@ description: Use this skill whenever you need to create, read, update, or organi
 **Hierarchy:** repo → (optional) feature → issue.
 
 - A **repo** is auto-detected from the current working directory by walking up to find a `.git` toplevel. Issues, features, and attachments are scoped to a repo.
-- A **feature** is an optional grouping of issues (think Linear "project"). Issues can exist without one.
+- A **feature** is an optional grouping of issues (think a project or epic). Issues can exist without one.
 - An **issue** has a title, description, state, tags, comments, relations to other issues, and attached PR URLs. Issues are addressed by a 4-letter `PREFIX-N` key like `MINI-42`.
 - A **document** is a per-repo named text blob (markdown, etc.) with a typed category (architecture, designs, project-in-planning, …). Issues and features can link to documents with a short reason; the same document can be linked to many issues and features.
 
-**Issue states** (mirror Linear): `backlog | todo | in_progress | in_review | done | cancelled | duplicate`. The state parser also accepts dashes or spaces (`in-progress`, `in progress`).
+**Issue states**: `backlog | todo | in_progress | in_review | done | cancelled | duplicate`. The state parser also accepts dashes or spaces (`in-progress`, `in progress`).
 
 **Auto-create on first use:** running any `mk` command in a git repo that hasn't been registered yet automatically creates the repo row and allocates a 4-char prefix from the directory basename (e.g. `mini-kanban` → `MINI`). Outside any git repo, `mk` errors out — never invent a working directory just to make it run.
 
@@ -33,7 +33,7 @@ description: Use this skill whenever you need to create, read, update, or organi
   - Feature: slug string (kebab-case auto-derived from title, override with `--slug`).
   - `mk doc link` / `unlink` accept either an issue key or a feature slug as the target; they auto-detect issue keys by the `PREFIX-N` shape and treat anything else as a feature slug in the current repo.
 - **Comment author.** `--as <name>` is required on every comment. There is no auth — use a sensible identity (e.g. `Claude`, `Geoff`).
-- **`--user` is REQUIRED for AI agents.** Every mutation is recorded in an audit log alongside the actor that performed it. The CLI will silently fall back to the OS username if `--user` is omitted, but for agents that produces useless `geoff did everything` history. **Always pass `--user <your-agent-name>` (e.g. `--user Claude`) on every mutating command.** Treat it as mandatory in any agent-driven invocation, even though the binary tolerates its absence for human users.
+- **`--user` is REQUIRED for AI agents.** Every mutation is recorded in an audit log alongside the actor that performed it. The CLI will silently fall back to the OS username if `--user` is omitted, but for agents that produces useless `<your-os-user> did everything` history. **Always pass `--user <your-agent-name>` (e.g. `--user Claude`) on every mutating command.** Treat it as mandatory in any agent-driven invocation, even though the binary tolerates its absence for human users.
 - **Database override.** `--db <path>` is a global flag, useful for tests. In production agents, leave it at the default.
 
 ## Command reference
@@ -78,6 +78,17 @@ mk feature edit <slug>               Patch fields (pass --title and/or --descrip
   --description <text|->
   --description-file <path>
 mk feature rm <slug>                 Delete a feature (issues remain, but lose their feature link)
+mk feature plan <slug>               Print open issues in execution order,
+                                     respecting `blocks` dependencies. Issues
+                                     with all blockers satisfied appear first;
+                                     blocked issues appear after their
+                                     blockers, annotated with `blocked_by`.
+                                     Open = not done/cancelled/duplicate.
+                                     Cross-feature blockers are surfaced as
+                                     `blocked_by` hints but don't gate the
+                                     topo position. Errors out on a cycle.
+                                     Use `-o json` to drive an agent through
+                                     the order one issue at a time.
 ```
 
 **Example:**
@@ -104,6 +115,14 @@ mk issue list                        List issues in the current repo
 
 mk issue show <KEY>                  Show issue + tags + comments + relations
                                      + PRs + linked documents
+mk issue brief <KEY>                 Bulk JSON for skills / LLMs: the issue,
+                                     parent feature, deduped linked docs
+                                     (with full content inlined), comments,
+                                     relations, PRs, and a warnings array.
+                                     Always emits JSON. Single read; replaces
+                                     the show + jq + per-doc-fetch dance.
+  --no-feature-docs                     Skip docs linked to the parent feature
+  --no-comments                         Skip the comments section
 mk issue edit <KEY>
   --title <new title>
   --description <text|->
@@ -111,6 +130,21 @@ mk issue edit <KEY>
   -f, --feature <slug>                  Move to a feature
   --no-feature                          Detach from any feature
 mk issue state <KEY> <state>         Change state (accepts dashes/spaces)
+mk issue assign <KEY> <name>         Set the assignee (free-form name; pass
+                                     an agent identity when a bot picks
+                                     up the work)
+mk issue unassign <KEY>              Clear the assignee
+mk issue next --feature <slug>       Atomically claim the next ready issue
+                                     in a feature: lowest-numbered todo
+                                     issue with all blockers
+                                     done/cancelled/duplicate and no
+                                     existing assignee. Flips it to
+                                     in_progress and stamps the assignee
+                                     with --user. Emits
+                                     `{"issue": null}` (and exit 0) when
+                                     nothing is currently claimable —
+                                     callers should poll/retry rather
+                                     than treat that as an error.
 mk issue rm <KEY>                    Delete an issue (cascades to comments,
                                      relations, PRs, tags, doc links)
 ```
@@ -124,7 +158,31 @@ mk issue add "Login broken on Safari" -f auth-rewrite \
 mk issue list --state todo,in_progress -o json
 mk issue state MINI-42 in-progress
 mk issue show MINI-42
+
+# Bulk context for an LLM/skill: issue + feature + linked docs (with raw
+# content) + comments, in one read. Always JSON.
+mk issue brief MINI-42 | tee /tmp/ctx.json
 ```
+
+`mk issue brief` returns a single object: `{issue, feature?, relations, pull_requests, documents, comments, warnings}`. Each entry in `documents` carries `filename`, `type`, `description` (the link's `--why`), `linked_via` (one or both of `"issue"` and `"feature/<slug>"`), `source_path`, and `content`. Docs reachable from both the issue and its parent feature are deduped to a single entry whose `linked_via` lists both paths. If the issue and feature link rows have differing `--why` descriptions, the issue's wins and a string is appended to `warnings`.
+
+**Driving an agent through a feature in dependency order.** Use `mk feature plan <slug>` to inspect the topo order, then loop on `mk issue next --feature <slug> --user <agent>` to claim issues one at a time:
+
+```bash
+# Read the plan once to understand what's ahead
+mk feature plan service-addons-framework
+
+# Agent loop: claim → work → mark done → repeat
+while :; do
+  next=$(mk issue next --feature service-addons-framework --user agent-1 -o json)
+  key=$(jq -r '.issue.key // empty' <<<"$next")
+  if [ -z "$key" ]; then sleep 30; continue; fi
+  # ... agent does the work ...
+  mk issue state "$key" done --user agent-1
+done
+```
+
+Two agents can call `mk issue next` against the same feature in parallel; the SQLite writer lock plus a conditional UPDATE serialise claims, so each issue is handed to exactly one agent. When the DAG is currently serial (everything else blocked) the second agent simply gets `{"issue": null}` and should retry later. Crashed agents leave a stale `in_progress`/assigned issue — clear with `mk issue state <KEY> todo --user <human>` and `mk issue unassign <KEY>` to release it.
 
 ### Comments
 
@@ -184,7 +242,7 @@ mk history                           Last 50 mutations in the current repo
 
 `--from` / `--to` accept either local-time stamps (`YYYY-MM-DD`, `YYYY-MM-DD HH:MM`, `YYYY-MM-DD HH:MM:SS`) or RFC 3339 (e.g. `2026-05-03T07:27:14Z`). Bare dates start at 00:00 in the local timezone.
 
-Op naming is dotted: `repo.create`, `feature.{create,update,delete}`, `issue.{create,update,state,delete}`, `comment.add`, `relation.{create,delete}`, `pr.{attach,detach}`, `tag.{add,remove}`, `document.{create,update,rename,delete,link,unlink}` (`mk doc upsert` records `document.create` or `document.update` depending on whether it created the row). Filtering by op prefix is not currently supported — match exactly, or use `--kind` for an entity-level cut.
+Op naming is dotted: `repo.create`, `feature.{create,update,delete}`, `issue.{create,update,state,assign,claim,delete}`, `comment.add`, `relation.{create,delete}`, `pr.{attach,detach}`, `tag.{add,remove}`, `document.{create,update,rename,delete,link,unlink}` (`mk doc upsert` records `document.create` or `document.update` depending on whether it created the row). Filtering by op prefix is not currently supported — match exactly, or use `--kind` for an entity-level cut.
 
 **Examples:**
 ```bash
@@ -227,6 +285,12 @@ mk doc rename <old> <new>            Rename in place. Links are preserved
   --type <new-type>                      Optionally also change the type
                                           (handy when a plan moves
                                            not-shipped/ → shipped/)
+mk doc export <filename>             Materialise a document onto disk
+  --to-path                              Write to the path the doc was last
+                                          imported from (--from-path on
+                                          add/upsert; errors if none)
+  --to <path>                            Write to an explicit repo-relative
+                                          path
 mk doc rm <filename>                 Delete a document (and its links)
 
 mk doc link   <filename> <ISSUE-KEY|feature-slug> [--why <text>]
@@ -264,6 +328,11 @@ mk doc rename \
   docs-planning-not-shipped-auth-plan.md \
   docs-planning-shipped-auth-plan.md \
   --type project_complete
+
+# Materialise the canonical version back onto disk (the inverse of
+# --from-path; mkdir -p as needed; overwrites if the file exists).
+mk doc export docs-designs-foo.svg --to-path
+mk doc export auth-spec.md --to docs/auth-spec.md  # or to an explicit path
 
 # Manual filename / type still works.
 mk doc add auth-spec.md --type architecture --content-file docs/auth.md
@@ -303,7 +372,7 @@ mk pr list <KEY>                     One URL per line (or JSON)
 
 **Example:**
 ```bash
-mk pr attach MINI-42 https://github.com/mrgeoffrich/mini-kanban/pull/7
+mk pr attach MINI-42 https://github.com/owner/repo/pull/7
 ```
 
 ## Common workflows
