@@ -1,13 +1,13 @@
 ---
 name: design-task
-description: Design-exploration agent for an `mk` ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task MINI-38`, or a bare `38` which `mk` resolves against the current repo's prefix) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked `todo` issue in the current repo via `mk issue list --state todo -o json`, the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent feature has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, a rough implementation outline, and — for UI tickets — a wireframe written to a sibling SVG file (`<issue-id>-<slug>-option-<a|b>.svg` next to the markdown, referenced via `![](…)`) plus a "UI components to use" mapping that names existing `client/src/components/ui/*` primitives and feature components to wire up, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, **commits + pushes + opens a PR** for the design artefacts (so reviewers have a real review surface), posts a "design ready" comment on the impl ticket pointing at the PR (so a future `execute-next-task` run finds it via `mk comment list`), and **moves the design ticket to `in_review`** — the design doc + recommendation are the deliverable, the PR is the review surface, and merging the PR (with `Closes MINI-NN` in the commit) is the human's signal that the design is locked in. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed). The worktree is torn down later via `finish-worktree` once the PR has merged. Use this skill whenever the user says "design MINI-NN", "design the next task", "explore design options for MINI-NN", "give me two designs for MINI-NN", "what are the design options for MINI-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for an `mk`-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for design questions on tasks that aren't tracked in `mk`, or for ad-hoc architecture discussions without an `mk` ticket attached.
+description: Design-exploration agent for an `mk` ticket. Accepts an **optional issue ID** as an argument (e.g. `/design-task MINI-38`, or a bare `38` which `mk` resolves against the current repo's prefix) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked `todo` issue in the current repo via `mk issue list --state todo -o json`, the same picking flow as `execute-next-task`. Reads the ticket body (Goal / Deliverables / Done when) and any plan-doc context if the parent feature has a `Plan:` line. Instead of consuming per-component CLAUDE.md / ARCHITECTURE.md pointers like `execute-next-task` does, this skill **researches design patterns** — architectural / structural / behavioural patterns relevant to the task, plus existing patterns already used in the Mini Infra codebase that could be reused. Generates **two distinct design options**, each with pros/cons, key abstractions, file/component sketch, a rough implementation outline, and — for UI tickets — a wireframe written to a sibling SVG file (`<issue-id>-<slug>-option-<a|b>.svg` next to the markdown, referenced via `![](…)`) plus a "UI components to use" mapping that names existing `client/src/components/ui/*` primitives and feature components to wire up, written to `docs/designs/<issue-id>-<slug>.md` (single file with both options side-by-side), commits to a recommendation, **commits + pushes + opens a PR** for the design artefacts (so reviewers have a real review surface), posts a "design ready" comment on the impl ticket pointing at the PR (so a future `execute-next-task` run finds it via `mk comment list`), **moves the design ticket to `in_review`**, and **automatically tears down the worktree via `finish-worktree`** at the end of the run — the design doc + recommendation are the deliverable, the PR is the review surface, and merging the PR (with `Closes MINI-NN` in the commit) is the human's signal that the design is locked in. Delegates worktree creation to the `setup-worktree` skill (with `--no-env`, since design is markdown-only and no dev env is needed) and worktree teardown to the `finish-worktree` skill (right after Phase 8 — the branch is already pushed and the PR points at the remote, so the local worktree is dead weight). Use this skill whenever the user says "design MINI-NN", "design the next task", "explore design options for MINI-NN", "give me two designs for MINI-NN", "what are the design options for MINI-NN", "design-task", "come up with designs for the next ticket", or any equivalent request to brainstorm two alternative designs for an `mk`-tracked task before execution begins. Do NOT trigger when the user wants to actually execute the work (use `execute-next-task` for that), or for design questions on tasks that aren't tracked in `mk`, or for ad-hoc architecture discussions without an `mk` ticket attached.
 ---
 
 # Design Task
 
 You're a **design-exploration agent**. The mk ticket describes *what* needs to happen (Goal, Deliverables, Done when). Your job is to propose *how* — by surveying relevant design patterns, finding what's already in the Mini Infra codebase that fits, writing up **two distinct design options**, and **committing to a recommendation**.
 
-This skill is the planning step that sits **between** ticket creation (`task-to-mk` / `plan-to-mk`) and execution (`execute-next-task`). It produces a design doc, **commits + pushes the worktree branch and opens a PR**, posts mk comments pointing at the PR, and moves the design ticket to **`in_review`**. The recommendation in the doc is the call — there's no "user picks an option" step. If the user disagrees, they can edit the PR and re-comment; the default flow assumes the recommendation stands. **The skill creates a worktree** (via `setup-worktree --no-env`) so the design doc lives on its own branch in its own checkout, then ships it as a PR. The user reviews and merges the PR on their own cadence — `mk` does not auto-flip state on PR merge, but the design ticket is already in `in_review` from Phase 8; the human reviewer transitions it to `done` (or runs `mk issue state MINI-NN done --user Geoff`) when the PR lands. After the PR has merged, the user runs `/finish-worktree mini-NN` to free the slot.
+This skill is the planning step that sits **between** ticket creation (`task-to-mk` / `plan-to-mk`) and execution (`execute-next-task`). It produces a design doc, **commits + pushes the worktree branch and opens a PR**, posts mk comments pointing at the PR, moves the design ticket to **`in_review`**, and **tears the worktree down automatically** at the end of the run. The recommendation in the doc is the call — there's no "user picks an option" step. If the user disagrees, they can edit the PR and re-comment; the default flow assumes the recommendation stands. **The skill creates a worktree** (via `setup-worktree --no-env`) so the design doc lives on its own branch in its own checkout, ships it as a PR, then **disposes of the worktree via `finish-worktree`** (Phase 9) — the branch is already pushed and the PR points at it on the remote, so the local checkout is dead weight once the PR is open. The user reviews and merges the PR on their own cadence — `mk` does not auto-flip state on PR merge, but the design ticket is already in `in_review` from Phase 8; the human reviewer transitions it to `done` (or runs `mk issue state MINI-NN done --user Geoff`) when the PR lands. If review feedback requires changes on the same branch, recreate the worktree with `git worktree add .claude/worktrees/mini-NN claude/mini-NN` (the remote branch is left intact by `finish-worktree`).
 
 The Done-when in the ticket body (often "Figma frames signed off") is informational. The skill considers the design doc + recommendation to be the actual deliverable, and the design ticket completes when the human flips it to `done` after merge. If the team starts wanting Figma frames again, that's a future change to this skill.
 
@@ -49,7 +49,7 @@ You should see a JSON blob with the repo's prefix (`MINI`) and per-state issue c
 
 Note: this skill calls `mk issue state` exactly once, near the end (Phase 8), to move the issue to **`in_review`**. No other state transitions. The terminal `done` transition is left to the human reviewer flipping it after the PR merges (the `Closes MINI-NN` line in the commit is for the audit trail; `mk` does not parse it).
 
-The phase order is deliberate: write the doc (Phase 5) → commit + push + PR (Phase 6) → mk comments linking to the PR (Phase 7) → move to `in_review` (Phase 8). The mk comments need the PR URL, so the PR must exist before they're posted; the `in_review` transition happens last so the comments post against the previous (`todo`) state.
+The phase order is deliberate: write the doc (Phase 5) → commit + push + PR (Phase 6) → mk comments linking to the PR (Phase 7) → move to `in_review` (Phase 8) → tear down the worktree (Phase 9) → final report (Phase 10). The mk comments need the PR URL, so the PR must exist before they're posted; the `in_review` transition happens before the teardown so the comments post against the previous (`todo`) state; the teardown happens after the transition so `finish-worktree`'s `gh pr view` defensive check still sees an open PR on the branch we're about to dispose of.
 
 ---
 
@@ -515,7 +515,7 @@ Two options explored:
 
 **Picked: Option <X>** — <one-sentence reason from §Recommendation>.
 
-Moving this design ticket to `in_review` — once the PR merges, the human reviewer flips it to `done`, which unblocks `/execute-next-task <impl-MINI-NN>`. If you disagree with the pick, comment on the PR or reopen the ticket.
+Moving this design ticket to `in_review` and tearing down the local worktree — once the PR merges, the human reviewer flips it to `done`, which unblocks `/execute-next-task <impl-MINI-NN>`. If you disagree with the pick, comment on the PR or reopen the ticket. (Re-edits: `git worktree add .claude/worktrees/mini-NN claude/mini-NN` recreates the worktree against the same branch.)
 EOF
 
 mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/design-comment.md
@@ -561,17 +561,43 @@ The Done-when on the ticket body (often "Design doc attached and recommendation 
 
 ---
 
-## Phase 9 — Final report to the user
+## Phase 9 — Tear down the worktree
+
+The design doc is on the remote (Phase 6 pushed `claude/mini-NN`), the PR points at it (Phase 6.3), the mk comments reference it (Phase 7), and the design ticket is in `in_review` (Phase 8). The local worktree has done its job — keeping it around just holds a `.claude/worktrees/mini-NN` slot and a `git worktree list` entry the user has to clean up later. Dispose of it now, automatically, by delegating to the **`finish-worktree`** skill:
+
+```
+Skill(skill: "finish-worktree", args: "mini-NN")
+```
+
+Pass the slug (`mini-NN`, lowercased — same value used for the worktree path and branch). `finish-worktree` runs its own defensive checks (clean tree / nothing unpushed / PR open) and then removes the directory and any per-worktree dev-env entry. All three checks pass naturally at this point in a successful design-task run: the commit was created in Phase 6, the push completed in 6.2, and the PR is open from 6.3 — so `finish-worktree` proceeds without prompting. The remote branch `claude/mini-NN` is deliberately left alone (the PR points at it).
+
+If `finish-worktree` reports an unexpected stop — e.g. a hook left an uncommitted file in the worktree, or the push didn't actually land — surface the message and stop the run there. Don't paper over it; the user needs to know their work isn't fully shipped before the worktree gets nuked. The Phase 10 final report still runs in that case but should explicitly say the worktree was *not* torn down and why.
+
+If review feedback later requires changes on the same branch, recreate the worktree at any time:
+
+```bash
+git fetch origin claude/mini-NN
+git worktree add .claude/worktrees/mini-NN claude/mini-NN
+cd .claude/worktrees/mini-NN
+pnpm install
+```
+
+(Skip the `pnpm worktree-env start` line — design changes are markdown-only, no dev env needed for re-edits.)
+
+---
+
+## Phase 10 — Final report to the user
 
 End the run with a tight summary so the user knows what landed:
 
 ```
-Design doc written + committed: docs/designs/<filename>.md (worktree .claude/worktrees/mini-NN, branch claude/mini-NN)
+Design doc written + committed: docs/designs/<filename>.md (branch claude/mini-NN — worktree torn down)
 PR opened: <PR URL>
 mk docs registered + linked: docs-designs-<filename>.md + sibling SVG wireframes (linked to design <MINI-NN> and impl <MINI-MM>)
 mk comment posted on design ticket <MINI-NN>
 "Design ready" comment posted on impl ticket <MINI-MM>
 <MINI-NN> moved to in_review (human flips to done after merge; impl ticket <MINI-MM> unblocks then)
+Worktree .claude/worktrees/mini-NN cleaned up — branch remains on the remote (PR points at it).
 
 Two options:
   A) <name> — <one-line>
@@ -579,11 +605,11 @@ Two options:
 
 Picked: Option <X> — <one-line reason>.
 
-Next: review and merge the PR on your cadence. After merge, run /finish-worktree mini-NN to tear down the worktree.
+Next: review and merge the PR on your cadence.
 If you disagree with the pick, comment on the PR or close it and reopen the ticket.
 ```
 
-If there's no impl ticket the design ticket was blocking, drop the impl-ticket comment line and the "impl ticket … unblocks then" clause.
+If there's no impl ticket the design ticket was blocking, drop the impl-ticket comment line and the "impl ticket … unblocks then" clause. If Phase 9's teardown stopped (rare), replace the "Worktree … cleaned up" line with the reason it didn't, and tell the user how to dispose of it manually (`/finish-worktree mini-NN`).
 
 That's the whole skill. Keep the output short — the design PR is the substantive thing; the chat reply just navigates to it.
 
@@ -602,6 +628,7 @@ That's the whole skill. Keep the output short — the design PR is the substanti
 - **Never skip the prior-art search (Phase 4.4).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
 - **Never overwrite an existing design doc silently.** If `docs/designs/<filename>.md` already exists (or a comment from a previous design pass exists on the ticket), stop and ask.
 - **Never produce an ExitPlanMode block.** The design doc *is* the plan. ExitPlanMode is for implementation plans presented in chat; this skill writes a markdown file instead.
+- **Always tear down the worktree at the end via `finish-worktree` (Phase 9), without asking.** The branch is already on the remote and the PR points at it, so the local checkout is dead weight. Don't add a confirmation prompt — the run-end is the cleanup point. The only time the worktree survives is when `finish-worktree`'s own defensive checks (clean tree / nothing unpushed / PR open) trip; in that case, surface why and let the user decide.
 
 ---
 
@@ -619,10 +646,12 @@ That's the whole skill. Keep the output short — the design PR is the substanti
 >
 > *Phase 6: stages the design `.md`, commits with `docs(designs): egress per-container override (MINI-38)` and a `Closes MINI-38` line, pushes `claude/mini-38`, opens PR #371 via `gh pr create`. Captures the PR URL and runs `mk pr attach MINI-38 <PR URL> --user Claude` so future `mk issue show MINI-38` calls surface the link.*
 >
-> *Phase 7.1: writes the design-ticket comment to a temp file, then `mk comment add MINI-38 --as Claude --user Claude --body-file /tmp/design-comment.md`: "Designs drafted (PR open): #371. A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Moving this design ticket to in_review — once the PR merges, the human reviewer flips it to done, which unblocks `/execute-next-task MINI-39`."*
+> *Phase 7.1: writes the design-ticket comment to a temp file, then `mk comment add MINI-38 --as Claude --user Claude --body-file /tmp/design-comment.md`: "Designs drafted (PR open): #371. A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Moving this design ticket to in_review and tearing down the local worktree — once the PR merges, the human reviewer flips it to done, which unblocks `/execute-next-task MINI-39`."*
 >
 > *Phase 7.2: MINI-38's relations include an outgoing `blocks` edge to MINI-39 (the impl ticket). Writes the impl-ticket comment to a temp file and `mk comment add MINI-39 --as Claude --user Claude --body-file /tmp/impl-comment.md`: "**Design ready (PR open):** #371 — design doc at `docs/designs/mini-38-egress-per-container-override.md` once merged. Picked: Option A — Service-row column. Read this before starting implementation … Wait for the design PR to merge before kicking off `/execute-next-task` — the doc lands on `main` at that point, and once the human flips the design ticket to `done` the impl ticket becomes pickable." A future `/execute-next-task MINI-39` skim of comments via `mk comment list` will see this immediately.*
 >
 > *Phase 8: `mk issue state MINI-38 in_review --user Claude`. The single state transition. MINI-38 will be flipped to `done` by the human after PR #371 merges; MINI-39 becomes picker-eligible at that point.*
 >
-> Skill: "Design doc written + committed: `docs/designs/mini-38-egress-per-container-override.md`. PR opened: #371. mk comment posted on design ticket MINI-38. 'Design ready' comment posted on impl ticket MINI-39. MINI-38 moved to in_review (human flips to done after merge; MINI-39 unblocks then). Two options: A) Service-row column. B) Separate EgressOverride table. Picked: A — cheap, leans on the haproxy override pattern. Next: review and merge the PR; after merge, `/finish-worktree mini-38`."
+> *Phase 9: `Skill(skill: "finish-worktree", args: "mini-38")`. The finish-worktree skill checks the working tree (clean), unpushed commits (none), and PR state (open) — all green — then `cd`s back to the repo root, runs `pnpm worktree-env delete mini-38 --force` (or skips if no env was started — design-task always passes `--no-env` to `setup-worktree`), and `git worktree remove .claude/worktrees/mini-38`. The remote branch `claude/mini-38` is left intact for the PR.*
+>
+> Skill: "Design doc written + committed: `docs/designs/mini-38-egress-per-container-override.md` (branch claude/mini-38 — worktree torn down). PR opened: #371. mk comment posted on design ticket MINI-38. 'Design ready' comment posted on impl ticket MINI-39. MINI-38 moved to in_review (human flips to done after merge; MINI-39 unblocks then). Worktree cleaned up; branch remains on the remote. Two options: A) Service-row column. B) Separate EgressOverride table. Picked: A — cheap, leans on the haproxy override pattern. Next: review and merge the PR."
