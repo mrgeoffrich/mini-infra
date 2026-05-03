@@ -34,6 +34,8 @@ import storageConnectivityRoutes from "./routes/storage-connectivity";
 import storageGoogleDriveOAuthRoutes from "./routes/storage-google-drive-oauth";
 import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 import cloudflareConnectivityRoutes from "./routes/cloudflare-connectivity";
+import tailscaleSettingsRoutes from "./routes/tailscale-settings";
+import tailscaleConnectivityRoutes from "./routes/tailscale-connectivity";
 import githubSettingsRoutes from "./routes/github-settings";
 import githubBugReportRoutes from "./routes/github-bug-report";
 import postgresDatabasesRoutes from "./routes/postgres-databases";
@@ -144,6 +146,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "storageGoogleDriveOAuth", path: "/api/storage/google-drive/oauth", name: "storageGoogleDriveOAuthRoutes", getRouter: () => storageGoogleDriveOAuthRoutes },
     { id: "storageSettings", path: "/api/storage", name: "storageSettingsRoutes", getRouter: () => storageSettingsRoutes },
     { id: "cloudflareSettings", path: "/api/settings/cloudflare", name: "cloudflareSettingsRoutes", getRouter: () => cloudflareSettingsRoutes },
+    { id: "tailscaleSettings", path: "/api/settings/tailscale", name: "tailscaleSettingsRoutes", getRouter: () => tailscaleSettingsRoutes },
     { id: "githubSettings", path: "/api/settings/github", name: "githubSettingsRoutes", getRouter: () => githubSettingsRoutes },
     { id: "githubAppSettings", path: "/api/settings/github-app", name: "githubAppSettingsRoutes", getRouter: () => githubAppSettingsRoutes },
     { id: "githubAppResources", path: "/api/github-app", name: "githubAppResourcesRoutes", getRouter: () => githubAppResourcesRoutes },
@@ -154,6 +157,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "settings", path: "/api/settings", name: "settingsRoutes", getRouter: () => settingsRoutes },
     { id: "storageConnectivity", path: "/api/connectivity/storage", name: "storageConnectivityRoutes", getRouter: () => storageConnectivityRoutes },
     { id: "cloudflareConnectivity", path: "/api/connectivity", name: "cloudflareConnectivityRoutes", getRouter: () => cloudflareConnectivityRoutes },
+    { id: "tailscaleConnectivity", path: "/api/connectivity", name: "tailscaleConnectivityRoutes", getRouter: () => tailscaleConnectivityRoutes },
     { id: "postgresDatabases", path: "/api/postgres/databases", name: "postgresDatabasesRoutes", getRouter: () => postgresDatabasesRoutes },
     { id: "postgresBackupConfigs", path: "/api/postgres/backup-configs", name: "postgresBackupConfigsRoutes", getRouter: () => postgresBackupConfigsRoutes },
     { id: "postgresBackups", path: "/api/postgres", name: "postgresBackupsRoutes", getRouter: () => postgresBackupsRoutes },

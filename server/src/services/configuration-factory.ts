@@ -11,6 +11,7 @@ import { CloudflareService } from "./cloudflare";
 import { TlsConfigService } from "./tls/tls-config";
 import { VaultConfigService } from "./vault/vault-config-service";
 import { AzureStorageBackend } from "./storage/providers/azure/azure-storage-backend";
+import { TailscaleService } from "./tailscale";
 
 export class ConfigurationServiceFactory
   implements IConfigurationServiceFactory
@@ -22,6 +23,7 @@ export class ConfigurationServiceFactory
     "storage-azure",
     "tls",
     "vault",
+    "tailscale",
   ];
 
   constructor(prisma: PrismaClient) {
@@ -56,6 +58,9 @@ export class ConfigurationServiceFactory
 
         case "vault":
           return new VaultConfigService(this.prisma);
+
+        case "tailscale":
+          return new TailscaleService(this.prisma);
 
         default:
           throw new Error(`Unknown configuration category: ${category}`);
