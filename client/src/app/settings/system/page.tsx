@@ -1,5 +1,5 @@
 import { useState, useEffect, useEffectEvent, useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -24,14 +24,26 @@ import {
 } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   useSystemSettings,
   useCreateSystemSetting,
   useUpdateSystemSetting,
 } from "@/hooks/use-settings";
+import { useSystemInfo } from "@/hooks/use-system-info";
 import {
   IconAlertCircle,
   IconDeviceFloppy,
   IconLoader2,
+  IconLock,
   IconSettings,
   IconNetwork,
   IconShield,
@@ -44,11 +56,12 @@ import { SystemSettingsInfo } from "@mini-infra/types";
 
 // System settings schema
 const systemSettingsSchema = z.object({
-  // Public URL and CORS
+  // Public URL and security toggles
   publicUrl: z.string().optional().refine(
     (val) => !val || /^https?:\/\//.test(val),
     "Must be a valid URL starting with http:// or https://"
   ),
+  httpsOnlyMode: z.boolean(),
   corsEnabled: z.boolean(),
 
   // Production mode setting
@@ -77,6 +90,9 @@ type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 export default function SystemSettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingSubmit, setPendingSubmit] = useState<SystemSettingsFormData | null>(null);
+
+  const systemInfo = useSystemInfo();
 
   // Fetch existing system settings for system category
   const {
@@ -98,6 +114,7 @@ export default function SystemSettingsPage() {
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
       publicUrl: "",
+      httpsOnlyMode: false,
       corsEnabled: false,
       isProduction: false,
       dockerHostIp: "",
@@ -125,6 +142,10 @@ export default function SystemSettingsPage() {
   const syncFormFromSettings = useEffectEvent(
     (settingsMap: Record<string, SystemSettingsInfo>) => {
       form.setValue("publicUrl", settingsMap.public_url?.value || "");
+      form.setValue(
+        "httpsOnlyMode",
+        settingsMap.https_only_mode?.value === "true",
+      );
       form.setValue(
         "corsEnabled",
         settingsMap.cors_enabled?.value === "true",
@@ -154,6 +175,12 @@ export default function SystemSettingsPage() {
           category: "system" as const,
           key: "public_url",
           value: data.publicUrl || "",
+          isEncrypted: false,
+        },
+        {
+          category: "system" as const,
+          key: "https_only_mode",
+          value: data.httpsOnlyMode.toString(),
           isEncrypted: false,
         },
         {
@@ -212,11 +239,45 @@ export default function SystemSettingsPage() {
       refetchSettings();
     } catch (error) {
       console.error("Failed to save system settings:", error);
-      toastWithCopy.error("Failed to save system settings");
+      const message = error instanceof Error ? error.message : "Failed to save system settings";
+      toastWithCopy.error(message);
     } finally {
       setIsSaving(false);
     }
   };
+
+  // Intercept submit so newly enabling HTTPS-only mode shows a confirm modal
+  // first — the lockout cost (HSTS pins for a year, page won't load over HTTP)
+  // is high enough that a typo on the toggle deserves a deliberate Yes.
+  const onFormSubmit = (data: SystemSettingsFormData) => {
+    const wasHttpsOnly = settings.https_only_mode?.value === "true";
+    if (!wasHttpsOnly && data.httpsOnlyMode) {
+      setPendingSubmit(data);
+      return;
+    }
+    return handleSubmit(data);
+  };
+
+  const confirmHttpsOnlyEnable = async () => {
+    if (!pendingSubmit) return;
+    const data = pendingSubmit;
+    setPendingSubmit(null);
+    await handleSubmit(data);
+  };
+
+  // Form-level guards on the security toggles. publicUrl must exist for either
+  // toggle; HTTPS-only additionally requires an https:// publicUrl. Returning
+  // helper text alongside makes the disabled reason discoverable in the UI
+  // rather than the user having to read the docs.
+  const watchedPublicUrl = useWatch({ control: form.control, name: "publicUrl" }) ?? "";
+  const corsToggleDisabled = !watchedPublicUrl;
+  const httpsOnlyToggleDisabled = !watchedPublicUrl || !watchedPublicUrl.startsWith("https://");
+  const corsHelperText = corsToggleDisabled
+    ? "Set the Public URL above to enable this option — that's the origin allowed past CORS."
+    : "When enabled, only the Public URL above is allowed as a cross-origin request source. When disabled, all origins are allowed.";
+  const httpsOnlyHelperText = httpsOnlyToggleDisabled
+    ? "Set the Public URL above to an https:// URL to enable this option."
+    : "When enabled, the server emits HSTS, upgrades insecure requests, and marks auth cookies Secure. Browsers will then refuse plain-HTTP access.";
 
 
   if (settingsError) {
@@ -238,6 +299,16 @@ export default function SystemSettingsPage() {
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      {systemInfo.forceInsecureOverride && (
+        <div className="px-4 lg:px-6">
+          <Alert variant="default" className="border-amber-500 text-amber-700 dark:text-amber-400">
+            <IconLock className="h-4 w-4" />
+            <AlertDescription>
+              Server is running with <code>MINI_INFRA_FORCE_INSECURE=true</code> — HTTPS-only mode is overridden at the process level. The toggle below is ignored until that env var is removed and the server restarted.
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
       <div className="px-4 lg:px-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-md bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300">
@@ -271,18 +342,18 @@ export default function SystemSettingsPage() {
           ) : (
             <Form {...form}>
               <form
-                onSubmit={form.handleSubmit(handleSubmit)}
+                onSubmit={form.handleSubmit(onFormSubmit)}
                 className="space-y-6"
               >
-                {/* Public URL & CORS */}
+                {/* Public URL, HTTPS-only mode, CORS */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
                       <IconWorld className="h-5 w-5" />
-                      <span>Public URL &amp; CORS</span>
+                      <span>Public URL &amp; security</span>
                     </CardTitle>
                     <CardDescription>
-                      Configure the externally-reachable URL for this instance and cross-origin request policy
+                      Configure the externally-reachable URL for this instance, HTTPS-only enforcement, and cross-origin request policy
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -307,6 +378,29 @@ export default function SystemSettingsPage() {
                     />
                     <FormField
                       control={form.control}
+                      name="httpsOnlyMode"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              HTTPS-only mode
+                            </FormLabel>
+                            <FormDescription>
+                              {httpsOnlyHelperText}
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              disabled={httpsOnlyToggleDisabled && !field.value}
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
                       name="corsEnabled"
                       render={({ field }) => (
                         <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
@@ -315,13 +409,14 @@ export default function SystemSettingsPage() {
                               Restrict CORS
                             </FormLabel>
                             <FormDescription>
-                              When enabled, only the Public URL above is allowed as a cross-origin request source. When disabled, all origins are allowed.
+                              {corsHelperText}
                             </FormDescription>
                           </div>
                           <FormControl>
                             <Switch
                               checked={field.value}
                               onCheckedChange={field.onChange}
+                              disabled={corsToggleDisabled && !field.value}
                             />
                           </FormControl>
                         </FormItem>
@@ -508,6 +603,59 @@ export default function SystemSettingsPage() {
         </div>
       </div>
 
+      <AlertDialog
+        open={pendingSubmit !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSubmit(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <IconLock className="h-5 w-5" />
+              Enable HTTPS-only mode?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Saving will start enforcing HTTPS for this instance:
+                </p>
+                <ul className="list-disc list-inside text-sm space-y-1">
+                  <li>
+                    Browsers will be told to upgrade insecure requests (CSP <code>upgrade-insecure-requests</code>)
+                  </li>
+                  <li>
+                    HSTS will be sent — <strong>browsers will pin HTTPS for up to 1 year</strong>; disabling later won&apos;t immediately let HTTP back in until the pin expires or site data is cleared
+                  </li>
+                  <li>
+                    Auth cookies will be marked <code>Secure</code>; the browser will drop them on plain HTTP, which means anyone still on HTTP will be silently logged out
+                  </li>
+                </ul>
+                <p className="text-sm">
+                  Your current connection is{" "}
+                  {systemInfo.protocol === "https" ? (
+                    <span className="font-medium text-green-600 dark:text-green-400">HTTPS ✓</span>
+                  ) : (
+                    <span className="font-medium text-red-600 dark:text-red-400">HTTP ✗</span>
+                  )}
+                  .
+                </p>
+                {systemInfo.protocol !== "https" && (
+                  <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                    The server will reject this change because the request itself is HTTP. Reload the page over HTTPS first.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmHttpsOnlyEnable}>
+              Enable HTTPS-only mode
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

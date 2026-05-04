@@ -40,9 +40,6 @@ const configSchema = z.object({
   connectivity: z.object({
     checkInterval: z.number(),
   }),
-  security: z.object({
-    allowInsecure: z.boolean(),
-  }),
   agent: z.object({
     model: z.string(),
     thinking: z.enum(["adaptive", "enabled", "disabled"]),
@@ -131,12 +128,6 @@ const appConfig: Config = {
       | "high"
       | "max",
   },
-  security: {
-    allowInsecure: (() => {
-      const value = getConfigValue<string | boolean>("security.allowInsecure", "ALLOW_INSECURE", false);
-      return value === "true" || value === true;
-    })(),
-  },
 };
 
 // Validate the final configuration
@@ -145,9 +136,9 @@ let validatedConfig: Config;
 try {
   validatedConfig = configSchema.parse(appConfig);
 
-  // Log security configuration for transparency
-  if (validatedConfig.security.allowInsecure) {
-    console.log("⚠️  Security: Allowing insecure connections (configured via ALLOW_INSECURE)");
+  // Boot-time warning when the recovery escape hatch is in effect.
+  if (process.env.MINI_INFRA_FORCE_INSECURE === "true") {
+    console.log("⚠️  Security: MINI_INFRA_FORCE_INSECURE=true — HTTPS-only mode is overridden, all requests are treated as insecure");
   }
 } catch (error) {
   // Use console.error since logger isn't available yet
@@ -188,7 +179,6 @@ export const {
   docker: dockerConfig,
   azure: azureConfig,
   connectivity: connectivityConfig,
-  security: securityConfig,
   agent: agentConfig,
 } = validatedConfig;
 

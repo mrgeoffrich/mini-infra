@@ -10,7 +10,8 @@ import Docker from "dockerode";
 import os from "os";
 import passport from "../lib/passport";
 import { getLogger } from "../lib/logger-factory";
-import { serverConfig, securityConfig, authConfig } from "../lib/config-new";
+import { serverConfig, authConfig } from "../lib/config-new";
+import { isHttpsOnlyEnabled, isForceInsecureOverride } from "../lib/public-url-service";
 import { generateToken } from "../lib/jwt";
 import prisma from "../lib/prisma";
 import {
@@ -53,13 +54,18 @@ function serializeUserProfile(user: JWTUser & { mustResetPwd?: boolean }): UserP
   };
 }
 
-// Cookie helper
-function getSecureCookieFlag(): boolean {
-  return serverConfig.nodeEnv === "production" && !securityConfig.allowInsecure;
+// Cookie helper. Production + HTTPS-only mode → Secure + SameSite=Strict.
+// Anything else (dev, or production with HTTPS-only off) → permissive cookies
+// so the browser still sends them over HTTP. The MINI_INFRA_FORCE_INSECURE env
+// var short-circuits to permissive regardless of DB state.
+async function getSecureCookieFlag(): Promise<boolean> {
+  if (serverConfig.nodeEnv !== "production") return false;
+  if (isForceInsecureOverride()) return false;
+  return await isHttpsOnlyEnabled();
 }
 
-function setAuthCookie(res: Response, token: string): void {
-  const secure = getSecureCookieFlag();
+async function setAuthCookie(res: Response, token: string): Promise<void> {
+  const secure = await getSecureCookieFlag();
   res.cookie("auth-token", token, {
     httpOnly: true,
     secure,
@@ -150,7 +156,7 @@ router.post("/setup", (async (req: Request, res: Response) => {
       createdAt: result.createdAt.toISOString(),
     };
     const token = generateToken(profile);
-    setAuthCookie(res, token);
+    await setAuthCookie(res, token);
 
     logger.info({ userId: result.id, email: result.email }, "Initial user created during setup");
     res.status(201).json({ success: true });
@@ -391,7 +397,7 @@ router.post("/login", (async (req: Request, res: Response) => {
     const token = generateToken(profile, {
       mustResetPwd: user.mustResetPwd,
     });
-    setAuthCookie(res, token);
+    await setAuthCookie(res, token);
 
     logger.info({ userId: user.id }, "Local login successful");
     res.json({ success: true, mustResetPwd: user.mustResetPwd });
@@ -584,7 +590,7 @@ router.post("/change-password", requireAuth, (async (req: Request, res: Response
       createdAt: user.createdAt.toISOString(),
     };
     const token = generateToken(profile);
-    setAuthCookie(res, token);
+    await setAuthCookie(res, token);
 
     logger.info({ userId }, "Password changed successfully");
     res.json({ success: true });
@@ -632,7 +638,7 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
   const statePayload = JSON.stringify({ nonce, redirect: redirectPath });
   const state = Buffer.from(statePayload).toString("base64");
 
-  const secure = getSecureCookieFlag();
+  const secure = await getSecureCookieFlag();
   res.cookie("oauth-state", nonce, {
     httpOnly: true,
     secure,
@@ -713,7 +719,7 @@ router.get("/google/callback", ((req: Request, res: Response, next: NextFunction
         (await getPublicUrlForRedirect()) ||
         (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
 
-      setAuthCookie(res, token);
+      await setAuthCookie(res, token);
       res.redirect(`${frontendUrl}${redirectPath}`);
     } catch (error) {
       logger.error({ error }, "Error generating JWT after OAuth");
@@ -734,9 +740,9 @@ router.get("/failure", (async (req: Request, res: Response) => {
 // ==========================================
 // Logout
 // ==========================================
-router.post("/logout", ((req: Request, res: Response) => {
+router.post("/logout", (async (req: Request, res: Response) => {
   try {
-    const secure = getSecureCookieFlag();
+    const secure = await getSecureCookieFlag();
     res.clearCookie("auth-token", {
       httpOnly: true,
       secure,

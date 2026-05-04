@@ -109,7 +109,8 @@ async function createSystemSetting(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to create system setting: ${response.statusText}`);
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.message || `Failed to create system setting: ${response.statusText}`);
   }
 
   const data: SettingResponse = await response.json();
@@ -137,7 +138,8 @@ async function updateSystemSetting(
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to update system setting: ${response.statusText}`);
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.message || `Failed to update system setting: ${response.statusText}`);
   }
 
   const data: SettingResponse = await response.json();

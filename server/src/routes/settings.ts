@@ -110,6 +110,65 @@ const updateSettingSchema = z.object({
   isEncrypted: z.boolean().optional(),
 });
 
+interface SecuritySettingValidationError {
+  status: number;
+  code: string;
+  message: string;
+}
+
+/**
+ * Gate enabling the security-sensitive system settings — `https_only_mode`
+ * and `cors_enabled` — to prevent users locking themselves out. HTTPS-only
+ * mode further requires the inbound request itself to be HTTPS, so a user
+ * still on HTTP can't flip the toggle and be unable to load the page.
+ */
+async function validateSecuritySettingChange(
+  req: Request,
+  category: string,
+  key: string,
+  value: string,
+): Promise<SecuritySettingValidationError | null> {
+  if (category !== "system" || value !== "true") return null;
+
+  const { getPublicUrl } = await import("../lib/public-url-service");
+
+  if (key === "https_only_mode") {
+    if (req.protocol !== "https") {
+      return {
+        status: 400,
+        code: "https_required",
+        message:
+          "HTTPS-only mode can't be enabled over an HTTP connection. Set up TLS for this instance and reload the page over HTTPS first.",
+      };
+    }
+    const publicUrl = await getPublicUrl();
+    if (!publicUrl || !publicUrl.startsWith("https://")) {
+      return {
+        status: 400,
+        code: "public_url_must_be_https",
+        message:
+          "HTTPS-only mode requires the Public URL to be set and start with https://.",
+      };
+    }
+    return null;
+  }
+
+  if (key === "cors_enabled") {
+    const publicUrl = await getPublicUrl();
+    if (!publicUrl) {
+      return {
+        status: 400,
+        code: "public_url_required",
+        message:
+          "Restrict CORS requires the Public URL to be set — that's the origin allowed past CORS.",
+      };
+    }
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * GET /api/settings - List system settings with filtering and pagination
  */
@@ -284,6 +343,17 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 
     const { category, key, value, isEncrypted } = bodyValidation.data;
 
+    const securityValidation = await validateSecuritySettingChange(req, category, key, value);
+    if (securityValidation) {
+      return res.status(securityValidation.status).json({
+        error: "Bad Request",
+        code: securityValidation.code,
+        message: securityValidation.message,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
     // Check if setting with same category/key already exists
     const existingSetting = await prisma.systemSettings.findUnique({
       where: {
@@ -328,9 +398,10 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 
     // Invalidate caches for known dynamic settings
     if (category === "system") {
-      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache, invalidateHttpsOnlyCache } = await import("../lib/public-url-service");
       if (key === "public_url") invalidatePublicUrlCache();
       if (key === "cors_enabled") invalidateCorsEnabledCache();
+      if (key === "https_only_mode") invalidateHttpsOnlyCache();
     }
 
     logger.debug(
@@ -553,6 +624,22 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
       updateData.isEncrypted = isEncrypted;
     }
 
+    const securityValidation = await validateSecuritySettingChange(
+      req,
+      existingSetting.category,
+      existingSetting.key,
+      value,
+    );
+    if (securityValidation) {
+      return res.status(securityValidation.status).json({
+        error: "Bad Request",
+        code: securityValidation.code,
+        message: securityValidation.message,
+        timestamp: new Date().toISOString(),
+        requestId,
+      });
+    }
+
     // Update the setting
     const updatedSetting = await prisma.systemSettings.update({
       where: { id: settingId },
@@ -561,9 +648,10 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
 
     // Invalidate caches for known dynamic settings
     if (existingSetting.category === "system") {
-      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache, invalidateHttpsOnlyCache } = await import("../lib/public-url-service");
       if (existingSetting.key === "public_url") invalidatePublicUrlCache();
       if (existingSetting.key === "cors_enabled") invalidateCorsEnabledCache();
+      if (existingSetting.key === "https_only_mode") invalidateHttpsOnlyCache();
     }
 
     logger.debug(
@@ -672,9 +760,10 @@ router.delete("/:id", requirePermission('settings:write') as RequestHandler, (as
 
     // Invalidate caches for known dynamic settings
     if (existingSetting.category === "system") {
-      const { invalidatePublicUrlCache, invalidateCorsEnabledCache } = await import("../lib/public-url-service");
+      const { invalidatePublicUrlCache, invalidateCorsEnabledCache, invalidateHttpsOnlyCache } = await import("../lib/public-url-service");
       if (existingSetting.key === "public_url") invalidatePublicUrlCache();
       if (existingSetting.key === "cors_enabled") invalidateCorsEnabledCache();
+      if (existingSetting.key === "https_only_mode") invalidateHttpsOnlyCache();
     }
 
     logger.debug(
