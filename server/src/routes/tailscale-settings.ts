@@ -11,12 +11,13 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import {
   TailscaleService,
   TailscaleAuthkeyMinter,
-  buildAclSnippet,
 } from "../services/tailscale";
 import {
   TAILSCALE_DEFAULT_TAG,
+  TailscaleErrorCode,
   TailscaleSettingsResponse,
   TailscaleValidationResponse,
+  buildAclSnippet,
 } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "tailscale-settings");
@@ -127,6 +128,9 @@ router.post(
         aclSnippet: buildAclSnippet(extra_tags ?? []),
         isValid: validationResult.isValid,
         validationMessage: validationResult.message,
+        validationErrorCode: validationResult.errorCode as
+          | TailscaleErrorCode
+          | undefined,
       },
     };
     res.json(response);

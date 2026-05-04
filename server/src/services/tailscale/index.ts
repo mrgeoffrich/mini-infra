@@ -3,4 +3,3 @@ export {
   TailscaleAuthkeyMinter,
   type MintAuthkeyOptions,
 } from "./tailscale-authkey-minter";
-export { buildAclSnippet } from "./build-acl-snippet";

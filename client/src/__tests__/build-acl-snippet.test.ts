@@ -4,8 +4,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildAclSnippet } from "@/lib/tailscale/build-acl-snippet";
-import { TAILSCALE_DEFAULT_TAG } from "@mini-infra/types";
+import { TAILSCALE_DEFAULT_TAG, buildAclSnippet } from "@mini-infra/types";
 
 describe("buildAclSnippet", () => {
   it("includes the default managed tag in tagOwners / grants / ssh", () => {

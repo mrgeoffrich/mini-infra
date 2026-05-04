@@ -40,8 +40,11 @@ import {
   IconExternalLink,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { TAILSCALE_DEFAULT_TAG, type TailscaleSettingsResponse } from "@mini-infra/types";
-import { buildAclSnippet } from "@/lib/tailscale/build-acl-snippet";
+import {
+  TAILSCALE_DEFAULT_TAG,
+  buildAclSnippet,
+  type TailscaleSettingsResponse,
+} from "@mini-infra/types";
 
 const tagRegex = /^tag:[a-z0-9-]+$/;
 
@@ -206,11 +209,7 @@ export default function TailscaleSettingsPage() {
       );
 
       if (!saved.isValid) {
-        const code = (saved.validationMessage ?? "").includes("OAuth client doesn")
-          ? "INVALID_TAG"
-          : (saved.validationMessage ?? "").includes("Tailscale rejected")
-            ? "INVALID_CLIENT"
-            : "TAILSCALE_API_ERROR";
+        const code = saved.validationErrorCode ?? "TAILSCALE_API_ERROR";
         setValidationState({
           isValidating: false,
           isSuccess: false,

@@ -23,6 +23,7 @@ export interface TailscaleSettingsResponse {
     aclSnippet: string;
     isValid?: boolean;
     validationMessage?: string;
+    validationErrorCode?: TailscaleErrorCode;
   };
 }
 
@@ -87,3 +88,35 @@ export const TAILSCALE_ERROR_CODES = {
 
 export type TailscaleErrorCode =
   (typeof TAILSCALE_ERROR_CODES)[keyof typeof TAILSCALE_ERROR_CODES];
+
+/**
+ * Canonical Tailscale ACL bootstrap snippet for the operator to paste into
+ * their tailnet policy file at https://login.tailscale.com/admin/acls.
+ *
+ * Single source of truth — the form's live preview, the docs page, and the
+ * server-side settings response all render the same JSON. Pure helper so the
+ * unit tests pin the output shape.
+ */
+export function buildAclSnippet(extraTags: string[] = []): string {
+  const tags = [TAILSCALE_DEFAULT_TAG, ...extraTags];
+  const acl = {
+    tagOwners: Object.fromEntries(tags.map((t) => [t, ["autogroup:admin"]])),
+    grants: [
+      {
+        src: ["autogroup:member"],
+        dst: tags,
+        ip: ["*"],
+      },
+    ],
+    ssh: [
+      {
+        action: "check",
+        src: ["autogroup:member"],
+        dst: tags,
+        users: ["root", "autogroup:nonroot"],
+        checkPeriod: "12h",
+      },
+    ],
+  };
+  return JSON.stringify(acl, null, 2);
+}
