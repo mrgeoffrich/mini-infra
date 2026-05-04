@@ -1,6 +1,6 @@
 ---
 name: address-review
-description: Action the findings from a `/review` mk comment on an in-review PR. Accepts an mk issue key (`MINI-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/mini-32`), or **no argument** (uses the current branch's PR). Resolves the input to the triple {mk issue, PR, branch}, transitions the issue back to **in_progress** and posts a brief claim comment, finds the most recent `**Review of …**` comment posted by `/review` on the issue, parses the severity-tagged findings out of it, **drops every `low` item entirely** (low isn't worth a fixup commit — calibration of severity is the line), and for each remaining `critical | high | medium` finding **validates that it's actually an issue** by reading the cited file and surrounding code before touching anything (`/review` is fallible — false positives must be dismissed with rationale, not silently fixed). Reloads the contract — ticket body (Goal / Deliverables / Done when), any `Design ready` comment from `design-task` pointing at a design doc under `docs/designs/`, the plan doc if any, and the project conventions that bear on the touched directories (root + server/ + client/ CLAUDE.md). Resumes the existing worktree at `.claude/worktrees/mini-NN` if it's still around, or recreates it from the existing branch (`git worktree add .claude/worktrees/mini-NN claude/mini-NN`, `pnpm install`, kicks off `pnpm worktree-env start` in the background) so live smoke is available. Applies a targeted fix per validated finding, runs `build / lint / unit` for the workspaces touched, **smoke-tests the changes live** against the dev env (reads the URL from `environment-details.xml` and uses a recipe tailored to what changed — playwright for UI fixes, curl for route fixes, unit-test exercise for pure server logic), and lands one **single fixup commit** (`fix(<area>): address review findings (MINI-NN)`) pushed to the existing PR branch. Never opens a new PR. Posts a structured response comment on the mk issue listing **Fixed** items (with `file:line` + commit SHA), **Dismissed** items (with rationale per false-positive), **Couldn't verify** items (when the cited file/line doesn't match what the finding describes), and a one-line **Skipped (low)** note. Transitions the issue from in_progress back to **in_review**. Use this skill whenever the user says "address the review", "action the review findings", "apply the review", "fix the review on MINI-NN", "address MINI-NN review", "fix what review flagged", "act on the review comments", "go fix what /review found", "address the comments on MINI-NN", or any equivalent ask to action a posted review. Trigger even when the user doesn't say the word "address" but is clearly asking the agent to go fix what `/review` flagged. Do NOT trigger when there's no review comment on the ticket yet (run `/review` first), when the user wants a fresh review run (use `/review`), when the changes haven't been started (use `execute-next-task`), or when the request is for design exploration (use `design-task`).
+description: Action the findings from a `/review` mk comment on an in-review PR. Accepts an mk issue key (`MINI-NN`), a GitHub PR number (`372` or `#372`), a branch name (`claude/mini-32`), or **no argument** (uses the current branch's PR). Resolves the input to the triple {mk issue, PR, branch}, transitions the issue back to **in_progress** and posts a brief claim comment, finds the most recent `**Review of …**` comment posted by `/review` on the issue, parses the severity-tagged findings out of it, **drops every `low` item entirely** (low isn't worth a fixup commit — calibration of severity is the line), and for each remaining `critical | high | medium` finding **validates that it's actually an issue** by reading the cited file and surrounding code before touching anything (`/review` is fallible — false positives must be dismissed with rationale, not silently fixed). Reloads the contract — ticket body (Goal / Deliverables / Done when), any `Design ready` comment from `design-task` pointing at a design doc under `docs/designs/`, the plan doc if any, and the project conventions that bear on the touched directories (root + server/ + client/ CLAUDE.md). Resumes the existing worktree at `.claude/worktrees/mini-NN` if it's still around, or recreates it from the existing branch (`git worktree add .claude/worktrees/mini-NN claude/mini-NN`, `pnpm install`, kicks off `pnpm worktree-env start` in the background) so live smoke is available. Supports an optional `--quick` flag (e.g. `/address-review MINI-NN --quick`) that **skips the worktree + dev-env spin-up** and works directly on the PR branch in the main checkout — only valid when every validated fix is no-runtime-change (comment-only edits, dead-code removal, type-only changes, or extracted helpers with unchanged behaviour); the skill **refuses quick mode mid-run** if any fix turns out to touch `client/`, a route handler, a Prisma migration, or seeded-data code, and tells the user to re-run without `--quick`. The flag is never auto-detected — must be passed explicitly. Applies a targeted fix per validated finding, runs `build / lint / unit` for the workspaces touched, **smoke-tests the changes live** against the dev env (reads the URL from `environment-details.xml` and uses a recipe tailored to what changed — playwright for UI fixes, curl for route fixes, unit-test exercise for pure server logic), and lands one **single fixup commit** (`fix(<area>): address review findings (MINI-NN)`) pushed to the existing PR branch. Never opens a new PR. Posts a structured response comment on the mk issue listing **Fixed** items (with `file:line` + commit SHA), **Dismissed** items (with rationale per false-positive), **Couldn't verify** items (when the cited file/line doesn't match what the finding describes), and a one-line **Skipped (low)** note. Transitions the issue from in_progress back to **in_review**. Use this skill whenever the user says "address the review", "action the review findings", "apply the review", "fix the review on MINI-NN", "address MINI-NN review", "fix what review flagged", "act on the review comments", "go fix what /review found", "address the comments on MINI-NN", or any equivalent ask to action a posted review. Trigger even when the user doesn't say the word "address" but is clearly asking the agent to go fix what `/review` flagged. Do NOT trigger when there's no review comment on the ticket yet (run `/review` first), when the user wants a fresh review run (use `/review`), when the changes haven't been started (use `execute-next-task`), or when the request is for design exploration (use `design-task`).
 ---
 
 # Address Review
@@ -38,9 +38,11 @@ Resolve the argument to the triple {mk issue, PR, branch}, identical to the reso
 
 If the resolution is ambiguous (multiple matching PRs, branch with no PR, ticket with no `Closes` link in any open PR), stop and ask. Don't guess past these.
 
+**Optional `--quick` flag.** The argument may include `--quick` after the issue/PR/branch ref (e.g. `/address-review MINI-NN --quick`, or `/address-review --quick` with no other arg — order doesn't matter). Quick mode skips the worktree + dev-env spin-up (Phase 5 takes the abbreviated path) and falls back to build/lint/unit as the smoke (Phase 8 skips the channel-by-channel recipes). It's only valid when every validated finding's fix is in a no-runtime-change shape — comment-only edits, dead-code removal, type-only changes, or extracted helpers with unchanged behaviour. If any fix touches `client/`, a route handler under `server/src/routes/`, a Prisma migration, or seeded-data code, the skill **refuses quick mode mid-run** in Phase 8 and tells the user to re-run without `--quick`. The flag is never auto-detected; it must be passed explicitly. Note in chat which mode the run is using before proceeding.
+
 State the resolved triple before proceeding:
 
-> Addressing review on MINI-NN ("<title>") — PR #N, branch `<branch>`.
+> Addressing review on MINI-NN ("<title>") — PR #N, branch `<branch>`. (quick mode: yes/no)
 
 ### 2.1 Mark the issue in_progress and post a claim comment
 
@@ -129,7 +131,22 @@ Don't skip the contract reload. A finding like "this `any` type is unjustified" 
 
 The PR's branch (`claude/<slug>`) already exists on the remote. The worktree at `.claude/worktrees/<slug>` may or may not still be around — `execute-next-task` Phase 14 / `/finish-worktree` tear it down on the success path, so for a recently-shipped ticket it's likely gone.
 
-Two cases:
+**Quick mode (`--quick` flag passed in Phase 2):** skip the worktree entirely and work in the **main checkout** on the PR branch. From the main checkout root:
+
+```bash
+# Pre-flight: tree must be clean (no uncommitted edits, no untracked files in tracked dirs)
+git status --porcelain    # must be empty; if not, stop and ask before clobbering work
+
+git fetch origin
+git checkout claude/<slug>
+git pull --ff-only origin claude/<slug>
+```
+
+No `pnpm install` (the main checkout's `node_modules` is already warm); no `pnpm worktree-env start`. Phase 8 will classify each fix and **refuse quick mode mid-run** if any of them touches a runtime surface. Remember to `git checkout main` (or the user's prior branch) at the end of the run — Phase 11's report should remind the user explicitly. Then skip the rest of Phase 5 and proceed to Phase 6.
+
+If `git checkout claude/<slug>` fails because of local edits the pre-flight missed, stop and surface — don't `--force`.
+
+For the **default (worktree) mode**, two cases:
 
 **Worktree still alive** (`.claude/worktrees/<slug>` is in `git worktree list`):
 
@@ -203,6 +220,23 @@ For pure-docs fixes (no source files changed) the gate set may collapse to nothi
 ## Phase 8 — Live smoke the changes against the dev env
 
 This step is **required**. The fixup commit shouldn't push without verifying the changes actually work. Build/lint/unit pass means the code compiles and the unit suite is green — it does **not** mean the fix is correct against the running app. Pick the channel(s) based on what was fixed; if a fix spans surfaces, hit all of them.
+
+### 8.0 Quick-mode runtime-surface check (only if `--quick` was passed)
+
+Before running any smoke recipes, classify each entry in the `fixed` list by file path:
+
+- **No-runtime-change shapes (allowed under `--quick`):** comment-only edits, dead-code removal (unreachable code, unused imports/exports, unused variables), type-only changes (TypeScript types that don't change runtime behaviour), pure refactors that extract a helper without altering its body. Pure-docs files (`docs/**`, `*.md`) also count.
+- **Runtime-surface shapes (refused under `--quick`):** any path under `client/`, any route handler under `server/src/routes/`, any Prisma migration under `server/prisma/migrations/`, any seeded-data code (`server/src/seed/`, `server/src/services/seed*`), any sidecar source, any stack-template definition.
+
+If **any** fix is in the runtime-surface bucket, **refuse quick mode**:
+
+1. Surface what would be reset: `git log --oneline origin/claude/<slug>..HEAD` and `git status --porcelain`.
+2. Reset the working tree: `git restore --source=origin/claude/<slug> --staged --worktree -- .` for uncommitted edits, or `git reset --hard origin/claude/<slug>` if commits were made (state the SHA being discarded so the user can recover from reflog if needed).
+3. Tell the user, naming the offending file: "Fix at `<file>` touches a runtime surface (`<which bucket>`) — quick mode requires every fix to be no-runtime-change. Re-run without `--quick` to spin up the worktree and dev env." Don't push, don't comment on mk, don't transition state.
+
+If **every** fix is in the no-runtime-change bucket, skip the channel-by-channel recipes below — Phase 7's build/lint/unit gates are the smoke for quick mode. Note this explicitly in the Phase 10 smoke line.
+
+
 
 **Validation channels available in the worktree dev env:**
 
@@ -303,6 +337,10 @@ Template — omit a section that's empty rather than write "None.":
 ---
 
 _Smoke: <one-line description of how the changes were verified — e.g. "Playwright walked the Tailscale settings form; the empty-tags ACL block now renders the placeholder text instead of broken JSON.">_
+
+<!-- In quick mode (Phase 8.0 passed), use this form instead: -->
+<!-- _Smoke: build/lint/unit only — quick mode (no runtime-surface fixes)._ -->
+
 ```
 
 Post the comment, then move the issue back to **in_review** so the board reflects that the PR is awaiting another review pass. If `mk issue state` errors, surface and stop — the fixup commit is already on the remote, so the work isn't lost; the user can move the state manually.
@@ -323,6 +361,9 @@ Fixed: <F>. Dismissed: <D>. Couldn't verify: <C>. Skipped (low): <L>.
 Out-of-scope issues spotted during the run (not fixed; consider a separate ticket):
 - <file:line — short description>
 - <…>
+
+<If quick mode was used:>
+Note: ran in quick mode — main checkout is currently on `claude/<slug>`. Run `git checkout main` (or your prior branch) when you're done.
 ```
 
 That's the run.
@@ -333,7 +374,7 @@ That's the run.
 
 - **Never act on `low` items.** They're filtered out before validation. Calibration of severity is the line; loosening that line eats the calibration.
 - **Always validate before fixing.** Read the cited file at the cited line; if the finding doesn't hold up, dismiss it with rationale. The skill applies fixes; it does not re-implement what `/review` literally said the fix should be without sanity-checking it.
-- **Always smoke-test the changes.** Phase 8 is required. A fix that builds and lints isn't verified — runtime behaviour has to be exercised somehow before push.
+- **Always smoke-test the changes.** Phase 8 is required. A fix that builds and lints isn't verified — runtime behaviour has to be exercised somehow before push. **Quick-mode exception:** when `--quick` was passed in Phase 2 *and* every fix is no-runtime-change (comment-only / dead-code / type-only / extracted-helper / pure-docs), Phase 7's build+lint+unit gates count as the smoke. The skill **refuses quick mode mid-run** in Phase 8.0 if any fix turns out to touch a runtime surface — that's a hard rule, not a heuristic. Quick mode is never auto-detected.
 - **One fixup commit, no `--force`.** A single `fix(<area>): address review findings (MINI-NN)` commit on the existing branch. Don't squash in earlier commits. Don't force-push.
 - **Never open a new PR.** The fixup belongs on the existing PR. The diff updates automatically when the branch updates.
 - **Symmetric state flow.** The issue moves todo → in_progress → in_review → in_progress (this skill, Phase 2.1) → in_review (Phase 10). Don't skip either transition. The board has to reflect what's actually happening.

@@ -68,7 +68,7 @@ Both flows below leave the issue in **`in_review`** when they finish, ready for 
 ### 4. Review loop
 
 - **`review`** — independent code review of the PR for an mk ticket. Reads the ticket as the contract, pulls the diff, checks bugs / security / convention violations / duplication, and posts a severity-tagged review comment on the ticket.
-- **`address-review`** — the other side of the loop. Reads the most recent `/review` comment, drops `low`-severity findings, validates each `critical`/`high`/`medium` finding before fixing (false positives get dismissed with rationale), applies targeted fixes, runs build/lint/unit, and pushes. Transitions the issue back to `in_progress` while the work happens.
+- **`address-review`** — the other side of the loop. Reads the most recent `/review` comment, drops `low`-severity findings, validates each `critical`/`high`/`medium` finding before fixing (false positives get dismissed with rationale), applies targeted fixes, runs build/lint/unit, and pushes. Transitions the issue back to `in_progress` while the work happens. Pass `--quick` (e.g. `/address-review MINI-NN --quick`) for trivial fixes — works directly on the PR branch in the main checkout, skips the worktree + dev-env spin-up, and falls back to build/lint/unit as the smoke. Quick mode is only valid when every fix is no-runtime-change (comment / dead-code / type-only / extracted-helper / pure-docs); the skill refuses mid-run if anything touches `client/`, a route handler, a migration, or seeded data.
 
 Loop `review` ↔ `address-review` until the review is clean.
 
@@ -110,7 +110,7 @@ When the user asks "what do I do next?", figure out where they are:
 | Has a ticket, needs a design | `design-task` |
 | Has a ticket, ready to code | `execute-next-task` |
 | PR open, ticket `in_review` | `review` |
-| Review posted with findings | `address-review` |
+| Review posted with findings | `address-review` (add `--quick` for trivial / no-runtime-change fixes) |
 | Review is clean | `ship-it` |
 | PR merged, worktree still around | `finish-worktree` |
 | Something's broken in the worktree | `diagnose-dev` |
