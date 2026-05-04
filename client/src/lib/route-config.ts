@@ -437,6 +437,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     helpDoc: "connectivity/health-monitoring",
   },
 
+  "/connectivity-tailscale": {
+    path: "/connectivity-tailscale",
+    title: "Tailscale",
+    icon: IconNetwork,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "connectivity",
+    description: "Tailscale OAuth credentials and ACL bootstrap for tailnet-attached services",
+    helpDoc: "settings/tailscale",
+  },
+
   "/settings-system": {
     path: "/settings-system",
     title: "System Settings",

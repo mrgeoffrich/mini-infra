@@ -78,6 +78,7 @@ describe("ConfigurationServiceFactory", () => {
         "storage-azure",
         "tls",
         "vault",
+        "tailscale",
       ]);
     });
   });
@@ -185,6 +186,7 @@ describe("ConfigurationServiceFactory", () => {
         "storage-azure",
         "tls",
         "vault",
+        "tailscale",
       ]);
       expect(categories2).toEqual([
         "docker",
@@ -192,6 +194,7 @@ describe("ConfigurationServiceFactory", () => {
         "storage-azure",
         "tls",
         "vault",
+        "tailscale",
       ]);
 
       // Should be different array instances
@@ -199,7 +202,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Modifying one shouldn't affect the other
       categories1.push("test" as any);
-      expect(categories2).toHaveLength(5);
+      expect(categories2).toHaveLength(6);
     });
   });
 
@@ -302,7 +305,7 @@ describe("ConfigurationServiceFactory", () => {
 
       // Should still create factory but services might fail at runtime
       expect(nullFactory).toBeInstanceOf(ConfigurationServiceFactory);
-      expect(nullFactory.getSupportedCategories()).toHaveLength(5);
+      expect(nullFactory.getSupportedCategories()).toHaveLength(6);
     });
 
     it("should handle factory with corrupted supported categories", () => {

@@ -323,7 +323,7 @@ describe("Settings Validation API Routes", () => {
       expect(response.body).toMatchObject({
         error: "Bad Request",
         message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app",
+          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app, tailscale",
       });
     });
 

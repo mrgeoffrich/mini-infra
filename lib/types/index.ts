@@ -98,6 +98,9 @@ export * from "./nats-subjects";
 // Egress firewall types
 export * from "./egress";
 
+// Tailscale connected-service types
+export * from "./tailscale";
+
 // ====================
 // Type Utilities
 // ====================

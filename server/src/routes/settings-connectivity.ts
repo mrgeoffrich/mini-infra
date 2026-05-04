@@ -46,6 +46,7 @@ const connectivityQuerySchema = z.object({
       "haproxy",
       "tls",
       "github-app",
+      "tailscale",
     ])
     .optional(),
   status: z

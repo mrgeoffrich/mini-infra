@@ -118,6 +118,8 @@ function ConnectivityIndicator({
         return "/connectivity-storage";
       case "github-app":
         return "/connectivity-github";
+      case "tailscale":
+        return "/connectivity-tailscale";
       default:
         return "/dashboard";
     }

@@ -104,11 +104,12 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
         "haproxy",
         "tls",
         "github-app",
+        "tailscale",
       ].includes(service)
     ) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app`,
+        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app, tailscale`,
         timestamp: new Date().toISOString(),
         requestId,
       });
