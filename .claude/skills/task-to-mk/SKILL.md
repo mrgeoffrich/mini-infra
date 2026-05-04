@@ -5,7 +5,7 @@ description: Turns a one-line job description into a single mk ticket in the sha
 
 # Task to mk
 
-You're filing a single one-off ticket against the persistent **Maintenance** feature in this repo's `mk` (mini-kanban) tracker, in the exact shape that `execute-next-task` expects to consume. mk is the single source of truth — there is no per-task entry in any plan doc. The "Phase" wording in the issue title is a contract with `execute-next-task` (it matches by `Phase N` prefix), not a semantic claim that one-offs are sequenced — they're independent and never block each other.
+You're filing a single one-off ticket against the persistent **Maintenance** feature in this repo's `mk` (mini-kanban) tracker, in the exact shape that `execute-next-task` expects to consume. mk is the single source of truth — there is no per-task entry in any plan doc. Issue titles are plain descriptive titles — no `Phase N:` prefix. One-offs are independent and never block each other; a synthetic phase number on the title would just look like a sequence that isn't there.
 
 ## Why this skill exists
 
@@ -16,8 +16,7 @@ The big phased-plan flow (`plan-to-mk` → `execute-next-task`) is great for mig
 - **Repo**: scoped automatically by `mk` from the current git toplevel. Always `cd` to the repo root before invoking `mk`.
 - **Feature**: `Maintenance` (slug `maintenance`) — single, persistent, auto-created on first run.
 - **Feature description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the feature — `execute-next-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
-- **Phase numbering**: monotonic, scoped to the maintenance feature. Read it from mk (issue titles in the Maintenance feature), incrementing the highest existing `Phase N`. The plan doc is *not* consulted for numbering.
-- **Issue title**: `Phase N: <title>` — same pattern `plan-to-mk` writes, so `execute-next-task` matches by phase number.
+- **Issue title**: a plain descriptive title (imperative phrase, e.g. `Add retry-with-backoff to cert renewer on Cloudflare 429`). No `Phase N:` prefix — that pattern is reserved for `plan-to-mk` tickets where the number actually orders work.
 - **Issue state**: `todo` (default — don't gate behind backlog).
 - **Blocks/blocked-by**: never set. One-offs are independent.
 
@@ -187,25 +186,7 @@ If no recent commits matched the touched components, write `<choose at execution
 
 ---
 
-## Phase 6 — Determine the next phase number
-
-mk is the source of truth. List issues in the Maintenance feature, including all states (closed tickets still occupy phase numbers):
-
-```bash
-mk issue list --feature maintenance \
-  --state todo,in_progress,in_review,done,cancelled,backlog,duplicate \
-  -o json
-```
-
-Parse the JSON, find the highest `Phase N` in the issue titles, increment by one.
-
-If no maintenance tickets exist yet, next is `Phase 1`.
-
-The plan doc is *not* consulted here — it's a static stub and contains no per-phase entries.
-
----
-
-## Phase 7 — Confirm with the user
+## Phase 6 — Confirm with the user
 
 Show a one-screen summary and wait for an explicit yes. The mk write is reversible (`mk issue rm`), but it leaves an audit-log trail and the no-confirmation cost of getting it wrong is higher than a one-line round-trip with the user.
 
@@ -213,10 +194,10 @@ Show a one-screen summary and wait for an explicit yes. The mk write is reversib
 About to file:
 
   Feature:    Maintenance (slug: maintenance)
-  Issue:      Phase <N>: <title>
+  Issue:      <title>
   State:      todo
   Smoke:      <UI / curl / unit-only / docs-only / custom>
-  Area tag:   <tag> (commit format: <area>(<scope>): ... (Phase N, MINI-NN))
+  Area tag:   <tag> (commit format: <area>(<scope>): ... (MINI-NN))
   Components: <list of detected dirs>
   Docs:       <list of CLAUDE.md / ARCHITECTURE.md links to attach>
 
@@ -227,9 +208,9 @@ Don't proceed without an explicit yes. "lgtm", "go", "yes", "ship it" all count.
 
 ---
 
-## Phase 8 — Create the mk issue
+## Phase 7 — Create the mk issue
 
-Issue title: `Phase <N>: <title>`.
+Issue title: the plain `<title>` from Phase 3 — no `Phase N:` prefix.
 
 State: `todo`.
 
@@ -287,7 +268,7 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 
 ## Conventions
 
-- Commit format: `<area>(<scope>): <subject> (Phase <N>, MINI-NN)` — area tag for this task: `<tag from Phase 5.3>`.
+- Commit format: `<area>(<scope>): <subject> (MINI-NN)` — area tag for this task: `<tag from Phase 5.3>`. (No `Phase N` — that's for `plan-to-mk` phased tickets only.)
 - PR body must include `Closes MINI-NN` so the merging human can manually transition the ticket to `done`.
 - This is a one-off ticket — no blocks/blocked-by relationships, no follow-up phases. If the work expands, file a separate ticket.
 - When done, the executor leaves a structured handoff comment on this issue covering Known issues / Work deferred / Blockers / Deviations.
@@ -299,7 +280,7 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 (no prior commits matching the area tag yet)   <-- only if applicable
 EOF
 
-mk issue add "Phase <N>: <title>" \
+mk issue add "<title>" \
   --feature maintenance \
   --state todo \
   --description-file /tmp/mini-task-body.md \
@@ -311,12 +292,12 @@ Capture the issue's `MINI-NN` ID and (if you want a clickable reference) the loc
 
 ---
 
-## Phase 9 — Report
+## Phase 8 — Report
 
 Print a tight summary:
 
 ```
-✓ Created Phase <N>: <title>
+✓ Created <title>
    <MINI-NN>  (run `mk issue show <MINI-NN>` to view)
 ✓ Smoke approach: <UI / curl / unit-only / docs-only / custom>
 
@@ -336,11 +317,12 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 - **Never ask more than three clarifying questions in Phase 4.** One smoke-test slot + at most two ambiguity probes. If you find yourself wanting a fourth, the request is too big for a one-off — suggest the user run `plan-to-mk` against a quick markdown plan instead.
 - **Never edit `docs/planning/maintenance.md`.** It's a static stub describing the Maintenance feature. Per-task data lives in mk only.
 - **Never set blocks/blocked-by relationships** between maintenance tickets. They're independent. If a one-off genuinely blocks another one-off, both should probably live in a small phased plan, not in maintenance.
-- **Never silently fix a corrupted Maintenance feature.** If the feature's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop. (Phase numbering drift between mk and the doc is no longer a concern — the doc is a stub and isn't consulted for numbering.)
+- **Never silently fix a corrupted Maintenance feature.** If the feature's `Plan:` line points somewhere other than `docs/planning/maintenance.md`, stop.
 - **Never write a multi-phase ticket.** This skill creates exactly one mk issue per run. If the user describes work that's clearly multiple phases, suggest `plan-to-mk`.
+- **Never prefix the issue title with `Phase N:`.** That format is reserved for `plan-to-mk` phased tickets where the number actually orders work. One-offs get plain descriptive titles.
 - **Never invent docs.** Each `Relevant docs` link must `Read`-resolve. If `egress-shared/CLAUDE.md` doesn't exist, drop it from the attach list.
 - **Never transition the issue out of `todo`.** That's `execute-next-task`'s job. The skill only creates.
-- **Never skip Phase 7's confirmation.** mk writes are user-visible side effects (and audit-logged) — confirm before, not after.
+- **Never skip the Phase 6 confirmation.** mk writes are user-visible side effects (and audit-logged) — confirm before, not after.
 - **Always pass `--user Claude` on every mutating `mk` command.** The audit log records the actor; without it the entry attributes to the OS user.
 - **Always pass `-o json` on reads you parse.** Text output is for humans and can shift.
 
@@ -350,7 +332,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 
 > User: "task: the cert renewer doesn't retry transient cloudflare 429s. file a maintenance ticket to add a small backoff."
 >
-> *Skill confirms `mk` is installed (`mk status`). Maintenance feature exists already; `mk issue list --feature maintenance` shows the highest existing `Phase N` is `Phase 12`. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
+> *Skill confirms `mk` is installed (`mk status`). Maintenance feature exists already. Skill parses the request: title "Add retry-with-backoff to cert renewer on Cloudflare 429"; component scope clearly `acme/` and probably `server/src/services/certificates/`; smoke-test approach not stated; goal/done-when implicit but extractable. Area tag from `git log`: `acme` is most recent for `acme/` changes.*
 >
 > Skill: "Quick check before I file —
 >
@@ -365,15 +347,15 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "(c)"
 >
-> *Skill computes: smoke is unit-only, docs to attach are root CLAUDE.md, root ARCHITECTURE.md, server/CLAUDE.md, server/ARCHITECTURE.md, acme/CLAUDE.md (verified to exist). Phase number is 13. Area tag `acme`.*
+> *Skill computes: smoke is unit-only, docs to attach are root CLAUDE.md, root ARCHITECTURE.md, server/CLAUDE.md, server/ARCHITECTURE.md, acme/CLAUDE.md (verified to exist). Area tag `acme`.*
 >
 > Skill: "About to file:
 >
 >   Feature:    Maintenance (slug: maintenance)
->   Issue:      Phase 13: Add retry-with-backoff to cert renewer on Cloudflare 429
+>   Issue:      Add retry-with-backoff to cert renewer on Cloudflare 429
 >   State:      todo
 >   Smoke:      Unit / build / lint only
->   Area tag:   acme
+>   Area tag:   acme (commit format: acme(...): ... (MINI-NN))
 >   Components: acme/, server/src/services/certificates/
 >   Docs:       CLAUDE.md, ARCHITECTURE.md, server/CLAUDE.md, server/ARCHITECTURE.md, acme/CLAUDE.md
 >
@@ -381,9 +363,9 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "go"
 >
-> *Skill writes the body to a temp file and runs `mk issue add "Phase 13: …" --feature maintenance --state todo --description-file /tmp/mini-task-body.md --user Claude -o json`. Captures `MINI-47`. No plan-doc edits — the doc is a stub.*
+> *Skill writes the body to a temp file and runs `mk issue add "Add retry-with-backoff to cert renewer on Cloudflare 429" --feature maintenance --state todo --description-file /tmp/mini-task-body.md --user Claude -o json`. Captures `MINI-47`. No plan-doc edits — the doc is a stub.*
 >
-> Skill: "✓ Created Phase 13: Add retry-with-backoff to cert renewer on Cloudflare 429
+> Skill: "✓ Created Add retry-with-backoff to cert renewer on Cloudflare 429
 >    MINI-47  (run `mk issue show MINI-47` to view)
 > ✓ Smoke approach: Unit / build / lint only
 >
