@@ -174,9 +174,12 @@ Note: Socket IO is not required for the self patching or updating feature.
 - `pnpm --filter mini-infra-server dev` - Start development server with hot reload (tsx watch)
 - `pnpm --filter mini-infra-server build` - Build TypeScript to JavaScript
 - `pnpm --filter mini-infra-server start` - Start production server
-- `pnpm --filter mini-infra-server test` - Run Vitest test suite
-- `pnpm --filter mini-infra-server test:watch` - Run tests in watch mode
-- `pnpm --filter mini-infra-server test:coverage` - Run tests with coverage report
+- `pnpm --filter mini-infra-server test` - Run Vitest `unit` + `integration` projects (default; no live external services required)
+- `pnpm --filter mini-infra-server test:watch` - Run `unit` + `integration` in watch mode
+- `pnpm --filter mini-infra-server test:coverage` - Run `unit` + `integration` with coverage report
+- `pnpm --filter mini-infra-server test:nats` - Run only NATS `*.external.test.ts` files (requires a live NATS server reachable on `/healthz`)
+- `pnpm --filter mini-infra-server test:external` - Run the full `external-integration` project (NATS externals + the haproxy data-plane integration test; requires the corresponding live services)
+- `pnpm --filter mini-infra-server test:all` - Run every project including externals (CI-style full run)
 - `pnpm --filter mini-infra-server exec vitest run <filename>` - Run a single test file (e.g., `pnpm --filter mini-infra-server exec vitest run src/__tests__/environment-manager.test.ts`)
 - `pnpm --filter mini-infra-server lint` - Run ESLint on TypeScript files
 - `pnpm --filter mini-infra-server lint:fix` - Run ESLint with auto-fix
