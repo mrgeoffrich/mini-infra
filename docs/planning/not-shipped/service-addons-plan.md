@@ -2,14 +2,14 @@
 
 **Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
 **Builds on:** the existing `Pool` service type and stack-template plumbing ([`PoolConfig`](../../../lib/types/stacks.ts), [`pool-spawner.ts`](../../../server/src/services/stacks/pool-spawner.ts), [`pool-instance-reaper.ts`](../../../server/src/services/stacks/pool-instance-reaper.ts)), the connected-services pattern ([Docker / Azure / Cloudflare / GitHub](../../../server/src/services/connected-services/)), the `StackServiceDefinition` schema ([`lib/types/stacks.ts`](../../../lib/types/stacks.ts)), and Vault credential storage.
-**Excludes:** outbound credential proxying — that work lives in the separate [auth-proxy-sidecar-plan.md](auth-proxy-sidecar-plan.md). The `caddy-auth` addon in this plan is an *inbound* user-auth gate and is intentionally named to avoid collision.
+**Excludes:** outbound credential proxying — that work lives in the separate [auth-proxy-sidecar-plan.md](auth-proxy-sidecar-plan.md). Inbound auth-gating sidecars (Caddy / OIDC) were earlier in scope but were cut for scope reasons; if revived they belong in their own plan.
 **Vendor reference:** Tailscale credential and ACL mechanics are documented in [docs/architecture/vendor/tailscale-auth.md](../../architecture/vendor/tailscale-auth.md) — Phases 2–5 implement against the OAuth-client-credentials flow described there. Read that doc before touching tag scoping, ACL snippets, scopes, or the device-status poller.
 
 ---
 
 ## 1. Background
 
-Three feature requests for stack-deployed services share the same structural shape: attach a sidecar that handles a cross-cutting ingress concern. Operators want Tailscale SSH access without exposing port 22 or distributing keys; internal tools want a friendly `https://<name>.<tailnet>.ts.net` URL with auto-provisioned TLS; services that don't speak OIDC themselves want a reverse-proxy in front of them that does. Each is "wrap the service with a sidecar"; without a framework, three bespoke template fields and three bespoke code paths grow in parallel. The Service Addons framework lets a stack service opt into one or more named capabilities by adding entries to a single `addons:` block, and lets the team ship a fourth (log shipping, volume backup, Prometheus exporter) by dropping a directory into `server/src/services/stack-addons/`.
+Two feature requests for stack-deployed services share the same structural shape: attach a sidecar that handles a cross-cutting ingress concern. Operators want Tailscale SSH access without exposing port 22 or distributing keys; internal tools want a friendly `https://<name>.<tailnet>.ts.net` URL with auto-provisioned TLS. Each is "wrap the service with a sidecar"; without a framework, two bespoke template fields and two bespoke code paths grow in parallel. The Service Addons framework lets a stack service opt into one or more named capabilities by adding entries to a single `addons:` block, and lets the team ship a third (log shipping, volume backup, Prometheus exporter) by dropping a directory into `server/src/services/stack-addons/`.
 
 User-friendliness was a stated design pressure. The cost of "add an addon" must be one line of YAML on the service definition; the cost of "connect to the resulting service from a developer laptop" must be effectively zero-config — Tailscale handles identity, MagicDNS handles hostnames, and the Mini Infra UI surfaces the address.
 
@@ -21,7 +21,7 @@ A second design pressure: addon containers are still containers. They need logs,
 2. **`AddonDefinition` wraps a `StackServiceDefinition`.** Each addon directory under `server/src/services/stack-addons/<id>/` exports a definition whose sidecar is described as a full `StackServiceDefinition`, so addon containers inherit logs / exec / drift detection / labels / events / RBAC for free. Adding an addon is dropping a directory.
 3. **Pool-aware lifecycle.** Addons declared on a `Pool`-type service materialise per pool instance at spawn time, so each pool worker gets its own sidecar identity and per-instance hostname.
 4. **Tailscale becomes a Connected Service** alongside Docker / Azure / Cloudflare / GitHub, with credential storage in Vault, connectivity probing, and an admin UI that emits a copy-paste ACL bootstrap snippet.
-5. **Three v1 addons.** `tailscale-ssh` (operator SSH via tailnet identity), `tailscale-web` (HTTPS exposure on the tailnet with auto-provisioned TLS), and `caddy-auth` (inbound OIDC gate via Caddy).
+5. **Two v1 addons.** `tailscale-ssh` (operator SSH via tailnet identity) and `tailscale-web` (HTTPS exposure on the tailnet with auto-provisioned TLS).
 6. **Friendly end-user surfaces.** The stack detail page exposes a "Connect" panel listing every addon-attached endpoint with one-click `ssh`/HTTPS, including per-pool-instance entries when expanded.
 
 ## 3. Non-goals
@@ -29,7 +29,7 @@ A second design pressure: addon containers are still containers. They need logs,
 - **Multi-tailnet support.** v1 binds Mini Infra to one tailnet via one OAuth client. Operators with multiple tailnets are out of scope.
 - **Auto-managing the tailnet ACL.** v1 emits a copy-paste snippet the operator pastes into their tailnet policy file; we do not call the Tailscale ACL API.
 - **Tailscale Funnel (public exposure).** v1 ships `tailscale-web` in tailnet-only mode. Funnel overlaps the existing Cloudflare tunnel feature; deferred.
-- **Full OIDC provider management.** v1 ships the Caddy sidecar reading provider config from Vault directly. The `OidcProvider` model and admin UI for managing IdPs are deferred (see Phases 10–12).
+- **Inbound auth-gating sidecars.** Caddy + OIDC and any other inbound user-auth gate were earlier in scope and were cut. If revived, they belong in their own plan, not as v1 addons here.
 - **User-defined addons.** Only addons in the registry are usable; addon authoring is not a user-facing feature.
 - **Cross-stack addon composition.** Addons are scoped to one service in one stack. No "addon X depends on addon Y on a different stack."
 - **Drift detection on tailnet devices.** Ephemeral nodes self-clean; a reconciler that detects "this Tailscale device exists but no longer corresponds to a running container" is deferred.
@@ -53,7 +53,7 @@ Because the rendered form is itself a `StackDefinition`, addon sidecars *are* `S
 - **Addon manifest.** Declares the addon's identity, description, configuration schema, applicability (which `serviceType`s it supports), and connected-service prerequisites.
 - **Addon kind.** An optional grouping label. When two addons of the same kind are declared on the same service, the runtime merges them into a single sidecar rather than spawning two. `tailscale-ssh` and `tailscale-web` share `kind: tailscale`. Merging is implemented by an `AddonMergeStrategy` registered for the kind.
 - **Target integration.** A small enum + bag of values declaring how the sidecar attaches to its target service: peer-on-network, join-target-netns, or own-target-netns; plus optional env / mounts / port-reclaim flags. Most addons don't modify their target.
-- **Provision hook.** Async function called before service-definition materialisation. Receives the addon config and full provision context; returns `ProvisionedValues` (env for sidecar, env for target, generated files, template variables) consumed by the materialisation step. This is where Tailscale authkeys are minted, Caddyfiles rendered, and per-instance secrets generated.
+- **Provision hook.** Async function called before service-definition materialisation. Receives the addon config and full provision context; returns `ProvisionedValues` (env for sidecar, env for target, generated files, template variables) consumed by the materialisation step. This is where Tailscale authkeys are minted, sidecar config files rendered, and per-instance secrets generated.
 - **Service-addon application.** The runtime pairing of (one service, one addon, one config blob). Computed once at apply for static services; once per instance at spawn for pool services.
 
 ### 4.3 Addon contract
@@ -145,8 +145,7 @@ For each `(service, addon)` pair on the authored stack:
    - `peer-on-target-network`: ensure the sidecar service definition declares the target's network; no rewrite to the target.
    - `join-target-netns`: set the sidecar's `network_mode` to `service:<target>`. Inject `envForTarget` and `mountsForTarget` (from both the integration spec and provisioned values) into the target service definition.
    - `own-target-netns`: set the target's `network_mode` to `service:<sidecar>`. If `reclaimTargetPorts`, move the target's `ports:` claims onto the sidecar and bind the target to localhost. Inject env / mounts as above.
-7. **Run cross-addon rewrites.** A small post-merge step lets specific addon combinations rewire each other — concretely, when `caddy-auth` and `tailscale-web` both apply to the same target, the runtime rewrites Tailscale's `serve.json` to forward to Caddy's port instead of the app's. This is the only target-aware composition that escapes the one-addon-at-a-time loop above.
-8. **Reconcile.** The rendered stack definition flows into the existing reconciler unchanged.
+7. **Reconcile.** The rendered stack definition flows into the existing reconciler unchanged.
 
 For pool services the same pipeline runs at instance spawn rather than at apply, with `instance.instanceId` populated. Each instance gets its own sidecar `StackServiceDefinition`, its own provisioned credentials, and the per-instance hostname described below. Addon sidecars carry the same `mini-infra.stack-id` / `mini-infra.service` labels as the pool instance plus `mini-infra.addon: <kind-or-id>` and `mini-infra.synthetic: true`. The pool reaper invokes `cleanup()` hooks when an instance is reaped.
 
@@ -169,8 +168,8 @@ Addons read from the same RBAC surface as their target features — `stacks:writ
 The egress firewall ([egress-gateway/CLAUDE.md](../../../egress-gateway/CLAUDE.md), [egress-fw-agent/CLAUDE.md](../../../egress-fw-agent/CLAUDE.md)) and the addon framework compose without any new primitive, because the firewall enforces at the network/host layer (env-scoped Docker bridge + nftables + L7 forward proxy at the bridge `.2`) and addon sidecars are real `StackServiceDefinition`s that join the same network as their target. Three properties make this fall out for free:
 
 1. **Network membership is the only thing that matters for enforcement.** When the env's `egressFirewallEnabled` flag is on, every container on the env's egress network has its outbound L3/L4 dropped by the host fw-agent except via the gateway, and the gateway applies the L7 hostname allowlist. Addon sidecars join the target service's network during render — for firewalled envs that *is* the egress network — so they're automatically in scope. No per-addon firewall plumbing is needed for any of the three `targetIntegration` modes.
-2. **`requiredEgress` declarations flow through `containerConfig` automatically.** The egress-policy reconciler ([egress-policy-lifecycle.ts](../../../server/src/services/egress/egress-policy-lifecycle.ts)) reads `requiredEgress: string[]` off each service's `containerConfig` and seeds template-sourced rules. Because `AddonDefinition.buildServiceDefinition()` returns a full `StackServiceDefinition` whose `containerConfig` is just a `StackContainerConfig`, the addon declares its sidecar's required outbound destinations there — Tailscale's coordination plane (`*.tailscale.com`, `controlplane.tailscale.com`, DERP relays), Caddy's IdP endpoints (discovery / token / JWKS), the outbound auth proxy's upstream host list — and the existing reconciler picks them up alongside user-authored services' patterns. No new framework primitive, no parallel firewall code path.
-3. **Fixed vs config-derived `requiredEgress`.** Tailscale and Caddy have fixed control-plane dependencies — encode them as constants the addon's `buildServiceDefinition()` writes into `containerConfig.requiredEgress`. The outbound auth proxy is config-derived: `provision()` computes the upstream host list from the addon config and threads it through `templateVars` so `buildServiceDefinition()` can emit the right `requiredEgress`.
+2. **`requiredEgress` declarations flow through `containerConfig` automatically.** The egress-policy reconciler ([egress-policy-lifecycle.ts](../../../server/src/services/egress/egress-policy-lifecycle.ts)) reads `requiredEgress: string[]` off each service's `containerConfig` and seeds template-sourced rules. Because `AddonDefinition.buildServiceDefinition()` returns a full `StackServiceDefinition` whose `containerConfig` is just a `StackContainerConfig`, the addon declares its sidecar's required outbound destinations there — Tailscale's coordination plane (`*.tailscale.com`, `controlplane.tailscale.com`, DERP relays), the outbound auth proxy's upstream host list — and the existing reconciler picks them up alongside user-authored services' patterns. No new framework primitive, no parallel firewall code path.
+3. **Fixed vs config-derived `requiredEgress`.** Tailscale has fixed control-plane dependencies — encode them as constants the addon's `buildServiceDefinition()` writes into `containerConfig.requiredEgress`. The outbound auth proxy is config-derived: `provision()` computes the upstream host list from the addon config and threads it through `templateVars` so `buildServiceDefinition()` can emit the right `requiredEgress`.
 
 #### Worked example: agent that needs both the firewall and extra auth headers
 
@@ -198,14 +197,14 @@ Behaviours worth pinning:
 - **The agent doesn't know the firewall exists.** It talks to `HTTP_PROXY` on localhost; the chain after that is invisible to its code.
 - **The L7 gateway sees the proxy's outbound, not the agent's.** Since the auth proxy preserves the `Host:` header (it's adding auth, not rewriting destination), the hostname allowlist behaves identically to a no-proxy setup. If a future auth-proxy ever rewrites destinations, its `requiredEgress` must list the *actual* upstream hostnames, not the apparent ones — flagged in the auth-proxy plan, not here.
 - **No double-proxy loop.** The auth proxy doesn't know the egress gateway exists. Its outbound socket connects directly to the destination IP; bridge routing + nftables transparently force that flow through the gateway. Two separate proxies, neither configured against the other.
-- **Each container's `requiredEgress` unions independently.** With `caddy-auth` + `own-target-netns` + `reclaimTargetPorts`, target and sidecar are still distinct service rows — their required-egress sets union at policy reconcile time. Same for the agent + auth-proxy case: agent declares its real upstreams, auth-proxy adds whatever it needs (e.g., a credential-fetch endpoint), policy picks up both.
-- **Cross-addon ordering is irrelevant for egress.** Inbound chains like `tailscale-web → caddy-auth → app` only affect the inbound path. Each container's outbound is independently firewalled by being on the egress network; nothing about the inbound chain changes that.
+- **Each container's `requiredEgress` unions independently.** Target and sidecar are distinct service rows — their required-egress sets union at policy reconcile time. For the agent + auth-proxy case: agent declares its real upstreams, auth-proxy adds whatever it needs (e.g., a credential-fetch endpoint), policy picks up both.
+- **Cross-addon ordering is irrelevant for egress.** Each container's outbound is independently firewalled by being on the egress network; addon attachment shape doesn't change that.
 
 #### Implications for the framework
 
-The framework deliverables don't grow — `containerConfig.requiredEgress` already exists on `StackContainerConfig` and the reconciler already reads it. What's required instead is documentation and a sanity check: the `tailscale-ssh` addon (Phase 3) must encode the right Tailscale control-plane hostnames in its `buildServiceDefinition()` output, and Phase 3's smoke tests should include "addon attached to a service in a firewalled env still functions, with the addon-declared hostnames showing up as template-sourced rules in the env's egress policy." Phase 7's `caddy-auth` adds the IdP-resolved hostnames; Phase 9 verifies pool-instance addon services emit per-instance `requiredEgress` correctly.
+The framework deliverables don't grow — `containerConfig.requiredEgress` already exists on `StackContainerConfig` and the reconciler already reads it. What's required instead is documentation and a sanity check: the `tailscale-ssh` addon (Phase 3) must encode the right Tailscale control-plane hostnames in its `buildServiceDefinition()` output, and Phase 3's smoke tests should include "addon attached to a service in a firewalled env still functions, with the addon-declared hostnames showing up as template-sourced rules in the env's egress policy." Phase 6 verifies pool-instance addon services emit per-instance `requiredEgress` correctly.
 
-## 5. The three v1 addons
+## 5. The two v1 addons
 
 Each addon below describes its `targetIntegration` shape, the `StackServiceDefinition` its `buildServiceDefinition()` produces (in shorthand), and the inputs flowing in from `provision()`.
 
@@ -230,24 +229,13 @@ Each addon below describes its `targetIntegration` shape, the `StackServiceDefin
 - **End-user surface:** `https://<service>-<env>.<tailnet>.ts.net` opens directly with auto-provisioned Let's Encrypt certs. No tunnel, no DNS configuration, no port-forwarding.
 - **Merge with `tailscale-ssh`:** the registered `kind: tailscale` merge strategy emits one sidecar definition with both `--ssh` and `TS_SERVE_CONFIG` set, sharing one authkey, one hostname, one tailnet device, one state volume, one published serve.json.
 
-### 5.3 `caddy-auth`
-
-- **Kind:** none — runs as a standalone sidecar.
-- **Requires:** OIDC provider config in Vault at `secret/connected-services/oidc/<provider>` (v1); the deferred `OidcProvider` model in v2.
-- **Config:** required `provider` (symbolic IdP id) and `upstreamPort`; optional `allowedGroups[]` and `publicPaths[]` (paths that bypass the auth gate).
-- **Target integration:** `network: "own-target-netns"`, `reclaimTargetPorts: true`. Caddy is unbypassable only if it owns ingress, so the runtime rewrites the target's `network_mode` to `service:<caddy-sidecar>`, moves the target's published ports onto the sidecar, and binds the target to `127.0.0.1`. No env injection into the target.
-- **Provision:** read OIDC client config from Vault; render a Caddyfile pinning `caddy-security` to the provider, gating the route on `allowedGroups`, exempting `publicPaths`, and reverse-proxying authenticated traffic to `127.0.0.1:<upstreamPort>`. Resolve the IdP's discovery / token / JWKS hostnames from the provider config and surface them via `templateVars` for `buildServiceDefinition` to use as `requiredEgress`. Returns the Caddyfile under `files`.
-- **Sidecar `StackServiceDefinition`:** the `mini-infra/caddy-auth` image, no published ports of its own (the target's reclaimed ports flow in via `targetIntegration`), a config-file mount for the Caddyfile, `containerConfig.requiredEgress` populated with the IdP hostnames resolved during provision (§4.7), the standard mini-infra labels.
-- **Composition with Tailscale.** When `tailscale-web` is also present on the same service, the cross-addon rewrite step (§4.4 step 7) rewrites Tailscale's `serve.json` to proxy to Caddy's port instead of the app's, producing the chain `tailscale-web → caddy-auth → app` in the rendered definition. The Tailscale sidecar still uses `peer-on-target-network`; the Caddy sidecar still uses `own-target-netns`. The two integrations don't conflict because Tailscale never asks for the target's netns.
-- **Image source.** A new `caddy-auth-sidecar/` directory mirroring `update-sidecar/` and `agent-sidecar/`, building `mini-infra/caddy-auth:<tag>` with the `caddy-security` plugin pinned.
-
-### 5.4 Forward look: outbound auth proxy
+### 5.3 Forward look: outbound auth proxy
 
 Out of scope for this plan, but worth confirming the framework fits the next addon-shaped feature without further extension. The agent auth proxy ([auth-proxy-sidecar-plan.md](auth-proxy-sidecar-plan.md)) intercepts *outbound* HTTP from a target so it can inject upstream credentials. It maps to `network: "join-target-netns"` plus `envForTarget: { HTTP_PROXY, HTTPS_PROXY, NODE_EXTRA_CA_CERTS }` plus `mountsForTarget` for a CA bundle. Its `requiredEgress` is config-derived — `provision()` reads the user's upstream-host list from the addon config and the resulting `containerConfig.requiredEgress` rides into the egress-policy reconcile alongside the agent's own declarations (§4.7). No new framework primitive is required.
 
 ## 6. Phased rollout
 
-Phases form a dependency graph (see the `[blocks-by: …]` brackets in §8). Phases 1–4 build the framework, the Tailscale connected service, and the two Tailscale addons against static services. Phase 5 ships the Connect panel and live device-status poller. Phases 6–8 build the Caddy auth-gate sidecar image, the addon, and its composition with `tailscale-web`. Phase 9 generalises addons to pool services. Phases 10–12 are the deferred OIDC provider management work.
+Phases form a dependency graph (see the `[blocks-by: …]` brackets in §8). Phases 1–4 build the framework, the Tailscale connected service, and the two Tailscale addons against static services. Phase 5 ships the Connect panel and live device-status poller. Phase 6 generalises addons to pool services.
 
 `[design needed]` UI items are picked up by `plan-to-linear` at seed time and materialised as paired `Backlog` design tickets that block their phase — designers own those tickets, kept out of `execute-next-task`'s queue.
 
@@ -358,64 +346,7 @@ Done when: a service with both Tailscale addons enabled has a Connect panel row 
 
 Verify in prod: at least one production service with `tailscale-web` has the Connect panel rendering correct URLs; live online/offline transitions reflect within ~5 s (measured against a deliberate device-down test).
 
-### Phase 6 — `caddy-auth-sidecar` image package
-
-**Goal:** a `mini-infra/caddy-auth` Docker image with the `caddy-security` plugin pinned, built and tested in CI alongside the other sidecars.
-
-Deliverables:
-- A new top-level `caddy-auth-sidecar/` directory mirroring the `update-sidecar/` and `agent-sidecar/` shape — standalone npm package outside the pnpm workspace.
-- `Dockerfile`, `package.json`, build scripts producing `mini-infra/caddy-auth:<tag>` with the `caddy-security` plugin pinned to a specific version.
-- Unit / smoke tests covering plugin load and a static Caddyfile probe.
-- `pnpm build:caddy-auth-sidecar` script wired into the root build flow alongside `build:sidecar` and `build:agent-sidecar`.
-- CI workflow updates to publish the image on tag.
-
-Reversibility: safe — additive package; if the image doesn't ship correctly, no service references it yet. Rollback is reverting the PR.
-
-UI changes: none
-
-Done when: `cd caddy-auth-sidecar && npm test` passes, `pnpm build:caddy-auth-sidecar` from the project root produces an image, and the image launches with the `caddy-security` plugin loaded against a static Caddyfile.
-
-Verify in prod: image is published to the registry under the expected tag; pulled by zero stacks (no consumer yet).
-
-### Phase 7 — `caddy-auth` addon
-
-**Goal:** services can be gated by OIDC sign-in via a Caddy reverse proxy that owns the target's netns.
-
-Deliverables:
-- The `caddy-auth` addon directory under `server/src/services/stack-addons/caddy-auth/` with manifest, `targetIntegration: own-target-netns + reclaimTargetPorts: true`, `provision` (reads OIDC client config from Vault, renders Caddyfile gating on `allowedGroups` / exempting `publicPaths`, resolves IdP discovery / token / JWKS hostnames), and `buildServiceDefinition` (writes resolved IdP hostnames into `containerConfig.requiredEgress`).
-- The Vault path convention `secret/connected-services/oidc/<provider>` documented for v1 manual editing.
-- The rendered services chain visualisation on the stack-detail page — operators see the app + caddy-auth chain with `network_mode` rewrites and reclaimed ports surfaced without reading YAML.
-- Operator documentation page covering the Vault path layout and a worked example for one IdP (Entra ID).
-
-Reversibility: forward-only — once a Caddy sidecar holds live sessions, removing the addon mid-flight drops in-flight authenticated sessions (Caddy's session state vanishes with the container). The PR itself is revertible until a service is deployed with the addon; afterwards, removing the addon from a live service is forward-only by nature.
-
-UI changes:
-- Stack detail page: rendered services list shows the chain (app + caddy-auth) with `network_mode` rewrites and reclaimed ports visible. [design needed] — how to convey "caddy owns the target's netns and reclaimed its ports" without operators having to read YAML.
-- Operator docs page: Vault layout for `secret/connected-services/oidc/<provider>` plus a worked Entra ID example. [no design] — uses the existing user-docs article shell.
-
-Done when: a service with `addons: { caddy-auth: { provider: "entra", upstreamPort: 8080, allowedGroups: [...] } }` redirects unauthenticated browsers to the IdP, accepts authenticated users in `allowedGroups`, returns 403 for users not in `allowedGroups`, and forwards authenticated traffic to the app — verified against a real Entra ID tenant in dev.
-
-Verify in prod: at least one production service with `caddy-auth` rejects unauthenticated requests with the IdP redirect; an authenticated user in `allowedGroups` reaches the app; users outside `allowedGroups` get 403.
-
-### Phase 8 — `caddy-auth` ↔ `tailscale-web` cross-addon composition
-
-**Goal:** services can layer `tailscale-web` and `caddy-auth` together so the chain `tailscale → caddy → app` works without manual config.
-
-Deliverables:
-- The cross-addon rewrite step (§4.4 step 7): when `caddy-auth` and `tailscale-web` both apply to the same target, the post-merge step rewrites the Tailscale sidecar's `serve.json` to forward to the Caddy sidecar's port instead of the app's port.
-- A test fixture covering the layering and the rewrite output.
-- Documentation that this is the only target-aware composition the framework reasons about.
-
-Reversibility: feature-flagged — the rewrite only fires when both addons are present on the same service. Either addon shipping alone behaves identically to before this phase.
-
-UI changes:
-- Stack detail page: rendered services list reflects three services in the chain (app + caddy-auth + tailscale-web) with the right rewrites visible. [no design] — uses the chain visualisation already built in Phase 7.
-
-Done when: a service with `addons: { caddy-auth: {…}, tailscale-web: {…} }` produces the chain `tailscale-web → caddy-auth → app` in the rendered definition; a tailnet-joined browser hitting `https://<host>.<tailnet>.ts.net` is redirected to the IdP, authenticates, and reaches the app.
-
-Verify in prod: at least one production service with both addons enabled is reachable via `https://<host>.<tailnet>.ts.net` only after IdP authentication; the rendered stack shows three services with the expected chain.
-
-### Phase 9 — Pool integration
+### Phase 6 — Pool integration
 
 **Goal:** addons declared on a pool service materialise per pool instance at spawn time.
 
@@ -439,86 +370,26 @@ Done when: a pool service with `addons: { tailscale-ssh: {} }` spawns N instance
 
 Verify in prod: at least one production pool service with `tailscale-ssh` shows N tailnet devices for N instances, names match the `{service-name}-{env-name}-{instance-id}` pattern, and idle reaping removes both worker and sidecar within the ephemeral-cleanup window without orphan devices.
 
-### Phase 10 — `OidcProvider` model + admin UI (deferred)
-
-**Goal:** admins can manage IdPs as a first-class connected service through the Mini Infra UI instead of editing Vault directly.
-
-Deliverables:
-- A new `OidcProvider` Prisma model + migration.
-- CRUD admin UI at `/connected-services/oidc-providers`: list, add, edit, delete IdPs with provider-specific fields (Entra, Auth0, Google Workspace, generic OIDC).
-- Connected Services page card: new "OIDC Providers" entry alongside Tailscale / Cloudflare / etc.
-- An "import from Vault" affordance that pulls existing `secret/connected-services/oidc/<provider>` entries into the new model.
-
-Reversibility: forward-only — the new model coexists with the old Vault path layout for the duration of this phase. Reverting the PR purges `OidcProvider` rows via the migration's down-step; any provider authored only via the new UI is lost.
-
-UI changes:
-- New `/connected-services/oidc-providers` admin page: list, add, edit, delete IdPs with provider-specific fields. [design needed] — full new page; per-provider form layout; secret-rotation pattern.
-- Connected Services page: new "OIDC Providers" entry alongside Tailscale / Cloudflare / etc. [no design] — fits the established connected-service card pattern.
-
-Done when: an admin can add an IdP through the new UI, see it in the list, edit / delete it, and import existing Vault-stored providers via the import affordance.
-
-Verify in prod: at least one IdP managed via the new UI; no operator edits against `secret/connected-services/oidc/<provider>` Vault paths after rollout (per the Vault audit log).
-
-### Phase 11 — `caddy-auth` provider-resolution swap (deferred)
-
-**Goal:** the `caddy-auth` addon resolves OIDC providers via the `OidcProvider` model instead of direct Vault path lookup.
-
-Deliverables:
-- `caddy-auth` addon's `provision()` switches from direct Vault path lookup (`secret/connected-services/oidc/<provider>`) to `OidcProvider` model resolution by id.
-- Migration documentation for operators with services authored against the old path.
-- A documented deprecation window for the old Vault path (read-only fallback for one release; removed afterwards).
-- The `caddy-auth` addon-config form's provider field becomes a dropdown sourced from the new `OidcProvider` model.
-
-Reversibility: forward-only — once the swap is live, services that authored against the old Vault path break unless migrated. Ship paired with the import-from-Vault affordance from Phase 10 and the documented deprecation window above.
-
-UI changes:
-- `caddy-auth` addon config form: provider field becomes a dropdown sourced from the new `OidcProvider` model. [no design] — slots into existing addon-config form rendering.
-
-Done when: a service with `addons: { caddy-auth: { provider: "entra-prod" } }` resolves the provider via the `OidcProvider` model and authenticates correctly; the same config that previously used the Vault path migrates seamlessly via the Phase 10 import affordance.
-
-Verify in prod: every production `caddy-auth` application resolves its provider via the model after the deprecation window closes; `caddy-auth.vault_fallback` log emissions hit zero for 24 h.
-
-### Phase 12 — Per-provider Test sign-in flow (deferred)
-
-**Goal:** admins can verify an OIDC provider's round-trip from the connected-services UI without leaving the page.
-
-Deliverables:
-- A "Test sign-in" button per provider on `/connected-services/oidc-providers`: opens the IdP redirect in a new tab, captures the round-trip result, and reports success or failure in a modal/dialog.
-
-Reversibility: safe — additive UI affordance.
-
-UI changes:
-- Per-provider "Test sign-in" button + modal/dialog showing test result. [design needed] — modal/dialog showing the test result is a new pattern for the connected-services area.
-
-Done when: an admin can click "Test sign-in" on a provider, complete the IdP flow in the new tab, and see the success / failure outcome reported in the modal.
-
-Verify in prod: at least one production IdP admin uses the Test sign-in button and sees a successful round-trip.
-
 ## 7. Risks & open questions
 
 - **Connected Service config model.** Three Tailscale-specific columns on `ConnectedService` may be the wrong shape if other connected services need similar growth. Worth a 30-minute look at the existing connected-services directory before Phase 2 to decide between a shared-table extension and a per-type satellite table.
 - **ACL bootstrap rendering.** JSON is parseable; HuJSON (Tailscale's commenting variant) is friendlier for the operator's eventual hand-editing but introduces a dependency. Default to JSON unless a user objects.
-- **Caddy image provenance.** Building our own `caddy-auth-sidecar` (Phase 6) pins the `caddy-security` plugin version and matches the existing sidecar pattern; pulling upstream `caddy:latest` is one less moving part. Mild preference for building, but worth confirming during Phase 6.
-- **Pool instance Tailscale state volume.** Per-instance state volumes are cheap, but pool instances are short-lived and authkeys are minted per-spawn. With ephemeral nodes auto-cleaning, the volume is effectively write-only. Phase 9 should validate that skipping the volume on pool instances doesn't introduce a re-registration race, and pick the cleaner of the two paths.
-- **Pool instance hostname collisions across stacks.** `worker-prod-u12345` in stack A and `worker-prod-u12345` in stack B produce duplicate device names in the tailnet. Because all devices share the single `tag:mini-infra-managed` (see the tag-taxonomy note below), the device list is the only disambiguator — Phase 9 likely needs to prefix pool hostnames with the stack name and accept longer hostnames (with the SHA-256 fallback already in §4.5 catching DNS-label overflow).
+- **Pool instance Tailscale state volume.** Per-instance state volumes are cheap, but pool instances are short-lived and authkeys are minted per-spawn. With ephemeral nodes auto-cleaning, the volume is effectively write-only. Phase 6 should validate that skipping the volume on pool instances doesn't introduce a re-registration race, and pick the cleaner of the two paths.
+- **Pool instance hostname collisions across stacks.** `worker-prod-u12345` in stack A and `worker-prod-u12345` in stack B produce duplicate device names in the tailnet. Because all devices share the single `tag:mini-infra-managed` (see the tag-taxonomy note below), the device list is the only disambiguator — Phase 6 likely needs to prefix pool hostnames with the stack name and accept longer hostnames (with the SHA-256 fallback already in §4.5 catching DNS-label overflow).
 - **Tag taxonomy is single-tag, not hierarchical.** Earlier drafts of §5.1 / §5.2 minted authkeys with `tag:stack-<id>,tag:env-<env>,tag:service-<name>` — infeasible because Tailscale OAuth clients can only mint keys with tags pre-declared in the operator's `tagOwners` ACL, and dynamic resource tags would force unbounded ACL edits. v1 ships with one static `tag:mini-infra-managed` and conveys per-resource identity via hostname. If a future need emerges (e.g. ACL rules that scope SSH access to specific environments), revisit by introducing a small fixed set of operator-declared environment tags rather than going fully dynamic.
 - **Funnel-shaped follow-up.** Once Tailscale-only HTTPS is shipped, the smallest extension to reach the public internet is enabling Tailscale Funnel. It overlaps the Cloudflare tunnel feature, so a deliberate "when do you pick which?" call is needed before any post-v1 extension touches Funnel.
 - **Definition-hash determinism.** The rendered stack definition includes addon-derived services and target-integration rewrites. Provision values like authkeys are minted fresh on each render, which would oscillate the hash and force needless re-applies. Phase 1 must ensure the hash is computed from the *authored* definition (plus addon-config), not the rendered form, or that mint-once values are cached and reused across renders. Confirm during Phase 1 that the existing definition-hash logic naturally extends to the new field rather than drifting.
 - **Synthetic-service surface in the UI.** Addon-derived services appearing in the same lists as user-authored ones is the whole point, but they need clear visual distinction (a "from addon" badge) and edit affordances should be disabled. Phase 3 lands the badge; further polish (status rollup, filter chips, copy-to-clipboard affordances) was scoped out — revisit after operator feedback if friction surfaces.
 
-## 8. Linear tracking
+## 8. mk tracking
 
-Tracked under the [Service Addons Framework](https://linear.app/altitude-devops/project/service-addons-framework-0391849444a5) project on the Altitude Devops team.
+Tracked under the `service-addons-framework` feature in mk.
 
-- [ALT-56](https://linear.app/altitude-devops/issue/ALT-56) — Phase 1: Addon framework
-- [ALT-57](https://linear.app/altitude-devops/issue/ALT-57) — Phase 2: Tailscale connected service  [blocks-by: 1]
-- [ALT-58](https://linear.app/altitude-devops/issue/ALT-58) — Phase 3: `tailscale-ssh` addon  [blocks-by: 1, 2]
-- [ALT-59](https://linear.app/altitude-devops/issue/ALT-59) — Phase 4: `tailscale-web` and tailscale addon merging  [blocks-by: 3]
-- [ALT-60](https://linear.app/altitude-devops/issue/ALT-60) — Phase 5: Connect panel + Tailscale device-status poller  [blocks-by: 4]
-- [ALT-61](https://linear.app/altitude-devops/issue/ALT-61) — Phase 6: `caddy-auth-sidecar` image package
-- [ALT-62](https://linear.app/altitude-devops/issue/ALT-62) — Phase 7: `caddy-auth` addon  [blocks-by: 1, 6]
-- [ALT-63](https://linear.app/altitude-devops/issue/ALT-63) — Phase 8: `caddy-auth` ↔ `tailscale-web` cross-addon composition  [blocks-by: 4, 7]
-- [ALT-64](https://linear.app/altitude-devops/issue/ALT-64) — Phase 9: Pool integration  [blocks-by: 3]
-- [ALT-65](https://linear.app/altitude-devops/issue/ALT-65) — Phase 10: `OidcProvider` model + admin UI (deferred)
-- [ALT-66](https://linear.app/altitude-devops/issue/ALT-66) — Phase 11: `caddy-auth` provider-resolution swap (deferred)  [blocks-by: 7, 10]
-- [ALT-67](https://linear.app/altitude-devops/issue/ALT-67) — Phase 12: Per-provider Test sign-in flow (deferred)  [blocks-by: 10]
+- MINI-16 — Phase 1: Addon framework
+- MINI-1 — Phase 2: Tailscale connected service  [blocks-by: 1]
+- MINI-2 — Phase 3: `tailscale-ssh` addon  [blocks-by: 1, 2]
+- MINI-3 — Phase 4: `tailscale-web` and tailscale addon merging  [blocks-by: 3]
+- MINI-4 — Phase 5: Connect panel + Tailscale device-status poller  [blocks-by: 4]
+- MINI-8 — Phase 6: Pool integration  [blocks-by: 3]
+
+Cancelled (caddy-auth + OIDC scope cut): MINI-5, MINI-6, MINI-7 (caddy-auth phases); MINI-32, MINI-33, MINI-34, MINI-35 (OIDC provider management); MINI-25, MINI-36, MINI-37 (paired design tickets).
