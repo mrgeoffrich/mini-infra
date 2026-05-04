@@ -19,6 +19,7 @@ import type {
 } from "@/lib/task-tracker-types";
 import type { OperationState, OperationStep } from "@/hooks/use-operation-progress";
 import { useSocketChannel, useSocketEvent } from "@/hooks/use-socket";
+import { ServerEvent } from "@mini-infra/types";
 import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 
 // Dynamic event name means the handler signature cannot be inferred at
@@ -147,6 +148,77 @@ function TaskEventListener({
       }));
     }) as AnyServerHandler,
     isExecuting && !!config.stepEvent,
+  );
+
+  // Service-Addons render-pass step events. The render pipeline emits
+  // `STACK_ADDON_PROVISIONED` / `STACK_ADDON_FAILED` once per addon
+  // application during stack apply / update — distinct from the per-action
+  // `STACK_APPLY_SERVICE_RESULT` step stream because addon expansion
+  // happens before any service action runs. The contract calls for these
+  // to surface under the same apply task in the tracker (Phase 3 of the
+  // Service Addons plan), so we listen on the same channel and append
+  // synthetic steps to the active task's completedSteps when the stackId
+  // matches. Only stack-apply / stack-update task types subscribe.
+  const isStackApplyLike =
+    task.type === "stack-apply" || task.type === "stack-update";
+  useSocketEvent(
+    ServerEvent.STACK_ADDON_PROVISIONED as keyof ServerToClientEvents,
+    ((data: AnyEventPayload) => {
+      if (!isStackApplyLike) return;
+      const payload = data as {
+        stackId: string;
+        serviceName: string;
+        addonIds: string[];
+        kind?: string;
+        syntheticServiceName: string;
+      };
+      if (payload.stackId !== task.id) return;
+      const label = payload.kind ?? payload.addonIds.join(", ");
+      onUpdate(task.id, (prev) => ({
+        ...prev,
+        operationState: {
+          ...prev.operationState,
+          completedSteps: [
+            ...prev.operationState.completedSteps,
+            {
+              step: `provisioned ${label} on ${payload.serviceName}`,
+              status: "completed",
+            },
+          ],
+        },
+      }));
+    }) as AnyServerHandler,
+    isExecuting && isStackApplyLike,
+  );
+  useSocketEvent(
+    ServerEvent.STACK_ADDON_FAILED as keyof ServerToClientEvents,
+    ((data: AnyEventPayload) => {
+      if (!isStackApplyLike) return;
+      const payload = data as {
+        stackId: string;
+        serviceName: string;
+        addonIds: string[];
+        kind?: string;
+        error: string;
+      };
+      if (payload.stackId !== task.id) return;
+      const label = payload.kind ?? payload.addonIds.join(", ");
+      onUpdate(task.id, (prev) => ({
+        ...prev,
+        operationState: {
+          ...prev.operationState,
+          completedSteps: [
+            ...prev.operationState.completedSteps,
+            {
+              step: `${label} addon failed on ${payload.serviceName}`,
+              status: "failed",
+              detail: payload.error,
+            },
+          ],
+        },
+      }));
+    }) as AnyServerHandler,
+    isExecuting && isStackApplyLike,
   );
 
   const applyTerminalResult = (

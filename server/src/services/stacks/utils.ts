@@ -272,13 +272,21 @@ export interface ResolveServiceConfigsOptions {
   /**
    * Override the addon registry — tests use this to inject a registry
    * pre-populated with the no-op test addon. Defaults to
-   * `productionAddonRegistry`, which is empty at Phase 1.
+   * `productionAddonRegistry`, which now carries `tailscale-ssh` (Phase 3).
    */
   addonRegistry?: AddonRegistry;
   /** Per-(service, addon) progress callback; see `ExpansionProgress`. */
   expansionProgress?: ExpansionProgress;
   /** Pool-instance id when this expansion is for a single pool spawn. */
   instance?: { instanceId: string };
+  /**
+   * Connected-services lookup an addon's `provision()` may narrow at runtime
+   * (e.g. the `tailscale-ssh` addon reads `lookup.tailscale`). Typed
+   * `unknown` so the framework doesn't bind to a concrete server-side
+   * service surface; addon implementations narrow to their concrete type.
+   * Omitted in `plan()` flows where no provisioning runs.
+   */
+  connectedServices?: unknown;
 }
 
 /**
@@ -373,6 +381,7 @@ export async function resolveServiceConfigs(
           }
         : { id: '', name: '', networkType: 'local' },
       instance: options.instance,
+      connectedServices: options.connectedServices,
     },
     options.expansionProgress,
   );

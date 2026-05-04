@@ -1,9 +1,9 @@
 // Service Addons framework — entry point for the render pipeline integration.
 //
-// Phase 1 ships the framework only; the production registry is empty so the
-// render pass is a no-op for every existing stack. Per-addon directories
-// (`tailscale-ssh/`, `tailscale-web/`, `caddy-auth/`) self-register into
-// `productionAddonRegistry` starting Phase 3.
+// Per-addon directories (`tailscale-ssh/`, `tailscale-web/`, `caddy-auth/`)
+// self-register into `productionAddonRegistry` on import. This barrel
+// imports them once so any consumer that imports from `./stack-addons`
+// automatically gets the production registry populated.
 
 export {
   AddonRegistry,
@@ -17,3 +17,6 @@ export {
   AddonExpansionError,
 } from './expand-addons';
 export type { ExpansionContext, ExpansionProgress } from './expand-addons';
+
+// Side-effect imports — populate `productionAddonRegistry`.
+import './tailscale-ssh';

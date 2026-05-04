@@ -90,6 +90,78 @@ export type TailscaleErrorCode =
   (typeof TAILSCALE_ERROR_CODES)[keyof typeof TAILSCALE_ERROR_CODES];
 
 /**
+ * Tailscale control-plane hostnames an addon-materialised sidecar must reach
+ * for `tailscaled` to come up. Encoded once so the `tailscale-ssh` /
+ * `tailscale-web` addons emit the same `requiredEgress` set without
+ * duplicating the list at each call site, and so a future control-plane
+ * change is a one-line edit.
+ *
+ * Wildcard entries cover regional control-plane shards (`*.tailscale.com`)
+ * and DERP relays (`*.tailscale.io`); the explicit `controlplane.tailscale.com`
+ * entry guards against an environment whose egress firewall doesn't honour
+ * the matching wildcard.
+ */
+export const TAILSCALE_CONTROL_PLANE_HOSTNAMES: readonly string[] = [
+  "controlplane.tailscale.com",
+  "*.tailscale.com",
+  "*.tailscale.io",
+] as const;
+
+/**
+ * Merge the static `tag:mini-infra-managed` tag with operator-supplied
+ * `extraTags`, deduping and preserving order (default first). Used by the
+ * authkey minter and the addon framework's `provision()` hooks to compose
+ * the tag set for a freshly-minted authkey.
+ */
+export function buildTailscaleTagSet(extraTags: readonly string[] = []): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const tag of [TAILSCALE_DEFAULT_TAG, ...extraTags]) {
+    const trimmed = tag.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    result.push(trimmed);
+  }
+  return result;
+}
+
+/**
+ * Hostname-sanitise `{service}-{env}` for use as a Tailscale device hostname.
+ *
+ * RFC 1123 hostname rules: ≤63 octets, lowercase ASCII alphanumerics + hyphen,
+ * no leading or trailing hyphen. Tailscale further requires the hostname to
+ * be unique across the tailnet within the OAuth client's scope, so the
+ * combined `{service}-{env}` form encodes per-resource identity (the OAuth
+ * client tag set is fixed at `tag:mini-infra-managed`, see §Phase 3).
+ *
+ * Mirrors the spirit of `buildPoolContainerName` in pool-spawner.ts but lives
+ * here in lib/ because the addon framework is the only consumer that needs
+ * RFC-compliant Tailscale-specific output (pool spawner targets Docker
+ * container names which are looser).
+ */
+export function sanitizeTailscaleHostname(
+  serviceName: string,
+  envName: string,
+): string {
+  const raw = `${serviceName}-${envName}`;
+  // Lowercase, replace non-[a-z0-9-] with `-`, collapse runs of `-`.
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (cleaned.length === 0) {
+    throw new Error(
+      `Cannot derive Tailscale hostname from "${serviceName}-${envName}" — no valid characters`,
+    );
+  }
+  // Truncate to 63 octets; trim a trailing hyphen left after the cut.
+  return cleaned.length <= 63
+    ? cleaned
+    : cleaned.slice(0, 63).replace(/-+$/, "");
+}
+
+/**
  * Canonical Tailscale ACL bootstrap snippet for the operator to paste into
  * their tailnet policy file at https://login.tailscale.com/admin/acls.
  *
@@ -98,7 +170,7 @@ export type TailscaleErrorCode =
  * unit tests pin the output shape.
  */
 export function buildAclSnippet(extraTags: string[] = []): string {
-  const tags = [TAILSCALE_DEFAULT_TAG, ...extraTags];
+  const tags = buildTailscaleTagSet(extraTags);
   const acl = {
     tagOwners: Object.fromEntries(tags.map((t) => [t, ["autogroup:admin"]])),
     grants: [

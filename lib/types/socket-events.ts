@@ -339,11 +339,14 @@ export interface ServerToClientEvents {
   /**
    * One addon application provisioned successfully during stack apply.
    * Defined in Phase 1; emitted from the render pipeline starting Phase 3.
+   * `addonIds` is plural so merge-groups (`kind: tailscale` collapsing
+   * `tailscale-ssh` + `tailscale-web` into one sidecar) can carry every
+   * member id; solo applications carry a single-element array.
    */
   "stack:addon:provisioned": (data: {
     stackId: string;
     serviceName: string;
-    addonId: string;
+    addonIds: string[];
     kind?: string;
     syntheticServiceName: string;
   }) => void;
@@ -355,7 +358,7 @@ export interface ServerToClientEvents {
   "stack:addon:failed": (data: {
     stackId: string;
     serviceName: string;
-    addonId: string;
+    addonIds: string[];
     kind?: string;
     error: string;
   }) => void;
