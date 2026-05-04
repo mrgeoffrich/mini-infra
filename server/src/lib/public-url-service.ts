@@ -9,6 +9,7 @@ const cache = new NodeCache({ stdTTL: 1800, checkperiod: 120 });
 
 const CACHE_KEY_PUBLIC_URL = "public_url";
 const CACHE_KEY_CORS_ORIGIN = "cors_origin";
+const CACHE_KEY_HTTPS_ONLY = "https_only_mode";
 
 // Wrapper to distinguish "not cached" from "cached as null"
 interface CachedValue {
@@ -72,6 +73,45 @@ export function invalidatePublicUrlCache(): void {
 export function invalidateCorsEnabledCache(): void {
   cache.del(CACHE_KEY_CORS_ORIGIN);
   logger.info("cors_enabled cache invalidated");
+}
+
+/**
+ * Check if HTTPS-only mode is enabled. When enabled, the server emits CSP
+ * `upgrade-insecure-requests`, sends HSTS, and marks auth cookies `Secure`.
+ * Returns false when not configured (permissive — fresh HTTP installs work).
+ */
+export async function isHttpsOnlyEnabled(): Promise<boolean> {
+  const cached = cache.get<CachedValue>(CACHE_KEY_HTTPS_ONLY);
+  if (cached !== undefined) {
+    return cached.value === "true";
+  }
+
+  try {
+    const setting = await prisma.systemSettings.findFirst({
+      where: { category: "system", key: "https_only_mode", isActive: true },
+    });
+    const value = setting?.value || null;
+    cache.set(CACHE_KEY_HTTPS_ONLY, { value });
+    return value === "true";
+  } catch (error) {
+    logger.warn({ error: error instanceof Error ? error.message : "Unknown error" }, "Failed to read https_only_mode from DB, returning false");
+    return false;
+  }
+}
+
+export function invalidateHttpsOnlyCache(): void {
+  cache.del(CACHE_KEY_HTTPS_ONLY);
+  logger.info("https_only_mode cache invalidated");
+}
+
+/**
+ * Recovery escape hatch: when `MINI_INFRA_FORCE_INSECURE=true` is set on the
+ * server's environment, the Helmet dispatcher and cookie helper short-circuit
+ * to insecure regardless of the DB row. Used to recover from a bricked HTTP
+ * install where someone toggled HTTPS-only mode on without TLS in place.
+ */
+export function isForceInsecureOverride(): boolean {
+  return process.env.MINI_INFRA_FORCE_INSECURE === "true";
 }
 
 /** Dev CORS origins — used when no cors_origin setting is configured in development */

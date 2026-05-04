@@ -111,7 +111,6 @@ If a profile is in slot `>= 64`, throw — pool exhausted, document the override
 ```yaml
 environment:
   - LOG_LEVEL=debug
-  - ALLOW_INSECURE=true
   - ENABLE_DEV_API_KEY_ENDPOINT=true
   - BUNDLES_DRIVE_BUILTIN=true
   - MINI_INFRA_EGRESS_POOL_CIDR=${EGRESS_POOL_CIDR}

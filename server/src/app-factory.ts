@@ -11,14 +11,14 @@ import pinoHttp from "pino-http";
 import expressListEndpoints from "express-list-endpoints";
 import path from "path";
 import { randomUUID } from "crypto";
-import appConfig, { securityConfig } from "./lib/config-new";
-import { createDynamicCorsOrigin } from "./lib/public-url-service";
+import appConfig from "./lib/config-new";
+import { createDynamicCorsOrigin, isForceInsecureOverride } from "./lib/public-url-service";
 import { buildPinoHttpOptions } from "./lib/logger-factory";
 import {
   requestContextMiddleware,
   type RequestWithId,
 } from "./middleware/request-context";
-import { createHelmetMiddleware } from "./lib/security";
+import { createHelmetDispatcher } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 import { extractJwtUser } from "./lib/jwt-middleware";
 import authRoutes from "./routes/auth";
@@ -279,7 +279,7 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
     }),
   );
 
-  app.use(createHelmetMiddleware(securityConfig.allowInsecure));
+  app.use(createHelmetDispatcher());
   app.use(
     cors({
       origin: createDynamicCorsOrigin(appConfig.server.nodeEnv),
@@ -299,6 +299,7 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
       environment: appConfig.server.nodeEnv,
       uptime: process.uptime(),
       version: process.env.BUILD_VERSION || "dev",
+      forceInsecureOverride: isForceInsecureOverride(),
     });
   }) as RequestHandler);
 
