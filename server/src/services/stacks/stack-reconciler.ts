@@ -136,7 +136,20 @@ export class StackReconciler {
 
       // Build maps for service definitions, hashes, and resolved configs
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
+      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(
+        stack.services,
+        templateContext,
+        {
+          // Service Addons render-pass plumbing (Phase 3). The framework
+          // tolerates a missing progress callback or connected-services
+          // lookup — when both are absent (e.g. a stack with no `addons:`
+          // declarations) the expansion is a pure pass-through.
+          expansionProgress: options?.addonExpansion?.progress as
+            | import('../stack-addons').ExpansionProgress
+            | undefined,
+          connectedServices: options?.addonExpansion?.connectedServices,
+        },
+      );
 
       // 5a-i. Reconcile infra resource outputs (creates Docker networks + InfraResource records)
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];

@@ -631,6 +631,19 @@ export interface ApplyOptions {
   plan?: StackPlan;
   /** Called after each service or resource action completes */
   onProgress?: (result: ServiceApplyResult | ResourceResult, completedCount: number, totalActions: number) => void;
+  /**
+   * Service Addons render-pass plumbing. Both fields are typed `unknown`
+   * here so `lib/` stays runtime-dep-free; the server narrows them to
+   * `ExpansionProgress` / connected-services lookup before invoking the
+   * addon framework. Either field may be omitted — the addon framework
+   * tolerates a missing progress callback (no fan-out) and a missing
+   * connected-services lookup (any addon that requires one is rejected
+   * at applicability check time).
+   */
+  addonExpansion?: {
+    progress?: unknown;
+    connectedServices?: unknown;
+  };
 }
 
 export interface UpdateOptions {

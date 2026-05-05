@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ServerModal } from "@/components/postgres-server/server-modal";
+import { AddonBadge } from "@/components/stacks/addon-badge";
 import { toast } from "sonner";
 
 interface ContainerTableProps {
@@ -50,12 +51,18 @@ const ContainerNameCell = React.memo(
     postgresAction,
     onPostgresAction,
     isPoolInstance,
+    addonName,
+    addonTarget,
+    onAddonTargetClick,
   }: {
     name: string;
     selfRole?: string;
     postgresAction?: "add" | "manage";
     onPostgresAction?: () => void;
     isPoolInstance?: boolean;
+    addonName?: string;
+    addonTarget?: string;
+    onAddonTargetClick?: () => void;
   }) => (
     <div className="flex items-center gap-2 min-h-[2rem]">
       <span className="font-medium truncate">{name}</span>
@@ -68,6 +75,13 @@ const ContainerNameCell = React.memo(
         <span className="shrink-0 text-xs bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded">
           Pool
         </span>
+      )}
+      {addonName && (
+        <AddonBadge
+          addonName={addonName}
+          targetName={addonTarget}
+          onTargetClick={onAddonTargetClick}
+        />
       )}
       {postgresAction && onPostgresAction && (
         <Tooltip>
@@ -99,7 +113,9 @@ const ContainerNameCell = React.memo(
     prevProps.name === nextProps.name &&
     prevProps.selfRole === nextProps.selfRole &&
     prevProps.postgresAction === nextProps.postgresAction &&
-    prevProps.isPoolInstance === nextProps.isPoolInstance,
+    prevProps.isPoolInstance === nextProps.isPoolInstance &&
+    prevProps.addonName === nextProps.addonName &&
+    prevProps.addonTarget === nextProps.addonTarget,
 );
 
 ContainerNameCell.displayName = "ContainerNameCell";
@@ -315,6 +331,28 @@ export const ContainerTable = React.memo(function ContainerTable({
           }
 
           const isPoolInstance = container.labels?.["mini-infra.pool-instance"] === "true";
+          const addonName = container.labels?.["mini-infra.addon"];
+          const addonTarget = container.labels?.["mini-infra.addon-target"];
+
+          // Resolve target → container id by matching stack-id + service
+          // labels in the current containers list. When found, the
+          // back-reference button navigates to that container's detail
+          // route; when not (target hasn't materialised yet, or it's been
+          // removed), the back-reference renders as plain text.
+          let onAddonTargetClick: (() => void) | undefined;
+          if (addonTarget && containers) {
+            const stackId = container.labels?.["mini-infra.stack-id"];
+            const targetContainer = containers.find(
+              (c) =>
+                c.labels?.["mini-infra.stack-id"] === stackId &&
+                c.labels?.["mini-infra.service"] === addonTarget &&
+                c.labels?.["mini-infra.synthetic"] !== "true",
+            );
+            if (targetContainer) {
+              const targetId = targetContainer.id;
+              onAddonTargetClick = () => navigate(`/containers/${targetId}`);
+            }
+          }
 
           return (
             <ContainerNameCell
@@ -323,6 +361,9 @@ export const ContainerTable = React.memo(function ContainerTable({
               postgresAction={postgresAction}
               onPostgresAction={onPostgresAction}
               isPoolInstance={isPoolInstance}
+              addonName={addonName}
+              addonTarget={addonTarget}
+              onAddonTargetClick={onAddonTargetClick}
             />
           );
         },
@@ -363,7 +404,7 @@ export const ContainerTable = React.memo(function ContainerTable({
         ),
       },
     ],
-    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds, managedContainerMap, handleAddPostgresServer, navigate],
+    [handleNameSort, handleStatusSort, handleImageSort, postgresContainerIds, managedContainerIds, managedContainerMap, handleAddPostgresServer, navigate, containers],
   );
 
   const sortingState = React.useMemo(

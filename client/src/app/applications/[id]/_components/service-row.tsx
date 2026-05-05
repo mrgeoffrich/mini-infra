@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { AddonBadge } from "@/components/stacks/addon-badge";
 import type {
   StackContainerStatus,
   StackServiceDefinition,
@@ -72,26 +73,46 @@ export function ServiceRow({ service, containers }: ServiceRowProps) {
   const restartPolicy = service.containerConfig?.restartPolicy ?? "—";
   const dependsOn = service.dependsOn ?? [];
   const envEntries = Object.entries(env);
+  const synthetic = service.synthetic;
+  // The first addon id is the canonical badge label. For merged groups
+  // (`kind: tailscale` collapsing `tailscale-ssh` + `tailscale-web` into
+  // one sidecar) `kind` is the better label; fall back to the first id
+  // when no kind is set.
+  const addonLabel = synthetic
+    ? synthetic.kind ?? synthetic.addonIds[0]
+    : undefined;
 
   return (
     <Fragment>
       <TableRow>
         <TableCell className="w-8 align-top">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? "Collapse" : "Expand"}
-          >
-            {expanded ? (
-              <IconChevronDown className="h-4 w-4" />
-            ) : (
-              <IconChevronRight className="h-4 w-4" />
-            )}
-          </Button>
+          {!synthetic && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={() => setExpanded((v) => !v)}
+              aria-label={expanded ? "Collapse" : "Expand"}
+            >
+              {expanded ? (
+                <IconChevronDown className="h-4 w-4" />
+              ) : (
+                <IconChevronRight className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </TableCell>
-        <TableCell className="font-medium">{service.serviceName}</TableCell>
+        <TableCell className="font-medium">
+          <div className="flex items-center gap-2">
+            <span>{service.serviceName}</span>
+            {synthetic && addonLabel && (
+              <AddonBadge
+                addonName={addonLabel}
+                targetName={synthetic.targetService}
+              />
+            )}
+          </div>
+        </TableCell>
         <TableCell>
           <ServiceTypeBadge type={service.serviceType} />
         </TableCell>

@@ -19,7 +19,11 @@ import {
   emitStackApplyServiceResult,
   emitStackApplyCompleted,
   emitStackApplyFailed,
+  emitStackAddonProvisioned,
+  emitStackAddonFailed,
 } from '../../services/stacks/stack-socket-emitter';
+import { TailscaleService } from '../../services/tailscale/tailscale-service';
+import type { ExpansionProgress } from '../../services/stack-addons';
 import {
   formatPlanStep,
   formatServiceStep,
@@ -195,10 +199,35 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
         throw new Error(natsPhase.error ?? 'NATS reconciliation phase failed');
       }
 
+      // Service Addons render-pass plumbing — fan addon-provisioning
+      // events out on the stacks channel (Phase 3) and hand the addon
+      // framework a typed connected-services lookup so addons like
+      // `tailscale-ssh` can mint authkeys without re-fetching credentials
+      // here. Both fields tolerate absence — the framework no-ops the
+      // progress callback and rejects any addon whose required service
+      // is missing.
+      const addonExpansion: {
+        progress: ExpansionProgress;
+        connectedServices: { tailscale: TailscaleService };
+      } = {
+        progress: {
+          onProvisioned: (info) => {
+            emitStackAddonProvisioned({ stackId, ...info });
+          },
+          onFailed: (info) => {
+            emitStackAddonFailed({ stackId, ...info });
+          },
+        },
+        connectedServices: {
+          tailscale: new TailscaleService(prisma),
+        },
+      };
+
       const result = await reconciler.apply(stackId, {
         ...applyArgs,
         triggeredBy,
         plan,
+        addonExpansion,
         onProgress: (progressResult) => {
           emittedStepCount++;
           emitStackApplyServiceResult(

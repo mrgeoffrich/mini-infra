@@ -93,3 +93,37 @@ export function emitStackDestroyFailed(stackId: string, error: unknown, startTim
     error: message,
   });
 }
+
+export type StackAddonProvisionedPayload = {
+  stackId: string;
+  serviceName: string;
+  addonIds: string[];
+  kind?: string;
+  syntheticServiceName: string;
+};
+
+export function emitStackAddonProvisioned(
+  payload: StackAddonProvisionedPayload,
+): void {
+  try {
+    emitToChannel(
+      Channel.STACKS,
+      ServerEvent.STACK_ADDON_PROVISIONED,
+      payload,
+    );
+  } catch { /* never break the caller */ }
+}
+
+export type StackAddonFailedPayload = {
+  stackId: string;
+  serviceName: string;
+  addonIds: string[];
+  kind?: string;
+  error: string;
+};
+
+export function emitStackAddonFailed(payload: StackAddonFailedPayload): void {
+  try {
+    emitToChannel(Channel.STACKS, ServerEvent.STACK_ADDON_FAILED, payload);
+  } catch { /* never break the caller */ }
+}
