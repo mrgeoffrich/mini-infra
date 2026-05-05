@@ -7,12 +7,15 @@
 //   3. Complete the setup wizard (docker host) via POST /auth/setup/complete
 //   3b. Upsert docker_host_ip system setting (needed for application DNS)
 //   4. Upsert Azure / Cloudflare / GitHub credentials
-//   5. Create a local environment
-//   6. Instantiate + apply the built-in HAProxy stack template
-//   7. Instantiate + apply the built-in Vault + NATS stack template
-//   8. Bootstrap/unlock Vault and publish system policies
-//   9. Mark onboarding complete
-//   10. Write environment-details.xml at the project root.
+//   5. Instantiate + apply the built-in Vault + NATS stack template
+//   6. Bootstrap/unlock Vault and publish system policies
+//   7. Create a local environment — egress-gateway provisioning kicks off here
+//      and needs both Vault unlocked (to mint NATS creds) and NATS running.
+//   8. Instantiate + apply the built-in HAProxy stack template
+//   9. Apply the host-scoped egress-fw-agent stack (created at server boot;
+//      its background apply requires Vault + NATS, so it lands here).
+//   10. Mark onboarding complete
+//   11. Write environment-details.xml at the project root.
 //
 // Each step is idempotent-ish: already-configured state is skipped, but the
 // seeder does not back out partial state on failure — fix the env file and re-run.
@@ -762,6 +765,32 @@ export async function ensureVaultUnlocked(api: ApiClient): Promise<void> {
   }
 }
 
+/**
+ * Apply the host-scoped egress-fw-agent stack created by the server's
+ * `bootstrapFwAgentStack` at boot. The server fires the apply in the
+ * background but it requires NATS to be reachable within 30 s — on a fresh
+ * worktree NATS is still coming up, so the boot apply silently fails and the
+ * stack stays `undeployed`. Now that NATS is up the seeder retries.
+ *
+ * Idempotent: if the stack is missing (auto-start disabled, template not
+ * synced) we log-skip; if it's already Synced we skip.
+ */
+async function ensureFwAgentStackApplied(api: ApiClient): Promise<void> {
+  logInfo('Looking for existing egress-fw-agent host stack');
+  const list = await api.get<unknown>('/api/stacks');
+  if (list.status !== 200) {
+    logSkip(`GET /api/stacks returned ${list.status} — skipping fw-agent apply`);
+    return;
+  }
+  const items = pickItems<Stack>(list.body);
+  const fwAgent = items.find((s) => s.name === 'egress-fw-agent');
+  if (!fwAgent?.id) {
+    logSkip('egress-fw-agent stack not found (auto-start disabled or template not synced)');
+    return;
+  }
+  await applyAndWaitForSynced(api, fwAgent.id, 'Egress fw-agent');
+}
+
 async function markOnboardingComplete(api: ApiClient): Promise<void> {
   logInfo('Marking onboarding complete');
   const res = await api.post('/api/onboarding/complete', {});
@@ -814,16 +843,12 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   await ensureDockerHostIp(api, env);
   await configureServices(api, env);
 
-  const localEnvId = await ensureLocalEnvironment(api, env);
-  const haproxyStackId = await ensureHaproxyStack(api, localEnvId, {
-    http: input.haproxyHttpPort,
-    https: input.haproxyHttpsPort,
-    stats: input.haproxyStatsPort,
-    dataplane: input.haproxyDataplanePort,
-  });
-  if (haproxyStackId) {
-    await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
-  }
+  // Vault + NATS go up first. The egress-gateway stack apply (kicked off
+  // when the local env is created below) reads NATS creds via Vault, so
+  // Vault must be unlocked and NATS must be reachable before any env-scoped
+  // provisioning runs. Earlier ordering put env creation first and the
+  // egress-gateway stack landed in `error` with
+  // "Vault admin client unavailable: No Vault address configured".
   const vaultNatsStackId = await ensureVaultNatsStack(api, {
     vault: input.vaultPort,
     natsClient: input.natsClientPort,
@@ -845,6 +870,25 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
       force: true,
     });
   }
+
+  // Apply the host-scoped egress-fw-agent stack. The server's
+  // `bootstrapFwAgentStack` creates the stack row at boot and dispatches the
+  // apply in the background, but on a fresh worktree NATS isn't up within
+  // its 30 s wait window so the boot-time apply fails silently and the stack
+  // stays `undeployed`. NATS is up now — apply explicitly.
+  await ensureFwAgentStackApplied(api);
+
+  const localEnvId = await ensureLocalEnvironment(api, env);
+  const haproxyStackId = await ensureHaproxyStack(api, localEnvId, {
+    http: input.haproxyHttpPort,
+    https: input.haproxyHttpsPort,
+    stats: input.haproxyStatsPort,
+    dataplane: input.haproxyDataplanePort,
+  });
+  if (haproxyStackId) {
+    await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
+  }
+
   await markOnboardingComplete(api);
 
   logInfo(`Writing ${input.detailsFile}`);

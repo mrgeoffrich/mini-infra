@@ -78,10 +78,18 @@ export class VaultAdminService {
 
   /**
    * Set or replace the HTTP client (e.g. after the vault stack has been deployed
-   * and its address is known).
+   * and its address is known). Propagates the cached admin token onto the new
+   * client so in-flight callers (KV reads from the NATS apply orchestrator,
+   * the health watcher, etc.) don't see a brief "permission denied" window
+   * while a renewal sneaks in. Without this, the post-install
+   * `register-vault-address` action would replace the client mid-seed and the
+   * very next KV read would land on a tokenless connection.
    */
   useClient(address: string): VaultHttpClient {
     this.client = new VaultHttpClient(address);
+    if (this.adminToken) {
+      this.client.setToken(this.adminToken);
+    }
     return this.client;
   }
 

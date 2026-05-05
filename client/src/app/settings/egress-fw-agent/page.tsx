@@ -134,7 +134,7 @@ export default function EgressFwAgentSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">Egress Firewall Agent</h1>
             <p className="text-muted-foreground">
-              Host-singleton sidecar that enforces L3/L4 egress rules via nftables
+              Blocks outbound traffic that breaks your egress rules and logs every block.
             </p>
           </div>
         </div>
@@ -149,8 +149,7 @@ export default function EgressFwAgentSettingsPage() {
               Container Status
             </CardTitle>
             <CardDescription>
-              Mini Infra manages this container's lifecycle. nftables rules and the persisted env store
-              survive container restarts via host kernel state and the shared `/var/run/mini-infra` volume.
+              Mini Infra manages this container. Your firewall rules persist across restarts.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -196,7 +195,7 @@ export default function EgressFwAgentSettingsPage() {
               Configuration
             </CardTitle>
             <CardDescription>
-              Database settings override the baked-in image tag. Changes take effect on the next restart.
+              Override the default image or turn off auto-start. Changes apply on the next restart.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">

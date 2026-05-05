@@ -16,6 +16,7 @@ import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle'
 import { getEnvFirewallManager } from '../egress';
 import { StackReconciler } from '../stacks/stack-reconciler';
 import { runStackNatsApplyPhase } from '../stacks/stack-nats-apply-orchestrator';
+import { runStackVaultApplyPhase } from '../stacks/stack-vault-apply-orchestrator';
 import DockerService from '../docker';
 
 export class EnvironmentManager {
@@ -787,14 +788,31 @@ export class EnvironmentManager {
       // The egress-gateway template injects `NATS_CREDS` via dynamicEnv, which
       // requires a `NatsCredentialProfile` row to exist for this stack before
       // the reconciler resolves env. Normal user-driven applies go through
-      // `routes/stacks/stacks-apply-route.ts`, which calls
-      // `runStackNatsApplyPhase` for that purpose. The auto-provision shortcut
-      // here would otherwise skip it — fail-closed at `resolveVaultEnv` with
-      // "no NATS credential profile is bound". Phase 3 / ALT-28.
+      // `routes/stacks/stacks-apply-route.ts`, which calls both
+      // `runStackVaultApplyPhase` and `runStackNatsApplyPhase` for that purpose.
+      // We mirror that here — the NATS phase reads the operator key out of
+      // Vault, so without the Vault phase setting up the policy/lease the NATS
+      // phase fails closed with "Vault GET …/shared/nats-operator failed:
+      // permission denied". Phase 3 / ALT-28.
       try {
         const dockerExecutor = new DockerExecutorService();
         await dockerExecutor.initialize();
         const reconciler = new StackReconciler(dockerExecutor, this.prisma);
+
+        const vaultPhase = await runStackVaultApplyPhase(this.prisma, egressStack.id, {
+          triggeredBy: userId ?? 'system',
+        });
+        if (vaultPhase.status === 'error') {
+          this.logger.error(
+            { environmentId, stackId: egressStack.id, error: vaultPhase.error },
+            'Vault apply phase failed; aborting egress gateway provisioning',
+          );
+          await this.userEventService.appendLogs(
+            userEventId,
+            `[${new Date().toISOString()}] WARNING: Vault apply failed: ${vaultPhase.error ?? 'unknown'}`,
+          );
+          return;
+        }
 
         const natsPhase = await runStackNatsApplyPhase(this.prisma, egressStack.id, {
           triggeredBy: userId ?? 'system',
