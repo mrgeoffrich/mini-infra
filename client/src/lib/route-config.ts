@@ -516,7 +516,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     showInNav: true,
     navGroup: "main",
     navSection: "administration",
-    description: "Host-singleton firewall agent that enforces L3/L4 egress rules",
+    description: "Blocks outbound traffic that breaks your egress rules",
     helpDoc: "settings/egress-fw-agent",
   },
 

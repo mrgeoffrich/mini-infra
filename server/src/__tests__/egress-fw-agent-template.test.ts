@@ -23,7 +23,7 @@ describe("egress-fw-agent template", () => {
     expect(json.name).toBe("egress-fw-agent");
     expect(json.scope).toBe("host");
     expect(json.category).toBe("infrastructure");
-    expect(json.builtinVersion).toBe(1);
+    expect(json.builtinVersion).toBe(2);
 
     // The agent role declares the KV bucket Phase 2 needs.
     expect(json.nats.subjectPrefix).toBe("mini-infra.egress.fw");
