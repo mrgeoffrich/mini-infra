@@ -27,14 +27,14 @@ There are two ticket flavours, and both are handled by the same flow. The shape 
 
 - Live under the persistent `maintenance` feature (or any feature without a strict per-feature plan doc), or with no feature at all.
 - Feature description (when there is one) may have a `Plan:` line pointing to a shared evergreen doc (e.g. `docs/planning/maintenance.md`), or no `Plan:` line at all.
-- Issue title may follow `Phase N: <short title>` (the `task-to-mk` convention) but isn't required to.
+- Issue title is a plain descriptive title (the current `task-to-mk` convention). Older `task-to-mk` runs may have used a `Phase N: <short title>` prefix — both shapes are tolerated; the title text is treated as opaque.
 - The matching `### Phase N` section in the plan doc is **best-effort** — the doc may have no entry at all (legitimate when the ticket was filed directly via `mk`, or when the doc has been pruned). The ticket body remains the contract either way.
 - No `blocks` chain — these are independent.
 
 What's true for **both** flavours, and is non-negotiable:
 
 - The ticket body carries **Goal / Deliverables / Done when / Relevant docs / Smoke tests** sections. That's the contract you execute against.
-- Commit / PR title format: `feat(<area>): <description> (Phase N, MINI-NN) (#PR)` — match the most recent shipped commit in the same feature (or, for one-offs, the most recent commit touching the same component).
+- Commit / PR title format: for **phased plan-doc tickets**, `feat(<area>): <description> (Phase N, MINI-NN) (#PR)` — match the most recent shipped commit in the same feature. For **standalone / maintenance tickets**, drop the `Phase N` and use `feat(<area>): <description> (MINI-NN) (#PR)` — there is no phase number to cite.
 - PR body must include `Closes MINI-NN` so merging closes the mk issue automatically. (`mk` does not auto-flip state on PR merge — you transition to `in_review` explicitly in Phase 12; the `Closes` line is for the human reviewer's audit trail and any future GitHub-Issues mirror.)
 
 Reference examples in this repo: `docs/planning/not-shipped/internal-nats-messaging-plan.md`, `docs/planning/not-shipped/observability-otel-tracing-plan.md`, `docs/planning/shipped/nats-app-roles-plan.md`, and the standalone `docs/planning/maintenance.md`.
@@ -346,10 +346,11 @@ Smoke tests passed. Commit the implementation and push the branch so the work is
 Match the most recent shipped commit format from the same feature (or, for one-offs, the most recent commit touching the same component). Typical:
 
 ```
-feat(<area>): <short description> (Phase N, MINI-NN)
+feat(<area>): <short description> (Phase N, MINI-NN)     # phased plan-doc tickets
+feat(<area>): <short description> (MINI-NN)              # standalone / maintenance tickets — no phase
 ```
 
-The area tag (`nats`, `egress`, `monitoring`, `docs`, etc.) follows what previous commits used. Commit body:
+Pick the form that matches the ticket flavour: phased plan-doc tickets (filed by `plan-to-mk`) cite `Phase N`; standalone / maintenance tickets (filed by `task-to-mk` or by hand) don't have a phase number, so just `(MINI-NN)`. The area tag (`nats`, `egress`, `monitoring`, `docs`, etc.) follows what previous commits used. Commit body:
 
 ```
 <one or two paragraphs explaining what changed and why,
