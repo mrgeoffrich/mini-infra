@@ -50,10 +50,13 @@ Same commands as the macOS flow — see [CLAUDE.md](../../CLAUDE.md). The unifie
 
 ```powershell
 pnpm worktree-env start --description "auth refactor"
+pnpm worktree-env start --description "auth refactor" --seed-profile minimal
 pnpm worktree-env list
 pnpm worktree-env delete <profile>
 pnpm worktree-env cleanup --dry-run
 ```
+
+`--seed-profile minimal` skips the vault+nats stack, the egress-fw-agent stack, the local environment (and its egress-gateway), and the HAProxy stack — the per-distro dockerd ends up with just the mini-infra container. `--seed-profile full` (default) is the historical seeding behaviour. The chosen profile is stored in `~/.mini-infra/worktrees.yaml` so subsequent re-runs of `worktree-env start` without the flag reuse it.
 
 The orchestrator auto-detects driver: `wsl` on Windows, `colima` on macOS. Override with `MINI_INFRA_DRIVER=wsl` (or `colima`) if you need to.
 

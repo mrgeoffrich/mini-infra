@@ -5,9 +5,9 @@
 // Ports are allocated from ~/.mini-infra/worktrees.yaml so re-runs are stable.
 //
 // Invoked via the worktree-env CLI:
-//   pnpm worktree-env start [--profile <name>] [--description <short>]
-//                           [--long-description <long>] [--reset]
-//                           [--skip-seed] [--seed]
+//   pnpm worktree-env start [--profile <name>] [--seed-profile minimal|full]
+//                           [--description <short>] [--long-description <long>]
+//                           [--reset] [--skip-seed] [--seed]
 //
 // After the app is healthy, this script calls the in-process seeder (POST
 // /setup, issue an admin API key, seed service configs, apply HAProxy stack)
@@ -28,6 +28,9 @@ import {
   migrateFromJsonIfNeeded,
   upsertEntry,
   loadRegistry,
+  DEFAULT_SEED_PROFILE,
+  SEED_PROFILES,
+  type SeedProfile,
 } from './lib/registry.js';
 import { readEnvironmentDetails, writeMinimalEnvironmentDetails } from './lib/env-details.js';
 import { isColimaRunning, startColima } from './lib/colima.js';
@@ -82,11 +85,13 @@ function pickDriver(): Driver {
 }
 
 function usage(): void {
-  console.log('Usage: worktree-env start [--profile <name>] [--description <short>]');
-  console.log('                          [--long-description <long>] [--reset]');
-  console.log('                          [--skip-seed] [--seed]');
+  console.log('Usage: worktree-env start [--profile <name>] [--seed-profile minimal|full]');
+  console.log('                          [--description <short>] [--long-description <long>]');
+  console.log('                          [--reset] [--skip-seed] [--seed]');
   console.log('');
   console.log('  --profile          Override the auto-derived worktree profile name.');
+  console.log('  --seed-profile     "minimal" skips vault+nats, egress-fw-agent, local env, and HAProxy.');
+  console.log('                     "full" (default on first run) seeds everything. Persisted across re-runs.');
   console.log('  --description      Short (≤10 word) summary of this worktree.');
   console.log('  --long-description Optional long (≤50 word) description.');
   console.log('  --reset            Tear down volumes before bringing the stack back up.');
@@ -168,6 +173,7 @@ interface Args {
   forceSeed: boolean;
   description?: string;
   longDescription?: string;
+  seedProfile?: SeedProfile;
 }
 
 function parseCliArgs(argv: string[]): Args {
@@ -176,6 +182,7 @@ function parseCliArgs(argv: string[]): Args {
       args: argv,
       options: {
         profile: { type: 'string' },
+        'seed-profile': { type: 'string' },
         reset: { type: 'boolean', default: false },
         'skip-seed': { type: 'boolean', default: false },
         seed: { type: 'boolean', default: false },
@@ -189,6 +196,17 @@ function parseCliArgs(argv: string[]): Args {
       usage();
       process.exit(0);
     }
+    const rawSeedProfile = values['seed-profile'] as string | undefined;
+    let seedProfile: SeedProfile | undefined;
+    if (rawSeedProfile !== undefined) {
+      if (!SEED_PROFILES.includes(rawSeedProfile as SeedProfile)) {
+        logError(
+          `Invalid --seed-profile '${rawSeedProfile}'. Valid values: ${SEED_PROFILES.join(', ')}`,
+        );
+        process.exit(1);
+      }
+      seedProfile = rawSeedProfile as SeedProfile;
+    }
     return {
       profile: values.profile as string | undefined,
       reset: Boolean(values.reset),
@@ -196,6 +214,7 @@ function parseCliArgs(argv: string[]): Args {
       forceSeed: Boolean(values.seed),
       description: values.description as string | undefined,
       longDescription: values['long-description'] as string | undefined,
+      seedProfile,
     };
   } catch (err) {
     logError(`Unknown arg: ${err instanceof Error ? err.message : String(err)}`);
@@ -301,10 +320,26 @@ export async function run(argv: string[]): Promise<void> {
   fs.mkdirSync(MINI_INFRA_HOME, { recursive: true });
   migrateFromJsonIfNeeded();
 
-  // Description resolution
+  // Description + seed-profile resolution
   const existingEntry = loadRegistry()[profile];
   let shortDesc: string | undefined;
   let longDesc: string | undefined;
+
+  // Seed profile precedence: explicit CLI flag → persisted registry entry →
+  // default `full`. Once resolved we persist it so future re-runs without the
+  // flag pick the same value.
+  const seedProfile: SeedProfile =
+    args.seedProfile ?? existingEntry?.seed_profile ?? DEFAULT_SEED_PROFILE;
+  if (
+    args.seedProfile &&
+    existingEntry?.seed_profile &&
+    args.seedProfile !== existingEntry.seed_profile
+  ) {
+    logWarn(
+      `--seed-profile=${args.seedProfile} overrides previously stored '${existingEntry.seed_profile}' for profile '${profile}'`,
+    );
+  }
+  logInfo(`Seed profile: ${seedProfile}`);
 
   if (args.description) {
     shortDesc = args.description;
@@ -364,6 +399,7 @@ export async function run(argv: string[]): Promise<void> {
     egress_pool_cidr: egressPoolCidr,
     url: `http://localhost:${uiPort}`,
     description: shortDesc,
+    seed_profile: seedProfile,
   });
   logInfo(
     `Ports: UI=${uiPort}, registry=${registryPort}, vault=${vaultPort}` +
@@ -663,6 +699,7 @@ export async function run(argv: string[]): Promise<void> {
     agentSidecarImageTag,
     shortDescription: shortDesc,
     longDescription: longDesc,
+    seedProfile,
   };
 
   let seededThisRun = false;
@@ -698,6 +735,7 @@ export async function run(argv: string[]): Promise<void> {
         detailsFile,
         shortDescription: shortDesc,
         longDescription: longDesc,
+        seedProfile,
       });
       upsertEntry({
         profile,
@@ -718,6 +756,7 @@ export async function run(argv: string[]): Promise<void> {
         admin_password: result.adminPassword,
         api_key: result.apiKey,
         description: shortDesc,
+        seed_profile: seedProfile,
         seeded: true,
       });
       logOk('Updated central registry (~/.mini-infra/worktrees.yaml) with admin credentials');
@@ -753,6 +792,7 @@ export async function run(argv: string[]): Promise<void> {
       admin_password: details?.admin.password,
       api_key: details?.admin.apiKey,
       description: shortDesc,
+      seed_profile: seedProfile,
     });
 
     // Server restarts re-lock the operator passphrase; re-unlock here so admin
@@ -774,6 +814,7 @@ export async function run(argv: string[]): Promise<void> {
   console.log('');
   logOk(`Mini Infra dev instance for '${profile}' is up`);
   console.log('');
+  console.log(`  Seed profile: ${seedProfile}`);
   console.log(`  URL:         http://localhost:${uiPort}`);
   console.log(`  Registry:    localhost:${registryPort}`);
   console.log(`  Vault:       http://localhost:${vaultPort}`);

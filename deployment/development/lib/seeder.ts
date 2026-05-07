@@ -29,6 +29,7 @@ import {
   type StackSummary,
 } from './env-details.js';
 import { logInfo, logOk, logError, logSkip } from './log.js';
+import type { SeedProfile } from './registry.js';
 
 export interface SeederInput {
   uiPort: number;
@@ -54,6 +55,10 @@ export interface SeederInput {
   detailsFile: string;
   shortDescription?: string;
   longDescription?: string;
+  // `full` runs the historical sequence (vault+nats, egress-fw-agent, local
+  // env with egress-gateway, HAProxy). `minimal` stops after admin + connected
+  // services so the worktree VM stays light when those surfaces aren't needed.
+  seedProfile: SeedProfile;
 }
 
 export interface SeederOutput {
@@ -843,57 +848,70 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   await ensureDockerHostIp(api, env);
   await configureServices(api, env);
 
-  // Vault + NATS go up first. The egress-gateway stack apply (kicked off
-  // when the local env is created below) reads NATS creds via Vault, so
-  // Vault must be unlocked and NATS must be reachable before any env-scoped
-  // provisioning runs. Earlier ordering put env creation first and the
-  // egress-gateway stack landed in `error` with
-  // "Vault admin client unavailable: No Vault address configured".
-  const vaultNatsStackId = await ensureVaultNatsStack(api, {
-    vault: input.vaultPort,
-    natsClient: input.natsClientPort,
-    natsMonitor: input.natsMonitorPort,
-  });
-  if (vaultNatsStackId) {
-    // NATS reads its nats.conf from Vault KV. Bring up Vault first, bootstrap it
-    // so NatsBootstrapService writes shared/nats-config, then apply the whole
-    // stack so NATS can resolve NATS_CONF on first container start.
-    await applyAndWaitForSynced(api, vaultNatsStackId, 'Vault service', {
-      serviceNames: ['vault'],
-      allowDrifted: true,
-    });
-  }
-  await ensureVaultUnlocked(api);
-  if (vaultNatsStackId) {
-    await applyAndWaitForSynced(api, vaultNatsStackId, 'NATS service', {
-      serviceNames: ['nats'],
-      force: true,
-    });
-  }
+  let localEnvId: string | undefined;
+  let haproxyStackId: string | undefined;
+  let localEnvironment: LocalEnvironmentSummary | null = null;
+  let stacks: StackSummary[] = [];
 
-  // Apply the host-scoped egress-fw-agent stack. The server's
-  // `bootstrapFwAgentStack` creates the stack row at boot and dispatches the
-  // apply in the background, but on a fresh worktree NATS isn't up within
-  // its 30 s wait window so the boot-time apply fails silently and the stack
-  // stays `undeployed`. NATS is up now — apply explicitly.
-  await ensureFwAgentStackApplied(api);
+  if (input.seedProfile === 'full') {
+    // Vault + NATS go up first. The egress-gateway stack apply (kicked off
+    // when the local env is created below) reads NATS creds via Vault, so
+    // Vault must be unlocked and NATS must be reachable before any env-scoped
+    // provisioning runs. Earlier ordering put env creation first and the
+    // egress-gateway stack landed in `error` with
+    // "Vault admin client unavailable: No Vault address configured".
+    const vaultNatsStackId = await ensureVaultNatsStack(api, {
+      vault: input.vaultPort,
+      natsClient: input.natsClientPort,
+      natsMonitor: input.natsMonitorPort,
+    });
+    if (vaultNatsStackId) {
+      // NATS reads its nats.conf from Vault KV. Bring up Vault first, bootstrap it
+      // so NatsBootstrapService writes shared/nats-config, then apply the whole
+      // stack so NATS can resolve NATS_CONF on first container start.
+      await applyAndWaitForSynced(api, vaultNatsStackId, 'Vault service', {
+        serviceNames: ['vault'],
+        allowDrifted: true,
+      });
+    }
+    await ensureVaultUnlocked(api);
+    if (vaultNatsStackId) {
+      await applyAndWaitForSynced(api, vaultNatsStackId, 'NATS service', {
+        serviceNames: ['nats'],
+        force: true,
+      });
+    }
 
-  const localEnvId = await ensureLocalEnvironment(api, env);
-  const haproxyStackId = await ensureHaproxyStack(api, localEnvId, {
-    http: input.haproxyHttpPort,
-    https: input.haproxyHttpsPort,
-    stats: input.haproxyStatsPort,
-    dataplane: input.haproxyDataplanePort,
-  });
-  if (haproxyStackId) {
-    await applyAndWaitForSynced(api, haproxyStackId, 'HAProxy');
+    // Apply the host-scoped egress-fw-agent stack. The server's
+    // `bootstrapFwAgentStack` creates the stack row at boot and dispatches the
+    // apply in the background, but on a fresh worktree NATS isn't up within
+    // its 30 s wait window so the boot-time apply fails silently and the stack
+    // stays `undeployed`. NATS is up now — apply explicitly.
+    await ensureFwAgentStackApplied(api);
+
+    localEnvId = await ensureLocalEnvironment(api, env);
+    const haproxyId = await ensureHaproxyStack(api, localEnvId, {
+      http: input.haproxyHttpPort,
+      https: input.haproxyHttpsPort,
+      stats: input.haproxyStatsPort,
+      dataplane: input.haproxyDataplanePort,
+    });
+    if (haproxyId) {
+      await applyAndWaitForSynced(api, haproxyId, 'HAProxy');
+      haproxyStackId = haproxyId;
+    }
+
+    localEnvironment = await fetchEnvironmentSummary(api, localEnvId);
+    stacks = await fetchStackSummaries(api, localEnvId);
+  } else {
+    logSkip(
+      'Minimal seed profile — skipping vault+nats stack, egress-fw-agent, local environment, and HAProxy',
+    );
   }
 
   await markOnboardingComplete(api);
 
   logInfo(`Writing ${input.detailsFile}`);
-  const localEnvironment = await fetchEnvironmentSummary(api, localEnvId);
-  const stacks = await fetchStackSummaries(api, localEnvId);
   writeFullEnvironmentDetails(input.detailsFile, {
     profile: input.profile,
     projectRoot: input.projectRoot,
@@ -917,6 +935,7 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     stacks,
     shortDescription: input.shortDescription,
     longDescription: input.longDescription,
+    seedProfile: input.seedProfile,
   });
   logOk(`Wrote ${input.detailsFile}`);
 
@@ -928,6 +947,6 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     adminPassword: env.ADMIN_PASSWORD,
     apiKey,
     localEnvId,
-    haproxyStackId: haproxyStackId ?? undefined,
+    haproxyStackId,
   };
 }
