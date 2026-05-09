@@ -53,7 +53,7 @@ const ACCOUNTS_DIR = "/data/accounts";
 export async function startTestNats(): Promise<TestNatsEnv> {
   // Build operator + system-account material before booting the container so
   // we can seed the JWTs into /data/accounts on first start. Production does
-  // this via the vault-nats v2 entrypoint reading $NATS_ACCOUNTS_INDEX; the
+  // this via the nats template entrypoint reading $NATS_ACCOUNTS_INDEX; the
   // test rig writes the same files directly.
   const operatorMaterial = await generateOperator("test-op");
   const operatorKp = loadKeyPair(operatorMaterial.seed);
@@ -75,7 +75,7 @@ export async function startTestNats(): Promise<TestNatsEnv> {
   });
 
   // Wrap nats-server with a tiny shim so the seed JWT lands on disk before
-  // the server starts. Mirrors the production vault-nats entrypoint.
+  // the server starts. Mirrors the production nats template entrypoint.
   const initScript = [
     `mkdir -p ${ACCOUNTS_DIR}`,
     `printf '%s' "$NATS_CONF" > /etc/nats.conf`,

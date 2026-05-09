@@ -60,7 +60,7 @@ export const NATS_OPERATOR_KV_PATH = "shared/nats-operator";
 export const NATS_CONFIG_KV_PATH = "shared/nats-config";
 export const NATS_DEFAULT_ACCOUNT_KV_PATH = "shared/nats-account";
 // Phase 0: system-account user creds + index of all account JWTs. The
-// vault-nats v2 entrypoint reads `shared/nats-accounts-index` on cold start
+// nats template entrypoint reads `shared/nats-accounts-index` on cold start
 // and writes one file per account into `/data/accounts/`; the control plane
 // reads `shared/nats-system-creds` to push live updates via $SYS.REQ.CLAIMS.UPDATE.
 export const NATS_SYSTEM_CREDS_KV_PATH = "shared/nats-system-creds";
@@ -373,17 +373,17 @@ export class NatsControlPlaneService {
 
   async getInternalUrl(): Promise<string> {
     const state = await this.db.natsState.findUnique({ where: { kind: "primary" } });
-    return state?.clientUrl ?? "nats://mini-infra-vault-nats-nats:4222";
+    return state?.clientUrl ?? "nats://mini-infra-nats-nats:4222";
   }
 
   /**
    * Host-loopback NATS URL for `network_mode: host` services that can't
    * resolve docker-internal DNS (e.g. egress-fw-agent, ALT-27). Returns the
    * stored `clientHostUrl` if `applyConfig()` has run since the migration
-   * landed, otherwise falls back to `nats://127.0.0.1:4222` (the vault-nats
+   * landed, otherwise falls back to `nats://127.0.0.1:4222` (the nats
    * template's host-port default). The fallback exists so a fresh worktree
    * boot doesn't deadlock on apply-ordering — fw-agent injection runs before
-   * the next vault-nats apply has had a chance to populate the field.
+   * the next nats apply has had a chance to populate the field.
    */
   async getHostUrl(): Promise<string> {
     const state = await this.db.natsState.findUnique({ where: { kind: "primary" } });
@@ -509,7 +509,7 @@ export class NatsControlPlaneService {
     }
 
     // Phase 0: write the full set of account JWTs to a single Vault KV blob
-    // so the vault-nats v2 entrypoint can populate /data/accounts/ on cold
+    // so the nats template entrypoint can populate /data/accounts/ on cold
     // start of the NATS container. One line per account: <publicKey> <jwt>.
     const accountsIndex = renderedAccounts
       .map((a) => `${a.publicKey} ${a.jwt}`)
@@ -543,7 +543,7 @@ export class NatsControlPlaneService {
 
     // Phase 0: best-effort live propagation of every re-issued account JWT.
     // Failed accounts come back in `unpropagated`; the cold-start path
-    // (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX) repairs them on
+    // (nats template entrypoint reads $NATS_ACCOUNTS_INDEX) repairs them on
     // next NATS restart. Callers with a security-sensitive change pending
     // (notably stack destroy revoking signers) inspect this list and force
     // a NATS recycle on a non-empty result.
@@ -589,7 +589,7 @@ export class NatsControlPlaneService {
   /**
    * Push every re-issued account JWT to the running NATS server via
    * `$SYS.REQ.CLAIMS.UPDATE`. Failures are caught per-account and returned;
-   * the cold-start path (vault-nats entrypoint reads $NATS_ACCOUNTS_INDEX)
+   * the cold-start path (nats template entrypoint reads $NATS_ACCOUNTS_INDEX)
    * repairs them on next NATS restart. Callers with a security-sensitive
    * change pending must inspect the result and force a recycle on a
    * non-empty array.
@@ -654,7 +654,7 @@ export class NatsControlPlaneService {
    * Send one `$SYS.REQ.CLAIMS.UPDATE` request and validate the JSON reply.
    * NATS 2.10+ always replies with JSON of the form `{ data: { code } }` on
    * success or `{ error: { description } }` on failure. We target 2.12+ in
-   * the vault-nats template, so a non-JSON reply is genuinely unexpected
+   * the nats template, so a non-JSON reply is genuinely unexpected
    * and surfaced as an error rather than treated as legacy success.
    */
   private async requestUpdateClaim(

@@ -13,7 +13,7 @@
  *
  * Boot ordering (server/src/server.ts): `NatsBus.getInstance().start()` is
  * fire-and-forget and returns immediately. The reconnect loop runs forever
- * in the background, so a fresh worktree where `vault-nats` hasn't booted
+ * in the background, so a fresh worktree where the `nats` stack hasn't booted
  * yet doesn't stall the parent process. Callers that genuinely need a
  * connection use `await bus.ready({ timeoutMs })`.
  */

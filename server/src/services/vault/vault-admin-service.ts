@@ -325,8 +325,8 @@ export class VaultAdminService {
 
     // Provision NATS NKey material in Vault now that the admin token is live.
     // Non-fatal: NATS is optional and a missing nats-config KV path just
-    // means the vault-nats stack's NATS service won't apply until a future
-    // bootstrap call succeeds. Re-runs at boot via authenticateAsAdmin.
+    // means the nats host stack won't apply until a future bootstrap call
+    // succeeds. Re-runs at boot via authenticateAsAdmin.
     try {
       await getNatsControlPlaneService().applyConfig();
     } catch (err) {

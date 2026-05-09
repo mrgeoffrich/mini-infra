@@ -1,7 +1,8 @@
 // =====================================================================
 // Template Prerequisites — cross-stack dependency declarations on a
 // stack template version. Phase 1 of the three-phase split-vault-nats
-// plan: pure infrastructure, no production templates use it yet.
+// plan shipped these types as pure infrastructure; Phase 2 wires the
+// `nats`, `egress-fw-agent`, and `egress-gateway` templates to use them.
 // =====================================================================
 
 /** Statuses a stack-kind requirement can demand. Higher implies lower
