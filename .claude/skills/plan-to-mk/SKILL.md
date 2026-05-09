@@ -478,7 +478,7 @@ When the final phase ships and the user moves the file from `docs/planning/not-s
 ```bash
 jq -nc --arg from "docs-planning-not-shipped-<slug>-plan.md" \
        --arg to "docs-planning-shipped-<slug>-plan.md" \
-       '{filename:$from, new_filename:$to, type:"project_complete"}' \
+       '{old_filename:$from, new_filename:$to, type:"project_complete"}' \
   | mk doc rename --user <them> --json -
 ```
 
