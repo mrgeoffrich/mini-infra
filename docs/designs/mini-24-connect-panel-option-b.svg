@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 520" width="600" font-family="system-ui, sans-serif" font-size="12">
+  <rect x="0" y="0" width="600" height="520" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- Page header -->
+  <text x="16" y="22" font-size="13" font-weight="600">Application detail · Overview tab</text>
+  <text x="16" y="38" fill="#666">Connect card inserted between StatusStrip and Details/Activity grid. No new tab.</text>
+
+  <!-- Tab strip -->
+  <rect x="16" y="48" width="568" height="26" rx="6" fill="#eee" stroke="#ddd"/>
+  <rect x="20" y="52" width="58" height="20" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="28" y="65" font-weight="600">Overview</text>
+  <text x="84" y="65" fill="#666">Services</text>
+  <text x="138" y="65" fill="#666">Routing</text>
+  <text x="192" y="65" fill="#666">Pool</text>
+  <text x="228" y="65" fill="#666">Monitoring</text>
+  <text x="298" y="65" fill="#666">History</text>
+  <text x="350" y="65" fill="#666">Configuration</text>
+
+  <!-- StatusStrip card (existing, faded) -->
+  <rect x="16" y="86" width="568" height="56" rx="6" fill="#fff" stroke="#ddd"/>
+  <text x="28" y="105" font-size="11" fill="#aaa">[existing] StatusStrip</text>
+  <text x="28" y="125" fill="#888">Services 2/2 up · Stack synced · Routing 1 host · Last applied 2m ago</text>
+
+  <!-- Connect card (NEW) -->
+  <rect x="16" y="152" width="568" height="200" rx="6" fill="#fff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="28" y="172" font-size="13" font-weight="600">Connect</text>
+  <text x="28" y="188" fill="#666">Reach this application over your tailnet.</text>
+
+  <!-- Group: web-app -->
+  <text x="28" y="210" font-size="11" font-weight="600" fill="#666">web-app</text>
+  <rect x="92" y="200" width="80" height="14" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="100" y="211" fill="#5b21b6" font-size="9">🧩 tailscale</text>
+
+  <!-- Row 1: SSH compact -->
+  <text x="36" y="232" font-size="11">🖥</text>
+  <text x="50" y="232" font-family="monospace" font-size="11">ssh root@web-app.tail-abc.ts.net</text>
+  <rect x="280" y="220" width="22" height="16" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="287" y="232" font-size="10">⧉</text>
+  <circle cx="556" cy="228" r="4" fill="#10b981"/>
+  <text x="528" y="232" font-size="10" fill="#065f46" text-anchor="end">Online</text>
+
+  <!-- Row 2: HTTPS compact -->
+  <text x="36" y="252" font-size="11">🌐</text>
+  <text x="50" y="252" font-family="monospace" font-size="11" fill="#1d4ed8">https://web-app.tail-abc.ts.net ↗</text>
+  <rect x="280" y="240" width="22" height="16" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="287" y="252" font-size="10">⧉</text>
+  <circle cx="556" cy="248" r="4" fill="#10b981"/>
+  <text x="528" y="252" font-size="10" fill="#065f46" text-anchor="end">Online</text>
+
+  <!-- Group: worker -->
+  <text x="28" y="278" font-size="11" font-weight="600" fill="#666">worker</text>
+  <rect x="68" y="268" width="80" height="14" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="76" y="279" fill="#5b21b6" font-size="9">🧩 tailscale</text>
+
+  <!-- Row 3: SSH offline -->
+  <text x="36" y="300" font-size="11">🖥</text>
+  <text x="50" y="300" font-family="monospace" font-size="11" fill="#888">ssh root@worker.tail-abc.ts.net</text>
+  <rect x="280" y="288" width="22" height="16" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="287" y="300" font-size="10">⧉</text>
+  <circle cx="556" cy="296" r="4" fill="#a1a1aa"/>
+  <text x="528" y="300" font-size="10" fill="#52525b" text-anchor="end">Offline</text>
+
+  <!-- Overflow CTA hint -->
+  <line x1="28" y1="316" x2="572" y2="316" stroke="#eee"/>
+  <text x="28" y="334" font-size="10" fill="#888">When endpoint count &gt; 5 → "Show all N endpoints" inline button (variant="ghost").</text>
+
+  <!-- Existing two-column grid (faded) -->
+  <rect x="16" y="362" width="276" height="80" rx="6" fill="#fff" stroke="#ddd"/>
+  <text x="28" y="382" font-size="11" fill="#aaa">[existing] Details card</text>
+  <text x="28" y="402" fill="#888">Environment · Public URL · Last applied · Images</text>
+
+  <rect x="308" y="362" width="276" height="80" rx="6" fill="#fff" stroke="#ddd"/>
+  <text x="320" y="382" font-size="11" fill="#aaa">[existing] Recent activity</text>
+  <text x="320" y="402" fill="#888">Last 5 deployment records, View full history button</text>
+
+  <!-- States callout block -->
+  <rect x="16" y="452" width="568" height="62" rx="4" fill="#fffaf0" stroke="#fbbf24"/>
+  <text x="28" y="470" font-size="11" font-weight="600" fill="#92400e">State variants (not all rendered above)</text>
+  <text x="28" y="488" font-size="11" fill="#92400e">• No addons attached: card omitted entirely. • Tailscale not connected: card body replaced by inline Alert.</text>
+  <text x="28" y="504" font-size="11" fill="#92400e">• Unknown (recent): amber pulsing dot + "Checking…" tooltip. • &gt;5 rows: collapse to first 5 + "Show all N".</text>
+</svg>

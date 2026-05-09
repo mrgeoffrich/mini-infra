@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 460" width="600" font-family="system-ui, sans-serif" font-size="12">
+  <rect x="0" y="0" width="600" height="460" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- Page header / title -->
+  <text x="16" y="22" font-size="13" font-weight="600">Application detail · Connect tab</text>
+  <text x="16" y="38" fill="#666">New top-level tab. One row per addon endpoint, grouped by target service.</text>
+
+  <!-- Tab strip -->
+  <rect x="16" y="48" width="568" height="26" rx="6" fill="#eee" stroke="#ddd"/>
+  <text x="28" y="65" fill="#666">Overview</text>
+  <text x="84" y="65" fill="#666">Services</text>
+  <rect x="138" y="52" width="58" height="20" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="146" y="65" font-weight="600">Connect</text>
+  <text x="208" y="65" fill="#666">Routing</text>
+  <text x="262" y="65" fill="#666">Pool</text>
+  <text x="298" y="65" fill="#666">Monitoring</text>
+  <text x="368" y="65" fill="#666">History</text>
+  <text x="420" y="65" fill="#666">Configuration</text>
+
+  <!-- Card shell -->
+  <rect x="16" y="86" width="568" height="350" rx="6" fill="#fff" stroke="#ddd"/>
+  <text x="28" y="106" font-size="13" font-weight="600">Connect</text>
+  <text x="28" y="122" fill="#666">Reach this application over your tailnet.</text>
+
+  <!-- Table header -->
+  <line x1="28" y1="132" x2="572" y2="132" stroke="#eee"/>
+  <text x="28" y="148" fill="#666" font-size="11">TARGET SERVICE</text>
+  <text x="240" y="148" fill="#666" font-size="11">ENDPOINT</text>
+  <text x="490" y="148" fill="#666" font-size="11">STATUS</text>
+
+  <!-- Group header: web-app -->
+  <rect x="28" y="156" width="544" height="22" fill="#f4f4f5" stroke="#eee"/>
+  <text x="36" y="171" font-weight="600">web-app</text>
+  <rect x="100" y="160" width="80" height="16" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="108" y="171" fill="#5b21b6" font-size="10">🧩 tailscale</text>
+
+  <!-- Row 1: SSH endpoint -->
+  <rect x="28" y="178" width="544" height="32" fill="#fff" stroke="#eee"/>
+  <text x="36" y="198" fill="#666">web-app</text>
+  <rect x="100" y="184" width="62" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="108" y="198" font-size="10">🖥 ssh</text>
+  <text x="240" y="198" font-family="monospace" font-size="11">ssh root@web-app.tail-abc.ts.net</text>
+  <rect x="448" y="184" width="22" height="18" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="455" y="197" font-size="11">⧉</text>
+  <circle cx="496" cy="195" r="5" fill="#10b981"/>
+  <text x="506" y="199" font-size="11" fill="#065f46">Online</text>
+
+  <!-- Row 2: HTTPS endpoint -->
+  <rect x="28" y="210" width="544" height="32" fill="#fff" stroke="#eee"/>
+  <text x="36" y="230" fill="#666">web-app</text>
+  <rect x="100" y="216" width="62" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="108" y="230" font-size="10">🌐 https</text>
+  <text x="240" y="230" font-family="monospace" font-size="11" fill="#1d4ed8">https://web-app.tail-abc.ts.net ↗</text>
+  <rect x="448" y="216" width="22" height="18" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="455" y="229" font-size="11">⧉</text>
+  <circle cx="496" cy="227" r="5" fill="#10b981"/>
+  <text x="506" y="231" font-size="11" fill="#065f46">Online</text>
+
+  <!-- Group header: worker -->
+  <rect x="28" y="246" width="544" height="22" fill="#f4f4f5" stroke="#eee"/>
+  <text x="36" y="261" font-weight="600">worker</text>
+  <rect x="100" y="250" width="80" height="16" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
+  <text x="108" y="261" fill="#5b21b6" font-size="10">🧩 tailscale</text>
+
+  <!-- Row 3: SSH endpoint, offline -->
+  <rect x="28" y="268" width="544" height="32" fill="#fff" stroke="#eee"/>
+  <text x="36" y="288" fill="#666">worker</text>
+  <rect x="100" y="274" width="62" height="18" rx="4" fill="#fff" stroke="#aaa"/>
+  <text x="108" y="288" font-size="10">🖥 ssh</text>
+  <text x="240" y="288" font-family="monospace" font-size="11" fill="#888">ssh root@worker.tail-abc.ts.net</text>
+  <rect x="448" y="274" width="22" height="18" rx="3" fill="#fff" stroke="#aaa"/>
+  <text x="455" y="287" font-size="11">⧉</text>
+  <circle cx="496" cy="285" r="5" fill="#a1a1aa"/>
+  <text x="506" y="289" font-size="11" fill="#52525b">Offline</text>
+
+  <!-- States callout block -->
+  <rect x="28" y="312" width="544" height="110" rx="4" fill="#fffaf0" stroke="#fbbf24"/>
+  <text x="40" y="330" font-size="11" font-weight="600" fill="#92400e">State variants (not all rendered above)</text>
+  <text x="40" y="350" font-size="11" fill="#92400e">• Empty: card replaced by "No connect endpoints — add a Tailscale addon on Services" + button.</text>
+  <text x="40" y="368" font-size="11" fill="#92400e">• Loading: 3× skeleton rows of h-9.</text>
+  <text x="40" y="386" font-size="11" fill="#92400e">• Tailscale not connected: card replaced by Alert linking to /connectivity/tailscale.</text>
+  <text x="40" y="404" font-size="11" fill="#92400e">• Unknown (no recent event): amber pulsing dot + "Checking…" label, action stays enabled.</text>
+</svg>
