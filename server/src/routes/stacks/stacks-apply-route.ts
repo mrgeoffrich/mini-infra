@@ -11,6 +11,7 @@ import { buildStackOperationServices } from '../../services/stacks/stack-operati
 import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { StackUserEvent } from '../../services/stacks/stack-user-event';
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
+import { evaluatePrerequisites } from '../../services/stacks/template-prerequisites';
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
@@ -37,6 +38,34 @@ import type {
 
 const logger = getLogger("stacks", "stacks-apply-route");
 const router = Router();
+
+// GET /:stackId/prerequisites — Precheck cross-stack prereqs for a stack.
+// Same shape as the body of the 409 PREREQUISITES_NOT_MET response on
+// POST /:stackId/apply, so the frontend can use one rendering path.
+router.get(
+  '/:stackId/prerequisites',
+  requirePermission('stacks:read'),
+  asyncHandler(async (req, res) => {
+    const stackId = String(req.params.stackId);
+    const exists = await prisma.stack.findUnique({
+      where: { id: stackId },
+      select: { id: true },
+    });
+    if (!exists) {
+      return res.status(404).json({ success: false, message: 'Stack not found' });
+    }
+    try {
+      const result = await evaluatePrerequisites(prisma, stackId);
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(422).json({
+        success: false,
+        message: err instanceof Error ? err.message : 'Prerequisite evaluation failed',
+        code: 'PREREQUISITES_INVALID',
+      });
+    }
+  }),
+);
 
 // POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)
 router.post(
@@ -74,6 +103,35 @@ router.post(
         success: false,
         message: 'Stack has parameters that are not configured',
         parameters: emptyParams.map((p) => ({ name: p.name, description: p.description })),
+      });
+    }
+
+    // Cross-stack prerequisites gate (Phase 1 of split-vault-nats). Runs
+    // after permission + parameter checks (those have nothing to do with
+    // prereqs) and before any apply-side state mutations — a failed
+    // precheck must NOT create a UserEvent or acquire the operation lock.
+    let prereqs;
+    try {
+      prereqs = await evaluatePrerequisites(prisma, stackId);
+    } catch (err) {
+      // Authoring errors (e.g. same-environment requirement on a
+      // host-scoped stack) surface here. 422 keeps it distinct from
+      // both 400 (bad client input) and 409 (state conflict).
+      logger.warn(
+        { stackId, error: err instanceof Error ? err.message : String(err) },
+        'Prerequisite evaluation threw — refusing to apply',
+      );
+      return res.status(422).json({
+        success: false,
+        message: err instanceof Error ? err.message : 'Prerequisite evaluation failed',
+        code: 'PREREQUISITES_INVALID',
+      });
+    }
+    if (!prereqs.ok) {
+      return res.status(409).json({
+        success: false,
+        code: 'PREREQUISITES_NOT_MET',
+        failures: prereqs.failures,
       });
     }
 

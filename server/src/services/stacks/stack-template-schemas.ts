@@ -10,6 +10,7 @@ import {
   stackResourceInputSchema,
 } from "./schemas";
 import { validateKvPath, stripTemplateTokens } from "../vault/vault-kv-paths";
+import { templateRequiresSchema } from "./template-prerequisites/schema";
 
 const nameRegex = /^[a-zA-Z0-9_-]+$/;
 
@@ -281,6 +282,9 @@ export const createTemplateSchema = z.object({
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
   nats: templateNatsSectionSchema.optional(),
+  // Phase 1 cross-stack prereqs. Predicate names validated against the
+  // server-side registry — typos rejected at draft-save time.
+  requires: templateRequiresSchema.optional(),
 }).superRefine((data, ctx) => {
   // Mirror draftVersionSchema: vaultAppRoleRef / natsCredentialRef / natsRole /
   // natsSigner must resolve, the legacy/new mixing rule applies, and role +
@@ -347,6 +351,8 @@ export const draftVersionSchema = z.object({
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSectionSchema.optional(),
   nats: templateNatsSectionSchema.optional(),
+  // Phase 1 cross-stack prereqs — see createTemplateSchema.
+  requires: templateRequiresSchema.optional(),
 }).superRefine((data, ctx) => {
   // Mirror templateFileSchema: every services[].vaultAppRoleRef must resolve
   // to a vault.appRoles[].name declared in this same draft body. Otherwise

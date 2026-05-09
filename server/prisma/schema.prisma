@@ -1606,6 +1606,12 @@ model StackTemplateVersion {
   natsExports            Json?                       // string[] — *resolved* (prefixed) export subjects
   natsImports            Json?                       // TemplateNatsImport[]
 
+  // Cross-stack prerequisites declared by the template author (Phase 1
+  // of the split-vault-nats plan). Soft-warned at instantiate, hard-blocks
+  // apply with 409 PREREQUISITES_NOT_MET. Persisted at the version level
+  // because prereqs can change between versions.
+  requires               Json?                       // StackTemplatePrerequisite[]
+
   // Relations
   services               StackTemplateService[]
   configFiles            StackTemplateConfigFile[]
