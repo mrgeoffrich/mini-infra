@@ -318,25 +318,22 @@ const initializeServices = async () => {
     }
 
     // ALT-27: bootstrap the egress-fw-agent stack now that the template
-    // is in the DB. Two phases:
-    //   1) Idempotent stack create (DB only) — synchronous here so a
-    //      subsequent EnvFirewallManager start has a stack id to point at.
-    //   2) Apply runs in the background (waits up to 30s for NATS to be
-    //      ready, then runs the same vault → nats → reconciler.apply
-    //      pipeline a manual UI apply uses). Non-fatal — operator can
-    //      retry from the egress-fw-agent settings card if it fails.
+    // is in the DB. Phase 2 of split-vault-nats: this only ensures the
+    // stack DB row exists — the apply is deferred to whichever caller
+    // walks the chain (vault → bootstrap → nats → fw-agent). The
+    // egress-fw-agent template's cross-stack `requires` block on the
+    // `nats` host stack guarantees a clear PREREQUISITES_NOT_MET if
+    // someone fires the apply before NATS is synced.
     console.log("[STARTUP] Bootstrapping egress fw-agent stack...");
     try {
       const result = await bootstrapFwAgentStack(prisma);
       if (result.stackId) {
         logger.info(
-          { stackId: result.stackId, applyDispatched: result.applyDispatched },
-          "Egress fw-agent stack bootstrapped",
+          { stackId: result.stackId, reason: result.reason },
+          "Egress fw-agent stack bootstrapped (apply deferred)",
         );
         console.log(
-          `[STARTUP] ✓ Egress fw-agent stack ${result.stackId.slice(0, 8)} (apply: ${
-            result.applyDispatched ? "dispatched" : "skipped — " + (result.reason ?? "?")
-          })`,
+          `[STARTUP] ✓ Egress fw-agent stack ${result.stackId.slice(0, 8)} (apply: deferred${result.reason ? " — " + result.reason : ""})`,
         );
       } else {
         console.log(
@@ -364,7 +361,7 @@ const initializeServices = async () => {
           try {
             await vaultServices.admin.authenticateAsAdmin();
             // Idempotent — refreshes operator/account JWTs and the rendered
-            // nats.conf in Vault KV. Safe to skip if no vault-nats stack is
+            // nats.conf in Vault KV. Safe to skip if no nats stack is
             // installed; the conf will simply sit unread in the KV.
             try {
               await getNatsControlPlaneService().applyConfig();
@@ -401,7 +398,7 @@ const initializeServices = async () => {
     }
 
     // Start the system NATS bus. Non-blocking — the connect loop runs in
-    // the background and tolerates vault-nats not being up yet (fresh
+    // the background and tolerates the nats stack not being up yet (fresh
     // worktree boot, or NATS container restart). Registering the ping
     // responder before `ready()` is important: NatsBus subscriptions are
     // durable across reconnects, so the responder is attached automatically
