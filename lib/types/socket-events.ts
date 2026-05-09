@@ -28,6 +28,7 @@ import type {
   VaultAppRoleAppliedEvent,
 } from "./vault";
 import type { NatsAppliedEvent } from "./nats";
+import type { TailscaleDeviceStatusEvent } from "./tailscale";
 import type {
   EgressEventBroadcast,
   EgressPolicyUpdatedEvent,
@@ -60,6 +61,7 @@ export const STATIC_SOCKET_CHANNELS = [
   "pools",
   "egress",
   "egress-fw-agent",
+  "tailscale",
 ] as const;
 
 /** Static (non-parameterized) channels */
@@ -98,6 +100,7 @@ export const Channel = {
   POOLS: "pools",
   EGRESS: "egress",
   EGRESS_FW_AGENT: "egress-fw-agent",
+  TAILSCALE: "tailscale",
 } as const satisfies Record<string, StaticSocketChannel>;
 
 /** Helpers to build parameterized channel names */
@@ -241,6 +244,9 @@ export const ServerEvent = {
   EGRESS_FW_AGENT_STARTUP_STARTED: "egress-fw-agent:startup:started",
   EGRESS_FW_AGENT_STARTUP_STEP: "egress-fw-agent:startup:step",
   EGRESS_FW_AGENT_STARTUP_COMPLETED: "egress-fw-agent:startup:completed",
+  // Tailscale device-status poller (Phase 5 of Service Addons)
+  TAILSCALE_DEVICE_ONLINE: "tailscale:device:online",
+  TAILSCALE_DEVICE_OFFLINE: "tailscale:device:offline",
 } as const;
 
 /** Client → Server event names */
@@ -577,6 +583,12 @@ export interface ServerToClientEvents {
     steps: OperationStep[];
     errors: string[];
   }) => void;
+
+  // ── Tailscale Device Status (Phase 5 of Service Addons) ──
+  /** A tailnet device transitioned from offline → online (or first-seen as online). */
+  "tailscale:device:online": (data: TailscaleDeviceStatusEvent) => void;
+  /** A tailnet device transitioned from online → offline (or stopped reporting). */
+  "tailscale:device:offline": (data: TailscaleDeviceStatusEvent) => void;
 }
 
 // ====================

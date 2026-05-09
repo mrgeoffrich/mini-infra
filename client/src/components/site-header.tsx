@@ -11,6 +11,7 @@ import {
   IconDatabase,
   IconHelp,
   IconRobot,
+  IconWorld,
   IconX,
 } from "@tabler/icons-react";
 import {
@@ -350,6 +351,12 @@ export function SiteHeader() {
                 icon={IconBrandGithub}
                 label="GitHub"
                 tourId="header-github"
+              />
+              <ConnectivityIndicator
+                service="tailscale"
+                icon={IconWorld}
+                label="Tailscale"
+                tourId="header-tailscale"
               />
             </div>
             <BackupHealthIndicator />

@@ -3,6 +3,7 @@ import {
   ValidationResult,
   ServiceHealthStatus,
   ConnectivityStatusType,
+  TailscaleDeviceStatus,
   TailscaleOAuthTokenResponse,
   TAILSCALE_SETTING_KEYS,
   TAILSCALE_DEFAULT_TAG,
@@ -380,6 +381,91 @@ export class TailscaleService extends ConfigurationService {
     // The endpoint returns paths with a trailing dot (FQDN form) on some
     // tailnets; normalise to the bare suffix.
     return first.replace(/\.$/, "");
+  }
+
+  /**
+   * List every tailnet device Mini Infra owns under `tag:mini-infra-managed`.
+   * Trims the upstream `GET /api/v2/tailnet/-/devices` payload down to the
+   * fields the device-status poller and Connect panel consume.
+   *
+   * `online` is derived locally rather than read from the API: Tailscale's
+   * `online` flag can lag a heartbeat, and the design contract is "badges
+   * flip within ~5s of a deliberate device-down test" — recomputing from
+   * `lastSeen` keeps the poller and the API consistent.
+   */
+  async listDevices(): Promise<TailscaleDeviceStatus[]> {
+    const accessToken = await this.getAccessToken();
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${TAILSCALE_API_BASE}/tailnet/-/devices`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        },
+      );
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError") {
+        throw new TailscaleAuthError(
+          "Tailscale device-list request timed out",
+          TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+        );
+      }
+      throw new TailscaleAuthError(
+        `Failed to reach Tailscale device-list endpoint: ${
+          err instanceof Error ? err.message : "unknown"
+        }`,
+        TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      const text = await safeReadText(response);
+      throw new TailscaleAuthError(
+        `Tailscale device-list request failed (HTTP ${response.status}): ${text}`,
+        TAILSCALE_ERROR_CODES.TAILSCALE_API_ERROR,
+      );
+    }
+
+    const data = (await response.json()) as { devices?: unknown };
+    if (!Array.isArray(data.devices)) return [];
+
+    const ONLINE_THRESHOLD_MS = 5 * 60 * 1000;
+    const now = Date.now();
+    const managedTags = await this.getAllManagedTags();
+    const managedTagSet = new Set(managedTags);
+
+    return data.devices
+      .filter((d): d is Record<string, unknown> => !!d && typeof d === "object")
+      .map((d) => {
+        const tags = Array.isArray(d.tags)
+          ? d.tags.filter((t): t is string => typeof t === "string")
+          : [];
+        const lastSeenRaw = typeof d.lastSeen === "string" ? d.lastSeen : null;
+        const lastSeenMs = lastSeenRaw ? Date.parse(lastSeenRaw) : NaN;
+        const online =
+          !Number.isNaN(lastSeenMs) && now - lastSeenMs <= ONLINE_THRESHOLD_MS;
+        return {
+          id: typeof d.nodeId === "string" ? d.nodeId : String(d.id ?? ""),
+          hostname: typeof d.hostname === "string" ? d.hostname : "",
+          name: typeof d.name === "string" ? d.name : "",
+          online,
+          lastSeen: lastSeenRaw,
+          tags,
+        } satisfies TailscaleDeviceStatus & { id: string };
+      })
+      .filter((d) => d.id && d.hostname)
+      .filter((d) => d.tags.some((t) => managedTagSet.has(t)));
   }
 
   async getHealthStatus(): Promise<ServiceHealthStatus> {

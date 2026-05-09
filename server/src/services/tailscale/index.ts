@@ -3,3 +3,4 @@ export {
   TailscaleAuthkeyMinter,
   type MintAuthkeyOptions,
 } from "./tailscale-authkey-minter";
+export { TailscaleDeviceStatusScheduler } from "./tailscale-device-status-scheduler";

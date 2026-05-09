@@ -36,6 +36,7 @@ import cloudflareSettingsRoutes from "./routes/cloudflare-settings";
 import cloudflareConnectivityRoutes from "./routes/cloudflare-connectivity";
 import tailscaleSettingsRoutes from "./routes/tailscale-settings";
 import tailscaleConnectivityRoutes from "./routes/tailscale-connectivity";
+import tailscaleDevicesRoutes from "./routes/tailscale-devices";
 import githubSettingsRoutes from "./routes/github-settings";
 import githubBugReportRoutes from "./routes/github-bug-report";
 import postgresDatabasesRoutes from "./routes/postgres-databases";
@@ -158,6 +159,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "storageConnectivity", path: "/api/connectivity/storage", name: "storageConnectivityRoutes", getRouter: () => storageConnectivityRoutes },
     { id: "cloudflareConnectivity", path: "/api/connectivity", name: "cloudflareConnectivityRoutes", getRouter: () => cloudflareConnectivityRoutes },
     { id: "tailscaleConnectivity", path: "/api/connectivity", name: "tailscaleConnectivityRoutes", getRouter: () => tailscaleConnectivityRoutes },
+    { id: "tailscaleDevices", path: "/api/tailscale", name: "tailscaleDevicesRoutes", getRouter: () => tailscaleDevicesRoutes },
     { id: "postgresDatabases", path: "/api/postgres/databases", name: "postgresDatabasesRoutes", getRouter: () => postgresDatabasesRoutes },
     { id: "postgresBackupConfigs", path: "/api/postgres/backup-configs", name: "postgresBackupConfigsRoutes", getRouter: () => postgresBackupConfigsRoutes },
     { id: "postgresBackups", path: "/api/postgres", name: "postgresBackupsRoutes", getRouter: () => postgresBackupsRoutes },

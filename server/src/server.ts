@@ -42,6 +42,10 @@ import serverHealthScheduler from "./services/postgres-server/health-scheduler";
 import { UserEventCleanupScheduler } from "./services/user-events";
 import prisma from "./lib/prisma";
 import { DnsCacheService, DnsCacheScheduler } from "./services/dns";
+import {
+  TailscaleService,
+  TailscaleDeviceStatusScheduler,
+} from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
 import { TlsConfigService } from "./services/tls/tls-config";
@@ -84,6 +88,7 @@ let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 let dnsCacheScheduler: DnsCacheScheduler | null = null;
+let tailscaleDeviceStatusScheduler: TailscaleDeviceStatusScheduler | null = null;
 let poolInstanceReaper: PoolInstanceReaper | null = null;
 
 /**
@@ -569,6 +574,40 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ DNS cache scheduler initialization failed (non-fatal)");
     }
 
+    // Initialize Tailscale device-status scheduler. Only start it when the
+    // OAuth credentials are configured — without them every poll tick would
+    // log a credential error and never produce useful events.
+    try {
+      console.log("[STARTUP] Initializing Tailscale device-status scheduler...");
+      const tailscaleService = new TailscaleService(prisma);
+      const clientId = await tailscaleService.getClientId();
+      const clientSecret = await tailscaleService.getClientSecret();
+      if (clientId && clientSecret) {
+        tailscaleDeviceStatusScheduler = new TailscaleDeviceStatusScheduler(
+          tailscaleService,
+        );
+        TailscaleDeviceStatusScheduler.setInstance(tailscaleDeviceStatusScheduler);
+        await tailscaleDeviceStatusScheduler.start();
+        logger.info("Tailscale device-status scheduler initialized successfully");
+        console.log("[STARTUP] ✓ Tailscale device-status scheduler initialized");
+      } else {
+        logger.info(
+          "Tailscale not configured, skipping device-status scheduler initialization",
+        );
+        console.log(
+          "[STARTUP] Tailscale not configured, skipping device-status scheduler",
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        { error },
+        "Failed to initialize Tailscale device-status scheduler (non-fatal)",
+      );
+      console.log(
+        "[STARTUP] ⚠ Tailscale device-status scheduler initialization failed (non-fatal)",
+      );
+    }
+
     // Seed default permission presets if not already present
     console.log("[STARTUP] Seeding default permission presets...");
     await seedDefaultPresets();
@@ -741,6 +780,13 @@ startServer()
       if (dnsCacheScheduler) {
         dnsCacheScheduler.stop();
         logger.info("DNS cache scheduler stopped");
+      }
+
+      // Stop Tailscale device-status scheduler
+      if (tailscaleDeviceStatusScheduler) {
+        tailscaleDeviceStatusScheduler.stop();
+        TailscaleDeviceStatusScheduler.setInstance(null);
+        logger.info("Tailscale device-status scheduler stopped");
       }
 
       // Stop pool instance reaper
