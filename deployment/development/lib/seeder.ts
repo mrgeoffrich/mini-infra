@@ -572,7 +572,6 @@ async function applyAndWaitForSynced(
   api: ApiClient,
   stackId: string,
   label: string,
-  options: { serviceNames?: string[]; allowDrifted?: boolean; force?: boolean } = {},
 ): Promise<void> {
   // Snapshot pre-apply status + lastAppliedAt. The status field may still read
   // "error" (or whatever) from a prior run until the reconciler finishes this
@@ -587,15 +586,13 @@ async function applyAndWaitForSynced(
     prevLastAppliedAt = s?.lastAppliedAt || '';
   }
 
-  if (!options.force && prevStatus.toLowerCase() === 'synced') {
+  if (prevStatus.toLowerCase() === 'synced') {
     logSkip(`${label} stack is already Synced — skipping apply`);
     return;
   }
 
   logInfo(`Applying ${label} stack (current status: ${prevStatus || 'unknown'})`);
-  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {
-    ...(options.serviceNames ? { serviceNames: options.serviceNames } : {}),
-  });
+  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {});
   if (applyRes.status !== 200 && applyRes.status !== 202) {
     logError(`Apply returned ${applyRes.status}: ${applyRes.bodyText}`);
     return;
@@ -620,10 +617,6 @@ async function applyAndWaitForSynced(
     }
     if (lower === 'error') {
       logError(`${label} stack apply failed (status=error)`);
-      return;
-    }
-    if (options.allowDrifted) {
-      logOk(`${label} stack apply completed (status=${lower || 'unknown'})`);
       return;
     }
   }
