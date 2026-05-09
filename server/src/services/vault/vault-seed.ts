@@ -10,7 +10,7 @@ const log = getLogger("platform", "vault-seed");
 /**
  * Seed built-in Vault policies. Called once at server boot — idempotent upsert.
  * System policies (`isSystem: true`) are auto-published to Vault during the
- * vault-nats stack bootstrap; user/example policies stay as drafts until an
+ * vault stack bootstrap; user/example policies stay as drafts until an
  * operator edits and publishes them via the UI.
  */
 export async function seedVaultPolicies(prisma: PrismaClient): Promise<void> {

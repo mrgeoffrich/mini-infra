@@ -27,12 +27,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Channel } from "@mini-infra/types";
 import type { StackParameterValue } from "@mini-infra/types";
-import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues } from "@/hooks/use-stacks";
+import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues, useStackPrerequisites } from "@/hooks/use-stacks";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
 import { StackParametersDialog } from "./StackParametersDialog";
 import { PoolServiceRow } from "./PoolServiceRow";
+import { PrerequisitesBanner } from "./PrerequisitesBanner";
 
 interface StackPlanViewProps {
   stackId: string;
@@ -76,6 +77,12 @@ export const StackPlanView = React.memo(function StackPlanView({
   }, [destroyProgress.result?.success, onDestroyCompleted]);
   const { data: validation } = useStackValidation(stackId);
   const hasValidationErrors = validation && !validation.valid;
+  const { data: prereqs } = useStackPrerequisites(stackId);
+  // `prereqs` may be undefined while the precheck is in flight or if
+  // the endpoint failed; treat undefined as "don't block" so the UI
+  // doesn't disable apply on transient fetch errors. The server's own
+  // gate at apply-time is the source of truth — this is just a UX nudge.
+  const prereqsBlocked = prereqs?.ok === false;
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
@@ -370,6 +377,13 @@ export const StackPlanView = React.memo(function StackPlanView({
             </div>
           </div>
         )}
+        {prereqs && !prereqs.ok && (
+          <PrerequisitesBanner
+            evaluation={prereqs}
+            severity="blocked"
+            className="mb-4"
+          />
+        )}
         <Card className={className}>
         <CardContent className="flex items-center gap-3 py-8 justify-center">
           <IconCheck className="h-6 w-6 text-green-500" />
@@ -385,7 +399,7 @@ export const StackPlanView = React.memo(function StackPlanView({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
+                  disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors || prereqsBlocked}
                 >
                   <IconCloudDownload className="h-4 w-4 mr-2" />
                   {applyMutation.isPending ? "Pulling..." : "Redeploy Containers"}
@@ -428,7 +442,7 @@ export const StackPlanView = React.memo(function StackPlanView({
               variant="ghost"
               size="sm"
               onClick={handleApplyAll}
-              disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
+              disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors || prereqsBlocked}
             >
               <IconRefresh className="h-4 w-4 mr-2" />
               Sync Anyway
@@ -484,6 +498,9 @@ export const StackPlanView = React.memo(function StackPlanView({
         isSaving={updateParamsMutation.isPending}
       />
       <div className={`space-y-4 ${className ?? ""}`}>
+      {prereqs && !prereqs.ok && (
+        <PrerequisitesBanner evaluation={prereqs} severity="blocked" />
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -588,7 +605,7 @@ export const StackPlanView = React.memo(function StackPlanView({
       <div className="flex gap-2">
         <Button
           onClick={handleApplyAll}
-          disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
+          disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors || prereqsBlocked}
         >
           <IconRocket className="h-4 w-4 mr-2" />
           {applyMutation.isPending ? "Starting..." : "Apply All"}
@@ -597,7 +614,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           <Button
             variant="outline"
             onClick={handleApplySelected}
-            disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors}
+            disabled={applyMutation.isPending || destroyMutation.isPending || !!hasValidationErrors || prereqsBlocked}
           >
             Apply Selected ({selectedServices.size})
           </Button>

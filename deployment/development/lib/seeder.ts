@@ -7,15 +7,22 @@
 //   3. Complete the setup wizard (docker host) via POST /auth/setup/complete
 //   3b. Upsert docker_host_ip system setting (needed for application DNS)
 //   4. Upsert Azure / Cloudflare / GitHub credentials
-//   5. Instantiate + apply the built-in Vault + NATS stack template
+//   5. Instantiate + apply the built-in Vault host stack template
 //   6. Bootstrap/unlock Vault and publish system policies
-//   7. Create a local environment — egress-gateway provisioning kicks off here
-//      and needs both Vault unlocked (to mint NATS creds) and NATS running.
-//   8. Instantiate + apply the built-in HAProxy stack template
-//   9. Apply the host-scoped egress-fw-agent stack (created at server boot;
-//      its background apply requires Vault + NATS, so it lands here).
-//   10. Mark onboarding complete
-//   11. Write environment-details.xml at the project root.
+//      (cross-stack `requires` predicate `vault-bootstrapped` gates everything
+//      below until this completes)
+//   7. Instantiate + apply the built-in NATS host stack template
+//   8. Apply the host-scoped egress-fw-agent stack (created at server boot
+//      with apply deferred). Its `requires` block enforces NATS is synced.
+//   9. Create a local environment — egress-gateway provisioning kicks off here
+//      and the egress-gateway template's `requires` block enforces NATS is synced.
+//   10. Instantiate + apply the built-in HAProxy stack template
+//   11. Mark onboarding complete
+//   12. Write environment-details.xml at the project root.
+//
+// Steps 5–10 are gated on `seedProfile === 'full'`. The `minimal` profile
+// stops after step 4 (admin + docker host + connected services) so the
+// worktree VM stays light when the host stacks aren't needed.
 //
 // Each step is idempotent-ish: already-configured state is skipped, but the
 // seeder does not back out partial state on failure — fix the env file and re-run.
@@ -574,7 +581,6 @@ async function applyAndWaitForSynced(
   api: ApiClient,
   stackId: string,
   label: string,
-  options: { serviceNames?: string[]; allowDrifted?: boolean; force?: boolean } = {},
 ): Promise<void> {
   // Snapshot pre-apply status + lastAppliedAt. The status field may still read
   // "error" (or whatever) from a prior run until the reconciler finishes this
@@ -589,15 +595,13 @@ async function applyAndWaitForSynced(
     prevLastAppliedAt = s?.lastAppliedAt || '';
   }
 
-  if (!options.force && prevStatus.toLowerCase() === 'synced') {
+  if (prevStatus.toLowerCase() === 'synced') {
     logSkip(`${label} stack is already Synced — skipping apply`);
     return;
   }
 
   logInfo(`Applying ${label} stack (current status: ${prevStatus || 'unknown'})`);
-  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {
-    ...(options.serviceNames ? { serviceNames: options.serviceNames } : {}),
-  });
+  const applyRes = await api.post(`/api/stacks/${stackId}/apply`, {});
   if (applyRes.status !== 200 && applyRes.status !== 202) {
     logError(`Apply returned ${applyRes.status}: ${applyRes.bodyText}`);
     return;
@@ -624,22 +628,21 @@ async function applyAndWaitForSynced(
       logError(`${label} stack apply failed (status=error)`);
       return;
     }
-    if (options.allowDrifted) {
-      logOk(`${label} stack apply completed (status=${lower || 'unknown'})`);
-      return;
-    }
   }
   logSkip(`Timed out waiting for ${label} to sync (last status: ${lastStatus || 'unknown'})`);
 }
 
-interface VaultNatsPorts {
+interface VaultStackPorts {
   vault: number;
+}
+
+interface NatsStackPorts {
   natsClient: number;
   natsMonitor: number;
 }
 
-async function ensureVaultNatsStack(api: ApiClient, ports: VaultNatsPorts): Promise<string | null> {
-  const stackName = 'vault-nats';
+async function ensureVaultStack(api: ApiClient, ports: VaultStackPorts): Promise<string | null> {
+  const stackName = 'vault';
   logInfo(`Looking for existing ${stackName} host stack`);
   // Vault is host-scoped — no environmentId filter, but the listing returns
   // all stacks the caller can see, so we still match by name.
@@ -652,37 +655,77 @@ async function ensureVaultNatsStack(api: ApiClient, ports: VaultNatsPorts): Prom
       return existing.id;
     }
   }
-  logInfo('Locating Vault + NATS stack template');
-  const templateId = await findTemplate(api, 'vault-nats', { exact: true });
+  logInfo('Locating Vault stack template');
+  const templateId = await findTemplate(api, 'vault', { exact: true });
   if (!templateId) {
-    logSkip('Vault + NATS template not found — skipping Vault/NATS setup');
+    logSkip('Vault template not found — skipping Vault setup');
     return null;
   }
-  // Host-scoped instantiate: no environmentId. Override every exposed port so
-  // each worktree can run Vault + NATS without colliding with sibling VMs.
+  // Host-scoped instantiate: no environmentId. Override the host port so
+  // each worktree can run Vault without colliding with sibling VMs.
   const res = await api.post<unknown>(
     `/api/stack-templates/${templateId}/instantiate`,
     {
       name: stackName,
       parameterValues: {
-        'vault-host-port': ports.vault,
+        'host-port': ports.vault,
+      },
+    },
+  );
+  if (res.status !== 201) {
+    logError(`Vault instantiate returned ${res.status}: ${res.bodyText}`);
+    return null;
+  }
+  const created = pickObject<Stack>(res.body);
+  const id = created?.id || '';
+  if (!id) {
+    logError(`Vault instantiate response missing id: ${res.bodyText}`);
+    return null;
+  }
+  logOk(`Vault stack created (id=${id}, port: vault=${ports.vault})`);
+  return id;
+}
+
+async function ensureNatsStack(api: ApiClient, ports: NatsStackPorts): Promise<string | null> {
+  const stackName = 'nats';
+  logInfo(`Looking for existing ${stackName} host stack`);
+  const list = await api.get<unknown>('/api/stacks');
+  if (list.status === 200) {
+    const items = pickItems<Stack>(list.body);
+    const existing = items.find((s) => s.name === stackName);
+    if (existing?.id) {
+      logSkip(`NATS stack already exists (id=${existing.id})`);
+      return existing.id;
+    }
+  }
+  logInfo('Locating NATS stack template');
+  const templateId = await findTemplate(api, 'nats', { exact: true });
+  if (!templateId) {
+    logSkip('NATS template not found — skipping NATS setup');
+    return null;
+  }
+  const res = await api.post<unknown>(
+    `/api/stack-templates/${templateId}/instantiate`,
+    {
+      name: stackName,
+      parameterValues: {
         'nats-host-port': ports.natsClient,
         'nats-monitor-port': ports.natsMonitor,
       },
     },
   );
   if (res.status !== 201) {
-    logError(`Vault + NATS instantiate returned ${res.status}: ${res.bodyText}`);
+    logError(`NATS instantiate returned ${res.status}: ${res.bodyText}`);
     return null;
   }
   const created = pickObject<Stack>(res.body);
   const id = created?.id || '';
   if (!id) {
-    logError(`Vault + NATS instantiate response missing id: ${res.bodyText}`);
+    logError(`NATS instantiate response missing id: ${res.bodyText}`);
     return null;
   }
   logOk(
-    `Vault + NATS stack created (id=${id}, ports: vault=${ports.vault} nats=${ports.natsClient} monitor=${ports.natsMonitor})`,
+    `NATS stack created (id=${id}, ports: nats=${ports.natsClient} monitor=${ports.natsMonitor})`,
   );
   return id;
 }
@@ -771,14 +814,14 @@ export async function ensureVaultUnlocked(api: ApiClient): Promise<void> {
 }
 
 /**
- * Apply the host-scoped egress-fw-agent stack created by the server's
- * `bootstrapFwAgentStack` at boot. The server fires the apply in the
- * background but it requires NATS to be reachable within 30 s — on a fresh
- * worktree NATS is still coming up, so the boot apply silently fails and the
- * stack stays `undeployed`. Now that NATS is up the seeder retries.
+ * Apply the host-scoped egress-fw-agent stack. Phase 2 of split-vault-nats:
+ * `bootstrapFwAgentStack` at server boot only creates the DB row; the apply
+ * is deferred to whichever caller walks the chain. The fw-agent template
+ * declares a cross-stack `requires` on the `nats` host stack being `synced`,
+ * so this apply only succeeds after NATS itself has been applied above.
  *
- * Idempotent: if the stack is missing (auto-start disabled, template not
- * synced) we log-skip; if it's already Synced we skip.
+ * Idempotent: if the stack is missing (template not synced) we log-skip;
+ * if it's already Synced we skip.
  */
 async function ensureFwAgentStackApplied(api: ApiClient): Promise<void> {
   logInfo('Looking for existing egress-fw-agent host stack');
@@ -854,39 +897,32 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
   let stacks: StackSummary[] = [];
 
   if (input.seedProfile === 'full') {
-    // Vault + NATS go up first. The egress-gateway stack apply (kicked off
-    // when the local env is created below) reads NATS creds via Vault, so
-    // Vault must be unlocked and NATS must be reachable before any env-scoped
-    // provisioning runs. Earlier ordering put env creation first and the
-    // egress-gateway stack landed in `error` with
-    // "Vault admin client unavailable: No Vault address configured".
-    const vaultNatsStackId = await ensureVaultNatsStack(api, {
-      vault: input.vaultPort,
+    // Phase 2 split-vault-nats: Vault and NATS are now separate host stacks
+    // wired together via cross-stack `requires`. Order matters:
+    //   - Vault first (no prereqs).
+    //   - Bootstrap Vault — once `vault-bootstrapped` predicate flips true, NATS
+    //     can apply (its `requires` block names that predicate).
+    //   - NATS next — applying writes shared/nats-config to Vault KV via
+    //     NatsControlPlaneService.applyConfig, which the NATS container reads
+    //     via dynamicEnv on first start.
+    //   - egress-fw-agent and the env-scoped egress-gateway both `requires` NATS
+    //     synced, so they only apply after NATS is up.
+    const vaultStackId = await ensureVaultStack(api, { vault: input.vaultPort });
+    if (vaultStackId) {
+      await applyAndWaitForSynced(api, vaultStackId, 'Vault');
+    }
+    await ensureVaultUnlocked(api);
+    const natsStackId = await ensureNatsStack(api, {
       natsClient: input.natsClientPort,
       natsMonitor: input.natsMonitorPort,
     });
-    if (vaultNatsStackId) {
-      // NATS reads its nats.conf from Vault KV. Bring up Vault first, bootstrap it
-      // so NatsBootstrapService writes shared/nats-config, then apply the whole
-      // stack so NATS can resolve NATS_CONF on first container start.
-      await applyAndWaitForSynced(api, vaultNatsStackId, 'Vault service', {
-        serviceNames: ['vault'],
-        allowDrifted: true,
-      });
-    }
-    await ensureVaultUnlocked(api);
-    if (vaultNatsStackId) {
-      await applyAndWaitForSynced(api, vaultNatsStackId, 'NATS service', {
-        serviceNames: ['nats'],
-        force: true,
-      });
+    if (natsStackId) {
+      await applyAndWaitForSynced(api, natsStackId, 'NATS');
     }
 
-    // Apply the host-scoped egress-fw-agent stack. The server's
-    // `bootstrapFwAgentStack` creates the stack row at boot and dispatches the
-    // apply in the background, but on a fresh worktree NATS isn't up within
-    // its 30 s wait window so the boot-time apply fails silently and the stack
-    // stays `undeployed`. NATS is up now — apply explicitly.
+    // Apply the host-scoped egress-fw-agent stack. Server boot only creates
+    // the DB row; the apply itself is deferred to here so the cross-stack
+    // prereq (NATS synced) is satisfied.
     await ensureFwAgentStackApplied(api);
 
     localEnvId = await ensureLocalEnvironment(api, env);

@@ -30,8 +30,9 @@ import {
   natsRelativeSubjectSchema,
   validateNatsSectionShape,
 } from "./stack-template-schemas";
-import type { StackTemplateConfigFileInput } from "@mini-infra/types";
+import type { StackTemplateConfigFileInput, StackTemplatePrerequisite } from "@mini-infra/types";
 import { STACK_SERVICE_TYPES } from "@mini-infra/types";
+import { templateRequiresSchema } from "./template-prerequisites/schema";
 
 // =====================
 // Template File Schema
@@ -122,6 +123,11 @@ export const templateFileSchema = z.object({
   inputs: z.array(templateInputDeclSchema).optional(),
   vault: templateVaultSchema.optional(),
   nats: templateNatsSchema.optional(),
+  // Phase 1 of the split-vault-nats plan: cross-stack prereqs declared
+  // by the template author. Predicate names are validated against the
+  // server-side registry at parse time, so a typo here blows up
+  // `syncBuiltinStacks` rather than silently failing at apply.
+  requires: templateRequiresSchema.optional(),
 }).superRefine((data, ctx) => {
   const inputNames = new Set((data.inputs ?? []).map((i) => i.name));
   const policyNames = new Set((data.vault?.policies ?? []).map((p) => p.name));
@@ -315,6 +321,8 @@ export interface LoadedTemplate {
   inputs?: TemplateInput[];
   vault?: TemplateVault;
   nats?: TemplateNats;
+  /** Phase 1 cross-stack prerequisites — validated at template load. */
+  requires?: StackTemplatePrerequisite[];
   definition: {
     name: string;
     description?: string;
@@ -477,6 +485,7 @@ export function loadTemplateFromObject(
     inputs: data.inputs,
     vault: data.vault,
     nats: data.nats,
+    requires: data.requires,
     definition: {
       name: data.name,
       description: data.description,

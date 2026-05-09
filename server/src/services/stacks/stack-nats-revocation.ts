@@ -20,7 +20,7 @@ import { getVaultKVService } from "../vault/vault-kv-service";
  * If the live push fails the running NATS server still trusts the now-
  * orphan public keys until the container restarts — a leaked seed would
  * still authenticate. To close that gap deterministically we recycle the
- * vault-nats NATS container as a fallback. The next start reads the
+ * managed NATS container as a fallback. The next start reads the
  * freshly-rebuilt `shared/nats-accounts-index` from Vault KV and seeds
  * `/data/accounts/`, so the live server comes back without the revoked
  * signers.
@@ -66,14 +66,14 @@ export async function revokeStackNatsSigningKeys(
   if (unpropagated.length > 0) {
     log.warn(
       { unpropagatedCount: unpropagated.length },
-      "Recycling vault-nats NATS container to complete signer revocation",
+      "Recycling managed NATS container to complete signer revocation",
     );
     try {
       await recycleManagedNatsContainer(prisma, log);
     } catch (err) {
       log.error(
         { err, stackId, signerCount: signingKeys.length },
-        "CRITICAL: scoped signer revocation did not propagate to the running NATS server. Manually restart the vault-nats NATS container to invalidate any leaked seeds.",
+        "CRITICAL: scoped signer revocation did not propagate to the running NATS server. Manually restart the managed NATS container to invalidate any leaked seeds.",
       );
     }
   }
@@ -92,10 +92,10 @@ export async function revokeStackNatsSigningKeys(
 }
 
 /**
- * Restart the host vault-nats NATS service container. Identifies it via
+ * Restart the host nats stack's NATS service container. Identifies it via
  * the `mini-infra.stack-id` label on the stack recorded in NatsState plus
  * `mini-infra.service=nats`. No-op if NatsState has no stackId yet (the
- * vault-nats stack hasn't applied) or no matching container is running.
+ * nats stack hasn't applied) or no matching container is running.
  */
 async function recycleManagedNatsContainer(
   prisma: PrismaClient,
@@ -103,7 +103,7 @@ async function recycleManagedNatsContainer(
 ): Promise<void> {
   const state = await prisma.natsState.findUnique({ where: { kind: "primary" } });
   if (!state?.stackId) {
-    log.warn("NatsState has no stackId; cannot identify the vault-nats NATS container to recycle");
+    log.warn("NatsState has no stackId; cannot identify the managed NATS container to recycle");
     return;
   }
   const docker = await DockerService.getInstance().getDockerInstance();
@@ -122,6 +122,6 @@ async function recycleManagedNatsContainer(
     // the freshly-rendered claims (which exclude the just-deleted scoped
     // signers) take effect on this restart.
     await docker.getContainer(c.Id).restart({ t: 10 });
-    log.info({ containerId: c.Id }, "Recycled vault-nats NATS container to complete signer revocation");
+    log.info({ containerId: c.Id }, "Recycled managed NATS container to complete signer revocation");
   }
 }

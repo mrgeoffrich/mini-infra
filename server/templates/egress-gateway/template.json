@@ -1,10 +1,10 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 10,
+  "builtinVersion": 11,
   "scope": "environment",
   "category": "infrastructure",
-  "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control. Talks to the Mini Infra server over NATS (subjects under mini-infra.egress.gw.>).",
+  "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control. Talks to the Mini Infra server over NATS (subjects under mini-infra.egress.gw.>). Requires a synced NATS host stack (which transitively requires Vault to be bootstrapped).",
   "parameters": [
     {
       "name": "log-level",
@@ -12,6 +12,9 @@
       "default": "info",
       "description": "Log level for the egress gateway (debug, info, warn, error)"
     }
+  ],
+  "requires": [
+    { "kind": "stack", "templateName": "nats", "minState": "synced", "scopeMatch": "host" }
   ],
   "resourceInputs": [
     { "type": "docker-network", "purpose": "nats", "optional": false }

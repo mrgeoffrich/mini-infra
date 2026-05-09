@@ -8,6 +8,7 @@ import {
   StackTemplateService,
   TemplateError,
 } from '../services/stacks/stack-template-service';
+import { evaluatePrerequisitesForTemplateVersion } from '../services/stacks/template-prerequisites';
 import {
   createTemplateSchema,
   updateTemplateMetaSchema,
@@ -275,6 +276,75 @@ router.delete('/:templateId', requirePermission('stacks:write'), async (req, res
     res.json({ success: true, message: 'Template deleted' });
   } catch (error) {
     handleTemplateError(error, res, 'Failed to delete template');
+  }
+});
+
+// GET /:templateId/prerequisites — Precheck cross-stack prereqs for what
+// would happen if this template were instantiated into the given scope.
+// Used by the instantiate dialog to show a soft-warn before creation.
+//
+// `environmentId` is required when the template is environment-scoped
+// (or `any`-scoped and the caller intends to instantiate into an env).
+// Host-scoped templates don't need it; the route falls back to host
+// scope when the template scope is `host` and no env is given.
+router.get('/:templateId/prerequisites', requirePermission('stacks:read'), async (req, res) => {
+  try {
+    const service = getTemplateService();
+    const template = await service.getTemplate(String(req.params.templateId));
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+    if (!template.currentVersionId || !template.currentVersion) {
+      return res.status(400).json({
+        success: false,
+        message: 'Template has no published version',
+        code: 'NO_PUBLISHED_VERSION',
+      });
+    }
+
+    const envQuery = req.query.environmentId;
+    const environmentId =
+      typeof envQuery === 'string' && envQuery.length > 0 ? envQuery : undefined;
+
+    // Determine the scope under which prereqs should be evaluated.
+    // - host-scoped template: always host scope (env query ignored).
+    // - environment-scoped template: env query required.
+    // - any-scoped template: env query optional; presence picks the scope.
+    let scope: { kind: 'host' } | { kind: 'environment'; environmentId: string };
+    if (template.scope === 'host') {
+      scope = { kind: 'host' };
+    } else if (template.scope === 'environment') {
+      if (!environmentId) {
+        return res.status(400).json({
+          success: false,
+          message: 'environmentId query parameter is required for environment-scoped templates',
+          code: 'ENVIRONMENT_ID_REQUIRED',
+        });
+      }
+      scope = { kind: 'environment', environmentId };
+    } else {
+      // 'any'
+      scope = environmentId
+        ? { kind: 'environment', environmentId }
+        : { kind: 'host' };
+    }
+
+    try {
+      const result = await evaluatePrerequisitesForTemplateVersion(
+        prisma,
+        template.currentVersionId,
+        scope,
+      );
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(422).json({
+        success: false,
+        message: err instanceof Error ? err.message : 'Prerequisite evaluation failed',
+        code: 'PREREQUISITES_INVALID',
+      });
+    }
+  } catch (error) {
+    handleTemplateError(error, res, 'Failed to evaluate template prerequisites');
   }
 });
 

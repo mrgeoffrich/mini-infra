@@ -77,6 +77,9 @@ export * from "./addons";
 // Stack Template types
 export * from "./stack-templates";
 
+// Stack Template prerequisites (Phase 1 — cross-stack `requires` block)
+export * from "./template-prerequisites";
+
 // Socket.IO event types
 export * from "./socket-events";
 

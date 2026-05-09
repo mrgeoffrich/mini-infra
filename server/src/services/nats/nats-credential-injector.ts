@@ -67,11 +67,11 @@ export class NatsCredentialInjector {
 
     // Resolve `nats-url` differently for host-mode containers. The default
     // `clientUrl` is a docker-internal DNS name (e.g.
-    // `mini-infra-vault-nats-nats:4222`) that doesn't resolve from the host
+    // `mini-infra-nats-nats:4222`) that doesn't resolve from the host
     // network namespace; a `network_mode: host` service (the egress-fw-agent
     // in ALT-27) needs the host-loopback form (`nats://127.0.0.1:<host-port>`).
     // The host port comes from `NatsState.clientHostUrl`, populated by the
-    // vault-nats post-install action.
+    // nats template's post-install action.
     const isHostMode = containerConfig.networkMode === "host";
 
     for (const [key, src] of Object.entries(dynamicEnv)) {

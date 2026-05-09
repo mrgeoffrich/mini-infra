@@ -4,37 +4,33 @@
  * Replaces the legacy host-singleton `ensureFwAgent()` flow (ALT-27). The
  * fw-agent is now a host-scoped stack template (`server/templates/egress-
  * fw-agent/`) that runs in `network_mode: host` with NATS_URL/NATS_CREDS
- * injected via dynamicEnv. This module preserves the boot-time UX of the
- * old sidecar — "the fw-agent just runs after a fresh install" — while
- * routing through the same code path as every other stack.
+ * injected via dynamicEnv.
  *
- * Two phases. They run in order at boot but operate independently so a
- * partial failure in one doesn't tank the other:
+ * **Phase 2 of split-vault-nats:** the boot-time apply dispatch was removed.
+ * The fw-agent template now declares a cross-stack `requires` on the host
+ * `nats` stack being `synced`, which transitively requires Vault to be
+ * bootstrapped. The apply is deferred to whatever caller is responsible for
+ * walking through the chain in order — the dev seeder runs the chain
+ * (vault → bootstrap → nats → fw-agent) explicitly; in production the
+ * operator triggers the apply from the egress-fw-agent settings card after
+ * NATS is up. The prereq gate produces a clear `PREREQUISITES_NOT_MET` if
+ * the apply is fired before NATS is synced.
+ *
+ * What this module still does at boot:
  *
  *   1. **Ensure the stack DB row exists.** Idempotent: looks up the
  *      stack by templateId; if missing and the system template is
  *      already on disk, calls `StackTemplateService.createStackFromTemplate`
  *      to materialize it. No apply, no Docker side effects.
  *
- *   2. **Apply in the background.** Fire-and-forget. Waits up to 30s for
- *      the NatsBus to reach `connected` (fw-agent's NATS_CREDS minting
- *      requires a live NATS), then runs the same vault → nats → apply
- *      pipeline the HTTP route uses. Any failure is logged at warn —
- *      operator can retry via the egress-fw-agent settings card.
- *
  * Auto-start opt-out: setting `egress-fw-agent.auto_start=false` in
  * SystemSettings preserves the legacy "user manages it" mode. The stack
- * row is still created so the UI has something to show; only the apply
- * is skipped.
+ * row is still created so the UI has something to show.
  */
 
 import type { PrismaClient } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
-import { NatsBus } from "../nats/nats-bus";
 import { StackTemplateService } from "../stacks/stack-template-service";
-import { buildStackOperationServices } from "../stacks/stack-operation-context";
-import { runStackVaultApplyPhase } from "../stacks/stack-vault-apply-orchestrator";
-import { runStackNatsApplyPhase } from "../stacks/stack-nats-apply-orchestrator";
 
 const log = getLogger("stacks", "fw-agent-stack-bootstrap");
 
@@ -43,35 +39,32 @@ const STACK_NAME = "egress-fw-agent";
 const SETTINGS_CATEGORY = "egress-fw-agent";
 const AUTO_START_KEY = "auto_start";
 const SYSTEM_USER = "system";
-/**
- * Window we wait for NatsBus to reach connected before kicking off apply.
- * On a fresh worktree the vault-nats stack is also coming up; 30s is the
- * empirical p95 for a cold worktree boot to reach a usable NATS. Beyond
- * that we still attempt the apply — the apply will fail with a clear
- * "NATS not ready" error and the user retries from the settings card.
- */
-const NATS_READY_TIMEOUT_MS = 30_000;
 
 export interface BootstrapFwAgentStackResult {
-  /** Stack row id; null when no stack was created (auto-start off, template missing). */
+  /** Stack row id; null when no stack was created (template missing). */
   stackId: string | null;
-  /** Whether the apply was fired in the background. False = stack created but not applied. */
-  applyDispatched: boolean;
-  /** Short human-readable reason on no-op paths. Mirrors the legacy log lines. */
+  /** Whether the apply was fired in the background. Always false post-Phase-2. */
+  applyDispatched: false;
+  /** Short human-readable reason on no-op paths. */
   reason: string | null;
 }
 
 /**
- * Idempotent boot entry point. Safe to call from `server.ts` (see the
- * `ensureFwAgent` call site this replaces) and from the docker-reconnect
- * callback. A second call with the stack already created and applied is a
- * cheap series of DB lookups — no side effects.
+ * Idempotent boot entry point. Safe to call from `server.ts` and from
+ * the docker-reconnect callback. A second call with the stack already
+ * created is a cheap series of DB lookups — no side effects.
+ *
+ * Phase 2 of split-vault-nats: this no longer dispatches an apply. The
+ * cross-stack-prereqs system on the egress-fw-agent template handles
+ * "NATS not yet synced" as a structured `PREREQUISITES_NOT_MET` failure
+ * when the operator (or the dev seeder) eventually triggers the apply.
  */
 export async function bootstrapFwAgentStack(
   prisma: PrismaClient,
 ): Promise<BootstrapFwAgentStackResult> {
-  // Auto-start opt-out. Same setting key the legacy host-singleton honored,
-  // so an operator who turned it off keeps that intent.
+  // Auto-start opt-out is read for parity with the legacy host-singleton, but
+  // post-Phase-2 it only affects a downstream caller's decision to apply —
+  // we always create the row so the UI has something to render.
   const autoStartRow = await prisma.systemSettings.findFirst({
     where: { category: SETTINGS_CATEGORY, key: AUTO_START_KEY, isActive: true },
   });
@@ -126,78 +119,11 @@ export async function bootstrapFwAgentStack(
     }
   }
 
-  if (!autoStart) {
-    log.info({ stackId }, "egress-fw-agent auto-start disabled; stack created but not applied");
-    return { stackId, applyDispatched: false, reason: "auto-start disabled" };
-  }
-
-  // Apply in the background — never block boot on it. This is the part
-  // that needs NATS up and Vault unsealed; the legacy `ensureFwAgent`
-  // didn't have that constraint (it was a raw container create), so the
-  // user-perceived boot time may be slightly slower on first install.
-  // Subsequent boots see the stack already-applied and short-circuit
-  // out of `reconciler.apply` via the no-op plan.
-  void applyFwAgentStackInBackground(prisma, stackId);
-  return { stackId, applyDispatched: true, reason: null };
-}
-
-async function applyFwAgentStackInBackground(
-  prisma: PrismaClient,
-  stackId: string,
-): Promise<void> {
-  // Wait for the bus, but don't make this terminal — `reconciler.apply`
-  // re-checks NATS readiness in the orchestrator phase and surfaces a
-  // clean error if it's still not up. Catch the timeout silently here:
-  // the goal is just to give the bus a head start on a cold-boot worktree.
-  try {
-    await NatsBus.getInstance().ready({ timeoutMs: NATS_READY_TIMEOUT_MS });
-  } catch {
-    // Pass through — the apply will surface the real error.
-  }
-
-  try {
-    const { reconciler } = await buildStackOperationServices();
-    const plan = await reconciler.plan(stackId);
-
-    // If every action is `no-op`, we're already in sync — short-circuit
-    // before invoking the heavier vault/nats phases. Saves boot time on
-    // the warm path (every boot after the first).
-    const hasWork = plan.actions.some((a) => a.action !== "no-op")
-      || (plan.resourceActions ?? []).some((r) => r.action !== "no-op");
-    if (!hasWork) {
-      log.info({ stackId }, "egress-fw-agent stack already in sync — no-op");
-      return;
-    }
-
-    const vaultPhase = await runStackVaultApplyPhase(prisma, stackId, {
-      triggeredBy: SYSTEM_USER,
-      requireVaultReady: true,
-    });
-    if (vaultPhase.status === "error") {
-      log.warn(
-        { stackId, err: vaultPhase.error },
-        "egress-fw-agent stack: vault apply phase failed (non-fatal; user can retry from UI)",
-      );
-      return;
-    }
-    const natsPhase = await runStackNatsApplyPhase(prisma, stackId, {
-      triggeredBy: SYSTEM_USER,
-      requireNatsReady: true,
-    });
-    if (natsPhase.status === "error") {
-      log.warn(
-        { stackId, err: natsPhase.error },
-        "egress-fw-agent stack: NATS apply phase failed (non-fatal; user can retry from UI)",
-      );
-      return;
-    }
-
-    await reconciler.apply(stackId, { triggeredBy: SYSTEM_USER, plan });
-    log.info({ stackId }, "egress-fw-agent stack applied at boot");
-  } catch (err) {
-    log.warn(
-      { stackId, err: err instanceof Error ? err.message : String(err) },
-      "egress-fw-agent stack auto-apply failed (non-fatal; user can retry from UI)",
-    );
-  }
+  // Phase 2 split-vault-nats: apply is deferred to operator/seeder via the
+  // cross-stack-prereqs system. Always return applyDispatched: false.
+  const reason = autoStart
+    ? "deferred to operator/seeder per cross-stack-prereqs design"
+    : "auto-start disabled";
+  log.info({ stackId, autoStart }, "egress-fw-agent stack ready (apply deferred)");
+  return { stackId, applyDispatched: false, reason };
 }

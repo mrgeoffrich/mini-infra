@@ -29,7 +29,7 @@ export const HAPROXY_STATS_PORT_MIN = 8400;
 export const HAPROXY_STATS_PORT_MAX = 8499;
 export const HAPROXY_DATAPLANE_PORT_MIN = 5500;
 export const HAPROXY_DATAPLANE_PORT_MAX = 5599;
-// NATS host ports are exposed by the vault-nats template. Keep these outside
+// NATS host ports are exposed by the nats template. Keep these outside
 // the Vault 8200–8299 range and HAProxy ranges so optional host infrastructure
 // stacks can run in parallel worktrees without colliding.
 export const NATS_CLIENT_PORT_MIN = 4300;
@@ -78,7 +78,7 @@ export interface WorktreeEntry {
   haproxy_stats_port: number;
   haproxy_dataplane_port: number;
   // Per-worktree NATS host ports — surfaced in environment-details.xml for
-  // the vault-nats stack template's nats-host-port/nats-monitor-port params.
+  // the nats stack template's nats-host-port/nats-monitor-port params.
   nats_client_port: number;
   nats_monitor_port: number;
   admin_email?: string;

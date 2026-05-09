@@ -23,6 +23,7 @@ import type {
   StackInfo,
   StackDefinition,
   TemplateNatsSection,
+  StackTemplatePrerequisite,
 } from "@mini-infra/types";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
@@ -45,6 +46,8 @@ export interface UpsertSystemTemplateInput {
   definition: StackDefinition;
   nats?: TemplateNatsSection;
   configFiles?: StackTemplateConfigFileInput[];
+  /** Phase 1 cross-stack prerequisites declared by the template author. */
+  requires?: StackTemplatePrerequisite[];
 }
 
 // Include helpers for Prisma queries.
@@ -81,6 +84,7 @@ const versionSummary = {
   natsSigners: true,
   natsExports: true,
   natsImports: true,
+  requires: true,
   publishedAt: true,
   createdAt: true,
   createdById: true,
@@ -374,6 +378,7 @@ export class StackTemplateService {
           vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           ...natsSectionToVersionWrite(input.nats),
+          requires: requiresToVersionWrite(input.requires),
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -539,6 +544,7 @@ export class StackTemplateService {
           vaultAppRoles: input.vault?.appRoles ? (input.vault.appRoles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           vaultKv: input.vault?.kv ? (input.vault.kv as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
           ...natsSectionToVersionWrite(input.nats),
+          requires: requiresToVersionWrite(input.requires),
           createdById: createdById ?? null,
           services: {
             create: input.services.map((s, i) =>
@@ -685,6 +691,7 @@ export class StackTemplateService {
       definition,
       nats,
       configFiles: externalConfigFiles,
+      requires,
     } = input;
 
     const networkTypeDefaults = (definition as { networkTypeDefaults?: unknown }).networkTypeDefaults ?? {};
@@ -778,6 +785,7 @@ export class StackTemplateService {
             networks: definition.networks as unknown as Prisma.InputJsonValue,
             volumes: definition.volumes as unknown as Prisma.InputJsonValue,
             ...natsSectionToVersionWrite(nats),
+            requires: requiresToVersionWrite(requires),
             publishedAt: new Date(),
           },
         });
@@ -798,6 +806,7 @@ export class StackTemplateService {
             networks: definition.networks as unknown as Prisma.InputJsonValue,
             volumes: definition.volumes as unknown as Prisma.InputJsonValue,
             ...natsSectionToVersionWrite(nats),
+            requires: requiresToVersionWrite(requires),
             publishedAt: new Date(),
           },
         });
@@ -1151,6 +1160,7 @@ export class StackTemplateService {
       inputs: (versionRecord['inputs'] as unknown as StackTemplateVersionInfo['inputs']) ?? undefined,
       vault: vaultSection,
       nats: natsSection,
+      requires: (versionRecord['requires'] as unknown as StackTemplatePrerequisite[] | null) ?? undefined,
     };
 
     if (isVersionDetailPayload(version)) {
@@ -1301,6 +1311,19 @@ function natsSectionToVersionWrite(nats: TemplateNatsSection | undefined): {
     natsExports: nats?.exports ? (nats.exports as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     natsImports: nats?.imports ? (nats.imports as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
+}
+
+/**
+ * Map an optional `requires` array to the Prisma write field on
+ * StackTemplateVersion. Centralised so create/update/builtin write
+ * paths can't drift on the column. Treats `undefined` and `[]` the
+ * same as null on disk — the evaluator reads them identically.
+ */
+function requiresToVersionWrite(
+  requires: StackTemplatePrerequisite[] | undefined,
+): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  if (!requires || requires.length === 0) return Prisma.DbNull;
+  return requires as unknown as Prisma.InputJsonValue;
 }
 
 function buildNatsSection(version: Record<string, unknown>): StackTemplateVersionInfo['nats'] {

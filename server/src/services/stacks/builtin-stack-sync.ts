@@ -63,6 +63,7 @@ export async function syncBuiltinStacks(
         definition: template.definition as unknown as StackDefinition,
         nats: template.nats,
         configFiles: template.configFiles,
+        requires: template.requires,
       });
       templateByName.set(template.name, { id: templateId, template });
     } catch (error) {

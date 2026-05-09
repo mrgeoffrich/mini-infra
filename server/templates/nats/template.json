@@ -1,17 +1,11 @@
 {
-  "name": "vault-nats",
-  "displayName": "Vault + NATS",
-  "builtinVersion": 2,
+  "name": "nats",
+  "displayName": "NATS",
+  "builtinVersion": 1,
   "scope": "host",
   "category": "infrastructure",
-  "description": "OpenBao vault paired with a NATS messaging server. NATS uses Vault-managed NKey/JWT auth and JetStream persistence. Cannot coexist with the standalone 'vault' template — install one or the other.",
+  "description": "NATS messaging server with JetStream persistence. Reads its config from Vault KV, so the Vault stack must be bootstrapped first.",
   "parameters": [
-    {
-      "name": "vault-host-port",
-      "type": "number",
-      "default": 8200,
-      "description": "Bind the Vault API on the host at this port."
-    },
     {
       "name": "nats-host-port",
       "type": "number",
@@ -26,52 +20,17 @@
     }
   ],
   "resourceOutputs": [
-    { "type": "docker-network", "purpose": "vault", "joinSelf": true },
     { "type": "docker-network", "purpose": "nats", "joinSelf": true }
   ],
   "networks": [],
   "volumes": [
-    { "name": "openbao_data" },
     { "name": "nats_data" }
   ],
+  "requires": [
+    { "kind": "stack", "templateName": "vault", "minState": "synced", "scopeMatch": "host" },
+    { "kind": "predicate", "name": "vault-bootstrapped" }
+  ],
   "services": [
-    {
-      "serviceName": "vault",
-      "serviceType": "Stateful",
-      "dockerImage": "openbao/openbao",
-      "dockerTag": "2.5.2",
-      "containerConfig": {
-        "command": ["server"],
-        "capAdd": ["IPC_LOCK"],
-        "env": {
-          "BAO_LOCAL_CONFIG": "{\"storage\":{\"file\":{\"path\":\"/openbao/file\"}},\"listener\":[{\"tcp\":{\"address\":\"0.0.0.0:8200\",\"tls_disable\":true}}],\"ui\":true,\"api_addr\":\"http://mini-infra-vault-nats-vault:8200\"}"
-        },
-        "ports": [
-          {
-            "containerPort": 8200,
-            "hostPort": "{{params.vault-host-port}}",
-            "protocol": "tcp",
-            "exposeOnHost": true
-          }
-        ],
-        "mounts": [
-          {
-            "source": "openbao_data",
-            "target": "/openbao/file",
-            "type": "volume"
-          }
-        ],
-        "restartPolicy": "unless-stopped",
-        "joinResourceNetworks": ["vault"],
-        "logConfig": {
-          "type": "json-file",
-          "maxSize": "10m",
-          "maxFile": "3"
-        }
-      },
-      "dependsOn": [],
-      "order": 1
-    },
     {
       "serviceName": "nats",
       "serviceType": "Stateful",
@@ -117,7 +76,7 @@
           }
         ],
         "restartPolicy": "unless-stopped",
-        "joinResourceNetworks": ["vault", "nats"],
+        "joinResourceNetworks": ["nats"],
         "healthcheck": {
           "test": ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"],
           "interval": 10,
@@ -131,8 +90,8 @@
           "maxFile": "3"
         }
       },
-      "dependsOn": ["vault"],
-      "order": 2
+      "dependsOn": [],
+      "order": 1
     }
   ]
 }

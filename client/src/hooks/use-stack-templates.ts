@@ -11,6 +11,7 @@ import type {
   PublishDraftRequest,
   StackTemplateSource,
   StackTemplateScope,
+  PrerequisiteEvaluation,
 } from "@mini-infra/types";
 
 // ─── Filter params type ───────────────────────────────────────────────────────
@@ -311,6 +312,49 @@ export function useDeleteTemplate() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
     },
+  });
+}
+
+/**
+ * Cross-stack prerequisites precheck for what would happen if a
+ * template were instantiated into the given scope. Used by the
+ * instantiate dialog to render a soft-warn before the user commits.
+ *
+ * `environmentId` is required for environment-scoped templates and
+ * optional for `any`-scoped ones; the server returns 400 with code
+ * `ENVIRONMENT_ID_REQUIRED` otherwise.
+ */
+export function useTemplatePrerequisites(args: {
+  templateId: string | undefined;
+  environmentId?: string;
+  enabled?: boolean;
+}) {
+  const { templateId, environmentId, enabled = true } = args;
+  return useQuery<PrerequisiteEvaluation>({
+    queryKey: ["templatePrerequisites", templateId, environmentId ?? null],
+    queryFn: async () => {
+      const url = new URL(
+        `/api/stack-templates/${templateId}/prerequisites`,
+        window.location.origin,
+      );
+      if (environmentId) url.searchParams.set("environmentId", environmentId);
+      const res = await fetch(url.toString(), {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        // 400 with ENVIRONMENT_ID_REQUIRED is expected for env-scoped
+        // templates when the user hasn't picked an env yet — don't
+        // treat it as a hard error in the hook; surface the response.
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.message ?? `Failed to evaluate prerequisites: ${res.statusText}`);
+      }
+      const data = (await res.json()) as { success: boolean } & PrerequisiteEvaluation;
+      return { ok: data.ok, failures: data.failures };
+    },
+    enabled: !!templateId && enabled,
+    staleTime: 5_000,
+    retry: false, // 400s for missing env shouldn't retry
   });
 }
 

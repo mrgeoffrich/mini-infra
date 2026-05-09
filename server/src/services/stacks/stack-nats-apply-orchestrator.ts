@@ -116,7 +116,7 @@ export async function runStackNatsApplyPhase(
 
   const status = await getNatsControlPlaneService(prisma).getStatus();
   if (!status.configured && opts.requireNatsReady) {
-    throw new Error("NATS is not configured; deploy the vault-nats stack before applying a NATS-bearing template");
+    throw new Error("NATS is not configured; deploy the vault and nats host stacks before applying a NATS-bearing template");
   }
 
   // System NATS seed self-heal: if the boot-time seed failed (DB race on

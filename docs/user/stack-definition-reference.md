@@ -43,6 +43,7 @@ services: []
 | `parameters` | No | Named inputs used by parameterized fields. | Array of parameter objects. |
 | `resourceOutputs` | No | Shared infra resources this stack publishes. | Array of output objects. |
 | `resourceInputs` | No | Shared infra resources this stack consumes. | Array of input objects. |
+| `requires` | No | Cross-stack prerequisites that must hold before this stack can be applied. | Array of requirement objects. |
 | `networks` | Yes | Docker networks owned by this stack. | Array, may be empty. |
 | `volumes` | Yes | Docker volumes owned by this stack. | Array, may be empty. |
 | `tlsCertificates` | No | Stack-managed TLS cert definitions. | Array of TLS objects. |
@@ -90,6 +91,78 @@ Runtime meaning:
 
 - For `docker-network` inputs, Mini Infra resolves an environment-scoped resource first, then falls back to a host-scoped one with the same `purpose`.
 - Non-`docker-network` inputs are currently ignored by the resolver.
+
+## `requires[]`
+
+Cross-stack prerequisites — declarative gates the apply pipeline checks before
+running this stack's reconciler. Use them when a stack depends on another stack
+already being applied (e.g. NATS depends on Vault), or on a system-level
+condition (e.g. Vault has been bootstrapped). Two kinds, distinguished by the
+`kind` discriminator.
+
+### `kind: "stack"`
+
+At least one stack instantiated from `templateName` must exist with status at
+or above `minState`, matching the requested scope.
+
+| Field | Required | Meaning | Constraints |
+| --- | --- | --- | --- |
+| `kind` | Yes | Discriminator. | Literal `"stack"`. |
+| `templateName` | Yes | Name of the template the prerequisite stack must be instantiated from. | 1-100 chars, `a-z`, `A-Z`, `0-9`, `_`, `-` only. |
+| `minState` | Yes | Minimum acceptable status of the prerequisite stack. | One of `synced`, `drifted`, `pending`. Higher implies "more applied" — `synced` satisfies `synced`/`drifted`/`pending`; `drifted` satisfies `drifted`/`pending`; `pending` only satisfies `pending`. Stacks in `error` or `removed` never satisfy any `minState`. |
+| `scopeMatch` | Yes | How candidate stacks are matched against the applying stack's scope. | One of `host`, `environment`, `same-environment`. |
+
+`scopeMatch` semantics:
+
+- `host` — match host-scoped stacks (no environment binding) with the named template.
+- `environment` — match any environment-scoped stack with the named template, in any environment.
+- `same-environment` — match an environment-scoped stack with the named template **in the same environment as the applying stack**. Authoring error if the applying stack is host-scoped — the apply route returns 422 `PREREQUISITES_INVALID`.
+
+### `kind: "predicate"`
+
+A named function in the server-side predicate registry must return ok. The
+registry is tight by design — only built-in predicates are accepted. The
+template loader rejects unknown names at parse time, so a typo blows up
+template sync rather than silently failing at apply.
+
+| Field | Required | Meaning | Constraints |
+| --- | --- | --- | --- |
+| `kind` | Yes | Discriminator. | Literal `"predicate"`. |
+| `name` | Yes | Name of a built-in predicate. | Kebab-case (lowercase, digits, hyphens). Must be in the registered set below. |
+
+Currently supported predicates:
+
+| Predicate | Returns ok when |
+| --- | --- |
+| `vault-bootstrapped` | The Vault stack has been bootstrapped (`VaultState.bootstrappedAt` is set) **and** the operator passphrase is currently unlocked in the running server. |
+
+### Runtime semantics
+
+- **Instantiate is soft-warn.** `POST /api/stack-templates/:id/instantiate` succeeds even when prereqs are unmet; the resulting stack lands in its usual initial status. The instantiate dialog calls the precheck endpoint and renders unmet prereqs as a warning so the user can stage stacks ahead of time.
+- **Apply hard-blocks.** `POST /api/stacks/:id/apply` runs the prereq evaluator after auth + parameter checks but before lock acquisition or `UserEvent` creation. On unmet prereqs the route returns **409 `PREREQUISITES_NOT_MET`** with a `failures[]` list — no audit-log pollution, no operation lock taken. Authoring errors (e.g. `same-environment` requirement on a host-scoped stack) return **422 `PREREQUISITES_INVALID`**.
+- **Precheck endpoints** mirror the gate without firing an apply:
+  - `GET /api/stacks/:id/prerequisites` for an existing stack.
+  - `GET /api/stack-templates/:id/prerequisites?environmentId=…` for what would happen if you instantiated this template into the given scope. `environmentId` is required for environment-scoped templates.
+- Each unmet failure carries an optional `helpAction` describing the next step (deploy a missing stack, apply a pending one, open the Vault bootstrap page) — the UI uses this to render deep-link CTAs.
+
+### Worked example
+
+The host-scoped `nats` template needs the Vault stack to be applied and bootstrapped before it can start (NATS reads its `nats.conf` from Vault KV at container start):
+
+```jsonc
+{
+  "name": "nats",
+  // ... other fields ...
+  "requires": [
+    { "kind": "stack",     "templateName": "vault", "minState": "synced", "scopeMatch": "host" },
+    { "kind": "predicate", "name": "vault-bootstrapped" }
+  ]
+}
+```
+
+A user clicking *Apply* on the NATS stack while Vault is missing or sealed sees
+the 409 response rendered as a banner with two action links — *Deploy 'vault'*
+and *Bootstrap Vault* — instead of a silent reconciler failure.
 
 ## `networks[]`
 

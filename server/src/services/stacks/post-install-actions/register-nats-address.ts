@@ -8,8 +8,8 @@ const NATS_SERVICE_NAME = "nats";
 const NATS_CLIENT_PORT = 4222;
 const NATS_MONITOR_PORT = 8222;
 /**
- * Parameter name on the vault-nats template that maps the NATS client port
- * to the host. Must stay in sync with `server/templates/vault-nats/template.json`.
+ * Parameter name on the nats template that maps the NATS client port
+ * to the host. Must stay in sync with `server/templates/nats/template.json`.
  * Pinned as a const so a typo is a compile-time error rather than a silent
  * fallback to the default port.
  */
@@ -20,7 +20,7 @@ export async function registerNatsAddress(ctx: PostInstallContext): Promise<void
   const monitorUrl = `http://${ctx.projectName}-${NATS_SERVICE_NAME}:${NATS_MONITOR_PORT}`;
 
   // Host-loopback URL for `network_mode: host` services (egress-fw-agent
-  // ALT-27, the egress-gateway in Phase 3). The vault-nats stack maps the
+  // ALT-27, the egress-gateway in Phase 3). The nats stack maps the
   // NATS client port to the host via the `nats-host-port` parameter; we
   // read whatever the operator chose so a non-default port still works.
   const hostPortRaw = ctx.parameterValues[NATS_HOST_PORT_PARAM];
@@ -34,7 +34,7 @@ export async function registerNatsAddress(ctx: PostInstallContext): Promise<void
   if (!clientHostUrl) {
     log.warn(
       { hostPortRaw, paramName: NATS_HOST_PORT_PARAM },
-      "vault-nats parameter for host port missing or invalid; clientHostUrl will fall back to NatsState default at read time",
+      "nats parameter for host port missing or invalid; clientHostUrl will fall back to NatsState default at read time",
     );
   }
 
