@@ -6,7 +6,7 @@
 //      POST /api/dev/issue-api-key (requires ENABLE_DEV_API_KEY_ENDPOINT=true)
 //   3. Complete the setup wizard (docker host) via POST /auth/setup/complete
 //   3b. Upsert docker_host_ip system setting (needed for application DNS)
-//   4. Upsert Azure / Cloudflare / GitHub credentials
+//   4. Upsert Azure / Tailscale / Cloudflare / GitHub credentials
 //   5. Instantiate + apply the built-in Vault host stack template
 //   6. Bootstrap/unlock Vault and publish system policies
 //      (cross-stack `requires` predicate `vault-bootstrapped` gates everything
@@ -328,6 +328,41 @@ async function configureAzure(api: ApiClient, connectionString: string): Promise
   }
 }
 
+interface TailscaleSettingsData {
+  isValid?: boolean;
+  validationMessage?: string;
+}
+
+async function configureTailscale(
+  api: ApiClient,
+  clientId: string,
+  clientSecret: string,
+  extraTags: string[],
+): Promise<void> {
+  logInfo('Configuring Tailscale');
+  const post = await api.post<unknown>('/api/settings/tailscale', {
+    client_id: clientId,
+    client_secret: clientSecret,
+    extra_tags: extraTags,
+  });
+  if (post.status !== 200 && post.status !== 201) {
+    logError(`Tailscale POST returned ${post.status}: ${post.bodyText}`);
+    return;
+  }
+  logOk('Tailscale configured');
+  // POST runs validation inline and returns isValid in the body, so we don't
+  // need a second round-trip to /api/settings/tailscale/test. pickObject
+  // unwraps the `data` envelope from `{ success, data: { ... } }`.
+  const data = pickObject<TailscaleSettingsData>(post.body);
+  if (data?.isValid) {
+    logOk('Tailscale connectivity verified');
+  } else {
+    logError(
+      `Tailscale validation failed: ${data?.validationMessage || 'no message'}`,
+    );
+  }
+}
+
 async function configureCloudflare(
   api: ApiClient,
   apiToken: string,
@@ -377,6 +412,16 @@ async function configureServices(api: ApiClient, env: DevEnv): Promise<void> {
     await configureAzure(api, env.AZURE_STORAGE_CONNECTION_STRING);
   } else {
     logSkip('AZURE_STORAGE_CONNECTION_STRING not set — skipping');
+  }
+  if (env.TAILSCALE_OAUTH_CLIENT_ID && env.TAILSCALE_OAUTH_CLIENT_SECRET) {
+    await configureTailscale(
+      api,
+      env.TAILSCALE_OAUTH_CLIENT_ID,
+      env.TAILSCALE_OAUTH_CLIENT_SECRET,
+      env.TAILSCALE_EXTRA_TAGS ?? [],
+    );
+  } else {
+    logSkip('TAILSCALE_OAUTH_CLIENT_ID / TAILSCALE_OAUTH_CLIENT_SECRET not set — skipping');
   }
   if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
     await configureCloudflare(api, env.CLOUDFLARE_API_TOKEN, env.CLOUDFLARE_ACCOUNT_ID);
@@ -967,6 +1012,9 @@ export async function seed(input: SeederInput): Promise<SeederOutput> {
     azureConfigured: Boolean(env.AZURE_STORAGE_CONNECTION_STRING),
     cloudflareConfigured: Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID),
     githubConfigured: Boolean(env.GITHUB_TOKEN),
+    tailscaleConfigured: Boolean(
+      env.TAILSCALE_OAUTH_CLIENT_ID && env.TAILSCALE_OAUTH_CLIENT_SECRET,
+    ),
     localEnvironment,
     stacks,
     shortDescription: input.shortDescription,

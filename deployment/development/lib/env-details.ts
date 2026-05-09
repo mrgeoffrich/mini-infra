@@ -168,6 +168,7 @@ export interface FullEnvironmentDetailsInput {
   azureConfigured: boolean;
   cloudflareConfigured: boolean;
   githubConfigured: boolean;
+  tailscaleConfigured: boolean;
   localEnvironment: LocalEnvironmentSummary | null;
   stacks: StackSummary[];
   shortDescription?: string;
@@ -238,6 +239,7 @@ ${descBlock}${profileLine}  <seeded>true</seeded>
     <azure configured="${input.azureConfigured}"/>
     <cloudflare configured="${input.cloudflareConfigured}"/>
     <github configured="${input.githubConfigured}"/>
+    <tailscale configured="${input.tailscaleConfigured}"/>
   </connectedServices>
 ${localEnvBlock}
   <stacks>

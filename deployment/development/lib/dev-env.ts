@@ -21,6 +21,9 @@ export interface DevEnv {
   CLOUDFLARE_ACCOUNT_ID?: string;
   DOCKER_HOST_IP?: string;
   GITHUB_TOKEN?: string;
+  TAILSCALE_OAUTH_CLIENT_ID?: string;
+  TAILSCALE_OAUTH_CLIENT_SECRET?: string;
+  TAILSCALE_EXTRA_TAGS?: string[];
 }
 
 function stripQuotes(raw: string): string {
@@ -60,6 +63,12 @@ export function loadDevEnv(filePath: string): DevEnv {
   if (!adminEmail) throw new Error('ADMIN_EMAIL must be set in dev.env');
   if (!adminPassword) throw new Error('ADMIN_PASSWORD must be set in dev.env');
 
+  const extraTagsRaw = map.TAILSCALE_EXTRA_TAGS || '';
+  const extraTags = extraTagsRaw
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+
   return {
     ADMIN_EMAIL: adminEmail,
     ADMIN_PASSWORD: adminPassword,
@@ -70,5 +79,8 @@ export function loadDevEnv(filePath: string): DevEnv {
     CLOUDFLARE_ACCOUNT_ID: map.CLOUDFLARE_ACCOUNT_ID || undefined,
     DOCKER_HOST_IP: map.DOCKER_HOST_IP || undefined,
     GITHUB_TOKEN: map.GITHUB_TOKEN || undefined,
+    TAILSCALE_OAUTH_CLIENT_ID: map.TAILSCALE_OAUTH_CLIENT_ID || undefined,
+    TAILSCALE_OAUTH_CLIENT_SECRET: map.TAILSCALE_OAUTH_CLIENT_SECRET || undefined,
+    TAILSCALE_EXTRA_TAGS: extraTags.length > 0 ? extraTags : undefined,
   };
 }
