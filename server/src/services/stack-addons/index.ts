@@ -20,3 +20,8 @@ export type { ExpansionContext, ExpansionProgress } from './expand-addons';
 
 // Side-effect imports — populate `productionAddonRegistry`.
 import './tailscale-ssh';
+import './tailscale-web';
+import { productionAddonRegistry } from './registry';
+import { tailscaleMergeStrategy } from './merge-strategies/tailscale';
+
+productionAddonRegistry.registerMergeStrategy(tailscaleMergeStrategy);

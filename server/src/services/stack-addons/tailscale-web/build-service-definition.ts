@@ -7,19 +7,21 @@ import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
 
 /**
  * Materialise the synthetic sidecar `StackServiceDefinition` for the
- * `tailscale-ssh` addon. The image, state volume, capabilities, and
+ * `tailscale-web` addon. The image, state volume, capabilities, and
  * control-plane egress all come from the shared helper; this function only
- * varies the env (incl. `TS_EXTRA_ARGS=--ssh`) and the addon-id labels.
+ * varies the env (incl. `TS_SERVE_CONFIG`), the rendered `serve.json` config
+ * file, and the addon-id labels.
  */
-export function buildTailscaleSshServiceDefinition(
+export function buildTailscaleWebServiceDefinition(
   ctx: ProvisionContext,
   provisioned: ProvisionedValues,
 ): StackServiceDefinition {
   return buildTailscaleSidecarDefinition({
     ctx,
     env: { ...(provisioned.envForSidecar ?? {}) },
+    files: provisioned.files ?? [],
     labels: {
-      'mini-infra.addon': 'tailscale-ssh',
+      'mini-infra.addon': 'tailscale-web',
       'mini-infra.synthetic': 'true',
       'mini-infra.addon-target': ctx.service.name,
     },
