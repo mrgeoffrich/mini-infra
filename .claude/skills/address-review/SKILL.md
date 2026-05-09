@@ -23,7 +23,7 @@ mk status -o json
 
 This should print the current repo, prefix (expected `MINI`), and counts. If `mk` errors with "not inside a git repository", `cd` to the repo root and retry. If the binary isn't installed, stop and tell the user — without `mk` we can't read the review or post the response.
 
-All `mk` reads in this skill use `-o json` for stable parsing. All mutations pass `--user Claude` so the audit log attributes the change correctly, and every `mk comment add` also passes `--as Claude` (the comment author).
+All `mk` reads in this skill use `-o json` for stable parsing. All mutations go through the `--json` payload form (the agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via `mk schema show <command>`) and pass `--user Claude` so the audit log attributes the change correctly. The JSON payload's `author` field replaces the flag-form `--as Claude` on `mk comment add`.
 
 ---
 
@@ -49,10 +49,13 @@ State the resolved triple before proceeding:
 The issue should currently be in **in_review** (that's the state `execute-next-task` left it in). The fixes are real work, so flip it back to in_progress before touching code — symmetric with the rest of the project's flow:
 
 ```bash
-mk issue state MINI-NN in_progress --user Claude
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_progress"}'
 
-printf 'Addressing review findings. Validating each item before applying — full summary will follow once the fixup commit lands.\n' \
-  | mk comment add MINI-NN --as Claude --user Claude --body -
+mk comment add --user Claude --json '{
+  "issue_key":"MINI-NN",
+  "author":"Claude",
+  "body":"Addressing review findings. Validating each item before applying — full summary will follow once the fixup commit lands."
+}'
 ```
 
 Don't move past Phase 2 until both succeeded. If `mk issue state` errors (state name drift, issue doesn't exist), surface and stop — fixing in the wrong board state defeats the audit trail.
@@ -305,11 +308,15 @@ If the push fails (someone else has pushed to the branch in the meantime, or you
 
 ## Phase 10 — Post the response comment and transition back to in_review
 
-Single response comment on the mk issue, structured to mirror the original review's structure so reviewers can scan diff against finding. Write the body to a temp file, then:
+Single response comment on the mk issue, structured to mirror the original review's structure so reviewers can scan diff against finding. Write the body to a temp file, then bridge it into the JSON payload via `jq -n --rawfile` so the markdown stays out of inline-JSON escape soup:
 
 ```bash
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/address-review-MINI-NN.md
-mk issue state MINI-NN in_review --user Claude
+jq -n \
+  --rawfile body /tmp/address-review-MINI-NN.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
+
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_review"}'
 ```
 
 Template — omit a section that's empty rather than write "None.":
@@ -379,8 +386,9 @@ That's the run.
 - **Never open a new PR.** The fixup belongs on the existing PR. The diff updates automatically when the branch updates.
 - **Symmetric state flow.** The issue moves todo → in_progress → in_review → in_progress (this skill, Phase 2.1) → in_review (Phase 10). Don't skip either transition. The board has to reflect what's actually happening.
 - **Don't accidentally over-scope.** Cleanups you spot but `/review` didn't flag belong in a separate ticket. Note them in the final report; don't bundle them into this fixup commit.
-- **Always pass `--user Claude` on `mk` mutations and `--as Claude` on `mk comment add`.** Without `--user`, the audit log silently attributes the change to whichever OS user the agent runs under — useless history.
+- **Always pass `--user Claude` on `mk` mutations.** Without it the audit log silently attributes the change to whichever OS user the agent runs under — useless history. On `mk comment add` JSON payloads the comment author is the `author` field (replaces the flag-form `--as Claude`).
 - **Always pass `-o json` when parsing `mk` output.** Text mode is for humans only.
+- **Prefer `--json` payloads on mutations** over per-field flags. Strict-decoded (typos surface as `unknown field` errors), schema discoverable via `mk schema show <command>`, dry-runnable.
 - **Never run `mk` outside a git repo** — it hard-errors. `cd` to the repo first.
 - **Stop on missing inputs.** No review comment found, ambiguous PR resolution, no mk key resolvable from the input → stop and ask.
 - **Never produce an ExitPlanMode block.** This is an action skill; the fixup commit + mk comment are the deliverables.
@@ -393,11 +401,11 @@ That's the run.
 >
 > *Skill runs `mk status -o json` to confirm the binary is wired up and the repo prefix is `MINI`. Resolves: MINI-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/mini-32`. Confirms: "Addressing review on MINI-32 — PR #412, branch `claude/mini-32`."*
 >
-> *Phase 2.1: `mk issue state MINI-32 in_progress --user Claude` + claim comment via `mk comment add MINI-32 --as Claude --user Claude --body -`.*
+> *Phase 2.1: `mk issue state --user Claude --json '{"key":"MINI-32","state":"in_progress"}'` + claim comment via `mk comment add --user Claude --json '{"issue_key":"MINI-32","author":"Claude","body":"Addressing review findings..."}'`.*
 >
-> *Phase 3: `mk comment list MINI-32 -o json`. Most recent `**Review of …**` comment shows 4 findings: 1 high (error swallowing in `backup-progress-emitter.ts:47`), 1 medium (duplicated step-name normalisation in `backup-executor.ts:208`), 1 low (`console.log` leftover), 1 medium ("missing `userId` on the new metric-emit row"). Drops the low. Three to validate.*
+> *Phase 3: `mk issue brief MINI-32 > /tmp/brief-MINI-32.json` (one read for the issue + comments + linked docs). Most recent `**Review of …**` comment in `.comments[]` shows 4 findings: 1 high (error swallowing in `backup-progress-emitter.ts:47`), 1 medium (duplicated step-name normalisation in `backup-executor.ts:208`), 1 low (`console.log` leftover), 1 medium ("missing `userId` on the new metric-emit row"). Drops the low. Three to validate.*
 >
-> *Phase 4: re-reads MINI-32 ticket body via `mk issue show`, server/CLAUDE.md (server-side findings), root CLAUDE.md (audit-trail rule for the `userId` finding). No design comment on this ticket — backend-only work.*
+> *Phase 4: reuses the brief from Phase 3 — pulls Goal / Deliverables / Done when from `.issue.description`, server/CLAUDE.md (server-side findings), root CLAUDE.md (audit-trail rule for the `userId` finding). No design comment on this ticket — backend-only work.*
 >
 > *Phase 5: `.claude/worktrees/mini-32` was torn down by `/finish-worktree` after the original PR shipped. Skill recreates: `git fetch origin claude/mini-32`, `git worktree add ...`, `pnpm install`, backgrounded `pnpm worktree-env start`.*
 >
@@ -412,6 +420,6 @@ That's the run.
 >
 > *Phase 9: commits `fix(backup): address review findings (MINI-32)` with the two fixed bullets, pushes.*
 >
-> *Phase 10: posts the response comment on MINI-32 via `mk comment add` with three sections (Fixed: 2; Dismissed: 1 with the user-vs-job rationale; Skipped (low): 1). `mk issue state MINI-32 in_review --user Claude`.*
+> *Phase 10: posts the response comment on MINI-32 via `jq -n --rawfile body /tmp/address-review-MINI-32.md '{issue_key:"MINI-32",author:"Claude",body:$body}' | mk comment add --user Claude --json -` with three sections (Fixed: 2; Dismissed: 1 with the user-vs-job rationale; Skipped (low): 1). `mk issue state --user Claude --json '{"key":"MINI-32","state":"in_review"}'`.*
 >
 > Skill: "Addressed review on MINI-32: <commit URL>. Fixed: 2. Dismissed: 1. Couldn't verify: 0. Skipped (low): 1. The high finding (error swallowing) and one medium (duplication) are now fixed. The other medium turned out to be a false positive — the audit-trail rule applies to user-initiated mutations, not the background job in question."

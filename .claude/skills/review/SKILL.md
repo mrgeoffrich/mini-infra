@@ -23,7 +23,7 @@ mk status -o json
 
 This should print the current repo, prefix (expected `MINI`), and counts. If `mk` errors with "not inside a git repository", `cd` to the repo root and retry. If the binary isn't installed, stop and tell the user — without `mk` we can't read the contract or post the deliverable.
 
-All `mk` reads in this skill use `-o json` for stable parsing. All mutations pass `--user Claude` so the audit log attributes the change correctly.
+All `mk` reads in this skill use `-o json` for stable parsing. All mutations go through the `--json` payload form (the agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via `mk schema show <command>`) and pass `--user Claude` so the audit log attributes the change correctly. The JSON payload's `author` field replaces the flag-form `--as Claude` on `mk comment add`.
 
 ---
 
@@ -175,13 +175,16 @@ If you have to debate `medium` vs `low`, default to `low`.
 
 The comment is the deliverable. One comment per review run, posted on the mk issue.
 
-Write the body to a temp file, then post:
+Write the body to a temp file, then bridge it into the JSON payload via `jq -n --rawfile` so the markdown stays out of inline-JSON escape soup:
 
 ```bash
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/review-MINI-NN.md
+jq -n \
+  --rawfile body /tmp/review-MINI-NN.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 ```
 
-`--as Claude` is the comment author (mandatory on every `mk comment add`). `--user Claude` is the audit-log actor (mandatory for every agent-driven mutation). `mk comment add` requires the body via `--body-file <path>` or `--body -` from stdin — there's no inline editor, and `--body "two\nlines"` does not interpret `\n`.
+The payload's `author` field is the comment author (replaces flag-form `--as Claude`). `--user Claude` is the audit-log actor (mandatory for every agent-driven mutation). Schema discoverable via `mk schema show comment.add`; rehearse with `--dry-run` if the body is unusually large or contains tricky characters.
 
 Template — omit a section that's empty rather than write "None.":
 
@@ -260,8 +263,9 @@ That's the run.
 - **Don't flag what you didn't read.** If a hunk is too noisy to follow without reading the whole file, read the whole file. Findings based on incomplete reading are worse than findings on a smaller set you actually understood.
 - **Cite file + line, always.** `<file>:<line>` notation; the user copies it straight into their editor. A finding without a path is not actionable.
 - **One comment per run.** Don't post multiple comments for one review. If you re-run after fixes, post a fresh comment — don't edit the previous one.
-- **Always pass `--user Claude` on `mk` mutations and `--as Claude` on `mk comment add`.** Without `--user`, the audit log silently attributes the change to whichever OS user the agent runs under — useless history.
+- **Always pass `--user Claude` on `mk` mutations.** Without it the audit log silently attributes the change to whichever OS user the agent runs under — useless history. On `mk comment add` JSON payloads the comment author is the `author` field (replaces the flag-form `--as Claude`).
 - **Always pass `-o json` when parsing `mk` output.** Text mode is for humans only.
+- **Prefer `--json` payloads on mutations** over per-field flags. Strict-decoded (typos surface as `unknown field` errors), schema discoverable via `mk schema show <command>`, dry-runnable.
 - **Never run `mk` outside a git repo** — it hard-errors. `cd` to the repo first.
 - **Stop on missing inputs.** No mk key, no PR, ambiguous resolution → stop and ask. Don't guess past these.
 - **Never produce an ExitPlanMode block.** This is a review skill; the mk comment is the deliverable.
@@ -274,7 +278,7 @@ That's the run.
 >
 > *Skill runs `mk status -o json` to confirm the binary is wired up and the repo prefix is `MINI`. Resolves: MINI-32 ("Phase 4: pg-az-backup progress + result events"), PR #412, branch `claude/mini-32`. Confirms: "Reviewing MINI-32 — PR #412, branch `claude/mini-32`."*
 >
-> *Phase 3: `mk issue show MINI-32 -o json`. Goal: emit progress + result events for pg-az-backup. Deliverables: three new socket events, task-tracker registry entry, server emitter. `mk comment list MINI-32 -o json` shows no design comment on this ticket — backend-only work. One handoff comment from execute-next-task notes the optional retry-on-transient-failure deliverable was deferred to a follow-up.*
+> *Phase 3: reuses `/tmp/brief-MINI-32.json` from Phase 2 (`mk issue brief MINI-32` — single read covers issue + comments + linked docs). Goal: emit progress + result events for pg-az-backup. Deliverables: three new socket events, task-tracker registry entry, server emitter. `.documents[]` has no design-typed entry on this ticket — backend-only work. One handoff comment in `.comments[]` from execute-next-task notes the optional retry-on-transient-failure deliverable was deferred to a follow-up.*
 >
 > *Phase 4: `gh pr diff 412 > /tmp/review-412.diff`. 7 files changed, mostly under `server/src/services/backup/` plus one update to `client/src/lib/task-type-registry.ts`.*
 >
@@ -285,6 +289,6 @@ That's the run.
 > - **Medium** — `server/src/services/backup/backup-executor.ts:208` — duplicates the step-name normalisation already at `cert-issuance/cert-issuance-executor.ts:412`; should be extracted into `server/src/services/operation-step.ts`.
 > - **Low** — leftover `console.log("emitter wired up")` in `backup-progress-emitter.ts:12`.
 >
-> *Phase 7: writes the comment body to `/tmp/review-MINI-32.md`, then `mk comment add MINI-32 --as Claude --user Claude --body-file /tmp/review-MINI-32.md`. Three sections (High / Medium / Low), closing line "Looks ready to ship after the high finding is addressed."*
+> *Phase 7: writes the comment body to `/tmp/review-MINI-32.md`, then `jq -n --rawfile body /tmp/review-MINI-32.md '{issue_key:"MINI-32",author:"Claude",body:$body}' | mk comment add --user Claude --json -`. Three sections (High / Medium / Low), closing line "Looks ready to ship after the high finding is addressed."*
 >
 > Skill: "Review posted on MINI-32 (3 findings). Breakdown: 0 critical, 1 high, 1 medium, 1 low. Highest-severity: error swallowing in `backup-progress-emitter.ts:47`. Run /review again after fixes land to re-check."

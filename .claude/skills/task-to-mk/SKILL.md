@@ -47,7 +47,7 @@ This phase is **idempotent** — on every run, after the first, it's a fast no-o
 mk feature show maintenance -o json
 ```
 
-**If it doesn't exist** (the call exits non-zero), create it. Build the feature description starting with the `Plan:` line, write it to a temp file, then create:
+**If it doesn't exist** (the call exits non-zero), create it. Build the feature description starting with the `Plan:` line, write it to a temp file, then create via the JSON payload form (the agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via `mk schema show feature.add`):
 
 ```bash
 cat <<EOF > /tmp/maintenance-feature.md
@@ -58,9 +58,10 @@ Catch-all feature for one-off maintenance and follow-up tickets filed via the
 don't have to ship in numerical order.
 EOF
 
-mk feature add "Maintenance" --slug maintenance \
-  --description-file /tmp/maintenance-feature.md \
-  --user Claude
+jq -n \
+  --rawfile description /tmp/maintenance-feature.md \
+  '{title:"Maintenance", slug:"maintenance", description:$description}' \
+  | mk feature add --user Claude --json -
 ```
 
 Build the GitHub URL from `git remote get-url origin` + `/blob/main/docs/planning/maintenance.md`. Don't use absolute filesystem paths or `./`-prefixed relative paths — they break the link in renderers.
@@ -216,7 +217,7 @@ State: `todo`.
 
 Description body — same shape `plan-to-mk` writes, so `execute-next-task` reads it without special-casing. The first line points at the maintenance plan doc (the feature stub) — `execute-next-task` will tolerate the lack of a per-phase anchor under the loosened flow.
 
-Write the body to a temp file first (long markdown can't go inline through `--description`):
+Write the body to a temp file first, then send it via the JSON payload form (`jq -n --rawfile` keeps the markdown out of inline-JSON escape soup):
 
 ```bash
 cat <<'EOF' > /tmp/mini-task-body.md
@@ -280,13 +281,14 @@ This is an execution-agent ticket — no separate planning phase. Read the docs 
 (no prior commits matching the area tag yet)   <-- only if applicable
 EOF
 
-mk issue add "<title>" \
-  --feature maintenance \
-  --state todo \
-  --description-file /tmp/mini-task-body.md \
-  --user Claude \
-  -o json
+jq -n \
+  --arg title "<title>" \
+  --rawfile description /tmp/mini-task-body.md \
+  '{title:$title, feature_slug:"maintenance", state:"todo", description:$description}' \
+  | mk issue add --user Claude --json - -o json
 ```
+
+Schema discoverable via `mk schema show issue.add`. To rehearse the call without writing, prepend `--dry-run` — same payload, no audit row, useful when sanity-checking a tricky description.
 
 Capture the issue's `MINI-NN` ID and (if you want a clickable reference) the local key — there's no remote URL, since `mk` is a local tracker.
 
@@ -325,6 +327,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 - **Never skip the Phase 6 confirmation.** mk writes are user-visible side effects (and audit-logged) — confirm before, not after.
 - **Always pass `--user Claude` on every mutating `mk` command.** The audit log records the actor; without it the entry attributes to the OS user.
 - **Always pass `-o json` on reads you parse.** Text output is for humans and can shift.
+- **Prefer `--json` payloads over per-field flags on mutations.** Strict-decoded (typos surface as `unknown field` errors), schema discoverable via `mk schema show <command>`, dry-runnable. Use `jq -n --rawfile body /tmp/foo.md '{...}'` to keep multi-line markdown out of inline-JSON escape soup.
 
 ---
 
@@ -363,7 +366,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "go"
 >
-> *Skill writes the body to a temp file and runs `mk issue add "Add retry-with-backoff to cert renewer on Cloudflare 429" --feature maintenance --state todo --description-file /tmp/mini-task-body.md --user Claude -o json`. Captures `MINI-47`. No plan-doc edits — the doc is a stub.*
+> *Skill writes the body to `/tmp/mini-task-body.md`, then composes the JSON payload via `jq -n --arg title "Add retry-with-backoff..." --rawfile description /tmp/mini-task-body.md '{title:$title, feature_slug:"maintenance", state:"todo", description:$description}' | mk issue add --user Claude --json - -o json`. Captures `MINI-47`. No plan-doc edits — the doc is a stub.*
 >
 > Skill: "✓ Created Add retry-with-backoff to cert renewer on Cloudflare 429
 >    MINI-47  (run `mk issue show MINI-47` to view)

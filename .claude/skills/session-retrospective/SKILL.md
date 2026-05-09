@@ -73,19 +73,22 @@ worthless retro.
 
 6. **Generate the retrospective markdown** per the Output Format below.
 
-7. **Create the retro issue** via `mk issue add`. Write the body to a temp file first
-   (long-text inputs in `mk` come from a file or stdin — there is no inline editor):
+7. **Create the retro issue** via `mk issue add` using the JSON payload form (the
+   agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via
+   `mk schema show issue.add`). Write the body to a temp file first, then bridge it
+   into the JSON payload via `jq -n --rawfile` so the markdown stays out of inline-JSON
+   escape soup:
 
    ```bash
    cat > /tmp/retro-body.md <<'EOF'
    <retrospective markdown body, per Output Format below>
    EOF
 
-   mk issue add "Retro: MINI-NN — <original-issue-title>" \
-     --description-file /tmp/retro-body.md \
-     --state backlog \
-     --tag retro \
-     --user Claude
+   jq -n \
+     --arg title "Retro: MINI-NN — <original-issue-title>" \
+     --rawfile description /tmp/retro-body.md \
+     '{title:$title, state:"backlog", description:$description, tags:["retro"]}' \
+     | mk issue add --user Claude --json - -o json
    ```
 
    - **Title**: `Retro: MINI-NN — <original-issue-title>` (truncate the original title to
@@ -94,26 +97,25 @@ worthless retro.
    - **Tag**: `retro` (free-form; created on first use).
    - **`--user Claude`** is **mandatory** for AI-driven calls — without it the audit log
      silently attributes the change to the OS user.
-   - Capture the new issue key from the command output (use `-o json` if you need to
-     parse it programmatically).
+   - Capture the new issue key from the JSON output (`jq -r .key`).
 
 8. **Link the retro back to the original** so `mk issue show` on either side surfaces the
    relation:
 
    ```bash
-   mk link <NEW-RETRO-KEY> relates-to MINI-NN --user Claude
+   mk link --user Claude --json '{"from":"<NEW-RETRO-KEY>","type":"relates-to","to":"MINI-NN"}'
    ```
 
    Optionally, drop a one-line pointer comment on the original so a human reading just
    that issue can find the retro:
 
    ```bash
-   printf 'Retro filed: <NEW-RETRO-KEY>\n' \
-     | mk comment add MINI-NN --as Claude --body - --user Claude
+   mk comment add --user Claude --json \
+     '{"issue_key":"MINI-NN","author":"Claude","body":"Retro filed: <NEW-RETRO-KEY>"}'
    ```
 
-   `--as` is required on every `mk comment add`; `--user Claude` is the audit-log
-   attribution and is mandatory for agent-driven calls.
+   The `author` field on the JSON payload replaces the flag-form `--as Claude`.
+   `--user Claude` is the audit-log attribution and is mandatory for agent-driven calls.
 
 9. **Return only** the new retro issue's key (e.g. `MINI-83`). Do not echo the markdown
    body — the caller (typically a subagent in `execute-next-task`) just needs the key

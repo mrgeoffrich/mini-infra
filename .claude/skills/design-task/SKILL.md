@@ -43,9 +43,9 @@ You should see a JSON blob with the repo's prefix (`MINI`) and per-state issue c
 **Critical agent-mode rules** (these apply to every `mk` call you make in this run):
 
 - **Always pass `--user Claude` on every mutating command.**
-- **Always pass `--as Claude` on `mk comment add`.**
 - **Always pass `-o json` when parsing output.**
-- **Always pass long text via `--description-file` / `--body-file` / `--body -` (stdin).**
+- **Prefer `--json` payloads on mutations** over per-field flags. Strict-decoded (typos surface as `unknown field` errors), schema discoverable via `mk schema show <command>`, dry-runnable. The JSON payload's `author` field replaces the flag-form `--as Claude` on `mk comment add`.
+- **For multi-line text bodies** (long descriptions, comment bodies, doc content), bridge a temp file into the JSON payload via `jq -n --rawfile body /tmp/foo.md '{...}' | mk ... --json -` — keeps the markdown out of inline-JSON escape soup. The exception is `mk doc upsert --from-path <path>`, which derives filename + reads content from disk in one shot and uses flag form (the JSON path doesn't have a path-derivation equivalent).
 
 Note: this skill calls `mk issue state` exactly once, near the end (Phase 8), to move the issue to **`in_review`**. No other state transitions. The terminal `done` transition is left to the human reviewer flipping it after the PR merges (the `Closes MINI-NN` line in the commit is for the audit trail; `mk` does not parse it).
 
@@ -485,7 +485,7 @@ EOF
 Once the PR URL is back, attach it to the design ticket so `mk issue show MINI-NN` and `mk pr list MINI-NN` both link to it:
 
 ```bash
-mk pr attach MINI-NN <PR_URL> --user Claude
+mk pr attach --user Claude --json '{"issue_key":"MINI-NN","url":"<PR_URL>"}'
 ```
 
 If `gh pr create` fails (no `gh` auth, repo settings, branch-protection rules), surface the error and stop. Don't retry silently. The user can authenticate `gh` and re-run the skill, or open the PR manually and paste the URL into Phase 7's comments — but don't try to half-ship by posting mk comments without a PR.
@@ -494,7 +494,7 @@ If `gh pr create` fails (no `gh` auth, repo settings, branch-protection rules), 
 
 Why: downstream skills (`execute-next-task`, `address-review`, `review`) fetch the design doc as supplemental context for the impl ticket. Linking via `mk doc link` gives them a single uniform fetch — they pull every linked doc's content out of the `documents[]` array of `mk issue brief` in one bulk read — instead of having to know which branch the doc lives on. SVG wireframes go in too (they're just XML — mk's `doc` subsystem stores arbitrary text content), so the executor can materialise them on demand even when the design PR hasn't merged yet.
 
-`mk doc upsert --from-path` derives the mk filename (path with `/` → `-`) and reads the file content in one shot. Pass `--type designs` because `--from-path` only auto-derives type for plan-doc paths; design paths need an explicit type.
+`mk doc upsert --from-path` derives the mk filename (path with `/` → `-`) and reads the file content in one shot — keep flag form for it (the JSON path has no path-derivation equivalent; you'd otherwise have to compute the filename and `cat` the content yourself). Pass `--type designs` because `--from-path` only auto-derives type for plan-doc paths; design paths need an explicit type. The link calls go through `--json` for strict decoding:
 
 ```bash
 register_and_link() {
@@ -502,11 +502,15 @@ register_and_link() {
   [ -f "$path" ] || return 0                            # skip artefacts not produced
   local name="${path//\//-}"                            # docs/designs/foo.md → docs-designs-foo.md
   mk doc upsert --from-path "$path" --type designs --user Claude
-  mk doc link "$name" MINI-NN \
-    --why "Design exploration artefacts for this design ticket" --user Claude
+  jq -nc --arg filename "$name" --arg key MINI-NN \
+       --arg why "Design exploration artefacts for this design ticket" \
+       '{filename:$filename, issue_key:$key, description:$why}' \
+    | mk doc link --user Claude --json -
   if [ -n "<impl-MINI-NN>" ]; then
-    mk doc link "$name" <impl-MINI-NN> \
-      --why "Design recommendation + wireframes for this implementation" --user Claude
+    jq -nc --arg filename "$name" --arg key "<impl-MINI-NN>" \
+         --arg why "Design recommendation + wireframes for this implementation" \
+         '{filename:$filename, issue_key:$key, description:$why}' \
+      | mk doc link --user Claude --json -
   fi
 }
 
@@ -515,7 +519,7 @@ register_and_link "docs/designs/<filename>-option-a.svg"
 register_and_link "docs/designs/<filename>-option-b.svg"
 ```
 
-`mk doc upsert` and `mk doc link` are both upserts — re-running the whole block on a re-design pass is safe (content refreshes, `--why` refreshes, no duplicate rows). The mk docs are the authoritative copies for downstream skills; the `.md` + `.svg` files on disk and the merged design PR are the source of truth for humans browsing the repo.
+`mk doc upsert` and `mk doc link` are both upserts — re-running the whole block on a re-design pass is safe (content refreshes, `description` refreshes, no duplicate rows). The mk docs are the authoritative copies for downstream skills; the `.md` + `.svg` files on disk and the merged design PR are the source of truth for humans browsing the repo.
 
 ---
 
@@ -540,7 +544,10 @@ Two options explored:
 Moving this design ticket to `in_review` and tearing down the local worktree — once the PR merges, the human reviewer flips it to `done`, which unblocks `/execute-next-task <impl-MINI-NN>`. If you disagree with the pick, comment on the PR or reopen the ticket. (Re-edits: `git worktree add .claude/worktrees/mini-NN claude/mini-NN` recreates the worktree against the same branch.)
 EOF
 
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/design-comment.md
+jq -n \
+  --rawfile body /tmp/design-comment.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 ```
 
 If the parent ticket lists an impl ticket it blocks (look at the issue's relations in the JSON from `mk issue show` — specifically outgoing `blocks`-typed edges), name that ticket explicitly so the user has a one-click follow-up. If there's no blocked impl ticket, drop the impl-ticket clause.
@@ -560,7 +567,11 @@ cat <<'EOF' > /tmp/impl-comment.md
 Read this before starting implementation — it includes Key abstractions, File / component sketch, and Implementation outline that the design doc commits to. Open questions in the doc are unresolved choices that may matter at implementation time. Wait for the design PR to merge before kicking off `/execute-next-task` so the doc + SVGs land on `main`; the executor can technically run sooner because the design artefacts are also linked as mk docs, but the design hasn't been reviewed by a human yet.
 EOF
 
-mk comment add <impl-MINI-NN> --as Claude --user Claude --body-file /tmp/impl-comment.md
+jq -n \
+  --arg key "<impl-MINI-NN>" \
+  --rawfile body /tmp/impl-comment.md \
+  '{issue_key:$key, author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 ```
 
 If there's no outgoing `blocks` edge (standalone design, no impl ticket), skip 7.2. If there's more than one (rare — usually a planning mistake), post the comment on each one and surface the multi-target case to the user in the final report.
@@ -572,7 +583,7 @@ If there's no outgoing `blocks` edge (standalone design, no impl ticket), skip 7
 The PR is open, the comments are posted. Move the design ticket from `todo` to `in_review` so the mk board reflects the actual state of play:
 
 ```bash
-mk issue state MINI-NN in_review --user Claude
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_review"}'
 ```
 
 That single call is all this phase does. The terminal `done` transition is **not** this skill's job — when the PR merges, the human reviewer flips the design ticket to `done` (or runs `mk issue state MINI-NN done --user Geoff`), at which point any impl ticket that had this design ticket as a `blocks` edge becomes pickable by `execute-next-task`.
@@ -644,7 +655,7 @@ That's the whole skill. Keep the output short — the design PR is the substanti
 - **Always commit + push + open a PR before posting mk comments.** Phase 6 must complete before Phase 7. The mk comments link to the PR URL — without a PR, the comments would point at a blob URL on a feature branch that may never reach `main`. If `gh pr create` fails, stop the whole run; don't half-ship.
 - **Commit only the design artefacts.** `git add` the design `.md` and any sibling `.svg` files explicitly. Never `git add .` — a stale `pnpm-lock.yaml` change or other in-flight worktree noise must not land in the design commit.
 - **Always include `Closes <MINI-NN>` in the commit message.** It's the audit-trail reference back to the ticket. `mk` does not parse it, but human reviewers and the commit history rely on it. Keep it in.
-- **Never call `mk` without `--user Claude` on a mutating command, or without `--as Claude` on `mk comment add`.** The audit log silently falls back to `geoff` otherwise — useless attribution for agent-driven runs.
+- **Never call `mk` without `--user Claude` on a mutating command.** The audit log silently falls back to `geoff` otherwise — useless attribution for agent-driven runs. On `mk comment add` JSON payloads the comment author is the `author` field (replaces the flag-form `--as Claude`).
 - **Never collapse two options into one.** If you genuinely can't think of two distinct approaches, surface that and ask the user whether to write one with a "rejected alternatives" appendix instead. Forcing a weak second option produces noise.
 - **Never punt the recommendation back to the user.** The §Recommendation section must commit to one option. "No strong preference" / "either works" / "user picks" are invalid outputs — pick one and name what would flip the call. The PR body and mk comments depend on the recommendation; the skill cannot ship them if it hasn't picked.
 - **Never skip the prior-art search (Phase 4.4).** Designs that ignore the existing codebase are usually wrong about what's expensive vs. cheap. Even if you find nothing reusable, the search itself should inform your options.
@@ -658,7 +669,7 @@ That's the whole skill. Keep the output short — the design PR is the substanti
 
 > User: "design MINI-38"
 >
-> *Skill runs `mk status -o json` to confirm `mk` is available and the prefix is `MINI`. Fetches MINI-38 with `mk issue show MINI-38 -o json`: "Phase 2: container-level egress firewall toggle", part of the `egress-firewall-per-container` feature. Runs `mk feature show egress-firewall-per-container -o json` and finds `Plan: docs/planning/not-shipped/egress-per-container-plan.md` in the description. Skill reads the ticket body (Goal: per-container override of the egress firewall policy; Deliverables: API field, UI control, applied at apply-time, audit-logged; Done when: integration test shows the override flips behaviour). Reads the plan doc's Phase 2 section as supplemental context. Skims prior comments via `mk comment list MINI-38 -o json` — none from this skill — so no overwrite risk.*
+> *Skill runs `mk status -o json` to confirm `mk` is available and the prefix is `MINI`. Fetches MINI-38 with `mk issue brief MINI-38 > /tmp/brief-MINI-38.json` — one read covers the issue + parent feature + linked docs + comments + relations + PRs. From `.issue.description`: "Phase 2: container-level egress firewall toggle"; from `.feature.description`: `Plan: docs/planning/not-shipped/egress-per-container-plan.md`. Skill reads the ticket body (Goal: per-container override of the egress firewall policy; Deliverables: API field, UI control, applied at apply-time, audit-logged; Done when: integration test shows the override flips behaviour). Reads the plan doc's Phase 2 section as supplemental context. Skims `.comments[]` from the brief — none from this skill — so no overwrite risk.*
 >
 > *Phase 4: identifies the dominant pattern axis as "where does the override live and how does it propagate to apply-time" — i.e. a state-placement + propagation question. Surveys two candidate shapes: (i) override stored on the StackService row, propagated through the existing apply pipeline; (ii) override stored on a new `EgressOverride` table keyed by service, looked up at apply-time. Searches the codebase for similar override patterns: finds `server/src/services/networking/haproxy-frontend-overrides.ts` (per-frontend overrides on the frontend row, similar to option (i)) and `server/src/services/registry/registry-credential-resolver.ts` (separate-table indirection lookup, similar to option (ii)). Cites both.*
 >
@@ -666,13 +677,13 @@ That's the whole skill. Keep the output short — the design PR is the substanti
 >
 > *Phase 5: writes `docs/designs/mini-38-egress-per-container-override.md` inside the worktree. Option A is the row-extension shape (cheap, follows the haproxy pattern, but couples the override to the service row's lifecycle). Option B is the separate-table shape (heavier, needs a new migration and model, but cleaner audit trail and easier to extend with override types later). Each option has Key abstractions / File sketch / Implementation outline / Pros / Cons. **Recommendation: Option A** — the team has no plans for other override types and the cheaper change is the right call for the ticket as scoped; flip to B if a second override type lands on the roadmap. One Open question: "do we want overrides to survive a service rename?" — answer changes which option wins. Two items in Out-of-scope: bulk override import (different ticket), override expiry (no Deliverable for it).*
 >
-> *Phase 6: stages the design `.md`, commits with `docs(designs): egress per-container override (MINI-38)` and a `Closes MINI-38` line, pushes `claude/mini-38`, opens PR #371 via `gh pr create`. Captures the PR URL and runs `mk pr attach MINI-38 <PR URL> --user Claude` so future `mk issue show MINI-38` calls surface the link.*
+> *Phase 6: stages the design `.md`, commits with `docs(designs): egress per-container override (MINI-38)` and a `Closes MINI-38` line, pushes `claude/mini-38`, opens PR #371 via `gh pr create`. Captures the PR URL and runs `mk pr attach --user Claude --json '{"issue_key":"MINI-38","url":"<PR URL>"}'` so future `mk issue show MINI-38` calls surface the link.*
 >
-> *Phase 7.1: writes the design-ticket comment to a temp file, then `mk comment add MINI-38 --as Claude --user Claude --body-file /tmp/design-comment.md`: "Designs drafted (PR open): #371. A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Moving this design ticket to in_review and tearing down the local worktree — once the PR merges, the human reviewer flips it to done, which unblocks `/execute-next-task MINI-39`."*
+> *Phase 7.1: writes the design-ticket comment to a temp file, then bridges it via `jq -n --rawfile body /tmp/design-comment.md '{issue_key:"MINI-38",author:"Claude",body:$body}' | mk comment add --user Claude --json -`: "Designs drafted (PR open): #371. A — Service-row column; B — Separate EgressOverride table. **Picked: Option A** — cheap, leans on the haproxy override pattern; flip to B only if a second override type lands. Moving this design ticket to in_review and tearing down the local worktree — once the PR merges, the human reviewer flips it to done, which unblocks `/execute-next-task MINI-39`."*
 >
-> *Phase 7.2: MINI-38's relations include an outgoing `blocks` edge to MINI-39 (the impl ticket). Writes the impl-ticket comment to a temp file and `mk comment add MINI-39 --as Claude --user Claude --body-file /tmp/impl-comment.md`: "**Design ready (PR open):** #371 — design doc at `docs/designs/mini-38-egress-per-container-override.md` once merged. Picked: Option A — Service-row column. Read this before starting implementation … Wait for the design PR to merge before kicking off `/execute-next-task` — the doc lands on `main` at that point, and once the human flips the design ticket to `done` the impl ticket becomes pickable." A future `/execute-next-task MINI-39` skim of comments via `mk comment list` will see this immediately.*
+> *Phase 7.2: MINI-38's relations include an outgoing `blocks` edge to MINI-39 (the impl ticket). Writes the impl-ticket comment to a temp file and `jq -n --arg key MINI-39 --rawfile body /tmp/impl-comment.md '{issue_key:$key,author:"Claude",body:$body}' | mk comment add --user Claude --json -`: "**Design ready (PR open):** #371 — design doc at `docs/designs/mini-38-egress-per-container-override.md` once merged. Picked: Option A — Service-row column. Read this before starting implementation … Wait for the design PR to merge before kicking off `/execute-next-task` — the doc lands on `main` at that point, and once the human flips the design ticket to `done` the impl ticket becomes pickable." A future `/execute-next-task MINI-39` will pick this comment up via `mk issue brief MINI-39` (one read covers issue + comments + linked docs).*
 >
-> *Phase 8: `mk issue state MINI-38 in_review --user Claude`. The single state transition. MINI-38 will be flipped to `done` by the human after PR #371 merges; MINI-39 becomes picker-eligible at that point.*
+> *Phase 8: `mk issue state --user Claude --json '{"key":"MINI-38","state":"in_review"}'`. The single state transition. MINI-38 will be flipped to `done` by the human after PR #371 merges; MINI-39 becomes picker-eligible at that point.*
 >
 > *Phase 9: `Skill(skill: "finish-worktree", args: "mini-38")`. The finish-worktree skill checks the working tree (clean), unpushed commits (none), and PR state (open) — all green — then `cd`s back to the repo root, runs `pnpm worktree-env delete mini-38 --force` (or skips if no env was started — design-task always passes `--no-env` to `setup-worktree`), and `git worktree remove .claude/worktrees/mini-38`. The remote branch `claude/mini-38` is left intact for the PR.*
 >

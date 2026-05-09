@@ -120,13 +120,13 @@ If the SHA comes back empty, fall back to whatever `gh pr merge` printed to stde
 
 ## Phase 4 — Transition the issue to `done` and record the merge
 
-Two `mk` calls. Order matters: state transition first (so the board reflects reality immediately), then the comment (so the audit log records the merge alongside the state change).
+Two `mk` calls. Order matters: state transition first (so the board reflects reality immediately), then the comment (so the audit log records the merge alongside the state change). Both use the JSON payload form (the agent-preferred surface — strict-decoded, dry-runnable; schemas at `mk schema show issue.state` and `mk schema show comment.add`):
 
 ```bash
-mk issue state MINI-NN done --user Claude
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"done"}'
 ```
 
-Then write a brief merge-record comment to a temp file and post it. Keep it terse — the PR diff is the real record; this is just a pointer.
+Then write a brief merge-record comment to a temp file and post it via `jq -n --rawfile` so the markdown stays out of inline-JSON escape soup. Keep it terse — the PR diff is the real record; this is just a pointer.
 
 ```bash
 cat <<EOF > /tmp/merge-MINI-NN.md
@@ -137,14 +137,17 @@ Merged via squash to \`main\`.
 - Branch \`<headRefName>\` deleted on remote.
 EOF
 
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/merge-MINI-NN.md
+jq -n \
+  --rawfile body /tmp/merge-MINI-NN.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 rm /tmp/merge-MINI-NN.md
 ```
 
 If the PR was discovered via `gh pr list` (i.e. not previously attached to the mk issue), also attach it now so the issue's `pull_requests[]` reflects what shipped:
 
 ```bash
-mk pr attach MINI-NN <PR-URL> --user Claude
+mk pr attach --user Claude --json '{"issue_key":"MINI-NN","url":"<PR-URL>"}'
 ```
 
 If either `mk` call fails after the merge succeeded, **don't try to undo the merge** — that's not recoverable. Surface the failure to the user with the exact `mk` command that failed so they can re-run it manually. The merge is the source of truth; the mk state is the bookkeeping that has to catch up.
@@ -190,7 +193,7 @@ Mention the `/finish-worktree` hint only if a worktree actually exists (`git wor
 >
 > *Phase 3: `gh pr merge 412 --squash --delete-branch` succeeds. Merge SHA `a3f1b29`.*
 >
-> *Phase 4: `mk issue state MINI-29 done --user Claude`. Posts merge-record comment.*
+> *Phase 4: `mk issue state --user Claude --json '{"key":"MINI-29","state":"done"}'`. Posts merge-record comment via `jq -n --rawfile body /tmp/merge-MINI-29.md '{issue_key:"MINI-29",author:"Claude",body:$body}' | mk comment add --user Claude --json -`.*
 >
 > Skill: "✓ Shipped MINI-29 — "Add NATS app role allowlist enforcement". PR #412 squash-merged to main as `a3f1b29`. Branch `claude/mini-29` deleted on remote. mk issue MINI-29 moved in_review → done. Next: `/finish-worktree mini-29` to tear down the local worktree + dev-env VM."
 
