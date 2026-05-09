@@ -100,6 +100,7 @@ export function run(argv: string[]): void {
     rows.push([
       'PROFILE',
       'DESCRIPTION',
+      'SEED',
       'URL',
       'UI',
       'REG',
@@ -122,6 +123,7 @@ export function run(argv: string[]): void {
       rows.push([
         e.profile,
         dash(e.description),
+        dash(e.seed_profile),
         dash(e.url),
         e.ui_port ? String(e.ui_port) : '-',
         e.registry_port ? String(e.registry_port) : '-',
@@ -138,11 +140,12 @@ export function run(argv: string[]): void {
       ]);
     }
   } else {
-    rows.push(['PROFILE', 'DESCRIPTION', 'URL', 'ADMIN EMAIL', 'SEEDED', 'PATH']);
+    rows.push(['PROFILE', 'DESCRIPTION', 'SEED', 'URL', 'ADMIN EMAIL', 'SEEDED', 'PATH']);
     for (const e of values) {
       rows.push([
         e.profile,
         dash(e.description),
+        dash(e.seed_profile),
         dash(e.url),
         dash(e.admin_email),
         e.seeded ? 'yes' : 'no',

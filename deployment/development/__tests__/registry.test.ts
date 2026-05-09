@@ -5,8 +5,10 @@ import {
   DEFAULT_EGRESS_POOL_CIDR,
   egressPoolForSlot,
   EGRESS_PER_WORKTREE_SLOT_COUNT,
+  loadRegistry,
   REGISTRY_YAML,
   saveRegistry,
+  upsertEntry,
   type WorktreeEntry,
   UI_PORT_MIN,
   REGISTRY_PORT_MIN,
@@ -121,6 +123,21 @@ describe('allocatePorts (egress_pool_cidr wiring)', () => {
     const again = allocatePorts('stable');
     expect(again.ui_port).toBe(first.ui_port);
     expect(again.egress_pool_cidr).toBe(first.egress_pool_cidr);
+  });
+
+  it('persists seed_profile across upserts and survives a partial update', () => {
+    upsertEntry({ profile: 'p', seed_profile: 'minimal' });
+    expect(loadRegistry().p?.seed_profile).toBe('minimal');
+
+    // A subsequent upsert that doesn't set seed_profile must keep the
+    // previously-stored value — that's how re-runs without --seed-profile
+    // reuse the original choice.
+    upsertEntry({ profile: 'p', description: 'updated' });
+    expect(loadRegistry().p?.seed_profile).toBe('minimal');
+
+    // Explicit override flips it.
+    upsertEntry({ profile: 'p', seed_profile: 'full' });
+    expect(loadRegistry().p?.seed_profile).toBe('full');
   });
 
   it('uses the temp registry path, not the user home', () => {
