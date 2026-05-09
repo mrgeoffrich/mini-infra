@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useStackTemplates, useInstantiateTemplate } from "@/hooks/use-stack-templates";
+import { useStackTemplates, useInstantiateTemplate, useTemplatePrerequisites } from "@/hooks/use-stack-templates";
 import type { StackTemplateInfo, StackTemplateLinkedStack } from "@mini-infra/types";
 import { StackPlanView } from "@/components/stacks";
+import { PrerequisitesBanner } from "@/components/stacks/PrerequisitesBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -224,6 +225,15 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                         <StackPlanView stackId={stack.id} />
                       </div>
                     )}
+                    {/* Soft-warn pre-deploy: show unmet template prereqs as
+                        a hint when the user is about to instantiate.
+                        Doesn't block the deploy button — instantiation
+                        is allowed even with unmet prereqs (the resulting
+                        stack lands in `pending`). The hard block fires
+                        on the apply route. */}
+                    {!stack && deployable && (
+                      <TemplatePrereqHint templateId={template.id} scope="host" />
+                    )}
                   </div>
                 );
               })}
@@ -231,6 +241,34 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+interface TemplatePrereqHintProps {
+  templateId: string;
+  scope: "host" | "environment";
+  environmentId?: string;
+}
+
+/**
+ * Soft-warn renderer for a template's cross-stack prereqs. Hidden when
+ * prereqs are met, the template has no `requires` declared, or the
+ * precheck endpoint fails (we don't want a precheck error to scare the
+ * user out of deploying — the apply route's hard gate will catch real
+ * issues). Used by both the host template list (above) and the
+ * environment stacks list (separate file, same component shape).
+ */
+function TemplatePrereqHint({ templateId, scope, environmentId }: TemplatePrereqHintProps) {
+  const { data, isError } = useTemplatePrerequisites({
+    templateId,
+    environmentId: scope === "environment" ? environmentId : undefined,
+    enabled: scope === "host" || !!environmentId,
+  });
+  if (isError || !data || data.ok) return null;
+  return (
+    <div className="border-t p-4">
+      <PrerequisitesBanner evaluation={data} severity="warning" />
     </div>
   );
 }

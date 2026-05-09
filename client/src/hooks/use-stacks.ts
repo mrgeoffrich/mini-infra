@@ -23,6 +23,7 @@ import type {
   StackValidationResult,
   StackStatusResponseData,
   StackDeploymentRecord,
+  PrerequisiteEvaluation,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 
@@ -356,6 +357,32 @@ export function useStack(stackId: string) {
     enabled: !!stackId,
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Cross-stack prerequisites precheck for an existing stack. Returns
+ * `ok: true` when all prereqs are met (apply will proceed), `ok: false`
+ * with structured failures otherwise. UI uses this to render an
+ * "apply blocked" banner and disable the apply button before the user
+ * even hits the apply endpoint.
+ */
+export function useStackPrerequisites(stackId: string, enabled = true) {
+  return useQuery<PrerequisiteEvaluation>({
+    queryKey: ["stackPrerequisites", stackId],
+    queryFn: async () => {
+      const res = await fetch(`/api/stacks/${stackId}/prerequisites`, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to evaluate prerequisites: ${res.statusText}`);
+      }
+      const data = (await res.json()) as { success: boolean } & PrerequisiteEvaluation;
+      return { ok: data.ok, failures: data.failures };
+    },
+    enabled: !!stackId && enabled,
+    staleTime: 5_000,
   });
 }
 
