@@ -283,23 +283,7 @@ mk issue brief MINI-42 | tee /tmp/ctx.json
 
 `mk issue brief` returns a single object: `{issue, feature?, relations, pull_requests, documents, comments, warnings}`. Each entry in `documents` carries `filename`, `type`, `description` (the link's `--why`), `linked_via` (one or both of `"issue"` and `"feature/<slug>"`), `source_path`, and `content`. Docs reachable from both the issue and its parent feature are deduped to a single entry whose `linked_via` lists both paths. If the issue and feature link rows have differing `--why` descriptions, the issue's wins and a string is appended to `warnings`.
 
-**Driving an agent through a feature in dependency order.** Use `mk feature plan <slug>` to inspect the topo order, then loop on `mk issue next --feature <slug> --user <agent>` to claim issues one at a time:
-
-```bash
-# Read the plan once to understand what's ahead
-mk feature plan service-addons-framework
-
-# Agent loop: claim → work → mark done → repeat
-while :; do
-  next=$(mk issue next --feature service-addons-framework --user agent-1 -o json)
-  key=$(jq -r '.issue.key // empty' <<<"$next")
-  if [ -z "$key" ]; then sleep 30; continue; fi
-  # ... agent does the work ...
-  mk issue state "$key" done --user agent-1
-done
-```
-
-Two agents can call `mk issue next` against the same feature in parallel; the SQLite writer lock plus a conditional UPDATE serialise claims, so each issue is handed to exactly one agent. When the DAG is currently serial (everything else blocked) the second agent simply gets `{"issue": null}` and should retry later. Crashed agents leave a stale `in_progress`/assigned issue — clear with `mk issue state <KEY> todo --user <human>` and `mk issue unassign <KEY>` to release it.
+**Driving an agent through a feature in dependency order.** Inspect the topo order with `mk feature plan <slug>`, then loop on `mk issue next --feature <slug> --user <agent> -o json`, treating `{"issue": null}` as "retry later". Multiple agents can call `next` in parallel — SQLite serialises the claim. Crashed agents leave a stale `in_progress`/assigned issue; clear with `mk issue state <KEY> todo` + `mk issue unassign <KEY>`.
 
 ### Comments
 
@@ -422,15 +406,7 @@ mk doc unlink <filename> <ISSUE-KEY|feature-slug>
 **`--from-path` filename derivation:** replaces `/` with `-`, so
 `docs/planning/not-shipped/foo-plan.md` → `docs-planning-not-shipped-foo-plan.md`.
 
-**`--from-path` type derivation** (skip `--type` when one of these matches):
-
-| path prefix                       | derived type           |
-| --------------------------------- | ---------------------- |
-| `docs/planning/not-shipped/`      | `project_in_planning`  |
-| `docs/planning/in-progress/`      | `project_in_progress`  |
-| `docs/planning/shipped/`          | `project_complete`     |
-
-For any other path, pass `--type` explicitly. Explicit `--type` / `--content-file` always wins over derivation. When `--from-path` is given without `--content`/`--content-file`, the path itself is used as the content file.
+**`--from-path` type derivation:** `docs/planning/{not-shipped,in-progress,shipped}/` → `project_in_{planning,progress,complete}`. For any other path, pass `--type` explicitly. Explicit `--type` / `--content-file` always wins over derivation. When `--from-path` is given without `--content`/`--content-file`, the path itself is used as the content file.
 
 **Example:**
 ```bash
@@ -492,369 +468,74 @@ mk pr list <KEY>                     One URL per line (or JSON)
 mk pr attach MINI-42 https://github.com/owner/repo/pull/7
 ```
 
-## Common workflows (JSON path — agent-preferred)
-
-**File a bug with repro steps:**
-```bash
-mk issue add --user agent-claude --json '{
-  "title": "Login returns 500",
-  "state": "todo",
-  "description": "## Repro\n1. POST /login with valid creds\n2. Server returns 500\n\n## Logs\nNullPointerException at AuthFilter.java:42"
-}'
-```
-
-**Pick up an issue and link the PR:**
-```bash
-mk issue state   --user agent-claude --json '{"key":"MINI-42","state":"in_progress"}'
-mk comment add   --user agent-claude --json '{"issue_key":"MINI-42","author":"Claude","body":"Picking this up."}'
-mk pr attach     --user agent-claude --json '{"issue_key":"MINI-42","url":"https://github.com/owner/repo/pull/123"}'
-```
-
-**Mark blocked work:**
-```bash
-mk link --user agent-claude --json '{"from":"MINI-42","type":"blocks","to":"MINI-43"}'
-mk issue show MINI-43          # MINI-43 will show "blocked by MINI-42" in relations
-```
-
-**Find what's in flight across all repos:**
-```bash
-mk issue list --all-repos --state in_progress,in_review -o json
-```
-
-**Preview a destructive change before committing:**
-```bash
-mk issue rm --user agent-claude --dry-run --json '{"key":"MINI-99"}' -o json
-# Inspect cascade counts in the output, then re-run without --dry-run.
-```
-
-The same workflows are available via the older flag/positional surface for human use (`mk issue add "Login returns 500" --state todo --description-file /tmp/repro.md`). Agents should prefer the JSON path because it's strict, schema-published, and dry-runnable.
-
 ## HTTP API
 
-`mk api` exposes every CLI mutation and read over HTTP, backed by the same SQLite database, the same `inputs.*Input` JSON shapes, the same store-side validators, and the same audit log. Use this surface when you can't be a child process of `mk` — web UIs, IDE plugins, long-running agents that already speak HTTP. The CLI stays available for shell-driven flows; the API is byte-for-byte equivalent for what overlaps.
-
-Start it with:
+`mk api` exposes every CLI mutation and read over HTTP, backed by the same SQLite database, JSON shapes, validators, and audit log. **The CLI conventions above all apply** — discover schemas, compose JSON, dry-run, then commit. The only differences are HTTP plumbing.
 
 ```bash
-mk api                                # bind 127.0.0.1:5320 (default), no auth
-mk api --port 8080                    # same host, different port
+mk api                                # bind 127.0.0.1:5320, no auth
 mk api --addr 127.0.0.1:7777 --token T   # require Authorization: Bearer T
-MK_API_TOKEN=T mk api                 # token via env (same effect as --token)
+MK_API_TOKEN=T mk api                 # token via env
 ```
 
-The same five conventions apply, in the same order:
+### Discovery
 
-1. **Discover the shape:** `GET /schema` (every command, one JSON object) or `GET /schema/{name}` (one command's schema with `examples[0]`). Both mirror `mk schema all` / `mk schema show` byte-for-byte.
-2. **Compose the JSON body** to match the schema. Bodies are strict-decoded — unknown fields get a `400 invalid_input`.
-3. **Rehearse with `?dry_run=true`** (or `X-Dry-Run: 1`). The response carries `X-Dry-Run: applied`, the body shape matches the real call, no row is written, no history entry is recorded.
-4. **Execute** by dropping the dry-run flag and sending `X-Actor: <agent-name>` so audit rows attribute correctly.
-5. **Query lean** by default. Issue / feature lists drop `description`; doc lists drop `content`. Opt-in to inflation with `?with_description=true` or `?with_content=true`.
+- `GET /schema/list` — every command name + one-line summary (mirrors `mk schema list`).
+- `GET /schema/{name}` — full JSON Schema for one command with `examples[0]` (mirrors `mk schema show`).
+- `GET /schema` — every schema in one object.
 
-Worked example, end to end:
+Schemas describe payload shapes, not routes. Routes follow REST conventions under `/repos/{prefix}/...` — list/create on the collection, show/patch/delete on the item, plus sub-resources for state changes (`/state`, `/assignee`), batch ops (`/tags`, `/pull-requests`), graph edges (`/relations`, `/links`), bulk reads (`/brief`, `/plan`), and claim/peek (`/next`). Use `GET /schema/list` to enumerate every operation. Issue keys in URLs and bodies must be canonical (`MINI-42`); the bare-number CLI shortcut isn't accepted.
 
-```bash
-# 1. Discover.
-curl -s http://127.0.0.1:5320/schema/issue.add | jq .examples[0]
+A few non-obvious mappings:
 
-# 2. Compose & rehearse.
-#    WHY ?dry_run=true: prove the payload validates and the projected
-#    issue looks right before we touch the DB.
-curl -s -X POST 'http://127.0.0.1:5320/repos/MINI/issues?dry_run=true' \
-  -H 'Content-Type: application/json' \
-  -H 'X-Actor: agent-claude' \
-  -d '{
-    "title": "Pin tab strip",
-    "feature_slug": "tui-polish",
-    "description": "Body height should clip the tab strip.",
-    "tags": ["ui","tui"]
-  }'
+- **Tags:** `POST/DELETE /repos/{prefix}/issues/{key}/tags` with `{"tags":[...]}` (batch, not per-tag URLs).
+- **Relations:** `POST /repos/{prefix}/relations` with `{"from","type","to"}`; `DELETE` with `{"a","b"}` (bidirectional).
+- **PR detach:** `DELETE /repos/{prefix}/issues/{key}/pull-requests` with `{"url"}` or `?url=`.
+- **Documents:** link/unlink at `POST/DELETE /documents/{filename}/links`; rename at `POST /documents/{filename}/rename`.
+- **State / assignee:** `PUT /issues/{key}/state`, `PUT/DELETE /issues/{key}/assignee`.
 
-# 3. Commit (drop dry_run).
-curl -s -X POST http://127.0.0.1:5320/repos/MINI/issues \
-  -H 'Content-Type: application/json' \
-  -H 'X-Actor: agent-claude' \
-  -d '{ ...same payload... }'
-```
+### Headers, query params, dry-run
 
-### Endpoints
-
-`{prefix}` is the 4-char repo prefix uppercased (`MINI`). `{key}` is the canonical `PREFIX-N` issue key (`MINI-42`) — the bare-number CLI shortcut is not accepted here. `{slug}` is the kebab-case feature slug. `{filename}` is the document filename. All bodies and responses are `application/json` except `GET /documents/{filename}/download`. Mutating endpoints accept `?dry_run=true|1` or `X-Dry-Run: 1|true`.
-
-#### Meta
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/healthz` | — | 200 `{ok,version}` | — |
-| `GET` | `/schema` | — | 200 — every schema, keyed by name | — |
-| `GET` | `/schema/list` | — | 200 — name + one-line summary | — |
-| `GET` | `/schema/{name}` | — | 200 — single schema with `examples[0]` | — |
-
-#### Repos
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos` | — | 200 array | — |
-| `POST` | `/repos` | `{prefix?, name, path, remote_url?}` | 201 repo | `repo.create` |
-| `GET` | `/repos/{prefix}` | — | 200 repo | — |
-
-`POST /repos` is the explicit equivalent of `mk init`. The CLI's auto-create-on-first-use only works because it can read CWD; over HTTP you have to spell out `name` and `path`. `prefix` is optional — the server allocates from `name` if omitted, same as the CLI.
-
-#### Features
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos/{prefix}/features` | — (`?with_description`) | 200 array | — |
-| `POST` | `/repos/{prefix}/features` | `FeatureAddInput` | 201 feature | `feature.create` |
-| `GET` | `/repos/{prefix}/features/{slug}` | — | 200 view (issues + linked docs) | — |
-| `PATCH` | `/repos/{prefix}/features/{slug}` | `FeatureEditInput` | 200 feature | `feature.update` |
-| `DELETE` | `/repos/{prefix}/features/{slug}` | — | 204 (200 dry-run preview) | `feature.delete` |
-| `GET` | `/repos/{prefix}/features/{slug}/plan` | — | 200 plan | — |
-| `GET` | `/repos/{prefix}/features/{slug}/next` | — | 200 `{issue}` (peek) | — |
-| `POST` | `/repos/{prefix}/features/{slug}/next` | — (requires `X-Actor`) | 200 `{issue}` (claim) | `issue.claim` |
-
-#### Issues
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos/{prefix}/issues` | — (`?state`,`?feature`,`?tag`,`?with_description`) | 200 array | — |
-| `POST` | `/repos/{prefix}/issues` | `IssueAddInput` | 201 issue | `issue.create` |
-| `GET` | `/repos/{prefix}/issues/{key}` | — | 200 view (comments + relations + PRs + docs) | — |
-| `GET` | `/repos/{prefix}/issues/{key}/brief` | — (`?no_feature_docs`,`?no_comments`,`?no_doc_content`) | 200 brief | — |
-| `PATCH` | `/repos/{prefix}/issues/{key}` | `IssueEditInput` | 200 issue | `issue.update` |
-| `DELETE` | `/repos/{prefix}/issues/{key}` | — | 204 (200 dry-run preview) | `issue.delete` |
-| `PUT` | `/repos/{prefix}/issues/{key}/state` | `{state}` | 200 issue | `issue.state` |
-| `PUT` | `/repos/{prefix}/issues/{key}/assignee` | `{assignee}` | 200 issue | `issue.assign` |
-| `DELETE` | `/repos/{prefix}/issues/{key}/assignee` | — | 200 issue (no-op when already clear) | `issue.assign` |
-
-#### Comments
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos/{prefix}/issues/{key}/comments` | — | 200 array | — |
-| `POST` | `/repos/{prefix}/issues/{key}/comments` | `CommentAddInput` (`{author, body}`) | 201 comment | `comment.add` |
-
-#### Relations
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `POST` | `/repos/{prefix}/relations` | `{from, type, to}` (canonical keys) | 201 relation | `relation.create` |
-| `DELETE` | `/repos/{prefix}/relations` | `{a, b}` | 204 (200 dry-run preview) | `relation.delete` |
-
-`type` is one of `blocks`, `relates-to` (alias `relates`), `duplicate-of` (alias `duplicates`).
-
-#### Pull requests
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos/{prefix}/issues/{key}/pull-requests` | — | 200 array | — |
-| `POST` | `/repos/{prefix}/issues/{key}/pull-requests` | `{url}` | 201 pr | `pr.attach` |
-| `DELETE` | `/repos/{prefix}/issues/{key}/pull-requests` | `{url}` or `?url=` | 204 (200 dry-run preview) | `pr.detach` |
-
-#### Tags
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `POST` | `/repos/{prefix}/issues/{key}/tags` | `{tags:[...]}` | 200 issue | `tag.add` |
-| `DELETE` | `/repos/{prefix}/issues/{key}/tags` | `{tags:[...]}` | 200 issue | `tag.remove` |
-
-#### Documents
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/repos/{prefix}/documents` | — (`?type`, `?with_content`) | 200 array | — |
-| `POST` | `/repos/{prefix}/documents` | `DocAddInput` | 201 document | `document.create` |
-| `GET` | `/repos/{prefix}/documents/{filename}` | — (`?with_content=false` to drop body) | 200 view (doc + links) | — |
-| `PUT` | `/repos/{prefix}/documents/{filename}` | `DocAddInput` (filename in URL wins) | 200 document | `document.create` or `document.update` |
-| `PATCH` | `/repos/{prefix}/documents/{filename}` | `DocEditInput` | 200 document | `document.update` |
-| `DELETE` | `/repos/{prefix}/documents/{filename}` | — | 204 (200 dry-run preview with cascade) | `document.delete` |
-| `GET` | `/repos/{prefix}/documents/{filename}/download` | — | 200 `text/markdown` body, `Content-Disposition: attachment` | — |
-| `POST` | `/repos/{prefix}/documents/{filename}/rename` | `{new_filename, type?}` | 200 document | `document.rename` |
-| `POST` | `/repos/{prefix}/documents/{filename}/links` | `{issue_key OR feature_slug, description?}` | 201 link | `document.link` |
-| `DELETE` | `/repos/{prefix}/documents/{filename}/links` | `{issue_key OR feature_slug}` | 204 (200 dry-run preview) | `document.unlink` |
-
-#### History
-
-| Method | Path | Body | Success | Audit op |
-|---|---|---|---|---|
-| `GET` | `/history` | — | 200 array (every repo) | — |
-| `GET` | `/repos/{prefix}/history` | — | 200 array (single repo) | — |
-
-Filters mirror the CLI: `?limit=` (default 50, 0 = no cap), `?offset=`, `?op=`, `?kind=`, `?actor=` (alias `?user_filter=`), `?since=`, `?from=`, `?to=`, `?oldest_first=true`. `since` and `from` are mutually exclusive. Bare-date stamps are local-timezone; RFC 3339 stamps are honoured as written. Reads are not audited.
-
-### Authentication
-
-When the server is started with `--token T` (or `MK_API_TOKEN=T`), every request except `GET /healthz` MUST send `Authorization: Bearer T`. Missing or wrong token → `401 unauthorized`. The token is compared with `subtle.ConstantTimeCompare`.
-
-When no token is configured, requests are accepted without an `Authorization` header — the loopback default address (`127.0.0.1:5320`) is the trust boundary. There is no per-user auth; one token serves every caller.
-
-### Actor identity
-
-```
-X-Actor: agent-claude
-```
-
-Every mutating endpoint stamps the audit row with the value from `X-Actor`. When the header is absent, the actor falls back to the literal string `"api"` (NOT the OS user the server runs as). The header is validated by `store.ValidateActor` once per request — control characters or overlength values fail with `400 invalid_input`.
-
-`POST /repos/{prefix}/features/{slug}/next` is the one endpoint where `X-Actor` is **required**: claiming work demands a real assignee, so the server returns `400 invalid_input` with `details.field=X-Actor` if it's missing.
-
-### Dry-run
-
-```
-?dry_run=true        # query parameter
-?dry_run=1           # also accepted
-X-Dry-Run: true      # header form (use whichever your client makes easier)
-X-Dry-Run: 1
-```
-
-Every mutating endpoint accepts dry-run. The response status matches what a real call would return (e.g. `201 Created` on `POST /issues?dry_run=true`), the body is the projected entity in the same shape, the response carries `X-Dry-Run: applied`, no row is written, no history entry is recorded. Server-time fields (`id`, `created_at`, `updated_at`) come back zero, same as the CLI's `--dry-run`. Destructive endpoints (`DELETE`) return a `*DeletePreview` carrying cascade counts.
+- **Auth.** When `--token` / `MK_API_TOKEN` is set, every request except `GET /healthz` needs `Authorization: Bearer <token>` (constant-time compare). The loopback default with no token is the trust boundary.
+- **Actor.** `X-Actor: <agent-name>` stamps the audit log. Absent → falls back to the literal `"api"` (NOT the OS user). **Required** on `POST /repos/{prefix}/features/{slug}/next` — claiming work demands a real assignee.
+- **Dry-run.** `?dry_run=true` (or `=1`) or `X-Dry-Run: 1`. Response status matches a real call, body is the projected entity, response carries `X-Dry-Run: applied`. No row written, no audit row recorded. Server-time fields (`id`, `created_at`, `updated_at`) come back zero. `DELETE` returns a `*DeletePreview` with cascade counts.
+- **Lean lists.** Issue/feature lists drop `description`; doc list drops `content`. Inflate with `?with_description=true` or `?with_content=true`. For a single doc, `?with_content=false` strips the body the other way.
+- **Brief opt-outs.** `?no_feature_docs=1`, `?no_comments=1`, `?no_doc_content=1` on `GET /issues/{key}/brief`.
+- **History filters.** `?limit`, `?offset`, `?op`, `?kind`, `?actor` (alias `?user_filter`), `?since`, `?from`, `?to`, `?oldest_first` on `GET /history` and `GET /repos/{prefix}/history`. `since` and `from` are mutually exclusive.
 
 ### Errors
 
-Every error response is a single envelope:
-
 ```json
-{
-  "error": "title is required",
-  "code": "invalid_input",
-  "details": {"field": "title"}
-}
+{ "error": "title is required", "code": "invalid_input", "details": {"field": "title"} }
 ```
 
 | Status | Code | When |
 |---|---|---|
-| 400 | `invalid_input` | malformed JSON, unknown fields (strict decode), validator failure, missing required `X-Actor` on claim |
-| 401 | `unauthorized` | `--token` configured and bearer is missing/wrong |
-| 404 | `not_found` | path resolves no such repo / feature / issue / document |
-| 409 | `conflict` | duplicate slug, duplicate prefix, duplicate PR attachment, document already exists |
-| 413 | `payload_too_large` | request body exceeds the 4 MiB cap |
-| 500 | `internal` | bug — server-side panic was caught by the recovery middleware |
+| 400 | `invalid_input` | malformed JSON, unknown fields, validator failure, missing required `X-Actor` on claim |
+| 401 | `unauthorized` | token configured and bearer is missing/wrong |
+| 404 | `not_found` | path resolves no such entity |
+| 409 | `conflict` | duplicate slug/prefix/PR URL/document filename |
+| 413 | `payload_too_large` | body > 4 MiB |
+| 500 | `internal` | server-side panic (caught by recovery middleware) |
 
-`details` is optional and field-specific. Most validation errors include `details.field` pointing at the offending payload key.
+### API-only quirks
 
-### Lean lists
+- **`POST /repos`** is the equivalent of `mk init`, but the server can't see your CWD — supply `{"name":"...", "path":"..."}` (plus optional `prefix`) explicitly.
+- **`GET /repos/{prefix}/documents/{filename}/download`** is the only non-JSON endpoint. Streams the body as `text/markdown` with `Content-Disposition: attachment`. No audit row, no dry-run, no `with_content`. The API never reads or writes the server filesystem, so callers materialise on disk by piping the response (`curl -O`).
+- **CLI verbs with no API equivalent** (touch the local filesystem or terminal): `mk init` (use `POST /repos`), `mk install-skill`, `mk doc add --from-path` / `--content-file` (inline `content` in the body), `mk doc export` (use `/download`), `mk tui`.
 
-Same defaults as the CLI. List endpoints strip heavy fields by default; use these flags to inflate when you really need bodies:
-
-- `GET /repos/{prefix}/issues?with_description=true|1` — inline `description` per row.
-- `GET /repos/{prefix}/features?with_description=true|1` — same.
-- `GET /repos/{prefix}/documents?with_content=true|1` — inline `content` per row.
-- `GET /repos/{prefix}/documents/{filename}?with_content=false|0` — opposite direction: skip the body when fetching one doc by name.
-
-`GET /repos/{prefix}/issues/{key}/brief` is the one bulk-context endpoint that *does* inline doc bodies on purpose. Use the three opt-out filters when the full payload is too large:
-
-- `?no_feature_docs=1` — skip docs linked to the parent feature.
-- `?no_comments=1` — skip the comments section.
-- `?no_doc_content=1` — keep linked-doc metadata but drop the bodies.
-
-### Special endpoints
-
-- `GET /repos/{prefix}/issues/{key}/brief` — the agent's bulk-context single-fetch. Returns `{issue, feature?, relations, pull_requests, documents, comments, warnings}` in one call, with linked-doc bodies inlined. Replaces the `show` + per-doc-fetch dance. Always JSON.
-- `POST /repos/{prefix}/features/{slug}/next` — atomic claim. **Requires `X-Actor`.** Picks the lowest-numbered todo issue in the feature with all blockers resolved and no existing assignee, flips it to `in_progress`, and stamps the assignee with the actor. Returns `{"issue": null}` (status 200) when nothing is currently claimable — poll/retry rather than treating that as an error. Records `issue.claim`.
-- `GET /repos/{prefix}/features/{slug}/next` — read-only peek. Same response shape as the claim, no mutation, no audit row. Use this to inspect what the next claim *would* return before committing.
-- `GET /repos/{prefix}/documents/{filename}/download` — the only non-JSON endpoint. Streams the doc body as `text/markdown; charset=utf-8` with `Content-Disposition: attachment; filename="<name>"`. No audit row, no `?dry_run`, no `with_content`. This replaces the CLI's `mk doc export --to-path`: the API never reads or writes the server filesystem, so callers materialise on disk by piping the response body themselves (e.g. `curl -O`).
-
-### CLI verbs that have no API equivalent
-
-Some CLI verbs touch the developer's local filesystem or terminal. They stay local-only and have no HTTP analogue:
-
-- **`mk init`** — auto-detects the repo from CWD by walking up to a `.git` toplevel. The API can't see your working tree; use `POST /repos` with explicit `{name, path}`.
-- **`mk install-skill`** — writes `.claude/skills/mk/SKILL.md` into the local repo. No remote sense.
-- **`mk doc add --from-path` / `--content-file`** — read a file off the server's disk. Over HTTP, put the body in the request `content` field directly (it's just a JSON string, multi-line is fine).
-- **`mk doc export --to-path` / `--to`** — write a file onto the server's disk. Over HTTP, use `GET /documents/{filename}/download` and let the client save the response stream.
-- **`mk tui`** — full-screen terminal UI. Same DB; no point exposing it over HTTP.
-
-The `mk schema*` commands have HTTP equivalents (`GET /schema*`) but the registry is identical, so a CLI agent can keep using either.
-
-### Worked examples
-
-**1. Create a repo and a first issue.**
-
-```bash
-# WHY: the API can't auto-detect a repo from CWD, so we register it explicitly.
-curl -s -X POST http://127.0.0.1:5320/repos \
-  -H 'Content-Type: application/json' \
-  -H 'X-Actor: agent-claude' \
-  -d '{"prefix":"MINI","name":"mini-kanban","path":"/home/me/Repos/mini-kanban"}'
-
-# WHY: file the first ticket. Strict decode means a typo in `tilte` returns 400.
-curl -s -X POST http://127.0.0.1:5320/repos/MINI/issues \
-  -H 'Content-Type: application/json' \
-  -H 'X-Actor: agent-claude' \
-  -d '{"title":"First ticket","state":"todo","tags":["bootstrap"]}'
-```
-
-**2. Agent claim loop.**
-
-```bash
-# WHY: claim → work → mark done. Each iteration writes an audit row stamped
-#      with X-Actor=agent-x, so the audit log shows exactly which agent did
-#      what. Returns {"issue": null} when nothing is claimable; sleep+retry.
-while :; do
-  resp=$(curl -s -X POST \
-    "http://127.0.0.1:5320/repos/MINI/features/auth-rewrite/next" \
-    -H 'X-Actor: agent-x')
-  key=$(jq -r '.issue.key // empty' <<<"$resp")
-  if [ -z "$key" ]; then sleep 30; continue; fi
-
-  # ... agent does the work, opens a PR, etc ...
-
-  # WHY: PUT /issues/{key}/state replaces the state. Body shape published at
-  #      /schema/issue.state — strict decode rejects extras.
-  curl -s -X PUT "http://127.0.0.1:5320/repos/MINI/issues/$key/state" \
-    -H 'Content-Type: application/json' \
-    -H 'X-Actor: agent-x' \
-    -d '{"state":"done"}'
-done
-```
-
-**3. Bulk-context fetch for an LLM prompt.**
-
-```bash
-# WHY: one read returns the issue, parent feature, all linked docs (with
-#      bodies inlined), comments, relations, and PRs. Drop --no-doc-content
-#      if the docs themselves are too large for context.
-curl -s "http://127.0.0.1:5320/repos/MINI/issues/MINI-42/brief?no_doc_content=1" \
-  -H 'X-Actor: reader' \
-  | jq .
-```
-
-### What the API deliberately doesn't do
-
-Same posture as the CLI's "what we deliberately don't do" — these came up during design and were rejected for v1. New consumers shouldn't expect them.
-
-- **No NDJSON / streaming / WebSockets.** Largest realistic response is one `issue brief`. Streaming complexity isn't justified.
-- **No per-user auth or sessions.** One shared bearer token. This is a local helper, not a SaaS.
-- **No remote `from-path` / `to-path` doc commands.** The API never reads or writes the server filesystem. Inline content in the body; pipe `/download` to disk.
-- **No metrics / Prometheus endpoint.** `/healthz` is the only non-resource endpoint.
-- **No CORS, no TLS termination, no rate limiting.** Designed for loopback and trusted LAN.
-- **No cursor pagination.** History uses `?limit=` + `?offset=`; nothing else paginates yet.
-
-For the full design rationale, the threat model, and the forward-looking "Phase 6: CLI client mode" sketch, see `docs/rest-api-design.md`.
+For the full design rationale, threat model, and what the API deliberately doesn't do (NDJSON, per-user auth, CORS, cursor pagination, …), see `docs/rest-api-design.md`.
 
 ## CLI client mode (`--remote` / `MK_REMOTE`)
 
-The same `mk` binary can drive a remote `mk api` server instead of the local SQLite database, so an agent can use the familiar CLI surface against a shared kanban without changing flags or output format. Set one of:
-
-- `--remote http://host:5320` (per-invocation flag), or
-- `MK_REMOTE=http://host:5320` (env, persists across the shell), and
-- `--token <secret>` / `MK_API_TOKEN=<secret>` if the server enforces auth.
+`mk` can drive a remote `mk api` server instead of the local DB. Set `--remote http://host:5320` (or `MK_REMOTE=...`) and, if the server enforces auth, `--token` / `MK_API_TOKEN`. Every read and mutating verb behaves identically — same flags, same JSON output, same `--dry-run`, same `--user`. The client translates each verb into the matching HTTP route; audit rows are written by the server.
 
 ```bash
 MK_REMOTE=http://team-mk:5320 MK_API_TOKEN=$T mk issue list -o json
 mk --remote http://team-mk:5320 issue add "Login broken" --feature auth
 ```
 
-In remote mode every read and mutating verb above behaves exactly as it does locally — same flags, same JSON output, same `--dry-run` semantics, same `--user` actor. The client transparently translates each verb into the corresponding HTTP route from the table above. Audit rows are written by the API server, not the client.
-
-Verbs that touch the developer's local filesystem stay local-only and error clearly when `MK_REMOTE` is set:
-
-- `mk init` — auto-detects CWD; use `POST /repos` (or run `mk init` against the local DB) instead.
-- `mk install-skill` — writes `.claude/skills/mk/SKILL.md` locally.
-- `mk doc add --from-path` / `mk doc upsert --from-path` — read from the client filesystem; pass `--content`/`--content-file` instead.
-- `mk doc export` (`--to-path` and `--to`) — writes to the client filesystem; use `mk doc download <filename>` (writes to stdout, or `--to <path>`) to get the body locally over HTTP.
-- `mk tui` — opens the local DB directly.
-
-`mk schema *` and `mk status` also stay local-direct (no remote endpoint exists in v1; the registry / stats are local concerns).
+Verbs that touch the local filesystem or terminal error clearly in remote mode and stay local-direct: `mk init`, `mk install-skill`, `mk doc add --from-path` / `--content-file` (use `--content` inline instead), `mk doc export` (use `mk doc download <filename>` — writes to stdout or `--to <path>`), `mk tui`, `mk schema *`, `mk status`.
 
 ## Gotchas
 
