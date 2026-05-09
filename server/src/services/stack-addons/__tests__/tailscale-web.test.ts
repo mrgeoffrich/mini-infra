@@ -154,7 +154,10 @@ describe('tailscale-web addon', () => {
     // substitutes it at boot.
     expect(sidecar.configFiles).toHaveLength(1);
     const file = sidecar.configFiles![0];
-    expect(file.path).toBe('/etc/tailscale/serve.json');
+    // `path` is the location *inside the volume* — the volume is mounted at
+    // /etc/tailscale on the sidecar, so the file appears at
+    // /etc/tailscale/serve.json (matching TS_SERVE_CONFIG).
+    expect(file.path).toBe('/serve.json');
     expect(file.volumeName).toBe('web-tailscale-config');
     expect(JSON.parse(file.content)).toMatchObject({
       Web: {
@@ -163,6 +166,19 @@ describe('tailscale-web addon', () => {
         },
       },
     });
+
+    // The sidecar mounts the config volume at /etc/tailscale so tailscaled
+    // can read serve.json. Without this mount, TS_SERVE_CONFIG points at a
+    // non-existent path and the HTTPS surface won't come up.
+    expect(sidecar.containerConfig.mounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'web-tailscale-config',
+          target: '/etc/tailscale',
+          type: 'volume',
+        }),
+      ]),
+    );
 
     // Synthetic-marker labels — addon-badge consumes 'mini-infra.addon'.
     expect(sidecar.containerConfig.labels).toMatchObject({

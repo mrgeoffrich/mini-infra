@@ -152,10 +152,14 @@ describe('tailscale merge strategy (kind:"tailscale")', () => {
     expect(mintCalls).toBe(1);
 
     // serve.json is mounted with the rendered HTTPS proxy → http://web:8080.
+    // `path` is the location inside the volume; the volume is mounted at
+    // /etc/tailscale on the sidecar so the file appears at
+    // /etc/tailscale/serve.json (matching TS_SERVE_CONFIG).
     expect(sidecar.configFiles).toBeDefined();
     expect(sidecar.configFiles).toHaveLength(1);
     const serveFile = sidecar.configFiles![0];
-    expect(serveFile.path).toBe('/etc/tailscale/serve.json');
+    expect(serveFile.path).toBe('/serve.json');
+    expect(serveFile.volumeName).toBe('web-tailscale-config');
     const parsed = JSON.parse(serveFile.content) as Record<string, unknown>;
     expect(parsed).toMatchObject({
       TCP: { '443': { HTTPS: true } },
@@ -166,13 +170,24 @@ describe('tailscale merge strategy (kind:"tailscale")', () => {
       },
     });
 
-    // Single state volume mount (one device → one state directory).
-    expect(sidecar.containerConfig.mounts).toHaveLength(1);
-    expect(sidecar.containerConfig.mounts?.[0]).toMatchObject({
-      source: 'web-tailscale-state',
-      target: '/var/lib/tailscale',
-      type: 'volume',
-    });
+    // Two volume mounts — the always-on state volume AND the config volume
+    // that holds serve.json. Without the config mount, TS_SERVE_CONFIG
+    // points at a non-existent path and the HTTPS surface fails to come up.
+    expect(sidecar.containerConfig.mounts).toHaveLength(2);
+    expect(sidecar.containerConfig.mounts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'web-tailscale-state',
+          target: '/var/lib/tailscale',
+          type: 'volume',
+        }),
+        expect.objectContaining({
+          source: 'web-tailscale-config',
+          target: '/etc/tailscale',
+          type: 'volume',
+        }),
+      ]),
+    );
 
     // Merged-marker labels — the kind, a comma-separated member list, and
     // the standard synthetic markers.

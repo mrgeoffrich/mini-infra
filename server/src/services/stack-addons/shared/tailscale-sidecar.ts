@@ -2,12 +2,15 @@ import {
   TAILSCALE_CONTROL_PLANE_HOSTNAMES,
   type ProvisionContext,
   type StackConfigFile,
+  type StackContainerConfig,
   type StackServiceDefinition,
 } from '@mini-infra/types';
 import {
   tailscaleSidecarServiceName,
   tailscaleStateVolumeName,
 } from './sidecar-naming';
+
+type SidecarMount = NonNullable<StackContainerConfig['mounts']>[number];
 
 /**
  * Official Tailscale image. We run containerised `tailscaled` rather than
@@ -31,6 +34,13 @@ export interface BuildTailscaleSidecarInput {
   env: Record<string, string>;
   /** Optional config files (e.g. rendered `serve.json` for `tailscale-web`). */
   files?: StackConfigFile[];
+  /**
+   * Mounts beyond the always-on state volume — e.g. the config-file volume
+   * holding `serve.json` for `tailscale-web`. Without these, a file in
+   * `files` is written into a volume the sidecar never mounts and
+   * tailscaled can't read it.
+   */
+  extraMounts?: SidecarMount[];
   /** Synthetic-marker labels — vary by solo addon vs merged group. */
   labels: Record<string, string>;
 }
@@ -65,6 +75,7 @@ export function buildTailscaleSidecarDefinition(
           target: STATE_VOLUME_MOUNT_PATH,
           type: 'volume',
         },
+        ...(input.extraMounts ?? []),
       ],
       labels: { ...input.labels },
       restartPolicy: 'unless-stopped',

@@ -13,11 +13,11 @@ import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter
 import { TailscaleService } from '../../tailscale/tailscale-service';
 import { getLogger } from '../../../lib/logger-factory';
 import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
-import { tailscaleSidecarServiceName } from '../shared/sidecar-naming';
 import {
   TAILSCALE_SERVE_CONFIG_PATH,
+  buildServeConfigArtifacts,
   renderServeJson,
-  tailscaleConfigVolumeName,
+  type TailscaleSidecarMount,
 } from '../tailscale-web/serve-config';
 import type { TailscaleSshConfig } from '../tailscale-ssh/manifest';
 import type { TailscaleWebConfig } from '../tailscale-web/manifest';
@@ -124,21 +124,19 @@ async function provisionTailscaleMerged(
   let tailnetDomain: string | null = null;
   let targetPort: number | undefined;
   let targetPath: string | undefined;
+  let serveConfigMount: TailscaleSidecarMount | undefined;
   if (resolved.web) {
     targetPort = resolved.web.port;
     targetPath = resolved.web.path ?? '/';
     env.TS_SERVE_CONFIG = TAILSCALE_SERVE_CONFIG_PATH;
-    const sidecarServiceName = tailscaleSidecarServiceName(ctx.service.name);
-    files.push({
-      volumeName: tailscaleConfigVolumeName(sidecarServiceName),
-      path: TAILSCALE_SERVE_CONFIG_PATH,
-      content: renderServeJson({
-        targetService: ctx.service.name,
-        targetPort: resolved.web.port,
-        path: resolved.web.path,
-      }),
-      permissions: '0644',
+    const serveJson = renderServeJson({
+      targetService: ctx.service.name,
+      targetPort: resolved.web.port,
+      path: resolved.web.path,
     });
+    const artifacts = buildServeConfigArtifacts(ctx.service.name, serveJson);
+    files.push(artifacts.configFile);
+    serveConfigMount = artifacts.configMount;
     try {
       tailnetDomain = await tailscale.getTailnetDomain();
     } catch (err) {
@@ -159,6 +157,10 @@ async function provisionTailscaleMerged(
       tailnetDomain,
       mergedAddonIds: members.map((m) => m.addonId),
       ...(targetPort !== undefined ? { targetPort, targetPath } : {}),
+      // Carried into buildServiceDefinition so the merged sidecar mounts the
+      // serve.json volume. Without this, tailscaled boots with
+      // TS_SERVE_CONFIG pointing at a non-existent path.
+      ...(serveConfigMount ? { serveConfigMount } : {}),
     },
   };
 }
@@ -169,10 +171,14 @@ function buildMergedServiceDefinition(
   members: ReadonlyArray<{ addonId: string; config: unknown }>,
 ): StackServiceDefinition {
   const memberIds = members.map((m) => m.addonId).sort();
+  const serveConfigMount = provisioned.templateVars.serveConfigMount as
+    | TailscaleSidecarMount
+    | undefined;
   return buildTailscaleSidecarDefinition({
     ctx,
     env: { ...(provisioned.envForSidecar ?? {}) },
     files: provisioned.files ?? [],
+    extraMounts: serveConfigMount ? [serveConfigMount] : [],
     labels: {
       // Merged sidecars are identified by their kind, not a specific addon
       // id — the AddonBadge falls back to `synthetic.kind` when present, so

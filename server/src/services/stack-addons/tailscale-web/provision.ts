@@ -8,11 +8,10 @@ import {
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
 import { getLogger } from '../../../lib/logger-factory';
-import { tailscaleSidecarServiceName } from '../shared/sidecar-naming';
 import {
   TAILSCALE_SERVE_CONFIG_PATH,
+  buildServeConfigArtifacts,
   renderServeJson,
-  tailscaleConfigVolumeName,
 } from './serve-config';
 import type { TailscaleWebConfig } from './manifest';
 
@@ -80,13 +79,15 @@ export async function provisionTailscaleWeb(
     );
   }
 
-  const sidecarServiceName = tailscaleSidecarServiceName(ctx.service.name);
-  const configVolume = tailscaleConfigVolumeName(sidecarServiceName);
   const serveJson = renderServeJson({
     targetService: ctx.service.name,
     targetPort: config.port,
     path: config.path,
   });
+  const { configFile, configMount } = buildServeConfigArtifacts(
+    ctx.service.name,
+    serveJson,
+  );
 
   return {
     envForSidecar: {
@@ -96,14 +97,7 @@ export async function provisionTailscaleWeb(
       TS_USERSPACE: 'false',
       TS_SERVE_CONFIG: TAILSCALE_SERVE_CONFIG_PATH,
     },
-    files: [
-      {
-        volumeName: configVolume,
-        path: TAILSCALE_SERVE_CONFIG_PATH,
-        content: serveJson,
-        permissions: '0644',
-      },
-    ],
+    files: [configFile],
     templateVars: {
       tailscaleHostname: hostname,
       tailscaleTags: tagSet,
@@ -111,6 +105,10 @@ export async function provisionTailscaleWeb(
       tailnetDomain,
       targetPort: config.port,
       targetPath: config.path ?? '/',
+      // Carried into buildServiceDefinition so the sidecar mounts the same
+      // volume the configFile gets written into. Without this, tailscaled
+      // boots with TS_SERVE_CONFIG pointing at a non-existent path.
+      serveConfigMount: configMount,
     },
   };
 }
