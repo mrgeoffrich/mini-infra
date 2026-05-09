@@ -317,6 +317,71 @@ export class TailscaleService extends ConfigurationService {
     }
   }
 
+  /**
+   * Resolve the tailnet's MagicDNS suffix (e.g. `tail-abc.ts.net`) so callers
+   * can compose `https://<host>.<tailnet>.ts.net` URLs without hardcoding the
+   * domain. Tailscale exposes the suffix via the DNS search paths on the
+   * tailnet — `searchPaths[0]` is the MagicDNS suffix when MagicDNS is on.
+   *
+   * Used by the `tailscale-web` addon to populate `templateVars.tailnetDomain`
+   * for downstream UI (Phase 5 Connect panel). The `serve.json` itself uses
+   * the runtime-substituted `${TS_CERT_DOMAIN}` so this lookup is not
+   * load-bearing for traffic — it's a UI ergonomic.
+   */
+  async getTailnetDomain(): Promise<string | null> {
+    const accessToken = await this.getAccessToken();
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${TAILSCALE_API_BASE}/tailnet/-/dns/searchpaths`,
+        {
+          method: "GET",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        },
+      );
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError") {
+        throw new TailscaleAuthError(
+          "Tailscale DNS searchpaths request timed out",
+          TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+        );
+      }
+      throw new TailscaleAuthError(
+        `Failed to reach Tailscale DNS endpoint: ${
+          err instanceof Error ? err.message : "unknown"
+        }`,
+        TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+      const text = await safeReadText(response);
+      throw new TailscaleAuthError(
+        `Tailscale DNS searchpaths request failed (HTTP ${response.status}): ${text}`,
+        TAILSCALE_ERROR_CODES.TAILSCALE_API_ERROR,
+      );
+    }
+
+    const data = (await response.json()) as { searchPaths?: string[] };
+    const first = data.searchPaths?.find(
+      (p): p is string => typeof p === "string" && p.length > 0,
+    );
+    if (!first) return null;
+    // The endpoint returns paths with a trailing dot (FQDN form) on some
+    // tailnets; normalise to the bare suffix.
+    return first.replace(/\.$/, "");
+  }
+
   async getHealthStatus(): Promise<ServiceHealthStatus> {
     const latestStatus = await this.getLatestConnectivityStatus();
 
