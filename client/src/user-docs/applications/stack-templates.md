@@ -46,6 +46,18 @@ Define template parameters that act as input variables when the template is inst
 
 Configure Docker networks and persistent volumes that the template's services use.
 
+### Cross-Stack Prerequisites
+
+Templates can declare other stacks (or system conditions) that must be in place before this stack can be applied. Two kinds:
+
+- **Stack prerequisite** --- a stack from a named template must exist with a minimum status (e.g. `synced`). The match scope can be `host`, `environment`, or `same-environment` (the same env as the applying stack).
+- **Predicate prerequisite** --- a built-in named check, e.g. `vault-bootstrapped` (true when Vault has been bootstrapped and the operator passphrase is unlocked).
+
+Behaviour:
+
+- **Instantiating a template is allowed even if prerequisites aren't met** --- the dialog shows a soft-warn so you can stage stacks ahead of time.
+- **Applying a stack is blocked** until every prerequisite passes. The stack detail page renders a banner explaining each unmet requirement, with deep-link CTAs to fix it (deploy a missing stack, apply a pending one, bootstrap Vault, etc.).
+
 ## Versioning
 
 Templates use a draft-and-publish workflow:
