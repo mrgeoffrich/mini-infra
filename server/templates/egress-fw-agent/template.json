@@ -1,10 +1,10 @@
 {
   "name": "egress-fw-agent",
   "displayName": "Egress Firewall Agent",
-  "builtinVersion": 2,
+  "builtinVersion": 3,
   "scope": "host",
   "category": "infrastructure",
-  "description": "Blocks outbound network traffic that breaks your environment's egress rules. Runs once per host. Logs every blocked connection so you can see what was denied and why.",
+  "description": "Blocks outbound network traffic that breaks your environment's egress rules. Runs once per host. Logs every blocked connection so you can see what was denied and why. Requires a synced NATS host stack (which transitively requires Vault to be bootstrapped).",
   "parameters": [
     {
       "name": "log-level",
@@ -12,6 +12,9 @@
       "default": "info",
       "description": "Log level for the fw-agent (debug, info, warn, error)"
     }
+  ],
+  "requires": [
+    { "kind": "stack", "templateName": "nats", "minState": "synced", "scopeMatch": "host" }
   ],
   "networks": [],
   "volumes": [],
