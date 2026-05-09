@@ -303,6 +303,22 @@ export async function run(argv: string[]): Promise<void> {
     logSkip('--keep-vm specified — leaving VM running.');
   }
 
+  if (entry.worktree_path) {
+    const detailsFile = path.join(entry.worktree_path, 'environment-details.xml');
+    if (fs.existsSync(detailsFile)) {
+      try {
+        fs.rmSync(detailsFile, { force: true });
+        logOk(`Removed ${detailsFile}.`);
+      } catch (err) {
+        logWarn(
+          `Failed to remove ${detailsFile}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    } else {
+      logSkip(`No environment-details.xml at ${entry.worktree_path}.`);
+    }
+  }
+
   if (removeEntry(profile)) {
     logOk(`Removed '${profile}' from registry.`);
   } else {
