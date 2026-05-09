@@ -63,9 +63,10 @@ The repo prefix should be `MINI`. If it's anything else, stop and tell the user 
 
 Bake these into every `mk` invocation throughout the rest of this skill:
 
-- Pass `--user Claude` on every mutating command (`feature add`, `feature edit`, `issue add`, `issue edit`, `issue state`, `comment add`, `link`, `unlink`, `tag add`, `tag rm`, `pr attach`). The audit log uses this attribution; without it everything attributes to the OS user.
+- Pass `--user Claude` on every mutating command (`feature add`, `feature edit`, `issue add`, `issue edit`, `issue state`, `comment add`, `link`, `unlink`, `tag add`, `tag rm`, `pr attach`, `doc upsert`, `doc link`, `doc rename`). The audit log uses this attribution; without it everything attributes to the OS user.
 - Pass `-o json` on every read you parse (`feature list`, `feature show`, `issue list`, `issue show`, `comment list`, `pr list`).
-- Pass `--as Claude` on every `mk comment add` (it's required by the CLI and identifies the comment author).
+- **Drive mutations via `--json` payloads** (the agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via `mk schema show <command>`). The JSON payload's `author` field replaces the flag-form `--as Claude` on `mk comment add`. For multi-line text bodies (issue descriptions, comment bodies, design ticket bodies), bridge a temp file into the JSON payload via `jq -n --rawfile body /tmp/foo.md '{...}' | mk ... --json -` so the markdown stays out of inline-JSON escape soup. The exception is `mk doc upsert --from-path <path>`, which derives filename + reads content from disk in one shot and uses flag form (the JSON path doesn't have a path-derivation equivalent).
+- **Rehearse destructive ops with `--dry-run`.** Every mutating command accepts a global `--dry-run` flag — input validation runs, the projected result prints, but no row is written and no audit entry is recorded. Especially useful in Phase 9 update mode before `mk unlink` (which removes *every* relation between two issues, not just the one you wanted) and before any update-mode pass that overwrites a large issue body.
 
 State names are fixed — `backlog | todo | in_progress | in_review | done | cancelled | duplicate`. There is no per-project status vocabulary to fetch.
 
@@ -421,7 +422,7 @@ Don't proceed without an explicit yes. Never guess "looks good, going" — the s
 
 Create the mk feature with the title from H1 and a description that **starts** with the `Plan:` line. This serves as a machine-readable anchor for `execute-next-task` and a clickable link for humans browsing `mk feature show <slug>`.
 
-Write the feature description to a temp file:
+Write the feature description to a temp file, then bridge into the JSON payload:
 
 ```bash
 cat <<'EOF' > /tmp/mini-feature.md
@@ -430,11 +431,12 @@ Plan: [<relative-path-to-plan-doc.md>](<full-https-url-to-plan-doc-on-main>)
 <§1 Background paragraph 1, copied verbatim>
 EOF
 
-mk feature add "<feature title>" \
-  --slug <kebab-slug> \
-  --description-file /tmp/mini-feature.md \
-  --user Claude \
-  -o json
+jq -n \
+  --arg title "<feature title>" \
+  --arg slug "<kebab-slug>" \
+  --rawfile description /tmp/mini-feature.md \
+  '{title:$title, slug:$slug, description:$description}' \
+  | mk feature add --user Claude --json - -o json
 ```
 
 Examples:
@@ -452,7 +454,7 @@ Capture the feature's slug from the response — you'll need it for Phase 8 (eve
 
 *Runs in **both** modes.* The on-disk plan markdown is the source of truth for humans. mk's `doc` subsystem stores a synchronised copy that downstream skills (`execute-next-task`, `address-review`, `review`) can fetch with a single `mk doc show <name> --raw` call instead of having to know which branch the file lives on or where on disk to look. Re-running `plan-to-mk` re-syncs the content.
 
-Use `mk doc upsert --from-path` — it derives the filename and the type from the path in one shot:
+Use `mk doc upsert --from-path` — it derives the filename and the type from the path in one shot. Keep flag form for the upsert (the JSON path has no path-derivation equivalent); the link call goes through `--json` for strict decoding:
 
 | On-disk path | mk doc filename | derived type |
 |---|---|---|
@@ -461,21 +463,23 @@ Use `mk doc upsert --from-path` — it derives the filename and the type from th
 
 ```bash
 mk doc upsert --from-path docs/planning/not-shipped/<slug>-plan.md --user Claude
-mk doc link  docs-planning-not-shipped-<slug>-plan.md <feature-slug> \
-  --why "Plan doc — phased rollout reference for this feature" \
-  --user Claude
+
+jq -nc --arg filename "docs-planning-not-shipped-<slug>-plan.md" \
+       --arg slug "<feature-slug>" \
+       --arg why "Plan doc — phased rollout reference for this feature" \
+       '{filename:$filename, feature_slug:$slug, description:$why}' \
+  | mk doc link --user Claude --json -
 ```
 
-`upsert` creates on first run, edits on every subsequent run — no probe-then-branch shell dance. `mk doc link` is an upsert too — calling it on an already-linked pair just refreshes `--why`, so it's safe to run on every re-sync.
+`upsert` creates on first run, edits on every subsequent run — no probe-then-branch shell dance. `mk doc link` is an upsert too — calling it on an already-linked pair just refreshes the description, so it's safe to run on every re-sync.
 
 When the final phase ships and the user moves the file from `docs/planning/not-shipped/` to `docs/planning/shipped/`, that's a single `mk doc rename` outside this skill — links survive:
 
 ```bash
-mk doc rename \
-  docs-planning-not-shipped-<slug>-plan.md \
-  docs-planning-shipped-<slug>-plan.md \
-  --type project_complete \
-  --user <them>
+jq -nc --arg from "docs-planning-not-shipped-<slug>-plan.md" \
+       --arg to "docs-planning-shipped-<slug>-plan.md" \
+       '{old_filename:$from, new_filename:$to, type:"project_complete"}' \
+  | mk doc rename --user <them> --json -
 ```
 
 This skill doesn't try to detect the move — re-running `plan-to-mk` after the file has moved would `upsert` the new-named doc against the existing feature, which is the same outcome.
@@ -628,12 +632,13 @@ If none of the recipes match, the populator emits `<no recipe — confirm with u
 Then create the issue:
 
 ```bash
-mk issue add "Phase N: <title>" \
-  --feature <slug> \
-  --state <todo|backlog> \
-  --description-file /tmp/mini-issue-phase-N.md \
-  --user Claude \
-  -o json
+jq -n \
+  --arg title "Phase N: <title>" \
+  --arg slug "<slug>" \
+  --arg state "<todo|backlog>" \
+  --rawfile description /tmp/mini-issue-phase-N.md \
+  '{title:$title, feature_slug:$slug, state:$state, description:$description}' \
+  | mk issue add --user Claude --json - -o json
 ```
 
 Capture each issue's key (`MINI-NN`) from the JSON response.
@@ -681,13 +686,12 @@ and any new design tokens merged into the design system.
 Create the design ticket:
 
 ```bash
-mk issue add "Design: Phase N: <title>" \
-  --feature <slug> \
-  --state backlog \
-  --tag design \
-  --description-file /tmp/mini-design-phase-N.md \
-  --user Claude \
-  -o json
+jq -n \
+  --arg title "Design: Phase N: <title>" \
+  --arg slug "<slug>" \
+  --rawfile description /tmp/mini-design-phase-N.md \
+  '{title:$title, feature_slug:$slug, state:"backlog", description:$description, tags:["design"]}' \
+  | mk issue add --user Claude --json - -o json
 ```
 
 Capture the design ticket's MINI-NN — Phase 9 uses it as a `blocks` and `relates-to` edge against the impl ticket.
@@ -704,14 +708,22 @@ For each matched issue:
 
 1. **Render the new body** using exactly the same template shape as create mode above (Source / Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod / extra subsections / Relevant docs / **Source-code touchpoints** / **Shared-library opportunities** / Workflow / Smoke tests / Conventions / Prior art). Re-derive doc pointers from Phase 3 against the current plan and current repo state — touched paths may have shifted. Re-derive touchpoints + shared-lib opportunities from Phase 3.5 against the current repo state — files renamed since seeding will not be reflected in the old body, and new shared-lib precedents may have appeared.
 2. **Compare titles.** If the plan's `### Phase N — <title>` (minus em-dash) differs from the existing issue title, update the title too. Match shape: `Phase N: <title>`.
-3. **Edit the issue.** Write the body to a temp file and run:
+3. **Edit the issue.** Write the body to a temp file, then bridge it through `--json`. Build the payload with the title only when it actually changed (omitting a field on edit means "no change"; an empty string would clear it where the model allows):
    ```bash
-   mk issue edit <KEY> \
-     [--title "Phase N: <new title>"] \
-     --description-file /tmp/mini-issue-phase-N.md \
-     --user Claude
+   # Title unchanged — omit the field; only refresh the body:
+   jq -n --arg key "<KEY>" \
+        --rawfile description /tmp/mini-issue-phase-N.md \
+        '{key:$key, description:$description}' \
+     | mk issue edit --user Claude --json -
+
+   # Title changed — include it:
+   jq -n --arg key "<KEY>" \
+        --arg title "Phase N: <new title>" \
+        --rawfile description /tmp/mini-issue-phase-N.md \
+        '{key:$key, title:$title, description:$description}' \
+     | mk issue edit --user Claude --json -
    ```
-   The `mk issue edit` command only touches the fields you pass — state, tags, comments, and PR attachments are preserved automatically. Don't pass `--state`. Don't touch tags here.
+   `mk issue edit` only touches the fields you pass — state, tags, comments, and PR attachments are preserved automatically. Don't include `state`. Don't touch tags here. Strict-decode means a typo (e.g. `decsription`) returns `unknown field "decsription"` instead of silently no-op-ing the edit.
 4. **Do not delete or alter existing comments.** All retros, handoff notes, and manual comments survive untouched.
 
 For phases newly added to the plan since seeding (detected in Phase 5 update-mode pre-flight, step 3 case "Plan has more phases than feature"), create the issue using the create-mode template above with state `todo` (or `backlog` if optional/deferred). Append the new MINI-NN line to §8 in Phase 10.
@@ -727,12 +739,12 @@ After refreshing each impl ticket, reconcile its paired design ticket against th
 2. **Reconcile against current `[design needed]` items:**
    | Plan has items? | Design ticket exists? | Action |
    |---|---|---|
-   | yes | yes | Refresh design body (regenerate `## Design needed` from the current verbatim items; preserve `## Source` and `## Done when`). Use `mk issue edit <KEY> --description-file <path> --user Claude`. |
+   | yes | yes | Refresh design body (regenerate `## Design needed` from the current verbatim items; preserve `## Source` and `## Done when`). Use the same `mk issue edit … --json -` shape from the impl-ticket refresh above (build the payload with `jq -n --arg key … --rawfile description …`). |
    | yes | no | Create the design ticket fresh (same template as Phase 8.1 create mode); add the design→impl `blocks` edge and the design↔impl `relates-to` edge in Phase 9. |
    | no | yes | **Leave alone.** Surface as orphan in the Phase 11 report. Designers may still be working on it; auto-delete is never the right call. |
    | no | no | No-op. |
 
-3. **State preservation** — same rules as impl tickets. Pass only `--description-file` and (if changed) `--title` to `mk issue edit`. State, tags, and comments survive untouched.
+3. **State preservation** — same rules as impl tickets. The JSON payload includes only `description` and (if changed) `title`; do not include `state`, do not include `tags`. `mk issue edit` only touches the fields you pass — state, tags, comments, and PR attachments are preserved automatically.
 
 Capture, for the Phase 11 report:
 
@@ -750,8 +762,8 @@ Capture, for the Phase 11 report:
 
 Use the dependency graph you parsed in Phase 2, plus the design pairings from Phase 8.1, to compute the **desired** set of relationship edges. There are two relation types in play, and they answer different questions:
 
-- **`blocks`** — hard ordering constraint. The impl ticket cannot start until its blockers are `done`. This is what the `execute-next-task` picker reads (via the inverse `blocked_by` view that `mk issue show` surfaces). Created with `mk link <FROM> blocks <TO> --user Claude`.
-- **`relates-to`** — soft "these belong together" link. Doesn't gate work; just makes the connection visible in both issues. Designers viewing a design ticket immediately see *which impl ticket consumes this design*, even after the design has shipped (and the `blocks` edge has resolved because the design is `done`). Created with `mk link <FROM> relates-to <TO> --user Claude`.
+- **`blocks`** — hard ordering constraint. The impl ticket cannot start until its blockers are `done`. This is what the `execute-next-task` picker reads (via the inverse `blocked_by` view that `mk issue show` surfaces). Created with `mk link --user Claude --json '{"from":"<FROM>","type":"blocks","to":"<TO>"}'`.
+- **`relates-to`** — soft "these belong together" link. Doesn't gate work; just makes the connection visible in both issues. Designers viewing a design ticket immediately see *which impl ticket consumes this design*, even after the design has shipped (and the `blocks` edge has resolved because the design is `done`). Created with `mk link --user Claude --json '{"from":"<FROM>","type":"relates-to","to":"<TO>"}'`.
 
 (`mk` also supports `duplicate-of`, but this skill never produces those — that's a manual reconciliation tool.)
 
@@ -768,7 +780,7 @@ Design tickets themselves have **no incoming `blocks` edges** — designers can 
 
 ### Create mode
 
-Add the desired edges in order via `mk link <FROM> <type> <TO> --user Claude`. There's nothing to compare against — the issues were just created and have no relationships yet. The design→impl `blocks` edges and the design→impl `relates-to` edges are added in the same pass alongside the inter-phase edges.
+Add the desired edges in order via `mk link --user Claude --json '{"from":"<FROM>","type":"<type>","to":"<TO>"}'`. There's nothing to compare against — the issues were just created and have no relationships yet. The design→impl `blocks` edges and the design→impl `relates-to` edges are added in the same pass alongside the inter-phase edges.
 
 ### Update mode
 
@@ -779,8 +791,8 @@ Existing edges may not match the desired graph — §8 brackets may have changed
    - desired `blocks` set per impl ticket (inter-phase from §8 ∪ design pairing)
    - desired `relates-to` set per design↔impl pair from Phase 8.1
 3. **Apply the delta** independently per relation type:
-   - **Add** edges that are desired but missing (`mk link <FROM> <type> <TO> --user Claude`).
-   - **Remove** `blocks` edges that exist but are no longer desired (e.g. §8 brackets changed). Use `mk unlink <A> <B> --user Claude` — note that `mk unlink` removes *every* relation between the two issues, so if there's also a `relates-to` edge between the same pair you want to keep, re-add it after unlinking.
+   - **Add** edges that are desired but missing: `mk link --user Claude --json '{"from":"<FROM>","type":"<type>","to":"<TO>"}'`.
+   - **Remove** `blocks` edges that exist but are no longer desired (e.g. §8 brackets changed). Use `mk unlink --user Claude --json '{"a":"<A>","b":"<B>"}'` — note that `mk unlink` removes *every* relation between the two issues, so if there's also a `relates-to` edge between the same pair you want to keep, re-add it after unlinking. **Rehearse with `--dry-run` first** when the §8 bracket diff is non-trivial: `... --dry-run --json '{"a":"<A>","b":"<B>"}'` prints the projected removals (and counts) without writing, so a misread of the desired graph doesn't quietly drop edges you still wanted.
    - For `relates-to` edges: **add** when missing, **never remove**. The `relates-to` link is cheap to keep around even if the impl ticket gets repurposed; deleting it costs context for designers, and the user can manually `mk unlink` if they truly want to.
    - **Leave alone** edges that are correct.
 4. **Cross-feature edges** (issues in this feature blocked by issues in *other* features) are out of scope for this skill — leave them untouched even if §8 makes no mention of them. They were added deliberately; we won't second-guess. Same rule for cross-feature `relates-to` edges — humans add those; the skill doesn't touch them.
@@ -875,8 +887,9 @@ Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans fl
 
 ### Both modes
 
-- **Always pass `--user Claude`** on every mutating `mk` command (`feature add`, `feature edit`, `issue add`, `issue edit`, `issue state`, `comment add`, `link`, `unlink`, `tag add`, `tag rm`, `pr attach`). The audit log requires it; without it actions attribute to the OS user.
+- **Always pass `--user Claude`** on every mutating `mk` command (`feature add`, `feature edit`, `issue add`, `issue edit`, `issue state`, `comment add`, `link`, `unlink`, `tag add`, `tag rm`, `pr attach`, `doc upsert`, `doc link`, `doc rename`). The audit log requires it; without it actions attribute to the OS user. On `mk comment add` JSON payloads the comment author is the `author` field (replaces the flag-form `--as Claude`).
 - **Always pass `-o json`** on reads you parse (`feature show`, `issue list`, `issue show`, etc.).
+- **Prefer `--json` payloads on mutations** over per-field flags. Strict-decoded (typos like `decsription` surface as `unknown field` errors instead of silent no-ops on edits — important when this skill is bulk-overwriting bodies in update mode), schema discoverable via `mk schema show <command>`, dry-runnable. Carve out one exception: `mk doc upsert --from-path <path>` keeps flag form because it derives the filename + reads file content in one shot, which the JSON path can't replicate.
 - **Always `cd` to the repo root before running `mk`.** mk auto-scopes by cwd's git toplevel and hard-errors outside any git repo.
 - **Never write a pre-baked implementation plan into the issue description.** Issue descriptions carry *context* — Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod, doc pointers, source-code touchpoints, shared-library opportunities — not file-by-file change lists. The executor produces its concrete implementation against current code at execution time. The line: **paths + ≤12-word what-for phrases are fine**; concrete edits ("change line 42 to…", "wrap this call in a try/catch") are not.
 - **Touchpoints are best-guess at seed time, not a contract.** The Phase 3.5 explorer produces its best guess from the deliverables; files may have been renamed since seeding, the explorer may have missed something, and the deliverables may evolve. The rendered ticket section explicitly tells the executor to verify each path and add what's missing. Never present touchpoints as exhaustive.

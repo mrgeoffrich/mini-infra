@@ -56,9 +56,8 @@ You should see a JSON blob with the repo's prefix (`MINI`) and per-state issue c
 **Critical agent-mode rules** (these apply to every `mk` call you make in this run):
 
 - **Always pass `--user Claude` on every mutating command** (`mk issue add`, `mk issue state`, `mk issue edit`, `mk comment add`, `mk tag add`, `mk link`, `mk pr attach`). Without it the audit log silently attributes the change to the current user.
-- **Always pass `--as Claude` on `mk comment add`** — required by the binary.
 - **Always pass `-o json` when parsing output.** Text mode is for humans only.
-- **Always pass long text via `--description-file <path>` / `--body-file <path>` / `--body -` (stdin).** There is no inline editor; inline `\n` is not interpreted.
+- **Drive mutations via `--json` payloads** (the agent-preferred surface — strict-decoded, dry-runnable, schema discoverable via `mk schema show <command>`). The JSON payload's `author` field replaces the flag-form `--as Claude` on `mk comment add`. For multi-line text bodies (handoff comments, claim comments, worktree details), bridge a temp file into the JSON payload via `jq -n --rawfile body /tmp/foo.md '{...}' | mk ... --json -` so the markdown stays out of inline-JSON escape soup.
 
 ---
 
@@ -109,11 +108,14 @@ The preferred picker is **`mk issue next`** — a single atomic call that combin
 
 ```bash
 # Explicit-ID path only — auto-pick path skips this; `mk issue next` already transitioned.
-mk issue state MINI-NN in_progress --user Claude
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_progress"}'
 
 # Both paths:
-printf 'Claimed by Claude. Reading ticket and preparing the worktree — full setup details will follow once the worktree is up.\n' \
-  | mk comment add MINI-NN --as Claude --user Claude --body -
+mk comment add --user Claude --json '{
+  "issue_key":"MINI-NN",
+  "author":"Claude",
+  "body":"Claimed by Claude. Reading ticket and preparing the worktree — full setup details will follow once the worktree is up."
+}'
 ```
 
 If, in any later phase, the skill stops with a hard-fail (malformed ticket, dirty tree, worktree collision, etc.), **leave the issue `in_progress`** and surface the failure to the user. Don't auto-roll-back to `todo` — the user decides whether to retry, hand off, or revert state manually.
@@ -263,7 +265,10 @@ Worktree ready.
 - Env startup: backgrounded (`pnpm worktree-env start`)
 EOF
 
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/worktree-comment.md
+jq -n \
+  --rawfile body /tmp/worktree-comment.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 ```
 
 If the phase is **docs-only** and the dev-env spin-up was skipped (you passed `--no-env` to `setup-worktree`), drop the env-startup line.
@@ -397,7 +402,7 @@ PR title matches the implementation commit's subject. PR body must:
 Once the PR URL is back from `gh pr create`, attach it to the issue:
 
 ```bash
-mk pr attach MINI-NN <PR_URL> --user Claude
+mk pr attach --user Claude --json '{"issue_key":"MINI-NN","url":"<PR_URL>"}'
 ```
 
 This gives `mk issue show` and `mk pr list MINI-NN` a clickable link back to the work — useful for the human reviewer and for any future agent that picks up follow-up work on this ticket.
@@ -409,9 +414,9 @@ This gives `mk issue show` and `mk pr list MINI-NN` a clickable link back to the
 Move the issue to `in_review` and post a single structured comment summarising the run. The comment is the handoff to the human reviewer — and, when a plan doc was loaded, to the future re-integration agent that will fold drift back into it — so it captures everything the PR diff doesn't show. **The plan doc itself is read-only for this skill** (see hard rules); drift goes here.
 
 ```bash
-mk issue state MINI-NN in_review --user Claude
+mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_review"}'
 
-# Write the handoff to a temp file (long text must come from --body-file or stdin)
+# Write the handoff to a temp file, then bridge it into the JSON payload
 cat <<'EOF' > /tmp/handoff.md
 **PR:** <PR_URL>
 
@@ -428,7 +433,10 @@ cat <<'EOF' > /tmp/handoff.md
 <…>
 EOF
 
-mk comment add MINI-NN --as Claude --user Claude --body-file /tmp/handoff.md
+jq -n \
+  --rawfile body /tmp/handoff.md \
+  '{issue_key:"MINI-NN", author:"Claude", body:$body}' \
+  | mk comment add --user Claude --json -
 ```
 
 Use this template. Omit any section that genuinely has nothing to report — don't pad with "N/A" or "none". If every section is empty, the comment is just the PR link.
@@ -490,11 +498,12 @@ The skill will:
   2. Analyze it and generate retrospective markdown per the skill's Output Format.
   3. Create a NEW mk issue in the current repo's `backlog` state, tagged "retro",
      titled "Retro: <MINI-NN> — <original-issue-title>", with a reference back to
-     <MINI-NN> at the top of the description. Use:
-       mk issue add "<title>" --description-file <path> --state backlog \
-         --tag retro --user Claude
+     <MINI-NN> at the top of the description. Use the JSON payload form:
+       jq -n --arg title "<title>" --rawfile description <path> \
+         '{title:$title, state:"backlog", description:$description, tags:["retro"]}' \
+         | mk issue add --user Claude --json - -o json
   4. After the retro issue is created, link it to <MINI-NN> using `mk link`:
-       mk link <new-retro-key> relates-to <MINI-NN> --user Claude
+       mk link --user Claude --json '{"from":"<new-retro-key>","type":"relates-to","to":"<MINI-NN>"}'
      This creates a first-class `relates-to` edge between the two issues so
      anyone viewing <MINI-NN> via `mk issue show` sees the retro under
      Relations, not just buried in the description body. The in-body reference
@@ -559,7 +568,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 - **Never `git checkout main`, `git stash`, or create a new branch outside the delegated worktree flow.** Worktree creation is owned by `setup-worktree` (Phase 4) and cleanup by `finish-worktree` (Phase 14); this skill does no other branch manipulation. Once inside the worktree, you stay on `claude/<slug>` until cleanup.
 - **Never skip pre-flight checks** by running on `main` or with a dirty tree. `setup-worktree` enforces this — if it stops, surface the failure.
 - **Never use `--no-verify` or skip hooks.** If a hook fails, investigate.
-- **Never call `mk` without `--user Claude` on a mutating command, or without `--as Claude` on `mk comment add`.** The audit log silently falls back to `geoff` otherwise — useless attribution for agent-driven runs.
+- **Never call `mk` without `--user Claude` on a mutating command.** The audit log silently falls back to `geoff` otherwise — useless attribution for agent-driven runs. On `mk comment add` JSON payloads the comment author is the `author` field (replaces the flag-form `--as Claude`).
 - **Never guess at the contract.** If the ticket has no Goal/Deliverables/Done-when sections, **stop and report** — the ticket wasn't populated correctly. (A missing `Plan:` line on the feature, or a missing `### Phase N` section in the plan doc, is *not* a stop condition under the looser flow — see Phase 3 for the rules.)
 
 ---
@@ -578,11 +587,11 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > User: "internal-nats-messaging"
 >
-> *Skill runs `mk issue next --feature internal-nats-messaging --user Claude -o json` — this atomically picks the lowest-numbered ready issue (MINI-29 — Phase 4: pg-az-backup progress + result events; Phase 3 already shipped, so blockers clear), flips it to `in_progress`, and stamps Claude as the assignee in one call. Phase 2.1 collapses to just the claim comment via `mk comment add MINI-29 --as Claude --user Claude --body -` so the mk board reflects who's working on it before any setup runs.*
+> *Skill runs `mk issue next --feature internal-nats-messaging --user Claude -o json` — this atomically picks the lowest-numbered ready issue (MINI-29 — Phase 4: pg-az-backup progress + result events; Phase 3 already shipped, so blockers clear), flips it to `in_progress`, and stamps Claude as the assignee in one call. Phase 2.1 collapses to just the claim comment via `mk comment add --user Claude --json '{"issue_key":"MINI-29","author":"Claude","body":"Claimed by Claude. Reading ticket and preparing the worktree…"}'` so the mk board reflects who's working on it before any setup runs.*
 >
 > *Skill bulk-fetches context with `mk issue brief MINI-29 > /tmp/brief-MINI-29.json` — one call returning the issue + feature + linked docs (with content) + comments + relations + PRs. Reads `.feature.description` and finds `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). The feature has one linked mk doc in `.documents[]` — `docs-planning-not-shipped-internal-nats-messaging-plan.md` (type `project_in_planning`, `linked_via: ["feature/internal-nats-messaging"]`); the skill reads its `### Phase 4` section as supplemental context. The issue itself has no linked docs (no design phase for this ticket). Reads each linked CLAUDE.md / ARCHITECTURE.md from disk. Iterates `.comments[]` from the brief — no designer hand-off. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
 >
-> *Phase 4: invokes `Skill(setup-worktree, args: "MINI-29")`. The setup-worktree skill pre-flights main, runs `git pull --ff-only origin main`, creates the worktree at `.claude/worktrees/mini-29` on `claude/mini-29`, runs `pnpm install` synchronously, then backgrounds `pnpm worktree-env start --description "Phase 4 — pg-az-backup progress + result events"` (description derived from the mk title). Returns control with cwd = the worktree. Skill posts the worktree-details follow-up comment on MINI-29 via `mk comment add … --body-file`.*
+> *Phase 4: invokes `Skill(setup-worktree, args: "MINI-29")`. The setup-worktree skill pre-flights main, runs `git pull --ff-only origin main`, creates the worktree at `.claude/worktrees/mini-29` on `claude/mini-29`, runs `pnpm install` synchronously, then backgrounds `pnpm worktree-env start --description "Phase 4 — pg-az-backup progress + result events"` (description derived from the mk title). Returns control with cwd = the worktree. Skill posts the worktree-details follow-up comment on MINI-29 via `jq -n --rawfile body /tmp/worktree-comment.md '{issue_key:"MINI-29",author:"Claude",body:$body}' | mk comment add --user Claude --json -`.*
 >
 > Skill: "Implementing Phase 4 — adding `mini-infra.backup.run` request handler and JetStream `BackupHistory` stream. Touching `server/src/services/backup/backup-executor.ts` first, then `server/src/services/nats/payload-schemas.ts`, then the boot sequence."
 >
@@ -590,10 +599,10 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 >
 > *Phase 10: commits with `feat(nats): pg-az-backup progress + result events (Phase 4, MINI-29)`, pushes the branch with `-u`. Code review is left to a separate `/review` run that the user kicks off after the PR is open.*
 >
-> *Phase 11: opens PR with the implementation commit's title and `Closes MINI-29` in the body. Then runs `mk pr attach MINI-29 <PR_URL> --user Claude`.*
+> *Phase 11: opens PR with the implementation commit's title and `Closes MINI-29` in the body. Then runs `mk pr attach --user Claude --json '{"issue_key":"MINI-29","url":"<PR_URL>"}'`.*
 >
-> *Phase 12: runs `mk issue state MINI-29 in_review --user Claude`. Posts the handoff comment via `mk comment add MINI-29 --as Claude --user Claude --body-file /tmp/handoff.md`: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording. The plan doc itself is left untouched; the re-integration agent will fold the Deviations back later. Reports the PR URL.*
+> *Phase 12: runs `mk issue state --user Claude --json '{"key":"MINI-29","state":"in_review"}'`. Posts the handoff comment via `jq -n --rawfile body /tmp/handoff.md '{issue_key:"MINI-29",author:"Claude",body:$body}' | mk comment add --user Claude --json -`: PR URL, plus a Deviations section noting that the optional retry-on-transient-failure deliverable was deferred to a follow-up issue per the plan doc's wording. The plan doc itself is left untouched; the re-integration agent will fold the Deviations back later. Reports the PR URL.*
 >
-> *Phase 13: captures `$CLAUDE_SESSION_ID` (the parent session), spawns a `general-purpose` subagent on Sonnet, and tells it to invoke the `session-retrospective` skill with `--session-id <parent-id> --issue MINI-29`. The skill verifies `mk` works in the current repo, runs `scripts/get-session.sh` against the parent JSONL, generates retrospective markdown, and creates a new issue via `mk issue add "Retro: MINI-29 — Phase 4: pg-az-backup progress + result events" --description-file /tmp/retro.md --state backlog --tag retro --user Claude`. Then `mk link MINI-42 relates-to MINI-29 --user Claude` so both issues show the link in their Relations section. Subagent returns `MINI-42`; skill appends it to the run report.*
+> *Phase 13: captures `$CLAUDE_SESSION_ID` (the parent session), spawns a `general-purpose` subagent on Sonnet, and tells it to invoke the `session-retrospective` skill with `--session-id <parent-id> --issue MINI-29`. The skill verifies `mk` works in the current repo, runs `scripts/get-session.sh` against the parent JSONL, generates retrospective markdown, and creates a new issue via `jq -n --arg title "Retro: MINI-29 — Phase 4: pg-az-backup progress + result events" --rawfile description /tmp/retro.md '{title:$title,state:"backlog",description:$description,tags:["retro"]}' | mk issue add --user Claude --json - -o json`. Then `mk link --user Claude --json '{"from":"MINI-42","type":"relates-to","to":"MINI-29"}'` so both issues show the link in their Relations section. Subagent returns `MINI-42`; skill appends it to the run report.*
 >
 > *Phase 14: every prior phase succeeded, so the skill invokes `Skill(finish-worktree, args: "mini-29")`. The finish-worktree skill verifies the tree is clean, the branch is fully pushed, and the PR exists; then `cd`s back to the repo root, runs `pnpm worktree-env delete mini-29 --force` and `git worktree remove .claude/worktrees/mini-29`. Reports cleanup done. The `claude/mini-29` branch stays on the remote (the PR points at it).*

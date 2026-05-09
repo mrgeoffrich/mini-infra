@@ -5,7 +5,35 @@ description: Use this skill whenever you need to create, read, update, or organi
 
 # Working with `mk` (mini-kanban)
 
-`mk` is a local CLI issue tracker. Everything lives in a single SQLite db at `~/.mini-kanban/db.sqlite`. It's designed to be driven non-interactively by AI agents — every read command supports JSON output, and every long-text input is supplied via a file or stdin.
+`mk` is a local CLI issue tracker. Everything lives in a single SQLite db at `~/.mini-kanban/db.sqlite`. It's designed to be driven non-interactively by AI agents — every read command supports JSON output, every mutation accepts a JSON payload via `--json`, and every payload shape is published at runtime via `mk schema`.
+
+## Agent quick start
+
+The five conventions below combine into one straightforward flow. Each is documented in detail further down; this section is the cheat-sheet:
+
+1. **Discover the shape:** `mk schema show <command>` (or `mk schema all` for one-shot ingestion). Worked examples are in every schema's `examples[0]`.
+2. **Compose the payload as JSON.** Every mutating command accepts `--json '<payload>'`, `--json -` (stdin), or `--json @path/to.json`. Long text (descriptions, comment bodies, doc content) goes inline as a string.
+3. **Rehearse with `--dry-run`** if the call is destructive or non-trivial. Stdout has the same shape as a real call; stderr emits `[dry-run] no changes were written`. Especially useful before `mk issue rm` / `feature rm` / `doc rm`, where the dry-run reports cascade counts.
+4. **Run for real** without `--dry-run`. **Always pass `--user <agent-name>`** so the audit log attributes work correctly.
+5. **Query lean by default.** `mk issue list -o json` and `mk feature list -o json` strip the heavy `description` field; pass `--with-description` if you actually need bodies. `mk doc show --metadata` skips the body. `mk issue brief --no-doc-content` gives you the structure without inlining linked-doc bodies.
+
+A worked example, end to end:
+
+```bash
+# 1. Discover.
+mk schema show issue.add | jq .examples[0]
+
+# 2. Compose & rehearse.
+mk issue add --user agent-claude --dry-run --json '{
+  "title": "Pin tab strip",
+  "feature_slug": "tui-polish",
+  "description": "Body height should clip the tab strip.",
+  "tags": ["ui", "tui"]
+}' -o json
+
+# 3. Commit (drop --dry-run).
+mk issue add --user agent-claude --json '{ ...same payload... }' -o json
+```
 
 ## Mental model
 
@@ -35,6 +63,91 @@ description: Use this skill whenever you need to create, read, update, or organi
 - **Comment author.** `--as <name>` is required on every comment. There is no auth — use a sensible identity (e.g. `Claude`, `Geoff`).
 - **`--user` is REQUIRED for AI agents.** Every mutation is recorded in an audit log alongside the actor that performed it. The CLI will silently fall back to the OS username if `--user` is omitted, but for agents that produces useless `<your-os-user> did everything` history. **Always pass `--user <your-agent-name>` (e.g. `--user Claude`) on every mutating command.** Treat it as mandatory in any agent-driven invocation, even though the binary tolerates its absence for human users.
 - **Database override.** `--db <path>` is a global flag, useful for tests. In production agents, leave it at the default.
+
+### Recommended: drive `mk` via `--json` (JSON)
+
+Every mutating command accepts `--json` (alias `-j`) — a JSON payload that fully describes the operation. **Prefer this over typed flags when driving `mk` from an agent.** It's strict (typos surface as `unknown field` errors instead of silent no-ops), it removes the `--description-file` / stdin dance for long text, and the schema is published at runtime so you don't have to memorise field names.
+
+- `--json '<json>'` — inline JSON.
+- `--json -` — read JSON from stdin.
+- `--json @path/to.json` — read JSON from a file.
+
+`--json` is **mutually exclusive** with positionals and per-field flags (`--title`, `--state`, etc.). Mixing them is rejected with a clear error.
+
+**Discover shapes at runtime, don't guess:**
+
+```bash
+mk schema list                # every command name with --json + one-line description
+mk schema show issue.add      # full JSON Schema (draft 2020-12) for one command
+mk schema all                 # every schema, keyed by command name (one ingest pass)
+```
+
+Each schema includes a worked `examples[0]` you can copy and adapt:
+
+```bash
+$ mk schema show issue.add | jq .examples[0]
+{
+  "title": "Pin tab strip in place",
+  "feature_slug": "tui-polish",
+  "description": "Body height should clip the tab strip so it doesn't drift on overflow.",
+  "state": "todo",
+  "tags": ["ui", "tui"]
+}
+
+$ mk schema show issue.add | jq .examples[0] | mk issue add --user agent-claude --json -
+```
+
+**Conventions baked into the JSON path:**
+
+- **Issue keys must be canonical** (`MINI-42`, not `42`). The bare-number shortcut is for humans on the CLI flag path only.
+- **Long-text fields are inline strings.** No JSON-side `--description-file`; just put the markdown directly in the `description` / `body` / `content` field.
+- **Edit semantics on `*string` fields:** field absent = no change; empty string = clear (where the model allows). Required fields like `title` reject empty strings — omit the field to leave the value alone.
+- **Globals stay as flags.** `--user`, `--db`, and `-o text|json` are passed as flags alongside `--json`, not inside the JSON.
+- **Strict decoding.** Unknown fields fail the call. If you get `unknown field "..."` errors, run `mk schema show <command>` to see the exact accepted shape.
+
+### `--dry-run` for safe rehearsals
+
+Every mutating command accepts a global `--dry-run` flag. When set, the command runs everything up to the SQL write — input validation, entity resolution, slug/key derivation, cascade lookups — and emits the projected result without touching the database or the audit log. A `[dry-run] no changes were written` line is written to stderr; stdout has the same shape as a real call's output, so the same parsing code works.
+
+Worth using when:
+
+- You want to rehearse an `--json` payload before committing it, especially after composing it from `mk schema show`.
+- You're about to delete something and want the cascade counts first. `mk issue rm --dry-run` returns the issue plus how many comments / relations / PR attachments / doc links would be removed alongside it; same shape on `mk feature rm --dry-run` (issues unlinked, doc links removed) and `mk doc rm --dry-run` (links removed).
+- You want to confirm a complicated `mk issue edit` patch would resolve to the right object (especially for `feature_slug: null` clears).
+
+Notes:
+
+- `mk issue next --dry-run` is equivalent to `mk issue peek` — it reports what would be claimed without flipping state.
+- `mk doc export --dry-run` reports the absolute destination path it would write to and the byte count, but doesn't create directories or files.
+- Server-time fields (`id`, `created_at`, `updated_at`) come back as zero values in dry-run output; everything else is faithful to the real call.
+
+### Output is lean by default
+
+To keep agent context windows small, list-style commands strip heavy fields by default:
+
+- `mk issue list -o json` — no `description`. Pass `--with-description` to inline bodies.
+- `mk feature list -o json` — no `description`. Pass `--with-description` to inline bodies.
+- `mk doc list -o json` — already metadata-only (emits `size_bytes`, never `content`).
+
+When you need just the metadata of a single document, pass `--metadata` to `mk doc show <name>` and the body is skipped. Pair it with `--raw` (mutually exclusive) only if you wanted the body and nothing else.
+
+`mk issue brief <KEY>` is the one bulk-context call that *does* inline doc bodies on purpose — it exists so a skill can read everything in one shot. Three opt-outs trim it when the full payload is too much:
+
+- `--no-feature-docs` — skip docs linked to the parent feature.
+- `--no-comments` — skip the comments section.
+- `--no-doc-content` — keep linked-doc metadata (filename, type, source_path, linked_via, description) but drop the bodies. Fetch specific bodies later via `mk doc show <name>`.
+
+### Input validation contract
+
+Every mutation runs through validators in the store layer, so malformed input fails fast with a clear error rather than being silently normalised or stored as garbage. Rules an agent should know:
+
+- **No control characters** anywhere. Single-line fields (titles, slugs, names, filenames, URLs, tags) reject all C0 controls and DEL (`\x00–\x1F`, `\x7F`). Multi-line fields (descriptions, comment bodies, document content) allow `\t \n \r` but reject the rest.
+- **No silent trimming on identifiers.** Leading or trailing whitespace in a `filename`, `slug`, or URL is rejected — if you fat-finger a payload you'll see it instead of having it normalised away.
+- **Length caps:** title 200 chars, name/assignee/`--user` 80, slug 60, filename 200, tag 80, PR URL 2 KiB, body fields 1 MiB. Generous for legitimate content, tight enough to fail loud on a runaway paste.
+- **Slugs must be kebab-case** matching `^[a-z0-9][a-z0-9-]*$`. Auto-derived slugs (when you omit `slug` on `feature.add`) always satisfy this; explicit slugs in JSON must too.
+- **PR URLs** must use `http` or `https` and have a host. `javascript:` and similar exotic schemes are rejected.
+- **`--user` is validated once per command.** A `--user` that contains a newline or a control character is rejected at the start of the command before any work happens.
+- **Strict JSON decode.** Unknown fields fail (covered by principle #1). Combined with the above, an agent that sends garbage gets a useful error pointing at the bad field rather than a successful write of corrupted data.
 
 ## Command reference
 
@@ -145,6 +258,10 @@ mk issue next --feature <slug>       Atomically claim the next ready issue
                                      nothing is currently claimable —
                                      callers should poll/retry rather
                                      than treat that as an error.
+mk issue peek --feature <slug>       Read-only counterpart to `next`:
+                                     shows what `next` would claim
+                                     without mutating state. Same empty
+                                     result shape when nothing is ready.
 mk issue rm <KEY>                    Delete an issue (cascades to comments,
                                      relations, PRs, tags, doc links)
 ```
@@ -166,23 +283,7 @@ mk issue brief MINI-42 | tee /tmp/ctx.json
 
 `mk issue brief` returns a single object: `{issue, feature?, relations, pull_requests, documents, comments, warnings}`. Each entry in `documents` carries `filename`, `type`, `description` (the link's `--why`), `linked_via` (one or both of `"issue"` and `"feature/<slug>"`), `source_path`, and `content`. Docs reachable from both the issue and its parent feature are deduped to a single entry whose `linked_via` lists both paths. If the issue and feature link rows have differing `--why` descriptions, the issue's wins and a string is appended to `warnings`.
 
-**Driving an agent through a feature in dependency order.** Use `mk feature plan <slug>` to inspect the topo order, then loop on `mk issue next --feature <slug> --user <agent>` to claim issues one at a time:
-
-```bash
-# Read the plan once to understand what's ahead
-mk feature plan service-addons-framework
-
-# Agent loop: claim → work → mark done → repeat
-while :; do
-  next=$(mk issue next --feature service-addons-framework --user agent-1 -o json)
-  key=$(jq -r '.issue.key // empty' <<<"$next")
-  if [ -z "$key" ]; then sleep 30; continue; fi
-  # ... agent does the work ...
-  mk issue state "$key" done --user agent-1
-done
-```
-
-Two agents can call `mk issue next` against the same feature in parallel; the SQLite writer lock plus a conditional UPDATE serialise claims, so each issue is handed to exactly one agent. When the DAG is currently serial (everything else blocked) the second agent simply gets `{"issue": null}` and should retry later. Crashed agents leave a stale `in_progress`/assigned issue — clear with `mk issue state <KEY> todo --user <human>` and `mk issue unassign <KEY>` to release it.
+**Driving an agent through a feature in dependency order.** Inspect the topo order with `mk feature plan <slug>`, then loop on `mk issue next --feature <slug> --user <agent> -o json`, treating `{"issue": null}` as "retry later". Multiple agents can call `next` in parallel — SQLite serialises the claim. Crashed agents leave a stale `in_progress`/assigned issue; clear with `mk issue state <KEY> todo` + `mk issue unassign <KEY>`.
 
 ### Comments
 
@@ -305,15 +406,7 @@ mk doc unlink <filename> <ISSUE-KEY|feature-slug>
 **`--from-path` filename derivation:** replaces `/` with `-`, so
 `docs/planning/not-shipped/foo-plan.md` → `docs-planning-not-shipped-foo-plan.md`.
 
-**`--from-path` type derivation** (skip `--type` when one of these matches):
-
-| path prefix                       | derived type           |
-| --------------------------------- | ---------------------- |
-| `docs/planning/not-shipped/`      | `project_in_planning`  |
-| `docs/planning/in-progress/`      | `project_in_progress`  |
-| `docs/planning/shipped/`          | `project_complete`     |
-
-For any other path, pass `--type` explicitly. Explicit `--type` / `--content-file` always wins over derivation. When `--from-path` is given without `--content`/`--content-file`, the path itself is used as the content file.
+**`--from-path` type derivation:** `docs/planning/{not-shipped,in-progress,shipped}/` → `project_in_{planning,progress,complete}`. For any other path, pass `--type` explicitly. Explicit `--type` / `--content-file` always wins over derivation. When `--from-path` is given without `--content`/`--content-file`, the path itself is used as the content file.
 
 **Example:**
 ```bash
@@ -375,45 +468,84 @@ mk pr list <KEY>                     One URL per line (or JSON)
 mk pr attach MINI-42 https://github.com/owner/repo/pull/7
 ```
 
-## Common workflows
+## HTTP API
 
-**File a bug with repro steps:**
+`mk api` exposes every CLI mutation and read over HTTP, backed by the same SQLite database, JSON shapes, validators, and audit log. **The CLI conventions above all apply** — discover schemas, compose JSON, dry-run, then commit. The only differences are HTTP plumbing.
+
 ```bash
-cat <<'EOF' > /tmp/repro.md
-## Repro
-1. POST /login with valid creds
-2. Server returns 500
-
-## Logs
-NullPointerException at AuthFilter.java:42
-EOF
-mk issue add "Login returns 500" --description-file /tmp/repro.md --state todo
+mk api                                # bind 127.0.0.1:5320, no auth
+mk api --addr 127.0.0.1:7777 --token T   # require Authorization: Bearer T
+MK_API_TOKEN=T mk api                 # token via env
 ```
 
-**Pick up an issue and link the PR:**
-```bash
-mk issue state MINI-42 in_progress
-mk comment add MINI-42 --as Claude --body "Picking this up."
-mk pr attach MINI-42 https://github.com/owner/repo/pull/123
+### Discovery
+
+- `GET /schema/list` — every command name + one-line summary (mirrors `mk schema list`).
+- `GET /schema/{name}` — full JSON Schema for one command with `examples[0]` (mirrors `mk schema show`).
+- `GET /schema` — every schema in one object.
+
+Schemas describe payload shapes, not routes. Routes follow REST conventions under `/repos/{prefix}/...` — list/create on the collection, show/patch/delete on the item, plus sub-resources for state changes (`/state`, `/assignee`), batch ops (`/tags`, `/pull-requests`), graph edges (`/relations`, `/links`), bulk reads (`/brief`, `/plan`), and claim/peek (`/next`). Use `GET /schema/list` to enumerate every operation. Issue keys in URLs and bodies must be canonical (`MINI-42`); the bare-number CLI shortcut isn't accepted.
+
+A few non-obvious mappings:
+
+- **Tags:** `POST/DELETE /repos/{prefix}/issues/{key}/tags` with `{"tags":[...]}` (batch, not per-tag URLs).
+- **Relations:** `POST /repos/{prefix}/relations` with `{"from","type","to"}`; `DELETE` with `{"a","b"}` (bidirectional).
+- **PR detach:** `DELETE /repos/{prefix}/issues/{key}/pull-requests` with `{"url"}` or `?url=`.
+- **Documents:** link/unlink at `POST/DELETE /documents/{filename}/links`; rename at `POST /documents/{filename}/rename`.
+- **State / assignee:** `PUT /issues/{key}/state`, `PUT/DELETE /issues/{key}/assignee`.
+
+### Headers, query params, dry-run
+
+- **Auth.** When `--token` / `MK_API_TOKEN` is set, every request except `GET /healthz` needs `Authorization: Bearer <token>` (constant-time compare). The loopback default with no token is the trust boundary.
+- **Actor.** `X-Actor: <agent-name>` stamps the audit log. Absent → falls back to the literal `"api"` (NOT the OS user). **Required** on `POST /repos/{prefix}/features/{slug}/next` — claiming work demands a real assignee.
+- **Dry-run.** `?dry_run=true` (or `=1`) or `X-Dry-Run: 1`. Response status matches a real call, body is the projected entity, response carries `X-Dry-Run: applied`. No row written, no audit row recorded. Server-time fields (`id`, `created_at`, `updated_at`) come back zero. `DELETE` returns a `*DeletePreview` with cascade counts.
+- **Lean lists.** Issue/feature lists drop `description`; doc list drops `content`. Inflate with `?with_description=true` or `?with_content=true`. For a single doc, `?with_content=false` strips the body the other way.
+- **Brief opt-outs.** `?no_feature_docs=1`, `?no_comments=1`, `?no_doc_content=1` on `GET /issues/{key}/brief`.
+- **History filters.** `?limit`, `?offset`, `?op`, `?kind`, `?actor` (alias `?user_filter`), `?since`, `?from`, `?to`, `?oldest_first` on `GET /history` and `GET /repos/{prefix}/history`. `since` and `from` are mutually exclusive.
+
+### Errors
+
+```json
+{ "error": "title is required", "code": "invalid_input", "details": {"field": "title"} }
 ```
 
-**Mark blocked work:**
+| Status | Code | When |
+|---|---|---|
+| 400 | `invalid_input` | malformed JSON, unknown fields, validator failure, missing required `X-Actor` on claim |
+| 401 | `unauthorized` | token configured and bearer is missing/wrong |
+| 404 | `not_found` | path resolves no such entity |
+| 409 | `conflict` | duplicate slug/prefix/PR URL/document filename |
+| 413 | `payload_too_large` | body > 4 MiB |
+| 500 | `internal` | server-side panic (caught by recovery middleware) |
+
+### API-only quirks
+
+- **`POST /repos`** is the equivalent of `mk init`, but the server can't see your CWD — supply `{"name":"...", "path":"..."}` (plus optional `prefix`) explicitly.
+- **`GET /repos/{prefix}/documents/{filename}/download`** is the only non-JSON endpoint. Streams the body as `text/markdown` with `Content-Disposition: attachment`. No audit row, no dry-run, no `with_content`. The API never reads or writes the server filesystem, so callers materialise on disk by piping the response (`curl -O`).
+- **CLI verbs with no API equivalent** (touch the local filesystem or terminal): `mk init` (use `POST /repos`), `mk install-skill`, `mk doc add --from-path` / `--content-file` (inline `content` in the body), `mk doc export` (use `/download`), `mk tui`.
+
+For the full design rationale, threat model, and what the API deliberately doesn't do (NDJSON, per-user auth, CORS, cursor pagination, …), see `docs/rest-api-design.md`.
+
+## CLI client mode (`--remote` / `MK_REMOTE`)
+
+`mk` can drive a remote `mk api` server instead of the local DB. Set `--remote http://host:5320` (or `MK_REMOTE=...`) and, if the server enforces auth, `--token` / `MK_API_TOKEN`. Every read and mutating verb behaves identically — same flags, same JSON output, same `--dry-run`, same `--user`. The client translates each verb into the matching HTTP route; audit rows are written by the server.
+
 ```bash
-mk link MINI-42 blocks MINI-43
-mk issue show MINI-43          # MINI-43 will show "blocks by MINI-42" in relations
+MK_REMOTE=http://team-mk:5320 MK_API_TOKEN=$T mk issue list -o json
+mk --remote http://team-mk:5320 issue add "Login broken" --feature auth
 ```
 
-**Find what's in flight across all repos:**
-```bash
-mk issue list --all-repos --state in_progress,in_review -o json
-```
+Verbs that touch the local filesystem or terminal error clearly in remote mode and stay local-direct: `mk init`, `mk install-skill`, `mk doc add --from-path` / `--content-file` (use `--content` inline instead), `mk doc export` (use `mk doc download <filename>` — writes to stdout or `--to <path>`), `mk tui`, `mk schema *`, `mk status`.
 
 ## Gotchas
 
 - **Never run `mk` outside a git repo** when a command needs the current repo — it hard-errors with "not inside a git repository". `cd` first.
-- **Comment author is required.** Forgetting `--as <name>` is the most common mistake.
-- **Long text via files only.** `mk issue add "Fix" --description "two\nlines"` does not interpret `\n`. Use `--description -` with a heredoc, or `--description-file`.
-- **State values** can be written as `in-progress`, `in progress`, or `in_progress` — but parsing is case-sensitive on the lowercase form.
+- **Comment author is required.** On the JSON path the field is `author`; on the flag path it's `--as <name>`. Forgetting it is the most common mistake.
+- **`--user` is required for agents.** It controls the actor field in the audit log; without it every action looks like the OS user. The flag is permissive (no rejection if omitted) so this is on you to pass consistently.
+- **Long text in JSON is just a string.** `description`, `body`, `content` etc. take inline strings — no `\n` translation magic, JSON's own `\n` escapes work as expected. The flag path's `--description-file` is unnecessary here.
+- **Issue keys in JSON must be canonical** (`MINI-42`). The bare-number shortcut (`42`) is for humans on the flag path; agents driving JSON should always pass the prefix.
+- **Mixing `--json` with positionals/flags is rejected.** Choose one mode per call.
+- **State values** accept `in-progress`, `in progress`, or `in_progress` — but parsing is case-sensitive on the lowercase form.
 - **Auto-created prefix can collide.** If two repos share a basename, `mk init` allocates `XXX2`, `XXX3`, etc. Use `mk repo list` to confirm what was assigned.
 - **Issue numbers never repeat.** Deleting `MINI-3` does not free up the number — the next issue is still `MINI-4`.
 - **JSON output is the contract.** When parsing programmatically, always pass `-o json`. Text output is for humans and may shift.
