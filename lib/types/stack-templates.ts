@@ -18,6 +18,7 @@ import type {
   PoolConfig,
 } from './stacks';
 import type { EnvironmentNetworkType } from './environments';
+import type { StackTemplatePrerequisite } from './template-prerequisites';
 
 // Enum mirrors
 export type StackTemplateSource = 'system' | 'user';
@@ -66,6 +67,11 @@ export interface StackTemplateVersion {
   createdById: string | null;
   services?: StackTemplateService[];
   configFiles?: StackTemplateConfigFile[];
+  /** Cross-stack prerequisites declared by the template author (Phase 1).
+   *  Soft-warned at instantiate; hard-blocks `apply` with a 409
+   *  `PREREQUISITES_NOT_MET` until satisfied. Persisted on the version
+   *  row so prereqs can change between template versions. */
+  requires?: StackTemplatePrerequisite[];
 }
 
 export interface StackTemplateService {
@@ -323,6 +329,8 @@ export interface StackTemplateVersionInfo {
   inputs?: TemplateInputDeclaration[];
   vault?: TemplateVaultSection;
   nats?: TemplateNatsSection;
+  /** Cross-stack prerequisites — see `StackTemplateVersion.requires`. */
+  requires?: StackTemplatePrerequisite[];
 }
 
 export interface StackTemplateServiceInfo {
@@ -395,6 +403,8 @@ export interface CreateStackTemplateRequest {
   /** Optional NATS section persisted on the initial v0 draft. Triggers the
    *  template-nats:write permission gate when non-empty. */
   nats?: TemplateNatsSection;
+  /** Cross-stack prerequisites declared on the initial v0 draft. */
+  requires?: StackTemplatePrerequisite[];
 }
 
 export interface StackTemplateConfigFileInput {
@@ -427,6 +437,8 @@ export interface DraftVersionInput {
   inputs?: TemplateInputDeclaration[];
   vault?: TemplateVaultSection;
   nats?: TemplateNatsSection;
+  /** Cross-stack prerequisites — see `StackTemplateVersion.requires`. */
+  requires?: StackTemplatePrerequisite[];
 }
 
 export interface PublishDraftRequest {
