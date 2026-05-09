@@ -37,6 +37,15 @@ export const NATS_CLIENT_PORT_MAX = 4399;
 export const NATS_MONITOR_PORT_MIN = 8600;
 export const NATS_MONITOR_PORT_MAX = 8699;
 
+// Seed profile — controls how much of the stack the seeder brings up. `full`
+// is the historical default (vault+nats, egress-fw-agent, local env, HAProxy);
+// `minimal` stops after admin user + connected services so the per-worktree
+// VM doesn't have to host vault, NATS, or the egress containers when working
+// on parts of the app that don't need them.
+export type SeedProfile = 'minimal' | 'full';
+export const DEFAULT_SEED_PROFILE: SeedProfile = 'full';
+export const SEED_PROFILES: readonly SeedProfile[] = ['minimal', 'full'];
+
 // Per-worktree egress pool slicing: each worktree gets a /22 carved out of
 // 172.30.0.0/16, keyed off the same slot the port allocator already uses.
 // Slot 0 → 172.30.0.0/22, slot 1 → 172.30.4.0/22, …, slot 63 → 172.30.252.0/22.
@@ -81,6 +90,11 @@ export interface WorktreeEntry {
   // of truth at runtime is the slot, not this field. Optional so legacy
   // entries written before this rolled out continue to load.
   egress_pool_cidr?: string;
+  // Seed profile chosen on first `worktree-env start` for this worktree.
+  // Persisted so subsequent re-runs reuse it without `--seed-profile`. Optional
+  // for backwards-compat with entries written before this rolled out — absent
+  // means `full` for legacy worktrees.
+  seed_profile?: SeedProfile;
   seeded: boolean;
   updated_at: string;
 }
@@ -134,6 +148,7 @@ export function upsertEntry(
     api_key: partial.api_key ?? existing?.api_key,
     description: partial.description ?? existing?.description,
     egress_pool_cidr: partial.egress_pool_cidr ?? existing?.egress_pool_cidr,
+    seed_profile: partial.seed_profile ?? existing?.seed_profile,
     seeded: partial.seeded ?? existing?.seeded ?? false,
     updated_at: new Date().toISOString(),
   };
