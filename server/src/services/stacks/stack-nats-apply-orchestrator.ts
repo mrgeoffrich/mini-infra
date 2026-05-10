@@ -43,7 +43,69 @@ export interface NatsApplyPhaseOptions {
   requireNatsReady?: boolean;
 }
 
+/**
+ * Module-scoped serializer for `runStackNatsApplyPhase`. Implements the
+ * "single advisory lock keyed by `nats-apply`" recommended in the design's
+ * §6 risks list — a producer + consumer applying simultaneously would
+ * otherwise race on the producer's `lastAppliedNatsSnapshot`, the consumer
+ * potentially observing a stale snapshot mid-flight as the producer is
+ * rotating it.
+ *
+ * Mini Infra runs as a single Node process per host, so an in-memory chain
+ * promise is the right primitive — no PostgreSQL advisory locks, no Redis
+ * round-trip. Errors from one apply are isolated from the chain so a
+ * single failed apply does not poison subsequent ones.
+ *
+ * **Trade-off.** The lock is held for the entire phase, including the slow
+ * `applyConfig` / `applyJetStreamResources` NATS network calls. The design
+ * note in `nats-app-roles-followups.md` flagged this as a perf concern at
+ * scale (the recommended split would be DB-only-locked, NATS-unlocked, DB-
+ * write-locked). At single-host scale concurrent applies are rare; the
+ * simple whole-phase lock is correct and the optimization is a documented
+ * follow-up if contention surfaces.
+ */
+let natsApplyChain: Promise<void> = Promise.resolve();
+
+async function acquireNatsApplyLock<T>(fn: () => Promise<T>): Promise<T> {
+  let resolveOuter!: (value: T) => void;
+  let rejectOuter!: (reason: unknown) => void;
+  const outer = new Promise<T>((resolve, reject) => {
+    resolveOuter = resolve;
+    rejectOuter = reject;
+  });
+
+  const next = natsApplyChain.then(async () => {
+    try {
+      resolveOuter(await fn());
+    } catch (err) {
+      rejectOuter(err);
+    }
+  });
+  // Swallow chain errors so one failed apply doesn't break the queue for
+  // every subsequent apply. Caller still sees the rejection via `outer`.
+  natsApplyChain = next.catch(() => undefined);
+
+  return outer;
+}
+
+/**
+ * Test-only: returns a promise that resolves when the in-flight chain has
+ * fully drained. Lets tests assert "no apply currently running" without
+ * having to thread state through their own scaffolding.
+ */
+export function __waitForNatsApplyChainDrainForTests(): Promise<void> {
+  return natsApplyChain.then(() => undefined).catch(() => undefined);
+}
+
 export async function runStackNatsApplyPhase(
+  prisma: PrismaClient,
+  stackId: string,
+  opts: NatsApplyPhaseOptions,
+): Promise<NatsApplyPhaseResult> {
+  return acquireNatsApplyLock(() => runStackNatsApplyPhaseUnlocked(prisma, stackId, opts));
+}
+
+async function runStackNatsApplyPhaseUnlocked(
   prisma: PrismaClient,
   stackId: string,
   opts: NatsApplyPhaseOptions,

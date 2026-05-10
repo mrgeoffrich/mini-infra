@@ -63,19 +63,26 @@ fires for cycles introduced by *this* apply. Coverage in
 covers direct (A↔B), transitive (A→B→C→A), diamond (no false positive),
 and the producer-side-cycle-not-involving-consumer case.
 
-### Global NATS-apply lock (concurrency hardening)
+### ~~Global NATS-apply lock (concurrency hardening)~~ — shipped
 
-**Problem.** Phase 5's `resolveImport` is a plain Prisma read of the
-producer's `lastAppliedNatsSnapshot`. If producer + consumer apply
-simultaneously, the consumer can race on a stale snapshot. The design
-recommended a global NATS-apply lock; v1 takes the eventual-consistency
-tradeoff (consumer's next apply picks up the new snapshot).
+Shipped: a module-scoped chain promise in
+`stack-nats-apply-orchestrator.ts` serializes `runStackNatsApplyPhase`
+calls on a single Node process. Producer + consumer applies can no longer
+race on `lastAppliedNatsSnapshot` mid-rotation. Errors from one apply are
+isolated from the chain so a single failure doesn't poison subsequent
+applies. Coverage in
+[server/src/__tests__/stack-nats-apply-lock.integration.test.ts](../../../server/src/__tests__/stack-nats-apply-lock.integration.test.ts):
+two concurrent applies stay at max-in-flight = 1, a forced failure on
+one apply leaves the next apply unaffected, and the chain drains cleanly
+after all in-flight work finishes.
 
-**Approach.** A single advisory lock keyed by `"nats-apply"` taken at
-the top of `runStackNatsApplyPhase`. Cheap, single-host system, contention
-is rare. Implementation note: keep the lock scope tight (don't hold across
-the legacy `applyConfig`/`applyJetStreamResources` since those touch a
-live NATS connection that may be slow).
+Trade-off (deviation from the design's "scope tight" note): the lock is
+held across the slow `applyConfig` / `applyJetStreamResources` NATS
+network calls. Splitting the lock into "DB-only-locked, NATS-unlocked,
+DB-write-locked" phases would refactor the orchestrator's monolithic
+`try` block — meaningful churn for a perf concern that doesn't matter at
+single-host single-process scale (concurrent applies are already rare).
+Documented as a follow-up if contention surfaces.
 
 ### Forced revocation path for in-flight JWTs
 
