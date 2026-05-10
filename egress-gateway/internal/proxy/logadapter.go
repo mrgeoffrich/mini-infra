@@ -133,9 +133,19 @@ func (h *NDJSONLogHook) Fire(entry *logrus.Entry) error {
 // falling back to stdout if (somehow) none was wired. The default
 // constructor always sets one — this branch only fires for tests that
 // pass a nil emitter explicitly.
+//
+// Defensive `Ts` default mirrors the per-handler stamp: the JetStream
+// publisher path doesn't pass through `EmitToStdout`'s default, and the
+// server-side Zod schema rejects payloads with an empty `ts` (min(1)),
+// so an unstamped event would be NAK'd repeatedly until the stream's
+// max-deliveries count kicks in. Stamping here covers any handler that
+// forgets to set it explicitly.
 func (h *NDJSONLogHook) emitOrFallback(evt EgressEvent) {
 	if h.environmentId != "" {
 		evt.EnvironmentId = h.environmentId
+	}
+	if evt.Ts == "" {
+		evt.Ts = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	if h.emit != nil {
 		h.emit(evt)
@@ -150,6 +160,7 @@ func (h *NDJSONLogHook) emitOrFallback(evt EgressEvent) {
 func (h *NDJSONLogHook) handleDecision(entry *logrus.Entry) {
 	evt := EgressEvent{
 		Evt:        "tcp",
+		Ts:         entry.Time.UTC().Format(time.RFC3339Nano),
 		MergedHits: 1,
 	}
 
@@ -207,6 +218,7 @@ func (h *NDJSONLogHook) handleConnClose(entry *logrus.Entry) {
 	evt := EgressEvent{
 		Evt:        "tcp",
 		Protocol:   "connect",
+		Ts:         entry.Time.UTC().Format(time.RFC3339Nano),
 		MergedHits: 1,
 	}
 
