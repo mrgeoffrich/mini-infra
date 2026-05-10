@@ -118,7 +118,11 @@ Deliverables:
 - A `runJobPool()` entry point that delegates to `spawnPoolInstance()` and tracks via `PoolInstance` rows. No trigger sources yet — only a direct internal call (used in tests) and a stub manual HTTP route returning `501` until Phase 3.
 - Unit tests: validation, type narrowing, `runJobPool` cap-check logic.
 
+UI changes: none (server-side type addition; no UI surfaces).
+
 Done when: a stack template with a JobPool service applies cleanly, the service row carries `jobPoolConfig`, and an integration test calls `runJobPool()` directly to spawn + observe a `PoolInstance` row reach `running`.
+
+Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
 ### Phase 2 — Exit watcher and per-pool history streams
 
@@ -137,7 +141,11 @@ Deliverables:
 - Pool reaper extension: kill instances that exceed `killAfterSeconds`, mark them `failed` with `errorMessage: "killed: exceeded killAfterSeconds"`.
 - Retry handling: if `onFailure.retries > 0` and exit was non-zero, schedule a retry through `runJobPool` after the configured backoff.
 
+UI changes: none (Socket.IO event types added to `lib/types/socket-events.ts` are wired through existing channels; no new pages or components — the backup-events surface picks them up in Phase 4).
+
 Done when: a JobPool service completes a successful run end-to-end (exit 0 → `completed` event published to JetStream → Socket.IO event fanned out), a deliberate failure produces a `failed` event with the right exit code, and a runaway job killed by `killAfterSeconds` surfaces as `failed`.
+
+Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
 ### Phase 3 — Trigger registries
 
@@ -151,7 +159,11 @@ Deliverables:
 - All three triggers go through `runJobPool()` and emit `run-skipped` on cap.
 - Drift detection: definition hash for JobPool services includes `triggers[]`, `history`, `killAfterSeconds`, `onFailure`. Excludes the running-or-not state of instances (oscillation, not drift).
 
+UI changes: none (server-side registries + new HTTP route only; the route is consumed by existing surfaces from Phase 4 onward).
+
 Done when: a fresh worktree with a JobPool template + cron trigger applies, the cron fires on schedule, the run completes, and history replays after a server restart. Manual HTTP and NATS-request triggers both spawn against the same pool with correct trigger attribution in the history events.
+
+Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
 ### Phase 4 — `pg-az-backup` migration
 
@@ -165,7 +177,14 @@ Deliverables:
 - The existing "Run now" UI affordance routes to the manual HTTP trigger.
 - Backwards compatibility: the existing backup configuration UI (`BackupConfiguration` rows) keeps its shape; cron strings flow into the JobPool template's `triggers[]` at apply time. No user-visible UX change.
 
+UI changes:
+- [no design] Existing "Run now" affordance on the Backups page calls `POST /api/stacks/:stackId/job-pools/:serviceName/run` instead of the bespoke backup-run route — same button, new wire underneath.
+- [no design] Backup events page reads completed / failed / run-skipped entries from the per-pool `JobHistory-<...>-pg-az-backup` JetStream stream rather than the retired `BackupHistory` stream. Same rendered table; different source.
+- [no design] Live in-progress backups continue to surface on the events page via the existing `mini-infra.backup.progress.<runId>` subjects; the producer moves from server-mediated bridge to in-container NATS publish.
+
 Done when: scheduled backups still run, manual "Run now" still works, the events page still shows live progress + completed/failed entries, and the bespoke executor + scheduler are deleted from the codebase. A killed backup container surfaces as `failed` via the exit watcher.
+
+Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
 ### Phase 5 — `restore-executor` migration
 
@@ -177,7 +196,13 @@ Deliverables:
 - Delete the bespoke restore executor.
 - Likely shakes out missing pieces in the manual-trigger payload story — surface them in the handoff comment for a follow-up.
 
+UI changes:
+- [no design] Existing restore-from-backup UI invokes the manual JobPool trigger with restore params encoded as `JOB_PAYLOAD` instead of the bespoke restore endpoint. Same flow; new wire underneath.
+- [no design] Restore progress / completion surfaces read from the per-pool `JobHistory-<...>-restore-executor` stream.
+
 Done when: a restore initiated from the UI completes against a real backup, lands as a `completed` event in the per-pool history, and the bespoke restore executor is deleted.
+
+Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
 ## 7. Risks & open questions
 
@@ -192,10 +217,10 @@ Done when: a restore initiated from the UI completes against a real backup, land
 
 ## 8. Tracking
 
-Not yet seeded. Phases land in order — each phase blocks the next:
+Tracked under the `job-pool-service-type` feature in mk (run `mk feature show job-pool-service-type` to view). Phases land in order — each phase blocks the next:
 
-- Phase 1: `JobPool` type + spawn handler
-- Phase 2: Exit watcher and per-pool history streams
-- Phase 3: Trigger registries
-- Phase 4: `pg-az-backup` migration
-- Phase 5: `restore-executor` migration
+- MINI-50 — Phase 1: `JobPool` type + spawn handler
+- MINI-51 — Phase 2: Exit watcher and per-pool history streams  [blocks-by: 1]
+- MINI-52 — Phase 3: Trigger registries  [blocks-by: 2]
+- MINI-53 — Phase 4: `pg-az-backup` migration  [blocks-by: 3]
+- MINI-54 — Phase 5: `restore-executor` migration  [blocks-by: 4]
