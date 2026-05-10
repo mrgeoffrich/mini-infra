@@ -251,8 +251,64 @@ export interface TemplateNatsRole {
    * bucket. Future system templates use the same mechanism.
    */
   kvBuckets?: string[];
+  /**
+   * App-declared JetStream streams owned by this role. Stream subjects are
+   * written *relative* to the stack's subjectPrefix; the orchestrator
+   * prepends `<prefix>.` at apply time so every stream's subject filter
+   * lives inside the stack's namespace. The stream is created on the
+   * shared system account (same prefix-only isolation as roles), and
+   * the role's credentials automatically retain pub/sub on the role's
+   * own subject tree — so a service bound to this role can publish to
+   * the stream and subscribe through any consumer it declares without
+   * extra plumbing.
+   */
+  streams?: TemplateNatsRoleStream[];
+  /**
+   * Consumers attached to one of this role's `streams[]`. The `stream`
+   * field references the role-stream by its declared `name`; it is NOT
+   * prefixed (it's a logical reference within the role). `filterSubject`
+   * is relative to the stack's subjectPrefix and gets prepended at apply
+   * time.
+   */
+  consumers?: TemplateNatsRoleConsumer[];
   /** Credential JWT TTL. Defaults to NatsCredentialProfile system default (3600s). */
   ttlSeconds?: number;
+}
+
+/**
+ * App-author-facing JetStream stream declaration nested inside a role.
+ * Mirrors `TemplateNatsStream` but drops `account` (always the shared
+ * system account) and `scope` (always stack-scoped) — both implied by
+ * the prefix-only isolation model. Subjects are relative to the stack's
+ * subjectPrefix; the orchestrator builds the absolute form at apply.
+ */
+export interface TemplateNatsRoleStream {
+  name: string;
+  description?: string;
+  subjects: string[];
+  retention?: 'limits' | 'interest' | 'workqueue';
+  storage?: 'file' | 'memory';
+  maxMsgs?: number | null;
+  maxBytes?: number | null;
+  maxAgeSeconds?: number | null;
+}
+
+/**
+ * App-author-facing JetStream consumer attached to a role's stream.
+ * Mirrors `TemplateNatsConsumer` but `stream` references one of the
+ * containing role's `streams[]` by declared name (not the materialized
+ * concrete name) and `filterSubject` is relative to the subjectPrefix.
+ */
+export interface TemplateNatsRoleConsumer {
+  name: string;
+  stream: string;
+  durableName?: string;
+  description?: string;
+  filterSubject?: string;
+  deliverPolicy?: 'all' | 'last' | 'new' | 'by_start_sequence' | 'by_start_time' | 'last_per_subject';
+  ackPolicy?: 'none' | 'all' | 'explicit';
+  maxDeliver?: number | null;
+  ackWaitSeconds?: number | null;
 }
 
 /**
