@@ -7,6 +7,7 @@ import updateRoutes from './stacks-update-route';
 import destroyRoutes from './stacks-destroy-route';
 import historyRoutes from './stacks-history-routes';
 import poolRoutes from './stacks-pool-routes';
+import addonEndpointsRoutes from './stacks-addon-endpoints-route';
 import { stacksErrorHandler } from './stacks-error-handler';
 
 const router = Router();
@@ -23,6 +24,7 @@ router.use(updateRoutes);
 router.use(destroyRoutes);
 router.use(historyRoutes);
 router.use(poolRoutes);
+router.use(addonEndpointsRoutes);
 
 router.use(stacksErrorHandler);
 

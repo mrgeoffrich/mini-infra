@@ -77,6 +77,84 @@ export interface TailscaleAuthkeyResponse {
   capabilities: TailscaleAuthkeyRequest["capabilities"];
 }
 
+/**
+ * One tailnet device as the Phase 5 device-status poller cares about it.
+ * Subset of the full `GET /api/v2/tailnet/-/devices` payload — only the
+ * fields the Connect panel and connection-status indicator consume. The
+ * scheduler trims the upstream response to this shape so the rest of the
+ * server (and the API surface) doesn't have to know about Tailscale's
+ * full device JSON.
+ *
+ * `online` is derived from `lastSeen` ≤ 5 minutes ago (Tailscale's own
+ * heuristic — `online: true` from the API can lag a heartbeat). The
+ * scheduler is the single source of truth for that derivation.
+ */
+export interface TailscaleDeviceStatus {
+  /** Tailnet device ID (`nodeId`). Stable across restarts of the same node. */
+  id: string;
+  /** Hostname the sidecar registered under (e.g. `web-app-prod`). */
+  hostname: string;
+  /** Full tailnet name (e.g. `web-app-prod.tail-abc.ts.net`). */
+  name: string;
+  /** Whether the device is currently online per the lastSeen heuristic. */
+  online: boolean;
+  /** ISO-8601 timestamp of the device's last keepalive. Null when never seen. */
+  lastSeen: string | null;
+  /** Tags applied to the device (lowercased, includes `tag:mini-infra-managed`). */
+  tags: string[];
+}
+
+/** GET /api/tailscale/devices — current device set + the resolved tailnet domain. */
+export interface TailscaleDevicesResponse {
+  /** Tailnet MagicDNS suffix (e.g. `tail-abc.ts.net`); null when unresolved. */
+  tailnet: string | null;
+  /** All devices Mini Infra owns under `tag:mini-infra-managed`. */
+  devices: TailscaleDeviceStatus[];
+  /** ISO-8601 timestamp of the most recent successful poller tick. */
+  lastUpdatedAt: string | null;
+}
+
+/**
+ * Payload for the Socket.IO `tailscale:device:online` / `tailscale:device:offline`
+ * events. The Connect panel uses this to flip the per-row status badge
+ * without re-fetching the full device list.
+ */
+export interface TailscaleDeviceStatusEvent {
+  device: TailscaleDeviceStatus;
+}
+
+/**
+ * One addon-derived endpoint surfaced on the stack-detail Connect panel.
+ * Endpoint *URLs* are derived server-side so the host/tailnet formatting
+ * lives in one place — the panel renders these strings as-is.
+ */
+export interface TailscaleAddonEndpoint {
+  /** Authored service this sidecar wraps. */
+  targetService: string;
+  /** Synthetic sidecar service name (e.g. `web-app-tailscale`). */
+  syntheticServiceName: string;
+  /** `tailscale-ssh` and/or `tailscale-web` ids that produced this endpoint. */
+  addonIds: string[];
+  /** SSH or HTTPS — drives the action affordance on the row. */
+  kind: "ssh" | "https";
+  /** Sanitised `<service>-<env>` hostname. Stable join key against device status. */
+  hostname: string;
+  /**
+   * The full reachable URL.
+   * - `kind: 'ssh'` → `ssh root@<hostname>.<tailnet>.ts.net`
+   * - `kind: 'https'` → `https://<hostname>.<tailnet>.ts.net[<path>]`
+   *
+   * Null when the tailnet domain hasn't been resolved yet — the panel still
+   * renders the row with `<hostname>` so the operator sees the addon attached.
+   */
+  url: string | null;
+}
+
+/** GET /api/stacks/:id/addon-endpoints — derived endpoint list for the Connect panel. */
+export interface TailscaleAddonEndpointsResponse {
+  endpoints: TailscaleAddonEndpoint[];
+}
+
 /** Validation error categories surfaced to the form. */
 export const TAILSCALE_ERROR_CODES = {
   MISSING_CREDENTIALS: "MISSING_CREDENTIALS",

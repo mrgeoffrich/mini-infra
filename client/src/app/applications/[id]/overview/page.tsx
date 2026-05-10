@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { StackDeploymentRecord } from "@mini-infra/types";
 import { StatusStrip } from "../_components/status-strip";
+import { ConnectCard } from "../_components/connect-card";
 import type { ApplicationDetailContext } from "../layout";
 
 function formatDateTime(value: string | null): string {
@@ -160,6 +161,8 @@ export default function ApplicationOverviewTab() {
           </AlertDescription>
         </Alert>
       )}
+
+      {hasStacks && <ConnectCard stackId={primaryStack?.id} />}
 
       {!hasStacks && (
         <Card>
