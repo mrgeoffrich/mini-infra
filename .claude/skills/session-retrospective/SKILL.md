@@ -3,7 +3,7 @@ name: session-retrospective
 description: |
   Analyze a Claude Code session JSONL and post a retrospective to `mk` as a new issue
   tagged "retro" in the backlog state, linked back to the original issue the run was working on.
-  Use when the user (or another skill, e.g. `execute-next-task`) wants to capture lessons
+  Use when the user (or another skill, e.g. `code-task`) wants to capture lessons
   learned from an `mk`-tracked execution run so a retrospective trail builds up over time.
   Triggers: "retrospective", "what did we learn", "session summary", "lessons learned", "retro".
 
@@ -118,7 +118,7 @@ worthless retro.
    `--user Claude` is the audit-log attribution and is mandatory for agent-driven calls.
 
 9. **Return only** the new retro issue's key (e.g. `MINI-83`). Do not echo the markdown
-   body — the caller (typically a subagent in `execute-next-task`) just needs the key
+   body — the caller (typically a subagent in `code-task`) just needs the key
    to relay back.
 
 ## Output Format

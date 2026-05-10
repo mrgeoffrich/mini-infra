@@ -23,13 +23,16 @@ The workflow has two entry points (planned features vs. one-off maintenance) tha
                   │           task-to-mk ──────────────┘  │   │
                   │                                       ▼   │
                   │                              ┌──── mk ticket(s) ────┐
-                  │                              │                      │
-                  │                       design-task            execute-next-task
-                  │                              │                      │
-                  │                              ▼                      ▼
-                  │                       (issue → in_review)   (issue → in_review)
-                  │                              │                      │
-                  │                              └──────────┬───────────┘
+                  │                                         │
+                  │                                  implement-issue
+                  │                              (routes by `design` tag)
+                  │                                 │             │
+                  │                                 ▼             ▼
+                  │                           design-task     code-task
+                  │                                 │             │
+                  │                                 ▼             ▼
+                  │                          (issue → in_review)
+                  │                                         │
                   │                                         ▼
                   │                                      review
                   │                                         │
@@ -60,10 +63,11 @@ The workflow has two entry points (planned features vs. one-off maintenance) tha
 
 ### 3. Working a ticket
 
-Both flows below leave the issue in **`in_review`** when they finish, ready for the review loop.
+All flows below leave the issue in **`in_review`** when they finish, ready for the review loop.
 
-- **`design-task`** — for design work. Researches patterns, produces two design options with wireframes under `docs/designs/`, opens a PR for the design artefacts, and posts a "design ready" comment on the ticket.
-- **`execute-next-task`** — for coding work. Picks the next unblocked todo (or jumps to a specified `MINI-NN`), executes end-to-end inside a worktree (code → build/lint/unit → live smoke → PR with `Closes MINI-NN`), and transitions the issue to `in_review`.
+- **`implement-issue`** — the **unified entry point**. Takes an optional `MINI-NN` (or no argument for the next unblocked todo), then routes by the `design` mk tag: design tickets go to `design-task`, everything else goes to `code-task`. Use this whenever you want "what's next?" behaviour or don't want to think about which downstream skill applies.
+- **`design-task`** — for design work. Researches patterns, produces two design options with wireframes under `docs/designs/`, opens a PR for the design artefacts, and posts a "design ready" comment on the ticket. `implement-issue` invokes it automatically for `design`-tagged tickets; call it directly when you already know the ticket is design work.
+- **`code-task`** — for coding work. **Requires an explicit `MINI-NN`** (no auto-pick — that lives in `implement-issue`). Executes end-to-end inside a worktree (code → build/lint/unit → live smoke → PR with `Closes MINI-NN`), and transitions the issue to `in_review`. Refuses to run on `design`-tagged tickets — surfaces the mistake and points back at `design-task` / `implement-issue`.
 
 ### 4. Review loop
 
@@ -80,9 +84,9 @@ Loop `review` ↔ `address-review` until the review is clean.
 
 ## Wrapping skills (used during a task)
 
-These wrap around `design-task` / `execute-next-task` rather than being a workflow step in their own right:
+These wrap around `implement-issue` (and its underlying `design-task` / `code-task`) rather than being a workflow step in their own right:
 
-- **`setup-worktree`** — scaffolds a fresh git worktree from main with `pnpm install` and a backgrounded `pnpm worktree-env start`. `execute-next-task` calls this internally; use it directly for ad-hoc work that needs an isolated worktree without the full execute loop.
+- **`setup-worktree`** — scaffolds a fresh git worktree from main with `pnpm install` and a backgrounded `pnpm worktree-env start`. `code-task` calls this internally; use it directly for ad-hoc work that needs an isolated worktree without the full execute loop.
 - **`finish-worktree`** — tears down a finished worktree: deletes the per-worktree VM/distro and removes the worktree dir. Run this **after** `ship-it`, never before — and never when the work is unfinished or the PR isn't merged. The remote branch is left alone (the PR points at it).
 - **`test-dev`** — runs a set of tests against the current worktree's dev environment using `playwright-cli`. Use it to smoke-test a feature before opening a PR, or any time the user asks for the change to be exercised in the running stack. Tracks issues found and reports them at the end; stops early on a show-stopper.
 - **`diagnose-dev`** — diagnoses issues in the dev environment running on a worktree. Trigger when the user mentions something is broken "in dev" — don't use it for production issues.
@@ -93,7 +97,7 @@ These wrap around `design-task` / `execute-next-task` rather than being a workfl
 
 These aren't workflow steps — they're general-purpose tools the workflow skills (and you) reach for as needed:
 
-- **`mk`** — the local issue tracker that ships with the repo. Anything that creates, reads, updates, or organises tickets/features/tags/blocks/PR-attachments goes through `mk`. Prefer it over GitHub Issues for any work tracked in this repo. Most workflow skills above (`task-to-mk`, `plan-to-mk`, `design-task`, `execute-next-task`, `review`, `address-review`, `ship-it`) call `mk` under the hood; reach for it directly when you need to inspect or tweak ticket state outside one of those flows.
+- **`mk`** — the local issue tracker that ships with the repo. Anything that creates, reads, updates, or organises tickets/features/tags/blocks/PR-attachments goes through `mk`. Prefer it over GitHub Issues for any work tracked in this repo. Most workflow skills above (`task-to-mk`, `plan-to-mk`, `implement-issue`, `design-task`, `code-task`, `review`, `address-review`, `ship-it`) call `mk` under the hood; reach for it directly when you need to inspect or tweak ticket state outside one of those flows.
 - **`playwright-cli`** — browser automation: navigation, form filling, screenshots, web testing, data extraction. `test-dev` builds on top of it; reach for it directly for ad-hoc browser interactions or one-off scraping/automation tasks.
 
 ---
@@ -107,8 +111,10 @@ When the user asks "what do I do next?", figure out where they are:
 | Has an idea, no shape yet | `brainstorming` (or just chat), then `brainstorm-to-plan` |
 | Has a plan doc, no tickets | `plan-to-mk` (out of scope — point at it) |
 | Has a one-off chore | `task-to-mk` |
-| Has a ticket, needs a design | `design-task` |
-| Has a ticket, ready to code | `execute-next-task` |
+| Has a ticket, not sure design vs code | `implement-issue` (routes by tag) |
+| Has a ticket, needs a design | `design-task` (or `implement-issue`) |
+| Has a ticket, ready to code | `code-task` (or `implement-issue`) |
+| Wants "next thing" / "what's next?" | `implement-issue` |
 | PR open, ticket `in_review` | `review` |
 | Review posted with findings | `address-review` (add `--quick` for trivial / no-runtime-change fixes) |
 | Review is clean | `ship-it` |

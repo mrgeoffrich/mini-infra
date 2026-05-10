@@ -5,7 +5,7 @@ description: Turns a brainstorming session — a scratch markdown file, in-conve
 
 # Brainstorm to Plan
 
-You're turning a brainstorming session into a phased planning document under `docs/planning/not-shipped/`. The output is consumed by `plan-to-mk` (which seeds mk) and then by `execute-next-task` (which executes phases one PR at a time). The phased rollout is the load-bearing artifact — get the splits right and the downstream skills work; get them wrong (phases too big, deliverables vague, Done-when untestable) and the executor wastes runs trying to figure out what "done" means.
+You're turning a brainstorming session into a phased planning document under `docs/planning/not-shipped/`. The output is consumed by `plan-to-mk` (which seeds mk) and then by `/implement-issue` (which routes each ticket to `code-task` or `design-task` and ships it one PR at a time). The phased rollout is the load-bearing artifact — get the splits right and the downstream skills work; get them wrong (phases too big, deliverables vague, Done-when untestable) and the executor wastes runs trying to figure out what "done" means.
 
 Plans are **scoping** documents, not implementations. You write goals, deliverables in noun form, reversibility classifiers, UI changes, Done-when, and Verify-in-prod — not file-by-file change lists. The executor's `plan-to-mk` Phase 3.5 explorer maps phases to source-code touchpoints at seed time; this skill never preempts that.
 

@@ -5,7 +5,7 @@ description: Squash-merges the PR for an `mk` issue that's sitting in `in_review
 
 # Ship It
 
-This skill takes a reviewed PR over the finish line: squash-merge on GitHub, then transition the `mk` issue from `in_review` to `done` with a merge-record comment. It's the bookend to `execute-next-task` (which leaves the issue in `in_review` once the PR is open) and the inverse of `address-review` (which pulls the issue back to `in_progress` to apply review feedback).
+This skill takes a reviewed PR over the finish line: squash-merge on GitHub, then transition the `mk` issue from `in_review` to `done` with a merge-record comment. It's the bookend to `code-task` (which leaves the issue in `in_review` once the PR is open) and the inverse of `address-review` (which pulls the issue back to `in_progress` to apply review feedback).
 
 The hard guarantee: **the merge and the mk transition happen together, or neither happens**. Drift between GitHub and `mk` is the whole reason this skill exists — humans forget to flip the state after merging, and then the board lies about what's done.
 

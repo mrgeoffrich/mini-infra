@@ -1,11 +1,11 @@
 ---
 name: plan-to-mk
-description: Reads a phased markdown planning document under `docs/planning/` and either seeds mk (mini-kanban) with a matching feature plus one issue per phase (**create mode** — §8 has `MINI-_TBD_` placeholders) or refreshes an already-seeded feature's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `MINI-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `execute-next-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `backlog` (designer-owned, kept out of the execute-next-task queue), tagged with the `design` mk tag so designers can filter their queue with one tag, and wired up to the impl ticket via two relation edges — a `blocks` (the hard ordering constraint the picker reads) and a `relates-to` (the soft "this design is for that work" link that stays visible in both issues even after the design has shipped). Plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, tags (other than `design`-pairing), and all prior comments (retros, handoff notes); only the body, title (if changed), and dependency edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `MINI-_TBD_` placeholders with real issue IDs. Use this skill whenever the user says "populate mk from plan", "create the mk tickets", "plan to mk", "scaffold mk from this plan", "turn this plan into mk issues", "refresh mk from plan", "update mk issues", "re-sync mk from plan", "plan-to-mk refresh", or any equivalent request to seed *or* refresh `mk` from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single mk issue (use `mk` directly).
+description: Reads a phased markdown planning document under `docs/planning/` and either seeds mk (mini-kanban) with a matching feature plus one issue per phase (**create mode** — §8 has `MINI-_TBD_` placeholders) or refreshes an already-seeded feature's issue bodies and dependency edges from the plan doc (**update mode** — §8 has real `MINI-NN` IDs). Each issue carries the phase's Goal / Deliverables / Reversibility / UI changes / Done when / Verify in prod, the relevant per-component CLAUDE.md and ARCHITECTURE.md pointers (server vs client vs lib vs go sidecars), a **Source-code touchpoints** section produced by a per-phase codebase exploration (best-guess New / Modify / Read paths) plus a **Shared-library opportunities** sub-section flagging types/constants/helpers that should land in `lib/` or `egress-shared/` rather than be duplicated, a Workflow section (worktree pre-flight, `pnpm install`, background `pnpm worktree-env start`), phase-specific smoke-test recipes derived from which directories the phase touches, prior-art commit references, and the commit/PR conventions — enough context that the `code-task` skill can execute the issue without re-planning the high-level scope or re-exploring from scratch. Phases whose UI changes block contains one or more `[design needed]` items also get a **paired design ticket** auto-created in `backlog` (designer-owned, kept out of the `/implement-issue` auto-pick queue, which only picks `todo`), tagged with the `design` mk tag so designers can filter their queue with one tag, and wired up to the impl ticket via two relation edges — a `blocks` (the hard ordering constraint the picker reads) and a `relates-to` (the soft "this design is for that work" link that stays visible in both issues even after the design has shipped). Plan authors don't write standalone "Design: …" phases. Update mode preserves issue state, tags (other than `design`-pairing), and all prior comments (retros, handoff notes); only the body, title (if changed), and dependency edges are refreshed, and orphan issues (phases removed from the plan since seeding) are surfaced for manual handling rather than auto-deleted. In create mode, rewrites the plan doc's §8 to replace `MINI-_TBD_` placeholders with real issue IDs. Use this skill whenever the user says "populate mk from plan", "create the mk tickets", "plan to mk", "scaffold mk from this plan", "turn this plan into mk issues", "refresh mk from plan", "update mk issues", "re-sync mk from plan", "plan-to-mk refresh", or any equivalent request to seed *or* refresh `mk` from a plan markdown. Do NOT trigger for one-off issue creation, for plans that aren't phased, or when the user wants to ad-hoc-edit a single mk issue (use `mk` directly).
 ---
 
 # Plan to mk
 
-You're either **seeding** mk (mini-kanban) with a feature and per-phase issues from an existing markdown planning document, or **refreshing** the issue bodies and dependency edges of an already-seeded feature after the plan doc has changed. In both cases the output is a populated mk feature that the companion skill `execute-next-task` can pick up phase by phase.
+You're either **seeding** mk (mini-kanban) with a feature and per-phase issues from an existing markdown planning document, or **refreshing** the issue bodies and dependency edges of an already-seeded feature after the plan doc has changed. In both cases the output is a populated mk feature that the companion skill `/implement-issue` (which dispatches to `code-task` or `design-task` by the `design` tag) can pick up phase by phase.
 
 The mode is detected from §8 of the plan doc:
 
@@ -21,7 +21,7 @@ Reference examples in this repo:
 - `docs/planning/not-shipped/observability-otel-tracing-plan.md` — has `MINI-_TBD_` placeholders waiting for this skill.
 - `docs/planning/shipped/nats-app-roles-plan.md` — same shape, already shipped.
 
-The conventions you depend on (full spec in [`docs/planning/PLANNING.md`](../../../docs/planning/PLANNING.md); also referenced from `execute-next-task/SKILL.md`):
+The conventions you depend on (full spec in [`docs/planning/PLANNING.md`](../../../docs/planning/PLANNING.md); also referenced from `code-task/SKILL.md`):
 
 - **H1** (`# <feature title>`) is the mk feature title.
 - **§1 Background** — first paragraph is the feature description body.
@@ -316,7 +316,7 @@ Phases (will create N impl issues + M design tickets):
   ...
   Phase 6: <title>           [backlog]   blocks-by: 5, Design#6   touchpoints: 0N/2M/0R   shared-lib: 1 flagged    (optional, deferred)   design: 1 [needed] → 1 paired ticket
 
-Design tickets to create (backlog, designer-owned, not picked by execute-next-task):
+Design tickets to create (backlog, designer-owned, not picked by `/implement-issue` auto-pick):
   Design: Phase 2 — <title>     [backlog]   blocks: Phase 2     items: 2 [design needed]
   Design: Phase 6 — <title>     [backlog]   blocks: Phase 6     items: 1 [design needed]
 
@@ -420,7 +420,7 @@ Don't proceed without an explicit yes. Never guess "looks good, going" — the s
 
 *Create mode only. In update mode, skip this phase entirely — the existing feature's slug was captured during the Phase 5 update-mode pre-flight (step 1).*
 
-Create the mk feature with the title from H1 and a description that **starts** with the `Plan:` line. This serves as a machine-readable anchor for `execute-next-task` and a clickable link for humans browsing `mk feature show <slug>`.
+Create the mk feature with the title from H1 and a description that **starts** with the `Plan:` line. This serves as a machine-readable anchor for `code-task` and a clickable link for humans browsing `mk feature show <slug>`.
 
 Write the feature description to a temp file, then bridge into the JSON payload:
 
@@ -444,7 +444,7 @@ Examples:
 
 Derive the GitHub URL by reading `git remote get-url origin` (e.g. `https://github.com/mrgeoffrich/mini-infra`) and appending `/blob/main/<relative-path>`. Don't use `./`-prefixed paths or absolute filesystem paths.
 
-The bare-path variant (`Plan: docs/planning/...md`) is also accepted by `execute-next-task` as a legacy fallback for features authored before this convention firmed up — but new features use the combined format.
+The bare-path variant (`Plan: docs/planning/...md`) is also accepted by `code-task` as a legacy fallback for features authored before this convention firmed up — but new features use the combined format.
 
 Capture the feature's slug from the response — you'll need it for Phase 8 (every `mk issue add` passes `--feature <slug>`).
 
@@ -452,7 +452,7 @@ Capture the feature's slug from the response — you'll need it for Phase 8 (eve
 
 ## Phase 7.5 — Attach (or refresh) the plan doc on the feature
 
-*Runs in **both** modes.* The on-disk plan markdown is the source of truth for humans. mk's `doc` subsystem stores a synchronised copy that downstream skills (`execute-next-task`, `address-review`, `review`) can fetch with a single `mk doc show <name> --raw` call instead of having to know which branch the file lives on or where on disk to look. Re-running `plan-to-mk` re-syncs the content.
+*Runs in **both** modes.* The on-disk plan markdown is the source of truth for humans. mk's `doc` subsystem stores a synchronised copy that downstream skills (`code-task`, `address-review`, `review`) can fetch with a single `mk doc show <name> --raw` call instead of having to know which branch the file lives on or where on disk to look. Re-running `plan-to-mk` re-syncs the content.
 
 Use `mk doc upsert --from-path` — it derives the filename and the type from the path in one shot. Keep flag form for the upsert (the JSON path has no path-derivation equivalent); the link call goes through `--json` for strict decoding:
 
@@ -492,7 +492,7 @@ This skill doesn't try to detect the move — re-running `plan-to-mk` after the 
 
 For each phase, in order, create an mk issue:
 
-**Title:** `Phase N: <title>` — exactly matching the `### Phase N — <title>` heading minus the em-dash. (`execute-next-task` matches by phase number, but exact title parity is good practice.)
+**Title:** `Phase N: <title>` — exactly matching the `### Phase N — <title>` heading minus the em-dash. (`code-task` matches by phase number, but exact title parity is good practice.)
 
 **State:** `todo` for non-optional phases, `backlog` for optional/deferred ones.
 
@@ -649,9 +649,9 @@ After the impl ticket is created, scan its UI changes block for items tagged `[d
 
 **Title:** `Design: Phase N: <title>` — same shape as the impl title with a `Design:` prefix, so they sort adjacent in any title-sorted view.
 
-**State:** `backlog`. Designers own these tickets; `execute-next-task` only picks from `todo`, so `backlog` keeps the design ticket out of the execution queue while letting designers transition through their own states normally.
+**State:** `backlog`. Designers own these tickets; `/implement-issue` auto-pick only picks from `todo`, so `backlog` keeps the design ticket out of the execution queue while letting designers transition through their own states normally.
 
-**Tag:** `design` — pass `--tag design` on `mk issue add`. Every paired design ticket carries this tag so designers can filter their queue with one tag across all features (`mk issue list --tag design --state backlog,in_progress -o json`). The `execute-next-task` picker doesn't filter on this tag — it filters on state — so the tag is purely for designer ergonomics.
+**Tag:** `design` — pass `--tag design` on `mk issue add`. Every paired design ticket carries this tag so designers can filter their queue with one tag across all features (`mk issue list --tag design --state backlog,in_progress -o json`). It also drives `/implement-issue`'s routing: tickets with this tag are dispatched to `design-task`, everything else to `code-task`.
 
 **Feature:** attach the design ticket to the same feature as the impl ticket via `--feature <slug>`. It keeps both halves of a phase visible together in `mk feature show <slug>`.
 
@@ -762,7 +762,7 @@ Capture, for the Phase 11 report:
 
 Use the dependency graph you parsed in Phase 2, plus the design pairings from Phase 8.1, to compute the **desired** set of relationship edges. There are two relation types in play, and they answer different questions:
 
-- **`blocks`** — hard ordering constraint. The impl ticket cannot start until its blockers are `done`. This is what the `execute-next-task` picker reads (via the inverse `blocked_by` view that `mk issue show` surfaces). Created with `mk link --user Claude --json '{"from":"<FROM>","type":"blocks","to":"<TO>"}'`.
+- **`blocks`** — hard ordering constraint. The impl ticket cannot start until its blockers are `done`. This is what the `/implement-issue` picker reads (via the inverse `blocked_by` view that `mk issue show` surfaces). Created with `mk link --user Claude --json '{"from":"<FROM>","type":"blocks","to":"<TO>"}'`.
 - **`relates-to`** — soft "these belong together" link. Doesn't gate work; just makes the connection visible in both issues. Designers viewing a design ticket immediately see *which impl ticket consumes this design*, even after the design has shipped (and the `blocks` edge has resolved because the design is `done`). Created with `mk link --user Claude --json '{"from":"<FROM>","type":"relates-to","to":"<TO>"}'`.
 
 (`mk` also supports `duplicate-of`, but this skill never produces those — that's a manual reconciliation tool.)
@@ -856,7 +856,7 @@ Print a summary. Shape differs by mode.
 ✓ Set blocking relationships per plan ordering, plus design→impl pairings.
 ✓ Updated <plan-doc-path> §<8> with real issue keys (uncommitted).
 
-Next step: review the plan-doc diff, commit it, then run `execute-next-task` when you're ready to start Phase 1.
+Next step: review the plan-doc diff, commit it, then run `/implement-issue` when you're ready to start Phase 1.
 ```
 
 ### Update mode
@@ -906,12 +906,12 @@ Next step: <if §8 changed, "review and commit the plan-doc diff"; if orphans fl
 ### Create mode only
 
 - **Never merge into an existing feature.** If a feature with the same slug or title already exists, stop. Same-named features are almost certainly the same project — manual reconciliation only. (If the user actually wants to refresh, §8 needs real MINI keys to flip the run into update mode.)
-- **Never transition issues from their initial state.** `execute-next-task` does that. The populator only creates.
+- **Never transition issues from their initial state.** `code-task` does that. The populator only creates.
 
 ### Update mode only
 
 - **Update mode preserves state, tags, comments, and PR attachments.** The skill only refreshes the issue body, title (if changed), and dependency edges. Everything else is the user's territory. `mk issue edit` already only touches the fields you pass — don't pass `--state`, don't touch tags, don't add or remove comments.
 - **Update mode never deletes issues.** Phases removed from the plan since seeding produce orphan issues — surface them, never auto-delete. They may have intentional history attached (retro comments, deferred-then-cancelled context, scheduled-for-later) and removal is a deliberate human choice.
-- **Update mode never deletes comments.** All prior comments — retros, handoff comments from `execute-next-task`, manual notes — survive a refresh untouched.
+- **Update mode never deletes comments.** All prior comments — retros, handoff comments from `code-task`, manual notes — survive a refresh untouched.
 - **Update mode requires the same explicit confirmation as create mode** (Phase 6). Bulk body overwrites are easy to misinterpret if the user wasn't expecting them.
 - **Update mode never touches cross-feature edges.** A `blocks` or `relates-to` edge from an issue in this feature to an issue in a different feature was added deliberately by a human — leave it alone even if §8 says nothing about it.

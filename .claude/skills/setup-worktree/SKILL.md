@@ -1,13 +1,13 @@
 ---
 name: setup-worktree
-description: Sets up a fresh git worktree — pre-flights main, pulls latest, creates the worktree at `.claude/worktrees/<slug>` on branch `claude/<slug>`, runs `pnpm install`, and (by default) kicks off `pnpm worktree-env start` in the background to warm the dev VM/distro. Takes an optional `mk` issue key as the argument (e.g. `/setup-worktree MINI-32`); when omitted, generates a random `adjective-animal` slug (e.g. `swift-otter`) for ad-hoc work that isn't tracked in `mk`. Pass `--no-env` to skip the dev-env spin-up — useful for docs-only changes or when the caller doesn't need a running stack. This skill is the worktree-prep half of `execute-next-task` (Phases 4 through 6) extracted so it can be reused by other skills (e.g. `fix-and-validate`, ad-hoc bugfix flows) and called directly by the user when they want a worktree without the full execute-end-to-end loop. Use this skill whenever the user says "set up a worktree", "setup a worktree for MINI-NN", "create a worktree", "spin up a worktree", "new worktree for MINI-NN", "worktree for MINI-NN", "make me a worktree", or any equivalent ask to scaffold a fresh agent worktree from main. Do **not** trigger when the user is already inside a worktree and wants to keep working there, or when they want the full execute-next-task flow (which already calls this internally).
+description: Sets up a fresh git worktree — pre-flights main, pulls latest, creates the worktree at `.claude/worktrees/<slug>` on branch `claude/<slug>`, runs `pnpm install`, and (by default) kicks off `pnpm worktree-env start` in the background to warm the dev VM/distro. Takes an optional `mk` issue key as the argument (e.g. `/setup-worktree MINI-32`); when omitted, generates a random `adjective-animal` slug (e.g. `swift-otter`) for ad-hoc work that isn't tracked in `mk`. Pass `--no-env` to skip the dev-env spin-up — useful for docs-only changes or when the caller doesn't need a running stack. This skill is the worktree-prep half of `code-task` (Phases 4 through 6) extracted so it can be reused by other skills (e.g. `fix-and-validate`, ad-hoc bugfix flows) and called directly by the user when they want a worktree without the full execute-end-to-end loop. Use this skill whenever the user says "set up a worktree", "setup a worktree for MINI-NN", "create a worktree", "spin up a worktree", "new worktree for MINI-NN", "worktree for MINI-NN", "make me a worktree", or any equivalent ask to scaffold a fresh agent worktree from main. Do **not** trigger when the user is already inside a worktree and wants to keep working there, or when they want the full `/implement-issue` flow (which already calls this internally via `code-task`).
 ---
 
 # Setup Worktree
 
 This is a **scaffolding skill**, not an execution agent. It gets a fresh worktree from `main` ready for work — pre-flights, pulls, creates the worktree and branch, installs deps, and (by default) warms the dev environment in the background — then hands control back to the caller. It does **not** read `mk` tickets, do code changes, or open PRs.
 
-It's the worktree-prep half of `execute-next-task` (Phases 4–6) carved out so other flows can reuse it: `fix-and-validate` for issue-driven bugfixes, ad-hoc "fix this thing" sessions, design-doc PR flows, anything that needs an isolated worktree without the full execute-end-to-end loop.
+It's the worktree-prep half of `code-task` (Phases 4–6) carved out so other flows can reuse it: `fix-and-validate` for issue-driven bugfixes, ad-hoc "fix this thing" sessions, design-doc PR flows, anything that needs an isolated worktree without the full execute-end-to-end loop.
 
 ## Arguments
 
@@ -21,7 +21,7 @@ The skill takes one optional argument and two optional flags:
 
 ## Phase 1 — Pre-flight on main
 
-The skill assumes you start at the **main checkout root**, on `main`, with a clean tree. The first job is to confirm that and pull the latest. (This phase is identical to Phase 4 of `.claude/skills/execute-next-task/SKILL.md` — see there for the full reasoning.)
+The skill assumes you start at the **main checkout root**, on `main`, with a clean tree. The first job is to confirm that and pull the latest. (This phase is identical to Phase 4 of `.claude/skills/code-task/SKILL.md` — see there for the full reasoning.)
 
 ```bash
 pwd
@@ -135,7 +135,7 @@ The skill's job ends here. The caller (another skill or the user) takes it from 
 
 ## Hard rules
 
-These mirror the rules in `execute-next-task` for the same reasons:
+These mirror the rules in `code-task` for the same reasons:
 
 - **Never run on a dirty tree or a non-default branch.** Phase 1 stops; don't auto-stash or auto-checkout to make it work.
 - **Never reuse an existing worktree directory or branch silently.** If `.claude/worktrees/<slug>` or `claude/<slug>` already exists, stop and ask. The right cleanup is `pnpm worktree-env delete <slug>` and (if needed) `git worktree remove`, then re-run.
