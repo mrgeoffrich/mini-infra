@@ -1,6 +1,6 @@
 # DNS Providers — pluggable DNS backends with Cloudflare and BIND
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
+**Status:** planned, not implemented. Not yet seeded in `mk` — run `/plan-to-mk` when picked up.
 **Builds on:** the storage-provider abstraction shipped in [`StorageBackend`](../../../lib/types/storage.ts), [`StorageServiceFactory`](../../../server/src/services/storage/storage-service-factory.ts), [`StorageService`](../../../server/src/services/storage/storage-service.ts), and the per-provider directory layout under `server/src/services/storage/providers/`. The current Cloudflare-only DNS implementation lives in [`CloudflareDNSService`](../../../server/src/services/cloudflare/cloudflare-dns.ts), [`DnsCacheService`](../../../server/src/services/dns/dns-cache-service.ts), [`DnsCacheScheduler`](../../../server/src/services/dns/dns-cache-scheduler.ts), [`DnsChallenge01Provider`](../../../server/src/services/tls/dns-challenge-provider.ts), and the `DnsCacheZone` / `DnsCacheRecord` Prisma models.
 **Excludes:** non-DNS Cloudflare features (tunnels, zone-level settings, account management) — those keep their existing single-tenant Cloudflare service path. Direct DNS *editing* through the UI (today the DNS page is read-only) is **not** in scope; it remains a discovery + ACME-challenge feature.
 
@@ -316,10 +316,12 @@ Done when: an operator can audit the health of every DNS provider from one page,
 - **Per-connection cron timing.** With multiple connections, refreshing every connection on the same cron tick means N concurrent fan-outs. For two connections this is fine; if a future deployment grows to ten, jittering is needed. Note for Phase 3 — accept the simple "all-at-once" design for now and put a TODO in the scheduler.
 - **Bootstrapping a Cloudflare connection before Phase 4.** Between Phase 1 and Phase 4 there is no admin UI for creating connections. Either ship a one-shot seed script with Phase 1, or front-load a minimal "create-connection" form in Phase 1 instead of waiting for Phase 4. Default plan is the seed script; revisit if Phases 2–3 turn into long-lived branches.
 
-## 7. Linear tracking
+## 7. Tracking
 
-- ALT-_TBD_ — Phase 1: DNS provider framework + Cloudflare backend
-- ALT-_TBD_ — Phase 2: BIND backend
-- ALT-_TBD_ — Phase 3: Multi-connection cache scheduler + ACME zone routing
-- ALT-_TBD_ — Phase 4: DNS Connections admin UI
-- ALT-_TBD_ — Phase 5: Per-provider polish + connectivity rollup
+Not yet seeded.
+
+- Phase 1: DNS provider framework + Cloudflare backend
+- Phase 2: BIND backend
+- Phase 3: Multi-connection cache scheduler + ACME zone routing
+- Phase 4: DNS Connections admin UI
+- Phase 5: Per-provider polish + connectivity rollup

@@ -1,7 +1,7 @@
 # OpenTelemetry Tracing — Adding Tempo to the Monitoring Stack
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
-**Builds on:** the existing `monitoring` stack (Prometheus + Loki + Alloy + Telegraf, see [server/templates/monitoring/template.json](../../../server/templates/monitoring/template.json)) and the `NatsBus` chokepoint shipped through Phase 3 of the [internal-nats-messaging-plan](./internal-nats-messaging-plan.md).
+**Status:** planned, not implemented. Not yet seeded in `mk` — run `/plan-to-mk` when picked up.
+**Builds on:** the existing `monitoring` stack (Prometheus + Loki + Alloy + Telegraf, see [server/templates/monitoring/template.json](../../../server/templates/monitoring/template.json)) and the `NatsBus` chokepoint shipped through Phase 3 of the [internal-nats-messaging-plan](../shipped/internal-nats-messaging-plan.md).
 **Pairs with:** [docs/architecture/internal-messaging.md](../../architecture/internal-messaging.md) — once tracing lands, that doc gets the trace-context propagation rules added to §3 and a worked end-to-end example in §5.
 
 ---
@@ -151,7 +151,7 @@ Mirror in [egress-shared/natsbus/bus.go](../../../egress-shared/natsbus/bus.go).
 
 ## 6. Phased rollout
 
-Each phase is a separate Linear issue. Phases land in order; Phase 1 unblocks every later one. Phases 3–5 are independent of each other after Phase 2.
+Each phase is a separate `mk` issue. Phases land in order; Phase 1 unblocks every later one. Phases 3–5 are independent of each other after Phase 2.
 
 ### Phase 1 — Tempo + Collector + Grafana in the monitoring stack
 
@@ -246,13 +246,13 @@ Out of scope for the current plan; pre-listed here only so it doesn't get folded
 - **Grafana auth.** Built-in stacks shipped today don't have user auth. We should not expose Grafana to the public network without putting it behind the existing auth-proxy or basic-auth-on-HAProxy. Phase 1 ships it on the worktree-local port only; production exposure is a separate decision.
 - **Cross-process clock skew.** Spans crossing into Go containers running on a separate `egress-fw-agent` Linux namespace can render with negative durations if the host clocks drift. NTP is on by default; flag if we ever see weird waterfalls.
 
-## 8. Linear tracking
+## 8. Tracking
 
-Tracked under the [OpenTelemetry Tracing — Adding Tempo to the Monitoring Stack](https://linear.app/altitude-devops/project/opentelemetry-tracing-adding-tempo-to-the-monitoring-stack-01c8e578f25d) project on the Altitude Devops team. Phase 1 blocks every later phase; Phase 4 also blocks on Phase 2 (Go side context propagation must exist before sidecar local spans are useful).
+Not yet seeded. Phase 1 blocks every later phase; Phase 4 also blocks on Phase 2 (Go-side context propagation must exist before sidecar local spans are useful):
 
-- [ALT-44](https://linear.app/altitude-devops/issue/ALT-44) — Phase 1: Tempo + Collector + Grafana in the monitoring stack
-- [ALT-45](https://linear.app/altitude-devops/issue/ALT-45) — Phase 2: `NatsBus` context propagation (TS + Go)
-- [ALT-46](https://linear.app/altitude-devops/issue/ALT-46) — Phase 3: Auto-instrumentation across the server
-- [ALT-47](https://linear.app/altitude-devops/issue/ALT-47) — Phase 4: Sidecars
-- [ALT-48](https://linear.app/altitude-devops/issue/ALT-48) — Phase 5: Service map, dashboards, and correlation polish
-- [ALT-49](https://linear.app/altitude-devops/issue/ALT-49) — Phase 6: App-level metrics (optional, deferred)
+- Phase 1: Tempo + Collector + Grafana in the monitoring stack
+- Phase 2: `NatsBus` context propagation (TS + Go)
+- Phase 3: Auto-instrumentation across the server
+- Phase 4: Sidecars
+- Phase 5: Service map, dashboards, and correlation polish
+- Phase 6: App-level metrics (optional, deferred)
