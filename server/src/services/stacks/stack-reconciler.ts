@@ -362,7 +362,7 @@ export class StackReconciler {
         data: {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: buildAppliedSnapshot(stack),
+          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedDefinitions),
           // Track the AppRole binding that was in effect on this apply so the
           // credential injector can detect binding changes on future re-applies.
           ...(allSucceeded
@@ -599,7 +599,7 @@ export class StackReconciler {
           status: resultStatus,
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: buildAppliedSnapshot(stack),
+          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedDefinitions),
           ...(allSucceeded
             ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null, lastFailureReason: null }
             // Same surfacing as in `apply` above — see that branch for context.

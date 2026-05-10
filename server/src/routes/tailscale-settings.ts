@@ -11,6 +11,7 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import {
   TailscaleService,
   TailscaleAuthkeyMinter,
+  ensureTailscaleDeviceStatusScheduler,
 } from "../services/tailscale";
 import {
   TAILSCALE_DEFAULT_TAG,
@@ -118,6 +119,11 @@ router.post(
 
     const validationResult = await tailscaleService.validate();
 
+    // Credentials may have just become valid for the first time — kick the
+    // device-status scheduler so the Connect panel sees devices without a
+    // server restart.
+    await ensureTailscaleDeviceStatusScheduler(prisma);
+
     const response: TailscaleSettingsResponse = {
       success: true,
       data: {
@@ -143,6 +149,11 @@ router.delete(
   asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     await tailscaleService.removeConfiguration(userId);
+
+    // Stop the device-status poller now that credentials are gone — otherwise
+    // it would keep ticking against missing credentials and log auth errors
+    // until the next server restart.
+    await ensureTailscaleDeviceStatusScheduler(prisma);
 
     const response: TailscaleSettingsResponse = {
       success: true,

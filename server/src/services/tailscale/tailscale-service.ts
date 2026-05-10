@@ -321,15 +321,48 @@ export class TailscaleService extends ConfigurationService {
   /**
    * Resolve the tailnet's MagicDNS suffix (e.g. `tail-abc.ts.net`) so callers
    * can compose `https://<host>.<tailnet>.ts.net` URLs without hardcoding the
-   * domain. Tailscale exposes the suffix via the DNS search paths on the
-   * tailnet — `searchPaths[0]` is the MagicDNS suffix when MagicDNS is on.
+   * domain.
    *
-   * Used by the `tailscale-web` addon to populate `templateVars.tailnetDomain`
-   * for downstream UI (Phase 5 Connect panel). The `serve.json` itself uses
-   * the runtime-substituted `${TS_CERT_DOMAIN}` so this lookup is not
-   * load-bearing for traffic — it's a UI ergonomic.
+   * Two sources, tried in order:
+   *   1. `GET /tailnet/-/dns/searchpaths` — populated only when the operator
+   *      has configured custom MagicDNS search domains. Empty on most
+   *      tailnets, including the default Tailscale-issued `tail-abc.ts.net`
+   *      ones, so the original implementation always returned `null` and the
+   *      Connect panel ended up with `url: null` for every endpoint.
+   *   2. The first managed device's `name` field, which is always
+   *      `<hostname>.<tailnet>.ts.net` for any tag:mini-infra-managed
+   *      device. This is the reliable signal — every Mini Infra-owned device
+   *      already encodes the suffix, and we already fetch the device list
+   *      once per scheduler tick so this is at most one extra round-trip on
+   *      the cold path.
+   *
+   * Returns `null` only when both sources are empty (a brand-new install
+   * with no Mini Infra-managed devices yet). The `tailscale-web` addon's
+   * `serve.json` uses runtime-substituted `${TS_CERT_DOMAIN}` so this lookup
+   * is not load-bearing for traffic — it's a UI ergonomic only.
    */
   async getTailnetDomain(): Promise<string | null> {
+    // The searchpaths endpoint is rarely useful but we keep trying it first
+    // so operator-customised MagicDNS search domains still win. Failures
+    // (network blip, missing OAuth scope, endpoint changes upstream) must
+    // not skip the fallback — the device-list path is the reliable signal,
+    // and a thrown searchpaths error would otherwise short-circuit the
+    // whole resolution.
+    let fromSearchPaths: string | null = null;
+    try {
+      fromSearchPaths = await this.fetchSearchPathTailnet();
+    } catch (err) {
+      const log = getLogger("integrations", "tailscale-service");
+      log.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        "searchpaths lookup failed; falling back to device-name extraction",
+      );
+    }
+    if (fromSearchPaths) return fromSearchPaths;
+    return this.fetchTailnetFromManagedDevice();
+  }
+
+  private async fetchSearchPathTailnet(): Promise<string | null> {
     const accessToken = await this.getAccessToken();
     const controller = new AbortController();
     const timer = setTimeout(
@@ -383,6 +416,21 @@ export class TailscaleService extends ConfigurationService {
     return first.replace(/\.$/, "");
   }
 
+  private async fetchTailnetFromManagedDevice(): Promise<string | null> {
+    let devices: Array<TailscaleDeviceStatus & { id: string }>;
+    try {
+      devices = await this.fetchManagedDevices();
+    } catch {
+      // Best-effort fallback — never throw from the tailnet-domain path.
+      return null;
+    }
+    for (const device of devices) {
+      const suffix = extractTailnetSuffixFromDeviceName(device.name);
+      if (suffix) return suffix;
+    }
+    return null;
+  }
+
   /**
    * List every tailnet device Mini Infra owns under `tag:mini-infra-managed`.
    * Trims the upstream `GET /api/v2/tailnet/-/devices` payload down to the
@@ -394,6 +442,53 @@ export class TailscaleService extends ConfigurationService {
    * `lastSeen` keeps the poller and the API consistent.
    */
   async listDevices(): Promise<TailscaleDeviceStatus[]> {
+    const mapped = await this.fetchManagedDevices();
+
+    // Dedupe by hostname. Tailscale's tailnet uses DNS-name uniqueness, not
+    // OS-hostname uniqueness — when an ephemeral container redeploys faster
+    // than Tailscale can GC the previous registration, the new node gets an
+    // auto-suffixed DNS name (`web-local-1.<tailnet>.ts.net`) but keeps the
+    // OS hostname `web-local`, so two devices come back with the same
+    // `hostname` field. Downstream consumers (the scheduler's
+    // `devicesByHostname` map and the Connect panel's
+    // `devicesByHostname.get(endpoint.hostname)` join) collapse to one row
+    // per hostname, and JS Map insertion order means whichever arrived last
+    // wins — usually the stale offline one.
+    //
+    // Pick the best representative per hostname: prefer online over offline,
+    // then most-recent `lastSeen`. Stale ephemerals eventually get purged
+    // upstream; until then this keeps the panel showing the live device.
+    const byHostname = new Map<string, typeof mapped[number]>();
+    for (const device of mapped) {
+      const incumbent = byHostname.get(device.hostname);
+      if (!incumbent) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (device.online && !incumbent.online) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (incumbent.online && !device.online) continue;
+      // Same online state — break the tie on lastSeen (most recent wins).
+      const incumbentMs = incumbent.lastSeen ? Date.parse(incumbent.lastSeen) : 0;
+      const deviceMs = device.lastSeen ? Date.parse(device.lastSeen) : 0;
+      if (deviceMs > incumbentMs) {
+        byHostname.set(device.hostname, device);
+      }
+    }
+    return Array.from(byHostname.values());
+  }
+
+  /**
+   * Fetch + filter the raw managed-device list with NO hostname dedupe.
+   * `listDevices` collapses duplicates to a single row per hostname for the
+   * Connect panel, but the redeploy-cleanup path on `purgeStaleManagedDevicesByHostname`
+   * needs every duplicate so it can purge each stale registration individually.
+   */
+  private async fetchManagedDevices(): Promise<
+    Array<TailscaleDeviceStatus & { id: string }>
+  > {
     const accessToken = await this.getAccessToken();
     const controller = new AbortController();
     const timer = setTimeout(
@@ -468,6 +563,126 @@ export class TailscaleService extends ConfigurationService {
       .filter((d) => d.tags.some((t) => managedTagSet.has(t)));
   }
 
+  /**
+   * Delete a single tailnet device by node id (`DELETE /api/v2/device/:id`).
+   * Used by the redeploy-cleanup path to release a stale OS-hostname slot
+   * before a fresh sidecar registers — without it the new device gets
+   * Tailscale's auto-suffixed DNS name (`<host>-1.<tailnet>.ts.net`) until
+   * the upstream ephemeral GC catches up.
+   */
+  async deleteDevice(deviceId: string): Promise<void> {
+    if (!deviceId || deviceId.length === 0) {
+      throw new Error("deviceId is required");
+    }
+    const accessToken = await this.getAccessToken();
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${TAILSCALE_API_BASE}/device/${encodeURIComponent(deviceId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        },
+      );
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError") {
+        throw new TailscaleAuthError(
+          "Tailscale device-delete request timed out",
+          TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+        );
+      }
+      throw new TailscaleAuthError(
+        `Failed to reach Tailscale device-delete endpoint: ${
+          err instanceof Error ? err.message : "unknown"
+        }`,
+        TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // 404 means the device is already gone — Tailscale's GC beat us to it.
+    // That's the post-condition we wanted, so treat it as success.
+    if (response.status === 404) return;
+    if (!response.ok) {
+      const text = await safeReadText(response);
+      throw new TailscaleAuthError(
+        `Tailscale device-delete failed (HTTP ${response.status}): ${text}`,
+        TAILSCALE_ERROR_CODES.TAILSCALE_API_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Best-effort cleanup before re-registering an addon-derived sidecar:
+   * delete every **offline** managed device that shares this hostname, so
+   * the freshly-minted authkey lets the new sidecar register under the
+   * unsuffixed DNS name (`<host>.<tailnet>.ts.net`) instead of getting an
+   * auto-suffixed `-1`/`-2`/… because Tailscale's ephemeral GC is still
+   * dragging its feet on the old registration.
+   *
+   * Hard rule: never delete an **online** device. The provision path runs
+   * on every apply (the authkey is regenerated even when the sidecar isn't
+   * recreated), so deleting a healthy live device would kick our own
+   * running sidecar off the tailnet on every apply.
+   *
+   * Never throws — device cleanup is a UX nicety, not a correctness gate.
+   * If Tailscale is unreachable or the delete fails the new sidecar still
+   * registers (just with a suffix), and `listDevices`'s hostname dedupe
+   * keeps the Connect panel showing the live one.
+   */
+  async purgeStaleManagedDevicesByHostname(
+    hostname: string,
+  ): Promise<{ deleted: number; errors: number }> {
+    const log = getLogger("integrations", "tailscale-service");
+    let deleted = 0;
+    let errors = 0;
+    let candidates: Array<TailscaleDeviceStatus & { id: string }>;
+    try {
+      const all = await this.fetchManagedDevices();
+      candidates = all.filter((d) => d.hostname === hostname && !d.online);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), hostname },
+        "Failed to list devices for stale-hostname purge (non-fatal)",
+      );
+      return { deleted: 0, errors: 1 };
+    }
+
+    if (candidates.length === 0) return { deleted: 0, errors: 0 };
+
+    log.info(
+      { hostname, candidateCount: candidates.length },
+      "Purging stale managed tailnet devices before re-registration",
+    );
+
+    for (const device of candidates) {
+      try {
+        await this.deleteDevice(device.id);
+        deleted++;
+      } catch (err) {
+        errors++;
+        log.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            deviceId: device.id,
+            hostname,
+          },
+          "Failed to delete stale tailnet device (non-fatal)",
+        );
+      }
+    }
+    return { deleted, errors };
+  }
+
   async getHealthStatus(): Promise<ServiceHealthStatus> {
     const latestStatus = await this.getLatestConnectivityStatus();
 
@@ -521,4 +736,26 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return "<unavailable>";
   }
+}
+
+/**
+ * Extract the tailnet MagicDNS suffix from a managed device's `name` field.
+ * Tailscale emits `name` as `<hostname>.<tailnet-suffix>` (sometimes with a
+ * trailing dot in FQDN form), so the suffix is everything after the first
+ * dot.
+ *
+ * Returns `null` when the input is empty or has no dot — defensive against
+ * a future Tailscale schema change rather than a current bug.
+ *
+ * Exported for unit testing — `getTailnetDomain` is the production caller.
+ */
+export function extractTailnetSuffixFromDeviceName(
+  name: string | null | undefined,
+): string | null {
+  if (!name || name.length === 0) return null;
+  const trimmed = name.replace(/\.$/, "");
+  const dot = trimmed.indexOf(".");
+  if (dot < 0) return null;
+  const suffix = trimmed.slice(dot + 1);
+  return suffix.length > 0 ? suffix : null;
 }

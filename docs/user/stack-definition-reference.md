@@ -461,30 +461,33 @@ Both share the `tailscale` kind: declaring both on one service produces a **sing
 
 `extraTags` entries must match `tag:[a-z0-9-]+` and must already be declared in the operator's tailnet `tagOwners` ACL. The static `tag:mini-infra-managed` is always added by the authkey minter, so omitting `extraTags` is the common case.
 
-### Worked example — both Tailscale addons on one web service
+### Worked example — Stateful nginx exposed on the tailnet
+
+A minimal end-to-end shape: one Stateful nginx service, exposed only on the tailnet via the `tailscale-web` addon (no host port, no HAProxy routing). The sidecar reaches the target by service-name DNS, so the target must be on a stack-owned Docker network — declare it once in `networks[]` and the reconciler attaches it automatically.
 
 ```yaml
+networks:
+  - name: web
+volumes: []
 services:
   - serviceName: web
-    serviceType: StatelessWeb
+    serviceType: Stateful
     dockerImage: nginx
     dockerTag: "1.27"
     containerConfig:
       ports:
-        - { containerPort: 80, hostPort: 8080, protocol: tcp }
+        - { containerPort: 80, hostPort: 0, protocol: tcp, exposeOnHost: false }
+      restartPolicy: unless-stopped
     dependsOn: []
     order: 0
-    routing:
-      hostname: web.local
-      listeningPort: 80
     addons:
-      tailscale-ssh: {}
       tailscale-web:
         port: 80
-        path: "/"
 ```
 
-At apply time the render pipeline expands the two entries into one synthetic sidecar joined to the same Docker network as `web`. The target service itself is unchanged — no `network_mode` rewrite, no port reclamation; the sidecar reaches the target by service-name DNS on the shared bridge network.
+Don't reach for `containerConfig.joinNetworks` to attach the target to the stack network — `joinNetworks[]` takes literal Docker network names (post-projectName resolution), so passing the logical `"web"` would try to join a network actually called `web` and fail with `network web not found` on container create. Top-level `networks[]` already wires the service onto `${projectName}_web`.
+
+Declaring both `tailscale-ssh` and `tailscale-web` on the same service merges them into a single tailscaled sidecar (one authkey, one tailnet device) — set `serviceType: StatelessWeb` and add a `routing` block if you want HAProxy in front as well.
 
 ## `nats` — app-author surface (roles, signers, imports/exports)
 

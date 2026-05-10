@@ -56,6 +56,13 @@ export async function provisionTailscaleWeb(
       : 'host';
   const hostname = sanitizeTailscaleHostname(ctx.service.name, envSlug);
 
+  // Best-effort: purge any *offline* managed device already squatting on
+  // this hostname so the new registration takes the unsuffixed DNS name
+  // instead of `<host>-1.<tailnet>.ts.net`. Online devices are left alone —
+  // the provision path runs on every apply, so deleting a live device would
+  // kick our own running sidecar off the tailnet.
+  await tailscale.purgeStaleManagedDevicesByHostname(hostname);
+
   const minter = new TailscaleAuthkeyMinter(tailscale);
   const tagSet = buildTailscaleTagSet(config.extraTags ?? []);
   const authkey = await minter.mintAuthkey({

@@ -43,8 +43,8 @@ import { UserEventCleanupScheduler } from "./services/user-events";
 import prisma from "./lib/prisma";
 import { DnsCacheService, DnsCacheScheduler } from "./services/dns";
 import {
-  TailscaleService,
   TailscaleDeviceStatusScheduler,
+  ensureTailscaleDeviceStatusScheduler,
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
@@ -88,7 +88,10 @@ let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
 let userEventCleanupScheduler: UserEventCleanupScheduler | null = null;
 let dnsCacheScheduler: DnsCacheScheduler | null = null;
-let tailscaleDeviceStatusScheduler: TailscaleDeviceStatusScheduler | null = null;
+// Tailscale device-status scheduler is owned by the singleton on
+// `TailscaleDeviceStatusScheduler` — see `ensureTailscaleDeviceStatusScheduler`
+// which both startup and the settings route call to keep it aligned with the
+// current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
 
 /**
@@ -593,37 +596,18 @@ const initializeServices = async () => {
       console.log("[STARTUP] ⚠ DNS cache scheduler initialization failed (non-fatal)");
     }
 
-    // Initialize Tailscale device-status scheduler. Only start it when the
-    // OAuth credentials are configured — without them every poll tick would
-    // log a credential error and never produce useful events.
-    try {
-      console.log("[STARTUP] Initializing Tailscale device-status scheduler...");
-      const tailscaleService = new TailscaleService(prisma);
-      const clientId = await tailscaleService.getClientId();
-      const clientSecret = await tailscaleService.getClientSecret();
-      if (clientId && clientSecret) {
-        tailscaleDeviceStatusScheduler = new TailscaleDeviceStatusScheduler(
-          tailscaleService,
-        );
-        TailscaleDeviceStatusScheduler.setInstance(tailscaleDeviceStatusScheduler);
-        await tailscaleDeviceStatusScheduler.start();
-        logger.info("Tailscale device-status scheduler initialized successfully");
-        console.log("[STARTUP] ✓ Tailscale device-status scheduler initialized");
-      } else {
-        logger.info(
-          "Tailscale not configured, skipping device-status scheduler initialization",
-        );
-        console.log(
-          "[STARTUP] Tailscale not configured, skipping device-status scheduler",
-        );
-      }
-    } catch (error) {
-      logger.warn(
-        { error },
-        "Failed to initialize Tailscale device-status scheduler (non-fatal)",
-      );
+    // Initialize Tailscale device-status scheduler. The helper is idempotent
+    // and re-runnable: on credential save / delete the tailscale-settings
+    // route handlers call it again so configuring Tailscale post-boot starts
+    // the scheduler without an app restart, and removing credentials stops
+    // it.
+    console.log("[STARTUP] Reconciling Tailscale device-status scheduler...");
+    await ensureTailscaleDeviceStatusScheduler(prisma);
+    if (TailscaleDeviceStatusScheduler.getInstance()) {
+      console.log("[STARTUP] ✓ Tailscale device-status scheduler initialized");
+    } else {
       console.log(
-        "[STARTUP] ⚠ Tailscale device-status scheduler initialization failed (non-fatal)",
+        "[STARTUP] Tailscale not configured, device-status scheduler idle",
       );
     }
 
@@ -802,8 +786,9 @@ startServer()
       }
 
       // Stop Tailscale device-status scheduler
-      if (tailscaleDeviceStatusScheduler) {
-        tailscaleDeviceStatusScheduler.stop();
+      const tsScheduler = TailscaleDeviceStatusScheduler.getInstance();
+      if (tsScheduler) {
+        tsScheduler.stop();
         TailscaleDeviceStatusScheduler.setInstance(null);
         logger.info("Tailscale device-status scheduler stopped");
       }

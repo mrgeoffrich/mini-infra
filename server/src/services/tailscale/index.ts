@@ -4,3 +4,4 @@ export {
   type MintAuthkeyOptions,
 } from "./tailscale-authkey-minter";
 export { TailscaleDeviceStatusScheduler } from "./tailscale-device-status-scheduler";
+export { ensureTailscaleDeviceStatusScheduler } from "./ensure-device-status-scheduler";

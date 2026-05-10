@@ -503,8 +503,36 @@ export interface StackDefinition {
 
 // Serialize/deserialize helpers
 
+/**
+ * Service shape accepted by `serializeStack` — superset of `StackService` (the
+ * Prisma row) and `StackServiceDefinition` (the post-expansion render output).
+ * Keeping `addons` and `synthetic` optional here lets the apply pipeline pass
+ * the rendered service list (including synthetic sidecars) so the resulting
+ * `lastAppliedSnapshot` reflects what was actually deployed, not just what the
+ * user authored. The `addon-endpoints` route iterates `snapshot.services`
+ * looking for `synthetic` markers — without this, the snapshot is missing
+ * every addon-derived sidecar.
+ */
+type SerializableStackService = {
+  serviceName: string;
+  serviceType: StackServiceType;
+  dockerImage: string;
+  dockerTag: string;
+  containerConfig: StackContainerConfig;
+  configFiles?: StackConfigFile[] | null;
+  initCommands?: StackInitCommand[] | null;
+  dependsOn: string[];
+  order: number;
+  routing?: StackServiceRouting | null;
+  adoptedContainer?: AdoptedContainerRef | null;
+  poolConfig?: PoolConfig | null;
+  vaultAppRoleId?: string | null;
+  addons?: Record<string, unknown> | null;
+  synthetic?: SyntheticServiceInfo;
+};
+
 export function serializeStack(
-  stack: Stack & { services: StackService[] }
+  stack: Omit<Stack, 'services'> & { services: SerializableStackService[] }
 ): StackDefinition {
   return {
     name: stack.name,
@@ -531,6 +559,8 @@ export function serializeStack(
       adoptedContainer: s.adoptedContainer ?? undefined,
       poolConfig: s.poolConfig ?? undefined,
       vaultAppRoleId: s.vaultAppRoleId ?? undefined,
+      addons: s.addons ?? undefined,
+      synthetic: s.synthetic,
     })),
   };
 }

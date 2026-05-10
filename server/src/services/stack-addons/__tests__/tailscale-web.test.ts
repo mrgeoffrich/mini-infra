@@ -34,6 +34,7 @@ function makeStubTailscaleService(searchPaths: string[] = []): unknown {
     getAccessToken: async () => 'stub-access-token',
     getAllManagedTags: async () => [TAILSCALE_DEFAULT_TAG],
     getTailnetDomain: async () => searchPaths[0] ?? null,
+    purgeStaleManagedDevicesByHostname: async () => ({ deleted: 0, errors: 0 }),
   };
 }
 

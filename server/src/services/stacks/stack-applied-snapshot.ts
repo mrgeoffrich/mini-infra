@@ -10,8 +10,18 @@ import {
 
 /**
  * Build the lastAppliedSnapshot value from a Prisma stack record.
- * Handles the JSON field casting that Prisma requires — Prisma types JSON
- * columns as `Prisma.JsonValue` but serializeStack expects the lib types.
+ *
+ * Pass `renderedServices` (the post-addon-expansion service map produced by
+ * `resolveServiceConfigs`) to capture synthetic sidecars in the snapshot.
+ * Without it, only the user-authored services are persisted — meaning every
+ * downstream consumer that walks `snapshot.services` looking for synthetic
+ * markers (notably `GET /api/stacks/:id/addon-endpoints`, which derives the
+ * tailnet URL for the Connect panel) sees an empty list even after a
+ * successful apply that created the sidecars.
+ *
+ * Falls back to `stack.services` (authored only) when `renderedServices` is
+ * omitted — used by callers that don't have the rendered map handy and don't
+ * care about synthetics (e.g. an early failure path).
  */
 export function buildAppliedSnapshot(
   stack: {
@@ -37,22 +47,32 @@ export function buildAppliedSnapshot(
       dependsOn: unknown;
       routing: unknown;
       adoptedContainer: unknown;
+      addons?: unknown;
     }>;
-  }
+  },
+  renderedServices?: Map<string, StackServiceDefinition>,
 ): Prisma.InputJsonValue {
+  const services: StackServiceDefinition[] = renderedServices
+    ? Array.from(renderedServices.values())
+    : stack.services.map((s) => ({
+        serviceName: s.serviceName,
+        serviceType: s.serviceType as StackServiceDefinition['serviceType'],
+        dockerImage: s.dockerImage,
+        dockerTag: s.dockerTag,
+        containerConfig: s.containerConfig as unknown as StackContainerConfig,
+        configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? undefined,
+        initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? undefined,
+        dependsOn: s.dependsOn as unknown as string[],
+        order: s.order,
+        routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
+        adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
+        addons: (s.addons as Record<string, unknown> | null | undefined) ?? undefined,
+      }));
+
   return serializeStack({
     ...stack,
     networks: stack.networks as unknown as StackNetwork[],
     volumes: stack.volumes as unknown as StackVolume[],
-    services: stack.services.map((s) => ({
-      ...s,
-      serviceType: s.serviceType as StackServiceDefinition['serviceType'],
-      containerConfig: s.containerConfig as unknown as StackContainerConfig,
-      configFiles: (s.configFiles as unknown as StackConfigFile[]) ?? null,
-      initCommands: (s.initCommands as unknown as StackServiceDefinition['initCommands']) ?? null,
-      dependsOn: s.dependsOn as unknown as string[],
-      routing: (s.routing as unknown as StackServiceDefinition['routing']) ?? null,
-      adoptedContainer: (s.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? null,
-    })),
+    services,
   } as unknown as Parameters<typeof serializeStack>[0]) as unknown as Prisma.InputJsonValue;
 }
