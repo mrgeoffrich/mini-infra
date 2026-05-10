@@ -12,7 +12,7 @@ import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
 /**
  * `tailscale-web` addon — Phase 4 sibling to `tailscale-ssh`. Materialises a
  * tailscaled sidecar running `tailscale serve` so the target service is
- * reachable at `https://<service>-<env>.<tailnet>.ts.net` with auto-issued
+ * reachable at `https://<stack>-<service>-<env>.<tailnet>.ts.net` with auto-issued
  * Let's Encrypt certs and no port forwarding. Shares `kind: tailscale` with
  * `tailscale-ssh` — when both are declared on the same service the merge
  * strategy collapses them into one sidecar.

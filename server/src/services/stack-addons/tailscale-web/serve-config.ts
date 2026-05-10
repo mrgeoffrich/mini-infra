@@ -5,7 +5,7 @@ import { tailscaleSidecarServiceName } from '../shared/sidecar-naming';
  * `serve.json` template for `tailscale serve`. The tailscaled container reads
  * this file when `TS_SERVE_CONFIG` is set and substitutes `${TS_CERT_DOMAIN}`
  * at runtime with the device's MagicDNS hostname (e.g.
- * `<service>-<env>.<tailnet>.ts.net`). Keeping the host literal in the file
+ * `<stack>-<service>-<env>.<tailnet>.ts.net`). Keeping the host literal in the file
  * means the sidecar works identically across tailnets without re-rendering
  * the file at apply time.
  *

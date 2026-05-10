@@ -204,24 +204,30 @@ export function buildTailscaleTagSet(extraTags: readonly string[] = []): string[
 }
 
 /**
- * Hostname-sanitise `{service}-{env}` for use as a Tailscale device hostname.
+ * Hostname-sanitise `{stack}-{service}-{env}` for use as a Tailscale device
+ * hostname.
  *
  * RFC 1123 hostname rules: ≤63 octets, lowercase ASCII alphanumerics + hyphen,
  * no leading or trailing hyphen. Tailscale further requires the hostname to
  * be unique across the tailnet within the OAuth client's scope, so the
- * combined `{service}-{env}` form encodes per-resource identity (the OAuth
- * client tag set is fixed at `tag:mini-infra-managed`, see §Phase 3).
+ * combined triple encodes per-resource identity — the OAuth client tag set
+ * is fixed at `tag:mini-infra-managed` (see §Phase 3), and stack name is
+ * already unique within a Mini Infra instance, so prefixing with stack name
+ * is what stops two stacks that both define `web/prod` from racing for the
+ * same tailnet device.
  *
- * Mirrors the spirit of `buildPoolContainerName` in pool-spawner.ts but lives
- * here in lib/ because the addon framework is the only consumer that needs
- * RFC-compliant Tailscale-specific output (pool spawner targets Docker
- * container names which are looser).
+ * Overflow rule: when the sanitised triple exceeds 63 chars, truncate the
+ * readable head to 54 chars and append a `-{fnv1a32-hex8}` disambiguator
+ * computed over the unsanitised inputs. The hash isn't cryptographic —
+ * it's collision-resistance for short strings, and 32 bits is plenty given
+ * how few oversized hostnames any one tailnet will see.
  */
 export function sanitizeTailscaleHostname(
+  stackName: string,
   serviceName: string,
   envName: string,
 ): string {
-  const raw = `${serviceName}-${envName}`;
+  const raw = `${stackName}-${serviceName}-${envName}`;
   // Lowercase, replace non-[a-z0-9-] with `-`, collapse runs of `-`.
   const cleaned = raw
     .toLowerCase()
@@ -230,13 +236,35 @@ export function sanitizeTailscaleHostname(
     .replace(/^-+|-+$/g, "");
   if (cleaned.length === 0) {
     throw new Error(
-      `Cannot derive Tailscale hostname from "${serviceName}-${envName}" — no valid characters`,
+      `Cannot derive Tailscale hostname from "${stackName}-${serviceName}-${envName}" — no valid characters`,
     );
   }
-  // Truncate to 63 octets; trim a trailing hyphen left after the cut.
-  return cleaned.length <= 63
-    ? cleaned
-    : cleaned.slice(0, 63).replace(/-+$/, "");
+  if (cleaned.length <= 63) return cleaned;
+  // Overflow: keep the first 54 chars of the cleaned head (after trimming
+  // any trailing hyphen left by the cut), then append `-{hash}` where hash
+  // is FNV-1a-32 of the unsanitised triple, hex-encoded to 8 chars. The
+  // pipe separator can't appear in any sanitised hostname so the hash
+  // domain stays distinct from the visible head.
+  const HASH_HEX_LEN = 8;
+  const HEAD_BUDGET = 63 - 1 - HASH_HEX_LEN; // 54
+  const head = cleaned.slice(0, HEAD_BUDGET).replace(/-+$/, "");
+  const hash = fnv1a32Hex(`${stackName}|${serviceName}|${envName}`);
+  return `${head}-${hash}`;
+}
+
+/**
+ * 32-bit FNV-1a → 8-char hex. Non-cryptographic but adequate for
+ * disambiguating overflowing Tailscale hostnames (32 bits, birthday-bound
+ * around ~65k inputs). Inline so `lib/` keeps its zero-dependency posture
+ * and the bundle stays browser-safe (no `node:crypto` import).
+ */
+function fnv1a32Hex(input: string): string {
+  let h = 0x811c9dc5; // FNV offset basis
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
 }
 
 /**
