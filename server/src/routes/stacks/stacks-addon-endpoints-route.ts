@@ -66,7 +66,8 @@ function readWebConfig(
   };
 }
 
-function deriveEndpoints(
+// Exported for unit testing — the route handler still calls it locally.
+export function deriveEndpoints(
   snapshot: StackDefinition,
   envName: string,
   tailnet: string | null,
