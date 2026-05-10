@@ -321,15 +321,48 @@ export class TailscaleService extends ConfigurationService {
   /**
    * Resolve the tailnet's MagicDNS suffix (e.g. `tail-abc.ts.net`) so callers
    * can compose `https://<host>.<tailnet>.ts.net` URLs without hardcoding the
-   * domain. Tailscale exposes the suffix via the DNS search paths on the
-   * tailnet — `searchPaths[0]` is the MagicDNS suffix when MagicDNS is on.
+   * domain.
    *
-   * Used by the `tailscale-web` addon to populate `templateVars.tailnetDomain`
-   * for downstream UI (Phase 5 Connect panel). The `serve.json` itself uses
-   * the runtime-substituted `${TS_CERT_DOMAIN}` so this lookup is not
-   * load-bearing for traffic — it's a UI ergonomic.
+   * Two sources, tried in order:
+   *   1. `GET /tailnet/-/dns/searchpaths` — populated only when the operator
+   *      has configured custom MagicDNS search domains. Empty on most
+   *      tailnets, including the default Tailscale-issued `tail-abc.ts.net`
+   *      ones, so the original implementation always returned `null` and the
+   *      Connect panel ended up with `url: null` for every endpoint.
+   *   2. The first managed device's `name` field, which is always
+   *      `<hostname>.<tailnet>.ts.net` for any tag:mini-infra-managed
+   *      device. This is the reliable signal — every Mini Infra-owned device
+   *      already encodes the suffix, and we already fetch the device list
+   *      once per scheduler tick so this is at most one extra round-trip on
+   *      the cold path.
+   *
+   * Returns `null` only when both sources are empty (a brand-new install
+   * with no Mini Infra-managed devices yet). The `tailscale-web` addon's
+   * `serve.json` uses runtime-substituted `${TS_CERT_DOMAIN}` so this lookup
+   * is not load-bearing for traffic — it's a UI ergonomic only.
    */
   async getTailnetDomain(): Promise<string | null> {
+    // The searchpaths endpoint is rarely useful but we keep trying it first
+    // so operator-customised MagicDNS search domains still win. Failures
+    // (network blip, missing OAuth scope, endpoint changes upstream) must
+    // not skip the fallback — the device-list path is the reliable signal,
+    // and a thrown searchpaths error would otherwise short-circuit the
+    // whole resolution.
+    let fromSearchPaths: string | null = null;
+    try {
+      fromSearchPaths = await this.fetchSearchPathTailnet();
+    } catch (err) {
+      const log = getLogger("integrations", "tailscale-service");
+      log.debug(
+        { err: err instanceof Error ? err.message : String(err) },
+        "searchpaths lookup failed; falling back to device-name extraction",
+      );
+    }
+    if (fromSearchPaths) return fromSearchPaths;
+    return this.fetchTailnetFromManagedDevice();
+  }
+
+  private async fetchSearchPathTailnet(): Promise<string | null> {
     const accessToken = await this.getAccessToken();
     const controller = new AbortController();
     const timer = setTimeout(
@@ -381,6 +414,21 @@ export class TailscaleService extends ConfigurationService {
     // The endpoint returns paths with a trailing dot (FQDN form) on some
     // tailnets; normalise to the bare suffix.
     return first.replace(/\.$/, "");
+  }
+
+  private async fetchTailnetFromManagedDevice(): Promise<string | null> {
+    let devices: Array<TailscaleDeviceStatus & { id: string }>;
+    try {
+      devices = await this.fetchManagedDevices();
+    } catch {
+      // Best-effort fallback — never throw from the tailnet-domain path.
+      return null;
+    }
+    for (const device of devices) {
+      const suffix = extractTailnetSuffixFromDeviceName(device.name);
+      if (suffix) return suffix;
+    }
+    return null;
   }
 
   /**
@@ -688,4 +736,26 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return "<unavailable>";
   }
+}
+
+/**
+ * Extract the tailnet MagicDNS suffix from a managed device's `name` field.
+ * Tailscale emits `name` as `<hostname>.<tailnet-suffix>` (sometimes with a
+ * trailing dot in FQDN form), so the suffix is everything after the first
+ * dot.
+ *
+ * Returns `null` when the input is empty or has no dot — defensive against
+ * a future Tailscale schema change rather than a current bug.
+ *
+ * Exported for unit testing — `getTailnetDomain` is the production caller.
+ */
+export function extractTailnetSuffixFromDeviceName(
+  name: string | null | undefined,
+): string | null {
+  if (!name || name.length === 0) return null;
+  const trimmed = name.replace(/\.$/, "");
+  const dot = trimmed.indexOf(".");
+  if (dot < 0) return null;
+  const suffix = trimmed.slice(dot + 1);
+  return suffix.length > 0 ? suffix : null;
 }
