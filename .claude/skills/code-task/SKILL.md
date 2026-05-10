@@ -1,13 +1,19 @@
 ---
-name: execute-next-task
-description: Execution agent. Assumes you start at the main checkout root on `main` with a clean tree. Accepts an **optional issue ID** as an argument (e.g. `/execute-next-task MINI-32`, or a bare `32` which `mk` resolves against the current repo's prefix) — when supplied, the skill jumps straight to that issue and skips the picking flow; when omitted, it picks the next unblocked `todo` issue in the current repo (using `mk issue next --feature <slug> --user Claude` for atomic pick+claim when one feature dominates the queue, falling back to a listing for disambiguation across features). Handles two ticket flavours uniformly — phased plan-doc tickets (populated by `plan-to-mk` from a markdown plan in `docs/planning/`) and standalone tickets (populated by `task-to-mk`, or filed by hand) that may have no plan-doc entry. The ticket body — Goal / Deliverables / Done-when / Relevant docs / Smoke tests — is the contract; the plan doc, when one exists, is supplemental context. Marks the issue **`in_progress` as soon as it's picked** (so the mk board reflects who's working on it before any setup runs), then runs `git pull --ff-only origin main`, creates a fresh worktree at `.claude/worktrees/mini-NN` on branch `claude/mini-NN`, runs `pnpm install`, kicks off `pnpm worktree-env start --description "..."` in the background to warm the dev env, then executes the work end-to-end inside the new worktree — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes MINI-NN`, and a final transition to `in_review` with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations). On the success path it then spawns a Sonnet subagent that runs the `session-retrospective` skill (passing the parent session ID and the mk issue ID), which creates a new "retro"-tagged mk issue in `backlog` referencing the original, and **cleans up the worktree** (`pnpm worktree-env delete <slug>` + `git worktree remove`) so the VM/distro slot is freed; on any failure the worktree is left alive for investigation. **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. Use this skill whenever the user says "execute next task", "what's next", "do the next phase", "pick up the next todo", "work on the next thing", "what should I do next", "execute MINI-NN", "work on MINI-NN", or any equivalent request to advance through mk-tracked work. Do NOT trigger for tasks that aren't tracked in mk or for "what should I work on?" without an obvious mk context.
+name: code-task
+description: Code-execution agent for a single `mk`-tracked code ticket. **Requires an explicit issue ID** as the argument (e.g. `/code-task MINI-32`, or a bare `32` which `mk` resolves against the current repo's prefix) — there is no auto-pick path; if you want "what's next?" behaviour invoke `/implement-issue` instead, which dispatches to this skill once it has chosen an issue. Assumes you start at the main checkout root on `main` with a clean tree. Handles two ticket flavours uniformly — phased plan-doc tickets (populated by `plan-to-mk` from a markdown plan in `docs/planning/`) and standalone tickets (populated by `task-to-mk`, or filed by hand) that may have no plan-doc entry. The ticket body — Goal / Deliverables / Done-when / Relevant docs / Smoke tests — is the contract; the plan doc, when one exists, is supplemental context. Marks the issue **`in_progress` as soon as it's claimed** (so the mk board reflects who's working on it before any setup runs), then runs `git pull --ff-only origin main`, creates a fresh worktree at `.claude/worktrees/mini-NN` on branch `claude/mini-NN`, runs `pnpm install`, kicks off `pnpm worktree-env start --description "..."` in the background to warm the dev env, then executes the work end-to-end inside the new worktree — code changes, build/lint/unit tests, live smoke against the dev env, PR with `Closes MINI-NN`, and a final transition to `in_review` with a structured handoff comment (Known issues / Work deferred / Blockers / Deviations). On the success path it then spawns a Sonnet subagent that runs the `session-retrospective` skill (passing the parent session ID and the mk issue ID), which creates a new "retro"-tagged mk issue in `backlog` referencing the original, and **cleans up the worktree** (`pnpm worktree-env delete <slug>` + `git worktree remove`) so the VM/distro slot is freed; on any failure the worktree is left alive for investigation. **Does not produce an ExitPlanMode plan** — planning happened when the ticket was created. **Does not edit the plan doc** — drift goes only in the handoff comment for a re-integration agent to fold back later. **Not the right skill for design tickets** — those carry the `design` mk tag and need wireframe/option work; route through `/implement-issue` (which auto-routes by tag) or invoke `/design-task <KEY>` directly. Use this skill whenever the user names a specific code ticket — "execute MINI-NN", "work on MINI-NN", "code MINI-NN", "do MINI-NN", "/code-task MINI-NN" — and the ticket is implementation work rather than design exploration. Do NOT trigger when the user says "what's next?" or "execute next task" without a specific issue (use `/implement-issue` for those — it owns the picking flow), and do NOT trigger for tasks that aren't tracked in mk.
 ---
 
-# Execute Next Task
+# Code Task
 
-You're an **execution agent**. The planning has already happened — when the mk ticket was created (by the `plan-to-mk` skill, from a phased markdown plan doc) it was populated with everything you need: Goal, Deliverables, Done when, the relevant per-component CLAUDE.md / ARCHITECTURE.md pointers, prior-art commit hints, and the conventions to follow. Your job is to read the ticket and the linked docs, set up the environment, do the work, and ship a PR. **Do not re-plan, do not stop for approval, do not produce an ExitPlanMode block.** State briefly what you're about to do (one or two sentences) before changing files so the user can interrupt if needed, then execute.
+You're a **code-execution agent**. The planning has already happened — when the mk ticket was created (by the `plan-to-mk` skill, from a phased markdown plan doc; or by `task-to-mk` for one-offs; or by hand) it was populated with everything you need: Goal, Deliverables, Done when, the relevant per-component CLAUDE.md / ARCHITECTURE.md pointers, prior-art commit hints, and the conventions to follow. Your job is to read the ticket and the linked docs, set up the environment, do the work, and ship a PR. **Do not re-plan, do not stop for approval, do not produce an ExitPlanMode block.** State briefly what you're about to do (one or two sentences) before changing files so the user can interrupt if needed, then execute.
 
 If you read the ticket and find it underspecified or contradictory, that's the only case where you stop and ask — but the populated ticket should rarely have that problem. Treat it as authoritative.
+
+## Entry contract
+
+This skill **requires an explicit issue ID as its argument**. Examples that resolve cleanly: `/code-task MINI-32`, `/code-task mini-32`, `/code-task 32` (the bare integer is resolved against the current repo's prefix by `mk`). If no ID is supplied — or only ambiguous text like "do the next thing" — **stop immediately** and tell the user to either invoke `/implement-issue` (which owns the picking + dispatch flow) or supply an explicit ID. The auto-pick path used to live here; it now lives in `/implement-issue` so that design-vs-code dispatch happens before this skill runs.
+
+If the supplied ticket turns out to be a **design ticket** (carries the `design` mk tag — see Phase 1.5 below), stop and route the user to `/design-task <KEY>` or `/implement-issue <KEY>`. This skill is for code execution; running it on a design ticket would skip the design exploration the ticket was filed for.
 
 ## Conventions you rely on
 
@@ -61,62 +67,51 @@ You should see a JSON blob with the repo's prefix (`MINI`) and per-state issue c
 
 ---
 
-## Phase 2 — Find the next unblocked task and claim it
+## Phase 1.5 — Refuse design tickets
 
-The skill has two entry modes:
+Before doing any other work, check whether the supplied issue is a design ticket — if it is, this skill is the wrong one. Design tickets carry the **`design` mk tag**, attached by `plan-to-mk` when it auto-creates paired design tickets for phases with `[design needed]` UI changes.
 
-- **Auto-pick mode** (no argument supplied) — list `todo` issues, filter by blocker state, pick the single unblocked candidate or ask the user to disambiguate.
-- **Explicit-ID mode** (a `MINI-NN` was passed as the argument, e.g. `/execute-next-task MINI-32`, or a bare `32`) — jump straight to that issue, skipping the listing/filtering. The user has already chosen.
-
-### 2.0 Branch on the argument
-
-Look at the arguments the user passed to the skill. If the args contain an mk issue identifier matching `MINI-\d+` (case-insensitive, may appear with surrounding text — e.g. `MINI-32`, `mini-32`, `pick up MINI-32`) or a bare integer (`32`), treat that as the explicit pick and **skip the listing logic entirely**. Otherwise fall through to the auto-pick path.
-
-#### Explicit-ID path
-
-1. Fetch the issue with `mk issue brief <KEY>` (a bare number works — `mk` resolves it against the current repo's prefix). If it doesn't exist, the command exits non-zero — stop and tell the user. The brief is the same one Phase 3 needs, so this read is not wasted; capture it to disk (`/tmp/brief-<KEY>.json`) and reuse it.
-2. **Soft validations.** These produce warnings, not stops — when the user names an explicit ID, they're overriding the heuristics on purpose:
-   - If the issue is **not in `todo` state** (e.g. `backlog`, `in_progress`, `done`), surface that to the user and ask "still proceed?" — useful for resuming a session that was interrupted, but not silently auto-resuming work the user might not realise was already shipped. Read `.issue.state` from the brief.
-   - If the issue has **incomplete `blocks` relations pointing in** (i.e. another open issue blocks this one), list them and ask "still proceed?". `.relations.incoming[]` in the brief exposes every incoming edge with its type and the other side's state — look for any `blocks`-typed edge whose other side is in a non-terminal state (`backlog`, `todo`, `in_progress`, `in_review`). Don't auto-skip — sometimes the dependency was already done in a way the relation didn't capture.
-3. Once you have user confirmation (or the soft validations all passed), proceed to Phase 2.1.
-
-State the pick the same way as the auto-pick path: id, title, feature slug.
-
-#### Auto-pick path
-
-The picking rule is **deliberately simple** — there is no priority sort, no cycle filter, no last-updated heuristic. Just: state = `todo`, no unfinished `blocks` edge pointing in, no assignee. The user maintains ordering through `mk` blocking relationships (where they exist; standalone tickets in the `maintenance` feature have none).
-
-The preferred picker is **`mk issue next`** — a single atomic call that combines "find the lowest-numbered ready issue in this feature" with "flip it to `in_progress` and stamp the assignee", eliminating the read-then-write race when multiple agents (or worktrees) pick at once. The catch: `mk issue next` is **feature-scoped** — it requires `--feature <slug>`. So the auto-pick flow first decides which feature to claim from, then delegates the pick + claim to `mk issue next`.
-
-1. **List Todos** in the current repo with `mk issue list --state todo -o json` and group them by `feature_slug`. This is purely to find which features have ready work — no per-issue blocker probe; `mk issue next` does that atomically.
-2. **Decide which feature to claim from:**
-   - **0 todos in the repo** → tell the user "Nothing to do — no `todo`s in any feature." Stop.
-   - **1 feature has todos** → use that feature; skip to step 3.
-   - **>1 features have todos** → list the features with their counts (`<feature-slug>: N todo(s)`) and ask the user which feature to walk. Don't infer.
-3. **Claim atomically** with `mk issue next`:
-   ```bash
-   mk issue next --feature <slug> --user Claude -o json
-   ```
-   This picks the lowest-numbered `todo` whose blockers are all `done`/`cancelled`/`duplicate` and whose assignee is empty, flips it to `in_progress`, and stamps the assignee with `Claude` — all in one call. Three outcomes:
-   - **A claimed issue is returned** → use it. State the pick: id, title, feature slug. The state transition and assignee stamp already happened — Phase 2.1 below collapses to "post the claim comment".
-   - **Empty result, exit 0** → everything in this feature is currently blocked, claimed, or done. Tell the user: "Nothing claimable in `<feature>` right now — every `todo` is blocked, in progress, or done." Stop. (This is `mk issue next`'s contract — empty + exit 0 means "retry later", not an error.)
-   - **Non-zero exit** → surface the error and stop. Don't fall back to a different feature without asking.
-
-### 2.1 Post the claim comment
-
-`mk issue next` already flipped the issue to `in_progress` and stamped the assignee, so this step is just the human-readable claim comment. (For the **explicit-ID path**, where the user named a specific issue, run `mk issue state MINI-NN in_progress --user Claude` first to do the equivalent of what `next` did — state transition is idempotent, so re-running on an already-`in_progress` ticket is harmless.)
+Fetch the issue and inspect its tags (`mk issue brief` is the same call Phase 3 uses for the contract — capture to disk and reuse there):
 
 ```bash
-# Explicit-ID path only — auto-pick path skips this; `mk issue next` already transitioned.
+mk issue brief MINI-NN > /tmp/brief-MINI-NN.json
+jq -r '.issue.tags // [] | join(",")' /tmp/brief-MINI-NN.json
+```
+
+If the tag list contains `design`, **stop and route the user**:
+
+> "MINI-NN is a design ticket (tagged `design`) — this skill ships code, not designs. Run `/design-task MINI-NN` for the design exploration, or `/implement-issue MINI-NN` to let the dispatcher route automatically."
+
+If the tags don't include `design`, proceed to Phase 2. (This guard is intentionally lightweight — `/implement-issue` performs the same check before delegating here, so in the common path this re-check is a no-op. The guard exists because `/code-task MINI-NN` can be invoked directly, and silently re-implementing a design ticket as code would be the worst possible failure mode.)
+
+---
+
+## Phase 2 — Claim the issue
+
+The issue ID has already been supplied (entry contract). This phase fetches it, validates it's in a state that makes sense to work on, transitions it to `in_progress`, and posts the claim comment.
+
+### 2.1 Fetch and soft-validate
+
+You already have `/tmp/brief-MINI-NN.json` from Phase 1.5. Run the soft validations:
+
+- If the issue is **not in `todo` state** (e.g. `backlog`, `in_progress`, `done`, `in_review`), surface that to the user and ask "still proceed?" — useful for resuming a session that was interrupted, but not silently auto-resuming work the user might not realise was already shipped. Read `.issue.state` from the brief.
+- If the issue has **incomplete `blocks` relations pointing in** (i.e. another open issue blocks this one), list them and ask "still proceed?". `.relations.incoming[]` in the brief exposes every incoming edge with its type and the other side's state — look for any `blocks`-typed edge whose other side is in a non-terminal state (`backlog`, `todo`, `in_progress`, `in_review`). Don't auto-skip — sometimes the dependency was already done in a way the relation didn't capture.
+
+Once user confirmation lands (or the soft validations all passed cleanly), proceed. State the pick in one line: id, title, feature slug.
+
+### 2.2 Transition to `in_progress` and post the claim comment
+
+```bash
 mk issue state --user Claude --json '{"key":"MINI-NN","state":"in_progress"}'
 
-# Both paths:
 mk comment add --user Claude --json '{
   "issue_key":"MINI-NN",
   "author":"Claude",
   "body":"Claimed by Claude. Reading ticket and preparing the worktree — full setup details will follow once the worktree is up."
 }'
 ```
+
+The `mk issue state` call is idempotent — re-running on an already-`in_progress` ticket is harmless, which matters when the user said "still proceed?" on a soft-validation warning for an issue that was already `in_progress`.
 
 If, in any later phase, the skill stops with a hard-fail (malformed ticket, dirty tree, worktree collision, etc.), **leave the issue `in_progress`** and surface the failure to the user. Don't auto-roll-back to `todo` — the user decides whether to retry, hand off, or revert state manually.
 
@@ -128,13 +123,9 @@ Don't move to Phase 3 until the claim comment is posted.
 
 The mk ticket body is your contract. Read it end to end and treat it as authoritative. The plan doc, when one exists and matches, is supplemental context — useful for understanding how the phase fits into a larger arc — but the ticket is what you execute against.
 
-### 3.1 Bulk-fetch the context with `mk issue brief`
+### 3.1 Reuse the brief from Phase 1.5
 
-`mk issue brief <KEY>` returns a single JSON blob with the issue + parent feature + linked docs (with content) + comments + relations + attached PRs — exactly the dance this phase used to open-code as five separate `mk` calls. Always JSON, regardless of `--output`. Use it as the one-shot context loader:
-
-```bash
-mk issue brief MINI-NN > /tmp/brief-MINI-NN.json
-```
+The bulk fetch already happened — `/tmp/brief-MINI-NN.json` contains the issue + parent feature + linked docs (with content) + comments + relations + attached PRs. No second `mk issue brief` call needed.
 
 The shape:
 
@@ -151,10 +142,6 @@ The shape:
 ```
 
 `linked_via` on each doc tells you whether the doc was attached to the issue, to the parent feature, or both — useful for distinguishing the design doc (issue-linked, type `designs`) from the plan-doc snapshot (feature-linked, type `project_in_planning` / `project_complete`).
-
-Pass `--no-comments` if the issue has hundreds of comments and you only need the contract — but the default (comments included) is what this skill wants, since the §5b backward-compat fallback skims comments for a pre-`mk-doc` designer hand-off.
-
-If `mk issue brief` errors (issue doesn't exist, mk is wedged), stop and report. Don't fall back to the legacy multi-call dance — `brief` is the one source of truth.
 
 ### 3.2 Pull the standard sections out of the issue body
 
@@ -249,13 +236,13 @@ Skill(skill: "setup-worktree", args: "MINI-NN --no-env")
 
 When the skill returns successfully, you'll be `cd`ed into `.claude/worktrees/<slug>`, dependencies installed, and the env warming in the background (or skipped). The current working directory is the worktree for the rest of this run; the slug is `mini-NN` (lowercase) and the branch is `claude/<slug>`.
 
-If `setup-worktree` stops — dirty tree, non-default branch, worktree/branch collision, `pnpm install` failure — surface the failure and stop. Don't auto-recover. The issue is already `in_progress` from Phase 2.1; leave it that way per the hard rule on auto-rollback (the user decides whether to retry, hand off, or revert state).
+If `setup-worktree` stops — dirty tree, non-default branch, worktree/branch collision, `pnpm install` failure — surface the failure and stop. Don't auto-recover. The issue is already `in_progress` from Phase 2.2; leave it that way per the hard rule on auto-rollback (the user decides whether to retry, hand off, or revert state).
 
 ---
 
 ## Phase 7 — Post the worktree details to the mk ticket
 
-The state transition already happened in Phase 2.1 (right after the pick) — at this point the issue is `in_progress` and there's a "claimed" comment. Now that the worktree exists, the env-startup is backgrounded, and `pnpm install` has finished, post a follow-up comment with the concrete details so anyone reading the ticket knows where the work is happening:
+The state transition already happened in Phase 2.2 (right after the pick) — at this point the issue is `in_progress` and there's a "claimed" comment. Now that the worktree exists, the env-startup is backgrounded, and `pnpm install` has finished, post a follow-up comment with the concrete details so anyone reading the ticket knows where the work is happening:
 
 ```bash
 cat <<'EOF' > /tmp/worktree-comment.md
@@ -558,10 +545,12 @@ Cleaned up worktree .claude/worktrees/<slug> and the dev-env VM.
 
 These are non-negotiable. If you find yourself wanting to break one, stop and ask the user instead.
 
+- **Never run without an explicit issue ID.** The entry contract requires one. If invoked with no argument (or with ambiguous text like "the next task"), refuse and point at `/implement-issue`.
+- **Never run on a design ticket.** The Phase 1.5 tag check is non-negotiable; if the picked issue carries the `design` tag, refuse and route the user to `/design-task` or `/implement-issue` (which dispatches automatically).
 - **Never produce an ExitPlanMode block.** This is an execution agent. Planning happened when the ticket was created (in `plan-to-mk` for phased tickets, in `task-to-mk` for standalone ones, or by the user filing it directly).
 - **Never run Phase 14 (cleanup) on a failure path.** If smoke failed, the PR didn't open, the `in_review` transition didn't go through, or you stopped to ask the user mid-phase — leave the worktree alive. The user needs it to investigate. Cleanup is the *reward* for a fully successful run. (Phase 13, the retrospective, also only runs on the success path, but a failure inside Phase 13 itself does not block Phase 14 — the retrospective is best-effort.)
 - **Never edit the plan doc.** When a plan doc was loaded in Phase 3, the doc under `docs/planning/` is read-only for this skill. If your implementation drifts from the spec, capture the drift in the handoff comment (Phase 12 — Deviations from the spec section). A separate re-integration agent will fold those notes back into the plan doc; don't pre-empt that. (When no plan doc was loaded, this rule is vacuous — there's nothing to edit.)
-- **Never auto-roll-back the `in_progress` transition.** Phase 2.1 marks the issue `in_progress` before any other work begins. If the run later hard-fails, leave it `in_progress` and report — don't quietly flip it back to `todo`. The user decides whether to retry, hand off, or revert state.
+- **Never auto-roll-back the `in_progress` transition.** Phase 2.2 marks the issue `in_progress` before any other work begins. If the run later hard-fails, leave it `in_progress` and report — don't quietly flip it back to `todo`. The user decides whether to retry, hand off, or revert state.
 - **Never merge PRs** — even if checks pass and the PR looks great. Merging is a human decision.
 - **Never create new mk issues** or split phases on the fly. If scope is too big for one phase, stop and report — splitting is a planning decision, not an execution decision.
 - **Never override the ticket's Deferrals.** If the ticket (or its plan-doc section, when one exists) says "Defer X to follow-up", that X is deferred. Don't quietly include it because it seemed easy.
@@ -575,21 +564,15 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 
 ## Example end-to-end (abbreviated)
 
-> User: "execute next task"
+> User: "code MINI-29" (or `/code-task MINI-29`, or — more commonly — `/implement-issue MINI-29`, which routes here after confirming the ticket isn't tagged `design`)
 >
-> *Skill runs `mk status -o json` to confirm the binary works and the prefix is `MINI`. Lists `todo` issues with `mk issue list --state todo -o json` and groups them by feature: 2 in `internal-nats-messaging`, 1 in `otel-tracing`. Two features have ready work, so skill asks the user which feature to walk.*
+> *Skill runs `mk status -o json` to confirm the binary works and the prefix is `MINI`. Phase 1.5: `mk issue brief MINI-29 > /tmp/brief-MINI-29.json`, then `jq '.issue.tags // []'` — empty list, so not a design ticket; proceed.*
 >
-> Skill: "Two features have unblocked Todos:
-> - `internal-nats-messaging`: 2 todo(s)
-> - `otel-tracing`: 1 todo
+> *Phase 2.1: re-reads the cached brief. State is `todo`, no incoming `blocks` from non-terminal issues. Soft validations pass. States the pick: "MINI-29 — Phase 4: pg-az-backup progress + result events (feature internal-nats-messaging)".*
 >
-> Which feature?"
+> *Phase 2.2: `mk issue state --user Claude --json '{"key":"MINI-29","state":"in_progress"}'`, then `mk comment add --user Claude --json '{"issue_key":"MINI-29","author":"Claude","body":"Claimed by Claude. Reading ticket and preparing the worktree…"}'`.*
 >
-> User: "internal-nats-messaging"
->
-> *Skill runs `mk issue next --feature internal-nats-messaging --user Claude -o json` — this atomically picks the lowest-numbered ready issue (MINI-29 — Phase 4: pg-az-backup progress + result events; Phase 3 already shipped, so blockers clear), flips it to `in_progress`, and stamps Claude as the assignee in one call. Phase 2.1 collapses to just the claim comment via `mk comment add --user Claude --json '{"issue_key":"MINI-29","author":"Claude","body":"Claimed by Claude. Reading ticket and preparing the worktree…"}'` so the mk board reflects who's working on it before any setup runs.*
->
-> *Skill bulk-fetches context with `mk issue brief MINI-29 > /tmp/brief-MINI-29.json` — one call returning the issue + feature + linked docs (with content) + comments + relations + PRs. Reads `.feature.description` and finds `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). The feature has one linked mk doc in `.documents[]` — `docs-planning-not-shipped-internal-nats-messaging-plan.md` (type `project_in_planning`, `linked_via: ["feature/internal-nats-messaging"]`); the skill reads its `### Phase 4` section as supplemental context. The issue itself has no linked docs (no design phase for this ticket). Reads each linked CLAUDE.md / ARCHITECTURE.md from disk. Iterates `.comments[]` from the brief — no designer hand-off. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
+> *Phase 3: reuses `/tmp/brief-MINI-29.json`. Reads `.feature.description` and finds `Plan: [docs/planning/not-shipped/internal-nats-messaging-plan.md](https://github.com/...)`. Reads the ticket body (Goal, Deliverables, Done when, Relevant docs, Smoke tests). The feature has one linked mk doc in `.documents[]` — `docs-planning-not-shipped-internal-nats-messaging-plan.md` (type `project_in_planning`, `linked_via: ["feature/internal-nats-messaging"]`); the skill reads its `### Phase 4` section as supplemental context. The issue itself has no linked docs (no design phase for this ticket). Reads each linked CLAUDE.md / ARCHITECTURE.md from disk. Iterates `.comments[]` from the brief — no designer hand-off. Reads `git log` for `Phase 1`/`Phase 2`/`Phase 3` shipped commits to learn the area tag (`nats`) and PR title shape.*
 >
 > *Phase 4: invokes `Skill(setup-worktree, args: "MINI-29")`. The setup-worktree skill pre-flights main, runs `git pull --ff-only origin main`, creates the worktree at `.claude/worktrees/mini-29` on `claude/mini-29`, runs `pnpm install` synchronously, then backgrounds `pnpm worktree-env start --description "Phase 4 — pg-az-backup progress + result events"` (description derived from the mk title). Returns control with cwd = the worktree. Skill posts the worktree-details follow-up comment on MINI-29 via `jq -n --rawfile body /tmp/worktree-comment.md '{issue_key:"MINI-29",author:"Claude",body:$body}' | mk comment add --user Claude --json -`.*
 >

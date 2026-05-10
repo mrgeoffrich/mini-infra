@@ -1,21 +1,21 @@
 ---
 name: task-to-mk
-description: Turns a one-line job description into a single mk ticket in the shape `execute-next-task` expects. The skill files the issue under a persistent **Maintenance** feature (slug `maintenance`, auto-created on first run). mk is the single source of truth for maintenance tickets — `docs/planning/maintenance.md` is a static stub describing the feature, never per-task entries. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to `todo` so `execute-next-task` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "create an mk task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "spin up an mk issue for ...", "make a kanban ticket for ...", "track this", "task: ...", "queue up a linear todo for ...", "queue an mk todo", or any equivalent ask to scaffold a single one-off ticket without a multi-phase plan. Make sure to use it even when the user doesn't say the word "linear" or "mk" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-mk`), or when they're asking about an *existing* ticket (use `mk` directly).
+description: Turns a one-line job description into a single mk ticket in the shape `code-task` expects. The skill files the issue under a persistent **Maintenance** feature (slug `maintenance`, auto-created on first run). mk is the single source of truth for maintenance tickets — `docs/planning/maintenance.md` is a static stub describing the feature, never per-task entries. Asks at most three clarifying questions before creating the ticket — one always about how to smoke-test the change (UI via `test-dev`, `curl` against a route, unit-only, or none), and up to two more only when the request is genuinely ambiguous (vague success criteria, unclear component scope, conflicting acceptance hints). Auto-detects which CLAUDE.md / ARCHITECTURE.md pointers apply from any file paths in the description and from the components named, picks an area tag for the eventual commit by reading recent `git log` on main, and sets the issue to `todo` so `/implement-issue` picks it up naturally with no other changes. Use this skill whenever the user says "create a linear task for X", "create an mk task for X", "make me a ticket to Y", "file a maintenance task to Z", "spin up a linear issue for ...", "spin up an mk issue for ...", "make a kanban ticket for ...", "track this", "task: ...", "queue up a linear todo for ...", "queue an mk todo", or any equivalent ask to scaffold a single one-off ticket without a multi-phase plan. Make sure to use it even when the user doesn't say the word "linear" or "mk" but clearly wants a tracked task that Claude can later pick up — e.g. "remember to fix the X bug later", "let's queue a ticket to clean up Y", "log a follow-up to revisit Z". Do NOT trigger when the user wants Claude to do the work right now (use the work-doing skills instead), when they're describing a multi-phase plan (use `plan-to-mk`), or when they're asking about an *existing* ticket (use `mk` directly).
 ---
 
 # Task to mk
 
-You're filing a single one-off ticket against the persistent **Maintenance** feature in this repo's `mk` (mini-kanban) tracker, in the exact shape that `execute-next-task` expects to consume. mk is the single source of truth — there is no per-task entry in any plan doc. Issue titles are plain descriptive titles — no `Phase N:` prefix. One-offs are independent and never block each other; a synthetic phase number on the title would just look like a sequence that isn't there.
+You're filing a single one-off ticket against the persistent **Maintenance** feature in this repo's `mk` (mini-kanban) tracker, in the exact shape that `code-task` expects to consume. mk is the single source of truth — there is no per-task entry in any plan doc. Issue titles are plain descriptive titles — no `Phase N:` prefix. One-offs are independent and never block each other; a synthetic phase number on the title would just look like a sequence that isn't there.
 
 ## Why this skill exists
 
-The big phased-plan flow (`plan-to-mk` → `execute-next-task`) is great for migrations and multi-phase features. For day-to-day one-offs — "fix the broken tooltip", "add a retry to the cert renewer", "drop the unused `legacy_*` columns" — it's overkill. This skill collapses the planning ceremony into a 30-second conversation: rough description in, runtime questions where there's genuine ambiguity, populated ticket out, ready to be picked up by `execute-next-task` whenever you next run it.
+The big phased-plan flow (`plan-to-mk` → `/implement-issue`) is great for migrations and multi-phase features. For day-to-day one-offs — "fix the broken tooltip", "add a retry to the cert renewer", "drop the unused `legacy_*` columns" — it's overkill. This skill collapses the planning ceremony into a 30-second conversation: rough description in, runtime questions where there's genuine ambiguity, populated ticket out, ready to be picked up by `/implement-issue` whenever you next run it.
 
 ## Conventions
 
 - **Repo**: scoped automatically by `mk` from the current git toplevel. Always `cd` to the repo root before invoking `mk`.
 - **Feature**: `Maintenance` (slug `maintenance`) — single, persistent, auto-created on first run.
-- **Feature description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the feature — `execute-next-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
+- **Feature description**: starts with `Plan: [docs/planning/maintenance.md](<github-blob-url>)`. The doc is a static stub describing the feature — `code-task` reads it as supplemental context but tolerates missing per-phase entries (it does, since the loosened flow). Don't edit it from this skill.
 - **Issue title**: a plain descriptive title (imperative phrase, e.g. `Add retry-with-backoff to cert renewer on Cloudflare 429`). No `Phase N:` prefix — that pattern is reserved for `plan-to-mk` tickets where the number actually orders work.
 - **Issue state**: `todo` (default — don't gate behind backlog).
 - **Blocks/blocked-by**: never set. One-offs are independent.
@@ -215,7 +215,7 @@ Issue title: the plain `<title>` from Phase 3 — no `Phase N:` prefix.
 
 State: `todo`.
 
-Description body — same shape `plan-to-mk` writes, so `execute-next-task` reads it without special-casing. The first line points at the maintenance plan doc (the feature stub) — `execute-next-task` will tolerate the lack of a per-phase anchor under the loosened flow.
+Description body — same shape `plan-to-mk` writes, so `code-task` reads it without special-casing. The first line points at the maintenance plan doc (the feature stub) — `code-task` will tolerate the lack of a per-phase anchor under the loosened flow.
 
 Write the body to a temp file first, then send it via the JSON payload form (`jq -n --rawfile` keeps the markdown out of inline-JSON escape soup):
 
@@ -304,8 +304,8 @@ Print a tight summary:
 ✓ Smoke approach: <UI / curl / unit-only / docs-only / custom>
 
 Next steps:
-  - run `execute-next-task MINI-NN` when you're ready to pick this up,
-    or `execute-next-task` to take whatever's next in the queue
+  - run `/implement-issue MINI-NN` when you're ready to pick this up,
+    or `/implement-issue` to take whatever's next in the queue
 ```
 
 The skill makes no working-tree changes — `docs/planning/maintenance.md` is a stub maintained by humans, not by this skill. There's nothing to stage or commit.
@@ -323,7 +323,7 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 - **Never write a multi-phase ticket.** This skill creates exactly one mk issue per run. If the user describes work that's clearly multiple phases, suggest `plan-to-mk`.
 - **Never prefix the issue title with `Phase N:`.** That format is reserved for `plan-to-mk` phased tickets where the number actually orders work. One-offs get plain descriptive titles.
 - **Never invent docs.** Each `Relevant docs` link must `Read`-resolve. If `egress-shared/CLAUDE.md` doesn't exist, drop it from the attach list.
-- **Never transition the issue out of `todo`.** That's `execute-next-task`'s job. The skill only creates.
+- **Never transition the issue out of `todo`.** That's `code-task`'s job. The skill only creates.
 - **Never skip the Phase 6 confirmation.** mk writes are user-visible side effects (and audit-logged) — confirm before, not after.
 - **Always pass `--user Claude` on every mutating `mk` command.** The audit log records the actor; without it the entry attributes to the OS user.
 - **Always pass `-o json` on reads you parse.** Text output is for humans and can shift.
@@ -373,5 +373,5 @@ These are non-negotiable. If you find yourself wanting to break one, stop and as
 > ✓ Smoke approach: Unit / build / lint only
 >
 > Next steps:
->   - run `execute-next-task MINI-47` when you're ready to pick this up,
->     or `execute-next-task` to take whatever's next in the queue"
+>   - run `/implement-issue MINI-47` when you're ready to pick this up,
+>     or `/implement-issue` to take whatever's next in the queue"

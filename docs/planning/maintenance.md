@@ -11,5 +11,5 @@ Deliverables / Done when / Relevant docs / Smoke tests) is the contract for
 each task — there is no per-task design here.
 
 Use the `task-to-linear` skill to file new maintenance tickets, and
-`execute-next-task` (with no argument, or with an explicit `ALT-NN`) to pick
+`/implement-issue` (with no argument, or with an explicit `ALT-NN`) to pick
 one up and ship it.
