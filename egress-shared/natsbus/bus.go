@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sync"
 	"time"
 
@@ -304,29 +305,39 @@ func splitCredsBody(body string) (string, string, error) {
 	return jwt, seed, nil
 }
 
+// extractArmored pulls the body out of a `-----BEGIN <label>-----` /
+// `-----END <label>-----` block.
+//
+// The dash-count on either side is tolerated as 3-or-more, anchored to a
+// line boundary, because the upstream `nats-jwt` formatter (and assorted
+// `.creds` files in the wild) emit asymmetric markers: 5 dashes on BEGIN
+// but 6 on END. An exact substring match would absorb the extra dash into
+// the body and yield e.g. a 59-char nkey seed (legit 58 chars + 1 stray
+// `-`), which fails base32 decode at byte 58 — exactly the failure the
+// egress-gateway / egress-fw-agent containers were hitting on boot.
+//
+// Mirrors the regex used by `nats-jwt`'s own `parseCreds`
+// (`/[-]{3,}[^\n]*[-]{3,}\n/`).
 func extractArmored(body, label string) (string, error) {
-	beginMarker := "-----BEGIN " + label + "-----"
-	endMarker := "-----END " + label + "-----"
-	start := indexOf(body, beginMarker)
-	if start < 0 {
-		return "", fmt.Errorf("natsbus: missing %q in creds body", beginMarker)
+	beginRe := regexp.MustCompile(`(?m)^-{3,}\s*BEGIN ` + regexp.QuoteMeta(label) + `\s*-{3,}\s*$`)
+	endRe := regexp.MustCompile(`(?m)^-{3,}\s*END ` + regexp.QuoteMeta(label) + `\s*-{3,}\s*$`)
+	beginLoc := beginRe.FindStringIndex(body)
+	if beginLoc == nil {
+		return "", fmt.Errorf("natsbus: missing BEGIN %s marker in creds body", label)
 	}
-	rest := body[start+len(beginMarker):]
-	end := indexOf(rest, endMarker)
-	if end < 0 {
-		return "", fmt.Errorf("natsbus: missing %q in creds body", endMarker)
+	endLoc := endRe.FindStringIndex(body[beginLoc[1]:])
+	if endLoc == nil {
+		return "", fmt.Errorf("natsbus: missing END %s marker in creds body", label)
 	}
-	inner := rest[:end]
-	// Trim leading/trailing whitespace and skip the "***" padding lines the
-	// nats-jwt encoder inserts around the actual content.
+	inner := body[beginLoc[1] : beginLoc[1]+endLoc[0]]
+	// Trim per-line whitespace and skip the "***" padding lines the nats-jwt
+	// encoder inserts between the JWT block and the seed block.
 	out := ""
 	for _, line := range splitLines(inner) {
 		line = trimSpace(line)
 		if line == "" {
 			continue
 		}
-		// `.creds` blobs sometimes carry a single line of asterisks as a
-		// visual separator. Skip those — they're never part of the payload.
 		if isAllAsterisks(line) {
 			continue
 		}

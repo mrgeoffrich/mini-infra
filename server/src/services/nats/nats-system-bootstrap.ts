@@ -51,16 +51,21 @@ const BACKUP_HISTORY_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export async function bootstrapNatsSystemResources(): Promise<void> {
   const bus = NatsBus.getInstance();
 
-  // Wait briefly for the bus — caller already kicked it off, but a fresh-
-  // worktree boot can have NATS still coming up. The bus's reconnect loop
-  // continues in the background regardless; if we time out here we just
-  // surface the error and rely on the next boot to retry.
+  // Wait for the bus to be ready. Generous timeout because this fire-and-
+  // forget call runs concurrently with Vault unlock + creds rotation on
+  // fresh-worktree / dev-env boots, and "no retry until next server boot"
+  // is too coarse — `pnpm worktree-env start` runs the seeded server
+  // directly, and an EgressFwEvents stream missing for that boot's whole
+  // lifetime means the egress-log-ingester never attaches and the
+  // fw-agent's NFLOG stream piles up unconsumed. 5 minutes is well past
+  // any realistic Vault-unlock window, including the manual-unlock path
+  // where the operator types the passphrase after seeing the boot banner.
   try {
-    await bus.ready({ timeoutMs: 10_000 });
+    await bus.ready({ timeoutMs: 5 * 60 * 1000 });
   } catch (err) {
     log.warn(
       { err: err instanceof Error ? err.message : String(err) },
-      "nats system bootstrap: bus not ready in 10s — skipping (will retry on next boot)",
+      "nats system bootstrap: bus not ready in 5 min — giving up (next server boot will retry)",
     );
     return;
   }

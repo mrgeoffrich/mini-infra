@@ -199,4 +199,50 @@ describe('tailscale-web addon', () => {
       expandAddons([target], { ...baseContext, registry }),
     ).rejects.toThrow(/connected service/);
   });
+
+  it('dryRun renders the deterministic sidecar skeleton without minting an authkey', async () => {
+    const registry = createAddonRegistry();
+    registry.register(tailscaleWebAddon);
+
+    const target = makeStateful('web', {
+      addons: { 'tailscale-web': { port: 8080 } },
+    });
+
+    // Stub fetch with a sentinel that would throw if any provision-time HTTP
+    // call slipped through — the assertion below is "expansion completes
+    // without calling fetch", not just "expansion completes".
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls++;
+      throw new Error('fetch must not be called in dryRun');
+    }) as typeof fetch;
+    let rendered;
+    try {
+      rendered = await expandAddons([target], {
+        ...baseContext,
+        registry,
+        dryRun: true,
+        // No connectedServices lookup — plan path doesn't have one.
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(fetchCalls).toBe(0);
+    expect(rendered).toHaveLength(2);
+    const sidecar = rendered.find((s) => s.serviceName === 'web-tailscale')!;
+    expect(sidecar).toBeDefined();
+    // Real image / requiredEgress (from buildTailscaleSidecarDefinition).
+    expect(sidecar.dockerImage).toBe('tailscale/tailscale');
+    expect(sidecar.containerConfig.requiredEgress).toBeDefined();
+    // Per-mint env is absent — TS_AUTHKEY only lands at apply time.
+    expect(sidecar.containerConfig.env?.TS_AUTHKEY).toBeUndefined();
+    expect(sidecar.containerConfig.env?.TS_HOSTNAME).toBeUndefined();
+    expect(sidecar.synthetic).toEqual({
+      addonIds: ['tailscale-web'],
+      kind: undefined,
+      targetService: 'web',
+    });
+  });
 });

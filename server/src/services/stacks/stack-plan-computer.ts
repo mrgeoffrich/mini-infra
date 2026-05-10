@@ -52,7 +52,14 @@ export class StackPlanComputer {
     );
     const templateContext = buildStackTemplateContext(stack, params);
 
-    const { resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
+    // Plan-time addon expansion runs in `dryRun` mode: synthetic sidecars
+    // appear in the plan diff but no `provision()` side-effects fire. See
+    // ExpansionContext.dryRun on the addon framework for the full contract.
+    const { resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(
+      stack.services,
+      templateContext,
+      { dryRun: true },
+    );
 
     const docker = this.dockerExecutor.getDockerClient();
     const rawContainers = await docker.listContainers({
@@ -200,7 +207,71 @@ export class StackPlanComputer {
       });
     }
 
-    const definedServiceNames = new Set(stack.services.map((s) => s.serviceName));
+    // Synthetic sidecars produced by the addon render pipeline live in
+    // `resolvedDefinitions` but have no DB row in `stack.services` — the loop
+    // above skipped them. Iterate the rendered map for any names not handled
+    // yet and emit Stateful-shaped actions so the apply path actually creates
+    // them. Synthetics are always Stateful per the addon framework contract.
+    const authoredServiceNames = new Set(stack.services.map((s) => s.serviceName));
+    for (const [serviceName, def] of resolvedDefinitions) {
+      if (authoredServiceNames.has(serviceName)) continue;
+      const desiredHash = serviceHashes.get(serviceName);
+      if (!desiredHash) continue;
+      const desiredImage = `${def.dockerImage}:${def.dockerTag}`;
+      const container = containerMap.get(serviceName);
+
+      if (!container) {
+        actions.push({
+          serviceName,
+          action: 'create',
+          reason: 'addon-derived sidecar not deployed',
+          desiredImage,
+        });
+        continue;
+      }
+
+      const currentHash = container.Labels['mini-infra.definition-hash'];
+      const currentImage = container.Image;
+
+      if (container.State !== 'running') {
+        actions.push({
+          serviceName,
+          action: 'recreate',
+          reason: 'sidecar container not running',
+          currentImage,
+          desiredImage,
+        });
+        continue;
+      }
+
+      if (currentHash === desiredHash) {
+        actions.push({
+          serviceName,
+          action: 'no-op',
+          currentImage,
+          desiredImage,
+        });
+        continue;
+      }
+
+      actions.push({
+        serviceName,
+        action: 'recreate',
+        reason: 'addon configuration changed',
+        currentImage,
+        desiredImage,
+      });
+    }
+
+    // Orphan-removal: any container labelled with this stack's id whose
+    // service name no longer maps to either an authored service OR a
+    // currently-rendered synthetic sidecar. The earlier behaviour omitted
+    // synthetics from the defined set, so a correctly-applied sidecar was
+    // flagged for removal on every subsequent plan.
+    const definedServiceNames = new Set([
+      ...authoredServiceNames,
+      ...resolvedDefinitions.keys(),
+    ]);
     for (const [serviceName, container] of containerMap) {
       if (!definedServiceNames.has(serviceName)) {
         actions.push({

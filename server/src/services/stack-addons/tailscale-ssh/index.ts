@@ -1,4 +1,4 @@
-import type { AddonDefinition } from '@mini-infra/types';
+import type { AddonDefinition, ProvisionContext } from '@mini-infra/types';
 import { productionAddonRegistry, type RegisteredAddon } from '../registry';
 import {
   tailscaleSshConfigSchema,
@@ -7,6 +7,7 @@ import {
 } from './manifest';
 import { provisionTailscaleSsh } from './provision';
 import { buildTailscaleSshServiceDefinition } from './build-service-definition';
+import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
 
 /**
  * `tailscale-ssh` addon — the first production addon in the framework
@@ -19,6 +20,19 @@ export const tailscaleSshDefinition: AddonDefinition = {
   targetIntegration: tailscaleSshTargetIntegration,
   provision: provisionTailscaleSsh,
   buildServiceDefinition: buildTailscaleSshServiceDefinition,
+  // Plan-time skeleton: the deterministic shape of the sidecar (image, capAdd,
+  // state-volume mount, requiredEgress) without the per-mint env (TS_AUTHKEY,
+  // TS_HOSTNAME, TS_EXTRA_ARGS — these land at apply time via `provision`).
+  planStub: (ctx: ProvisionContext) =>
+    buildTailscaleSidecarDefinition({
+      ctx,
+      env: {},
+      labels: {
+        'mini-infra.addon': 'tailscale-ssh',
+        'mini-infra.synthetic': 'true',
+        'mini-infra.addon-target': ctx.service.name,
+      },
+    }),
 };
 
 export const tailscaleSshAddon: RegisteredAddon = {

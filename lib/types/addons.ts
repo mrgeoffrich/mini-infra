@@ -172,6 +172,19 @@ export interface AddonDefinition {
   ): StackServiceDefinition;
   cleanup?(ctx: ProvisionContext, provisioned: ProvisionedValues): Promise<void>;
   status?(ctx: StatusContext): Promise<AddonStatus>;
+  /**
+   * Read-only synthetic-service skeleton used at plan time. Must be
+   * deterministic — the same `(stack, service, addonConfig)` triple produces
+   * byte-identical output. Returned definition stands in for what
+   * `buildServiceDefinition()` would produce after `provision()` ran, but
+   * with non-deterministic per-mint values (authkeys, hostnames derived from
+   * runtime state) excluded so plan-time hashes don't drift between runs.
+   *
+   * When omitted, the framework substitutes a generic placeholder
+   * (`dockerImage: 'addon-pending'`); addons that want plan-time identity to
+   * reflect their real image / mounts / requiredEgress should implement this.
+   */
+  planStub?(ctx: ProvisionContext): StackServiceDefinition;
 }
 
 /**
@@ -190,6 +203,16 @@ export interface AddonMergeStrategy {
   buildServiceDefinition(
     ctx: ProvisionContext,
     provisioned: ProvisionedValues,
+    members: Array<{ addonId: string; config: unknown }>,
+  ): StackServiceDefinition;
+  /**
+   * Plan-time deterministic skeleton for the merged sidecar. See
+   * `AddonDefinition.planStub` for the contract — the merge variant takes
+   * the resolved member list so it can label the synthetic with the right
+   * `addon-members` set without running provision().
+   */
+  planStub?(
+    ctx: ProvisionContext,
     members: Array<{ addonId: string; config: unknown }>,
   ): StackServiceDefinition;
 }

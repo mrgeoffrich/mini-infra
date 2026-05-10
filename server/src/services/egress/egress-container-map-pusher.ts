@@ -318,6 +318,15 @@ export class EgressContainerMapPusher {
 
     const entries: ContainerMapEntry[] = [];
 
+    // Synthetic sidecars produced by the addon render pipeline don't have a
+    // StackService DB row, so they're absent from `serviceConfigByKey`. They
+    // do carry `mini-infra.synthetic=true` plus the parent's `mini-infra.stack-id`
+    // — both labels set by the reconciler, not the user — so we accept them
+    // when the parent stack is known to this env. Without this, the sidecar's
+    // IP is missing from the gateway's container map and tailscaled (or any
+    // other addon outbound traffic) is 403'd by UnknownIPDenyHandler.
+    const knownStackIds = new Set(stacks.map((s) => s.id));
+
     for (const c of rawContainers) {
       const ip = c.NetworkSettings?.Networks?.[egressNetwork]?.IPAddress;
       if (!ip) continue;
@@ -327,12 +336,26 @@ export class EgressContainerMapPusher {
       const serviceName = labels['mini-infra.service'];
       if (!stackId || !serviceName) continue;
 
+      const isSynthetic = labels['mini-infra.synthetic'] === 'true';
       const key = `${stackId}:${serviceName}`;
+
       if (!serviceConfigByKey.has(key)) {
-        // Container is on this egress network but the stack/service is
-        // unknown to this env (foreign stack, deleted service, or a stale
-        // container that survived a stack rebuild). Skip — don't trust
-        // labels alone for membership.
+        if (!isSynthetic || !knownStackIds.has(stackId)) {
+          // Container is on this egress network but the stack/service is
+          // unknown to this env (foreign stack, deleted service, or a stale
+          // container that survived a stack rebuild). Skip — don't trust
+          // labels alone for non-synthetic membership.
+          continue;
+        }
+        // Synthetic with a known parent stack — trust the labels and admit.
+        // Synthetic sidecars never declare egressBypass; the only legitimate
+        // bypass is for infra containers like the egress gateway itself.
+        entries.push({
+          ip,
+          stackId,
+          serviceName,
+          containerId: c.Id,
+        });
         continue;
       }
 

@@ -1,8 +1,18 @@
 import type { PrismaClient } from '../../generated/prisma/client';
 import type * as runtime from '@prisma/client/runtime/client';
 import { getLogger } from '../../lib/logger-factory';
-import type { EgressArchivedReason, StackContainerConfig } from '@mini-infra/types';
+import type {
+  EgressArchivedReason,
+  StackContainerConfig,
+  StackParameterDefinition,
+  StackParameterValue,
+} from '@mini-infra/types';
 import { emitEgressPolicyUpdated, emitEgressRuleMutation } from './egress-socket-emitter';
+import {
+  buildStackTemplateContext,
+  mergeParameterValues,
+  resolveServiceConfigs,
+} from '../stacks/utils';
 
 const log = getLogger('stacks', 'egress-policy-lifecycle');
 
@@ -331,17 +341,18 @@ export class EgressPolicyLifecycleService {
    */
   async reconcileTemplateRules(stackId: string, userId: string | null): Promise<void> {
     try {
-      // 1. Load the stack's services and their requiredEgress declarations.
+      // 1. Load the stack with everything needed to render the addon expansion.
+      // Authored services give us their `requiredEgress` directly; addon-derived
+      // synthetic sidecars (e.g. tailscaled with its control-plane allowlist)
+      // are produced by `resolveServiceConfigs` in dryRun mode and need to be
+      // included so the addon's required hostnames auto-promote into
+      // template-source rules. Without this, every addon stack hits 403 at the
+      // gateway because its required egress is invisible to the rule reconciler.
       const stack = await this.prisma.stack.findUnique({
         where: { id: stackId },
-        select: {
-          environmentId: true,
-          services: {
-            select: {
-              serviceName: true,
-              containerConfig: true,
-            },
-          },
+        include: {
+          services: { orderBy: { order: 'asc' } },
+          environment: true,
         },
       });
 
@@ -356,7 +367,15 @@ export class EgressPolicyLifecycleService {
         return;
       }
 
-      // 2. Build Map<pattern, Set<serviceName>> from requiredEgress declarations.
+      // 2. Build Map<pattern, Set<serviceName>> from requiredEgress
+      // declarations. Two passes: (a) authored services straight from the DB
+      // rows — this is the long-standing behaviour and the source of truth
+      // for hand-authored stack definitions; (b) addon-derived synthetic
+      // sidecars via dryRun expansion — these don't have DB rows but their
+      // planStub carries `requiredEgress` (e.g. Tailscale's control-plane
+      // hostnames). Without (b), addon stacks like nginx + tailscale-web get
+      // 403'd at the gateway because the synthetic's required hostnames
+      // never auto-promote into template-source rules.
       const desiredPatterns = new Map<string, Set<string>>();
       for (const svc of stack.services) {
         const config = svc.containerConfig as unknown as StackContainerConfig;
@@ -366,6 +385,37 @@ export class EgressPolicyLifecycleService {
           targets.add(svc.serviceName);
           desiredPatterns.set(pattern, targets);
         }
+      }
+
+      const authoredNames = new Set(stack.services.map((s) => s.serviceName));
+      try {
+        const params = mergeParameterValues(
+          (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
+          (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {},
+        );
+        const templateContext = buildStackTemplateContext(stack, params);
+        const { resolvedDefinitions } = await resolveServiceConfigs(
+          stack.services,
+          templateContext,
+          { dryRun: true },
+        );
+        for (const [serviceName, def] of resolvedDefinitions) {
+          if (authoredNames.has(serviceName)) continue; // already covered by pass (a)
+          const required = def.containerConfig?.requiredEgress;
+          if (!required || required.length === 0) continue;
+          for (const pattern of required) {
+            const targets = desiredPatterns.get(pattern) ?? new Set<string>();
+            targets.add(serviceName);
+            desiredPatterns.set(pattern, targets);
+          }
+        }
+      } catch (err) {
+        // Addon expansion failure here must not break the rule reconciler —
+        // pass (a) above already produced a baseline from authored services.
+        log.warn(
+          { err, stackId },
+          'reconcileTemplateRules: synthetic expansion failed; rules limited to authored services',
+        );
       }
 
       // 3. Load the stack's active EgressPolicy.

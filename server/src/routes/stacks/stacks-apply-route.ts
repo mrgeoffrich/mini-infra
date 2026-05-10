@@ -14,6 +14,7 @@ import { findEmptyStackParameters } from '../../services/stacks/parameter-valida
 import { evaluatePrerequisites } from '../../services/stacks/template-prerequisites';
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
+import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
   emitStackApplyStarted,
@@ -256,6 +257,19 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       if (natsPhase.status === 'error') {
         throw new Error(natsPhase.error ?? 'NATS reconciliation phase failed');
       }
+
+      // Re-promote `requiredEgress` declarations into template-source
+      // EgressRules so addon-derived patterns (e.g. Tailscale's control-plane
+      // hostnames from the synthetic sidecar) propagate to existing stacks
+      // when the apply pipeline is the trigger — not just when the stack is
+      // first created or PUT'd. Without this, a code-level change to which
+      // hostnames an addon emits never updates the rules of stacks that
+      // were instantiated before the change.
+      //
+      // Failures are logged inside `reconcileTemplateRules` and do not throw,
+      // so an egress-side reconciliation issue can't block the stack apply.
+      const egressLifecycle = new EgressPolicyLifecycleService(prisma);
+      await egressLifecycle.reconcileTemplateRules(stackId, triggeredBy ?? null);
 
       // Service Addons render-pass plumbing — fan addon-provisioning
       // events out on the stacks channel (Phase 3) and hand the addon

@@ -7,6 +7,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -195,6 +196,56 @@ func TestToInt64_NumericTypes(t *testing.T) {
 				t.Errorf("value: want %d, got %d", tc.want, got)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ts is always set on emitted events
+// ---------------------------------------------------------------------------
+
+// Regression for the JetStream-publish path: server-side Zod schema requires
+// `ts: string min(1)`, but only `EmitToStdout` was defaulting `Ts`. The
+// JetStream emitter wasn't, so every CANONICAL-PROXY-DECISION published from
+// the gateway hit the server's nats-bus payload validator with
+// `ts: Too small` and was NAK'd until max-deliveries.
+func TestNDJSONLogHook_Decision_StampsTsForCustomEmitter(t *testing.T) {
+	var captured EgressEvent
+	hook := NewNDJSONLogHookWithEmitter("env-1", func(evt EgressEvent) {
+		captured = evt
+	})
+	entry := makeEntry("CANONICAL-PROXY-DECISION", logrus.Fields{
+		"proxy_type":          "connect",
+		"inbound_remote_addr": "172.30.0.6:33342",
+		"requested_host":      "controlplane.tailscale.com:443",
+		"allow":               true,
+	})
+	entry.Time = time.Date(2026, 5, 10, 0, 23, 22, 379256180, time.UTC)
+
+	_ = hook.Fire(entry)
+
+	if captured.Ts == "" {
+		t.Fatal("Ts: expected non-empty, got empty")
+	}
+	if captured.Ts != "2026-05-10T00:23:22.37925618Z" {
+		t.Errorf("Ts: expected logrus entry time stamped (RFC3339Nano), got %q", captured.Ts)
+	}
+}
+
+func TestNDJSONLogHook_ConnClose_StampsTsForCustomEmitter(t *testing.T) {
+	var captured EgressEvent
+	hook := NewNDJSONLogHookWithEmitter("env-1", func(evt EgressEvent) {
+		captured = evt
+	})
+	entry := makeEntry("CANONICAL-PROXY-CN-CLOSE", logrus.Fields{
+		"inbound_remote_addr": "172.30.0.6:33342",
+		"requested_host":      "controlplane.tailscale.com:443",
+	})
+	entry.Time = time.Date(2026, 5, 10, 0, 23, 33, 0, time.UTC)
+
+	_ = hook.Fire(entry)
+
+	if captured.Ts == "" {
+		t.Fatal("Ts: expected non-empty, got empty")
 	}
 }
 

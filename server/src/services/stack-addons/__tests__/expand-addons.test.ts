@@ -174,3 +174,78 @@ describe('expandAddons (Phase 1)', () => {
     expect(provisioned).toEqual([{ serviceName: 'web', addonIds: ['noop'] }]);
   });
 });
+
+describe('expandAddons (dryRun)', () => {
+  it('falls back to a generic stub when the addon does not implement planStub', async () => {
+    const registry = createAddonRegistry();
+    registry.register(noopAddon);
+
+    const target = makeStateful('web', { addons: { noop: { label: 'plan' } } });
+    const rendered = await expandAddons([target], {
+      ...baseContext,
+      registry,
+      dryRun: true,
+    });
+
+    expect(rendered).toHaveLength(2);
+    const sidecar = rendered.find((s) => s.serviceName === 'web-noop')!;
+    expect(sidecar).toBeDefined();
+    // Generic stub uses sentinel image so accidental apply use would be obvious.
+    expect(sidecar.dockerImage).toBe('addon-pending');
+    expect(sidecar.dockerTag).toBe('plan');
+    expect(sidecar.synthetic).toEqual({
+      addonIds: ['noop'],
+      targetService: 'web',
+    });
+    // No env from provision() — the noop addon would normally inject NOOP_TARGET / NOOP_LABEL.
+    expect(sidecar.containerConfig.env).toBeUndefined();
+  });
+
+  it('skips the requiresConnectedService check when no lookup is provided', async () => {
+    // Synthetic addon that requires a connected service. Without dryRun this
+    // would fail with "is not configured"; with dryRun + no lookup, expansion
+    // succeeds (the apply path re-checks before any side-effects fire).
+    const registry = createAddonRegistry();
+    registry.register({
+      manifest: {
+        ...noopAddon.manifest,
+        id: 'requires-svc',
+        requiresConnectedService: 'imaginary',
+      },
+      configSchema: noopAddon.configSchema,
+      definition: { ...noopAddon.definition, manifest: { ...noopAddon.manifest, id: 'requires-svc', requiresConnectedService: 'imaginary' } },
+    });
+
+    const target = makeStateful('web', { addons: { 'requires-svc': {} } });
+    const rendered = await expandAddons([target], {
+      ...baseContext,
+      registry,
+      dryRun: true,
+    });
+    expect(rendered).toHaveLength(2);
+    expect(rendered.find((s) => s.serviceName === 'web-requires-svc')).toBeDefined();
+  });
+
+  it('still enforces requiresConnectedService when the lookup is provided but missing the service', async () => {
+    const registry = createAddonRegistry();
+    registry.register({
+      manifest: {
+        ...noopAddon.manifest,
+        id: 'requires-svc',
+        requiresConnectedService: 'imaginary',
+      },
+      configSchema: noopAddon.configSchema,
+      definition: { ...noopAddon.definition, manifest: { ...noopAddon.manifest, id: 'requires-svc', requiresConnectedService: 'imaginary' } },
+    });
+
+    const target = makeStateful('web', { addons: { 'requires-svc': {} } });
+    await expect(
+      expandAddons([target], {
+        ...baseContext,
+        registry,
+        dryRun: true,
+        connectedServices: { other: true },
+      }),
+    ).rejects.toThrow(/requires connected service "imaginary"/);
+  });
+});

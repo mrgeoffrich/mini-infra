@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
-import { StackServiceDefinition, StackConfigFile, StackContainerConfig } from '@mini-infra/types';
+import {
+  StackServiceDefinition,
+  StackConfigFile,
+  StackContainerConfig,
+  SyntheticServiceInfo,
+} from '@mini-infra/types';
 
 /**
  * Strip apply-time dynamic-env metadata from containerConfig before hashing.
@@ -73,5 +78,42 @@ export function computeDefinitionHash(
     .update(stableStringify(canonical))
     .digest('hex');
 
+  return `sha256:${hash}`;
+}
+
+/**
+ * Stable hash for an addon-derived synthetic sidecar.
+ *
+ * Synthetic services live outside the authored DB rows — their rendered shape
+ * (image, env, mounts) is computed at apply time by the addon's `provision()`
+ * and `buildServiceDefinition()`. Some of that shape is deterministic
+ * (image, capAdd, state-volume mount) and some is per-mint (TS_AUTHKEY,
+ * hostnames derived from runtime state). Hashing the rendered definition
+ * directly would change the hash on every apply, marking the sidecar as
+ * permanently drifted.
+ *
+ * Instead we hash the *authoring intent* — the synthetic's identity (addon
+ * ids, kind, target service) plus the target's authored addon-config block.
+ * Two applies with the same authored input yield the same hash regardless
+ * of when provisioning ran or what authkey was minted.
+ */
+export function computeSyntheticDefinitionHash(
+  synthetic: SyntheticServiceInfo,
+  targetAuthoredAddons: Record<string, unknown> | undefined,
+): string {
+  const sortedAddonIds = [...synthetic.addonIds].sort();
+  const relevantConfigs: Record<string, unknown> = {};
+  for (const id of sortedAddonIds) {
+    relevantConfigs[id] = targetAuthoredAddons?.[id] ?? null;
+  }
+  const canonical = {
+    syntheticAddonIds: sortedAddonIds,
+    syntheticKind: synthetic.kind ?? null,
+    syntheticTarget: synthetic.targetService,
+    addonConfigs: relevantConfigs,
+  };
+  const hash = createHash('sha256')
+    .update(stableStringify(canonical))
+    .digest('hex');
   return `sha256:${hash}`;
 }

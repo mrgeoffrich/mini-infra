@@ -1,7 +1,7 @@
 {
   "name": "egress-fw-agent",
   "displayName": "Egress Firewall Agent",
-  "builtinVersion": 3,
+  "builtinVersion": 4,
   "scope": "host",
   "category": "infrastructure",
   "description": "Blocks outbound network traffic that breaks your environment's egress rules. Runs once per host. Logs every blocked connection so you can see what was denied and why. Requires a synced NATS host stack (which transitively requires Vault to be bootstrapped).",
@@ -33,7 +33,7 @@
         "kvBuckets": [
           "egress-fw-health"
         ],
-        "inboxAuto": "reply"
+        "inboxAuto": "both"
       }
     ]
   },
