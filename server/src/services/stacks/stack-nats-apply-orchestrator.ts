@@ -43,7 +43,69 @@ export interface NatsApplyPhaseOptions {
   requireNatsReady?: boolean;
 }
 
+/**
+ * Module-scoped serializer for `runStackNatsApplyPhase`. Implements the
+ * "single advisory lock keyed by `nats-apply`" recommended in the design's
+ * §6 risks list — a producer + consumer applying simultaneously would
+ * otherwise race on the producer's `lastAppliedNatsSnapshot`, the consumer
+ * potentially observing a stale snapshot mid-flight as the producer is
+ * rotating it.
+ *
+ * Mini Infra runs as a single Node process per host, so an in-memory chain
+ * promise is the right primitive — no PostgreSQL advisory locks, no Redis
+ * round-trip. Errors from one apply are isolated from the chain so a
+ * single failed apply does not poison subsequent ones.
+ *
+ * **Trade-off.** The lock is held for the entire phase, including the slow
+ * `applyConfig` / `applyJetStreamResources` NATS network calls. The design
+ * note in `nats-app-roles-followups.md` flagged this as a perf concern at
+ * scale (the recommended split would be DB-only-locked, NATS-unlocked, DB-
+ * write-locked). At single-host scale concurrent applies are rare; the
+ * simple whole-phase lock is correct and the optimization is a documented
+ * follow-up if contention surfaces.
+ */
+let natsApplyChain: Promise<void> = Promise.resolve();
+
+async function acquireNatsApplyLock<T>(fn: () => Promise<T>): Promise<T> {
+  let resolveOuter!: (value: T) => void;
+  let rejectOuter!: (reason: unknown) => void;
+  const outer = new Promise<T>((resolve, reject) => {
+    resolveOuter = resolve;
+    rejectOuter = reject;
+  });
+
+  const next = natsApplyChain.then(async () => {
+    try {
+      resolveOuter(await fn());
+    } catch (err) {
+      rejectOuter(err);
+    }
+  });
+  // Swallow chain errors so one failed apply doesn't break the queue for
+  // every subsequent apply. Caller still sees the rejection via `outer`.
+  natsApplyChain = next.catch(() => undefined);
+
+  return outer;
+}
+
+/**
+ * Test-only: returns a promise that resolves when the in-flight chain has
+ * fully drained. Lets tests assert "no apply currently running" without
+ * having to thread state through their own scaffolding.
+ */
+export function __waitForNatsApplyChainDrainForTests(): Promise<void> {
+  return natsApplyChain.then(() => undefined).catch(() => undefined);
+}
+
 export async function runStackNatsApplyPhase(
+  prisma: PrismaClient,
+  stackId: string,
+  opts: NatsApplyPhaseOptions,
+): Promise<NatsApplyPhaseResult> {
+  return acquireNatsApplyLock(() => runStackNatsApplyPhaseUnlocked(prisma, stackId, opts));
+}
+
+async function runStackNatsApplyPhaseUnlocked(
   prisma: PrismaClient,
   stackId: string,
   opts: NatsApplyPhaseOptions,
@@ -313,6 +375,13 @@ export async function runStackNatsApplyPhase(
     // references at materialization time.
     const renderedRoleStreamNames = new Set<string>();
     const roleStreamIdByRoleAndName = new Map<string, string>();
+    // Captured before the DB rows are deleted in `pruneOrphanRoleStreams`
+    // so the orchestrator can ask the control plane to delete the live
+    // JetStream streams after `applyJetStreamResources()` has run. Without
+    // this hand-off the JS streams stay alive in NATS forever (the apply
+    // path only adds/updates from the current DB rows; it has no signal
+    // for "this stream used to exist and should now be gone").
+    let orphanStreamCleanup: { accountId: string; orphanStreamNames: string[] } | null = null;
     if (roles.length > 0 || signers.length > 0 || exportsRelative.length > 0 || imports.length > 0) {
       const defaultAccount = await service.ensureDefaultAccount();
       resolvedSubjectPrefix = await resolveAndValidateSubjectPrefix({
@@ -448,7 +517,7 @@ export async function runStackNatsApplyPhase(
         stackId,
         desiredSignerNames: renderedSignerNames,
       });
-      await pruneOrphanRoleStreams({
+      orphanStreamCleanup = await pruneOrphanRoleStreams({
         prisma,
         stackId,
         desiredStreamNames: renderedRoleStreamNames,
@@ -463,6 +532,35 @@ export async function runStackNatsApplyPhase(
     // gap that bit Phase 1's `/api/nats/apply` route. Mirror that fix here.
     NatsBus.getInstance().invalidateCreds();
     await service.applyJetStreamResources();
+
+    // Best-effort delete of orphan JetStream streams whose DB rows we just
+    // pruned. Runs AFTER `applyJetStreamResources` so the create/update
+    // pass for the surviving streams completes first — the order matters
+    // only if a rename collision could see the old name briefly survive
+    // alongside the new, which can't happen here because the prune
+    // already removed the old DB row before applyJetStream's iteration.
+    // Wrapped in try/catch: the DB is already authoritative, so a NATS-
+    // side blip leaks storage but doesn't fail the apply.
+    if (orphanStreamCleanup) {
+      try {
+        await service.deleteJetStreams(orphanStreamCleanup.accountId, orphanStreamCleanup.orphanStreamNames);
+      } catch (err) {
+        // The DB row for the orphan is already gone, so a future apply
+        // can't re-discover this orphan from its own state — manual NATS
+        // CLI cleanup is the recovery path if NATS is unreachable here.
+        // Storage-only consequence: the orphan stream sits in NATS with
+        // no producers/consumers (no role's permissions reference its
+        // subjects).
+        getLogger("integrations", "nats-apply-orchestrator").warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            stackId,
+            orphanStreamNames: orphanStreamCleanup.orphanStreamNames,
+          },
+          "orphan JetStream stream cleanup failed; manual NATS CLI delete required",
+        );
+      }
+    }
 
     const credentialRefByService = new Map(
       templateVersion.services
@@ -1113,17 +1211,22 @@ async function pruneOrphanRoleStreams(args: {
   prisma: PrismaClient;
   stackId: string;
   desiredStreamNames: Set<string>;
-}): Promise<number> {
+}): Promise<{ accountId: string; orphanStreamNames: string[] } | null> {
   const existing = await args.prisma.natsStream.findMany({
     where: { stackId: args.stackId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, accountId: true },
   });
-  const orphanIds = existing
-    .filter((row) => !args.desiredStreamNames.has(row.name))
-    .map((row) => row.id);
-  if (orphanIds.length === 0) return 0;
-  await args.prisma.natsStream.deleteMany({ where: { id: { in: orphanIds } } });
-  return orphanIds.length;
+  const orphans = existing.filter((row) => !args.desiredStreamNames.has(row.name));
+  if (orphans.length === 0) return null;
+  // Capture names + account BEFORE delete so the orchestrator can pass
+  // them to the control plane's `deleteJetStreams` after
+  // `applyJetStreamResources` runs. Without this hand-off the JS streams
+  // stay live in NATS with no producers/consumers — a storage leak the
+  // operator has to clean up by hand.
+  const accountId = orphans[0].accountId;
+  const orphanStreamNames = orphans.map((o) => o.name);
+  await args.prisma.natsStream.deleteMany({ where: { id: { in: orphans.map((o) => o.id) } } });
+  return { accountId, orphanStreamNames };
 }
 
 // =====================================================================

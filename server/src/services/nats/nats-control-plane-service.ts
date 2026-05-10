@@ -778,6 +778,60 @@ export class NatsControlPlaneService {
   }
 
   /**
+   * Best-effort delete of JetStream streams that should no longer exist on
+   * the live NATS server.
+   *
+   * The orchestrator's apply path deletes `NatsStream` rows when a role's
+   * declared streams change (rename or removal — see
+   * `pruneOrphanRoleStreams` in `stack-nats-apply-orchestrator.ts`), but
+   * `applyJetStreamResources` only iterates over rows that *are* still in
+   * the DB — it has no signal for "this stream used to exist but is now
+   * gone." Without this method, those JetStream streams stay live in NATS
+   * with no producers and no consumers, leaking storage indefinitely.
+   *
+   * Callers MUST guard the names they pass: anything in `streamNames` will
+   * be deleted on the live server. The orchestrator passes only the
+   * concrete names it captured *before* deleting the corresponding DB
+   * rows, scoped to the current stack — no cross-stack or system-stream
+   * surface area.
+   *
+   * 404 from the server (stream already absent) is treated as success;
+   * any other failure is logged and swallowed so a NATS-side blip doesn't
+   * block the broader apply. The DB is already authoritative — a stale
+   * JetStream stream is a storage leak, not a correctness problem.
+   */
+  async deleteJetStreams(accountId: string, streamNames: string[]): Promise<void> {
+    if (streamNames.length === 0) return;
+    const account = await this.db.natsAccount.findUnique({ where: { id: accountId } });
+    if (!account) {
+      log.warn(
+        { accountId, streamNames },
+        "deleteJetStreams: account not found, skipping orphan stream cleanup",
+      );
+      return;
+    }
+    const creds = await this.mintAccountAdminCreds(account);
+    await this.withNats(creds, async (jsm) => {
+      for (const name of streamNames) {
+        try {
+          await jsm.streams.delete(name);
+          log.info({ streamName: name, account: account.name }, "deleted orphan JetStream stream");
+        } catch (err) {
+          // The NATS client throws an Error whose message contains
+          // "stream not found" / 404 when the target is already absent —
+          // treat as success. Anything else is best-effort logged.
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/stream not found|404/i.test(msg)) continue;
+          log.warn(
+            { err: msg, streamName: name, account: account.name },
+            "best-effort orphan JetStream stream delete failed; will retry on next apply",
+          );
+        }
+      }
+    });
+  }
+
+  /**
    * Idempotently ensure JetStream KV buckets exist on the system account.
    * KV buckets are JetStream streams under the hood (named `KV_<bucket>`),
    * but creating one requires admin permission on the account — which only
