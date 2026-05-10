@@ -26,6 +26,14 @@ export interface ExpansionContext {
   instance?: { instanceId: string };
   vault?: unknown;
   connectedServices?: unknown;
+  /**
+   * When true, expansion runs from a read-only plan path: `provision()` and
+   * `buildServiceDefinition()` are skipped in favour of `planStub()` (or a
+   * generic placeholder), and the `requiresConnectedService` check is
+   * tolerant of an absent `connectedServices` lookup. Apply paths leave this
+   * unset so real provisioning runs.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -231,8 +239,15 @@ async function resolveGroups(
         `Addon "${addonId}" does not apply to service type "${target.serviceType}" (allowed: ${registered.manifest.appliesTo.join(', ')})`,
       );
     }
+    // Connected-service presence is enforced at apply time (when the caller
+    // supplies a real lookup). Plan-time callers run with `dryRun: true` and
+    // no lookup — the synthetic sidecar still appears in the plan diff, and
+    // the eventual apply re-checks before any provisioning runs. Skipping
+    // here keeps standalone plan UIs (validation-routes, update-route)
+    // working for stacks that declare addons.
     if (
       registered.manifest.requiresConnectedService &&
+      context.connectedServices !== undefined &&
       !connectedServiceConfigured(
         registered.manifest.requiresConnectedService,
         context.connectedServices,
@@ -242,6 +257,17 @@ async function resolveGroups(
         target.serviceName,
         [addonId],
         `Addon "${addonId}" requires connected service "${registered.manifest.requiresConnectedService}" but it is not configured`,
+      );
+    }
+    if (
+      registered.manifest.requiresConnectedService &&
+      context.connectedServices === undefined &&
+      !context.dryRun
+    ) {
+      throw new AddonExpansionError(
+        target.serviceName,
+        [addonId],
+        `Addon "${addonId}" requires connected service "${registered.manifest.requiresConnectedService}" but no connected-services lookup was provided to apply-time expansion`,
       );
     }
 
@@ -293,7 +319,12 @@ async function applyGroup(
   rendered: Map<string, StackServiceDefinition>,
   progress: ExpansionProgress,
 ): Promise<void> {
-  // Step 4–5 — provision and materialise.
+  // Step 4–5 — provision and materialise. In `dryRun` mode the side-effecting
+  // `provision()` (e.g. authkey minting) is skipped; the addon's `planStub()`
+  // (or a generic placeholder) supplies a deterministic synthetic-service
+  // skeleton so the plan diff still shows the sidecar. `applyTargetIntegration`
+  // also degrades to a no-op in dryRun because `provisioned` carries nothing
+  // for it to thread through.
   let provisioned: ProvisionedValues;
   let sidecar: StackServiceDefinition;
   let integration: TargetIntegration;
@@ -307,8 +338,15 @@ async function applyGroup(
       group.application.config,
       context,
     );
-    provisioned = await def.provision(provisionCtx);
-    sidecar = def.buildServiceDefinition(provisionCtx, provisioned);
+    if (context.dryRun) {
+      provisioned = { templateVars: {} };
+      sidecar = def.planStub
+        ? def.planStub(provisionCtx)
+        : genericPlanStub(group.target.serviceName, [group.application.addonId]);
+    } else {
+      provisioned = await def.provision(provisionCtx);
+      sidecar = def.buildServiceDefinition(provisionCtx, provisioned);
+    }
     integration = def.targetIntegration;
     memberIds = [group.application.addonId];
     synthetic = {
@@ -329,14 +367,21 @@ async function applyGroup(
       addonId: m.addonId,
       config: m.config,
     }));
-    provisioned = await group.strategy.provision(provisionCtx, memberPairs);
-    sidecar = group.strategy.buildServiceDefinition(
-      provisionCtx,
-      provisioned,
-      memberPairs,
-    );
-    integration = group.strategy.targetIntegration;
     memberIds = group.members.map((m) => m.addonId);
+    if (context.dryRun) {
+      provisioned = { templateVars: {} };
+      sidecar = group.strategy.planStub
+        ? group.strategy.planStub(provisionCtx, memberPairs)
+        : genericPlanStub(group.target.serviceName, memberIds, group.kindLabel);
+    } else {
+      provisioned = await group.strategy.provision(provisionCtx, memberPairs);
+      sidecar = group.strategy.buildServiceDefinition(
+        provisionCtx,
+        provisioned,
+        memberPairs,
+      );
+    }
+    integration = group.strategy.targetIntegration;
     synthetic = {
       addonIds: memberIds,
       kind: group.kindLabel,
@@ -375,6 +420,31 @@ async function applyGroup(
     kind: group.kind === 'merged' ? group.kindLabel : undefined,
     syntheticServiceName: renderedSidecar.serviceName,
   });
+}
+
+/**
+ * Fallback synthetic-service skeleton when an addon (or merge strategy)
+ * doesn't supply its own `planStub`. The shape is deliberately minimal —
+ * just enough that the plan diff can include the synthetic by name without
+ * leaking apply-time provisioned state. Image / tag use a sentinel that
+ * makes plan-time misuse obvious if it ever leaks past plan into the
+ * reconciler.
+ */
+function genericPlanStub(
+  targetServiceName: string,
+  addonIds: string[],
+  kind?: string,
+): StackServiceDefinition {
+  const suffix = kind ?? addonIds[0] ?? 'addon';
+  return {
+    serviceName: `${targetServiceName}-${suffix}`,
+    serviceType: 'Stateful',
+    dockerImage: 'addon-pending',
+    dockerTag: 'plan',
+    containerConfig: {},
+    dependsOn: [targetServiceName],
+    order: 1000,
+  };
 }
 
 function buildProvisionContext(

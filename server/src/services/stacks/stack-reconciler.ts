@@ -309,7 +309,7 @@ export class StackReconciler {
         }
 
         const handlerCtx: ServiceHandlerContext = {
-          action, svc: svc!, serviceDef, projectName, stackId, stack,
+          action, svc: svc ?? null, serviceDef, projectName, stackId, stack,
           networkNames, serviceHashes, resolvedConfigsMap, containerByService,
           infraNetworkMap, resolvedEnvOverrides, actionStart, log,
         };
@@ -567,7 +567,7 @@ export class StackReconciler {
         const actionStart = Date.now();
 
         const handlerCtx: ServiceHandlerContext = {
-          action, svc: svc!, serviceDef, projectName, stackId, stack,
+          action, svc: svc ?? null, serviceDef, projectName, stackId, stack,
           networkNames, serviceHashes, resolvedConfigsMap, containerByService,
           infraNetworkMap, resolvedEnvOverrides, actionStart, log,
         };

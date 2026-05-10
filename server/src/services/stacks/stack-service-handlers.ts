@@ -29,10 +29,17 @@ import {
 /**
  * Shared context passed to every service handler invocation. Contains
  * everything the handler needs beyond the per-call action and service defs.
+ *
+ * `svc` is the authored DB row when this action targets a user-declared
+ * service. It is `null` for synthetic sidecars produced by the addon render
+ * pipeline (e.g. a `tailscale-web` sidecar attached to a target service) —
+ * synthetics have no dedicated DB row, only a `serviceDef` derived from the
+ * addon's `buildServiceDefinition()` output. Handlers that need
+ * authored-service metadata (vault refs, pool config) must guard on `svc`.
  */
 export interface ServiceHandlerContext {
   action: ServiceAction;
-  svc: Prisma.StackServiceGetPayload<true>;
+  svc: Prisma.StackServiceGetPayload<true> | null;
   serviceDef: StackServiceDefinition | null;
   projectName: string;
   stackId: string;
@@ -87,7 +94,7 @@ export class StackServiceHandlers {
   ) {}
 
   async applyStateful(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
-    const { action, svc, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
+    const { action, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
       resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
     const overridesForService = resolvedEnvOverrides?.get(action.serviceName);
@@ -95,7 +102,7 @@ export class StackServiceHandlers {
 
     switch (action.action) {
       case 'create': {
-        if (!effectiveServiceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Creating service');
 
         await removeConflictingContainer(
@@ -151,7 +158,7 @@ export class StackServiceHandlers {
       }
 
       case 'recreate': {
-        if (!effectiveServiceDef || !svc) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef) throw new Error(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Recreating service');
 
         const oldContainer = containerByService.get(action.serviceName);

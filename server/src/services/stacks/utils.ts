@@ -12,7 +12,7 @@ import type {
   StackServiceInfo,
 } from '@mini-infra/types';
 import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
-import { computeDefinitionHash } from './definition-hash';
+import { computeDefinitionHash, computeSyntheticDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
 import { decryptInputValues } from './stack-input-values-service';
 import {
@@ -287,6 +287,15 @@ export interface ResolveServiceConfigsOptions {
    * Omitted in `plan()` flows where no provisioning runs.
    */
   connectedServices?: unknown;
+  /**
+   * When true, addon expansion runs as a read-only plan pass: `provision()`
+   * and `buildServiceDefinition()` are skipped in favour of the addon's
+   * `planStub()` (or a generic placeholder), so plan invocations don't mint
+   * authkeys, hit external APIs, or produce synthetic-service hashes that
+   * drift between runs. The apply path leaves this unset (defaults to false)
+   * so real provisioning runs.
+   */
+  dryRun?: boolean;
 }
 
 /**
@@ -382,6 +391,7 @@ export async function resolveServiceConfigs(
         : { id: '', name: '', networkType: 'local' },
       instance: options.instance,
       connectedServices: options.connectedServices,
+      dryRun: options.dryRun,
     },
     options.expansionProgress,
   );
@@ -399,19 +409,34 @@ export async function resolveServiceConfigs(
     const resolvedDef = resolveServiceDefinition(def, templateContext);
     resolvedDefinitions.set(def.serviceName, resolvedDef);
     // Hash the resolved definition so parameter value changes trigger
-    // recreates. For authored services we re-attach the original `addons:`
-    // block (stripped on the render output) so the hash includes the
-    // authoring intent — definition-hash.ts §7 invariant. Synthetic
-    // sidecars don't carry an addons block of their own.
+    // recreates. Three cases:
+    //
+    // 1. Authored services: re-attach the authored `addons:` block (stripped
+    //    on the render output) so addon-config changes recreate the target,
+    //    without leaking provisioned values into the hash. Definition-hash.ts
+    //    §7 invariant.
+    // 2. Synthetic sidecars: hash the *authoring intent* (synthetic info +
+    //    target's authored addon configs). Hashing the rendered sidecar
+    //    directly would include per-mint env (TS_AUTHKEY etc.) and drift
+    //    every apply, so plan would always say "recreate".
+    // 3. Pre-existing services with neither: hash the resolved def as-is.
     const authoredAddons = authoredAddonsByName.get(def.serviceName);
-    const defForHash =
-      authoredAddons !== undefined
-        ? { ...resolvedDef, addons: authoredAddons }
-        : resolvedDef;
-    serviceHashes.set(
-      def.serviceName,
-      computeDefinitionHash(defForHash, resolvedConfigs),
-    );
+    if (def.synthetic) {
+      const targetAuthoredAddons = authoredAddonsByName.get(def.synthetic.targetService);
+      serviceHashes.set(
+        def.serviceName,
+        computeSyntheticDefinitionHash(def.synthetic, targetAuthoredAddons),
+      );
+    } else {
+      const defForHash =
+        authoredAddons !== undefined
+          ? { ...resolvedDef, addons: authoredAddons }
+          : resolvedDef;
+      serviceHashes.set(
+        def.serviceName,
+        computeDefinitionHash(defForHash, resolvedConfigs),
+      );
+    }
   }
 
   return { resolvedConfigsMap, resolvedDefinitions, serviceHashes };

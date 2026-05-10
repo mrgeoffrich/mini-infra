@@ -199,6 +199,29 @@ const tailscaleMergedTargetIntegration: TargetIntegration = {
   network: 'peer-on-target-network',
 };
 
+function planStubMergedServiceDefinition(
+  ctx: ProvisionContext,
+  members: ReadonlyArray<{ addonId: string; config: unknown }>,
+): StackServiceDefinition {
+  // Mirror buildMergedServiceDefinition's labels exactly (sorted member ids)
+  // so the plan-time synthetic identity matches the apply-time one. Per-mint
+  // env (TS_AUTHKEY, TS_HOSTNAME, TS_EXTRA_ARGS, TS_SERVE_CONFIG) is omitted —
+  // those values come from `provision()` and would change the synthetic's
+  // hash on every plan run if included.
+  const memberIds = members.map((m) => m.addonId).sort();
+  return buildTailscaleSidecarDefinition({
+    ctx,
+    env: {},
+    labels: {
+      'mini-infra.addon': TAILSCALE_KIND,
+      'mini-infra.addon-kind': TAILSCALE_KIND,
+      'mini-infra.addon-members': memberIds.join(','),
+      'mini-infra.synthetic': 'true',
+      'mini-infra.addon-target': ctx.service.name,
+    },
+  });
+}
+
 /**
  * Merge strategy for `kind: "tailscale"`. Collapses any combination of
  * `tailscale-ssh` and `tailscale-web` declared on the same target service
@@ -211,4 +234,5 @@ export const tailscaleMergeStrategy: AddonMergeStrategy = {
   targetIntegration: tailscaleMergedTargetIntegration,
   provision: provisionTailscaleMerged,
   buildServiceDefinition: buildMergedServiceDefinition,
+  planStub: planStubMergedServiceDefinition,
 };

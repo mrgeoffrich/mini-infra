@@ -115,4 +115,59 @@ describe('resolveServiceConfigs — §7 hash invariant pinned end-to-end', () =>
     expect(targetHashB).toBeDefined();
     expect(targetHashA).not.toBe(targetHashB);
   });
+
+  it('synthetic sidecar hash is stable across plan/apply when authored addon-config is unchanged', async () => {
+    const registry = createAddonRegistry();
+    registry.register(noopAddon);
+
+    const ctx = buildTemplateContext(
+      { name: 'demo', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: { restartPolicy: 'unless-stopped' } }],
+    );
+
+    // Apply path: full provisioning (no dryRun) — synthetic ends up with the
+    // noop addon's per-call provisioned env (NOOP_TARGET, NOOP_LABEL).
+    const { serviceHashes: applyHashes } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'x' } })],
+      ctx,
+      { addonRegistry: registry },
+    );
+    // Plan path: dryRun stub — synthetic uses the generic placeholder def,
+    // which has a different shape than the apply-time def. The synthetic
+    // hash must agree with apply-time despite that difference.
+    const { serviceHashes: planHashes } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'x' } })],
+      ctx,
+      { addonRegistry: registry, dryRun: true },
+    );
+
+    const applyHash = applyHashes.get('web-noop');
+    const planHash = planHashes.get('web-noop');
+    expect(applyHash).toBeDefined();
+    expect(planHash).toBeDefined();
+    expect(planHash).toBe(applyHash);
+  });
+
+  it('synthetic sidecar hash changes when authored addon-config changes', async () => {
+    const registry = createAddonRegistry();
+    registry.register(noopAddon);
+
+    const ctx = buildTemplateContext(
+      { name: 'demo', networks: [], volumes: [] },
+      [{ serviceName: 'web', dockerImage: 'nginx', dockerTag: 'latest', containerConfig: { restartPolicy: 'unless-stopped' } }],
+    );
+
+    const { serviceHashes: hashA } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'a' } })],
+      ctx,
+      { addonRegistry: registry, dryRun: true },
+    );
+    const { serviceHashes: hashB } = await resolveServiceConfigs(
+      [makeServiceRow({ noop: { label: 'b' } })],
+      ctx,
+      { addonRegistry: registry, dryRun: true },
+    );
+
+    expect(hashA.get('web-noop')).not.toBe(hashB.get('web-noop'));
+  });
 });
