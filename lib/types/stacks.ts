@@ -362,6 +362,44 @@ export interface StackInfo {
   inputValueKeys?: string[];
   /** Human-readable reason the last apply failed; null when the last apply succeeded. */
   lastFailureReason?: string | null;
+  /**
+   * NATS-section drift report. Populated when the stack has a NATS section
+   * AND a `lastAppliedNatsSnapshot`; otherwise `null`. The detector compares
+   * the current template's raw NATS fields (`natsRoles`, `natsSigners`,
+   * `natsExports`, `natsImports`, `natsSubjectPrefix`) against the snapshot
+   * — independent of stack-level container drift, so a stack can be `synced`
+   * status-wise yet still report `natsDrift.drifted = true` if the template
+   * was edited since the last NATS apply.
+   */
+  natsDrift?: NatsDriftInfo | null;
+}
+
+/** Reasons why the NATS section of a stack is out of sync with its last apply. */
+export type NatsDriftReason =
+  /** Resolved subject prefix differs (template edit, allowlist change, or param change). */
+  | 'subject-prefix'
+  /** `roles[]` array differs (added/removed roles, changed pub/sub patterns, etc.). */
+  | 'roles'
+  /** `signers[]` array differs (scope, TTL, or membership). */
+  | 'signers'
+  /** `exports[]` array differs. */
+  | 'exports'
+  /** `imports[]` array differs. */
+  | 'imports'
+  /**
+   * The `lastAppliedNatsSnapshot` predates the v2 raw-fields schema. The
+   * detector can't compare cleanly without re-rendering the template; the
+   * UI surfaces this as "baseline incomplete — re-apply to refresh". A
+   * single re-apply on an already-synced stack populates the missing fields
+   * and clears the reason.
+   */
+  | 'baseline-incomplete';
+
+export interface NatsDriftInfo {
+  /** True if any reason fired. */
+  drifted: boolean;
+  /** Specific fields that differ. Empty when `drifted` is false. */
+  reasons: NatsDriftReason[];
 }
 
 export interface StackServiceInfo {

@@ -150,14 +150,28 @@ NATS-using system templates that exist (`egress-fw-agent`,
 template. `roles[].streams` is purely additive for future app
 templates that want their own per-stack JetStream.
 
-### Drift detection in `lastAppliedNatsSnapshot`
+### ~~Drift detection in `lastAppliedNatsSnapshot`~~ — shipped
 
-The snapshot writes accounts/credentials/streams/consumers/roles/exports/
-imports/resolved-prefix on every apply, but no consumer compares against
-it for drift. Once the orchestrator's snapshot is rich enough (it is now,
-post-Phase 5), the next planned change is a drift detector that compares
-the rendered roles + resolved prefix against the snapshot and surfaces
-"out of sync" in the stack list.
+Shipped: the snapshot now also stores `subjectPrefixRaw` + `exportsRaw`
+alongside the existing resolved fields, so `detectNatsDrift` does pure
+raw-to-raw comparisons (no template re-rendering at every list call) of
+`natsRoles`, `natsSigners`, `natsExports`, `natsImports`, and
+`natsSubjectPrefix`. The detector returns
+`NatsDriftInfo { drifted, reasons[] }`, surfaced as `StackInfo.natsDrift`
+on the stack list + get routes. The stacks-list UI renders a small
+"NATS out of sync" badge alongside the existing status badge, with a
+tooltip listing which fields drifted. Independent from `stack.status`
+because container-level sync and NATS-section sync are orthogonal — a
+stack can be `synced` yet still report drift if the template was edited
+and not yet re-applied. Pre-bump snapshots that don't carry the raw
+fields surface as `baseline-incomplete` so a single re-apply refreshes
+the baseline cleanly. Coverage in
+[server/src/__tests__/nats-drift-detector.integration.test.ts](../../../server/src/__tests__/nats-drift-detector.integration.test.ts).
+
+Known limitation: drift driven purely by stack-parameter renaming or
+admin-allowlist edits isn't detected (raw-to-raw doesn't catch
+substitution drift). Re-rendering the template at every list call is the
+straightforward fix; punted until anyone observes a real false-negative.
 
 ---
 

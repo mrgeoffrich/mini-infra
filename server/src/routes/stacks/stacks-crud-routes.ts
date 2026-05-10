@@ -15,6 +15,7 @@ import {
   serializeStack,
   toServiceCreateInput,
 } from '../../services/stacks/utils';
+import { detectNatsDrift } from '../../services/stacks/nats-drift-detector';
 import {
   encryptInputValues,
   decryptInputValues,
@@ -71,7 +72,25 @@ router.get(
       orderBy: { name: 'asc' },
     });
 
-    res.json({ success: true, data: stacks.map(serializeStack) });
+    // Drift detection runs in parallel per stack — `detectNatsDrift` is one
+    // Prisma read on `stackTemplateVersion` plus a JSON.parse, so for a list
+    // bounded by single-host scale (dozens of stacks) the latency is well
+    // within the existing list-route budget. Stacks without a NATS section
+    // or without a snapshot return null cheaply.
+    const driftByStack = await Promise.all(
+      stacks.map((s) =>
+        detectNatsDrift(prisma, {
+          templateId: s.templateId,
+          templateVersion: s.templateVersion,
+          lastAppliedNatsSnapshot: s.lastAppliedNatsSnapshot,
+        }).catch(() => null),
+      ),
+    );
+
+    res.json({
+      success: true,
+      data: stacks.map((s, i) => ({ ...serializeStack(s), natsDrift: driftByStack[i] })),
+    });
   }),
 );
 
@@ -139,7 +158,13 @@ router.get(
       return res.status(404).json({ success: false, message: 'Stack not found' });
     }
 
-    res.json({ success: true, data: serializeStack(stack) });
+    const natsDrift = await detectNatsDrift(prisma, {
+      templateId: stack.templateId,
+      templateVersion: stack.templateVersion,
+      lastAppliedNatsSnapshot: stack.lastAppliedNatsSnapshot,
+    }).catch(() => null);
+
+    res.json({ success: true, data: { ...serializeStack(stack), natsDrift } });
   }),
 );
 
