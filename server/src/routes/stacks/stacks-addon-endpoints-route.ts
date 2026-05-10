@@ -5,6 +5,7 @@ import { requirePermission } from "../../middleware/auth";
 import { TailscaleDeviceStatusScheduler } from "../../services/tailscale";
 import { getLogger } from "../../lib/logger-factory";
 import {
+  buildPoolHostnamePrefix,
   sanitizeTailscaleHostname,
   type StackDefinition,
   type StackServiceDefinition,
@@ -66,6 +67,18 @@ function readWebConfig(
   };
 }
 
+/**
+ * Look up a target service's `serviceType` from the snapshot. The Connect
+ * panel emits a *summary row* for pool targets rather than enumerating
+ * per-instance endpoints — per-instance enumeration happens in the client's
+ * drill-in Sheet via the live pool-instances pipeline, keeping this route a
+ * pure snapshot read (no PoolInstance query).
+ */
+function isPoolTarget(snapshot: StackDefinition, targetServiceName: string): boolean {
+  const target = snapshot.services.find((s) => s.serviceName === targetServiceName);
+  return target?.serviceType === "Pool";
+}
+
 // Exported for unit testing — the route handler still calls it locally.
 export function deriveEndpoints(
   snapshot: StackDefinition,
@@ -90,8 +103,28 @@ export function deriveEndpoints(
     const targetService = findTargetService(service);
     if (!targetService) continue;
 
-    const hostname = sanitizeTailscaleHostname(stackName, targetService, envSlug);
+    const targetIsPool = isPoolTarget(snapshot, targetService);
+
+    // For pool targets the visible "hostname" on the row is the template form
+    // (e.g. `web-svc-prod-{instance}`) — the client renders this verbatim,
+    // computes per-instance hostnames in the Sheet via `buildPoolInstanceHostname`.
+    // The non-pool path keeps the existing static-service behaviour.
+    const hostname = targetIsPool
+      ? `${buildPoolHostnamePrefix(stackName, targetService, envSlug)}-{instance}`
+      : sanitizeTailscaleHostname(stackName, targetService, envSlug);
     const fqdn = tailnet ? `${hostname}.${tailnet}` : null;
+    const poolFields = targetIsPool
+      ? {
+          isPool: true as const,
+          poolHostnamePrefix: buildPoolHostnamePrefix(
+            stackName,
+            targetService,
+            envSlug,
+          ),
+          tailnet,
+          templateHostname: fqdn,
+        }
+      : {};
 
     if (synth.addonIds.includes("tailscale-ssh")) {
       endpoints.push({
@@ -100,7 +133,8 @@ export function deriveEndpoints(
         addonIds: synth.addonIds,
         kind: "ssh",
         hostname,
-        url: fqdn ? `ssh root@${fqdn}` : null,
+        url: targetIsPool ? null : fqdn ? `ssh root@${fqdn}` : null,
+        ...poolFields,
       });
     }
 
@@ -113,7 +147,8 @@ export function deriveEndpoints(
         addonIds: synth.addonIds,
         kind: "https",
         hostname,
-        url: fqdn ? `https://${fqdn}${path}` : null,
+        url: targetIsPool ? null : fqdn ? `https://${fqdn}${path}` : null,
+        ...poolFields,
       });
     }
   }

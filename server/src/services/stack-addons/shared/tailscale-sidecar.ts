@@ -55,8 +55,30 @@ export interface BuildTailscaleSidecarInput {
 export function buildTailscaleSidecarDefinition(
   input: BuildTailscaleSidecarInput,
 ): StackServiceDefinition {
-  const sidecarServiceName = tailscaleSidecarServiceName(input.ctx.service.name);
-  const stateVolumeName = tailscaleStateVolumeName(sidecarServiceName);
+  const instanceId = input.ctx.instance?.instanceId;
+  const sidecarServiceName = tailscaleSidecarServiceName(
+    input.ctx.service.name,
+    instanceId,
+  );
+
+  // Pool-instance addon sidecars skip the persistent state volume — pool
+  // instances are short-lived, authkeys are minted per-spawn with
+  // `ephemeral: true`, and the tailnet auto-cleans the device on shutdown.
+  // The state volume would persist write-only across reaps and accumulate
+  // one orphan volume per spawn, with no read-side benefit. Static-service
+  // sidecars keep the volume so a restart re-uses the same device record.
+  const mounts: NonNullable<StackServiceDefinition['containerConfig']['mounts']> = [
+    ...(instanceId
+      ? []
+      : [
+          {
+            source: tailscaleStateVolumeName(sidecarServiceName),
+            target: STATE_VOLUME_MOUNT_PATH,
+            type: 'volume' as const,
+          },
+        ]),
+    ...(input.extraMounts ?? []),
+  ];
 
   const def: StackServiceDefinition = {
     serviceName: sidecarServiceName,
@@ -69,14 +91,7 @@ export function buildTailscaleSidecarDefinition(
       // device, plus access to /dev/net/tun for kernel-mode networking. We
       // run in kernel mode (TS_USERSPACE=false) for best performance.
       capAdd: ['NET_ADMIN', 'SYS_MODULE'],
-      mounts: [
-        {
-          source: stateVolumeName,
-          target: STATE_VOLUME_MOUNT_PATH,
-          type: 'volume',
-        },
-        ...(input.extraMounts ?? []),
-      ],
+      mounts,
       labels: { ...input.labels },
       restartPolicy: 'unless-stopped',
       // Tailscale control-plane and DERP relay hostnames — the sidecar must

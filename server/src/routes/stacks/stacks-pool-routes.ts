@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import type { PoolConfig, PoolInstanceInfo, PoolInstance as PoolInstanceDb } from '@mini-infra/types';
-import { hasAnyPermission } from '@mini-infra/types';
+import { hasAnyPermission, POOL_ADDON_LABELS } from '@mini-infra/types';
 import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requireSessionOrApiKey } from '../../middleware/auth';
@@ -435,12 +435,59 @@ router.delete(
       data: { status: 'stopped', stoppedAt: new Date() },
     });
 
-    // Fire-and-forget container cleanup — the caller doesn't wait.
-    if (row.containerId) {
-      const dockerExecutor = await buildDockerExecutor();
-      const docker = dockerExecutor.getDockerClient();
-      const containerId = row.containerId;
-      void (async () => {
+    // Fire-and-forget container cleanup — the caller doesn't wait. Per-instance
+    // addon sidecars (Phase 6) are reaped first via label match so they don't
+    // outlive their worker; the worker itself is stopped second so the addon
+    // cleanup observes a still-running tailnet device record (relevant only
+    // for non-ephemeral addons; Tailscale is ephemeral so order doesn't
+    // strictly matter, but kept this way to match the reaper's order).
+    const dockerExecutor = await buildDockerExecutor();
+    const docker = dockerExecutor.getDockerClient();
+    const containerId = row.containerId;
+    void (async () => {
+      try {
+        const sidecars = await docker.listContainers({
+          all: true,
+          filters: {
+            label: [
+              `${POOL_ADDON_LABELS.STACK_ID}=${stackId}`,
+              `${POOL_ADDON_LABELS.POOL_INSTANCE_ID}=${instanceId}`,
+              `${POOL_ADDON_LABELS.SYNTHETIC}=true`,
+            ],
+          },
+        });
+        for (const c of sidecars) {
+          try {
+            const sidecar = docker.getContainer(c.Id);
+            await sidecar.stop({ t: 10 }).catch((err) => {
+              const code = (err as { statusCode?: number })?.statusCode;
+              if (code !== 404 && code !== 304) throw err;
+            });
+            await sidecar.remove({ force: true }).catch((err) => {
+              const code = (err as { statusCode?: number })?.statusCode;
+              if (code !== 404) throw err;
+            });
+          } catch (err) {
+            log.warn(
+              {
+                stackId,
+                serviceName,
+                instanceId,
+                sidecarContainerId: c.Id,
+                err: err instanceof Error ? err.message : String(err),
+              },
+              'Failed to remove per-instance addon sidecar (continuing)',
+            );
+          }
+        }
+      } catch (err) {
+        log.warn(
+          { stackId, serviceName, instanceId, err: err instanceof Error ? err.message : String(err) },
+          'Failed to enumerate per-instance addon sidecars during manual stop',
+        );
+      }
+
+      if (containerId) {
         try {
           const container = docker.getContainer(containerId);
           await container.stop({ t: 10 }).catch((err) => {
@@ -457,8 +504,8 @@ router.delete(
             'Fire-and-forget container removal failed',
           );
         }
-      })();
-    }
+      }
+    })();
 
     emitPoolInstanceStopped({ stackId, serviceName, instanceId });
 

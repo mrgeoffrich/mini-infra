@@ -2,6 +2,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { withOperation } from '../../lib/logging-context';
+import { POOL_ADDON_LABELS } from '@mini-infra/types';
 import {
   emitPoolInstanceIdleStopped,
   emitPoolInstanceFailed,
@@ -110,6 +111,7 @@ export class PoolInstanceReaper {
 
       const idleMinutes = Math.round(idleForMs / 60_000);
       try {
+        await this.reapAddonSidecars(executor, row.stackId, row.instanceId);
         await this.stopAndRemoveContainer(executor, row.containerId);
         await this.prisma.poolInstance.update({
           where: { id: row.id },
@@ -155,6 +157,7 @@ export class PoolInstanceReaper {
 
     for (const row of stuck) {
       try {
+        await this.reapAddonSidecars(executor, row.stackId, row.instanceId);
         await this.stopAndRemoveContainer(executor, row.containerId);
         await this.prisma.poolInstance.update({
           where: { id: row.id },
@@ -189,6 +192,65 @@ export class PoolInstanceReaper {
           'Stuck-starting reap failed for instance; will retry next tick',
         );
       }
+    }
+  }
+
+  /**
+   * Find and remove per-instance addon sidecar containers belonging to a
+   * just-reaped pool instance. Discovery is by label match — the spawner
+   * stamps `mini-infra.stack-id` + `mini-infra.pool-instance-id` +
+   * `mini-infra.synthetic=true` on every sidecar, so a Docker `list` with
+   * those filters is the canonical lookup.
+   *
+   * Best-effort: an unreachable sidecar logs and moves on; the next reap
+   * tick or `docker container prune` will pick it up. We never block the
+   * worker cleanup on a sidecar failure.
+   */
+  private async reapAddonSidecars(
+    executor: DockerExecutorService,
+    stackId: string,
+    instanceId: string,
+  ): Promise<void> {
+    try {
+      const docker = executor.getDockerClient();
+      const containers = await docker.listContainers({
+        all: true,
+        filters: {
+          label: [
+            `${POOL_ADDON_LABELS.STACK_ID}=${stackId}`,
+            `${POOL_ADDON_LABELS.POOL_INSTANCE_ID}=${instanceId}`,
+            `${POOL_ADDON_LABELS.SYNTHETIC}=true`,
+          ],
+        },
+      });
+      for (const c of containers) {
+        try {
+          await this.stopAndRemoveContainer(executor, c.Id);
+          log.info(
+            { stackId, instanceId, sidecarContainerId: c.Id },
+            'Reaped per-instance addon sidecar',
+          );
+        } catch (err) {
+          log.warn(
+            {
+              stackId,
+              instanceId,
+              sidecarContainerId: c.Id,
+              err: err instanceof Error ? err.message : String(err),
+            },
+            'Failed to reap sidecar container; will retry next tick',
+          );
+        }
+      }
+    } catch (err) {
+      log.warn(
+        {
+          stackId,
+          instanceId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'Failed to enumerate per-instance addon sidecars; skipping addon reap',
+      );
     }
   }
 

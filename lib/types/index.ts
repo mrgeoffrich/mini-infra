@@ -104,6 +104,9 @@ export * from "./egress";
 // Tailscale connected-service types
 export * from "./tailscale";
 
+// Pool-instance addon label keys
+export * from "./pool-addons";
+
 // ====================
 // Type Utilities
 // ====================

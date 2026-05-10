@@ -58,6 +58,7 @@ export async function provisionTailscaleWeb(
     ctx.stack.name,
     ctx.service.name,
     envSlug,
+    ctx.instance?.instanceId,
   );
 
   // Best-effort: purge any *offline* managed device already squatting on

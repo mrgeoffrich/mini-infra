@@ -18,6 +18,7 @@ import {
 } from "@/hooks/use-tailscale-devices";
 import { useServiceConnectivity } from "@/hooks/use-settings-validation";
 import { EndpointRow } from "./endpoint-row";
+import { PoolSummaryRow } from "./pool-summary-row";
 import { AddonBadge } from "@/components/stacks/addon-badge";
 import type {
   TailscaleAddonEndpoint,
@@ -29,6 +30,12 @@ const VISIBLE_LIMIT = 5;
 
 interface ConnectCardProps {
   stackId: string | undefined;
+  /** Stack name — needed so the pool-summary Sheet can compute per-instance
+   * hostnames client-side via `buildPoolInstanceHostname`. */
+  stackName?: string;
+  /** Environment name — same; passed verbatim into the sanitiser, with a
+   * `"host"` fallback applied inside the Sheet for host-scoped stacks. */
+  envName?: string;
 }
 
 /**
@@ -38,7 +45,7 @@ interface ConnectCardProps {
  * the authored target service. Omits itself entirely when the stack has
  * no addon endpoints — non-Tailscale apps see no Connect surface.
  */
-export function ConnectCard({ stackId }: ConnectCardProps) {
+export function ConnectCard({ stackId, stackName, envName }: ConnectCardProps) {
   const endpointsQuery = useStackAddonEndpoints(stackId, !!stackId);
   const devicesQuery = useTailscaleDevices();
 
@@ -138,6 +145,9 @@ export function ConnectCard({ stackId }: ConnectCardProps) {
               group={group}
               devicesByHostname={devicesByHostname}
               lastUpdatedAt={lastUpdatedAt}
+              stackId={stackId}
+              stackName={stackName}
+              envName={envName}
             />
           ))}
 
@@ -169,10 +179,16 @@ function ServiceGroup({
   group,
   devicesByHostname,
   lastUpdatedAt,
+  stackId,
+  stackName,
+  envName,
 }: {
   group: { targetService: string; endpoints: TailscaleAddonEndpoint[] };
   devicesByHostname: Map<string, TailscaleDeviceStatus>;
   lastUpdatedAt: string | null;
+  stackId: string | undefined;
+  stackName: string | undefined;
+  envName: string | undefined;
 }) {
   return (
     <div>
@@ -184,6 +200,23 @@ function ServiceGroup({
       </div>
       <ul className="divide-y">
         {group.endpoints.map((endpoint) => {
+          // Pool targets render as a summary row + drill-in Sheet so a
+          // 50-instance pool doesn't flood the card. The Sheet computes
+          // per-instance hostnames client-side via `buildPoolInstanceHostname`
+          // against the live pool-instances pipeline.
+          if (endpoint.isPool && stackId) {
+            return (
+              <PoolSummaryRow
+                key={`${endpoint.syntheticServiceName}-${endpoint.kind}-pool`}
+                endpoint={endpoint}
+                stackId={stackId}
+                stackName={stackName ?? ""}
+                envName={envName ?? ""}
+                devicesByHostname={devicesByHostname}
+                lastUpdatedAt={lastUpdatedAt}
+              />
+            );
+          }
           const device = devicesByHostname.get(endpoint.hostname);
           const status = resolveStatus(device, lastUpdatedAt);
           return (
