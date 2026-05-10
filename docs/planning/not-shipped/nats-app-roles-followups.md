@@ -134,14 +134,17 @@ template; declare them via `nats.roles[].streams` instead. Real-NATS
 external coverage in
 [server/src/__tests__/nats-role-streams.external.test.ts](../../../server/src/__tests__/nats-role-streams.external.test.ts).
 
-Known follow-up: removing a role-stream from a template deletes the
+~~Known follow-up: removing a role-stream from a template deletes the
 `NatsStream` DB row but does not delete the underlying JetStream stream
-in NATS itself (the orchestrator only adds/updates via
-`applyJetStreamResources`). Stale streams stop receiving traffic because
-nothing else publishes to the prefixed subjects, but they leak storage
-until manually pruned. A reconciliation step that lists JetStream
-streams and deletes any that aren't in the DB is the natural fix; punted
-out of this PR to keep the change focused.
+in NATS itself.~~ — closed. `pruneOrphanRoleStreams` now returns the
+captured orphan names + accountId, the orchestrator hands them to a new
+`NatsControlPlaneService.deleteJetStreams(...)` after
+`applyJetStreamResources` has run, and the live JS streams are deleted
+on the same apply that prunes the DB rows. Best-effort: a NATS-side blip
+during the cleanup is logged and the apply still succeeds (DB is
+authoritative). 404s from the live server are treated as success
+(stream already gone). Coverage in
+[server/src/__tests__/stack-nats-orphan-stream-cleanup.integration.test.ts](../../../server/src/__tests__/stack-nats-orphan-stream-cleanup.integration.test.ts).
 
 No system templates need to migrate to the new surface. The shared
 system JetStream streams (`EgressFwEvents`, `BackupHistory`, etc.) and KV
