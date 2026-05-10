@@ -10,6 +10,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   IconStack2,
   IconRefresh,
   IconChevronDown,
@@ -54,6 +60,48 @@ const statusBadgeVariants: Record<
     label: "Removed",
   },
 };
+
+/**
+ * Surfaces the soft NATS-drift signal layered on top of the stack status.
+ * Operators see a small "NATS out of sync" badge with a tooltip listing
+ * which fields drifted; clicking through to apply re-syncs everything in
+ * one shot. Independent from `stack.status` because container-level sync
+ * and NATS-section sync are orthogonal — a stack can be `synced` for
+ * containers but have a freshly-edited (un-applied) NATS section.
+ */
+function NatsDriftBadge({ reasons }: { reasons: readonly string[] }) {
+  const labelByReason: Record<string, string> = {
+    'subject-prefix': 'Subject prefix',
+    roles: 'Roles',
+    signers: 'Signers',
+    exports: 'Exports',
+    imports: 'Imports',
+    'baseline-incomplete': 'Baseline incomplete (re-apply to refresh)',
+  };
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className="bg-amber-50 text-amber-900 border-amber-300 dark:bg-amber-950 dark:text-amber-200 dark:border-amber-800"
+          >
+            NATS out of sync
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          <div className="font-medium mb-1">NATS section differs from last apply</div>
+          <ul className="list-disc pl-4 text-xs">
+            {reasons.map((r) => (
+              <li key={r}>{labelByReason[r] ?? r}</li>
+            ))}
+          </ul>
+          <div className="text-xs mt-2 opacity-80">Re-apply the stack to sync.</div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 export function StacksList({ environmentId, scope, className }: StacksListProps) {
   const [expandedStackId, setExpandedStackId] = useState<string | null>(null);
@@ -202,6 +250,9 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                             >
                               {badge.label}
                             </Badge>
+                            {stack.natsDrift?.drifted && (
+                              <NatsDriftBadge reasons={stack.natsDrift.reasons} />
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
                             <span>Latest Version v{stack.version}</span>

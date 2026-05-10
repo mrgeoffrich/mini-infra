@@ -512,6 +512,14 @@ export async function runStackNatsApplyPhase(
             // producer's prefix at consumer-apply time.
             resolvedExports,
             imports,
+            // Drift-detector inputs — the raw, un-rendered template values
+            // captured at apply time. Lets `detectNatsDrift` compare the
+            // current template's raw fields apples-to-apples without
+            // re-running the template engine on every list call. The
+            // detector falls back to a `baseline-incomplete` reason for
+            // pre-bump snapshots that don't carry these.
+            subjectPrefixRaw: templateVersion.natsSubjectPrefix ?? null,
+            exportsRaw: exportsRelative,
           }),
           lastFailureReason: null,
         },
