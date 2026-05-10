@@ -30,18 +30,19 @@ These plans split UI from backend in ways that hide design dependencies. Backfil
 
 Real UI work is mentioned but in places a designer scanning for the UI block would miss.
 
-- [ ] **[native-heap-profiling](not-shipped/native-heap-profiling.md)** (1 phase) — "two buttons on the diagnostics page" is buried in a code block.
 - [ ] **[observability-otel-tracing-plan](not-shipped/observability-otel-tracing-plan.md)** (6 phases) — Phase 6's "new Grafana dashboard panel set" is mentioned but not framed as user-facing work. Phases 1, 5 already clear.
 - [ ] **[unified-backups-plan](not-shipped/unified-backups-plan.md)** (5 phases) — Phase 1 ships two distinct UIs (bootstrap surface + admin Backups page) but only one is in the deliverable bullets.
+
+(`native-heap-profiling` was moved to `docs/architecture/` — it's a how-to, not a phased plan, so the spec doesn't apply.)
 
 ## Priority 3 — UI articulation is fine; just rote backfill of Reversibility + Verify-in-prod
 
 UI lines will mostly be `none` or copy-from-existing. The rate-limiter is writing the Reversibility classifier and Verify-in-prod signal honestly.
 
-- [ ] **[internal-nats-messaging-plan](not-shipped/internal-nats-messaging-plan.md)** (5 phases) — UI is clear (events page, health UI). Reversibility for Phases 2-5 is `feature-flagged` per the existing prose ("old transport stays compiled for one release behind a feature flag for rollback").
 - [ ] **[vault-oidc-plan](not-shipped/vault-oidc-plan.md)** (3 stages) — Stage 1 UI is clear; Stages 2–3 backend-only (`UI changes: none`).
 - [ ] **[job-pool-service-type-plan](not-shipped/job-pool-service-type-plan.md)** (5 phases) — UI is clear (events page, Run-now affordance reuse).
-- [ ] **[worktree-egress-subnet-allocation](not-shipped/worktree-egress-subnet-allocation.md)** — entirely infra; UI is `none` for every phase. Shortest backfill in the list.
+
+(`internal-nats-messaging-plan` and `worktree-egress-subnet-allocation` shipped and moved to `shipped/` — no need to backfill.)
 
 ---
 
@@ -71,6 +72,6 @@ See [service-addons-plan](not-shipped/service-addons-plan.md) Phase 1 for a work
 ## Notes
 
 - **Already-seeded plans:** every plan in the list except `native-heap-profiling` is already seeded to Linear. The new sections won't auto-propagate to existing Linear issues. Decide per-plan whether to manually update the issue body, or accept the doc as source-of-truth and let the Linear ticket stay as a frozen snapshot.
-- **The `plan-to-linear` skill has been updated** to extract and propagate the new fields, so any *new* plan seeded after the spec change will carry them into Linear automatically.
+- **The `plan-to-mk` skill** extracts and propagates the new fields, so any *new* plan seeded after the spec change will carry them into `mk` automatically.
 - **Strict-sequential plans don't need `[blocks-by]` brackets** in §8 — the omitted-bracket form means strict sequential. Most plans here are strict sequential and §8 needs no change.
 - **Delete this file** once the list is empty.

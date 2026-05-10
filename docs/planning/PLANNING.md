@@ -2,12 +2,12 @@
 
 This directory holds **phased planning documents** that feed two skills:
 
-- **`plan-to-linear`** reads a plan and creates a Linear project + one issue per phase, copying the per-phase Goal / Deliverables / Done when verbatim into each ticket.
-- **`execute-next-task`** picks up the resulting issues phase by phase and runs them end-to-end (worktree, code, tests, smoke, PR, Linear state transitions).
+- **`plan-to-mk`** reads a plan and creates an `mk` feature plus one issue per phase, copying the per-phase Goal / Deliverables / Done when verbatim into each ticket.
+- **`execute-next-task`** picks up the resulting issues phase by phase and runs them end-to-end (worktree, code, tests, smoke, PR, `mk` state transitions).
 
-The format below is **mechanically required** — `plan-to-linear` stops and reports if a doc doesn't match. It's also the convention humans rely on when reading these docs, so write for both audiences.
+The format below is **mechanically required** — `plan-to-mk` stops and reports if a doc doesn't match. It's also the convention humans rely on when reading these docs, so write for both audiences.
 
-Reference, fully populated example: [not-shipped/internal-nats-messaging-plan.md](not-shipped/internal-nats-messaging-plan.md).
+Reference, fully populated example: [shipped/internal-nats-messaging-plan.md](shipped/internal-nats-messaging-plan.md).
 
 ---
 
@@ -15,11 +15,11 @@ Reference, fully populated example: [not-shipped/internal-nats-messaging-plan.md
 
 | Stage | Path |
 |---|---|
-| Drafting / awaiting Linear seed | `docs/planning/not-shipped/<slug>.md` |
-| Linear seeded, work in flight or complete | same path; the §8 list now has real `ALT-NN` IDs |
+| Drafting / awaiting `mk` seed | `docs/planning/not-shipped/<slug>.md` |
+| `mk`-seeded, work in flight or complete | same path; the §8 list now has real `MINI-NN` IDs |
 | Project shipped | move to `docs/planning/shipped/<slug>.md` |
 
-Slug is kebab-case, ends in `-plan` for full project plans (e.g. `job-pool-service-type-plan.md`). Single-phase write-ups can drop the `-plan` suffix (e.g. `nats-app-roles-followups.md`) but won't be processed by `plan-to-linear`.
+Slug is kebab-case, ends in `-plan` for full project plans (e.g. `job-pool-service-type-plan.md`). Single-phase write-ups can drop the `-plan` suffix (e.g. `addons-egress-followups.md`) but won't be processed by `plan-to-mk`.
 
 ---
 
@@ -33,7 +33,7 @@ A processable plan has these sections in order. Section *numbers* in existing do
 # <Feature title> — <subtitle or framing>
 ```
 
-The H1 (stripped of trailing punctuation) becomes the Linear **project name**. Don't change it after seeding — the project lookup is by name.
+The H1 (stripped of trailing punctuation) becomes the `mk` **feature title**. Don't change it after seeding — the feature lookup is by slug derived from the title.
 
 ### §1 Background
 
@@ -45,7 +45,7 @@ The H1 (stripped of trailing punctuation) becomes the Linear **project name**. D
 <optional further paragraphs>
 ```
 
-The **first paragraph of §1** is copied verbatim into the Linear project description. Make it self-contained — no "see above" references — and fit the gist of the project in 3-6 sentences.
+The **first paragraph of §1** is copied verbatim into the `mk` feature description. Make it self-contained — no "see above" references — and fit the gist of the project in 3-6 sentences.
 
 ### §2 Goals
 
@@ -123,43 +123,43 @@ Optional per-phase subsections (used when they help):
 - **Migration shape** — when a phase replaces an existing transport/component, a short numbered list of the swap steps.
 - **Deferred to follow-ups** — bullets of work deliberately punted, with one-line rationale each. Prevents scope creep during execution.
 
-Heading convention: `### Phase N — <title>` with an em-dash (`—`), not a hyphen. The em-dash is what `plan-to-linear` parses out.
+Heading convention: `### Phase N — <title>` with an em-dash (`—`), not a hyphen. The em-dash is what `plan-to-mk` parses out.
 
-### §8 Linear tracking (placeholder list)
+### §8 mk tracking (placeholder list)
 
 ```markdown
-## 8. Linear tracking
+## 8. mk tracking
 
 <one-line pointer to where these issues will live>
 
-- ALT-_TBD_ — Phase 1: <title>
-- ALT-_TBD_ — Phase 2: <title>  [blocks-by: 1]
-- ALT-_TBD_ — Phase 3: <title>  [blocks-by: 1, 2]
+- MINI-_TBD_ — Phase 1: <title>
+- MINI-_TBD_ — Phase 2: <title>  [blocks-by: 1]
+- MINI-_TBD_ — Phase 3: <title>  [blocks-by: 1, 2]
 ```
 
 Required:
 
 - One line per phase, in order, count must equal the number of `### Phase N` headings.
-- Placeholder is exactly `ALT-_TBD_` (with underscores). `plan-to-linear` rewrites these to real Linear-linked references after seeding.
+- Placeholder is exactly `MINI-_TBD_` (with underscores). `plan-to-mk` rewrites these to real `MINI-NN` IDs after seeding.
 - Phase title after the colon should match the heading title (minus the em-dash).
 - **`[blocks-by: N, M]` brackets** encode the dependency graph (see "Phase ordering" below). Omit the brackets entirely on every line to fall back to strict-sequential default. Brackets are preserved through seeding so the graph stays readable from the doc.
 
 After seeding, this section is rewritten in place to:
 
 ```markdown
-Tracked under the [<Project Name>](<linear project URL>) project on the Altitude Devops team.
+Tracked under the `<feature-slug>` feature in mk.
 
-- [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN) — Phase 1: <title>
-- [ALT-NN](https://linear.app/altitude-devops/issue/ALT-NN) — Phase 2: <title>  [blocks-by: 1]
+- MINI-NN — Phase 1: <title>
+- MINI-NN — Phase 2: <title>  [blocks-by: 1]
 ```
 
-`[blocks-by: …]` brackets are preserved verbatim through seeding so the dependency graph remains readable in the doc without opening Linear. Don't pre-write the linked shape — leave the placeholders, let `plan-to-linear` write them.
+`[blocks-by: …]` brackets are preserved verbatim through seeding so the dependency graph remains readable in the doc without opening `mk`. Don't pre-write the seeded shape — leave the placeholders, let `plan-to-mk` write them.
 
 ---
 
 ## Optional structural sections
 
-These don't affect Linear seeding but are common and worth knowing.
+These don't affect `mk` seeding but are common and worth knowing.
 
 | Section | Purpose |
 |---|---|
@@ -171,15 +171,15 @@ These don't affect Linear seeding but are common and worth knowing.
 
 ## Phase ordering
 
-`plan-to-linear` builds Linear `blocked-by` relationships from the §8 list. Two ways to express ordering, in order of preference:
+`plan-to-mk` builds `mk` `blocks-by` relationships from the §8 list. Two ways to express ordering, in order of preference:
 
 **Preferred — explicit `[blocks-by: N, M]` brackets in §8.** Mechanical, unambiguous, survives copy-paste and review:
 
 ```markdown
-- ALT-_TBD_ — Phase 1: foundation
-- ALT-_TBD_ — Phase 2: migration A   [blocks-by: 1]
-- ALT-_TBD_ — Phase 3: migration B   [blocks-by: 1]
-- ALT-_TBD_ — Phase 4: cleanup       [blocks-by: 2, 3]
+- MINI-_TBD_ — Phase 1: foundation
+- MINI-_TBD_ — Phase 2: migration A   [blocks-by: 1]
+- MINI-_TBD_ — Phase 3: migration B   [blocks-by: 1]
+- MINI-_TBD_ — Phase 4: cleanup       [blocks-by: 2, 3]
 ```
 
 Phases 2 and 3 fan out from Phase 1 in parallel; Phase 4 waits for both. Omit the brackets entirely on every line to fall back to **strict sequential** (each phase blocks-by the previous).
@@ -188,7 +188,7 @@ Phases 2 and 3 fan out from Phase 1 in parallel; Phase 4 waits for both. Omit th
 
 - "Phases land in order" → strictly sequential.
 - "Phase 1 blocks all later phases" → fan-out from Phase 1.
-- "Phase N also blocks on Phase M" → extra `blocked-by` edge.
+- "Phase N also blocks on Phase M" → extra `blocks-by` edge.
 
 Brackets win if both forms are present. Don't mix them in the same plan.
 
@@ -201,7 +201,7 @@ Mark optional phases in the **heading** itself:
 ### Phase 6 — App-level metrics (optional, deferred)
 ```
 
-The keywords `optional` or `deferred` (case-insensitive) put the issue into Linear `Backlog` instead of `Todo`. They still get `blocked-by` edges from previous phases — backlog just means "not active yet."
+The keywords `optional` or `deferred` (case-insensitive) put the issue into `mk` `backlog` instead of `todo`. They still get `blocks-by` edges from previous phases — backlog just means "not active yet."
 
 ---
 
@@ -212,8 +212,8 @@ Plan docs are **scoping** documents, not implementation plans. The executor (`ex
 - ❌ **File-by-file change lists.** "Edit `server/src/foo.ts:42` to add field X" is execution detail. Just say "Add field X on the foo service" in Deliverables.
 - ❌ **Pre-baked code patches.** Concrete TypeScript snippets are fine when they're *defining a contract* (a new type, a subject namespace, a config schema). They're not fine as "here's how to write the implementation."
 - ❌ **"Read X, then Y, then Z" task lists.** That's the executor's job.
-- ❌ **Status updates in-place.** Don't edit the plan to say "Phase 2 done." That state lives in Linear / git, not in the plan doc.
-- ❌ **Stale TBD scaffolding after seeding.** Once `plan-to-linear` rewrites §8, the doc is the seeded contract — don't reintroduce `ALT-_TBD_` placeholders by hand.
+- ❌ **Status updates in-place.** Don't edit the plan to say "Phase 2 done." That state lives in `mk` / git, not in the plan doc.
+- ❌ **Stale TBD scaffolding after seeding.** Once `plan-to-mk` rewrites §8, the doc is the seeded contract — don't reintroduce `MINI-_TBD_` placeholders by hand.
 
 What's good to write:
 
@@ -227,15 +227,15 @@ What's good to write:
 
 ## Workflow
 
-1. Author the plan in `docs/planning/not-shipped/<slug>.md` with `ALT-_TBD_` placeholders in §8.
-2. **If any phase has `[design needed]` UI changes**, brief the designer with those phases extracted before seeding to Linear. Either delay seeding the design-blocked phases until designs land, or seed them as `(deferred)` so they go into Linear `Backlog` rather than `Todo`. Grep across all in-flight plans for outstanding designer work with `grep -r "\[design needed\]" docs/planning/`.
-3. Run `plan-to-linear` (or ask Claude to). It creates the Linear project, files one issue per phase, sets blocked-by edges, and rewrites §8 with the real IDs. The plan-doc edit is staged but not committed — review the diff before committing.
-4. Use `execute-next-task` to pick up phases one at a time. Each phase ships as its own PR with `Closes ALT-NN`.
+1. Author the plan in `docs/planning/not-shipped/<slug>.md` with `MINI-_TBD_` placeholders in §8.
+2. **If any phase has `[design needed]` UI changes**, brief the designer with those phases extracted before seeding to `mk`. Either delay seeding the design-blocked phases until designs land, or seed them as `(deferred)` so they go into `mk` `backlog` rather than `todo`. Grep across all in-flight plans for outstanding designer work with `grep -r "\[design needed\]" docs/planning/`.
+3. Run `plan-to-mk` (or ask Claude to). It creates the `mk` feature, files one issue per phase, sets `blocks-by` edges, and rewrites §8 with the real IDs. The plan-doc edit is staged but not committed — review the diff before committing.
+4. Use `execute-next-task` to pick up phases one at a time. Each phase ships as its own PR with `Closes MINI-NN`.
 5. When the project is fully shipped, move the plan to `docs/planning/shipped/`.
 
 ---
 
-## Quick checklist before running `plan-to-linear`
+## Quick checklist before running `plan-to-mk`
 
 - [ ] H1 present, single-line, no trailing punctuation.
 - [ ] §1 Background first paragraph reads standalone in 3-6 sentences.
@@ -244,7 +244,7 @@ What's good to write:
 - [ ] Every phase has all six required parts: Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod.
 - [ ] UI changes is either a bullet list (each item tagged `[design needed]` or `[no design]`) or the literal word `none`. Don't omit the line.
 - [ ] Verify in prod is a production signal or the literal `n/a — internal only`.
-- [ ] §8 has exactly one `ALT-_TBD_ — Phase N: <title>[ [blocks-by: …]]` line per phase.
+- [ ] §8 has exactly one `MINI-_TBD_ — Phase N: <title>[ [blocks-by: …]]` line per phase.
 - [ ] Optional/deferred phases say so in the heading.
 - [ ] Phase ordering uses `[blocks-by: …]` brackets, prose hints, or strict-sequential default — pick one, don't mix.
 - [ ] No pre-baked implementation steps in Deliverables.

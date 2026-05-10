@@ -1,6 +1,6 @@
 # Unified Backups — Strategy-based backup and restore framework
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
+**Status:** planned, not implemented. Not yet seeded in `mk` — run `/plan-to-mk` when picked up.
 **Builds on:** the existing `BackupConfiguration` / `BackupOperation` schema and [`BackupExecutorService`](../../../server/src/services/backup/backup-executor.ts) / [`BackupSchedulerService`](../../../server/src/services/backup/backup-scheduler.ts), the [pg-az-backup container pattern](../../../pg-az-backup/backup.sh), `DockerExecutorService.executeContainer()` for transient runners, and `AzureStorageService.generateBlobSasUrl()` ([server/src/services/azure-storage-service.ts](../../../server/src/services/azure-storage-service.ts)).
 **Pairs with:** [service-addons-plan.md](service-addons-plan.md) and [job-pool-service-type-plan.md](job-pool-service-type-plan.md) — Phase 5 swaps the runner-container dispatcher from local transient-container to JobPool-dispatched once those features ship.
 **Supersedes:** the deferred `volume-azure-backup-plan.md` and `volume-azure-backup-implementation.md`. Volume backup is now one strategy in this framework, not a feature in its own right.
@@ -310,13 +310,13 @@ Done when: a stack template can declare any of the listed strategies against any
 - **Runner image size.** Bundling every strategy into one shared library and one runner image keeps distribution simple but grows both with each strategy added. Re-evaluate at Phase 6 whether per-strategy images or a plugin-fetch model becomes warranted; for v1 the unified library + image is right.
 - **Concurrency before JobPool.** Phase 1 dispatches steady-state backups via transient containers with no global concurrency cap. With only the seeded `control-plane-db` config the risk is small, but it grows in Phase 3 once user-stack backups join the schedule. Mitigate with a small in-process semaphore in the dispatcher; revisit properly in Phase 5.
 
-## 7. Linear tracking
+## 7. Tracking
 
-Tracked under the [Unified Backups — Strategy-based backup and restore framework](https://linear.app/altitude-devops/project/unified-backups) project on the Altitude Devops team. Phases land in order; each phase blocks the next. Phase 5 also blocks on JobPool landing in the Service Addons project.
+Not yet seeded. Phases land in order; each phase blocks the next. Phase 5 also blocks on JobPool landing in the Service Addons project.
 
-- ALT-_TBD_ — Phase 1: Mini Infra control-plane backup and onboarding restore from storage
-- ALT-_TBD_ — Phase 2: OpenBao Vault strategy and client-side encryption
-- ALT-_TBD_ — Phase 3: Stack-template `backups:` block and Docker volume strategies
-- ALT-_TBD_ — Phase 4: pg-az-backup cutover
-- ALT-_TBD_ — Phase 5: JobPool integration (optional, deferred)
-- ALT-_TBD_ — Phase 6: Additional strategies and targets (optional, deferred)
+- Phase 1: Mini Infra control-plane backup and onboarding restore from storage
+- Phase 2: OpenBao Vault strategy and client-side encryption
+- Phase 3: Stack-template `backups:` block and Docker volume strategies
+- Phase 4: pg-az-backup cutover
+- Phase 5: JobPool integration (optional, deferred)
+- Phase 6: Additional strategies and targets (optional, deferred)

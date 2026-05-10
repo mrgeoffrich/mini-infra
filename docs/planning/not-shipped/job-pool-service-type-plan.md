@@ -1,7 +1,7 @@
 # Service Addons — `JobPool` service type for triggered one-shot containers
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
-**Builds on:** the existing `Pool` service type and stack-template injection plumbing ([`PoolConfig`](../../../lib/types/stacks.ts), [`pool-spawner.ts`](../../../server/src/services/stacks/pool-spawner.ts), `PoolInstance`, [`pool-instance-reaper.ts`](../../../server/src/services/stacks/pool-instance-reaper.ts), [`pool-socket-emitter.ts`](../../../server/src/services/stacks/pool-socket-emitter.ts)), and the NATS migration shipped through #346 — see [internal-nats-messaging-plan.md](internal-nats-messaging-plan.md) §6 Phase 4 and the deferred-work comment on ALT-29.
+**Status:** planned, not implemented. Not yet seeded in `mk` — run `/plan-to-mk` when picked up.
+**Builds on:** the existing `Pool` service type and stack-template injection plumbing ([`PoolConfig`](../../../lib/types/stacks.ts), [`pool-spawner.ts`](../../../server/src/services/stacks/pool-spawner.ts), `PoolInstance`, [`pool-instance-reaper.ts`](../../../server/src/services/stacks/pool-instance-reaper.ts), [`pool-socket-emitter.ts`](../../../server/src/services/stacks/pool-socket-emitter.ts)), and the NATS migration shipped through #346 — see [shipped/internal-nats-messaging-plan.md](../shipped/internal-nats-messaging-plan.md) §6 Phase 4.
 **Excludes:** all other one-shot patterns (volume inspection, ACME challenge runners, ad-hoc Alpine probes). Only `pg-az-backup` and `restore-executor` migrate in this project; the rest evaluate against the abstraction once it's stable.
 
 ---
@@ -10,19 +10,19 @@
 
 Mini Infra has four service types today: `Stateful`, `StatelessWeb`, `AdoptedWeb`, and `Pool`. All of them get stack-managed plumbing — NATS credential injection, Vault AppRole binding, environment-aware container/network naming, structured plan/apply events, draft/publish template versioning. One-shot containers like `pg-az-backup` and `restore-executor` get **none** of it. They're spawned through bespoke executors that re-roll their own env assembly, network resolution, and queue management.
 
-ALT-29 (NATS migration Phase 4) made this gap concrete: container-side NATS publishing was deferred from the original plan because [`NatsCredentialInjector`](../../../server/src/services/nats/nats-credential-injector.ts) only knows how to inject into stack-template-defined services. The pg-az-backup container can't publish its own progress events over NATS today; the server has to mediate by parsing stdout. That deferred deliverable sits at the centre of this plan.
+internal-nats-messaging Phase 4 (#346) (NATS migration Phase 4) made this gap concrete: container-side NATS publishing was deferred from the original plan because [`NatsCredentialInjector`](../../../server/src/services/nats/nats-credential-injector.ts) only knows how to inject into stack-template-defined services. The pg-az-backup container can't publish its own progress events over NATS today; the server has to mediate by parsing stdout. That deferred deliverable sits at the centre of this plan.
 
 The addon framing: `JobPool` is a new service type that takes Pool's existing spawn/inject/track machinery and re-points it at containers that *exit* rather than *idle*. The terminator changes from "idle timer" to "exit code"; trigger sources move from "HTTP route" to "cron, NATS request, or manual"; everything else — `dynamicEnv` resolution, network attachment, `PoolInstance` lifecycle tracking, Socket.IO emission — is reused unchanged. Once it's in place, a one-shot becomes a stack-template service like any other, and pg-az-backup picks up live NATS publishing for free.
 
-This plan also generalizes the per-domain JetStream history stream (`BackupHistory` from ALT-29) into a per-pool pattern, so that future job pools each get their own durable history without bespoke wiring.
+This plan also generalizes the per-domain JetStream history stream (`BackupHistory` from internal-nats-messaging Phase 4 (#346)) into a per-pool pattern, so that future job pools each get their own durable history without bespoke wiring.
 
 ## 2. Goals
 
 1. **One-shot containers become stack services.** A new `JobPool` service type sits in the same template that defines any other stack, with the same dynamicEnv / networks / Vault / NATS plumbing.
 2. **Mini Infra owns the trigger registries.** Cron and NATS-request triggers are reconciled at apply time. Operators declare `triggers[]` on a JobPool service; the server registers schedules and subscriptions accordingly.
 3. **Exit drives lifecycle.** A new exit watcher converts container exit (0 vs non-zero) into `completed` / `failed` history events and frees the concurrency slot promptly. Pool's idle reaper stays as the safety net for stuck-starting and run-away jobs.
-4. **Per-pool durable history.** Each JobPool gets its own JetStream stream (`JobHistory-<stack>-<service>`). The bespoke `BackupHistory` stream from ALT-29 retires.
-5. **`pg-az-backup` and `restore-executor` migrate.** The first proves the abstraction works end-to-end and closes ALT-29's deferred container-side NATS publishing. The second proves the abstraction generalizes beyond a single domain.
+4. **Per-pool durable history.** Each JobPool gets its own JetStream stream (`JobHistory-<stack>-<service>`). The bespoke `BackupHistory` stream from internal-nats-messaging Phase 4 (#346) retires.
+5. **`pg-az-backup` and `restore-executor` migrate.** The first proves the abstraction works end-to-end and closes internal-nats-messaging Phase 4 (#346)'s deferred container-side NATS publishing. The second proves the abstraction generalizes beyond a single domain.
 
 ## 3. Non-goals
 
@@ -76,7 +76,7 @@ Three trigger sources, all converging on a single `runJobPool(ctx)` entry point 
 ### 5.1 Trigger sources
 
 - **Cron.** A new singleton `JobPoolCronRegistry` queries all applied JobPool services with `triggers[kind=='cron']` and registers each with `node-cron`. On apply, the registry refreshes for the affected stack — adding new schedules, removing deleted ones, restarting changed ones.
-- **NATS request.** A second singleton `JobPoolNatsRegistry` hosts responders. On apply, it diffs declared `nats-request` subjects against current subscriptions; subscribes new, unsubscribes removed. Replaces the bespoke per-domain responder pattern (`mini-infra.backup.run` from ALT-29 moves under this registry).
+- **NATS request.** A second singleton `JobPoolNatsRegistry` hosts responders. On apply, it diffs declared `nats-request` subjects against current subscriptions; subscribes new, unsubscribes removed. Replaces the bespoke per-domain responder pattern (`mini-infra.backup.run` from internal-nats-messaging Phase 4 (#346) moves under this registry).
 - **Manual.** HTTP POST route, available for every JobPool unconditionally. Body is a free-form JSON object forwarded as a `JOB_PAYLOAD` env var to the container. Schema validation deferred to a follow-up.
 
 ### 5.2 The shared spawn path
@@ -131,7 +131,7 @@ Subjects:
 
 Deliverables:
 - A `JobPoolExitWatcher` that subscribes to the existing Docker event stream and finalizes `PoolInstance` rows on container `die` events. Sets `status` to `completed` or `failed` based on exit code, writes `exitCode` and `finishedAt`, frees the concurrency slot.
-- Per-pool JetStream stream creation, wired through the **operator path** in `system-nats-bootstrap.ts` (per ALT-29's handoff: the live-bus path can't create regular streams). Stream naming: `JobHistory-<stackId-suffix>-<serviceName>`, kept under NATS's name-length limits.
+- Per-pool JetStream stream creation, wired through the **operator path** in `system-nats-bootstrap.ts` (per internal-nats-messaging Phase 4 (#346)'s handoff: the live-bus path can't create regular streams). Stream naming: `JobHistory-<stackId-suffix>-<serviceName>`, kept under NATS's name-length limits.
 - `JobPoolConfig.history` config drives `max-bytes` and `max-age`.
 - New Socket.IO events on `Channel.POOLS`: `JOB_POOL_RUN_COMPLETED`, `JOB_POOL_RUN_FAILED`, `JOB_POOL_RUN_SKIPPED` (added to `lib/types/socket-events.ts`).
 - Pool reaper extension: kill instances that exceed `killAfterSeconds`, mark them `failed` with `errorMessage: "killed: exceeded killAfterSeconds"`.
@@ -155,7 +155,7 @@ Done when: a fresh worktree with a JobPool template + cron trigger applies, the 
 
 ### Phase 4 — `pg-az-backup` migration
 
-**Goal:** convert `pg-az-backup` to a JobPool. Close ALT-29's deferred container-side NATS publishing. Delete the bespoke executor and scheduler.
+**Goal:** convert `pg-az-backup` to a JobPool. Close internal-nats-messaging Phase 4 (#346)'s deferred container-side NATS publishing. Delete the bespoke executor and scheduler.
 
 Deliverables:
 - A new system stack template `pg-az-backup` (or rename of the existing one) with a single `JobPool` service. `dynamicEnv` declares `NATS_CREDS`, `NATS_URL`, `AZURE_SAS_URL`, the existing `POSTGRES_*` vars. `triggers[]` carries one `cron` per scheduled backup and one `nats-request` on `mini-infra.backup.run`.
@@ -181,7 +181,7 @@ Done when: a restore initiated from the UI completes against a real backup, land
 
 ## 7. Risks & open questions
 
-- **Stream creation path.** ALT-29's handoff flagged that the live-bus path can't create regular JetStream streams (only KV). Phase 2's per-pool stream creation goes through the operator-path control-plane seeder. Confirm this generalizes when streams are created on apply rather than at boot — may need to extend `system-nats-bootstrap.ts` to react to apply events, not just startup.
+- **Stream creation path.** internal-nats-messaging Phase 4 (#346)'s handoff flagged that the live-bus path can't create regular JetStream streams (only KV). Phase 2's per-pool stream creation goes through the operator-path control-plane seeder. Confirm this generalizes when streams are created on apply rather than at boot — may need to extend `system-nats-bootstrap.ts` to react to apply events, not just startup.
 - **Stream-name length.** `JobHistory-<stackId>-<serviceName>` can exceed NATS's stream-name limits for long stack IDs. Phase 2 needs a deterministic shortening (e.g. hash suffix when over 32 chars).
 - **Credential dry-run at apply time.** The Phase 3 dry-run may surface latent misconfigurations in existing stacks when their templates are first re-applied post-upgrade. Document the failure mode in release notes.
 - **Manual trigger payload schema.** v1 ships free-form JSON forwarded as one env var. If two JobPools end up with very different payload shapes, schema declaration on `JobPoolTrigger` becomes the next ask. Out of scope for this plan.
@@ -190,12 +190,12 @@ Done when: a restore initiated from the UI completes against a real backup, land
 - **Cron firing during in-flight apply.** If a cron trigger fires while the stack is mid-apply, the registry may briefly hold a stale schedule. Acceptable for v1 (worst case: one missed beat); add a per-stack apply mutex if it shows up in practice.
 - **Running-or-not is not drift.** The plan-and-apply flow needs to ignore "no instance running" as a steady state. Verify that the existing definition-hash already excludes `dynamicEnv` and that no new fields slip into the hash that would oscillate per-run.
 
-## 8. Linear tracking
+## 8. Tracking
 
-Tracked under the [Service Addons](https://linear.app/altitude-devops/project/service-addons-jobpool-service-type-for-triggered-one-shot-containers-31f632f8c571) project on the Altitude Devops team. Phases land in order — each phase blocks the next.
+Not yet seeded. Phases land in order — each phase blocks the next:
 
-- [ALT-33](https://linear.app/altitude-devops/issue/ALT-33) — Phase 1: `JobPool` type + spawn handler
-- [ALT-34](https://linear.app/altitude-devops/issue/ALT-34) — Phase 2: Exit watcher and per-pool history streams
-- [ALT-35](https://linear.app/altitude-devops/issue/ALT-35) — Phase 3: Trigger registries
-- [ALT-36](https://linear.app/altitude-devops/issue/ALT-36) — Phase 4: `pg-az-backup` migration
-- [ALT-37](https://linear.app/altitude-devops/issue/ALT-37) — Phase 5: `restore-executor` migration
+- Phase 1: `JobPool` type + spawn handler
+- Phase 2: Exit watcher and per-pool history streams
+- Phase 3: Trigger registries
+- Phase 4: `pg-az-backup` migration
+- Phase 5: `restore-executor` migration

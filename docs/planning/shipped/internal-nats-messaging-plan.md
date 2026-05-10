@@ -1,6 +1,6 @@
 # Internal NATS Messaging — Migrating App-to-App Comms onto the Bus
 
-**Status:** planned, not implemented. Phased rollout — each phase is a separate Linear issue.
+**Status:** Phases 1–4 shipped (#335, #338, #340, #346). Phase 5 (`update-sidecar` progress) was marked optional and was not pursued; revisit if/when an operator surface needs live update progress beyond exit codes.
 **Builds on:** the `vault-nats` stack and `NatsControlPlaneService` shipped in #320 / #322, plus the App Roles / Signers / Prefix Allowlist work shipped through #332 (see [shipped/nats-app-roles-plan.md](../shipped/nats-app-roles-plan.md)).
 **Excludes:** `agent-sidecar/` — a separate solution is in flight for that surface.
 
@@ -235,12 +235,12 @@ Defer until Phase 4 has settled — same pattern, same subscribers; no surprise.
 - **Schema evolution.** Zod schemas are versioned by adding optional fields. Renaming or removing a field requires a new subject token (`v2`), not a schema flag — easier to grep, harder to footgun.
 - **Replacing Unix socket is a behaviour change.** Some operators may have monitoring on the socket file. Document the removal in the release notes for the Phase 2 release.
 
-## 8. Linear tracking
+## 8. Tracking
 
-Tracked under the [Internal NATS Messaging Migration](https://linear.app/altitude-devops/project/internal-nats-messaging-migration-e76f6def15e8/overview) project on the Altitude Devops team. Phase issues each link back to this doc. Phase 1 blocks all later phases; Phase 5 also blocks on Phase 4.
+Originally tracked in Linear (project since abandoned). Shipped commits:
 
-- [ALT-26](https://linear.app/altitude-devops/issue/ALT-26) — Phase 1: Foundation (`NatsBus`, subject constants, prefix allowlist)
-- [ALT-27](https://linear.app/altitude-devops/issue/ALT-27) — Phase 2: `egress-fw-agent` onto NATS
-- [ALT-28](https://linear.app/altitude-devops/issue/ALT-28) — Phase 3: `egress-gateway` onto NATS
-- [ALT-29](https://linear.app/altitude-devops/issue/ALT-29) — Phase 4: `pg-az-backup` progress + result events
-- [ALT-30](https://linear.app/altitude-devops/issue/ALT-30) — Phase 5: `update-sidecar` progress (optional)
+- Phase 1 — `NatsBus`, subject constants, prefix allowlist: #335
+- Phase 2 — `egress-fw-agent` onto NATS: #338
+- Phase 3 — `egress-gateway` onto NATS: #340
+- Phase 4 — `pg-az-backup` progress + result events: #346
+- Phase 5 — `update-sidecar` progress (optional): not pursued; reopen if needed.

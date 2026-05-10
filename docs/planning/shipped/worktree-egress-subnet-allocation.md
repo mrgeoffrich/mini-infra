@@ -1,6 +1,6 @@
 # Per-worktree egress subnet allocation (design)
 
-Status: **planned, not implemented**. Follow-up to [#275](https://github.com/mrgeoffrich/mini-infra/pull/275) (orphan-bridge sweep on worktree delete).
+Status: **shipped**. Implementation lives in `deployment/development/lib/registry.ts` (`egressPoolForSlot`, `egress_pool_cidr` on `WorktreeEntry`), the `MINI_INFRA_EGRESS_POOL_CIDR` env on `docker-compose.worktree.yaml`, the `<egressPool>` field in `environment-details.xml`, and the slot→CIDR test in `deployment/development/__tests__/registry.test.ts`. Follow-up to [#275](https://github.com/mrgeoffrich/mini-infra/pull/275) (orphan-bridge sweep on worktree delete).
 
 ## Problem
 
