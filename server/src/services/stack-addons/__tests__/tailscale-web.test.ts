@@ -141,7 +141,7 @@ describe('tailscale-web addon', () => {
 
     expect(sidecar.containerConfig.env).toMatchObject({
       TS_AUTHKEY: 'tskey-auth-stub',
-      TS_HOSTNAME: 'web-prod',
+      TS_HOSTNAME: 'web-stack-web-prod',
       TS_SERVE_CONFIG: '/etc/tailscale/serve.json',
     });
     expect(sidecar.containerConfig.env?.TS_EXTRA_ARGS).toBeUndefined();

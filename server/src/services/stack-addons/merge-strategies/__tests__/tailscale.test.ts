@@ -144,7 +144,7 @@ describe('tailscale merge strategy (kind:"tailscale")', () => {
     // sidecar, two surfaces".
     expect(sidecar.containerConfig.env).toMatchObject({
       TS_AUTHKEY: expect.stringMatching(/^tskey-auth-stub-/),
-      TS_HOSTNAME: 'web-prod',
+      TS_HOSTNAME: 'web-stack-web-prod',
       TS_EXTRA_ARGS: '--ssh',
       TS_SERVE_CONFIG: '/etc/tailscale/serve.json',
     });
@@ -373,7 +373,7 @@ describe('tailscale merge strategy (kind:"tailscale")', () => {
     // Only one authkey mint → only one chance to assert tags. Validate the
     // sidecar's hostname is present and synthetic info is right; the tag
     // dedup is exercised by the buildTailscaleTagSet contract test.
-    expect(sidecar.containerConfig.env?.TS_HOSTNAME).toBe('web-prod');
+    expect(sidecar.containerConfig.env?.TS_HOSTNAME).toBe('web-stack-web-prod');
     expect(mintCalls).toBe(1);
   });
 

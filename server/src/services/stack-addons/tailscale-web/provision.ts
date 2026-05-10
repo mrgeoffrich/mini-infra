@@ -54,7 +54,11 @@ export async function provisionTailscaleWeb(
     ctx.environment.name && ctx.environment.name.length > 0
       ? ctx.environment.name
       : 'host';
-  const hostname = sanitizeTailscaleHostname(ctx.service.name, envSlug);
+  const hostname = sanitizeTailscaleHostname(
+    ctx.stack.name,
+    ctx.service.name,
+    envSlug,
+  );
 
   // Best-effort: purge any *offline* managed device already squatting on
   // this hostname so the new registration takes the unsuffixed DNS name

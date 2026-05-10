@@ -152,10 +152,11 @@ describe('tailscale-ssh addon', () => {
       targetService: 'web',
     });
     // Authkey + hostname env are present and the hostname follows the
-    // `<service>-<env>` rule.
+    // `<stack>-<service>-<env>` rule (stack-name prefix disambiguates two
+    // stacks that happen to share a service+env namespace).
     expect(sidecar.containerConfig.env).toMatchObject({
       TS_AUTHKEY: 'tskey-auth-stub',
-      TS_HOSTNAME: 'web-prod',
+      TS_HOSTNAME: 'web-stack-web-prod',
       TS_EXTRA_ARGS: '--ssh',
     });
     // Required egress lists the Tailscale control-plane hostnames (§4.7
@@ -200,11 +201,11 @@ describe('tailscale-ssh addon', () => {
       connectedServices: undefined,
     };
     const a = def.buildServiceDefinition(ctx, {
-      envForSidecar: { TS_AUTHKEY: 'a', TS_HOSTNAME: 'web-prod' },
+      envForSidecar: { TS_AUTHKEY: 'a', TS_HOSTNAME: 'web-stack-web-prod' },
       templateVars: {},
     });
     const b = def.buildServiceDefinition(ctx, {
-      envForSidecar: { TS_AUTHKEY: 'b', TS_HOSTNAME: 'web-prod' },
+      envForSidecar: { TS_AUTHKEY: 'b', TS_HOSTNAME: 'web-stack-web-prod' },
       templateVars: {},
     });
     expect({ ...a, containerConfig: { ...a.containerConfig, env: {} } })
@@ -235,19 +236,50 @@ describe('lib/ helpers used by the tailscale-ssh addon', () => {
     ).toEqual([TAILSCALE_DEFAULT_TAG, 'tag:dev']);
   });
 
-  it('sanitizeTailscaleHostname enforces the {service}-{env} ≤63 char rule', () => {
-    expect(sanitizeTailscaleHostname('web', 'prod')).toBe('web-prod');
-    expect(sanitizeTailscaleHostname('Web_App', 'PROD')).toBe('web-app-prod');
-    expect(sanitizeTailscaleHostname('foo--bar', 'baz')).toBe('foo-bar-baz');
+  it('sanitizeTailscaleHostname enforces the {stack}-{service}-{env} ≤63 char rule', () => {
+    expect(sanitizeTailscaleHostname('shop', 'web', 'prod')).toBe('shop-web-prod');
+    expect(sanitizeTailscaleHostname('Shop_App', 'Web_App', 'PROD')).toBe(
+      'shop-app-web-app-prod',
+    );
+    expect(sanitizeTailscaleHostname('foo--bar', 'baz', 'qux')).toBe(
+      'foo-bar-baz-qux',
+    );
   });
 
-  it('sanitizeTailscaleHostname truncates to ≤63 octets and trims trailing hyphens', () => {
-    const long = sanitizeTailscaleHostname('a'.repeat(70), 'b');
+  it('sanitizeTailscaleHostname disambiguates same-service-name across stacks', () => {
+    // The whole reason the stack prefix exists: two stacks that each ship a
+    // `web/prod` service must produce different hostnames so they don't
+    // race for the same tailnet device record.
+    const a = sanitizeTailscaleHostname('shop', 'web', 'prod');
+    const b = sanitizeTailscaleHostname('blog', 'web', 'prod');
+    expect(a).not.toBe(b);
+    expect(a).toBe('shop-web-prod');
+    expect(b).toBe('blog-web-prod');
+  });
+
+  it('sanitizeTailscaleHostname falls back to FNV-1a hash when oversized', () => {
+    // Long stack name forces the cleaned triple past 63 chars; the result
+    // must stay ≤63, end in 8 hex chars after a hyphen, and remain
+    // deterministic for a given (stack, service, env) triple.
+    const long = sanitizeTailscaleHostname('a'.repeat(80), 'web', 'prod');
     expect(long.length).toBeLessThanOrEqual(63);
-    expect(long).not.toMatch(/-$/);
+    expect(long).toMatch(/-[0-9a-f]{8}$/);
+    // Stable across calls.
+    const longAgain = sanitizeTailscaleHostname('a'.repeat(80), 'web', 'prod');
+    expect(long).toBe(longAgain);
+  });
+
+  it('sanitizeTailscaleHostname hash differs when any input changes', () => {
+    // Same overflow-triggering length, different stack — different hash
+    // suffix proves the disambiguator is content-addressed, not just
+    // length-bound.
+    const a = sanitizeTailscaleHostname('a'.repeat(80), 'web', 'prod');
+    const b = sanitizeTailscaleHostname('b'.repeat(80), 'web', 'prod');
+    expect(a).not.toBe(b);
+    expect(a.slice(-8)).not.toBe(b.slice(-8));
   });
 
   it('sanitizeTailscaleHostname throws when no valid characters survive', () => {
-    expect(() => sanitizeTailscaleHostname('___', '___')).toThrow();
+    expect(() => sanitizeTailscaleHostname('___', '___', '___')).toThrow();
   });
 });

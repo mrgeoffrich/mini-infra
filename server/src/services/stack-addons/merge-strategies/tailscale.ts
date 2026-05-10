@@ -96,7 +96,11 @@ async function provisionTailscaleMerged(
     ctx.environment.name && ctx.environment.name.length > 0
       ? ctx.environment.name
       : 'host';
-  const hostname = sanitizeTailscaleHostname(ctx.service.name, envSlug);
+  const hostname = sanitizeTailscaleHostname(
+    ctx.stack.name,
+    ctx.service.name,
+    envSlug,
+  );
 
   // Best-effort cleanup of stale offline registrations on this hostname —
   // see the matching call in `tailscale-web/provision.ts` for the rationale.

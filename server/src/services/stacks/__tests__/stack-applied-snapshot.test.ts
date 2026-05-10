@@ -64,7 +64,7 @@ describe('buildAppliedSnapshot', () => {
       dockerTag: 'stable',
       order: 1,
       containerConfig: {
-        env: { TS_HOSTNAME: 'web-prod' },
+        env: { TS_HOSTNAME: 'web-stack-web-prod' },
         labels: {
           'mini-infra.synthetic': 'true',
           'mini-infra.addon-target': 'web',

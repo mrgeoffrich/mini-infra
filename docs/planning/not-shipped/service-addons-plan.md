@@ -153,11 +153,12 @@ For pool services the same pipeline runs at instance spawn rather than at apply,
 
 | Service shape | Hostname (TS_HOSTNAME / sidecar identity) |
 |---|---|
-| Static (`Stateful`, `StatelessWeb`) | `{service-name}-{env-name}` |
-| Pool instance | `{service-name}-{env-name}-{instance-id}` |
-| Pool instance, instanceId longer than fits | `{service-name}-{env-name}-{instance-id-sha256[:8]}` |
+| Static (`Stateful`, `StatelessWeb`) | `{stack-name}-{service-name}-{env-name}` |
+| Static, oversized | `{cleaned-head[:54]}-{fnv1a32-hex8}` |
+| Pool instance | `{stack-name}-{service-name}-{env-name}-{instance-id}` |
+| Pool instance, oversized | `{cleaned-head[:54]}-{fnv1a32-hex8}` |
 
-Sanitised to `[a-z0-9-]`, lowercased, max 63 chars (DNS label limit). For Tailscale-attached services this becomes the device name in the tailnet admin console, the MagicDNS short name, and the FQDN root for HTTPS exposure.
+Sanitised to `[a-z0-9-]`, lowercased, max 63 chars (DNS label limit). The stack-name prefix exists so two stacks that both ship a `web/prod` service don't race for the same tailnet device record — without it Tailscale auto-suffixes the loser to `web-prod-1` and the suffix is *persistent* even after the original device is removed, which silently rots ACL `host:` rules and integration URLs that reference the bare name. The hash fallback is FNV-1a-32 over the unsanitised triple (or quadruple, for pools) — non-cryptographic but ample for disambiguating a bounded set of overflowing hostnames in one tailnet. For Tailscale-attached services this becomes the device name in the tailnet admin console, the MagicDNS short name, and the FQDN root for HTTPS exposure.
 
 ### 4.6 Permissions and events
 
@@ -216,7 +217,7 @@ Each addon below describes its `targetIntegration` shape, the `StackServiceDefin
 - **Target integration:** `network: "peer-on-target-network"`. The sidecar joins the same Docker network as the target so it can reach `<target>:<port>` by name. The target service is unmodified — no `network_mode` rewrite, no port reclamation.
 - **Provision:** mint a one-time, ephemeral, preauthorized authkey via the OAuth-client-credentials flow (see [tailscale-auth.md](../../architecture/vendor/tailscale-auth.md)). Auth keys are tagged with the single static `tag:mini-infra-managed` (plus any user-supplied `extraTags` the operator has pre-declared in their `tagOwners` ACL). Per-resource identity is conveyed by the device hostname, **not** by additional dynamic tags — Tailscale OAuth clients can only mint keys with tags pre-declared in the operator's ACL `tagOwners`, so dynamic per-stack/per-env/per-service tags would force unbounded ACL edits. Returns `envForSidecar: { TS_AUTHKEY, TS_HOSTNAME }` and `templateVars: { tsExtraArgs: "--ssh" }`.
 - **Sidecar `StackServiceDefinition`:** the official `tailscale/tailscale` image (containerised tailscaled, not embedded `tsnet` — `tsnet` is Go-only and we don't need it because the addon ships as a sidecar container, not a library inside the Node process), the provisioned env, a per-application state volume, no published ports, the standard mini-infra labels, `restart: unless-stopped`, and `containerConfig.requiredEgress` listing the Tailscale control-plane hostnames (`controlplane.tailscale.com`, `*.tailscale.com`, `*.tailscale.io`, DERP relay hostnames) so the egress-policy reconciler pre-allows them in firewalled envs (§4.7).
-- **End-user surface:** `ssh root@<service>-<env>` from any tailnet-joined laptop. Authentication is the tailnet identity provider via the ACL `ssh` stanza configured during connected-service setup. Default ACL is `action: check` with a 12-hour `checkPeriod` — one IdP re-auth per workday.
+- **End-user surface:** `ssh root@<stack>-<service>-<env>` from any tailnet-joined laptop. Authentication is the tailnet identity provider via the ACL `ssh` stanza configured during connected-service setup. Default ACL is `action: check` with a 12-hour `checkPeriod` — one IdP re-auth per workday.
 
 ### 5.2 `tailscale-web`
 
@@ -226,7 +227,7 @@ Each addon below describes its `targetIntegration` shape, the `StackServiceDefin
 - **Target integration:** `network: "peer-on-target-network"`. Same as `tailscale-ssh` — the sidecar reaches the app by service-name DNS over the shared Docker network. No target rewrite.
 - **Provision:** mint authkey (same shape and single-tag scoping as `tailscale-ssh`); resolve the tailnet domain via the `GET /api/v2/tailnet/-` shorthand on the OAuth client (`-` = "the tailnet that owns this OAuth client" — see [tailscale-auth.md](../../architecture/vendor/tailscale-auth.md)); render a `serve.json` that terminates HTTPS on `${TS_CERT_DOMAIN}:443` and proxies to the target service's `port`. Returns the file under `files: [{ path: "/etc/tailscale/serve.json", … }]` and the env (`TS_AUTHKEY`, `TS_HOSTNAME`, `TS_SERVE_CONFIG=/etc/tailscale/serve.json`).
 - **Sidecar `StackServiceDefinition`:** as for `tailscale-ssh` (including the same `requiredEgress` for the Tailscale control plane), plus a config-file mount populated from the provisioned `files`.
-- **End-user surface:** `https://<service>-<env>.<tailnet>.ts.net` opens directly with auto-provisioned Let's Encrypt certs. No tunnel, no DNS configuration, no port-forwarding.
+- **End-user surface:** `https://<stack>-<service>-<env>.<tailnet>.ts.net` opens directly with auto-provisioned Let's Encrypt certs. No tunnel, no DNS configuration, no port-forwarding.
 - **Merge with `tailscale-ssh`:** the registered `kind: tailscale` merge strategy emits one sidecar definition with both `--ssh` and `TS_SERVE_CONFIG` set, sharing one authkey, one hostname, one tailnet device, one state volume, one published serve.json.
 
 ### 5.3 Forward look: outbound auth proxy
@@ -294,7 +295,7 @@ Deliverables:
 - The `tailscale-ssh` addon directory under `server/src/services/stack-addons/tailscale-ssh/` with its `AddonDefinition` (manifest, `targetIntegration: peer-on-target-network`, `provision`, `buildServiceDefinition`).
 - The Tailscale state-volume convention for static services.
 - Default tag scoping: the single static `tag:mini-infra-managed` (matching the tag the operator assigned to the OAuth client in Phase 2), plus any user-supplied `extraTags` the operator has separately added to their `tagOwners`. Per-resource identity comes from the device hostname, not from dynamic per-stack/per-env/per-service tags — see [tailscale-auth.md](../../architecture/vendor/tailscale-auth.md) for the OAuth-client tag-ownership constraint that rules out dynamic tagging.
-- The static-service hostname rule `{service-name}-{env-name}` (sanitised, ≤63 chars).
+- The static-service hostname rule `{stack-name}-{service-name}-{env-name}` (sanitised, ≤63 chars; FNV-1a-32 hash fallback when oversized — see §4.5).
 - The materialised sidecar's `containerConfig.requiredEgress` lists the Tailscale control-plane hostnames (`controlplane.tailscale.com`, `*.tailscale.com`, `*.tailscale.io`, DERP relays), so the addon works in firewalled envs without manual policy edits (§4.7).
 - The "from addon" badge rendered on synthetic services in the stack-detail and containers pages.
 - `STACK_ADDON_PROVISIONED` and `STACK_ADDON_FAILED` events emitted by the render pipeline and surfaced under the existing apply task in the task tracker.
@@ -305,7 +306,7 @@ UI changes:
 - Stack detail / Containers page: addon-derived sidecars appear in the existing service/container lists with a "from addon" badge and a back-reference to the target service; edit affordances disabled. [design needed] — badge style and how a synthetic sidecar visually relates to its target row (indented? linked icon?) needs a designer call.
 - Stack apply flow: live progress reflects `STACK_ADDON_PROVISIONED` / `STACK_ADDON_FAILED` under the existing apply task in the task tracker. [no design] — slots into existing task-tracker step rendering.
 
-Done when: a stack template with `addons: { tailscale-ssh: {} }` on a Stateful or StatelessWeb service applies cleanly, the synthetic sidecar joins the tailnet under the right tags, shows up on the containers page with the "from addon" badge and working logs/exec, and `ssh root@<service>-<env>` from a tailnet-joined laptop succeeds via the ACL-driven `check` flow — including in an env with `egressFirewallEnabled: true`, where the Tailscale control-plane hostnames must appear as template-sourced rules without manual policy edits.
+Done when: a stack template with `addons: { tailscale-ssh: {} }` on a Stateful or StatelessWeb service applies cleanly, the synthetic sidecar joins the tailnet under the right tags, shows up on the containers page with the "from addon" badge and working logs/exec, and `ssh root@<stack>-<service>-<env>` from a tailnet-joined laptop succeeds via the ACL-driven `check` flow — including in an env with `egressFirewallEnabled: true`, where the Tailscale control-plane hostnames must appear as template-sourced rules without manual policy edits.
 
 Verify in prod: the first stack applied with `addons: { tailscale-ssh: {} }` shows the sidecar online in the Tailscale admin console under `tag:mini-infra-managed`; no spike in `STACK_ADDON_FAILED` events for 24 h after rollout.
 
@@ -352,7 +353,7 @@ Verify in prod: at least one production service with `tailscale-web` has the Con
 
 Deliverables:
 - `pool-spawner.ts` invokes the render pipeline with `instance: { instanceId }` populated, producing per-instance provisioned credentials and per-instance `StackServiceDefinition`s for each addon application.
-- Per-instance hostname rule `{service-name}-{env-name}-{instance-id}` (sanitised, ≤63 chars; `instance-id-sha256[:8]` fallback when oversized).
+- Per-instance hostname rule `{stack-name}-{service-name}-{env-name}-{instance-id}` (sanitised, ≤63 chars; FNV-1a-32 hash fallback per §4.5 when oversized). Re-uses the static-service `sanitizeTailscaleHostname` helper with the instance-id appended as a fourth segment.
 - Per-instance addon sidecars carry `mini-infra.stack-id`, `mini-infra.service`, `mini-infra.pool-instance-id`, `mini-infra.addon: <kind-or-id>`, and `mini-infra.synthetic: true` labels.
 - `pool-instance-reaper.ts` extension: invokes addon `cleanup()` hooks and removes addon sidecar containers when instances are reaped.
 - Per-instance addon sidecars emit `containerConfig.requiredEgress` flowing into the env's policy reconcile the same way static addon services do (§4.7).
@@ -364,18 +365,18 @@ Reversibility: safe — pool addon support is additive. Pools without `addons:` 
 UI changes:
 - Stack detail Connect panel: pool service rows expand to per-instance rows, each with their own `ssh` / HTTPS actions. [design needed] — disclosure pattern for a pool with N instances; how to handle 50-instance pools without flooding the panel.
 - Containers page: per-instance addon sidecars appear with `mini-infra.synthetic` and `mini-infra.pool-instance-id` labels visible. [no design] — fits existing container-row label rendering.
-- Pool detail: per-instance hostname (`{service}-{env}-{instance-id}`) shown alongside the existing instance-id column. [no design].
+- Pool detail: per-instance hostname (`{stack}-{service}-{env}-{instance-id}`) shown alongside the existing instance-id column. [no design].
 
 Done when: a pool service with `addons: { tailscale-ssh: {} }` spawns N instances, each registers as its own tailnet device with the per-instance hostname pattern, an operator can SSH into a specific instance by name, and idle reaping removes both the worker container and the sidecar (and the device from the tailnet via ephemeral cleanup) — including in a firewalled env where per-instance sidecars must reach the tailnet without manual policy edits.
 
-Verify in prod: at least one production pool service with `tailscale-ssh` shows N tailnet devices for N instances, names match the `{service-name}-{env-name}-{instance-id}` pattern, and idle reaping removes both worker and sidecar within the ephemeral-cleanup window without orphan devices.
+Verify in prod: at least one production pool service with `tailscale-ssh` shows N tailnet devices for N instances, names match the `{stack-name}-{service-name}-{env-name}-{instance-id}` pattern, and idle reaping removes both worker and sidecar within the ephemeral-cleanup window without orphan devices.
 
 ## 7. Risks & open questions
 
 - **Connected Service config model.** Three Tailscale-specific columns on `ConnectedService` may be the wrong shape if other connected services need similar growth. Worth a 30-minute look at the existing connected-services directory before Phase 2 to decide between a shared-table extension and a per-type satellite table.
 - **ACL bootstrap rendering.** JSON is parseable; HuJSON (Tailscale's commenting variant) is friendlier for the operator's eventual hand-editing but introduces a dependency. Default to JSON unless a user objects.
 - **Pool instance Tailscale state volume.** Per-instance state volumes are cheap, but pool instances are short-lived and authkeys are minted per-spawn. With ephemeral nodes auto-cleaning, the volume is effectively write-only. Phase 6 should validate that skipping the volume on pool instances doesn't introduce a re-registration race, and pick the cleaner of the two paths.
-- **Pool instance hostname collisions across stacks.** `worker-prod-u12345` in stack A and `worker-prod-u12345` in stack B produce duplicate device names in the tailnet. Because all devices share the single `tag:mini-infra-managed` (see the tag-taxonomy note below), the device list is the only disambiguator — Phase 6 likely needs to prefix pool hostnames with the stack name and accept longer hostnames (with the SHA-256 fallback already in §4.5 catching DNS-label overflow).
+- **Pool instance hostname collisions across stacks.** Resolved at the framework layer: `sanitizeTailscaleHostname` now prefixes the stack name (§4.5), so `{stack-a}-worker-prod-u12345` and `{stack-b}-worker-prod-u12345` are distinct by construction. Phase 6 just appends the instance-id as a fourth segment and inherits the same FNV-1a hash fallback when oversized.
 - **Tag taxonomy is single-tag, not hierarchical.** Earlier drafts of §5.1 / §5.2 minted authkeys with `tag:stack-<id>,tag:env-<env>,tag:service-<name>` — infeasible because Tailscale OAuth clients can only mint keys with tags pre-declared in the operator's `tagOwners` ACL, and dynamic resource tags would force unbounded ACL edits. v1 ships with one static `tag:mini-infra-managed` and conveys per-resource identity via hostname. If a future need emerges (e.g. ACL rules that scope SSH access to specific environments), revisit by introducing a small fixed set of operator-declared environment tags rather than going fully dynamic.
 - **Funnel-shaped follow-up.** Once Tailscale-only HTTPS is shipped, the smallest extension to reach the public internet is enabling Tailscale Funnel. It overlaps the Cloudflare tunnel feature, so a deliberate "when do you pick which?" call is needed before any post-v1 extension touches Funnel.
 - **Definition-hash determinism.** The rendered stack definition includes addon-derived services and target-integration rewrites. Provision values like authkeys are minted fresh on each render, which would oscillate the hash and force needless re-applies. Phase 1 must ensure the hash is computed from the *authored* definition (plus addon-config), not the rendered form, or that mint-once values are cached and reused across renders. Confirm during Phase 1 that the existing definition-hash logic naturally extends to the new field rather than drifting.

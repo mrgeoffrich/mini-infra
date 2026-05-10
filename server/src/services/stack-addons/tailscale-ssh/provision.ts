@@ -35,9 +35,10 @@ function asLookup(input: unknown): AddonConnectedServicesLookup {
  * The default `tag:mini-infra-managed` is always present (asserted by the
  * authkey minter); operator-supplied `extraTags` are merged on top via the
  * shared lib helper. Per-resource identity rides on the device hostname
- * (`<service>-<env>` sanitised, ≤63 chars), not on dynamic per-resource tags
- * — Tailscale OAuth clients can only mint keys with tags pre-declared in
- * the operator's ACL `tagOwners`, so dynamic tagging is infeasible.
+ * (`<stack>-<service>-<env>` sanitised, ≤63 chars), not on dynamic
+ * per-resource tags — Tailscale OAuth clients can only mint keys with tags
+ * pre-declared in the operator's ACL `tagOwners`, so dynamic tagging is
+ * infeasible.
  */
 export async function provisionTailscaleSsh(
   ctx: ProvisionContext,
@@ -51,14 +52,20 @@ export async function provisionTailscaleSsh(
     );
   }
 
-  // Hostname rule: `{service}-{env}` sanitised, ≤63 chars. For the rare
-  // case of a host-level stack (no environment) we fall back to the service
-  // name alone — which still encodes per-resource identity because there's
-  // only one host scope.
+  // Hostname rule: `{stack}-{service}-{env}` sanitised, ≤63 chars (FNV-1a
+  // hash fallback when oversized — see sanitizeTailscaleHostname). The
+  // stack-name prefix prevents two stacks that both ship a `web/prod`
+  // service from racing for the same tailnet device. For the rare case of
+  // a host-level stack (no environment) we fall back to `host` so the
+  // triple still encodes per-resource identity.
   const envSlug = ctx.environment.name && ctx.environment.name.length > 0
     ? ctx.environment.name
     : 'host';
-  const hostname = sanitizeTailscaleHostname(ctx.service.name, envSlug);
+  const hostname = sanitizeTailscaleHostname(
+    ctx.stack.name,
+    ctx.service.name,
+    envSlug,
+  );
 
   // Best-effort cleanup of stale offline registrations on this hostname —
   // see the matching call in `tailscale-web/provision.ts` for the rationale.
