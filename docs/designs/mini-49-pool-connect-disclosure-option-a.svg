@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 540" width="600" font-family="system-ui, sans-serif" font-size="13">
+  <rect x="0" y="0" width="600" height="540" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- Card frame -->
+  <rect x="16" y="16" width="568" height="508" rx="6" fill="#fff" stroke="#ccc"/>
+
+  <!-- Card header -->
+  <text x="32" y="42" font-weight="600" font-size="14">Connect</text>
+  <text x="32" y="60" fill="#666" font-size="12">Reach this application over your tailnet.</text>
+
+  <!-- Static service group: api-server -->
+  <text x="32" y="92" fill="#666" font-size="11">api-server  · tailscale</text>
+  <line x1="32" y1="100" x2="568" y2="100" stroke="#eee"/>
+  <g>
+    <text x="48" y="120" font-size="14">⌨</text>
+    <text x="68" y="120" font-family="ui-monospace, monospace" font-size="12">ssh root@api-server-prod.tail-abc.ts.net</text>
+    <rect x="498" y="106" width="28" height="22" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="506" y="121" font-size="11">⧉</text>
+    <circle cx="540" cy="117" r="4" fill="#22c55e"/>
+    <text x="548" y="121" font-size="11" fill="#16a34a">online</text>
+  </g>
+
+  <!-- Pool group: worker (collapsed pool target — chevron header + count) -->
+  <text x="32" y="156" fill="#666" font-size="11">worker  · tailscale  · pool</text>
+  <line x1="32" y1="164" x2="568" y2="164" stroke="#eee"/>
+
+  <!-- Expanded pool: chevron-down + 47 instances badge -->
+  <g>
+    <text x="40" y="184">▼</text>
+    <text x="60" y="184" font-weight="500">47 instances</text>
+    <rect x="156" y="172" width="60" height="18" rx="9" fill="#fef3c7" stroke="#f59e0b"/>
+    <text x="166" y="185" font-size="10" fill="#92400e">Pool</text>
+  </g>
+
+  <!-- Search input above the inline list (only when expanded and large) -->
+  <rect x="40" y="200" width="528" height="26" rx="4" fill="#fafafa" stroke="#ddd"/>
+  <text x="48" y="218" font-size="11" fill="#999">⌕  Filter instances…</text>
+
+  <!-- Scrollable inline list (max-h-72) — first 4 visible -->
+  <rect x="40" y="234" width="528" height="232" rx="4" fill="#fff" stroke="#eee"/>
+
+  <!-- Per-instance row: instanceId chip + ssh url + copy + status -->
+  <g transform="translate(48, 248)">
+    <rect x="0" y="0" width="78" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-7a3f9c1d</text>
+    <text x="92" y="14" font-family="ui-monospace, monospace" font-size="11">ssh root@stack-worker-prod-w-7a3f9c1d.tail-abc.ts.net</text>
+    <rect x="446" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="452" y="14" font-size="10">⧉</text>
+    <circle cx="490" cy="10" r="3" fill="#22c55e"/>
+    <text x="498" y="14" font-size="10" fill="#16a34a">online</text>
+  </g>
+  <line x1="48" y1="278" x2="560" y2="278" stroke="#f3f4f6"/>
+
+  <g transform="translate(48, 286)">
+    <rect x="0" y="0" width="78" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-2b8e1f04</text>
+    <text x="92" y="14" font-family="ui-monospace, monospace" font-size="11">ssh root@stack-worker-prod-w-2b8e1f04.tail-abc.ts.net</text>
+    <rect x="446" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="452" y="14" font-size="10">⧉</text>
+    <circle cx="490" cy="10" r="3" fill="#22c55e"/>
+    <text x="498" y="14" font-size="10" fill="#16a34a">online</text>
+  </g>
+  <line x1="48" y1="316" x2="560" y2="316" stroke="#f3f4f6"/>
+
+  <g transform="translate(48, 324)">
+    <rect x="0" y="0" width="78" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-2b8e1f04</text>
+    <text x="92" y="14" font-family="ui-monospace, monospace" font-size="11">https://stack-worker-prod-w-2b8e1f04.tail-abc.ts.net</text>
+    <rect x="446" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="452" y="14" font-size="10">⧉</text>
+    <circle cx="490" cy="10" r="3" fill="#94a3b8"/>
+    <text x="498" y="14" font-size="10" fill="#64748b">offline</text>
+  </g>
+  <line x1="48" y1="354" x2="560" y2="354" stroke="#f3f4f6"/>
+
+  <g transform="translate(48, 362)">
+    <rect x="0" y="0" width="78" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-9c4d7e22</text>
+    <text x="92" y="14" font-family="ui-monospace, monospace" font-size="11">ssh root@stack-worker-prod-w-9c4d7e22.tail-abc.ts.net</text>
+    <rect x="446" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="452" y="14" font-size="10">⧉</text>
+    <circle cx="490" cy="10" r="3" fill="#22c55e"/>
+    <text x="498" y="14" font-size="10" fill="#16a34a">online</text>
+  </g>
+  <line x1="48" y1="392" x2="560" y2="392" stroke="#f3f4f6"/>
+
+  <!-- "more rows below — scroll" hint -->
+  <text x="48" y="418" font-size="10" fill="#94a3b8">…  90 more rows  (scroll)</text>
+
+  <!-- scrollbar suggestion -->
+  <rect x="558" y="234" width="3" height="232" fill="#e5e7eb"/>
+  <rect x="558" y="234" width="3" height="40" fill="#94a3b8"/>
+
+  <!-- Footnote / annotation -->
+  <text x="32" y="494" font-size="11" fill="#64748b">Card grows by ~250px when this pool is expanded; with multiple pools open, the card scrolls.</text>
+</svg>
