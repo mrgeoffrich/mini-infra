@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 540" width="800" font-family="system-ui, sans-serif" font-size="13">
+  <rect x="0" y="0" width="800" height="540" fill="#fafafa" stroke="#ddd"/>
+
+  <!-- LEFT: Connect card with summary rows -->
+  <rect x="16" y="16" width="380" height="320" rx="6" fill="#fff" stroke="#ccc"/>
+
+  <text x="32" y="42" font-weight="600" font-size="14">Connect</text>
+  <text x="32" y="60" fill="#666" font-size="12">Reach this application over your tailnet.</text>
+
+  <!-- Static service group: api-server -->
+  <text x="32" y="92" fill="#666" font-size="11">api-server  · tailscale</text>
+  <line x1="32" y1="100" x2="380" y2="100" stroke="#eee"/>
+  <g>
+    <text x="40" y="120" font-size="14">⌨</text>
+    <text x="60" y="120" font-family="ui-monospace, monospace" font-size="11">ssh root@api-server-prod.tail-abc.ts.net</text>
+    <rect x="320" y="106" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="326" y="120" font-size="10">⧉</text>
+    <circle cx="356" cy="116" r="3" fill="#22c55e"/>
+    <text x="364" y="119" font-size="10" fill="#16a34a">on</text>
+  </g>
+
+  <!-- Pool group: worker -->
+  <text x="32" y="156" fill="#666" font-size="11">worker  · tailscale  · pool</text>
+  <line x1="32" y1="164" x2="380" y2="164" stroke="#eee"/>
+
+  <!-- Pool summary row #1: ssh -->
+  <g>
+    <text x="40" y="186" font-size="14">⌨</text>
+    <text x="60" y="184" font-family="ui-monospace, monospace" font-size="11">ssh root@stack-worker-prod-</text>
+    <text x="60" y="200" font-family="ui-monospace, monospace" font-size="11" fill="#94a3b8">{instance}.tail-abc.ts.net</text>
+    <rect x="244" y="180" width="124" height="22" rx="3" fill="#eef2ff" stroke="#6366f1"/>
+    <text x="252" y="195" fill="#3730a3" font-size="11">View instances · 47 →</text>
+  </g>
+
+  <!-- Pool summary row #2: https -->
+  <line x1="32" y1="216" x2="380" y2="216" stroke="#f3f4f6"/>
+  <g>
+    <text x="40" y="240" font-size="14">🌐</text>
+    <text x="60" y="238" font-family="ui-monospace, monospace" font-size="11">https://stack-worker-prod-</text>
+    <text x="60" y="254" font-family="ui-monospace, monospace" font-size="11" fill="#94a3b8">{instance}.tail-abc.ts.net</text>
+    <rect x="244" y="234" width="124" height="22" rx="3" fill="#fff" stroke="#cbd5e1"/>
+    <text x="252" y="249" fill="#475569" font-size="11">View instances · 47 →</text>
+  </g>
+
+  <text x="32" y="304" font-size="11" fill="#64748b">Card height fixed regardless of pool size.</text>
+
+  <!-- Click affordance arrow toward Sheet -->
+  <path d="M 380 192 L 420 192 L 420 60 L 460 60" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="4,3"/>
+  <text x="424" y="124" font-size="10" fill="#6366f1">click "View instances"</text>
+  <text x="424" y="138" font-size="10" fill="#6366f1">opens →</text>
+
+  <!-- RIGHT: Sheet -->
+  <rect x="460" y="16" width="324" height="508" rx="6" fill="#fff" stroke="#6366f1" stroke-width="2"/>
+
+  <!-- Sheet header -->
+  <text x="476" y="42" font-weight="600" font-size="14">⌨ Pool instances · worker</text>
+  <text x="476" y="60" font-family="ui-monospace, monospace" font-size="11" fill="#666">stack-worker-prod-</text>
+  <text x="476" y="74" font-family="ui-monospace, monospace" font-size="11" fill="#94a3b8">{instance}.tail-abc.ts.net</text>
+
+  <!-- Search -->
+  <rect x="476" y="90" width="292" height="28" rx="4" fill="#fafafa" stroke="#ddd"/>
+  <text x="486" y="108" font-size="11" fill="#999">⌕  Filter by instance ID…</text>
+
+  <!-- Sort/filter row -->
+  <text x="476" y="138" font-size="11" fill="#666">47 instances</text>
+  <rect x="664" y="125" width="100" height="20" rx="10" fill="#f3f4f6" stroke="#e5e7eb"/>
+  <text x="678" y="139" font-size="11">⏻ Online only</text>
+
+  <!-- Sheet rows -->
+  <line x1="476" y1="156" x2="768" y2="156" stroke="#eee"/>
+
+  <g transform="translate(484, 168)">
+    <rect x="0" y="0" width="86" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-7a3f9c1d</text>
+    <text x="98" y="14" font-family="ui-monospace, monospace" font-size="10">stack-worker-prod-w-7a3f9c1d</text>
+    <rect x="246" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="252" y="14" font-size="10">⧉</text>
+    <circle cx="276" cy="10" r="3" fill="#22c55e"/>
+  </g>
+  <line x1="476" y1="196" x2="768" y2="196" stroke="#f3f4f6"/>
+
+  <g transform="translate(484, 204)">
+    <rect x="0" y="0" width="86" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-2b8e1f04</text>
+    <text x="98" y="14" font-family="ui-monospace, monospace" font-size="10">stack-worker-prod-w-2b8e1f04</text>
+    <rect x="246" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="252" y="14" font-size="10">⧉</text>
+    <circle cx="276" cy="10" r="3" fill="#22c55e"/>
+  </g>
+  <line x1="476" y1="232" x2="768" y2="232" stroke="#f3f4f6"/>
+
+  <g transform="translate(484, 240)">
+    <rect x="0" y="0" width="86" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-9c4d7e22</text>
+    <text x="98" y="14" font-family="ui-monospace, monospace" font-size="10">stack-worker-prod-w-9c4d7e22</text>
+    <rect x="246" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="252" y="14" font-size="10">⧉</text>
+    <circle cx="276" cy="10" r="3" fill="#94a3b8"/>
+  </g>
+  <line x1="476" y1="268" x2="768" y2="268" stroke="#f3f4f6"/>
+
+  <g transform="translate(484, 276)">
+    <rect x="0" y="0" width="86" height="20" rx="3" fill="#f3f4f6" stroke="#e5e7eb"/>
+    <text x="6" y="14" font-family="ui-monospace, monospace" font-size="10">w-c1f8b094</text>
+    <text x="98" y="14" font-family="ui-monospace, monospace" font-size="10">stack-worker-prod-w-c1f8b094</text>
+    <rect x="246" y="0" width="22" height="20" rx="3" fill="#f5f5f5" stroke="#ddd"/>
+    <text x="252" y="14" font-size="10">⧉</text>
+    <circle cx="276" cy="10" r="3" fill="#22c55e"/>
+  </g>
+  <line x1="476" y1="304" x2="768" y2="304" stroke="#f3f4f6"/>
+
+  <text x="484" y="328" font-size="11" fill="#94a3b8">… 43 more (scroll)</text>
+
+  <!-- scrollbar -->
+  <rect x="772" y="156" width="3" height="320" fill="#e5e7eb"/>
+  <rect x="772" y="156" width="3" height="60" fill="#94a3b8"/>
+
+  <!-- Sheet footer note -->
+  <line x1="476" y1="486" x2="768" y2="486" stroke="#eee"/>
+  <text x="484" y="506" font-size="10" fill="#64748b">Live — invalidates on pool:instance:* events.</text>
+</svg>
