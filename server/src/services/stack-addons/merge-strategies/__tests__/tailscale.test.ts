@@ -48,6 +48,7 @@ function makeStubTailscaleService(opts: StubFetchOptions = {}) {
       const first = opts.searchPaths?.[0];
       return first ? first.replace(/\.$/, '') : null;
     },
+    purgeStaleManagedDevicesByHostname: async () => ({ deleted: 0, errors: 0 }),
   };
 }
 

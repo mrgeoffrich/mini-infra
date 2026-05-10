@@ -41,13 +41,15 @@ function makeStateful(
  * control.
  */
 function makeStubTailscaleService(): unknown {
-  // Minimal duck-typed shape covering the calls TailscaleAuthkeyMinter
-  // makes against the real TailscaleService:
+  // Minimal duck-typed shape covering the calls TailscaleAuthkeyMinter +
+  // the addon provision path make against the real TailscaleService:
   //   - getAccessToken(): Promise<string>
   //   - getAllManagedTags(): Promise<string[]>
+  //   - purgeStaleManagedDevicesByHostname(host): Promise<{deleted,errors}>
   return {
     getAccessToken: async () => 'stub-access-token',
     getAllManagedTags: async () => [TAILSCALE_DEFAULT_TAG],
+    purgeStaleManagedDevicesByHostname: async () => ({ deleted: 0, errors: 0 }),
   };
 }
 

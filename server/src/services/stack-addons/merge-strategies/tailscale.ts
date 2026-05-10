@@ -98,6 +98,10 @@ async function provisionTailscaleMerged(
       : 'host';
   const hostname = sanitizeTailscaleHostname(ctx.service.name, envSlug);
 
+  // Best-effort cleanup of stale offline registrations on this hostname —
+  // see the matching call in `tailscale-web/provision.ts` for the rationale.
+  await tailscale.purgeStaleManagedDevicesByHostname(hostname);
+
   const tagSet = buildTailscaleTagSet(resolved.extraTags);
   const minter = new TailscaleAuthkeyMinter(tailscale);
   const authkey = await minter.mintAuthkey({

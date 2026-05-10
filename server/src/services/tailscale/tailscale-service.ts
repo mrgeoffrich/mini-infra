@@ -394,6 +394,53 @@ export class TailscaleService extends ConfigurationService {
    * `lastSeen` keeps the poller and the API consistent.
    */
   async listDevices(): Promise<TailscaleDeviceStatus[]> {
+    const mapped = await this.fetchManagedDevices();
+
+    // Dedupe by hostname. Tailscale's tailnet uses DNS-name uniqueness, not
+    // OS-hostname uniqueness — when an ephemeral container redeploys faster
+    // than Tailscale can GC the previous registration, the new node gets an
+    // auto-suffixed DNS name (`web-local-1.<tailnet>.ts.net`) but keeps the
+    // OS hostname `web-local`, so two devices come back with the same
+    // `hostname` field. Downstream consumers (the scheduler's
+    // `devicesByHostname` map and the Connect panel's
+    // `devicesByHostname.get(endpoint.hostname)` join) collapse to one row
+    // per hostname, and JS Map insertion order means whichever arrived last
+    // wins — usually the stale offline one.
+    //
+    // Pick the best representative per hostname: prefer online over offline,
+    // then most-recent `lastSeen`. Stale ephemerals eventually get purged
+    // upstream; until then this keeps the panel showing the live device.
+    const byHostname = new Map<string, typeof mapped[number]>();
+    for (const device of mapped) {
+      const incumbent = byHostname.get(device.hostname);
+      if (!incumbent) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (device.online && !incumbent.online) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (incumbent.online && !device.online) continue;
+      // Same online state — break the tie on lastSeen (most recent wins).
+      const incumbentMs = incumbent.lastSeen ? Date.parse(incumbent.lastSeen) : 0;
+      const deviceMs = device.lastSeen ? Date.parse(device.lastSeen) : 0;
+      if (deviceMs > incumbentMs) {
+        byHostname.set(device.hostname, device);
+      }
+    }
+    return Array.from(byHostname.values());
+  }
+
+  /**
+   * Fetch + filter the raw managed-device list with NO hostname dedupe.
+   * `listDevices` collapses duplicates to a single row per hostname for the
+   * Connect panel, but the redeploy-cleanup path on `purgeStaleManagedDevicesByHostname`
+   * needs every duplicate so it can purge each stale registration individually.
+   */
+  private async fetchManagedDevices(): Promise<
+    Array<TailscaleDeviceStatus & { id: string }>
+  > {
     const accessToken = await this.getAccessToken();
     const controller = new AbortController();
     const timer = setTimeout(
@@ -445,7 +492,7 @@ export class TailscaleService extends ConfigurationService {
     const managedTags = await this.getAllManagedTags();
     const managedTagSet = new Set(managedTags);
 
-    const mapped = data.devices
+    return data.devices
       .filter((d): d is Record<string, unknown> => !!d && typeof d === "object")
       .map((d) => {
         const tags = Array.isArray(d.tags)
@@ -466,41 +513,126 @@ export class TailscaleService extends ConfigurationService {
       })
       .filter((d) => d.id && d.hostname)
       .filter((d) => d.tags.some((t) => managedTagSet.has(t)));
+  }
 
-    // Dedupe by hostname. Tailscale's tailnet uses DNS-name uniqueness, not
-    // OS-hostname uniqueness — when an ephemeral container redeploys faster
-    // than Tailscale can GC the previous registration, the new node gets an
-    // auto-suffixed DNS name (`web-local-1.<tailnet>.ts.net`) but keeps the
-    // OS hostname `web-local`, so two devices come back with the same
-    // `hostname` field. Downstream consumers (the scheduler's
-    // `devicesByHostname` map and the Connect panel's
-    // `devicesByHostname.get(endpoint.hostname)` join) collapse to one row
-    // per hostname, and JS Map insertion order means whichever arrived last
-    // wins — usually the stale offline one.
-    //
-    // Pick the best representative per hostname: prefer online over offline,
-    // then most-recent `lastSeen`. Stale ephemerals eventually get purged
-    // upstream; until then this keeps the panel showing the live device.
-    const byHostname = new Map<string, typeof mapped[number]>();
-    for (const device of mapped) {
-      const incumbent = byHostname.get(device.hostname);
-      if (!incumbent) {
-        byHostname.set(device.hostname, device);
-        continue;
+  /**
+   * Delete a single tailnet device by node id (`DELETE /api/v2/device/:id`).
+   * Used by the redeploy-cleanup path to release a stale OS-hostname slot
+   * before a fresh sidecar registers — without it the new device gets
+   * Tailscale's auto-suffixed DNS name (`<host>-1.<tailnet>.ts.net`) until
+   * the upstream ephemeral GC catches up.
+   */
+  async deleteDevice(deviceId: string): Promise<void> {
+    if (!deviceId || deviceId.length === 0) {
+      throw new Error("deviceId is required");
+    }
+    const accessToken = await this.getAccessToken();
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    );
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(
+        `${TAILSCALE_API_BASE}/device/${encodeURIComponent(deviceId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        },
+      );
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError") {
+        throw new TailscaleAuthError(
+          "Tailscale device-delete request timed out",
+          TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+        );
       }
-      if (device.online && !incumbent.online) {
-        byHostname.set(device.hostname, device);
-        continue;
-      }
-      if (incumbent.online && !device.online) continue;
-      // Same online state — break the tie on lastSeen (most recent wins).
-      const incumbentMs = incumbent.lastSeen ? Date.parse(incumbent.lastSeen) : 0;
-      const deviceMs = device.lastSeen ? Date.parse(device.lastSeen) : 0;
-      if (deviceMs > incumbentMs) {
-        byHostname.set(device.hostname, device);
+      throw new TailscaleAuthError(
+        `Failed to reach Tailscale device-delete endpoint: ${
+          err instanceof Error ? err.message : "unknown"
+        }`,
+        TAILSCALE_ERROR_CODES.NETWORK_ERROR,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+
+    // 404 means the device is already gone — Tailscale's GC beat us to it.
+    // That's the post-condition we wanted, so treat it as success.
+    if (response.status === 404) return;
+    if (!response.ok) {
+      const text = await safeReadText(response);
+      throw new TailscaleAuthError(
+        `Tailscale device-delete failed (HTTP ${response.status}): ${text}`,
+        TAILSCALE_ERROR_CODES.TAILSCALE_API_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Best-effort cleanup before re-registering an addon-derived sidecar:
+   * delete every **offline** managed device that shares this hostname, so
+   * the freshly-minted authkey lets the new sidecar register under the
+   * unsuffixed DNS name (`<host>.<tailnet>.ts.net`) instead of getting an
+   * auto-suffixed `-1`/`-2`/… because Tailscale's ephemeral GC is still
+   * dragging its feet on the old registration.
+   *
+   * Hard rule: never delete an **online** device. The provision path runs
+   * on every apply (the authkey is regenerated even when the sidecar isn't
+   * recreated), so deleting a healthy live device would kick our own
+   * running sidecar off the tailnet on every apply.
+   *
+   * Never throws — device cleanup is a UX nicety, not a correctness gate.
+   * If Tailscale is unreachable or the delete fails the new sidecar still
+   * registers (just with a suffix), and `listDevices`'s hostname dedupe
+   * keeps the Connect panel showing the live one.
+   */
+  async purgeStaleManagedDevicesByHostname(
+    hostname: string,
+  ): Promise<{ deleted: number; errors: number }> {
+    const log = getLogger("integrations", "tailscale-service");
+    let deleted = 0;
+    let errors = 0;
+    let candidates: Array<TailscaleDeviceStatus & { id: string }>;
+    try {
+      const all = await this.fetchManagedDevices();
+      candidates = all.filter((d) => d.hostname === hostname && !d.online);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), hostname },
+        "Failed to list devices for stale-hostname purge (non-fatal)",
+      );
+      return { deleted: 0, errors: 1 };
+    }
+
+    if (candidates.length === 0) return { deleted: 0, errors: 0 };
+
+    log.info(
+      { hostname, candidateCount: candidates.length },
+      "Purging stale managed tailnet devices before re-registration",
+    );
+
+    for (const device of candidates) {
+      try {
+        await this.deleteDevice(device.id);
+        deleted++;
+      } catch (err) {
+        errors++;
+        log.warn(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            deviceId: device.id,
+            hostname,
+          },
+          "Failed to delete stale tailnet device (non-fatal)",
+        );
       }
     }
-    return Array.from(byHostname.values());
+    return { deleted, errors };
   }
 
   async getHealthStatus(): Promise<ServiceHealthStatus> {
