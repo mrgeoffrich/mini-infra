@@ -413,28 +413,47 @@ const initializeServices = async () => {
       // avoids a slow-NATS cold boot leaving the watcher permanently
       // unstarted (review finding H1).
       startFwAgentHealthWatcher();
+      // Probe whether the bus is up *now* so the operator gets a
+      // confidence-building startup banner. The 3s budget is short on
+      // purpose — Vault unlock + creds fetch typically takes longer than
+      // that on a fresh worktree, and we don't want boot to wait on it.
       try {
         await NatsBus.getInstance().ready({ timeoutMs: 3_000 });
         console.log("[STARTUP] ✓ NATS bus connected");
-        // ALT-27: ensure JetStream streams + KV buckets system-internal
-        // subjects depend on. Fire-and-forget — the helper logs its own
-        // errors and the next boot retries. Doing it here (rather than
-        // inside `applyConfig`) keeps the messaging-namespace boot
-        // separate from the NATS control-plane boot.
-        const { bootstrapNatsSystemResources } = await import(
-          "./services/nats/nats-system-bootstrap"
-        );
-        void bootstrapNatsSystemResources();
-        // ALT-29: start the backup NATS bridge (progress → Socket.IO fan-out
-        // + BackupHistory JetStream consumer for cold-boot replay).
-        const { startBackupNatsBridge } = await import("./services/backup");
-        startBackupNatsBridge(prisma);
       } catch (busErr) {
         logger.info(
           { err: busErr instanceof Error ? busErr.message : String(busErr) },
           "NATS bus not connected at boot — will keep retrying in the background",
         );
         console.log("[STARTUP] NATS bus retrying in background (non-fatal)");
+      }
+
+      // The dependent fire-and-forget helpers below MUST run regardless of
+      // whether the 3s ready-probe above succeeded — both helpers handle a
+      // not-yet-ready bus internally (bootstrap waits up to 10s on its own;
+      // bus.subscribe / bus.jetstream.consume are durable across reconnects
+      // and queue subscriptions when the bus comes up later). Gating them on
+      // the probe meant fresh-worktree boots — where NATS reliably takes
+      // ~10-15s to come up while Vault unlocks — silently skipped them and
+      // the EgressFwEvents stream + backup bridge were never bootstrapped.
+      try {
+        // ALT-27: ensure JetStream streams + KV buckets system-internal
+        // subjects depend on (EgressFwEvents stream, egress-fw-health KV).
+        // Fire-and-forget — the helper logs its own errors and the next
+        // boot retries.
+        const { bootstrapNatsSystemResources } = await import(
+          "./services/nats/nats-system-bootstrap"
+        );
+        void bootstrapNatsSystemResources();
+        // ALT-29: start the backup NATS bridge (progress → Socket.IO
+        // fan-out + BackupHistory JetStream consumer for cold-boot replay).
+        const { startBackupNatsBridge } = await import("./services/backup");
+        startBackupNatsBridge(prisma);
+      } catch (err) {
+        logger.warn(
+          { err: err instanceof Error ? err.message : String(err) },
+          "NATS dependent helper start failed (non-fatal)",
+        );
       }
     } catch (err) {
       logger.warn(
