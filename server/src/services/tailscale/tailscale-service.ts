@@ -445,7 +445,7 @@ export class TailscaleService extends ConfigurationService {
     const managedTags = await this.getAllManagedTags();
     const managedTagSet = new Set(managedTags);
 
-    return data.devices
+    const mapped = data.devices
       .filter((d): d is Record<string, unknown> => !!d && typeof d === "object")
       .map((d) => {
         const tags = Array.isArray(d.tags)
@@ -466,6 +466,41 @@ export class TailscaleService extends ConfigurationService {
       })
       .filter((d) => d.id && d.hostname)
       .filter((d) => d.tags.some((t) => managedTagSet.has(t)));
+
+    // Dedupe by hostname. Tailscale's tailnet uses DNS-name uniqueness, not
+    // OS-hostname uniqueness — when an ephemeral container redeploys faster
+    // than Tailscale can GC the previous registration, the new node gets an
+    // auto-suffixed DNS name (`web-local-1.<tailnet>.ts.net`) but keeps the
+    // OS hostname `web-local`, so two devices come back with the same
+    // `hostname` field. Downstream consumers (the scheduler's
+    // `devicesByHostname` map and the Connect panel's
+    // `devicesByHostname.get(endpoint.hostname)` join) collapse to one row
+    // per hostname, and JS Map insertion order means whichever arrived last
+    // wins — usually the stale offline one.
+    //
+    // Pick the best representative per hostname: prefer online over offline,
+    // then most-recent `lastSeen`. Stale ephemerals eventually get purged
+    // upstream; until then this keeps the panel showing the live device.
+    const byHostname = new Map<string, typeof mapped[number]>();
+    for (const device of mapped) {
+      const incumbent = byHostname.get(device.hostname);
+      if (!incumbent) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (device.online && !incumbent.online) {
+        byHostname.set(device.hostname, device);
+        continue;
+      }
+      if (incumbent.online && !device.online) continue;
+      // Same online state — break the tie on lastSeen (most recent wins).
+      const incumbentMs = incumbent.lastSeen ? Date.parse(incumbent.lastSeen) : 0;
+      const deviceMs = device.lastSeen ? Date.parse(device.lastSeen) : 0;
+      if (deviceMs > incumbentMs) {
+        byHostname.set(device.hostname, device);
+      }
+    }
+    return Array.from(byHostname.values());
   }
 
   async getHealthStatus(): Promise<ServiceHealthStatus> {
