@@ -22,35 +22,32 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   SIDECAR_IMAGE_NAME: ${{ github.repository }}-sidecar
   AGENT_SIDECAR_IMAGE_NAME: ${{ github.repository }}-agent-sidecar
+  EGRESS_GATEWAY_IMAGE_NAME: ${{ github.repository }}-egress-gateway
   EGRESS_FW_AGENT_IMAGE_NAME: ${{ github.repository }}-egress-fw-agent
   PG_BACKUP_IMAGE_NAME: ${{ github.repository }}-pg-backup
 
+# All ancillary images use the same tag matrix so consumers can pin a single
+# version across the whole set (e.g. :main-<sha> for an immutable build, :dev
+# for the rolling main tip, :1.2.3 for a release).
+
 jobs:
-  build-and-push:
+  build-sidecar:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      # ---- Sidecar image metadata & build ----
-
-      - name: Extract sidecar metadata (tags, labels)
-        id: sidecar-meta
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}
@@ -62,41 +59,46 @@ jobs:
             type=raw,value=production,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push sidecar image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: ./update-sidecar
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.sidecar-meta.outputs.tags }}
-          labels: ${{ steps.sidecar-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=sidecar
           cache-to: type=gha,mode=max,scope=sidecar
           platforms: linux/amd64
-
-      # ---- Compute the sidecar tag to bake into the main image ----
-
-      - name: Determine sidecar image tag
-        id: sidecar-tag
+      - id: tag
+        # Pick an immutable tag to bake into the main image.
+        # Releases: exact semver (1.2.3). Main pushes: SHA-pinned (main-abc1234).
+        # Fallback: first emitted tag.
         run: |
-          # Pick an immutable tag to bake into the main image.
-          # For releases: use the exact semver tag (e.g. 1.2.3)
-          # For main branch pushes: use the SHA-pinned tag (e.g. main-abc1234)
-          # Fallback: first tag from metadata output
-          TAGS="${{ steps.sidecar-meta.outputs.tags }}"
+          TAGS="${{ steps.meta.outputs.tags }}"
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
           else
             TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
           fi
-          # Fallback to first tag if no specific match
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      # ---- Agent sidecar image metadata & build ----
-
-      - name: Extract agent sidecar metadata (tags, labels)
-        id: agent-sidecar-meta
+  build-agent-sidecar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.AGENT_SIDECAR_IMAGE_NAME }}
@@ -108,23 +110,19 @@ jobs:
             type=raw,value=production,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push agent sidecar image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           file: agent-sidecar/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.agent-sidecar-meta.outputs.tags }}
-          labels: ${{ steps.agent-sidecar-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=agent-sidecar
           cache-to: type=gha,mode=max,scope=agent-sidecar
           platforms: linux/amd64
-
-      - name: Determine agent sidecar image tag
-        id: agent-sidecar-tag
+      - id: tag
         run: |
-          TAGS="${{ steps.agent-sidecar-meta.outputs.tags }}"
+          TAGS="${{ steps.meta.outputs.tags }}"
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
           else
@@ -133,10 +131,61 @@ jobs:
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      # ---- Egress firewall agent image metadata & build ----
+  build-egress-gateway:
+    # No tag output — the egress-gateway stack template appends its own
+    # `:tag` suffix at apply time, so the main image bakes in the bare repo URL.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.EGRESS_GATEWAY_IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=production,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: egress-gateway/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=egress-gateway
+          cache-to: type=gha,mode=max,scope=egress-gateway
+          platforms: linux/amd64
 
-      - name: Extract egress fw-agent metadata (tags, labels)
-        id: egress-fw-agent-meta
+  build-egress-fw-agent:
+    # No tag output — same convention as egress-gateway.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.EGRESS_FW_AGENT_IMAGE_NAME }}
@@ -148,35 +197,34 @@ jobs:
             type=raw,value=production,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push egress fw-agent image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           file: egress-fw-agent/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.egress-fw-agent-meta.outputs.tags }}
-          labels: ${{ steps.egress-fw-agent-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=egress-fw-agent
           cache-to: type=gha,mode=max,scope=egress-fw-agent
           platforms: linux/amd64
 
-      - name: Determine egress fw-agent image tag
-        id: egress-fw-agent-tag
-        run: |
-          TAGS="${{ steps.egress-fw-agent-meta.outputs.tags }}"
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
-          else
-            TAG=$(echo "$TAGS" | grep ':main-' | head -n1)
-          fi
-          TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      # ---- PG backup image metadata & build ----
-
-      - name: Extract pg-backup metadata (tags, labels)
-        id: pg-backup-meta
+  build-pg-backup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.PG_BACKUP_IMAGE_NAME }}
@@ -188,22 +236,18 @@ jobs:
             type=raw,value=production,enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push pg-backup image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: ./pg-az-backup
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.pg-backup-meta.outputs.tags }}
-          labels: ${{ steps.pg-backup-meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=pg-backup
           cache-to: type=gha,mode=max,scope=pg-backup
           platforms: linux/amd64
-
-      - name: Determine pg-backup image tag
-        id: pg-backup-tag
+      - id: tag
         run: |
-          TAGS="${{ steps.pg-backup-meta.outputs.tags }}"
+          TAGS="${{ steps.meta.outputs.tags }}"
           if [[ "${{ github.event_name }}" == "release" ]]; then
             TAG=$(echo "$TAGS" | grep -E ':[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
           else
@@ -212,50 +256,59 @@ jobs:
           TAG="${TAG:-$(echo "$TAGS" | head -n1)}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      # ---- Main image metadata & build ----
-
-      - name: Extract metadata (tags, labels)
-        id: meta
+  build-main:
+    needs:
+      - build-sidecar
+      - build-agent-sidecar
+      - build-egress-gateway
+      - build-egress-fw-agent
+      - build-pg-backup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # Branch name (e.g., :main)
             type=ref,event=branch
-            # PR number (e.g., :pr-123)
             type=ref,event=pr
-            # SHA for main branch pushes (e.g., :main-abc1234)
             type=sha,prefix=main-,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-            # :dev tag for main branch pushes
             type=raw,value=dev,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-            # :production tag for releases
             type=raw,value=production,enable=${{ github.event_name == 'release' }}
-            # Semver tags for releases (e.g., :1.2.3, :1.2)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            SIDECAR_IMAGE_TAG=${{ steps.sidecar-tag.outputs.tag }}
-            AGENT_SIDECAR_IMAGE_TAG=${{ steps.agent-sidecar-tag.outputs.tag }}
-            EGRESS_FW_AGENT_IMAGE_TAG=${{ steps.egress-fw-agent-tag.outputs.tag }}
-            PG_BACKUP_IMAGE_TAG=${{ steps.pg-backup-tag.outputs.tag }}
+            SIDECAR_IMAGE_TAG=${{ needs.build-sidecar.outputs.tag }}
+            AGENT_SIDECAR_IMAGE_TAG=${{ needs.build-agent-sidecar.outputs.tag }}
+            EGRESS_GATEWAY_IMAGE_TAG=${{ env.REGISTRY }}/${{ env.EGRESS_GATEWAY_IMAGE_NAME }}
+            EGRESS_FW_AGENT_IMAGE_TAG=${{ env.REGISTRY }}/${{ env.EGRESS_FW_AGENT_IMAGE_NAME }}
+            PG_BACKUP_IMAGE_TAG=${{ needs.build-pg-backup.outputs.tag }}
             BUILD_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
-
-      - name: Image digest
-        if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request'
         run: |
           echo "Main image pushed to ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
           echo "Sidecar image pushed to ${{ env.REGISTRY }}/${{ env.SIDECAR_IMAGE_NAME }}"
           echo "Agent sidecar image pushed to ${{ env.REGISTRY }}/${{ env.AGENT_SIDECAR_IMAGE_NAME }}"
+          echo "Egress gateway image pushed to ${{ env.REGISTRY }}/${{ env.EGRESS_GATEWAY_IMAGE_NAME }}"
           echo "Egress fw-agent image pushed to ${{ env.REGISTRY }}/${{ env.EGRESS_FW_AGENT_IMAGE_NAME }}"
           echo "PG backup image pushed to ${{ env.REGISTRY }}/${{ env.PG_BACKUP_IMAGE_NAME }}"

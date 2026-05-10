@@ -143,9 +143,12 @@ ENV AGENT_SIDECAR_IMAGE_TAG=${AGENT_SIDECAR_IMAGE_TAG}
 ARG EGRESS_GATEWAY_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-gateway
 ENV EGRESS_GATEWAY_IMAGE_TAG=${EGRESS_GATEWAY_IMAGE_TAG}
 
-# EGRESS_FW_AGENT_IMAGE_TAG is consumed by the FwAgentSidecar service to launch
-# the host-singleton egress firewall agent container. Includes the `:tag` suffix.
-ARG EGRESS_FW_AGENT_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-fw-agent:dev
+# EGRESS_FW_AGENT_IMAGE_TAG is consumed by the egress-fw-agent stack template's
+# `dockerImage` field (the template appends its own `:tag`), so this value must
+# NOT include a `:tag` suffix. Pre-ALT-27 this carried the tag because the
+# legacy host-singleton in `fw-agent-sidecar.ts` pulled the image directly;
+# the stack-template reconciler now does the concat instead.
+ARG EGRESS_FW_AGENT_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-fw-agent
 ENV EGRESS_FW_AGENT_IMAGE_TAG=${EGRESS_FW_AGENT_IMAGE_TAG}
 
 ARG PG_BACKUP_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev
