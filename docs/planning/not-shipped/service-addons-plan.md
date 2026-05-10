@@ -44,4 +44,4 @@ Verify in prod: at least one production pool service with `tailscale-ssh` shows 
 
 ## 4. mk tracking
 
-- MINI-8 — Phase 6: Pool integration
+- MINI-48 — Phase 6: Pool integration
