@@ -138,6 +138,20 @@ until manually pruned. A reconciliation step that lists JetStream
 streams and deletes any that aren't in the DB is the natural fix; punted
 out of this PR to keep the change focused.
 
+No system templates need to migrate to the new surface. The shared
+system JetStream streams (`EgressFwEvents`, `BackupHistory`, etc.) and KV
+buckets (`egress-fw-health`) are bootstrapped server-side at boot via
+`bus.jetstream.ensureStream(...)` in
+[server/src/services/nats/nats-system-bootstrap.ts](../../../server/src/services/nats/nats-system-bootstrap.ts) —
+not from any template. Their lifecycle is "server up", not "stack
+applied", which is the right shape for shared infra streams that
+multiple stack instances and the server itself consume from. The two
+NATS-using system templates that exist (`egress-fw-agent`,
+`egress-gateway`) already declare `roles[]` with allowlisted prefixes
+(`mini-infra.egress.fw` / `.gw`) and don't declare any streams in the
+template. `roles[].streams` is purely additive for future app
+templates that want their own per-stack JetStream.
+
 ### Drift detection in `lastAppliedNatsSnapshot`
 
 The snapshot writes accounts/credentials/streams/consumers/roles/exports/
