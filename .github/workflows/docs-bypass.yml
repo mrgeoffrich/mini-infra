@@ -1,0 +1,30 @@
+name: Docs-only required-check bypass
+
+# The `build-main` job in docker-build.yml is a required status check on main,
+# but that workflow has `paths-ignore: '**.md'` so it never fires on docs-only
+# PRs — leaving the required check structurally unsatisfiable and the PR
+# unmergeable. This workflow fires on docs-only changes and emits a passing
+# `build-main` check so docs-only PRs can merge without bypassing branch
+# protection.
+#
+# On mixed PRs (some .md, some code), both this workflow and docker-build.yml
+# fire; both must pass, which is the correct behaviour.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '**.md'
+
+jobs:
+  build-main:
+    name: build-main
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Docs-only change — required-check bypass."
