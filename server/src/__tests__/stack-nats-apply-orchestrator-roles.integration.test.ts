@@ -503,3 +503,236 @@ describe('runStackNatsApplyPhase — Phase 3 reviewer-flagged gaps', () => {
     expect(result.error).toMatch(/empty tokens/);
   });
 });
+
+describe('runStackNatsApplyPhase — role-nested JetStream streams + consumers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('materializes role-nested streams with prefix-prepended subjects and stackId set', async () => {
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'worker',
+          publish: ['work.>'],
+          streams: [
+            {
+              name: 'jobs',
+              subjects: ['work.in.>', 'work.retry.>'],
+              retention: 'workqueue',
+            },
+          ],
+        },
+      ],
+      serviceNatsRole: 'worker',
+    });
+
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: 'test-user' });
+    expect(result.status).toBe('applied');
+
+    const expectedPrefix = `app.${stackId}`;
+    const stream = await testPrisma.natsStream.findFirst({
+      where: { stackId, name: { contains: 'worker-jobs' } },
+    });
+    expect(stream).not.toBeNull();
+    // Subjects are prefix-prepended; retention/storage carry through.
+    expect(stream!.subjects).toEqual([
+      `${expectedPrefix}.work.in.>`,
+      `${expectedPrefix}.work.retry.>`,
+    ]);
+    expect(stream!.retention).toBe('workqueue');
+    expect(stream!.stackId).toBe(stackId);
+  });
+
+  it('materializes role-nested consumers with prefix-prepended filterSubject', async () => {
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'worker',
+          subscribe: ['work.>'],
+          streams: [{ name: 'jobs', subjects: ['work.>'] }],
+          consumers: [
+            {
+              name: 'high-priority',
+              stream: 'jobs',
+              filterSubject: 'work.priority.high',
+              ackPolicy: 'explicit',
+              maxDeliver: 5,
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const expectedPrefix = `app.${stackId}`;
+    const stream = await testPrisma.natsStream.findFirst({
+      where: { stackId, name: { contains: 'worker-jobs' } },
+    });
+    expect(stream).not.toBeNull();
+    const consumer = await testPrisma.natsConsumer.findFirst({
+      where: { streamId: stream!.id, name: { contains: 'high-priority' } },
+    });
+    expect(consumer).not.toBeNull();
+    // filterSubject auto-prefixed; ack/maxDeliver carry through.
+    expect(consumer!.filterSubject).toBe(`${expectedPrefix}.work.priority.high`);
+    expect(consumer!.ackPolicy).toBe('explicit');
+    expect(consumer!.maxDeliver).toBe(5);
+  });
+
+  it('orphan-prune drops role-streams whose names disappear on re-apply', async () => {
+    // First apply: declare two streams. Second apply: remove the second one.
+    // The orchestrator's pruneOrphanRoleStreams must delete the now-orphan
+    // row by stackId — without it, every template edit leaks NatsStream rows.
+    const stackName = `stack-orphan-${Date.now()}`;
+    const { stackId, templateId } = await seedStack({
+      stackName,
+      natsRoles: [
+        {
+          name: 'worker',
+          publish: ['x'],
+          streams: [
+            { name: 'keep', subjects: ['k.>'] },
+            { name: 'drop', subjects: ['d.>'] },
+          ],
+        },
+      ],
+    });
+
+    const first = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(first.status).toBe('applied');
+
+    expect(
+      await testPrisma.natsStream.count({ where: { stackId } }),
+    ).toBe(2);
+
+    // Edit the template version in place — drop the second stream from the role.
+    await testPrisma.stackTemplateVersion.updateMany({
+      where: { templateId, version: 1 },
+      data: {
+        natsRoles: [
+          {
+            name: 'worker',
+            publish: ['x'],
+            streams: [{ name: 'keep', subjects: ['k.>'] }],
+          },
+        ],
+      },
+    });
+
+    const second = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(second.status).toBe('applied');
+
+    const remaining = await testPrisma.natsStream.findMany({ where: { stackId } });
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].name).toContain('worker-keep');
+  });
+
+  it('two stacks with the same role-stream name get distinct NatsStream rows scoped by stackId', async () => {
+    const a = await seedStack({
+      stackName: `stack-a-${Date.now()}`,
+      natsRoles: [
+        { name: 'worker', publish: ['x'], streams: [{ name: 'jobs', subjects: ['x.>'] }] },
+      ],
+    });
+    const b = await seedStack({
+      stackName: `stack-b-${Date.now()}`,
+      natsRoles: [
+        { name: 'worker', publish: ['x'], streams: [{ name: 'jobs', subjects: ['x.>'] }] },
+      ],
+    });
+
+    await runStackNatsApplyPhase(testPrisma, a.stackId, { triggeredBy: undefined });
+    await runStackNatsApplyPhase(testPrisma, b.stackId, { triggeredBy: undefined });
+
+    const streamA = await testPrisma.natsStream.findFirst({ where: { stackId: a.stackId } });
+    const streamB = await testPrisma.natsStream.findFirst({ where: { stackId: b.stackId } });
+    expect(streamA).not.toBeNull();
+    expect(streamB).not.toBeNull();
+    expect(streamA!.id).not.toBe(streamB!.id);
+    // Names disambiguated by stackId so the unique-name constraint never fires.
+    expect(streamA!.name).not.toBe(streamB!.name);
+    // Subjects scoped to each stack's own prefix — no overlap.
+    const subjA = streamA!.subjects as unknown as string[];
+    const subjB = streamB!.subjects as unknown as string[];
+    expect(subjA[0]).toBe(`app.${a.stackId}.x.>`);
+    expect(subjB[0]).toBe(`app.${b.stackId}.x.>`);
+  });
+
+  it('defense-in-depth: stream subject with `>` at root is rejected at apply', async () => {
+    // The static schema rejects this at publish time, but a corrupt JSON
+    // column could otherwise reach the materializer. The apply-time check
+    // refuses rather than emitting a NatsStream row whose filter shadows
+    // the entire prefix tree.
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'worker',
+          publish: ['x'],
+          streams: [{ name: 'wide', subjects: ['>'] }],
+        },
+      ],
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('error');
+    expect(result.error).toMatch(/escapes the prefix/);
+  });
+
+  it("role's credentials get the JetStream API grants for its own streams + consumers", async () => {
+    // Without these grants the role's connection can publish/subscribe on
+    // the stream's subjects but can't bind the JetStream view (STREAM.INFO),
+    // pull messages (CONSUMER.MSG.NEXT), or ack them ($JS.ACK.>). Pinning
+    // the exact grants so a future refactor can't accidentally drop one and
+    // silently break consumption.
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'worker',
+          publish: ['work.>'],
+          streams: [{ name: 'jobs', subjects: ['work.>'] }],
+          consumers: [{ name: 'pull', stream: 'jobs' }],
+        },
+      ],
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const profile = await testPrisma.natsCredentialProfile.findFirst({
+      where: { stackId, name: { contains: 'worker' } },
+    });
+    const pub = profile!.publishAllow as unknown as string[];
+
+    const stream = await testPrisma.natsStream.findFirst({ where: { stackId } });
+    const consumer = await testPrisma.natsConsumer.findFirst({
+      where: { streamId: stream!.id },
+    });
+    expect(stream).not.toBeNull();
+    expect(consumer).not.toBeNull();
+
+    // Stream-level: bind the view.
+    expect(pub).toContain(`$JS.API.STREAM.INFO.${stream!.name}`);
+    // Consumer-level: info / create / pull-next / ack.
+    expect(pub).toContain(`$JS.API.CONSUMER.INFO.${stream!.name}.${consumer!.name}`);
+    expect(pub).toContain(`$JS.API.CONSUMER.CREATE.${stream!.name}.${consumer!.name}`);
+    expect(pub).toContain(`$JS.API.CONSUMER.MSG.NEXT.${stream!.name}.${consumer!.name}`);
+    expect(pub).toContain(`$JS.ACK.${stream!.name}.${consumer!.name}.>`);
+  });
+
+  it('consumer referencing an unknown role-stream fails apply with a clear error', async () => {
+    const { stackId } = await seedStack({
+      natsRoles: [
+        {
+          name: 'worker',
+          publish: ['x'],
+          streams: [{ name: 'jobs', subjects: ['x.>'] }],
+          consumers: [{ name: 'broken', stream: 'does-not-exist' }],
+        },
+      ],
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('error');
+    expect(result.error).toMatch(/references unknown stream/);
+  });
+});

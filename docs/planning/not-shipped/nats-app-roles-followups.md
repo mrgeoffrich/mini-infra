@@ -112,15 +112,31 @@ connected with what JWT; the manager service is responsible for its own
 audit log if it needs one. Worth revisiting if a real compliance ask
 appears.
 
-### JetStream-for-apps (`roles[].streams`)
+### ~~JetStream-for-apps (`roles[].streams`)~~ — shipped
 
-V1 keeps `streams` as a legacy-only template field with absolute
-subjects, system-template-only path. Apps that want JetStream are blocked
-by the mixing rule. Slackbot doesn't need it, but the next NATS-using app
-might. Adding `roles[].streams` (relative subjects, auto-prefixed) is
-straightforward once a use case appears — the materialization path
-already exists, just needs prefix-prepending in
-`stack-nats-apply-orchestrator.ts` legacy-streams branch.
+Shipped: app-author roles can now declare `streams[]` and `consumers[]`
+nested on the role. Stream subjects + consumer `filterSubject` are written
+relative to the stack's `subjectPrefix` and the orchestrator prepends at
+apply time. The role's credentials gain the matching JetStream API grants
+(`$JS.API.STREAM.INFO.<stream>`, `$JS.API.CONSUMER.{INFO,CREATE,MSG.NEXT}.<stream>.<consumer>`,
+`$JS.ACK.<stream>.<consumer>.>`) so a service bound to the role can
+publish, bind the durable consumer, pull, and ACK without any extra
+plumbing. `NatsStream` rows now carry a `stackId` so cascade-delete +
+`pruneOrphanRoleStreams` clean up renames and removals. The mixing rule
+extends to streams/consumers — top-level `nats.streams[]` and
+`nats.consumers[]` cannot coexist with `nats.roles[]` in the same
+template; declare them via `nats.roles[].streams` instead. Real-NATS
+external coverage in
+[server/src/__tests__/nats-role-streams.external.test.ts](../../../server/src/__tests__/nats-role-streams.external.test.ts).
+
+Known follow-up: removing a role-stream from a template deletes the
+`NatsStream` DB row but does not delete the underlying JetStream stream
+in NATS itself (the orchestrator only adds/updates via
+`applyJetStreamResources`). Stale streams stop receiving traffic because
+nothing else publishes to the prefixed subjects, but they leak storage
+until manually pruned. A reconciliation step that lists JetStream
+streams and deletes any that aren't in the DB is the natural fix; punted
+out of this PR to keep the change focused.
 
 ### Drift detection in `lastAppliedNatsSnapshot`
 

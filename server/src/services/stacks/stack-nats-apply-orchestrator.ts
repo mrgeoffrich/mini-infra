@@ -23,6 +23,8 @@ import type {
   TemplateNatsCredential,
   TemplateNatsImport,
   TemplateNatsRole,
+  TemplateNatsRoleConsumer,
+  TemplateNatsRoleStream,
   TemplateNatsSigner,
   TemplateNatsStream,
 } from "@mini-infra/types";
@@ -305,6 +307,12 @@ export async function runStackNatsApplyPhase(
     let resolvedExports: string[] = [];
     const renderedRoleProfileNames = new Set<string>();
     const renderedSignerNames = new Set<string>();
+    // Stack-scoped (role-derived) JetStream resources. Names are namespaced
+    // `<roleName>.<streamName>` so two roles can declare a stream named the
+    // same without colliding. Used to resolve consumers' relative `stream:`
+    // references at materialization time.
+    const renderedRoleStreamNames = new Set<string>();
+    const roleStreamIdByRoleAndName = new Map<string, string>();
     if (roles.length > 0 || signers.length > 0 || exportsRelative.length > 0 || imports.length > 0) {
       const defaultAccount = await service.ensureDefaultAccount();
       resolvedSubjectPrefix = await resolveAndValidateSubjectPrefix({
@@ -358,6 +366,50 @@ export async function runStackNatsApplyPhase(
         roleCredentialIdByName.set(role.name, profile.id);
         renderedRoleProfileNames.add(profile.name);
         resources.push({ type: "credential", concreteName: profile.name, scope: "stack" });
+
+        // Phase 6: role-nested JetStream streams + consumers. Declared on
+        // the role, materialized into NatsStream/NatsConsumer rows on the
+        // shared system account with the stack's resolvedSubjectPrefix
+        // prepended to every subject filter. Consumers reference one of
+        // their containing role's streams by relative name; the materializer
+        // resolves that against `roleStreamIdByRoleAndName`. The role's
+        // own credentials retain pub/sub on the role's relative subject
+        // tree, so a service bound to the role can publish into the stream
+        // and consume through any of its consumers without extra grants.
+        for (const stream of role.streams ?? []) {
+          const row = await materializeRoleStream({
+            prisma,
+            roleName: role.name,
+            stream,
+            accountId: defaultAccount.id,
+            subjectPrefix: resolvedSubjectPrefix,
+            stackId,
+            triggeredBy: opts.triggeredBy,
+          });
+          renderedRoleStreamNames.add(row.name);
+          roleStreamIdByRoleAndName.set(`${role.name}.${stream.name}`, row.id);
+          resources.push({ type: "stream", concreteName: row.name, scope: "stack" });
+        }
+        for (const consumer of role.consumers ?? []) {
+          const streamId = roleStreamIdByRoleAndName.get(`${role.name}.${consumer.stream}`);
+          if (!streamId) {
+            // Validator catches this at publish time; defense-in-depth at
+            // apply for corrupt JSON columns or a future schema-drift bug.
+            throw new Error(
+              `NATS apply: role '${role.name}' consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
+            );
+          }
+          const row = await materializeRoleConsumer({
+            prisma,
+            roleName: role.name,
+            consumer,
+            streamId,
+            subjectPrefix: resolvedSubjectPrefix,
+            stackId,
+            triggeredBy: opts.triggeredBy,
+          });
+          resources.push({ type: "consumer", concreteName: row.name, scope: "stack" });
+        }
       }
 
       // Phase 4: signers materialization. Each signer becomes a NatsSigningKey
@@ -380,7 +432,11 @@ export async function runStackNatsApplyPhase(
 
       // Diff-and-prune. Run before applyConfig() so the re-issued account
       // JWT reflects only the live set of signing keys + the orphan profiles
-      // are gone before any service tries to rebind to them.
+      // are gone before any service tries to rebind to them. Role-derived
+      // streams are pruned before applyJetStreamResources() (run further
+      // down) so the live JetStream view picks up only the desired set; the
+      // delete also cascades to any consumers (NatsConsumer.streamId FK is
+      // ON DELETE CASCADE).
       await pruneOrphanRoleProfiles({
         prisma,
         stackId,
@@ -390,6 +446,11 @@ export async function runStackNatsApplyPhase(
         prisma,
         stackId,
         desiredSignerNames: renderedSignerNames,
+      });
+      await pruneOrphanRoleStreams({
+        prisma,
+        stackId,
+        desiredStreamNames: renderedRoleStreamNames,
       });
     }
 
@@ -661,6 +722,31 @@ async function materializeRole(args: {
     publishAllow.push(`$JS.API.STREAM.INFO.KV_${bucket}`);
   }
 
+  // Phase 6: JetStream API access for role-nested streams + consumers.
+  // Without these grants the role's connection can pub/sub on the stream's
+  // subjects but can't bind the JetStream view (`STREAM.INFO`), pull
+  // messages (`CONSUMER.MSG.NEXT`), or ack them (`$JS.ACK.>`) — so the
+  // feature is only half-shipped without them. Concrete stream + consumer
+  // names match what `materializeRoleStream` / `materializeRoleConsumer`
+  // produce so the grants line up against the live NATS objects.
+  for (const stream of role.streams ?? []) {
+    const concreteStream = concreteName(`${role.name}-${stream.name}`, "stack", args.stackId, null);
+    publishAllow.push(`$JS.API.STREAM.INFO.${concreteStream}`);
+  }
+  for (const consumer of role.consumers ?? []) {
+    const concreteStream = concreteName(`${role.name}-${consumer.stream}`, "stack", args.stackId, null);
+    const concreteConsumer = concreteName(
+      `${role.name}-${consumer.stream}-${consumer.name}`,
+      "stack",
+      args.stackId,
+      null,
+    );
+    publishAllow.push(`$JS.API.CONSUMER.INFO.${concreteStream}.${concreteConsumer}`);
+    publishAllow.push(`$JS.API.CONSUMER.CREATE.${concreteStream}.${concreteConsumer}`);
+    publishAllow.push(`$JS.API.CONSUMER.MSG.NEXT.${concreteStream}.${concreteConsumer}`);
+    publishAllow.push(`$JS.ACK.${concreteStream}.${concreteConsumer}.>`);
+  }
+
   // Profile name: `<stackId>-<roleName>`. `stack.id` is opaque but
   // collision-free — two stacks with the same `name` (host scope) would
   // otherwise clobber each other (design §2.1 decision 2). UI can render
@@ -861,6 +947,174 @@ async function pruneOrphanSigningKeys(args: {
     }
   }
   return orphans.length;
+}
+
+// =====================================================================
+// Phase 6 helpers — role-nested JetStream streams + consumers
+// =====================================================================
+
+/**
+ * Materialize a single `roles[].streams[]` entry into a `NatsStream` row.
+ * Subjects are written *relative* to the stack's subjectPrefix in the
+ * template; the orchestrator prepends the resolved prefix so every
+ * subject filter lives inside the stack's namespace. The row is owned
+ * by the consumer stack via `stackId`, so cascade-delete + the
+ * `pruneOrphanRoleStreams` diff cover the lifecycle without a separate
+ * destroy hook (legacy top-level `nats.streams` keep `stackId = null`
+ * because their lifecycle is owned by the system seeder).
+ */
+async function materializeRoleStream(args: {
+  prisma: PrismaClient;
+  roleName: string;
+  stream: TemplateNatsRoleStream;
+  accountId: string;
+  subjectPrefix: string;
+  stackId: string;
+  triggeredBy: string | undefined;
+}): Promise<{ id: string; name: string }> {
+  const { stream, subjectPrefix, stackId } = args;
+
+  // Defense-in-depth: re-validate every subject at apply. The static
+  // `natsRelativeSubjectSchema` is the primary gate; this catches a
+  // corrupt natsRoles JSON column that bypasses publish-time validation.
+  const validateRelative = (s: string): void => {
+    if (!s || s.startsWith(">") || s.startsWith("*")) {
+      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' escapes the prefix`);
+    }
+    if (s.startsWith("_INBOX.")) {
+      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets _INBOX directly`);
+    }
+    if (s.startsWith("$SYS.") || s === "$SYS") {
+      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets the $SYS namespace`);
+    }
+    if (s.includes("..") || s.split(".").some((tok) => tok.length === 0)) {
+      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' has empty tokens`);
+    }
+  };
+  const absoluteSubjects: string[] = [];
+  for (const s of stream.subjects) {
+    validateRelative(s);
+    absoluteSubjects.push(`${subjectPrefix}.${s}`);
+  }
+
+  // Concrete name: `<stackId>-<roleName>-<streamName>`. Same shape as the
+  // role-credential profile name (`materializeRole`) so two stacks can
+  // declare the same role.stream name without colliding, and a role
+  // rename rotates cleanly through `pruneOrphanRoleStreams`.
+  const concreteStreamName = concreteName(`${args.roleName}-${stream.name}`, "stack", stackId, null);
+
+  const existing = await args.prisma.natsStream.findUnique({ where: { name: concreteStreamName } });
+  const data = {
+    accountId: args.accountId,
+    stackId,
+    description: stream.description ?? null,
+    subjects: absoluteSubjects as unknown as Prisma.InputJsonValue,
+    retention: stream.retention ?? "limits",
+    storage: stream.storage ?? "file",
+    maxMsgs: stream.maxMsgs ?? null,
+    maxBytes: stream.maxBytes ?? null,
+    maxAgeSeconds: stream.maxAgeSeconds ?? null,
+    updatedById: args.triggeredBy ?? null,
+  };
+  const row = existing
+    ? await args.prisma.natsStream.update({ where: { id: existing.id }, data })
+    : await args.prisma.natsStream.create({
+        data: { name: concreteStreamName, ...data, createdById: args.triggeredBy ?? null },
+      });
+  return { id: row.id, name: concreteStreamName };
+}
+
+/**
+ * Materialize a single `roles[].consumers[]` entry into a `NatsConsumer`
+ * row attached to the materialized role-stream. `filterSubject` (when set)
+ * is treated as a relative subject and gets prepended with the stack's
+ * resolved prefix. Consumer name uniqueness is `(streamId, name)`, which
+ * Prisma enforces via the `@@unique([streamId, name])` constraint.
+ */
+async function materializeRoleConsumer(args: {
+  prisma: PrismaClient;
+  roleName: string;
+  consumer: TemplateNatsRoleConsumer;
+  streamId: string;
+  subjectPrefix: string;
+  stackId: string;
+  triggeredBy: string | undefined;
+}): Promise<{ id: string; name: string }> {
+  const { consumer, subjectPrefix, stackId } = args;
+
+  // Defense-in-depth: re-validate filterSubject. Static schema is the
+  // primary gate; this catches a corrupt natsRoles JSON column.
+  if (consumer.filterSubject) {
+    const fs = consumer.filterSubject;
+    if (fs.startsWith(">") || fs.startsWith("*")) {
+      throw new Error(
+        `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' escapes the prefix`,
+      );
+    }
+    if (fs.startsWith("_INBOX.") || fs.startsWith("$SYS.") || fs === "$SYS") {
+      throw new Error(
+        `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' targets a reserved namespace`,
+      );
+    }
+    if (fs.includes("..") || fs.split(".").some((tok) => tok.length === 0)) {
+      throw new Error(
+        `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' has empty tokens`,
+      );
+    }
+  }
+
+  const concreteConsumerName = concreteName(`${args.roleName}-${consumer.stream}-${consumer.name}`, "stack", stackId, null);
+  const existing = await args.prisma.natsConsumer.findFirst({
+    where: { streamId: args.streamId, name: concreteConsumerName },
+  });
+  const data = {
+    durableName: consumer.durableName ? consumer.durableName : concreteConsumerName,
+    description: consumer.description ?? null,
+    filterSubject: consumer.filterSubject ? `${subjectPrefix}.${consumer.filterSubject}` : null,
+    deliverPolicy: consumer.deliverPolicy ?? "all",
+    ackPolicy: consumer.ackPolicy ?? "explicit",
+    maxDeliver: consumer.maxDeliver ?? null,
+    ackWaitSeconds: consumer.ackWaitSeconds ?? null,
+    updatedById: args.triggeredBy ?? null,
+  };
+  const row = existing
+    ? await args.prisma.natsConsumer.update({ where: { id: existing.id }, data })
+    : await args.prisma.natsConsumer.create({
+        data: {
+          streamId: args.streamId,
+          name: concreteConsumerName,
+          ...data,
+          createdById: args.triggeredBy ?? null,
+        },
+      });
+  return { id: row.id, name: concreteConsumerName };
+}
+
+/**
+ * Drop role-derived `NatsStream` rows owned by this stack whose names
+ * aren't in the freshly-rendered set. Catches stream renames + removals;
+ * the `NatsConsumer.streamId` FK's `onDelete: Cascade` handles consumer
+ * cleanup so we don't need a separate consumer prune.
+ *
+ * Legacy top-level `nats.streams` rows have `stackId = null` and stay out
+ * of this filter, so a system template's streams are never accidentally
+ * pruned by a co-applied app stack.
+ */
+async function pruneOrphanRoleStreams(args: {
+  prisma: PrismaClient;
+  stackId: string;
+  desiredStreamNames: Set<string>;
+}): Promise<number> {
+  const existing = await args.prisma.natsStream.findMany({
+    where: { stackId: args.stackId },
+    select: { id: true, name: true },
+  });
+  const orphanIds = existing
+    .filter((row) => !args.desiredStreamNames.has(row.name))
+    .map((row) => row.id);
+  if (orphanIds.length === 0) return 0;
+  await args.prisma.natsStream.deleteMany({ where: { id: { in: orphanIds } } });
+  return orphanIds.length;
 }
 
 // =====================================================================

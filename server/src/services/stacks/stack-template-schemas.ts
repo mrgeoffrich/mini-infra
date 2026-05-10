@@ -157,20 +157,92 @@ export const templateNatsConsumerSchema = z.object({
 
 // ----- Phase 1: app-author role / signer / import surface -----
 
-export const templateNatsRoleSchema = z.object({
-  name: z.string().min(1).max(100).regex(nameRegex, "role name can only contain letters, numbers, '_', '-'"),
-  publish: z.array(natsRelativeSubjectSchema).optional(),
-  subscribe: z.array(natsRelativeSubjectSchema).optional(),
-  inboxAuto: z.enum(["both", "reply", "request", "none"]).optional(),
-  // KV bucket names. Each materializes into `$KV.<bucket>.>` on both pub
-  // and sub at apply time. Bucket-name rules mirror NATS' validator:
-  // alphanumeric + `_`/`-`, ≤100 chars. The orchestrator constructs the
-  // absolute subject form so the schema only validates the bucket names.
-  kvBuckets: z
-    .array(z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "kvBuckets entry: alphanumeric + '_' / '-' only"))
-    .optional(),
-  ttlSeconds: z.number().int().min(0).optional(),
+// Role-nested stream: subjects relative to the stack's subjectPrefix. Drops
+// `account` (always the shared system account) and `scope` (always stack-
+// scoped) compared to the legacy top-level `streams[]` — both are implied
+// by the prefix-only isolation model.
+export const templateNatsRoleStreamSchema = z.object({
+  name: z.string().min(1).max(100).regex(nameRegex, "stream name can only contain letters, numbers, '_', '-'"),
+  description: z.string().max(500).optional(),
+  subjects: z.array(natsRelativeSubjectSchema).min(1),
+  retention: z.enum(["limits", "interest", "workqueue"]).optional(),
+  storage: z.enum(["file", "memory"]).optional(),
+  maxMsgs: z.number().int().nullable().optional(),
+  maxBytes: z.number().int().nullable().optional(),
+  maxAgeSeconds: z.number().int().nullable().optional(),
 });
+
+// Role-nested consumer: `stream` references one of the role's own streams
+// by declared name (the orchestrator resolves it to the materialized id);
+// `filterSubject` is relative to the subjectPrefix and gets prepended.
+export const templateNatsRoleConsumerSchema = z.object({
+  name: z.string().min(1).max(100).regex(nameRegex, "consumer name can only contain letters, numbers, '_', '-'"),
+  stream: z.string().min(1).max(100),
+  durableName: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  filterSubject: natsRelativeSubjectSchema.optional(),
+  deliverPolicy: z.enum(["all", "last", "new", "by_start_sequence", "by_start_time", "last_per_subject"]).optional(),
+  ackPolicy: z.enum(["none", "all", "explicit"]).optional(),
+  maxDeliver: z.number().int().nullable().optional(),
+  ackWaitSeconds: z.number().int().nullable().optional(),
+});
+
+export const templateNatsRoleSchema = z
+  .object({
+    name: z.string().min(1).max(100).regex(nameRegex, "role name can only contain letters, numbers, '_', '-'"),
+    publish: z.array(natsRelativeSubjectSchema).optional(),
+    subscribe: z.array(natsRelativeSubjectSchema).optional(),
+    inboxAuto: z.enum(["both", "reply", "request", "none"]).optional(),
+    // KV bucket names. Each materializes into `$KV.<bucket>.>` on both pub
+    // and sub at apply time. Bucket-name rules mirror NATS' validator:
+    // alphanumeric + `_`/`-`, ≤100 chars. The orchestrator constructs the
+    // absolute subject form so the schema only validates the bucket names.
+    kvBuckets: z
+      .array(z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/, "kvBuckets entry: alphanumeric + '_' / '-' only"))
+      .optional(),
+    streams: z.array(templateNatsRoleStreamSchema).optional(),
+    consumers: z.array(templateNatsRoleConsumerSchema).optional(),
+    ttlSeconds: z.number().int().min(0).optional(),
+  })
+  .superRefine((role, ctx) => {
+    // Stream + consumer name uniqueness within the role. Names go into
+    // composite materialized identifiers (`<stackId>-<roleName>-<streamName>`),
+    // so a duplicate would silently overwrite the earlier definition.
+    const streamNames = new Set<string>();
+    for (let i = 0; i < (role.streams?.length ?? 0); i++) {
+      const s = role.streams![i];
+      if (streamNames.has(s.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate stream name '${s.name}' in role '${role.name}'`,
+          path: ["streams", i, "name"],
+        });
+      }
+      streamNames.add(s.name);
+    }
+    const consumerNames = new Set<string>();
+    for (let i = 0; i < (role.consumers?.length ?? 0); i++) {
+      const c = role.consumers![i];
+      if (consumerNames.has(c.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate consumer name '${c.name}' in role '${role.name}'`,
+          path: ["consumers", i, "name"],
+        });
+      }
+      consumerNames.add(c.name);
+      // Consumer.stream must reference a stream declared on this same role.
+      if (!streamNames.has(c.stream)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Consumer '${c.name}' references unknown stream '${c.stream}' in role '${role.name}' (defined: ${
+            streamNames.size === 0 ? "none" : Array.from(streamNames).map((n) => `'${n}'`).join(", ")
+          })`,
+          path: ["consumers", i, "stream"],
+        });
+      }
+    }
+  });
 
 export const templateNatsSignerSchema = z.object({
   name: z.string().min(1).max(100).regex(nameRegex, "signer name can only contain letters, numbers, '_', '-'"),
@@ -408,7 +480,7 @@ export const draftVersionSchema = z.object({
  */
 export function validateNatsSectionShape(
   nats: { accounts?: unknown[]; credentials?: unknown[]; streams?: unknown[]; consumers?: unknown[];
-          roles?: Array<{ name: string }>; signers?: Array<{ name: string }>;
+          roles?: Array<{ name: string; streams?: unknown[]; consumers?: unknown[] }>; signers?: Array<{ name: string }>;
           imports?: Array<{ forRoles?: string[] }>; exports?: unknown[]; subjectPrefix?: unknown } | undefined,
   ctx: z.RefinementCtx,
 ): void {
@@ -423,6 +495,25 @@ export function validateNatsSectionShape(
       code: z.ZodIssueCode.custom,
       message: "nats.credentials (legacy) and nats.roles (new) cannot be declared in the same template — pick one surface",
       path: ["nats", "roles"],
+    });
+  }
+
+  // Same rule for streams/consumers: an app template with `roles[]` must
+  // declare its JetStream resources via `roles[].streams` (auto-prefixed,
+  // relative subjects). Top-level `nats.streams` keeps absolute subjects
+  // for system templates and must not coexist with the new role surface.
+  if (hasNewRoles && (nats.streams?.length ?? 0) > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "nats.streams (legacy, absolute subjects) cannot be declared alongside nats.roles — declare streams via nats.roles[].streams instead",
+      path: ["nats", "streams"],
+    });
+  }
+  if (hasNewRoles && (nats.consumers?.length ?? 0) > 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "nats.consumers (legacy) cannot be declared alongside nats.roles — declare consumers via nats.roles[].consumers instead",
+      path: ["nats", "consumers"],
     });
   }
 

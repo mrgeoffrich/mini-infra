@@ -156,6 +156,153 @@ describe('NATS mixing rule (legacy credentials + new roles)', () => {
     const r = draftVersionSchema.safeParse(draftBody(mixed));
     expect(r.success).toBe(false);
   });
+
+  it('roles + legacy top-level streams is rejected — declare via roles[].streams instead', () => {
+    // Symmetry with the credentials-vs-roles rule: an app template using
+    // the new role surface must declare its JetStream resources nested on
+    // those roles (auto-prefixed, relative subjects). Top-level streams
+    // keep absolute subjects for system templates and must not coexist
+    // with roles in the same template.
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [{ name: 'gateway', publish: ['x'] }],
+        streams: [{ name: 'legacy', account: 'app', subjects: ['legacy.>'], scope: 'host' }],
+        // accounts is required so top-level streams pass shape validation
+        accounts: [{ name: 'app', scope: 'host' as const }],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain('nats.streams (legacy');
+    }
+  });
+
+  it('roles + legacy top-level consumers is rejected — declare via roles[].consumers instead', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [{ name: 'gateway', publish: ['x'] }],
+        consumers: [{ name: 'leg', stream: 'legacy', scope: 'host' }],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain('nats.consumers (legacy)');
+    }
+  });
+});
+
+// ─── roles[].streams + roles[].consumers — name uniqueness, refs, validation ─
+
+describe('NATS role-nested streams + consumers', () => {
+  it('a role with prefix-relative streams[] is accepted', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [
+          {
+            name: 'worker',
+            publish: ['work.>'],
+            streams: [
+              { name: 'jobs', subjects: ['work.in.>'], retention: 'workqueue' },
+            ],
+          },
+        ],
+      },
+    }));
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects a role-stream with a wildcard at root (would shadow the prefix)', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [{ name: 'worker', streams: [{ name: 'wide', subjects: ['>'] }] }],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain('must not start with a wildcard');
+    }
+  });
+
+  it('rejects duplicate stream names within a role', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [
+          {
+            name: 'worker',
+            streams: [
+              { name: 'jobs', subjects: ['x.>'] },
+              { name: 'jobs', subjects: ['y.>'] },
+            ],
+          },
+        ],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain("Duplicate stream name 'jobs'");
+    }
+  });
+
+  it("rejects a consumer whose `stream` doesn't reference one of the role's streams", () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [
+          {
+            name: 'worker',
+            streams: [{ name: 'jobs', subjects: ['x.>'] }],
+            consumers: [{ name: 'broken', stream: 'no-such-stream' }],
+          },
+        ],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain("references unknown stream 'no-such-stream'");
+    }
+  });
+
+  it('accepts a consumer with a relative filterSubject', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [
+          {
+            name: 'worker',
+            streams: [{ name: 'jobs', subjects: ['work.>'] }],
+            consumers: [
+              { name: 'high', stream: 'jobs', filterSubject: 'work.priority.high' },
+            ],
+          },
+        ],
+      },
+    }));
+    expect(r.success).toBe(true);
+  });
+
+  it('rejects a consumer filterSubject that targets _INBOX directly', () => {
+    const r = templateFileSchema.safeParse(fileBody({
+      nats: {
+        roles: [
+          {
+            name: 'worker',
+            streams: [{ name: 'jobs', subjects: ['x.>'] }],
+            consumers: [
+              { name: 'evil', stream: 'jobs', filterSubject: '_INBOX.intercept' },
+            ],
+          },
+        ],
+      },
+    }));
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      const msg = r.error.issues.map((i) => i.message).join('|');
+      expect(msg).toContain('_INBOX');
+    }
+  });
 });
 
 // ─── Name uniqueness ─────────────────────────────────────────────────────────

@@ -1129,6 +1129,7 @@ model Stack {
   natsResources        StackNatsResource[]
   natsSigningKeys      NatsSigningKey[]     @relation("StackNatsSigningKey")
   natsCredentialProfiles NatsCredentialProfile[] @relation("StackNatsCredentialProfile")
+  natsStreams          NatsStream[]            @relation("StackNatsStream")
   egressPolicies       EgressPolicy[]
 
   @@index([environmentId])
@@ -1329,6 +1330,12 @@ model NatsStream {
   name            String          @unique
   accountId       String
   account         NatsAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  /// Set for streams materialized from `nats.roles[].streams` so the
+  /// cascade delete + orphan-prune path can find them by stackId. Legacy
+  /// system-template streams (declared at `nats.streams[]`) leave this
+  /// null — their lifecycle is owned by the system seeder, not a stack.
+  stackId         String?
+  stack           Stack?          @relation("StackNatsStream", fields: [stackId], references: [id], onDelete: Cascade)
   description     String?
   subjects        Json
   retention       String          @default("limits")
@@ -1345,6 +1352,7 @@ model NatsStream {
   consumers       NatsConsumer[]
 
   @@index([accountId])
+  @@index([stackId])
   @@map("nats_streams")
 }
 
