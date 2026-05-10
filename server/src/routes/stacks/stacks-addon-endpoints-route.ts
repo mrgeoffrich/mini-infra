@@ -69,6 +69,7 @@ function readWebConfig(
 // Exported for unit testing — the route handler still calls it locally.
 export function deriveEndpoints(
   snapshot: StackDefinition,
+  stackName: string,
   envName: string,
   tailnet: string | null,
 ): TailscaleAddonEndpoint[] {
@@ -89,7 +90,7 @@ export function deriveEndpoints(
     const targetService = findTargetService(service);
     if (!targetService) continue;
 
-    const hostname = sanitizeTailscaleHostname(targetService, envSlug);
+    const hostname = sanitizeTailscaleHostname(stackName, targetService, envSlug);
     const fqdn = tailnet ? `${hostname}.${tailnet}` : null;
 
     if (synth.addonIds.includes("tailscale-ssh")) {
@@ -172,6 +173,7 @@ router.get(
     try {
       endpoints = deriveEndpoints(
         snapshot,
+        stack.name,
         stack.environment?.name ?? "",
         tailnet,
       );

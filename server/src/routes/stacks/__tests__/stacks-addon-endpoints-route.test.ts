@@ -36,15 +36,15 @@ describe('deriveEndpoints', () => {
       },
     ]);
 
-    const endpoints = deriveEndpoints(snapshot, 'prod', 'tailnet-1234.ts.net');
+    const endpoints = deriveEndpoints(snapshot, 'web-stack', 'prod', 'tailnet-1234.ts.net');
 
     expect(endpoints).toHaveLength(1);
     expect(endpoints[0]).toMatchObject({
       targetService: 'web',
       syntheticServiceName: 'web-tailscale',
       kind: 'https',
-      hostname: sanitizeTailscaleHostname('web', 'prod'),
-      url: `https://${sanitizeTailscaleHostname('web', 'prod')}.tailnet-1234.ts.net`,
+      hostname: sanitizeTailscaleHostname('web-stack', 'web', 'prod'),
+      url: `https://${sanitizeTailscaleHostname('web-stack', 'web', 'prod')}.tailnet-1234.ts.net`,
     });
   });
 
@@ -72,11 +72,11 @@ describe('deriveEndpoints', () => {
       },
     ]);
 
-    const endpoints = deriveEndpoints(snapshot, 'prod', 'tailnet-1234.ts.net');
+    const endpoints = deriveEndpoints(snapshot, 'web-stack', 'prod', 'tailnet-1234.ts.net');
 
     expect(endpoints).toHaveLength(1);
     expect(endpoints[0]?.url).toBe(
-      `https://${sanitizeTailscaleHostname('web', 'prod')}.tailnet-1234.ts.net/api`,
+      `https://${sanitizeTailscaleHostname('web-stack', 'web', 'prod')}.tailnet-1234.ts.net/api`,
     );
   });
 
@@ -104,11 +104,11 @@ describe('deriveEndpoints', () => {
       },
     ]);
 
-    const endpoints = deriveEndpoints(snapshot, 'prod', null);
+    const endpoints = deriveEndpoints(snapshot, 'web-stack', 'prod', null);
 
     expect(endpoints).toHaveLength(1);
     expect(endpoints[0]?.url).toBeNull();
-    expect(endpoints[0]?.hostname).toBe(sanitizeTailscaleHostname('web', 'prod'));
+    expect(endpoints[0]?.hostname).toBe(sanitizeTailscaleHostname('web-stack', 'web', 'prod'));
   });
 
   it('returns both ssh and https endpoints, sorted ssh before https, when both addons merge on one service', () => {
@@ -142,7 +142,7 @@ describe('deriveEndpoints', () => {
       },
     ]);
 
-    const endpoints = deriveEndpoints(snapshot, 'prod', 'tailnet-1234.ts.net');
+    const endpoints = deriveEndpoints(snapshot, 'web-stack', 'prod', 'tailnet-1234.ts.net');
 
     expect(endpoints.map((e) => e.kind)).toEqual(['ssh', 'https']);
     expect(endpoints[0]?.url).toMatch(/^ssh root@/);
@@ -166,7 +166,7 @@ describe('deriveEndpoints', () => {
       },
     ]);
 
-    const endpoints = deriveEndpoints(snapshot, 'prod', 'tailnet-1234.ts.net');
+    const endpoints = deriveEndpoints(snapshot, 'web-stack', 'prod', 'tailnet-1234.ts.net');
 
     expect(endpoints).toEqual([]);
   });
