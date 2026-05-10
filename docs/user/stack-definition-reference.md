@@ -229,6 +229,7 @@ Runtime meaning:
 | `order` | Yes | Apply order for the service. | Integer `>= 0`. |
 | `routing` | No | HTTP routing configuration. | Required when `serviceType` is `StatelessWeb` or `AdoptedWeb`. |
 | `adoptedContainer` | No | Existing external container to route to. | Required when `serviceType` is `AdoptedWeb`. |
+| `addons` | No | Named capability declarations expanded into synthetic sidecars at apply time. | Map of registered `<addon-id>` to addon-specific config. See `services[].addons` below. |
 
 Runtime meaning of `serviceType`:
 
@@ -430,6 +431,60 @@ Reference note:
 | --- | --- | --- | --- |
 | `containerName` | Yes | Name of the already-running Docker container to route to. | 1-253 chars. |
 | `listeningPort` | Yes | Port Mini Infra should target on that container. | Integer `1-65535`. |
+
+## `services[].addons`
+
+A map of `<addon-id>` to addon-specific config. Each entry opts the service into a named capability — typically a sidecar container that attaches to the target at apply time. The expanded sidecar is rendered as a synthetic service (carrying `mini-infra.synthetic=true` and `mini-infra.addon-target=<service>` labels) and flows through the existing reconciler; the stack template author never declares the sidecar directly.
+
+Validation runs in two passes:
+
+1. The addon id must be registered. Unknown ids are rejected at draft / template-load time with `Addon "<id>" is not registered`.
+2. The entry value is parsed by the addon's `configSchema`. Per-addon required-field errors surface with a path of `addons.<id>.<field>`.
+
+Per-addon applicability is gated by two manifest fields, both checked at render time:
+
+- **`appliesTo`** — the addon declares which `serviceType`s it supports. Applying an addon to an unsupported service type is rejected.
+- **`requiresConnectedService`** — when set, the named connected service (e.g. `tailscale`) must be configured in the environment, otherwise expansion fails.
+
+When two addons declared on the same service share a `kind` (declared on each addon's manifest), they **merge** into a single synthetic sidecar via the registered merge strategy for that kind. The merged sidecar inherits each member's env, files, and labels and carries `mini-infra.addon-kind=<kind>` plus `mini-infra.addon-members=<comma-separated-ids>`. Addons without a `kind`, or with distinct `kind`s, expand independently.
+
+### Registered addons
+
+| ID | `kind` | Required connected service | Applies to | Config fields |
+| --- | --- | --- | --- | --- |
+| `tailscale-ssh` | `tailscale` | `tailscale` | `Stateful`, `StatelessWeb`, `Pool` | `extraTags?: string[]` |
+| `tailscale-web` | `tailscale` | `tailscale` | `Stateful`, `StatelessWeb`, `Pool` | `port: integer 1-65535` (required); `path?: string` (must start with `/`, default `/`); `extraTags?: string[]` |
+
+`tailscale-ssh` exposes operator SSH into the target service via Tailscale identity (gated by the tailnet ACL `ssh` policy). `tailscale-web` exposes the target over HTTPS on the tailnet at `${TS_CERT_DOMAIN}:443` using `tailscale serve` against `http://<target>:<port>`.
+
+Both share the `tailscale` kind: declaring both on one service produces a **single** tailscaled sidecar — one authkey, one tailnet device, one state volume — running `--ssh` and `tailscale serve` together.
+
+`extraTags` entries must match `tag:[a-z0-9-]+` and must already be declared in the operator's tailnet `tagOwners` ACL. The static `tag:mini-infra-managed` is always added by the authkey minter, so omitting `extraTags` is the common case.
+
+### Worked example — both Tailscale addons on one web service
+
+```yaml
+services:
+  - serviceName: web
+    serviceType: StatelessWeb
+    dockerImage: nginx
+    dockerTag: "1.27"
+    containerConfig:
+      ports:
+        - { containerPort: 80, hostPort: 8080, protocol: tcp }
+    dependsOn: []
+    order: 0
+    routing:
+      hostname: web.local
+      listeningPort: 80
+    addons:
+      tailscale-ssh: {}
+      tailscale-web:
+        port: 80
+        path: "/"
+```
+
+At apply time the render pipeline expands the two entries into one synthetic sidecar joined to the same Docker network as `web`. The target service itself is unchanged — no `network_mode` rewrite, no port reclamation; the sidecar reaches the target by service-name DNS on the shared bridge network.
 
 ## `nats` — app-author surface (roles, signers, imports/exports)
 
