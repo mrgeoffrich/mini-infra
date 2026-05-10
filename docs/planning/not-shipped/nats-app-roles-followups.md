@@ -49,21 +49,19 @@ The slackbot can now be ported.
 These came up during code review of Phases 1–5. None are blocking, all are
 worth doing before the first non-trivial third-party app onboards.
 
-### Cycle detection in cross-stack imports
+### ~~Cycle detection in cross-stack imports~~ — shipped
 
-**Problem.** Stack A imports from B; B imports from A. The Phase 5
-orchestrator has no cycle check. Both apply in some order: each generation
-sees the other's *prior* snapshot, so they ping-pong eventually-
-consistent rather than failing fast. This was acknowledged in the design
-(§6) but no implementation yet.
-
-**Where flagged:**
-- [server/src/services/stacks/stack-nats-apply-orchestrator.ts](../../../server/src/services/stacks/stack-nats-apply-orchestrator.ts) — TODO comment in `resolveImport`.
-
-**Approach.** Before resolving an import, walk the producer's `imports[]`
-recursively (DFS through `lastAppliedNatsSnapshot.imports`) looking for the
-consumer's stack name. Refuse to apply if found, surface the cycle path.
-Cheap because cross-stack import depth is small in practice.
+Shipped: `resolveImport` now BFS-walks the producer's
+`lastAppliedNatsSnapshot.imports[]` (environment-scoped) before resolving
+the import. If any transitive import references the consumer's stack
+name, apply fails with the cycle path in the error message
+(`A → B → C → A`). Pre-existing producer-side cycles that don't include
+the consumer (e.g. B↔C while A is the new consumer) are tolerated — the
+visited set bounds the search so the BFS terminates, but the error only
+fires for cycles introduced by *this* apply. Coverage in
+[server/src/__tests__/stack-nats-apply-orchestrator-imports.integration.test.ts](../../../server/src/__tests__/stack-nats-apply-orchestrator-imports.integration.test.ts)
+covers direct (A↔B), transitive (A→B→C→A), diamond (no false positive),
+and the producer-side-cycle-not-involving-consumer case.
 
 ### Global NATS-apply lock (concurrency hardening)
 

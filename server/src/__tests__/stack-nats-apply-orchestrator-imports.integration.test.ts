@@ -321,3 +321,195 @@ describe('runStackNatsApplyPhase — Phase 5 imports/exports', () => {
     expect(result.error).toMatch(/undeclared role/);
   });
 });
+
+// ─── Cycle detection ─────────────────────────────────────────────────────────
+
+/**
+ * Helper for the cycle tests. Applies a producer stack with the given exports
+ * (so it has a real `lastAppliedNatsSnapshot` written by the orchestrator),
+ * then overlays a custom `imports[]` array onto that snapshot to simulate
+ * the producer's own past-apply imports. This is the only way to construct
+ * the closing edge of a cycle without bootstrapping the cycle through real
+ * applies (which the validator would reject in the first place).
+ */
+async function seedAppliedProducerWithImports(args: {
+  stackName: string;
+  exports: string[];
+  importsFromNames: string[];
+}): Promise<{ stackId: string; stackName: string }> {
+  const { stackId } = await seedStack({
+    natsRoles: [{ name: 'pub', publish: ['x'] }],
+    natsExports: args.exports,
+    stackName: args.stackName,
+  });
+  const r = await runStackNatsApplyPhase(testPrisma, stackId, { triggeredBy: undefined });
+  expect(r.status).toBe('applied');
+
+  const row = (await testPrisma.stack.findUnique({ where: { id: stackId } }))!;
+  const snap = JSON.parse(row.lastAppliedNatsSnapshot!);
+  // Splice fake imports into the snapshot. The orchestrator wrote
+  // `imports: []` based on this seed's input; overwrite to simulate that
+  // this producer has previously applied with imports of its own.
+  snap.imports = args.importsFromNames.map((fromStack) => ({
+    fromStack,
+    subjects: ['events.foo'],
+    forRoles: ['pub'],
+  }));
+  await testPrisma.stack.update({
+    where: { id: stackId },
+    data: { lastAppliedNatsSnapshot: JSON.stringify(snap) },
+  });
+  return { stackId, stackName: row.name };
+}
+
+describe('runStackNatsApplyPhase — Phase 5 cycle detection', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('rejects a direct cycle (A imports B, B imports A) with the cycle path in the error', async () => {
+    const consumerName = `cycle-A-${Date.now()}`;
+
+    // B is already applied AND its snapshot already records `imports: [{ fromStack: A }]`.
+    const b = await seedAppliedProducerWithImports({
+      stackName: `cycle-B-${Date.now()}`,
+      exports: ['events.>'],
+      importsFromNames: [consumerName],
+    });
+
+    // A applies, importing from B. Cycle detection walks B's snapshot →
+    // sees A in B's imports → refuses.
+    const a = await seedStack({
+      natsRoles: [{ name: 'watcher', subscribe: ['x'] }],
+      natsImports: [{ fromStack: b.stackName, subjects: ['events.foo'], forRoles: ['watcher'] }],
+      stackName: consumerName,
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, a.stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('error');
+    expect(result.error).toMatch(/would create a cycle/);
+    // Path renders consumer → producer → consumer.
+    expect(result.error).toContain(`${consumerName} → ${b.stackName} → ${consumerName}`);
+  });
+
+  it('rejects a transitive cycle (A imports B, B imports C, C imports A)', async () => {
+    const aName = `tcycle-A-${Date.now()}`;
+
+    // C imports A (closes the cycle).
+    const c = await seedAppliedProducerWithImports({
+      stackName: `tcycle-C-${Date.now()}`,
+      exports: ['events.>'],
+      importsFromNames: [aName],
+    });
+    // B imports C. B is the direct producer A is about to import from.
+    const b = await seedAppliedProducerWithImports({
+      stackName: `tcycle-B-${Date.now()}`,
+      exports: ['events.>'],
+      importsFromNames: [c.stackName],
+    });
+
+    const a = await seedStack({
+      natsRoles: [{ name: 'watcher', subscribe: ['x'] }],
+      natsImports: [{ fromStack: b.stackName, subjects: ['events.foo'], forRoles: ['watcher'] }],
+      stackName: aName,
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, a.stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('error');
+    expect(result.error).toMatch(/would create a cycle/);
+    // BFS walks A → B → C → A; path renders that order.
+    expect(result.error).toContain(`${aName} → ${b.stackName} → ${c.stackName} → ${aName}`);
+  });
+
+  it('does NOT error on a diamond (A → B → D and A → C → D, no back-edge)', async () => {
+    // D is a leaf — no imports.
+    const d = await seedStack({
+      natsRoles: [{ name: 'pub', publish: ['x'] }],
+      natsExports: ['events.>'],
+      stackName: `diamond-D-${Date.now()}`,
+    });
+    await runStackNatsApplyPhase(testPrisma, d.stackId, { triggeredBy: undefined });
+    const dName = (await testPrisma.stack.findUnique({ where: { id: d.stackId } }))!.name;
+
+    // B imports D, also exports.
+    const b = await seedAppliedProducerWithImports({
+      stackName: `diamond-B-${Date.now()}`,
+      exports: ['events.>'],
+      importsFromNames: [dName],
+    });
+    // C also imports D, also exports.
+    const c = await seedAppliedProducerWithImports({
+      stackName: `diamond-C-${Date.now()}`,
+      exports: ['events.>'],
+      importsFromNames: [dName],
+    });
+
+    // A imports from both B and C — diamond shape, no cycle.
+    const a = await seedStack({
+      natsRoles: [{ name: 'watcher', subscribe: ['x'] }],
+      natsImports: [
+        { fromStack: b.stackName, subjects: ['events.foo'], forRoles: ['watcher'] },
+        { fromStack: c.stackName, subjects: ['events.foo'], forRoles: ['watcher'] },
+      ],
+      stackName: `diamond-A-${Date.now()}`,
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, a.stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+  });
+
+  it('does NOT error on a producer-side cycle that does not include the consumer (B → C → B with new A)', async () => {
+    // A pre-existing cycle between B and C is the operator's problem to fix
+    // when they next re-apply B or C — propagating it to every consumer's
+    // apply would be high-blast-radius and wrong. The visited set keeps
+    // the BFS from looping forever; the cycle isn't surfaced because A
+    // isn't in it.
+    const bName = `pre-B-${Date.now()}`;
+    const cName = `pre-C-${Date.now()}`;
+    // C imports B.
+    const c = await seedAppliedProducerWithImports({
+      stackName: cName,
+      exports: ['events.>'],
+      importsFromNames: [bName],
+    });
+    // B imports C — this is the pre-existing cycle the orchestrator should
+    // tolerate when walking from a fresh consumer A.
+    const b = await seedAppliedProducerWithImports({
+      stackName: bName,
+      exports: ['events.>'],
+      importsFromNames: [c.stackName],
+    });
+
+    const a = await seedStack({
+      natsRoles: [{ name: 'watcher', subscribe: ['x'] }],
+      natsImports: [{ fromStack: b.stackName, subjects: ['events.foo'], forRoles: ['watcher'] }],
+      stackName: `pre-A-${Date.now()}`,
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, a.stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+  });
+
+  it('happy-path imports still resolve after consumer name plumbing', async () => {
+    // Sanity pin: the post-cycle-detection branch of resolveImport still
+    // resolves a normal import correctly. Catches any regression where the
+    // detector fires false positives or short-circuits past the matcher.
+    const producer = await seedStack({
+      natsRoles: [{ name: 'pub', publish: ['x'] }],
+      natsExports: ['events.>'],
+      stackName: `happy-prod-${Date.now()}`,
+    });
+    await runStackNatsApplyPhase(testPrisma, producer.stackId, { triggeredBy: undefined });
+    const producerName = (await testPrisma.stack.findUnique({ where: { id: producer.stackId } }))!.name;
+
+    const consumer = await seedStack({
+      natsRoles: [{ name: 'watcher', subscribe: ['x'] }],
+      natsImports: [{ fromStack: producerName, subjects: ['events.foo'], forRoles: ['watcher'] }],
+      stackName: `happy-cons-${Date.now()}`,
+    });
+    const result = await runStackNatsApplyPhase(testPrisma, consumer.stackId, { triggeredBy: undefined });
+    expect(result.status).toBe('applied');
+
+    const profile = await testPrisma.natsCredentialProfile.findFirst({
+      where: { stackId: consumer.stackId, name: { contains: 'watcher' } },
+    });
+    const sub = profile!.subscribeAllow as unknown as string[];
+    expect(sub).toContain(`app.${producer.stackId}.events.foo`);
+  });
+});

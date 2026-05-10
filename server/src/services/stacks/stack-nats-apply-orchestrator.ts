@@ -343,6 +343,7 @@ export async function runStackNatsApplyPhase(
           prisma,
           imp,
           consumerStackId: stackId,
+          consumerStackName: stack.name,
           consumerEnvironmentId: stack.environmentId,
         });
         for (const r of imp.forRoles) {
@@ -1153,6 +1154,7 @@ async function resolveImport(args: {
   prisma: PrismaClient;
   imp: TemplateNatsImport;
   consumerStackId: string;
+  consumerStackName: string;
   consumerEnvironmentId: string | null;
 }): Promise<string[]> {
   if (args.imp.fromStack === "") {
@@ -1169,11 +1171,6 @@ async function resolveImport(args: {
   //
   // Cross-environment imports are explicitly out of scope for v1 per the
   // design's §2.1 ("Out of scope: cross-environment imports").
-  //
-  // TODO: detect circular import dependencies (A imports B imports A).
-  // Currently the orchestrator allows ping-pong eventual consistency: each
-  // apply uses the other's prior snapshot. Phase-5+ should add a cycle
-  // check and refuse to apply, surfacing the cycle to the operator.
   const producer = await args.prisma.stack.findFirst({
     where: {
       name: args.imp.fromStack,
@@ -1201,6 +1198,26 @@ async function resolveImport(args: {
   if (!producer.lastAppliedNatsSnapshot) {
     throw new Error(
       `NATS apply: producer stack '${args.imp.fromStack}' has no applied NATS snapshot — apply it before importing`,
+    );
+  }
+
+  // Refuse to apply if the producer's import chain transitively references
+  // the consumer. Without this guard the orchestrator would silently allow
+  // A imports B / B imports A — each apply would use the other side's prior
+  // snapshot and the two stacks would ping-pong eventual consistency rather
+  // than the cycle being surfaced as a structural error. The walk is BFS
+  // through `lastAppliedNatsSnapshot.imports[].fromStack`, scoped to the
+  // consumer's environment to mirror the lookup above.
+  const cyclePath = await detectImportCycle({
+    prisma: args.prisma,
+    consumerStackName: args.consumerStackName,
+    startProducerName: producer.name,
+    environmentId: args.consumerEnvironmentId,
+  });
+  if (cyclePath) {
+    throw new Error(
+      `NATS apply: cross-stack import would create a cycle (${cyclePath.join(" → ")}). ` +
+        `Cross-stack imports must form a DAG — break the cycle by removing one direction.`,
     );
   }
 
@@ -1232,6 +1249,88 @@ async function resolveImport(args: {
     resolved.push(absolute);
   }
   return resolved;
+}
+
+/**
+ * Walk the producer's `lastAppliedNatsSnapshot.imports[]` (BFS), looking for
+ * the consumer's stack name. Returns the cycle path on detection, `null`
+ * otherwise.
+ *
+ *   consumer A is importing from producer B. We walk B's snapshot.imports →
+ *   any of those stacks' snapshot.imports → ... If we ever encounter A's
+ *   name, the new import would close a cycle (A → B → ... → A).
+ *
+ * The walk is environment-scoped to mirror `resolveImport`'s producer
+ * lookup — cross-environment imports are out of scope, so the cycle search
+ * stays in the consumer's environment too. A `visited` set bounds the
+ * traversal even if the chain itself contains a cycle that doesn't include
+ * the consumer (e.g. B → C → B); we don't error on those because they're
+ * pre-existing producer-side state, not introduced by this apply.
+ *
+ * Cross-stack import depth is small in practice, so the BFS is cheap even
+ * for templates with many `imports[]` entries — each visited stack's
+ * snapshot is parsed once.
+ */
+async function detectImportCycle(args: {
+  prisma: PrismaClient;
+  consumerStackName: string;
+  startProducerName: string;
+  environmentId: string | null;
+}): Promise<string[] | null> {
+  // Defensive name-loop check. The stackId-based check in `resolveImport`
+  // already rejects self-import (producer.id === consumerStackId), but a
+  // mid-flight rename could in theory drift the name; surfacing it via
+  // the cycle path keeps the operator-facing error consistent.
+  if (args.startProducerName === args.consumerStackName) {
+    return [args.consumerStackName, args.consumerStackName];
+  }
+
+  const visited = new Set<string>();
+  const queue: Array<{ name: string; path: string[] }> = [
+    { name: args.startProducerName, path: [args.consumerStackName, args.startProducerName] },
+  ];
+
+  while (queue.length > 0) {
+    const { name, path } = queue.shift()!;
+    if (visited.has(name)) continue;
+    visited.add(name);
+
+    const stackRow = await args.prisma.stack.findFirst({
+      where: {
+        name,
+        removedAt: null,
+        environmentId: args.environmentId,
+      },
+      select: { lastAppliedNatsSnapshot: true },
+    });
+    // No matching stack, or the producer in question hasn't applied — no
+    // cycle through this branch. (`resolveImport` separately enforces that
+    // the *direct* producer is applied; intermediate hops being un-applied
+    // just means the cycle isn't realized yet.)
+    if (!stackRow?.lastAppliedNatsSnapshot) continue;
+
+    let snapshot: { imports?: Array<{ fromStack?: unknown }> };
+    try {
+      snapshot = JSON.parse(stackRow.lastAppliedNatsSnapshot);
+    } catch {
+      // Corrupt snapshot — treat as no-imports. The owning stack's next
+      // apply will surface the corruption via its own JSON.parse path.
+      continue;
+    }
+
+    for (const imp of snapshot.imports ?? []) {
+      const next = typeof imp?.fromStack === "string" ? imp.fromStack : null;
+      if (!next) continue;
+      if (next === args.consumerStackName) {
+        return [...path, args.consumerStackName];
+      }
+      if (!visited.has(next)) {
+        queue.push({ name: next, path: [...path, next] });
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
