@@ -177,17 +177,6 @@ func TestExtractArmored_RoundTrip(t *testing.T) {
 	body := "" +
 		"-----BEGIN NATS USER JWT-----\n" +
 		"abc.def.ghi\n" +
-		"------END NATS USER JWT------\n" +
-		"************************************************************\n" +
-		"-----BEGIN USER NKEY SEED-----\n" +
-		"SUACSEED\n" +
-		"------END USER NKEY SEED------\n"
-	// Note: tolerate the `------` 6-dash variant by including both ends in
-	// real `.creds` blobs; our extractor matches the canonical 5-dash form.
-	// Switch the body to canonical for the test.
-	body = "" +
-		"-----BEGIN NATS USER JWT-----\n" +
-		"abc.def.ghi\n" +
 		"-----END NATS USER JWT-----\n" +
 		"-----BEGIN USER NKEY SEED-----\n" +
 		"SUACSEED\n" +
@@ -202,6 +191,42 @@ func TestExtractArmored_RoundTrip(t *testing.T) {
 	}
 	if seed != "SUACSEED" {
 		t.Errorf("seed = %q, want %q", seed, "SUACSEED")
+	}
+}
+
+// nats-jwt's `fmtCreds` emits 5-dash BEGIN markers and 6-dash END markers.
+// Real .creds blobs hitting both egress-gateway and egress-fw-agent in dev
+// look like this. The parser must accept the asymmetry — earlier substring
+// matching absorbed the extra dash into the seed body, producing a 59-char
+// "seed" that failed base32 decode at byte 58 and crashed both binaries on
+// every boot with `error signing nonce: unable to extract key pair from
+// seed: illegal base32 data at input byte 58`.
+func TestExtractArmored_AsymmetricEndMarkers(t *testing.T) {
+	body := "" +
+		"-----BEGIN NATS USER JWT-----\n" +
+		"abc.def.ghi\n" +
+		"------END NATS USER JWT------\n" +
+		"\n" +
+		"************************* IMPORTANT *************************\n" +
+		"\n" +
+		"-----BEGIN USER NKEY SEED-----\n" +
+		"SUAD3HZCAIX43R4AAIE7SNKC5UXBB3X4C2XT4TXQZIM4VLIRLBL4TWLF34\n" +
+		"------END USER NKEY SEED------\n"
+
+	jwt, seed, err := splitCredsBody(body)
+	if err != nil {
+		t.Fatalf("splitCredsBody: %v", err)
+	}
+	if jwt != "abc.def.ghi" {
+		t.Errorf("jwt = %q, want %q", jwt, "abc.def.ghi")
+	}
+	wantSeed := "SUAD3HZCAIX43R4AAIE7SNKC5UXBB3X4C2XT4TXQZIM4VLIRLBL4TWLF34"
+	if seed != wantSeed {
+		t.Errorf("seed = %q (len %d), want %q (len %d)", seed, len(seed), wantSeed, len(wantSeed))
+	}
+	// Specifically guard against the absorbed-trailing-dash regression.
+	if len(seed) != 58 {
+		t.Errorf("seed length = %d, want 58 (NATS NKey seeds are exactly 58 chars)", len(seed))
 	}
 }
 
