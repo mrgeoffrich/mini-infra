@@ -23,7 +23,7 @@ describe("egress-fw-agent template", () => {
     expect(json.name).toBe("egress-fw-agent");
     expect(json.scope).toBe("host");
     expect(json.category).toBe("infrastructure");
-    expect(json.builtinVersion).toBe(3);
+    expect(json.builtinVersion).toBe(4);
 
     // The agent role declares the KV bucket Phase 2 needs.
     expect(json.nats.subjectPrefix).toBe("mini-infra.egress.fw");
@@ -34,6 +34,14 @@ describe("egress-fw-agent template", () => {
     // not via a subject publish on `mini-infra.egress.fw.health`.
     expect(role.publish).toEqual(["rules.applied", "events"]);
     expect(role.subscribe).toEqual(["rules.apply"]);
+    // `inboxAuto: 'both'` is required because every JetStream operation
+    // (KV Put, JS Publish to `rules.applied` / `events`) is a request/reply
+    // under the hood — nats.go awaits the JS API ack on a synthetic
+    // `_INBOX.<id>.<seq>` subject. With the previous `'reply'` setting the
+    // role got PUB on `_INBOX.>` (for replying to inbound `rules.apply`
+    // requests) but no SUB, so KV Puts hit a Permissions Violation on the
+    // ack-subscribe and timed out as `context deadline exceeded`.
+    expect(role.inboxAuto).toBe("both");
 
     // Host networking + privileged caps are the whole reason this template
     // exists (vs being a regular bridge-mode stack).
@@ -55,7 +63,7 @@ describe("egress-fw-agent template", () => {
       publish: ["rules.applied", "events"],
       subscribe: ["rules.apply"],
       kvBuckets: ["egress-fw-health"],
-      inboxAuto: "reply",
+      inboxAuto: "both",
     };
     expect(() => templateNatsRoleSchema.parse(role)).not.toThrow();
   });
