@@ -49,10 +49,36 @@ export class JobPoolNatsRegistry {
 
   private readonly entries = new Map<string, NatsRegistryEntry>();
 
+  /**
+   * Cached `DockerExecutorService` instance — see the same comment on
+   * `JobPoolCronRegistry`. The factory in `server.ts` constructs a fresh
+   * executor + `initialize()`s it per call, so re-resolving on every
+   * NATS-request fire wasted a Docker client per inbound message
+   * (MINI-50 review finding M5).
+   */
+  private cachedDockerExecutor: DockerExecutorService | null = null;
+  private cachedDockerExecutorPromise: Promise<DockerExecutorService> | null = null;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly resolveDockerExecutor: () => Promise<DockerExecutorService>,
   ) {}
+
+  private async getDockerExecutor(): Promise<DockerExecutorService> {
+    if (this.cachedDockerExecutor) return this.cachedDockerExecutor;
+    if (!this.cachedDockerExecutorPromise) {
+      this.cachedDockerExecutorPromise = this.resolveDockerExecutor()
+        .then((exec) => {
+          this.cachedDockerExecutor = exec;
+          return exec;
+        })
+        .catch((err) => {
+          this.cachedDockerExecutorPromise = null;
+          throw err;
+        });
+    }
+    return this.cachedDockerExecutorPromise;
+  }
 
   static setInstance(instance: JobPoolNatsRegistry | null): void {
     JobPoolNatsRegistry.instance = instance;
@@ -233,7 +259,7 @@ export class JobPoolNatsRegistry {
         }
 
         try {
-          const dockerExecutor = await this.resolveDockerExecutor();
+          const dockerExecutor = await this.getDockerExecutor();
           const result = await runJobPool(this.prisma, dockerExecutor, {
             stackId: want.stackId,
             serviceName: want.serviceName,
