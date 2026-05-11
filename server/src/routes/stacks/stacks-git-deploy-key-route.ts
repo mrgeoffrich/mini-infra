@@ -1,15 +1,73 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import prisma from "../../lib/prisma";
 import { asyncHandler } from "../../lib/async-handler";
-import { requirePermission } from "../../middleware/auth";
+import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { getLogger } from "../../lib/logger-factory";
 import {
   getVaultKVService,
   VaultKVError,
 } from "../../services/vault/vault-kv-service";
+import { UserEventService } from "../../services/user-events/user-event-service";
+import type { UserEventStatus } from "@mini-infra/types";
 
 const log = getLogger("stacks", "stacks-git-deploy-key-route");
+
+/**
+ * Audit-log a git-deploy-key write or delete via the same `UserEventService`
+ * surface `routes/vault/kv.ts` uses for brokered KV writes. The key material
+ * is NEVER part of the audit metadata — we record `{ stackId, serviceName,
+ * action, apiKeyId }` only. Failures are non-fatal so a missing audit row
+ * never breaks the underlying Vault operation.
+ *
+ * The event types reuse the existing `vault_kv_*` strings (single source of
+ * truth in `lib/types/user-events.ts`) — the resource identifier on the
+ * row carries the stack/service context.
+ */
+async function recordGitDeployKeyAuditEvent(
+  req: Request,
+  action: "put" | "delete",
+  stackId: string,
+  serviceName: string,
+  status: UserEventStatus,
+  errorMessage?: string,
+): Promise<void> {
+  try {
+    const user = getAuthenticatedUser(req);
+    const apiKeyId = req.apiKey?.id ?? null;
+    const eventType = action === "put" ? "vault_kv_write" : "vault_kv_delete";
+    await new UserEventService().createEvent({
+      eventType,
+      eventCategory: "security",
+      eventName: `git-deploy-key ${action}: ${stackId}/${serviceName}`,
+      userId: user?.id,
+      triggeredBy: req.apiKey ? "api" : "manual",
+      status,
+      progress: status === "completed" ? 100 : 0,
+      resourceId: stackId,
+      resourceType: "stack",
+      resourceName: `${stackId}/${serviceName}`,
+      description:
+        errorMessage ?? `git-deploy-key ${action} for stack service ${serviceName}`,
+      metadata: {
+        stackId,
+        serviceName,
+        action: `git-deploy-key:${action}`,
+        apiKeyId,
+      },
+    });
+  } catch (err) {
+    log.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        action,
+        stackId,
+        serviceName,
+      },
+      "Failed to record git-deploy-key audit event (non-fatal)",
+    );
+  }
+}
 
 const router = Router();
 
@@ -180,6 +238,7 @@ router.put(
     }
 
     const path = buildGitDeployKeyPath(stackId, serviceName);
+    const userId = getAuthenticatedUser(req)?.id ?? null;
     try {
       await getVaultKVService().write(path, {
         privateKey: parsed.data.privateKey,
@@ -187,13 +246,28 @@ router.put(
       // Intentionally NOT logging the key material — only the marker that a
       // key was written. The Vault KV service itself also logs at info on
       // write, but redacts the data.
-      log.info({ stackId, serviceName }, "git-deploy-key written");
+      log.info({ stackId, serviceName, userId }, "git-deploy-key written");
+      await recordGitDeployKeyAuditEvent(
+        req,
+        "put",
+        stackId,
+        serviceName,
+        "completed",
+      );
       return res.json({ success: true, data: { hasKey: true } });
     } catch (err) {
       if (err instanceof VaultKVError) {
         log.warn(
-          { err: err.message, code: err.code, stackId, serviceName },
+          { err: err.message, code: err.code, stackId, serviceName, userId },
           "git-deploy-key write failed",
+        );
+        await recordGitDeployKeyAuditEvent(
+          req,
+          "put",
+          stackId,
+          serviceName,
+          "failed",
+          err.message,
         );
         return res
           .status(vaultKvErrorStatus(err))
@@ -227,6 +301,7 @@ router.delete(
     }
 
     const path = buildGitDeployKeyPath(stackId, serviceName);
+    const userId = getAuthenticatedUser(req)?.id ?? null;
     try {
       const current = await getVaultKVService().read(path);
       if (current === null) {
@@ -237,13 +312,28 @@ router.delete(
         });
       }
       await getVaultKVService().delete(path);
-      log.info({ stackId, serviceName }, "git-deploy-key deleted");
+      log.info({ stackId, serviceName, userId }, "git-deploy-key deleted");
+      await recordGitDeployKeyAuditEvent(
+        req,
+        "delete",
+        stackId,
+        serviceName,
+        "completed",
+      );
       return res.json({ success: true, data: { hasKey: false } });
     } catch (err) {
       if (err instanceof VaultKVError) {
         log.warn(
-          { err: err.message, code: err.code, stackId, serviceName },
+          { err: err.message, code: err.code, stackId, serviceName, userId },
           "git-deploy-key delete failed",
+        );
+        await recordGitDeployKeyAuditEvent(
+          req,
+          "delete",
+          stackId,
+          serviceName,
+          "failed",
+          err.message,
         );
         return res
           .status(vaultKvErrorStatus(err))

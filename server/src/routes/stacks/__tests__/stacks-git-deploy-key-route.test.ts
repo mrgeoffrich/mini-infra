@@ -36,6 +36,21 @@ vi.mock('../../../middleware/auth', () => ({
   getAuthenticatedUser: (req: { user?: unknown }) => req.user ?? null,
 }));
 
+// UserEventService stub — captures `createEvent` calls so the audit-trail
+// regression tests can assert the per-action audit row was written without
+// hitting Prisma. The route awaits these calls but the failure path is
+// non-fatal, so resolving with a stub object is safe. `vi.hoisted` is
+// required because `vi.mock` runs before normal top-level consts initialize.
+const { mockCreateEvent } = vi.hoisted(() => ({
+  mockCreateEvent: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+}));
+vi.mock('../../../services/user-events/user-event-service', () => {
+  class MockUserEventService {
+    createEvent = mockCreateEvent;
+  }
+  return { UserEventService: MockUserEventService };
+});
+
 // Prisma stub: route guards "does this stack service exist?" via
 // `stackService.findFirst`. Default returns a row; specific tests override
 // with `null` to exercise the 404 path.
@@ -82,6 +97,8 @@ beforeEach(() => {
   mockKvService.write.mockReset();
   mockKvService.delete.mockReset();
   mockStackServiceFindFirst.mockReset();
+  mockCreateEvent.mockReset();
+  mockCreateEvent.mockResolvedValue({ id: 'evt-1' });
   // Default: stack service exists.
   mockStackServiceFindFirst.mockResolvedValue({ id: 'svc-1' });
 });
@@ -167,6 +184,16 @@ describe('GET /:stackId/services/:serviceName/git-deploy-key', () => {
 
     expect(res.body.code).toBe('vault_sealed');
   });
+
+  it('does NOT record an audit event for GET (reads are not mutations)', async () => {
+    mockKvService.read.mockResolvedValue({ privateKey: FAKE_PEM });
+
+    await supertest(buildApp())
+      .get('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(200);
+
+    expect(mockCreateEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe('PUT /:stackId/services/:serviceName/git-deploy-key', () => {
@@ -182,6 +209,70 @@ describe('PUT /:stackId/services/:serviceName/git-deploy-key', () => {
     expect(mockKvService.write).toHaveBeenCalledWith(
       'stacks/stack-1/services/shell/git-deploy-key',
       { privateKey: FAKE_PEM },
+    );
+  });
+
+  it('records a write audit event with the right userId on success', async () => {
+    // Root-CLAUDE rule: "All configuration mutations require `userId` for
+    // audit trail". Same shape as the `vault_kv_write` audit row the brokered
+    // Vault KV route writes (see `routes/vault/kv.ts`).
+    mockKvService.write.mockResolvedValue(undefined);
+
+    await supertest(buildApp())
+      .put('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .send({ privateKey: FAKE_PEM })
+      .expect(200);
+
+    expect(mockCreateEvent).toHaveBeenCalledTimes(1);
+    expect(mockCreateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'vault_kv_write',
+        eventCategory: 'security',
+        userId: 'test-user',
+        resourceId: 'stack-1',
+        resourceType: 'stack',
+        status: 'completed',
+        metadata: expect.objectContaining({
+          stackId: 'stack-1',
+          serviceName: 'shell',
+          action: 'git-deploy-key:put',
+          apiKeyId: 'test-key',
+        }),
+      }),
+    );
+  });
+
+  it('NEVER includes the private key in the audit event metadata', async () => {
+    mockKvService.write.mockResolvedValue(undefined);
+
+    await supertest(buildApp())
+      .put('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .send({ privateKey: FAKE_PEM })
+      .expect(200);
+
+    expect(mockCreateEvent).toHaveBeenCalled();
+    const eventArg = JSON.stringify(mockCreateEvent.mock.calls[0]?.[0]);
+    expect(eventArg).not.toContain(FAKE_PEM);
+    expect(eventArg).not.toContain('AAAA-test-payload');
+    expect(eventArg).not.toContain('privateKey');
+  });
+
+  it('records a failed audit event when Vault write rejects', async () => {
+    mockKvService.write.mockRejectedValue(
+      new VaultKVError('permission denied', 'vault_permission_denied', 403),
+    );
+
+    await supertest(buildApp())
+      .put('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .send({ privateKey: FAKE_PEM })
+      .expect(403);
+
+    expect(mockCreateEvent).toHaveBeenCalledTimes(1);
+    expect(mockCreateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'vault_kv_write',
+        status: 'failed',
+      }),
     );
   });
 
@@ -321,6 +412,33 @@ describe('DELETE /:stackId/services/:serviceName/git-deploy-key', () => {
     expect(res.body).toEqual({ success: true, data: { hasKey: false } });
     expect(mockKvService.delete).toHaveBeenCalledWith(
       'stacks/stack-1/services/shell/git-deploy-key',
+    );
+  });
+
+  it('records a delete audit event with the right userId on success', async () => {
+    mockKvService.read.mockResolvedValue({ privateKey: FAKE_PEM });
+    mockKvService.delete.mockResolvedValue(undefined);
+
+    await supertest(buildApp())
+      .delete('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(200);
+
+    expect(mockCreateEvent).toHaveBeenCalledTimes(1);
+    expect(mockCreateEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'vault_kv_delete',
+        eventCategory: 'security',
+        userId: 'test-user',
+        resourceId: 'stack-1',
+        resourceType: 'stack',
+        status: 'completed',
+        metadata: expect.objectContaining({
+          stackId: 'stack-1',
+          serviceName: 'shell',
+          action: 'git-deploy-key:delete',
+          apiKeyId: 'test-key',
+        }),
+      }),
     );
   });
 
