@@ -30,6 +30,44 @@ import {
 
 const router = Router();
 
+/**
+ * Module-level cached `DockerExecutorService` instance for the restore
+ * route. The factory pattern (`new DockerExecutorService() + initialize()`)
+ * is non-trivial work, and allocating one per restore request wasted
+ * resources on every form submit (MINI-50 review finding M5). Mirrors
+ * the `lazyDockerExecutor` shape from `job-pool-exit-watcher.ts` /
+ * `backup-executor.ts`.
+ */
+let cachedRestoreDockerExecutor: DockerExecutorService | null = null;
+let cachedRestoreDockerExecutorPromise: Promise<DockerExecutorService> | null = null;
+
+async function getRestoreDockerExecutor(): Promise<DockerExecutorService> {
+  if (cachedRestoreDockerExecutor) return cachedRestoreDockerExecutor;
+  if (!cachedRestoreDockerExecutorPromise) {
+    cachedRestoreDockerExecutorPromise = (async () => {
+      const exec = new DockerExecutorService();
+      await exec.initialize();
+      cachedRestoreDockerExecutor = exec;
+      return exec;
+    })().catch((err) => {
+      // Reset so the next request can retry — a transient docker
+      // unavailability shouldn't pin the route to a broken state.
+      cachedRestoreDockerExecutorPromise = null;
+      throw err;
+    });
+  }
+  return cachedRestoreDockerExecutorPromise;
+}
+
+/**
+ * Test-only — drop the cached executor so a fresh module import in tests
+ * doesn't carry state across suites. Not exported on the public surface.
+ */
+export function __resetRestoreDockerExecutorForTests(): void {
+  cachedRestoreDockerExecutor = null;
+  cachedRestoreDockerExecutorPromise = null;
+}
+
 // ====================
 // Validation Schemas
 // ====================
@@ -565,8 +603,7 @@ router.post(
         });
       }
 
-      const dockerExecutor = new DockerExecutorService();
-      await dockerExecutor.initialize();
+      const dockerExecutor = await getRestoreDockerExecutor();
 
       const result = await runJobPool(prisma, dockerExecutor, {
         stackId: restoreService.stackId,

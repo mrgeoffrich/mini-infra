@@ -50,10 +50,45 @@ export class JobPoolCronRegistry {
 
   private readonly entries = new Map<string, CronRegistryEntry>();
 
+  /**
+   * Cached `DockerExecutorService` instance — the factory in `server.ts`
+   * constructs a fresh executor + `initialize()`s it on every call, so
+   * the per-fire pattern of `await this.resolveDockerExecutor()` allocated
+   * ~1,440 executors per day for a stack with a 1-minute cron (MINI-50
+   * review finding M5). The watcher's `lazyDockerExecutor` shape solves
+   * this — the first fire pays the construction cost, every subsequent
+   * fire reuses the same instance.
+   */
+  private cachedDockerExecutor: DockerExecutorService | null = null;
+  private cachedDockerExecutorPromise: Promise<DockerExecutorService> | null = null;
+
   constructor(
     private readonly prisma: PrismaClient,
     private readonly resolveDockerExecutor: () => Promise<DockerExecutorService>,
   ) {}
+
+  /**
+   * Lazy single-instance accessor for the docker executor. Concurrent
+   * callers during the first construction await the same promise so a
+   * burst of simultaneous fires doesn't race-allocate multiple executors.
+   */
+  private async getDockerExecutor(): Promise<DockerExecutorService> {
+    if (this.cachedDockerExecutor) return this.cachedDockerExecutor;
+    if (!this.cachedDockerExecutorPromise) {
+      this.cachedDockerExecutorPromise = this.resolveDockerExecutor()
+        .then((exec) => {
+          this.cachedDockerExecutor = exec;
+          return exec;
+        })
+        .catch((err) => {
+          // Reset so the next fire can retry — a transient docker
+          // unavailability shouldn't pin the registry to a broken state.
+          this.cachedDockerExecutorPromise = null;
+          throw err;
+        });
+    }
+    return this.cachedDockerExecutorPromise;
+  }
 
   static setInstance(instance: JobPoolCronRegistry | null): void {
     JobPoolCronRegistry.instance = instance;
@@ -300,7 +335,7 @@ export class JobPoolCronRegistry {
 
   private async fireOnce(stackId: string, serviceName: string, triggerName: string): Promise<void> {
     try {
-      const dockerExecutor = await this.resolveDockerExecutor();
+      const dockerExecutor = await this.getDockerExecutor();
       const result = await runJobPool(this.prisma, dockerExecutor, {
         stackId,
         serviceName,

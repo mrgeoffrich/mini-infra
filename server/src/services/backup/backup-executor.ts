@@ -38,7 +38,41 @@ const log = getLogger("backup", "backup-executor");
  * required, and `shutdown()` is a no-op.
  */
 export class BackupExecutorService {
+  /**
+   * Cached `DockerExecutorService` instance — `new DockerExecutorService()
+   * + initialize()` is non-trivial work (wires a fresh Docker client +
+   * event handlers + image-pull auth lookup), so allocating one per
+   * `queueBackup()` call wasted resources on every "Run now" click
+   * (MINI-50 review finding M5). Mirrors the `lazyDockerExecutor`
+   * pattern in `job-pool-exit-watcher.ts` / the registries.
+   */
+  private cachedDockerExecutor: DockerExecutorService | null = null;
+  private cachedDockerExecutorPromise: Promise<DockerExecutorService> | null = null;
+
   constructor(private readonly prisma: PrismaClient) {}
+
+  /**
+   * Lazy single-instance accessor. Concurrent callers during the first
+   * construction await the same promise so a burst of simultaneous
+   * "Run now" clicks doesn't race-allocate multiple executors.
+   */
+  private async getDockerExecutor(): Promise<DockerExecutorService> {
+    if (this.cachedDockerExecutor) return this.cachedDockerExecutor;
+    if (!this.cachedDockerExecutorPromise) {
+      this.cachedDockerExecutorPromise = (async () => {
+        const exec = new DockerExecutorService();
+        await exec.initialize();
+        this.cachedDockerExecutor = exec;
+        return exec;
+      })().catch((err) => {
+        // Reset so the next call can retry — a transient docker
+        // unavailability shouldn't pin the service to a broken state.
+        this.cachedDockerExecutorPromise = null;
+        throw err;
+      });
+    }
+    return this.cachedDockerExecutorPromise;
+  }
 
   /**
    * Initialise — kept as a no-op for backwards compatibility with the
@@ -74,8 +108,7 @@ export class BackupExecutorService {
       );
     }
 
-    const dockerExecutor = new DockerExecutorService();
-    await dockerExecutor.initialize();
+    const dockerExecutor = await this.getDockerExecutor();
 
     const result = await runJobPool(this.prisma, dockerExecutor, {
       stackId: stack.id,
