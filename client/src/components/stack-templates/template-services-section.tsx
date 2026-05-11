@@ -21,6 +21,7 @@ const TYPE_BADGE_CLASSES: Record<StackServiceType, string> = {
   StatelessWeb: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
   AdoptedWeb: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
   Pool: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300",
+  JobPool: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-300",
 };
 
 const TYPE_BORDER_CLASSES: Record<StackServiceType, string> = {
@@ -28,6 +29,7 @@ const TYPE_BORDER_CLASSES: Record<StackServiceType, string> = {
   StatelessWeb: "border-l-green-500",
   AdoptedWeb: "border-l-purple-500",
   Pool: "border-l-amber-500",
+  JobPool: "border-l-rose-500",
 };
 
 function toServiceDefinition(

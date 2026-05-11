@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as cron from "node-cron";
 import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
@@ -117,6 +118,134 @@ export const poolConfigSchema = z.object({
   maxInstances: z.number().int().min(1).nullable(),
   managedBy: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).nullable(),
 });
+
+// JobPool trigger and config validators (Phase 1, MINI-50). The structural
+// JobPool authoring surface — `triggers[]`, `maxConcurrent`, `history`,
+// `killAfterSeconds`, `onFailure`. The cron `schedule` is validated through
+// `node-cron`'s parser (the same parser node-cron uses to schedule, so any
+// string that survives this check is guaranteed schedulable in Phase 3). NATS
+// subjects use `natsRelativeSubjectSchema` so the structural rules ($SYS-
+// protection, no wildcards-at-start, no _INBOX) match the rest of the bus —
+// the runtime prefix allowlist (`nats-prefix-allowlist-service.ts`) layers on
+// top at apply/subscribe time and is not enforced at template-load.
+//
+// `name` on each trigger is a short identifier that history events and
+// run-skipped logs attribute the run to ("ran from `nightly-prod` cron").
+const triggerNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(
+    /^[a-zA-Z0-9_-]+$/,
+    "trigger name can only contain letters, numbers, '_', '-'",
+  );
+
+// Structural subject rules for a `nats-request` trigger. Mirrors
+// `natsRelativeSubjectSchema` in `./stack-template-schemas.ts` — kept inline
+// here to avoid a circular import (stack-template-schemas imports from this
+// file). The runtime prefix-allowlist check is layered on top at
+// subscribe-time in Phase 3 and is enforced by
+// `nats-prefix-allowlist-service.ts`, not at template-load.
+const triggerNatsSubjectSchema = z
+  .string()
+  .min(1)
+  .max(255)
+  .regex(
+    /^[A-Za-z0-9_*>\-.]+$/,
+    "subject must contain only letters, numbers, '_', '-', '.', '*', '>'",
+  )
+  .refine((s) => !s.startsWith('>') && !s.startsWith('*'), {
+    message:
+      "subject must not start with a wildcard ('>' or '*') — that would shadow the entire stack prefix",
+  })
+  .refine((s) => !s.startsWith('_INBOX.'), {
+    message:
+      "subject must not target '_INBOX.>' directly — use a different trigger kind",
+  })
+  .refine((s) => !s.startsWith('$SYS.') && s !== '$SYS', {
+    message:
+      "subject must not target the '$SYS.>' system-account namespace",
+  })
+  .refine(
+    (s) =>
+      !s.includes('..') && !s.split('.').some((tok) => tok.length === 0),
+    {
+      message:
+        "subject must not contain empty tokens ('..' or leading/trailing dots)",
+    },
+  );
+
+export const jobPoolTriggerSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('cron'),
+    schedule: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => cron.validate(s), {
+        message: 'cron schedule is not parseable by node-cron',
+      }),
+    timezone: z.string().min(1).max(100).optional(),
+    name: triggerNameSchema,
+  }),
+  z.object({
+    kind: z.literal('nats-request'),
+    subject: triggerNatsSubjectSchema,
+    ackWithRunId: z.boolean(),
+    name: triggerNameSchema,
+  }),
+  z.object({
+    kind: z.literal('manual'),
+    name: triggerNameSchema,
+  }),
+]);
+
+export const jobPoolConfigSchema = z
+  .object({
+    // `null` = unlimited, otherwise must be at least 1. `0` is explicitly
+    // forbidden — it would mean "the pool can never run" which is a
+    // misconfiguration, not a feature.
+    maxConcurrent: z.number().int().min(1).nullable(),
+    // Reserved for a future where another stack owns the spawn token. Unused
+    // in v1 — accept null or a service-name-shaped string for forward compat.
+    managedBy: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .nullable(),
+    triggers: z.array(jobPoolTriggerSchema).min(1, {
+      message: 'JobPool requires at least one trigger',
+    }),
+    history: z.object({
+      retainDays: z.number().int().min(1),
+      maxBytes: z.string().min(1).optional(),
+    }),
+    killAfterSeconds: z.number().int().min(1).nullable().optional(),
+    onFailure: z
+      .object({
+        retries: z.number().int().min(0),
+        backoff: z.enum(['fixed', 'exponential']),
+      })
+      .optional(),
+  })
+  .superRefine((cfg, ctx) => {
+    // Each trigger's `name` must be unique within the pool — names land in
+    // history events and run-skipped logs as the attribution key, so a
+    // duplicate would make a run untraceable to its source trigger.
+    const seen = new Set<string>();
+    for (let i = 0; i < cfg.triggers.length; i++) {
+      const n = cfg.triggers[i].name;
+      if (seen.has(n)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['triggers', i, 'name'],
+          message: `Duplicate trigger name "${n}"`,
+        });
+      }
+      seen.add(n);
+    }
+  });
 
 export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
@@ -470,6 +599,7 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     configFiles: z.array(stackConfigFileSchema).optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
     poolConfig: poolConfigSchema.optional(),
+    jobPoolConfig: jobPoolConfigSchema.optional(),
     // Resolved concrete IDs — set at apply time only, never present in
     // template/draft input. Symbolic *Ref siblings live on the common base.
     vaultAppRoleId: z.string().min(1).nullable().optional(),
@@ -531,6 +661,28 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     },
     {
       message: "Pool services cannot have routing",
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "JobPool" && !data.jobPoolConfig) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "JobPool services must have jobPoolConfig",
+    }
+  )
+  .refine(
+    (data) => {
+      if (data.serviceType === "JobPool" && data.routing) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "JobPool services cannot have routing",
     }
   );
 
@@ -647,6 +799,7 @@ export const updateStackServiceSchema = z.object({
   routing: stackServiceRoutingSchema.nullable().optional(),
   adoptedContainer: adoptedContainerSchema.nullable().optional(),
   poolConfig: poolConfigSchema.nullable().optional(),
+  jobPoolConfig: jobPoolConfigSchema.nullable().optional(),
   vaultAppRoleId: z.string().nullable().optional(),
   natsCredentialId: z.string().nullable().optional(),
 });

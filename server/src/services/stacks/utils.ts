@@ -136,6 +136,7 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
       ? (s.adoptedContainer as unknown as Prisma.InputJsonValue)
       : Prisma.DbNull,
     poolConfig: s.poolConfig ? (s.poolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+    jobPoolConfig: s.jobPoolConfig ? (s.jobPoolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
     natsCredentialRef: s.natsCredentialRef ?? null,
@@ -327,6 +328,7 @@ export async function resolveServiceConfigs(
     routing: unknown;
     adoptedContainer?: unknown;
     poolConfig?: unknown;
+    jobPoolConfig?: unknown;
     vaultAppRoleId?: string | null;
     vaultAppRoleRef?: string | null;
     natsCredentialId?: string | null;
@@ -458,6 +460,7 @@ export function toServiceDefinition(svc: {
   routing: unknown;
   adoptedContainer?: unknown;
   poolConfig?: unknown;
+  jobPoolConfig?: unknown;
   vaultAppRoleId?: string | null;
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
@@ -477,6 +480,7 @@ export function toServiceDefinition(svc: {
     routing: (svc.routing as unknown as StackServiceDefinition['routing']) ?? undefined,
     adoptedContainer: (svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer']) ?? undefined,
     poolConfig: (svc.poolConfig as unknown as StackServiceDefinition['poolConfig']) ?? undefined,
+    jobPoolConfig: (svc.jobPoolConfig as unknown as StackServiceDefinition['jobPoolConfig']) ?? undefined,
     vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
     vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
     natsCredentialId: svc.natsCredentialId ?? undefined,

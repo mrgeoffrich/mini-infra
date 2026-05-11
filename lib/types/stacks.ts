@@ -4,7 +4,7 @@
 
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
-export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool'] as const;
+export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
@@ -90,6 +90,39 @@ export interface PoolConfig {
   /** Name of the caller service in the stack that gets the pool management token. */
   managedBy: string | null;
 }
+
+/**
+ * Per-service configuration for a `JobPool` service. JobPools spawn one-shot
+ * containers in response to triggers (cron, NATS request, manual HTTP), reusing
+ * the Pool spawn / `PoolInstance` lifecycle machinery but driven by container
+ * exit rather than idle timers (exit watcher lands in Phase 2; Phase 1 only
+ * defines the type, validates it, persists it, and offers a direct
+ * `runJobPool()` entry point).
+ */
+export interface JobPoolConfig {
+  /** Hard cap on simultaneous in-flight runs. `null` = unlimited. */
+  maxConcurrent: number | null;
+
+  /** Reserved — name of a caller service that holds the spawn token. Unused in v1. */
+  managedBy: string | null;
+
+  /** Triggers declared by the template. At least one required. */
+  triggers: JobPoolTrigger[];
+
+  /** Per-pool JetStream history stream config. */
+  history: { retainDays: number; maxBytes?: string };
+
+  /** Safety: kill a runaway run after N seconds. Replaces Pool's idle timer. */
+  killAfterSeconds?: number | null;
+
+  /** In-job retry policy on non-zero exit. Optional. */
+  onFailure?: { retries: number; backoff: 'fixed' | 'exponential' };
+}
+
+export type JobPoolTrigger =
+  | { kind: 'cron'; schedule: string; timezone?: string; name: string }
+  | { kind: 'nats-request'; subject: string; ackWithRunId: boolean; name: string }
+  | { kind: 'manual'; name: string };
 
 /** Lifecycle statuses for a pool instance row. */
 export const POOL_INSTANCE_STATUSES = ['starting', 'running', 'stopping', 'stopped', 'error'] as const;
@@ -319,6 +352,7 @@ export interface StackService {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  jobPoolConfig: JobPoolConfig | null;
   vaultAppRoleId: string | null;
   lastAppliedVaultAppRoleId: string | null;
   natsCredentialId: string | null;
@@ -417,6 +451,7 @@ export interface StackServiceInfo {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  jobPoolConfig: JobPoolConfig | null;
   /** Service Addons authoring block; null when no addons declared. */
   addons: Record<string, unknown> | null;
   createdAt: string;
@@ -457,6 +492,7 @@ export interface StackServiceDefinition {
   routing?: StackServiceRouting;
   adoptedContainer?: AdoptedContainerRef;
   poolConfig?: PoolConfig;
+  jobPoolConfig?: JobPoolConfig | null;
   vaultAppRoleId?: string | null;
   /** Symbolic reference to a vault.appRoles[].name in the owning template draft.
    *  Resolved to a concrete vaultAppRoleId at apply time. */
@@ -526,6 +562,7 @@ type SerializableStackService = {
   routing?: StackServiceRouting | null;
   adoptedContainer?: AdoptedContainerRef | null;
   poolConfig?: PoolConfig | null;
+  jobPoolConfig?: JobPoolConfig | null;
   vaultAppRoleId?: string | null;
   addons?: Record<string, unknown> | null;
   synthetic?: SyntheticServiceInfo;
@@ -558,6 +595,7 @@ export function serializeStack(
       routing: s.routing ?? undefined,
       adoptedContainer: s.adoptedContainer ?? undefined,
       poolConfig: s.poolConfig ?? undefined,
+      jobPoolConfig: s.jobPoolConfig ?? undefined,
       vaultAppRoleId: s.vaultAppRoleId ?? undefined,
       addons: s.addons ?? undefined,
       synthetic: s.synthetic,

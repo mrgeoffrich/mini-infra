@@ -47,6 +47,10 @@ vi.mock('../middleware/auth', () => ({
     req.user = { id: 'test-user' };
     next();
   },
+  requireSessionOrApiKey: (req: any, _res: any, next: any) => {
+    req.user = { id: 'test-user' };
+    next();
+  },
 }));
 
 // Mock socket
