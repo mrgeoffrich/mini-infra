@@ -490,9 +490,59 @@ async function applyEnvInjectionGroup(
   };
 
   if (context.dryRun) {
+    // Side-effect-free `planStub()` (optional) lets the addon surface the
+    // static parts of its provisioned values — `requiredEgress`, mounts,
+    // caps, devices, labels — so plan-time consumers see the same shape
+    // the apply path would write. Implementations must NOT read Vault or
+    // mint credentials here. Without this hook, the egress-rule reconciler
+    // can't see env-injection-derived `requiredEgress` (e.g. claude-shell's
+    // Tailscale control-plane hostnames) and the env's egress firewall
+    // silently blocks them at apply time — see the egress-policy-lifecycle
+    // pass (b) for the corresponding consumer.
+    const def = application.registered.definition as EnvInjectionAddonDefinition;
+    const stub = def.planStub
+      ? def.planStub(buildProvisionContext(target, application.config, context))
+      : {};
+    // Mirror the non-dryRun merge shape below (env / templateVars are
+    // skipped because those depend on minted secrets the dryRun path
+    // doesn't have). Fields that the stub doesn't supply AND the target
+    // didn't declare stay undefined so the rendered shape matches the
+    // authored shape for hash-stable plan diffs.
+    const mergedLabels: Record<string, string> = {
+      ...baseLabels,
+      ...(stub.labelsForTarget ?? {}),
+    };
+    const existingMounts = renderedTarget.containerConfig.mounts;
+    const stubMounts = stub.mountsForTarget ?? [];
+    const mergedMounts =
+      existingMounts !== undefined || stubMounts.length > 0
+        ? [...(existingMounts ?? []), ...stubMounts]
+        : undefined;
+    const existingEgress = renderedTarget.containerConfig.requiredEgress;
+    const stubEgress = stub.requiredEgress ?? [];
+    const mergedEgress =
+      existingEgress !== undefined || stubEgress.length > 0
+        ? Array.from(new Set([...(existingEgress ?? []), ...stubEgress]))
+        : undefined;
+    const existingCapAdd = renderedTarget.containerConfig.capAdd;
+    const stubCapAdd = stub.capAddForTarget ?? [];
+    const mergedCapAdd =
+      existingCapAdd !== undefined || stubCapAdd.length > 0
+        ? Array.from(new Set([...(existingCapAdd ?? []), ...stubCapAdd]))
+        : undefined;
+    const existingDevices = renderedTarget.containerConfig.devices;
+    const stubDevices = stub.devicesForTarget ?? [];
+    const mergedDevices =
+      existingDevices !== undefined || stubDevices.length > 0
+        ? Array.from(new Set([...(existingDevices ?? []), ...stubDevices]))
+        : undefined;
     renderedTarget.containerConfig = {
       ...renderedTarget.containerConfig,
-      labels: baseLabels,
+      labels: mergedLabels,
+      ...(mergedMounts !== undefined ? { mounts: mergedMounts } : {}),
+      ...(mergedEgress !== undefined ? { requiredEgress: mergedEgress } : {}),
+      ...(mergedCapAdd !== undefined ? { capAdd: mergedCapAdd } : {}),
+      ...(mergedDevices !== undefined ? { devices: mergedDevices } : {}),
     };
     progress.onProvisioned?.({
       serviceName: target.serviceName,

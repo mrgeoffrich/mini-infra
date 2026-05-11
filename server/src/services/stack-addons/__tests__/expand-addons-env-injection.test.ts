@@ -513,6 +513,158 @@ describe('expandAddons — env-injection mode', () => {
     });
     // No env merge — provision() was skipped.
     expect(rendered[0].containerConfig.env).toEqual({ WORKSPACE_DIR: '/workspace' });
+    // No planStub — no caps/devices/egress/mounts written.
+    expect(rendered[0].containerConfig.requiredEgress).toBeUndefined();
+    expect(rendered[0].containerConfig.capAdd).toBeUndefined();
+    expect(rendered[0].containerConfig.devices).toBeUndefined();
+    expect(rendered[0].containerConfig.mounts).toBeUndefined();
+  });
+
+  it('dryRun calls planStub() and merges its requiredEgress / caps / devices / labels / mounts onto the target', async () => {
+    // Critical regression — without this, the egress-rule reconciler can't see
+    // env-injection-derived `requiredEgress` (claude-shell's Tailscale
+    // control-plane hostnames) and stacks in firewall-enabled envs fail to
+    // reach the control-plane. `planStub` is side-effect-free; production
+    // claude-shell uses it to surface caps + devices + egress + label
+    // without minting an authkey or reading Vault.
+    let provisionCalls = 0;
+    let planStubCalls = 0;
+    const definition: EnvInjectionAddonDefinition = {
+      manifest: {
+        id: 'planstub-fixture',
+        mode: 'env-injection',
+        description: 'fixture',
+        appliesTo: ['Stateful'],
+      },
+      async provision(): Promise<EnvInjectionProvisionedValues> {
+        provisionCalls++;
+        return {
+          mode: 'env-injection',
+          envForTarget: { TS_AUTHKEY: 'minted' },
+          requiredEgress: ['controlplane.tailscale.com'],
+          capAddForTarget: ['NET_ADMIN'],
+          devicesForTarget: ['/dev/net/tun'],
+        };
+      },
+      planStub() {
+        planStubCalls++;
+        return {
+          requiredEgress: ['controlplane.tailscale.com', '*.tailscale.com'],
+          capAddForTarget: ['NET_ADMIN', 'SYS_MODULE'],
+          devicesForTarget: ['/dev/net/tun'],
+          labelsForTarget: { 'mini-infra.role': 'shell' },
+          mountsForTarget: [
+            { source: 'state-vol', target: '/var/lib/tailscale', type: 'volume' },
+          ],
+        };
+      },
+    };
+    const registry = createAddonRegistry();
+    registry.register({
+      manifest: definition.manifest,
+      configSchema: z.object({}).strict(),
+      definition,
+    });
+
+    const target = makeStateful('shell', { addons: { 'planstub-fixture': {} } });
+    const rendered = await expandAddons([target], {
+      ...baseContext,
+      registry,
+      dryRun: true,
+    });
+
+    // provision() side effects were NOT executed; planStub WAS.
+    expect(provisionCalls).toBe(0);
+    expect(planStubCalls).toBe(1);
+    expect(rendered).toHaveLength(1);
+
+    // Egress / caps / devices / mounts surfaced from the stub so the plan
+    // diff and the egress-policy reconciler see the same shape the apply
+    // path would write.
+    expect(rendered[0].containerConfig.requiredEgress).toEqual(
+      expect.arrayContaining(['controlplane.tailscale.com', '*.tailscale.com']),
+    );
+    expect(rendered[0].containerConfig.capAdd).toEqual(
+      expect.arrayContaining(['NET_ADMIN', 'SYS_MODULE']),
+    );
+    expect(rendered[0].containerConfig.devices).toEqual(['/dev/net/tun']);
+    expect(rendered[0].containerConfig.mounts).toEqual([
+      { source: 'state-vol', target: '/var/lib/tailscale', type: 'volume' },
+    ]);
+
+    // Framework-applied `mini-infra.addon` + stub-supplied `mini-infra.role`.
+    expect(rendered[0].containerConfig.labels).toEqual({
+      'mini-infra.addon': 'planstub-fixture',
+      'mini-infra.synthetic': 'false',
+      'mini-infra.role': 'shell',
+    });
+
+    // env stays untouched in dryRun (depends on minted secrets).
+    expect(rendered[0].containerConfig.env).toEqual({ WORKSPACE_DIR: '/workspace' });
+  });
+
+  it('dryRun planStub merge dedupes egress / caps / devices against operator-declared entries', async () => {
+    // Same dedup contract as the non-dryRun branch: operator-declared values
+    // are preserved, addon stub values are appended without duplicates.
+    const definition: EnvInjectionAddonDefinition = {
+      manifest: {
+        id: 'planstub-dedup',
+        mode: 'env-injection',
+        description: 'fixture',
+        appliesTo: ['Stateful'],
+      },
+      async provision(): Promise<EnvInjectionProvisionedValues> {
+        return { mode: 'env-injection' };
+      },
+      planStub() {
+        return {
+          requiredEgress: ['github.com', 'controlplane.tailscale.com'],
+          capAddForTarget: ['NET_ADMIN', 'SYS_MODULE'],
+          devicesForTarget: ['/dev/net/tun'],
+        };
+      },
+    };
+    const registry = createAddonRegistry();
+    registry.register({
+      manifest: definition.manifest,
+      configSchema: z.object({}).strict(),
+      definition,
+    });
+
+    const target = makeStateful('shell', {
+      addons: { 'planstub-dedup': {} },
+      containerConfig: {
+        env: { WORKSPACE_DIR: '/workspace' },
+        restartPolicy: 'unless-stopped',
+        requiredEgress: ['github.com'], // overlaps with stub
+        capAdd: ['NET_ADMIN', 'SYS_PTRACE'], // partial overlap with stub
+        devices: ['/dev/net/tun'], // exact overlap with stub
+      },
+    });
+    const rendered = await expandAddons([target], {
+      ...baseContext,
+      registry,
+      dryRun: true,
+    });
+
+    // exactly one github.com / NET_ADMIN / /dev/net/tun entry.
+    expect(
+      rendered[0].containerConfig.requiredEgress!.filter((e) => e === 'github.com'),
+    ).toHaveLength(1);
+    expect(
+      rendered[0].containerConfig.capAdd!.filter((c) => c === 'NET_ADMIN'),
+    ).toHaveLength(1);
+    expect(
+      rendered[0].containerConfig.devices!.filter((d) => d === '/dev/net/tun'),
+    ).toHaveLength(1);
+
+    // Sanity: union content.
+    expect(rendered[0].containerConfig.requiredEgress).toEqual(
+      expect.arrayContaining(['github.com', 'controlplane.tailscale.com']),
+    );
+    expect(rendered[0].containerConfig.capAdd).toEqual(
+      expect.arrayContaining(['NET_ADMIN', 'SYS_PTRACE', 'SYS_MODULE']),
+    );
   });
 });
 

@@ -387,7 +387,28 @@ export class EgressPolicyLifecycleService {
         }
       }
 
-      const authoredNames = new Set(stack.services.map((s) => s.serviceName));
+      // Pass (a) above captured the DB-persisted `requiredEgress` for each
+      // authored service. The dryRun expansion below additionally surfaces:
+      //   (i)  synthetic sidecars (e.g. `tailscale-ssh`) whose required
+      //        hostnames aren't on any DB row — they live on the addon's
+      //        `planStub`. We pick those up by walking *non-authored* names.
+      //   (ii) env-injection addons (e.g. `claude-shell`) whose required
+      //        hostnames are merged onto the *authored target* in-memory by
+      //        the dryRun branch of `applyEnvInjectionGroup`. The target's
+      //        DB row carries only operator-authored egress; the dryRun
+      //        expansion merges the addon's `planStub`-supplied entries on
+      //        top. We therefore can't `continue` on `authoredNames` —
+      //        instead we merge any *additional* patterns the expansion
+      //        produced onto the same authored serviceName entry in
+      //        `desiredPatterns`.
+      const authoredEgressByService = new Map<string, Set<string>>();
+      for (const svc of stack.services) {
+        const config = svc.containerConfig as unknown as StackContainerConfig;
+        authoredEgressByService.set(
+          svc.serviceName,
+          new Set(config?.requiredEgress ?? []),
+        );
+      }
       try {
         const params = mergeParameterValues(
           (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
@@ -400,10 +421,15 @@ export class EgressPolicyLifecycleService {
           { dryRun: true },
         );
         for (const [serviceName, def] of resolvedDefinitions) {
-          if (authoredNames.has(serviceName)) continue; // already covered by pass (a)
           const required = def.containerConfig?.requiredEgress;
           if (!required || required.length === 0) continue;
+          const authoredEgress = authoredEgressByService.get(serviceName);
           for (const pattern of required) {
+            // For an authored service (env-injection target case), skip
+            // patterns that were already on the DB row — pass (a) already
+            // covered them. Patterns the dryRun expansion *added* (i.e.
+            // env-injection-derived `requiredEgress`) flow through.
+            if (authoredEgress && authoredEgress.has(pattern)) continue;
             const targets = desiredPatterns.get(pattern) ?? new Set<string>();
             targets.add(serviceName);
             desiredPatterns.set(pattern, targets);

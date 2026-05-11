@@ -12,6 +12,7 @@ import {
   type TailscaleAddonEndpoint,
   type TailscaleAddonEndpointsResponse,
 } from "@mini-infra/types";
+import { CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR } from "../../services/stack-addons/claude-shell/manifest";
 
 const logger = getLogger("integrations", "stacks-addon-endpoints-route");
 
@@ -194,6 +195,7 @@ export function deriveEndpoints(
       stackName,
       service.serviceName,
       envSlug,
+      { discriminator: CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR },
     );
     const fqdn = tailnet ? `${hostname}.${tailnet}` : null;
     endpoints.push({

@@ -740,6 +740,104 @@ describe('EgressPolicyLifecycleService.reconcileTemplateRules', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Env-injection addon planStub egress regression — claude-shell control-plane
+// ---------------------------------------------------------------------------
+
+describe('reconcileTemplateRules — env-injection planStub egress (claude-shell)', () => {
+  let prisma: MockPrisma;
+  let service: EgressPolicyLifecycleService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prisma = makeMockPrisma();
+    service = new EgressPolicyLifecycleService(prisma as any);
+  });
+
+  /**
+   * Critical-#1 regression. A stack with the `claude-shell` env-injection
+   * addon attached must produce template-source EgressRules for the
+   * Tailscale control-plane hostnames the addon's `planStub` emits, even
+   * though the addon merges those entries onto the *authored target* (not
+   * a synthetic sidecar). Before the fix, pass (b) of `reconcileTemplateRules`
+   * skipped any name in `authoredNames`, so env-injection-derived
+   * `requiredEgress` was invisible to the reconciler and the env's firewall
+   * blocked the control-plane connection at apply time.
+   */
+  it('creates rules for Tailscale control-plane hostnames the claude-shell planStub emits', async () => {
+    // Stack row: one authored service with the `claude-shell` addon
+    // attached, no operator-declared egress on the row. We use a stable
+    // shape that matches the production Prisma `stack.findUnique({ include:
+    // { services, environment } })` projection used by the reconciler.
+    const stackWithClaudeShell = {
+      id: 'stack-shell',
+      name: 'my-shell',
+      environmentId: 'env-1',
+      networks: [],
+      volumes: [],
+      services: [
+        {
+          serviceName: 'shell',
+          serviceType: 'Stateful',
+          dockerImage: 'ghcr.io/mrgeoffrich/mini-infra-claude-shell',
+          dockerTag: 'latest',
+          containerConfig: {}, // operator-declared: none
+          configFiles: [],
+          initCommands: [],
+          dependsOn: [],
+          order: 0,
+          routing: null,
+          poolConfig: null,
+          addons: { 'claude-shell': {} },
+        },
+      ],
+      environment: {
+        id: 'env-1',
+        name: 'dev',
+        type: 'nonproduction',
+        networkType: 'local',
+      },
+      parameters: [],
+      parameterValues: {},
+    };
+    prisma.stack.findUnique.mockResolvedValue(stackWithClaudeShell);
+    prisma.egressPolicy.findFirst.mockResolvedValue(makePolicy());
+    prisma.egressRule.findMany.mockResolvedValue([]);
+    prisma.egressRule.create.mockImplementation((args: any) => ({
+      id: `rule-${args.data.pattern}`,
+      ...args.data,
+    }));
+    prisma.egressPolicy.update.mockResolvedValue({ ...makePolicy(), version: 2 });
+
+    // Ensure the claude-shell addon is registered. Import for the side
+    // effect — `claudeShellAddon` self-registers into the production
+    // registry that `resolveServiceConfigs` reads from.
+    await import('../../stack-addons/claude-shell');
+
+    await service.reconcileTemplateRules('stack-shell', 'user-1');
+
+    // Pull the patterns the reconciler tried to write. We don't care about
+    // ordering, only that every Tailscale control-plane hostname was
+    // surfaced as a desired pattern targeting the authored `shell` service.
+    const created = prisma.egressRule.create.mock.calls.map((c: any[]) => c[0].data);
+    const patterns = created.map((d: any) => d.pattern);
+
+    expect(patterns).toEqual(
+      expect.arrayContaining([
+        'controlplane.tailscale.com',
+        '*.tailscale.com',
+        '*.tailscale.io',
+      ]),
+    );
+    for (const pattern of patterns) {
+      const created = prisma.egressRule.create.mock.calls
+        .find((c: any[]) => c[0].data.pattern === pattern)?.[0].data;
+      expect(created.targets).toEqual(['shell']);
+      expect(created.source).toBe('template');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Schema validation for requiredEgress
 // ---------------------------------------------------------------------------
 

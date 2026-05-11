@@ -212,7 +212,9 @@ describe('claude-shell addon — expansion', () => {
 
     expect(renderedTarget.containerConfig.env).toMatchObject({
       TS_AUTHKEY: 'tskey-auth-claude-shell-stub',
-      TS_HOSTNAME: 'shop-shell-prod',
+      // `-shell` discriminator distinguishes this addon's device from a
+      // `tailscale-ssh` sidecar on the same target — see review #3.
+      TS_HOSTNAME: 'shop-shell-prod-shell',
       TS_EXTRA_ARGS: '--ssh',
       TS_STATE_DIR: '/var/lib/tailscale',
     });
@@ -515,10 +517,45 @@ describe('claude-shell addon — expansion', () => {
     );
 
     expect(renderedShop[0].containerConfig.env?.TS_HOSTNAME).toBe(
-      'shop-shell-prod',
+      'shop-shell-prod-shell',
     );
     expect(renderedBlog[0].containerConfig.env?.TS_HOSTNAME).toBe(
-      'blog-shell-prod',
+      'blog-shell-prod-shell',
+    );
+  });
+
+  it('disambiguates the hostname from a same-target tailscale-ssh sidecar (review #3)', async () => {
+    // Phase-2 plumbing means an operator could attach both `tailscale-ssh`
+    // and `claude-shell` to the same service. Both addons mint a Tailscale
+    // device hostname from `(stack, service, env)`; without a discriminator
+    // they collide, Tailscale auto-renames one to `<host>-1`, and the
+    // Connect-panel client + server hostname computations diverge from the
+    // actual device. The `-shell` discriminator on the claude-shell side
+    // is the load-bearing piece.
+    const registry = createAddonRegistry();
+    registry.register(claudeShellAddon);
+
+    const target = makeStateful('shell', {
+      addons: { 'claude-shell': {} },
+    });
+    const rendered = await withStubbedFetch(() =>
+      expandAddons([target], {
+        ...baseContext,
+        registry,
+        connectedServices: { tailscale: makeStubTailscaleService() },
+      }),
+    );
+
+    // What a `tailscale-ssh` sidecar on the same `(stack, service, env)`
+    // triple would compute via `sanitizeTailscaleHostname` (no discriminator).
+    // Pinning the literal here is deliberate — if either side changes, the
+    // collision-prevention contract is broken and this test should fail.
+    const tailscaleSshEquivalent = 'shop-shell-prod';
+    expect(rendered[0].containerConfig.env?.TS_HOSTNAME).not.toBe(
+      tailscaleSshEquivalent,
+    );
+    expect(rendered[0].containerConfig.env?.TS_HOSTNAME).toBe(
+      'shop-shell-prod-shell',
     );
   });
 });
