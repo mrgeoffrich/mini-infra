@@ -9,6 +9,7 @@ import historyRoutes from './stacks-history-routes';
 import poolRoutes from './stacks-pool-routes';
 import jobPoolRoutes from './stacks-job-pool-routes';
 import addonEndpointsRoutes from './stacks-addon-endpoints-route';
+import gitDeployKeyRoutes from './stacks-git-deploy-key-route';
 import { stacksErrorHandler } from './stacks-error-handler';
 
 const router = Router();
@@ -27,6 +28,7 @@ router.use(historyRoutes);
 router.use(poolRoutes);
 router.use(jobPoolRoutes);
 router.use(addonEndpointsRoutes);
+router.use(gitDeployKeyRoutes);
 
 router.use(stacksErrorHandler);
 

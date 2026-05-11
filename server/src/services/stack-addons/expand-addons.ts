@@ -1,7 +1,10 @@
 import type {
   AddonMergeStrategy,
+  EnvInjectionAddonDefinition,
+  EnvInjectionProvisionedValues,
   ProvisionContext,
-  ProvisionedValues,
+  SidecarAddonDefinition,
+  SidecarProvisionedValues,
   StackServiceDefinition,
   SyntheticServiceInfo,
   TargetIntegration,
@@ -277,11 +280,18 @@ async function resolveGroups(
   // Step 3 — merge-group resolution. Group by `kind`; solo applications go
   // through verbatim. Two members of the same kind without a registered
   // strategy is a hard error (configuration mistake at registry-build time).
+  //
+  // Env-injection addons are kept out of `kind`-based merge groups entirely —
+  // by definition they don't materialise a sidecar, so there's no shared
+  // sidecar to collapse multiple members into. If two env-injection addons
+  // happen to share a `kind`, each is treated as a solo application and
+  // merges its own outputs onto the target independently.
   const byKind = new Map<string, PendingApplication[]>();
   const solos: PendingApplication[] = [];
   for (const app of applications) {
     const kind = app.registered.manifest.kind;
-    if (!kind) {
+    const mode = app.registered.manifest.mode ?? 'sidecar';
+    if (!kind || mode === 'env-injection') {
       solos.push(app);
       continue;
     }
@@ -319,20 +329,31 @@ async function applyGroup(
   rendered: Map<string, StackServiceDefinition>,
   progress: ExpansionProgress,
 ): Promise<void> {
+  // Branch by mode. Env-injection addons are solo-by-construction (see
+  // `resolveGroups`) and bypass the sidecar materialisation entirely.
+  if (
+    group.kind === 'solo' &&
+    (group.application.registered.manifest.mode ?? 'sidecar') === 'env-injection'
+  ) {
+    await applyEnvInjectionGroup(group.application, group.target, context, rendered, progress);
+    return;
+  }
+
   // Step 4–5 — provision and materialise. In `dryRun` mode the side-effecting
   // `provision()` (e.g. authkey minting) is skipped; the addon's `planStub()`
   // (or a generic placeholder) supplies a deterministic synthetic-service
   // skeleton so the plan diff still shows the sidecar. `applyTargetIntegration`
   // also degrades to a no-op in dryRun because `provisioned` carries nothing
   // for it to thread through.
-  let provisioned: ProvisionedValues;
+  let provisioned: SidecarProvisionedValues;
   let sidecar: StackServiceDefinition;
   let integration: TargetIntegration;
   let synthetic: SyntheticServiceInfo;
   let memberIds: string[];
 
   if (group.kind === 'solo') {
-    const def = group.application.registered.definition;
+    // Mode was checked above; this branch is sidecar-only.
+    const def = group.application.registered.definition as SidecarAddonDefinition;
     const provisionCtx = buildProvisionContext(
       group.target,
       group.application.config,
@@ -423,6 +444,195 @@ async function applyGroup(
 }
 
 /**
+ * Apply a `mode: 'env-injection'` addon to the rendered target. Unlike the
+ * sidecar path, no synthetic service is materialised — the provisioned env,
+ * mounts, labels, and requiredEgress are merged onto the target's
+ * `containerConfig` in place. The target is additionally tagged with
+ * `mini-infra.addon: <addon-id>` so downstream endpoint discovery (Phase 4)
+ * can locate env-injection addons without scanning manifests.
+ *
+ * Env-injection addons don't participate in `kind`-based merge groups (see
+ * `resolveGroups`) — two same-`kind` env-injection addons each take this
+ * path independently and stack their outputs onto the target. Key collisions
+ * on `envForTarget` fail loudly rather than silently overwrite.
+ *
+ * In `dryRun` mode the side-effecting `provision()` is skipped and the
+ * target is only tagged with the addon-id label so the plan diff reflects
+ * which addons are attached without exercising vault / authkey-minter side
+ * effects.
+ */
+async function applyEnvInjectionGroup(
+  application: PendingApplication,
+  target: StackServiceDefinition,
+  context: ExpansionContext,
+  rendered: Map<string, StackServiceDefinition>,
+  progress: ExpansionProgress,
+): Promise<void> {
+  const addonId = application.addonId;
+  const renderedTarget = rendered.get(target.serviceName);
+  if (!renderedTarget) {
+    throw new Error(
+      `Target service "${target.serviceName}" missing from rendered map`,
+    );
+  }
+
+  // Always-on label so endpoint discovery can locate env-injection addons
+  // without scanning manifests. Applied in both `dryRun` and apply paths so
+  // the plan diff reflects the addon attachment.
+  const baseLabels: Record<string, string> = {
+    ...(renderedTarget.containerConfig.labels ?? {}),
+    'mini-infra.addon': addonId,
+    // `synthetic: false` is conceptually redundant for an authored target,
+    // but the label is the discovery key — making it explicit means callers
+    // can distinguish "target with env-injection addon" from "target with
+    // no addon" using a single label query.
+    'mini-infra.synthetic': 'false',
+  };
+
+  if (context.dryRun) {
+    // Side-effect-free `planStub()` (optional) lets the addon surface the
+    // static parts of its provisioned values — `requiredEgress`, mounts,
+    // caps, devices, labels — so plan-time consumers see the same shape
+    // the apply path would write. Implementations must NOT read Vault or
+    // mint credentials here. Without this hook, the egress-rule reconciler
+    // can't see env-injection-derived `requiredEgress` (e.g. claude-shell's
+    // Tailscale control-plane hostnames) and the env's egress firewall
+    // silently blocks them at apply time — see the egress-policy-lifecycle
+    // pass (b) for the corresponding consumer.
+    const def = application.registered.definition as EnvInjectionAddonDefinition;
+    const stub = def.planStub
+      ? def.planStub(buildProvisionContext(target, application.config, context))
+      : {};
+    // Mirror the non-dryRun merge shape below (env / templateVars are
+    // skipped because those depend on minted secrets the dryRun path
+    // doesn't have). Fields that the stub doesn't supply AND the target
+    // didn't declare stay undefined so the rendered shape matches the
+    // authored shape for hash-stable plan diffs.
+    const mergedLabels: Record<string, string> = {
+      ...baseLabels,
+      ...(stub.labelsForTarget ?? {}),
+    };
+    const existingMounts = renderedTarget.containerConfig.mounts;
+    const stubMounts = stub.mountsForTarget ?? [];
+    const mergedMounts =
+      existingMounts !== undefined || stubMounts.length > 0
+        ? [...(existingMounts ?? []), ...stubMounts]
+        : undefined;
+    const existingEgress = renderedTarget.containerConfig.requiredEgress;
+    const stubEgress = stub.requiredEgress ?? [];
+    const mergedEgress =
+      existingEgress !== undefined || stubEgress.length > 0
+        ? Array.from(new Set([...(existingEgress ?? []), ...stubEgress]))
+        : undefined;
+    const existingCapAdd = renderedTarget.containerConfig.capAdd;
+    const stubCapAdd = stub.capAddForTarget ?? [];
+    const mergedCapAdd =
+      existingCapAdd !== undefined || stubCapAdd.length > 0
+        ? Array.from(new Set([...(existingCapAdd ?? []), ...stubCapAdd]))
+        : undefined;
+    const existingDevices = renderedTarget.containerConfig.devices;
+    const stubDevices = stub.devicesForTarget ?? [];
+    const mergedDevices =
+      existingDevices !== undefined || stubDevices.length > 0
+        ? Array.from(new Set([...(existingDevices ?? []), ...stubDevices]))
+        : undefined;
+    renderedTarget.containerConfig = {
+      ...renderedTarget.containerConfig,
+      labels: mergedLabels,
+      ...(mergedMounts !== undefined ? { mounts: mergedMounts } : {}),
+      ...(mergedEgress !== undefined ? { requiredEgress: mergedEgress } : {}),
+      ...(mergedCapAdd !== undefined ? { capAdd: mergedCapAdd } : {}),
+      ...(mergedDevices !== undefined ? { devices: mergedDevices } : {}),
+    };
+    progress.onProvisioned?.({
+      serviceName: target.serviceName,
+      addonIds: [addonId],
+      // No synthetic service is materialised — surface the target name so
+      // callers fanning out events still get a non-empty back-reference.
+      syntheticServiceName: target.serviceName,
+    });
+    return;
+  }
+
+  const def = application.registered.definition as EnvInjectionAddonDefinition;
+  const provisionCtx = buildProvisionContext(target, application.config, context);
+  const provisioned: EnvInjectionProvisionedValues = await def.provision(provisionCtx);
+
+  // Env merge: hard-fail on key collision rather than silently overwriting
+  // operator-authored or previously-merged env vars. The error message
+  // names the colliding key so the operator can resolve the conflict in
+  // their stack definition.
+  const existingEnv = renderedTarget.containerConfig.env ?? {};
+  const mergedEnv: Record<string, string> = { ...existingEnv };
+  if (provisioned.envForTarget) {
+    for (const [key, value] of Object.entries(provisioned.envForTarget)) {
+      if (key in mergedEnv) {
+        throw new Error(
+          `Addon "${addonId}" cannot inject env var "${key}" into target service "${target.serviceName}": key already set`,
+        );
+      }
+      mergedEnv[key] = value;
+    }
+  }
+
+  const mergedMounts = [
+    ...(renderedTarget.containerConfig.mounts ?? []),
+    ...(provisioned.mountsForTarget ?? []),
+  ];
+
+  const mergedLabels: Record<string, string> = {
+    ...baseLabels,
+    ...(provisioned.labelsForTarget ?? {}),
+  };
+
+  // Required egress: dedupe to avoid duplicate egress-rule rows when the
+  // operator already declared an overlapping hostname.
+  const existingEgress = renderedTarget.containerConfig.requiredEgress ?? [];
+  const addonEgress = provisioned.requiredEgress ?? [];
+  const mergedEgress = Array.from(new Set([...existingEgress, ...addonEgress]));
+
+  // Capabilities + devices: dedupe the same way egress does. The env-injection
+  // mode exists for cases where the target image runs the agent the addon
+  // would otherwise sidecar (e.g. `claude-shell` runs `tailscaled` in-process),
+  // so the target needs whatever caps + devices the would-be sidecar needed
+  // (`NET_ADMIN` + `/dev/net/tun` for tailscaled in kernel mode). The merge
+  // is additive — operator-declared caps/devices are preserved verbatim,
+  // addon-supplied ones are appended without duplicates. We avoid writing
+  // empty arrays onto fields the target never declared so the rendered
+  // shape stays identical to the authored shape for addons that don't
+  // touch caps/devices (matters for hash-based drift detection).
+  const existingCapAdd = renderedTarget.containerConfig.capAdd;
+  const addonCapAdd = provisioned.capAddForTarget ?? [];
+  const mergedCapAdd =
+    existingCapAdd !== undefined || addonCapAdd.length > 0
+      ? Array.from(new Set([...(existingCapAdd ?? []), ...addonCapAdd]))
+      : undefined;
+
+  const existingDevices = renderedTarget.containerConfig.devices;
+  const addonDevices = provisioned.devicesForTarget ?? [];
+  const mergedDevices =
+    existingDevices !== undefined || addonDevices.length > 0
+      ? Array.from(new Set([...(existingDevices ?? []), ...addonDevices]))
+      : undefined;
+
+  renderedTarget.containerConfig = {
+    ...renderedTarget.containerConfig,
+    env: mergedEnv,
+    mounts: mergedMounts,
+    labels: mergedLabels,
+    requiredEgress: mergedEgress,
+    ...(mergedCapAdd !== undefined ? { capAdd: mergedCapAdd } : {}),
+    ...(mergedDevices !== undefined ? { devices: mergedDevices } : {}),
+  };
+
+  progress.onProvisioned?.({
+    serviceName: target.serviceName,
+    addonIds: [addonId],
+    syntheticServiceName: target.serviceName,
+  });
+}
+
+/**
  * Fallback synthetic-service skeleton when an addon (or merge strategy)
  * doesn't supply its own `planStub`. The shape is deliberately minimal —
  * just enough that the plan diff can include the synthetic by name without
@@ -466,7 +676,7 @@ function buildProvisionContext(
 function applyTargetIntegration(
   targetName: string,
   integration: TargetIntegration,
-  provisioned: ProvisionedValues,
+  provisioned: SidecarProvisionedValues,
   rendered: Map<string, StackServiceDefinition>,
 ): void {
   const target = rendered.get(targetName);

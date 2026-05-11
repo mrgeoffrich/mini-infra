@@ -284,6 +284,8 @@ export class DockerExecutorService {
       user?: string;
       entrypoint?: string[];
       capAdd?: string[];
+      /** Host devices to expose into the container — see LongRunningContainerManager. */
+      devices?: string[];
       dnsServers?: string[];
     }
   ): Promise<Container> {

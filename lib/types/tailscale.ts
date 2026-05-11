@@ -129,11 +129,23 @@ export interface TailscaleDeviceStatusEvent {
  * lives in one place — the panel renders these strings as-is.
  */
 export interface TailscaleAddonEndpoint {
-  /** Authored service this sidecar wraps. */
+  /** Authored service this endpoint reaches. */
   targetService: string;
-  /** Synthetic sidecar service name (e.g. `web-app-tailscale`). */
+  /**
+   * Source service name for the row.
+   * - Sidecar-mode addons (`tailscale-ssh`, `tailscale-web`): the synthetic
+   *   sidecar service name (e.g. `web-app-tailscale`).
+   * - Env-injection-mode addons (`claude-shell`): the target service name
+   *   itself, since the addon merges its outputs onto the target rather
+   *   than materialising a peer. Used by the client as a React-key suffix
+   *   so it just needs to be unique per row.
+   */
   syntheticServiceName: string;
-  /** `tailscale-ssh` and/or `tailscale-web` ids that produced this endpoint. */
+  /**
+   * Addon ids that produced this endpoint.
+   * - `tailscale-ssh` and/or `tailscale-web` for sidecar-mode endpoints.
+   * - `claude-shell` for the env-injection-mode SSH endpoint.
+   */
   addonIds: string[];
   /** SSH or HTTPS — drives the action affordance on the row. */
   kind: "ssh" | "https";
@@ -248,16 +260,36 @@ export function buildTailscaleTagSet(extraTags: readonly string[] = []): string[
  * computed over the unsanitised inputs. The hash isn't cryptographic —
  * it's collision-resistance for short strings, and 32 bits is plenty given
  * how few oversized hostnames any one tailnet will see.
+ *
+ * `options.discriminator` (e.g. `"shell"` for the claude-shell env-injection
+ * addon) is inserted between `envName` and the optional `instanceId` so
+ * two addons attached to the same `(stack, service, env)` triple produce
+ * distinct Tailscale devices. Without it, `tailscale-ssh` and
+ * `claude-shell` on the same service collide, Tailscale auto-renames one
+ * device (`<host>-1`), and the Connect-panel hostname computed server +
+ * client-side no longer matches the actual tailnet device.
+ *
+ * `options.instanceId` keeps its existing 4th-segment semantics — for
+ * pool instances. When both `discriminator` and `instanceId` are set the
+ * segments are joined as `[stack, service, env, discriminator, instanceId]`.
  */
 export function sanitizeTailscaleHostname(
   stackName: string,
   serviceName: string,
   envName: string,
-  instanceId?: string,
+  instanceIdOrOptions?: string | { discriminator?: string; instanceId?: string },
 ): string {
-  const segments = instanceId
-    ? [stackName, serviceName, envName, instanceId]
-    : [stackName, serviceName, envName];
+  // Back-compat: callers may still pass a bare `instanceId` string at the
+  // 4th positional slot (Pool sites do this). New callers pass
+  // `{ discriminator, instanceId }`. The two-arg overloads keep merge-strategy
+  // call sites untouched.
+  const opts =
+    typeof instanceIdOrOptions === "string"
+      ? { instanceId: instanceIdOrOptions }
+      : instanceIdOrOptions ?? {};
+  const segments = [stackName, serviceName, envName];
+  if (opts.discriminator) segments.push(opts.discriminator);
+  if (opts.instanceId) segments.push(opts.instanceId);
   const raw = segments.join("-");
   // Lowercase, replace non-[a-z0-9-] with `-`, collapse runs of `-`.
   const cleaned = raw
@@ -336,7 +368,9 @@ export function buildPoolInstanceHostname(
   envName: string,
   instanceId: string,
 ): string {
-  return sanitizeTailscaleHostname(stackName, serviceName, envName, instanceId);
+  return sanitizeTailscaleHostname(stackName, serviceName, envName, {
+    instanceId,
+  });
 }
 
 /**

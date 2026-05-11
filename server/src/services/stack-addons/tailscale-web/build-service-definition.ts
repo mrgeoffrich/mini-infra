@@ -1,6 +1,6 @@
 import type {
   ProvisionContext,
-  ProvisionedValues,
+  SidecarProvisionedValues,
   StackServiceDefinition,
 } from '@mini-infra/types';
 import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
@@ -16,7 +16,7 @@ import type { TailscaleSidecarMount } from './serve-config';
  */
 export function buildTailscaleWebServiceDefinition(
   ctx: ProvisionContext,
-  provisioned: ProvisionedValues,
+  provisioned: SidecarProvisionedValues,
 ): StackServiceDefinition {
   const serveConfigMount = provisioned.templateVars.serveConfigMount as
     | TailscaleSidecarMount

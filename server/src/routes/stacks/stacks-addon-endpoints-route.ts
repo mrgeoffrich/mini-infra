@@ -12,6 +12,7 @@ import {
   type TailscaleAddonEndpoint,
   type TailscaleAddonEndpointsResponse,
 } from "@mini-infra/types";
+import { CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR } from "../../services/stack-addons/claude-shell/manifest";
 
 const logger = getLogger("integrations", "stacks-addon-endpoints-route");
 
@@ -77,6 +78,24 @@ function readWebConfig(
 function isPoolTarget(snapshot: StackDefinition, targetServiceName: string): boolean {
   const target = snapshot.services.find((s) => s.serviceName === targetServiceName);
   return target?.serviceType === "Pool";
+}
+
+/**
+ * Read the `mini-infra.addon` label off a service's `containerConfig.labels`.
+ * Env-injection-mode addons (e.g. `claude-shell`) stamp this label onto the
+ * *target* service so endpoint discovery can find them without scanning
+ * manifests. Sidecar-mode addons stamp it onto the *synthetic* service,
+ * which is the path the legacy synthetic-scan branch picks up — we ignore
+ * those here to avoid double-counting.
+ */
+function readEnvInjectionAddonId(service: StackServiceDefinition): string | null {
+  const labels = service.containerConfig?.labels;
+  if (!labels || typeof labels !== "object") return null;
+  // A synthetic service also carries `mini-infra.addon` — skip it; the
+  // synthetic-scan branch above handles those endpoints.
+  if (service.synthetic) return null;
+  const raw = (labels as Record<string, unknown>)["mini-infra.addon"];
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
 
 // Exported for unit testing — the route handler still calls it locally.
@@ -151,6 +170,45 @@ export function deriveEndpoints(
         ...poolFields,
       });
     }
+  }
+
+  // Env-injection-mode addons (`claude-shell`) don't materialise a synthetic
+  // service — they label the *target* service with `mini-infra.addon: <id>`
+  // and merge their tailscaled env / caps / devices onto the target's
+  // containerConfig. Discovery walks the same `snapshot.services` list but
+  // keys off the label rather than `synthetic`.
+  //
+  // The hostname rule is identical to the sidecar path: the addon's
+  // `provision()` calls `sanitizeTailscaleHostname(stackName, serviceName,
+  // envSlug)`, and we recompute it here from the same inputs so the Connect
+  // panel's hostname matches the tailnet device hostname exactly.
+  for (const service of snapshot.services) {
+    const addonId = readEnvInjectionAddonId(service);
+    if (addonId !== "claude-shell") continue;
+
+    // Pool targets aren't supported by `claude-shell` (manifest's
+    // `appliesTo` excludes `Pool`), but guard defensively so a hand-crafted
+    // snapshot that violates that invariant doesn't crash the route.
+    if (service.serviceType === "Pool") continue;
+
+    const hostname = sanitizeTailscaleHostname(
+      stackName,
+      service.serviceName,
+      envSlug,
+      { discriminator: CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR },
+    );
+    const fqdn = tailnet ? `${hostname}.${tailnet}` : null;
+    endpoints.push({
+      targetService: service.serviceName,
+      // Env-injection addons have no synthetic peer — reuse the target's
+      // own name as the row's React-key suffix. The shape stays uniform
+      // with the sidecar-mode endpoints the client already renders.
+      syntheticServiceName: service.serviceName,
+      addonIds: [addonId],
+      kind: "ssh",
+      hostname,
+      url: fqdn ? `ssh root@${fqdn}` : null,
+    });
   }
 
   // Stable sort: target service alphabetical, ssh before https within a target.

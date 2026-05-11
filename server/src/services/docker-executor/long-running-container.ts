@@ -3,7 +3,7 @@ import { getLogger } from "../../lib/logger-factory";
 import ContainerLabelManager from "../container/container-label-manager";
 import type { ContainerExecutionOptions } from "./types";
 import { RESTART_POLICIES } from "@mini-infra/types";
-import { generateTaskId } from "./utils";
+import { generateTaskId, parseDeviceSpec } from "./utils";
 
 /**
  * LongRunningContainerManager - Creates persistent, long-running Docker containers
@@ -49,6 +49,12 @@ export class LongRunningContainerManager {
       user?: string;
       entrypoint?: string[];
       capAdd?: string[];
+      /**
+       * Host devices to expose into the container. Each entry is parsed by
+       * `parseDeviceSpec` (bare path, `HOST:CONTAINER`, or
+       * `HOST:CONTAINER:PERMS`) and translated to `HostConfig.Devices`.
+       */
+      devices?: string[];
       dnsServers?: string[];
     }
   ): Promise<Container> {
@@ -146,6 +152,15 @@ export class LongRunningContainerManager {
       // Add Linux capabilities
       if (options.capAdd && options.capAdd.length > 0) {
         containerOptions.HostConfig!.CapAdd = options.capAdd;
+      }
+
+      // Translate host-device specs (bare path / HOST:CONTAINER /
+      // HOST:CONTAINER:PERMS) into the dockerode HostConfig.Devices shape.
+      // Empty arrays intentionally leave the field undefined to keep the
+      // generated container spec identical for stacks that don't request
+      // any devices (matters for hash-based drift detection upstream).
+      if (options.devices && options.devices.length > 0) {
+        containerOptions.HostConfig!.Devices = options.devices.map(parseDeviceSpec);
       }
 
       // Add restart policy
