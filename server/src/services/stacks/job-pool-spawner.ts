@@ -4,6 +4,7 @@ import type { JobPoolConfig, PoolInstance as PoolInstanceDb } from '@mini-infra/
 import type { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { spawnPoolInstance } from './pool-spawner';
+import { publishJobPoolRunSkipped } from './job-pool-history-publisher';
 
 const log = getLogger('stacks', 'job-pool-spawner');
 
@@ -134,6 +135,21 @@ export async function runJobPool(
     });
   } catch (err) {
     if (err === MAX_REACHED) {
+      // Fire-and-forget — publishing the skipped event must never block
+      // the trigger's reply path; failures inside the publisher are
+      // logged there. Cast `maxConcurrent` because the MAX_REACHED branch
+      // is unreachable when `maxConcurrent === null`.
+      void publishJobPoolRunSkipped({
+        stackId,
+        serviceName,
+        reason: 'concurrency_cap',
+        triggerKind: trigger.kind,
+        triggerName: trigger.name,
+        scheduledAtMs: Date.now(),
+        maxConcurrent: jobPoolConfig.maxConcurrent!,
+      }).catch(() => {
+        /* logged inside publisher */
+      });
       return {
         ok: false,
         reason: 'concurrency_cap',
@@ -172,6 +188,14 @@ export async function runJobPool(
       instanceRowId: row.id,
       callerEnv,
       idleTimeoutMinutes: JOB_POOL_DEFAULT_IDLE_MINUTES,
+      // Trigger attribution survives the spawn → Docker → die-event
+      // round trip via these labels; the exit watcher reads them when
+      // it builds the history payload. Trigger name is sanitised to
+      // satisfy Docker's label-value constraints (no control chars).
+      extraLabels: {
+        'mini-infra.job-pool-trigger-kind': trigger.kind,
+        'mini-infra.job-pool-trigger-name': trigger.name.replace(/[^A-Za-z0-9._#-]/g, '_'),
+      },
     });
 
     if (!spawn.success) {
@@ -194,14 +218,29 @@ export async function runJobPool(
       };
     }
 
-    await prisma.poolInstance.update({
-      where: { id: row.id },
+    // Conditional flip from `starting` to `running` — for fast-exiting jobs,
+    // the exit watcher (subscribed to Docker `die` events) may have already
+    // finalised this row to `completed`/`failed` before the spawn poll loop
+    // returns. `updateMany` with the `starting` filter makes that race a
+    // no-op rather than overwriting the watcher's terminal state. The
+    // common case (long-running job, watcher hasn't fired yet) flips
+    // through `starting → running → completed/failed` as expected.
+    const updateCount = await prisma.poolInstance.updateMany({
+      where: { id: row.id, status: 'starting' },
       data: {
         status: 'running',
         containerId: spawn.containerId,
         lastActive: new Date(),
       },
     });
+    if (updateCount.count === 0) {
+      // Watcher beat us — record the containerId for traceability but leave
+      // the terminal status field alone.
+      await prisma.poolInstance.update({
+        where: { id: row.id },
+        data: { containerId: spawn.containerId },
+      }).catch(() => { /* race-tolerant */ });
+    }
     return {
       ok: true,
       runId,

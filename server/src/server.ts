@@ -48,6 +48,7 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
+import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
 import { TlsConfigService } from "./services/tls/tls-config";
 import { StorageCertificateStore } from "./services/tls/storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
@@ -93,6 +94,7 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // which both startup and the settings route call to keep it aligned with the
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
+let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
 
 /**
  * Initialize the internal auth secret from the database, generating one if
@@ -268,11 +270,27 @@ const initializeServices = async () => {
     console.log("[STARTUP] ✓ Connectivity scheduler initialized");
 
     // Initialize pool instance reaper (stops idle pool instances on a 60s
-    // cadence; also force-fails spawns stuck in `starting` for >5 min).
+    // cadence; also force-fails spawns stuck in `starting` for >5 min and
+    // kills JobPool runs that exceed `killAfterSeconds`).
     console.log("[STARTUP] Initializing pool instance reaper...");
     poolInstanceReaper = new PoolInstanceReaper(prisma);
     poolInstanceReaper.start();
     console.log("[STARTUP] ✓ Pool instance reaper initialized");
+
+    // Initialize JobPool exit watcher (Phase 2 of job-pool-service-type):
+    // subscribes to Docker `die` events to finalise JobPool runs, publish
+    // history events to JetStream, and schedule retries.
+    console.log("[STARTUP] Initializing JobPool exit watcher...");
+    jobPoolExitWatcher = new JobPoolExitWatcher(prisma, async () => {
+      const { DockerExecutorService } = await import(
+        "./services/docker-executor"
+      );
+      const exec = new DockerExecutorService();
+      await exec.initialize();
+      return exec;
+    });
+    jobPoolExitWatcher.start();
+    console.log("[STARTUP] ✓ JobPool exit watcher initialized");
 
     // Initialize backup scheduler
     console.log("[STARTUP] Initializing backup scheduler...");

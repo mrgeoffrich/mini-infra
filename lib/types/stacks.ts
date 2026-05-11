@@ -124,8 +124,24 @@ export type JobPoolTrigger =
   | { kind: 'nats-request'; subject: string; ackWithRunId: boolean; name: string }
   | { kind: 'manual'; name: string };
 
-/** Lifecycle statuses for a pool instance row. */
-export const POOL_INSTANCE_STATUSES = ['starting', 'running', 'stopping', 'stopped', 'error'] as const;
+/**
+ * Lifecycle statuses for a pool instance row.
+ *
+ * Pool instances use a subset: `starting`/`running`/`stopping`/`stopped`/`error`.
+ * JobPool instances additionally transition to terminal `completed` (exit 0)
+ * or `failed` (non-zero exit, killed by `killAfterSeconds`, or exit watcher
+ * surfacing). The exit watcher (Phase 2) is the only thing that ever writes
+ * `completed` / `failed`; pre-Phase-2 rows never hold those values.
+ */
+export const POOL_INSTANCE_STATUSES = [
+  'starting',
+  'running',
+  'stopping',
+  'stopped',
+  'error',
+  'completed',
+  'failed',
+] as const;
 export type PoolInstanceStatus = typeof POOL_INSTANCE_STATUSES[number];
 
 /** DB shape for a pool instance (Date fields). */
@@ -141,6 +157,18 @@ export interface PoolInstance {
   createdAt: Date;
   stoppedAt: Date | null;
   errorMessage: string | null;
+  /**
+   * Container exit code captured by the JobPool exit watcher when status is
+   * `completed` (always 0) or `failed` (non-zero, or `-1` when the row was
+   * forced failed without a real exit — e.g. kill-after-seconds overrun).
+   * `null` on Pool rows and on JobPool rows that haven't terminated yet.
+   */
+  exitCode: number | null;
+  /**
+   * Wall-clock time the JobPool run finished (success or failure). `null`
+   * on Pool rows and on still-running JobPool rows.
+   */
+  finishedAt: Date | null;
 }
 
 /** API response shape for a pool instance (string dates). */
@@ -156,6 +184,8 @@ export interface PoolInstanceInfo {
   createdAt: string;
   stoppedAt: string | null;
   errorMessage: string | null;
+  exitCode: number | null;
+  finishedAt: string | null;
 }
 
 /** Request body for POST /api/stacks/:stackId/pools/:serviceName/instances */

@@ -2,7 +2,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { withOperation } from '../../lib/logging-context';
-import { POOL_ADDON_LABELS } from '@mini-infra/types';
+import { POOL_ADDON_LABELS, type JobPoolConfig } from '@mini-infra/types';
 import {
   emitPoolInstanceIdleStopped,
   emitPoolInstanceFailed,
@@ -92,6 +92,7 @@ export class PoolInstanceReaper {
 
     await this.reapIdle(executor);
     await this.reapStuckStarting(executor);
+    await this.reapKillAfterSeconds(executor);
   }
 
   private async reapIdle(executor: DockerExecutorService): Promise<void> {
@@ -141,6 +142,85 @@ export class PoolInstanceReaper {
             err: err instanceof Error ? err.message : String(err),
           },
           'Idle reap failed for instance; will retry next tick',
+        );
+      }
+    }
+  }
+
+  /**
+   * Enforce `JobPoolConfig.killAfterSeconds` on JobPool runs whose
+   * containers have been alive longer than their declared cap. Marks the
+   * row's errorMessage so the exit watcher (which gets the subsequent
+   * `die` event) keeps the kill attribution — finalising the row to
+   * `failed`. We don't transition status here ourselves so the watcher
+   * stays the single writer of `completed`/`failed`.
+   *
+   * Behaviour intentionally narrow: only `running` JobPool rows are
+   * candidates. `starting` rows are handled by `reapStuckStarting`; Pool
+   * rows have no `killAfterSeconds` semantics (they idle-sweep instead).
+   */
+  private async reapKillAfterSeconds(executor: DockerExecutorService): Promise<void> {
+    const running = await this.prisma.poolInstance.findMany({
+      where: { status: 'running' },
+    });
+    if (running.length === 0) return;
+
+    // Batch-load owning services so we don't issue one findFirst per row.
+    // SQLite handles small `where in` payloads cheaply; for the few-tens
+    // expected scale this is one query per tick.
+    const services = await this.prisma.stackService.findMany({
+      where: {
+        OR: running.map((r) => ({ stackId: r.stackId, serviceName: r.serviceName })),
+      },
+    });
+    const serviceByKey = new Map<string, (typeof services)[number]>();
+    for (const s of services) {
+      serviceByKey.set(`${s.stackId}|${s.serviceName}`, s);
+    }
+
+    const now = Date.now();
+    for (const row of running) {
+      const svc = serviceByKey.get(`${row.stackId}|${row.serviceName}`);
+      if (!svc || svc.serviceType !== 'JobPool') continue;
+      const cfg = svc.jobPoolConfig as unknown as JobPoolConfig | null;
+      if (!cfg?.killAfterSeconds) continue;
+
+      // Use `lastActive` as the run's start time — the JobPool spawner
+      // sets it to spawn-time and never updates it on a JobPool row.
+      const runtimeMs = now - row.lastActive.getTime();
+      const limitMs = cfg.killAfterSeconds * 1000;
+      if (runtimeMs < limitMs) continue;
+
+      try {
+        // Mark the row first so the upcoming `die` event from the kill is
+        // attributed correctly when the exit watcher reads `errorMessage`.
+        await this.prisma.poolInstance.update({
+          where: { id: row.id },
+          data: { errorMessage: 'killed: exceeded killAfterSeconds' },
+        });
+        await this.stopAndRemoveContainer(executor, row.containerId);
+        log.warn(
+          {
+            stackId: row.stackId,
+            serviceName: row.serviceName,
+            instanceId: row.instanceId,
+            killAfterSeconds: cfg.killAfterSeconds,
+            runtimeMs,
+          },
+          'JobPool run exceeded killAfterSeconds — container killed',
+        );
+        // Don't emit Socket.IO here — the exit watcher's `failed` event
+        // picks up the kill attribution from `errorMessage` and is the
+        // single source of truth for run-finalisation fan-out.
+      } catch (err) {
+        log.warn(
+          {
+            stackId: row.stackId,
+            serviceName: row.serviceName,
+            instanceId: row.instanceId,
+            err: err instanceof Error ? err.message : String(err),
+          },
+          'Kill-after-seconds reap failed for instance; will retry next tick',
         );
       }
     }

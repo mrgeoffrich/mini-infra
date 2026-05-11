@@ -38,6 +38,14 @@ export interface PoolSpawnContext {
   instanceRowId: string;
   callerEnv: Record<string, string>;
   idleTimeoutMinutes: number;
+  /**
+   * Optional Docker labels stamped on the spawned container alongside the
+   * standard pool-instance labels. Used by the JobPool spawner to pass
+   * trigger attribution forward — the exit watcher reads the labels off
+   * the `die` event to know which trigger fired the run. Reserved label
+   * keys (`mini-infra.*`) emitted by the spawner cannot be overridden.
+   */
+  extraLabels?: Record<string, string>;
 }
 
 /**
@@ -278,6 +286,9 @@ export async function spawnPoolInstance(
   const networkNames = networks.map((n) => `${projectName}_${n.name}`);
 
   // Labels that match static stack containers, plus pool-instance markers.
+  // `extraLabels` (e.g. JobPool trigger attribution) layer on top of the
+  // template's container labels but cannot override the reserved
+  // mini-infra.* markers further below.
   const labels: Record<string, string> = {
     'mini-infra.stack': stack.name,
     'mini-infra.stack-id': stack.id,
@@ -286,6 +297,7 @@ export async function spawnPoolInstance(
     'mini-infra.pool-instance-id': ctx.instanceId,
     ...(stack.environmentId ? { 'mini-infra.environment': stack.environmentId } : {}),
     ...(containerConfig.labels ?? {}),
+    ...(ctx.extraLabels ?? {}),
   };
 
   // Ports (mirror StackContainerManager logic).
@@ -535,6 +547,22 @@ export async function spawnPoolInstance(
   }
 
   // Poll for running state (up to 30s).
+  //
+  // For `Pool` services, the container is expected to stay up — observing
+  // an `exited` state during the poll means the bootstrap died and the
+  // pool worker never came up. That's a spawn failure.
+  //
+  // For `JobPool` services, the container is *expected* to exit — that's the
+  // entire lifecycle. A super-fast exit (success or non-zero) is a normal
+  // outcome, not a spawn failure: the exit watcher (Phase 2 — see
+  // `job-pool-exit-watcher.ts`) flips the `PoolInstance` row to
+  // `completed`/`failed` based on the exit code from the Docker `die`
+  // event. Reporting it as a spawn failure here would race the watcher and
+  // (depending on which loses the race) leave the row stuck at `error` with
+  // semantically wrong status, even though the run actually completed
+  // cleanly. So for JobPool we treat both `Running` and `exited` as success
+  // and let the watcher own the terminal-state transition.
+  const isJobPool = service.serviceType === 'JobPool';
   const deadline = Date.now() + 30_000;
   const docker = dockerExecutor.getDockerClient();
   while (Date.now() < deadline) {
@@ -544,6 +572,9 @@ export async function spawnPoolInstance(
         return { success: true, containerId };
       }
       if (info.State?.Status === 'exited') {
+        if (isJobPool) {
+          return { success: true, containerId };
+        }
         return {
           success: false,
           containerId,
