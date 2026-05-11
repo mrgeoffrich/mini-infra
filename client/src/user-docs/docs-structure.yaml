@@ -93,6 +93,21 @@ sections:
           - Draft and publish versioning workflow
           - Template scopes — Host vs Environment
           - System vs User template sources
+      - slug: claude-shell
+        topics:
+          - Claude Shell — Tailscale-SSH-reachable developer container with Claude Code baked in
+          - Prerequisites — Tailscale connected service, optional SSH deploy key for private repos
+          - Creating a Claude Shell from the Applications page — name, environment, git repo, deploy key, extra tags
+          - Connecting via SSH — the Connect panel surfaces `ssh <hostname>.<tailnet>` and tailnet identity handles auth
+          - Authenticating Claude Code on first connect — `claude login` OAuth flow, credentials persist to `/home/claude` volume
+          - Workspace and persistence — `/workspace` (cloned repo + edits) and `/home/claude` (claude config, shell history, MCP installs)
+          - Using a private git repo with an SSH deploy key — upload at create time or via `PUT/GET/DELETE /api/stacks/:id/services/shell/git-deploy-key`
+          - DELETE quirk — clearing the key does not auto-trigger a re-apply, key material never returned by GET
+          - Tailscale identity — one ephemeral device per shell named `<stack>-<service>-<env>`
+          - ACL recommendation — one device = one operator, per-operator gating owned by tailnet admin
+          - Egress firewall — Tailscale control-plane hostnames auto-allowed, git-host egress must be added manually
+          - Limits — one operator per shell (no pool yet), image ~600 MB, Anthropic credentials live in `/home/claude` only
+          - Troubleshooting — Tailscale not connected, control-plane unreachable, clone failures, `claude login` redirect failures
 
   - slug: containers
     label: Containers
