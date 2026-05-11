@@ -2,6 +2,18 @@ import { z } from 'zod';
 import type { AddonManifest } from '@mini-infra/types';
 
 /**
+ * Hostname discriminator inserted between `envName` and the optional
+ * `instanceId` segment by `sanitizeTailscaleHostname`. Distinguishes the
+ * `claude-shell` env-injection addon's tailnet device from a
+ * `tailscale-ssh` / `tailscale-web` sidecar's device on the same target
+ * service (review #3). Single source of truth — the provision path emits it
+ * via `TS_HOSTNAME` and the Connect-panel endpoint route reconstructs the
+ * same string. Must stay short and `[a-z0-9-]+` so it survives sanitisation
+ * with no chars dropped.
+ */
+export const CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR = 'shell';
+
+/**
  * User-supplied config for the `claude-shell` addon.
  *
  * Both fields are optional — `addons: { 'claude-shell': {} }` is the minimum

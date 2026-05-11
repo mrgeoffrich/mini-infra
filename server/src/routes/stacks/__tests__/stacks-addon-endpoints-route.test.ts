@@ -206,8 +206,10 @@ describe('deriveEndpoints', () => {
         syntheticServiceName: 'shell',
         addonIds: ['claude-shell'],
         kind: 'ssh',
-        hostname: sanitizeTailscaleHostname('dev-stack', 'shell', 'prod'),
-        url: `ssh root@${sanitizeTailscaleHostname('dev-stack', 'shell', 'prod')}.tailnet-1234.ts.net`,
+        hostname: sanitizeTailscaleHostname('dev-stack', 'shell', 'prod', {
+          discriminator: 'shell',
+        }),
+        url: `ssh root@${sanitizeTailscaleHostname('dev-stack', 'shell', 'prod', { discriminator: 'shell' })}.tailnet-1234.ts.net`,
       });
     });
 
@@ -232,7 +234,9 @@ describe('deriveEndpoints', () => {
       expect(endpoints).toHaveLength(1);
       expect(endpoints[0]?.url).toBeNull();
       expect(endpoints[0]?.hostname).toBe(
-        sanitizeTailscaleHostname('dev-stack', 'shell', 'prod'),
+        sanitizeTailscaleHostname('dev-stack', 'shell', 'prod', {
+          discriminator: 'shell',
+        }),
       );
     });
 

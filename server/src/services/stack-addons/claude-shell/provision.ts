@@ -13,7 +13,10 @@ import {
   VaultKVError,
   type VaultKVService,
 } from '../../vault/vault-kv-service';
-import type { ClaudeShellConfig } from './manifest';
+import {
+  CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR,
+  type ClaudeShellConfig,
+} from './manifest';
 
 const log = getLogger('stacks', 'claude-shell-provision');
 
@@ -137,10 +140,15 @@ export async function provisionClaudeShell(
     );
   }
 
-  // Hostname rule: `{stack}-{service}-{env}` sanitised, ≤63 chars. The
-  // manifest's `appliesTo` excludes `Pool`, so we deliberately do not
-  // thread `ctx.instance?.instanceId` through — a `claude-shell` addon on
-  // a pool service would have been rejected at applicability time.
+  // Hostname rule: `{stack}-{service}-{env}-shell` sanitised, ≤63 chars.
+  // The `-shell` discriminator distinguishes this addon's device from the
+  // `tailscale-ssh` / `tailscale-web` sidecar-mode addons' devices on the
+  // same target — without it, attaching both `tailscale-ssh` and
+  // `claude-shell` to one service produces two devices with the same
+  // hostname, Tailscale auto-renames one to `<host>-1`, and the Connect
+  // panel's client-side hostname derivation no longer matches the actual
+  // tailnet device (review #3). The manifest's `appliesTo` excludes
+  // `Pool`, so `instanceId` is not threaded through.
   const envSlug =
     ctx.environment.name && ctx.environment.name.length > 0
       ? ctx.environment.name
@@ -149,6 +157,7 @@ export async function provisionClaudeShell(
     ctx.stack.name,
     ctx.service.name,
     envSlug,
+    { discriminator: CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR },
   );
 
   // Best-effort cleanup of stale offline registrations on this hostname —
