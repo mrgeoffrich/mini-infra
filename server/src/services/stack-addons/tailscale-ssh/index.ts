@@ -1,4 +1,4 @@
-import type { AddonDefinition, ProvisionContext } from '@mini-infra/types';
+import type { SidecarAddonDefinition, ProvisionContext } from '@mini-infra/types';
 import { productionAddonRegistry, type RegisteredAddon } from '../registry';
 import {
   tailscaleSshConfigSchema,
@@ -15,7 +15,7 @@ import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
  * registry on import; tests opt out by constructing their own registry via
  * `createAddonRegistry()` and choosing what to register into it.
  */
-export const tailscaleSshDefinition: AddonDefinition = {
+export const tailscaleSshDefinition: SidecarAddonDefinition = {
   manifest: tailscaleSshManifest,
   targetIntegration: tailscaleSshTargetIntegration,
   provision: provisionTailscaleSsh,

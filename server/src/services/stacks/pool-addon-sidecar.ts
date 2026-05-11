@@ -172,6 +172,7 @@ async function spawnOne(
       cmd: cfg.command,
       entrypoint: cfg.entrypoint,
       capAdd: cfg.capAdd,
+      devices: cfg.devices,
       user: cfg.user,
       mounts,
       // Peer-on-target-network: join the same Docker networks the worker is

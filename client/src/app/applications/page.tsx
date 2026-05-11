@@ -36,6 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ApplicationCard } from "./application-card";
+import { PresetsSection } from "./presets-section";
 import type { StackTemplateInfo, StackInfo, StackServiceType } from "@mini-infra/types";
 
 function getAppServiceType(
@@ -238,6 +239,9 @@ export default function ApplicationsPage() {
           </div>
         </div>
       </div>
+
+      {/* Curated presets */}
+      <PresetsSection />
 
       {/* Applications grid */}
       <div className="px-4 lg:px-6" data-tour="applications-grid">
