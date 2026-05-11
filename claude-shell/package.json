@@ -1,0 +1,9 @@
+{
+  "name": "mini-infra-claude-shell",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tailscale-SSH-enabled developer container with Claude Code baked in.",
+  "scripts": {
+    "build": "echo 'claude-shell has no JS to compile; image is built from Dockerfile' && exit 0"
+  }
+}
