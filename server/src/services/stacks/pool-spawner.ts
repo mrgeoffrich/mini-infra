@@ -336,6 +336,7 @@ export async function spawnPoolInstance(
       cmd: containerConfig.command,
       entrypoint: containerConfig.entrypoint,
       capAdd: containerConfig.capAdd,
+      devices: containerConfig.devices,
       user: containerConfig.user,
       ports,
       internalPorts,

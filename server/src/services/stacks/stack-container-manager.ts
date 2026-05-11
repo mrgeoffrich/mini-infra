@@ -231,6 +231,7 @@ export class StackContainerManager {
       cmd: config.command,
       entrypoint: config.entrypoint,
       capAdd: config.capAdd,
+      devices: config.devices,
       user: config.user,
       ports,
       internalPorts,
