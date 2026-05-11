@@ -15,12 +15,22 @@ describe("buildTriggersFromBackupConfigurations (Phase 4, MINI-53)", () => {
     expect(natsTriggers).toHaveLength(1);
 
     expect(cronTriggers).toEqual([
-      { kind: "cron", name: "cron-db1", schedule: "0 2 * * *", timezone: "UTC" },
+      {
+        kind: "cron",
+        name: "cron-db1",
+        schedule: "0 2 * * *",
+        timezone: "UTC",
+        // Structured metadata carries the databaseId so the runtime env
+        // resolver can read it directly rather than parsing it out of the
+        // cron-<id> name (MINI-50 review finding M8).
+        metadata: { databaseId: "db1" },
+      },
       {
         kind: "cron",
         name: "cron-db2",
         schedule: "30 3 * * *",
         timezone: "America/New_York",
+        metadata: { databaseId: "db2" },
       },
     ]);
 

@@ -170,14 +170,31 @@ describe('schema separation — HTTP-only fields are not on the common base', ()
   //   - configFiles  : the loader uses a top-level `configFiles[]` array
   //                    (referenced by serviceName); the embedded form here
   //                    only exists post-load.
-  //   - adoptedContainer / poolConfig: file-format doesn't support these
-  //                    service types yet.
-  //   - vaultAppRoleId: resolved concrete ID set at apply time, not authored.
+  //   - adoptedContainer: file-format doesn't support this service type yet.
+  //   - vaultAppRoleId / natsCredentialId: resolved concrete IDs set at
+  //                    apply time, not authored.
+  //
+  // Note: `poolConfig` and `jobPoolConfig` *are* on the common base — the
+  // file-loaded template path needs to validate them with the same shape as
+  // the HTTP draft path so the per-serviceType refines in
+  // `refinePoolAndJobPoolConstraints` fire for both authoring surfaces
+  // (MINI-50 review finding M1).
   it('common base does not expose HTTP-only fields', () => {
     const baseKeys = new Set(Object.keys(stackServiceCommonFieldsSchema.shape));
     expect(baseKeys.has('configFiles')).toBe(false);
     expect(baseKeys.has('adoptedContainer')).toBe(false);
-    expect(baseKeys.has('poolConfig')).toBe(false);
     expect(baseKeys.has('vaultAppRoleId')).toBe(false);
+    expect(baseKeys.has('natsCredentialId')).toBe(false);
+  });
+
+  // poolConfig + jobPoolConfig are pinned ON the common base so they ride
+  // through both authoring surfaces. If a future refactor accidentally drops
+  // them, the file-loaded template path would silently lose the JobPool
+  // refines and a misconfigured YAML template would fail later in the
+  // spawn pipeline.
+  it('common base exposes pool + jobPool config fields', () => {
+    const baseKeys = new Set(Object.keys(stackServiceCommonFieldsSchema.shape));
+    expect(baseKeys.has('poolConfig')).toBe(true);
+    expect(baseKeys.has('jobPoolConfig')).toBe(true);
   });
 });

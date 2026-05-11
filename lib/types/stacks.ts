@@ -119,10 +119,23 @@ export interface JobPoolConfig {
   onFailure?: { retries: number; backoff: 'fixed' | 'exponential' };
 }
 
+/**
+ * Optional structured identification carried alongside a trigger's
+ * human-readable `name`. Authors (templates / materialisers) stash domain
+ * keys like `databaseId` here so the runtime env resolver can read them
+ * structurally rather than parsing them out of the `name` field — the
+ * `cron-<databaseId>` positional convention used by pg-az-backup at Phase 4
+ * is brittle the moment a UI lets operators rename triggers (MINI-50 review
+ * finding M8).
+ *
+ * Values are restricted to strings so the field round-trips cleanly through
+ * Zod, JSON, and Docker labels without surprise coercion. Keep the map
+ * small — it rides on every history publish and every container spawn.
+ */
 export type JobPoolTrigger =
-  | { kind: 'cron'; schedule: string; timezone?: string; name: string }
-  | { kind: 'nats-request'; subject: string; ackWithRunId: boolean; name: string }
-  | { kind: 'manual'; name: string };
+  | { kind: 'cron'; schedule: string; timezone?: string; name: string; metadata?: Record<string, string> }
+  | { kind: 'nats-request'; subject: string; ackWithRunId: boolean; name: string; metadata?: Record<string, string> }
+  | { kind: 'manual'; name: string; metadata?: Record<string, string> };
 
 /**
  * Lifecycle statuses for a pool instance row.

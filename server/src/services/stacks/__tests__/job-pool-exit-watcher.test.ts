@@ -246,7 +246,11 @@ describe('JobPoolExitWatcher', () => {
     expect(scheduledRetries[0]).toMatchObject({
       stackId: 'stack-1',
       serviceName: 'backup',
-      attemptedRetries: 0,
+      // The watcher post-increments: a die event with no retry-attempt
+      // label is treated as attempt 0, so the next retry it schedules is
+      // attempt 1 (MINI-50 review finding H1 — pre-fix this was always
+      // `0` and the retry chain ran forever).
+      attemptedRetries: 1,
       onFailure: { retries: 1, backoff: 'fixed' },
     });
   });

@@ -55,14 +55,20 @@ describe('JobPool schema validation', () => {
     expect(result.success).toBe(false);
   });
 
-  it('rejects a JobPool with no triggers', () => {
+  it('accepts a JobPool with no triggers (materialiser-populated pattern)', () => {
+    // Empty triggers are tolerated by the schema because system templates
+    // like pg-az-backup ship with `triggers: []` and have them populated
+    // at apply time by a materialiser. An inert JobPool (no triggers,
+    // no fires) is a benign state — neither registry registers anything
+    // and the manual HTTP route doesn't consult triggers. See the
+    // schema comment for the full justification (MINI-50 review M1).
     const result = jobPoolConfigSchema.safeParse({
       maxConcurrent: 1,
       managedBy: null,
       triggers: [],
       history: { retainDays: 7 },
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('rejects a JobPool with maxConcurrent: 0', () => {
