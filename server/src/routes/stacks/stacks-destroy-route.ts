@@ -26,6 +26,8 @@ import {
   removeStackNetworksAndVolumes,
 } from '../../services/stacks/stack-destroy-helpers';
 import { revokeStackNatsSigningKeys } from '../../services/stacks/stack-nats-revocation';
+import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
+import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 
@@ -176,6 +178,21 @@ async function runDestroyInBackground(
     // wipes seeds from Vault KV. Best-effort throughout — errors don't
     // block destroy because the stack record is going away regardless.
     await revokeStackNatsSigningKeys(prisma, stackId, logger);
+
+    // Step 6.6 (Phase 3 of job-pool-service-type): tear down any JobPool
+    // triggers this stack owned before its rows are cascade-deleted. The
+    // registries reconcile against `StackService` rows, so after the
+    // cascade they'd just be orphan node-cron handles / NATS subscriptions
+    // until next refresh. removeStack() is idempotent.
+    try {
+      JobPoolCronRegistry.getInstance()?.removeStack(stackId);
+      JobPoolNatsRegistry.getInstance()?.removeStack(stackId);
+    } catch (err) {
+      logger.warn(
+        { stackId, err: err instanceof Error ? err.message : String(err) },
+        'JobPool trigger registry teardown failed during destroy (non-fatal)',
+      );
+    }
 
     // Step 7: Delete stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;

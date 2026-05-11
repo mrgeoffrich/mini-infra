@@ -15,6 +15,9 @@ import { evaluatePrerequisites } from '../../services/stacks/template-prerequisi
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
 import { applyJobPoolStreamsForStack } from '../../services/stacks/job-pool-stream-reconciler';
+import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
+import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
+import { dryRunJobPoolCredentials } from '../../services/stacks/job-pool-credential-dry-run';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
@@ -272,6 +275,16 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
         );
       }
 
+      // JobPool credential dry-run (Phase 3 of job-pool-service-type): apply
+      // fails fast if any JobPool service declares a `dynamicEnv` binding
+      // that resolves to a missing Vault path / NATS credential. Without
+      // this gate, a misconfigured pool silently apples — and only the
+      // first triggered run discovers the problem.
+      //
+      // Throws on failure; the catch below converts that into the standard
+      // apply-failure surface (userEvent.fail + apply-failed Socket.IO event).
+      await dryRunJobPoolCredentials(prisma, stackId);
+
       // Re-promote `requiredEgress` declarations into template-source
       // EgressRules so addon-derived patterns (e.g. Tailscale's control-plane
       // hostnames from the synthetic sidecar) propagate to existing stacks
@@ -363,6 +376,39 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       // accumulate silently across versions.
       if (result.success) {
         await doPruneOrphanedInputValues(prisma, stackId);
+      }
+
+      // JobPool trigger registries (Phase 3): reconcile declared cron +
+      // nats-request triggers against live registrations. Only when the
+      // apply itself succeeded — a partially-applied stack should not have
+      // its triggers re-registered, because the underlying `StackService`
+      // rows may no longer match the operator's intent. The next successful
+      // apply re-establishes them. Registry failures are non-fatal: they
+      // surface as a warning in the logs, not as an apply failure (the
+      // services themselves are already up).
+      if (result.success) {
+        const cronRegistry = JobPoolCronRegistry.getInstance();
+        if (cronRegistry) {
+          try {
+            await cronRegistry.refresh(stackId);
+          } catch (err) {
+            logger.warn(
+              { stackId, err: err instanceof Error ? err.message : String(err) },
+              'JobPool cron registry refresh failed (continuing apply)',
+            );
+          }
+        }
+        const natsRegistry = JobPoolNatsRegistry.getInstance();
+        if (natsRegistry) {
+          try {
+            await natsRegistry.refresh(stackId);
+          } catch (err) {
+            logger.warn(
+              { stackId, err: err instanceof Error ? err.message : String(err) },
+              'JobPool NATS registry refresh failed (continuing apply)',
+            );
+          }
+        }
       }
 
       await finalizeApplyEvent(userEvent, result);
