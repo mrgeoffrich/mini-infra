@@ -69,6 +69,8 @@ Each trigger carries a `name` so history events and skipped-run logs can attribu
 
 The `manual` trigger is implicit — every JobPool gets a `POST /api/stacks/:stackId/job-pools/:serviceName/run` endpoint regardless. Declaring it in `triggers[]` is for UI labeling.
 
+**Outbound-host allowlist.** JobPool services declare their outbound dependencies through the existing `containerConfig.requiredEgress` field on `StackTemplateServiceInfo` (`lib/types/stacks.ts:196`) — the same surface every other service type uses. The egress-policy reconciler ([`egress-policy-lifecycle.ts`](../../../server/src/services/egress/egress-policy-lifecycle.ts)) picks the declarations up at apply time and writes matching rules into the per-env egress policy, so templates that need outbound access (Azure Blob for `pg-az-backup`, anything `restore-executor` needs to reach) don't require a separate manual policy edit. No new JobPool-specific field; the `requiredEgress` inheritance is the contract.
+
 ## 5. Triggers and the trigger registries
 
 Three trigger sources, all converging on a single `runJobPool(ctx)` entry point inside the server.
@@ -117,10 +119,11 @@ Deliverables:
 - Apply handler is a stub `no-op` (matching `Pool` today) — config persists on the `StackService` row but no orchestration runs at apply.
 - A `runJobPool()` entry point that delegates to `spawnPoolInstance()` and tracks via `PoolInstance` rows. No trigger sources yet — only a direct internal call (used in tests) and a stub manual HTTP route returning `501` until Phase 3.
 - Unit tests: validation, type narrowing, `runJobPool` cap-check logic.
+- **Egress-inheritance smoke:** the integration-test spawn lands the `PoolInstance` on the env's egress network and has `HTTP_PROXY=egress-gateway:3128` injected — confirms `spawnPoolInstance()`'s `resolveEgressEnv()` + `attachEgressNetworkIfNeeded()` flow runs for JobPool the same way it does for Pool. Cheap to assert; catches any future regression where JobPool drifts off the shared spawn path.
 
 UI changes: none (server-side type addition; no UI surfaces).
 
-Done when: a stack template with a JobPool service applies cleanly, the service row carries `jobPoolConfig`, and an integration test calls `runJobPool()` directly to spawn + observe a `PoolInstance` row reach `running`.
+Done when: a stack template with a JobPool service applies cleanly, the service row carries `jobPoolConfig`, and an integration test calls `runJobPool()` directly to spawn + observe a `PoolInstance` row reach `running` on the env's egress network with `HTTP_PROXY` set.
 
 Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 
@@ -174,6 +177,7 @@ Deliverables:
 - The `pg-az-backup` container's `run.sh` (or new companion) publishes `mini-infra.backup.progress.<runId>` directly over NATS using the injected creds, replacing the server-mediated bridge.
 - Server-side: [`backup-executor.ts`](../../../server/src/services/backup/backup-executor.ts) deletes the in-memory queue and the bespoke `mini-infra.backup.run` responder. [`backup-scheduler.ts`](../../../server/src/services/backup/backup-scheduler.ts) deletes; cron handling moves to `JobPoolCronRegistry`.
 - `BackupHistory` JetStream stream retires; backup history reads from the per-pool `JobHistory-<...>-pg-az-backup` stream. UI events page query updates accordingly.
+- **Egress posture migration.** Today [`backup-executor.ts`](../../../server/src/services/backup/backup-executor.ts) starts the backup container with `networkMode: <database backup network>` and reaches Azure Blob Storage directly — bypassing the egress firewall entirely. Under JobPool the container runs on the per-env egress network with `HTTP_PROXY=egress-gateway:3128` injected (inherited from `spawnPoolInstance()`), so every Azure call goes through the gateway. The new template must declare `containerConfig.requiredEgress: ["*.blob.core.windows.net", "login.microsoftonline.com", …]` (plus any Azure auth endpoints actually used by the SAS-URL flow) so the egress-policy reconciler pre-allows them. Smoke check: a backup completes successfully against a real Azure container in dev *and* the egress policy contains the expected rules after apply.
 - The existing "Run now" UI affordance routes to the manual HTTP trigger.
 - Backwards compatibility: the existing backup configuration UI (`BackupConfiguration` rows) keeps its shape; cron strings flow into the JobPool template's `triggers[]` at apply time. No user-visible UX change.
 
@@ -211,6 +215,7 @@ Verify in prod: smoke tests in dev (see Smoke tests section in the issue).
 - **Credential dry-run at apply time.** The Phase 3 dry-run may surface latent misconfigurations in existing stacks when their templates are first re-applied post-upgrade. Document the failure mode in release notes.
 - **Manual trigger payload schema.** v1 ships free-form JSON forwarded as one env var. If two JobPools end up with very different payload shapes, schema declaration on `JobPoolTrigger` becomes the next ask. Out of scope for this plan.
 - **Concurrency cap migration.** pg-az-backup currently enforces a global cap of 2 in `backup-executor`; under JobPool it becomes per-pool. If we ever run two backup pools (e.g., per-environment), they each get their own 2-slot cap. Document the behavior change in Phase 4's release notes.
+- **pg-az-backup egress posture flip.** Phase 4 moves the backup container off its dedicated `<database>-backup` Docker network — where it reaches Azure Blob Storage directly, outside the egress firewall — onto the per-env egress network with `HTTP_PROXY` injected. Every Azure call now hops through `egress-gateway`. If the new template's `containerConfig.requiredEgress` is missing any Azure host the backup actually uses (Blob endpoints, AAD auth, SAS-URL host), backups fail post-upgrade with `403`/`CONNECT denied` from the proxy rather than the previous direct-connect behaviour. Mitigation: enumerate the full Azure host set from a live backup run *before* writing the template, smoke a real backup in dev against a per-env policy that contains the expected rules, and document the network-path change in Phase 4 release notes alongside the concurrency-cap note. Tailscale-ssh (#383) hit the same shape — `TAILSCALE_CONTROL_PLANE_HOSTNAMES` had to be declared via `requiredEgress` before the addon could reach `controlplane.tailscale.com`.
 - **Drift semantics for JobPool with `nats-request` triggers.** A subscription in the registry that's missing in the template means drift. Subscription unsubscribe-on-apply must be ordered before subscribe-on-apply within a refresh cycle to avoid a window with duplicate handlers.
 - **Cron firing during in-flight apply.** If a cron trigger fires while the stack is mid-apply, the registry may briefly hold a stale schedule. Acceptable for v1 (worst case: one missed beat); add a per-stack apply mutex if it shows up in practice.
 - **Running-or-not is not drift.** The plan-and-apply flow needs to ignore "no instance running" as a steady state. Verify that the existing definition-hash already excludes `dynamicEnv` and that no new fields slip into the hash that would oscillate per-run.
