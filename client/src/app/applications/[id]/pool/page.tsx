@@ -12,7 +12,8 @@ import type { StackServiceInfo } from "@mini-infra/types";
 import type { ApplicationDetailContext } from "../layout";
 
 export default function ApplicationPoolTab() {
-  const { primaryStack } = useOutletContext<ApplicationDetailContext>();
+  const { primaryStack, environment } =
+    useOutletContext<ApplicationDetailContext>();
   const poolServices = useMemo<StackServiceInfo[]>(() => {
     return (primaryStack?.services ?? []).filter(
       (s) => s.serviceType === "Pool",
@@ -66,6 +67,8 @@ export default function ApplicationPoolTab() {
             key={service.id}
             stackId={primaryStack.id}
             service={service}
+            stackName={primaryStack.name}
+            envName={environment?.name}
           />
         ))}
       </CardContent>

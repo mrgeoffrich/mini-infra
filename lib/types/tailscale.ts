@@ -148,6 +148,33 @@ export interface TailscaleAddonEndpoint {
    * renders the row with `<hostname>` so the operator sees the addon attached.
    */
   url: string | null;
+  /**
+   * True when the target service is a Pool — the endpoint is a summary row
+   * for the whole pool rather than a per-resource reachable URL. The client
+   * uses this discriminator to render a summary row + drill-in Sheet
+   * (driven by the live pool-instances pipeline) instead of an inline row.
+   * Authored as optional/additive so existing non-pool endpoints decode
+   * unchanged.
+   */
+  isPool?: boolean;
+  /**
+   * Hostname template the Connect panel displays on the summary row when
+   * `isPool` is true (e.g. `web-svc-prod-{instance}.<tailnet>.ts.net`). The
+   * `{instance}` literal stands in for the per-instance segment so the
+   * operator sees the shape without enumerating every running instance.
+   * Null follows the same "tailnet not yet resolved" rule as `url`.
+   */
+  templateHostname?: string | null;
+  /** Sanitised `<stack>-<service>-<env>` prefix (≤54 chars, hyphen-trimmed)
+   * used together with the per-instance id to compute each instance's
+   * hostname client-side. Mirrors the server-side `sanitizeTailscaleHostname`
+   * head so the Sheet doesn't have to know the sanitisation rule. Only set
+   * when `isPool` is true. */
+  poolHostnamePrefix?: string;
+  /** Tailnet domain (e.g. `tail-scale.ts.net`) the Sheet appends to each
+   * computed per-instance hostname. Null when the tailnet hasn't yet been
+   * resolved server-side; the Sheet renders bare hostnames in that case. */
+  tailnet?: string | null;
 }
 
 /** GET /api/stacks/:id/addon-endpoints — derived endpoint list for the Connect panel. */
@@ -226,8 +253,12 @@ export function sanitizeTailscaleHostname(
   stackName: string,
   serviceName: string,
   envName: string,
+  instanceId?: string,
 ): string {
-  const raw = `${stackName}-${serviceName}-${envName}`;
+  const segments = instanceId
+    ? [stackName, serviceName, envName, instanceId]
+    : [stackName, serviceName, envName];
+  const raw = segments.join("-");
   // Lowercase, replace non-[a-z0-9-] with `-`, collapse runs of `-`.
   const cleaned = raw
     .toLowerCase()
@@ -236,20 +267,76 @@ export function sanitizeTailscaleHostname(
     .replace(/^-+|-+$/g, "");
   if (cleaned.length === 0) {
     throw new Error(
-      `Cannot derive Tailscale hostname from "${stackName}-${serviceName}-${envName}" — no valid characters`,
+      `Cannot derive Tailscale hostname from "${raw}" — no valid characters`,
     );
   }
   if (cleaned.length <= 63) return cleaned;
   // Overflow: keep the first 54 chars of the cleaned head (after trimming
   // any trailing hyphen left by the cut), then append `-{hash}` where hash
-  // is FNV-1a-32 of the unsanitised triple, hex-encoded to 8 chars. The
-  // pipe separator can't appear in any sanitised hostname so the hash
-  // domain stays distinct from the visible head.
+  // is FNV-1a-32 of the unsanitised inputs joined with `|`, hex-encoded to
+  // 8 chars. The pipe separator can't appear in any sanitised hostname so
+  // the hash domain stays distinct from the visible head.
   const HASH_HEX_LEN = 8;
   const HEAD_BUDGET = 63 - 1 - HASH_HEX_LEN; // 54
   const head = cleaned.slice(0, HEAD_BUDGET).replace(/-+$/, "");
+  const hash = fnv1a32Hex(segments.join("|"));
+  return `${head}-${hash}`;
+}
+
+/**
+ * Sanitised `<stack>-<service>-<env>` prefix used as the visible head of a
+ * per-instance Tailscale hostname. Distinct from `sanitizeTailscaleHostname`
+ * with no `instanceId` because this one applies the same overflow rule
+ * *budgeted against the eventual full hostname* — the prefix is capped
+ * before the `-{instanceId}` segment lands so the final hostname stays ≤63
+ * chars without re-sanitising after the join.
+ *
+ * Specifically: the result of this helper is at most 54 chars; the caller
+ * appends `-{instanceId}` and re-runs `sanitizeTailscaleHostname` (which
+ * trims to 63 + overflow-hashes if the instance id is itself long). For
+ * the Connect-panel summary row this prefix is what renders before
+ * `{instance}` in the template hostname displayed to the operator.
+ */
+export function buildPoolHostnamePrefix(
+  stackName: string,
+  serviceName: string,
+  envName: string,
+): string {
+  const PREFIX_BUDGET = 54; // 63 minus a 1-char hyphen + an 8-char fallback budget
+  const raw = `${stackName}-${serviceName}-${envName}`;
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (cleaned.length === 0) {
+    throw new Error(
+      `Cannot derive Tailscale pool prefix from "${raw}" — no valid characters`,
+    );
+  }
+  if (cleaned.length <= PREFIX_BUDGET) return cleaned;
+  // Overflowed prefix — same FNV trick as sanitizeTailscaleHostname so two
+  // pool services with long unstructured names don't collide on prefix.
+  const HASH_HEX_LEN = 8;
+  const HEAD_BUDGET = PREFIX_BUDGET - 1 - HASH_HEX_LEN;
+  const head = cleaned.slice(0, HEAD_BUDGET).replace(/-+$/, "");
   const hash = fnv1a32Hex(`${stackName}|${serviceName}|${envName}`);
   return `${head}-${hash}`;
+}
+
+/**
+ * Compute a per-pool-instance Tailscale hostname. Thin wrapper over
+ * `sanitizeTailscaleHostname` with the instanceId appended as the fourth
+ * segment — exposed as a named export so the client-side Sheet doesn't have
+ * to know which positional argument is the instance id.
+ */
+export function buildPoolInstanceHostname(
+  stackName: string,
+  serviceName: string,
+  envName: string,
+  instanceId: string,
+): string {
+  return sanitizeTailscaleHostname(stackName, serviceName, envName, instanceId);
 }
 
 /**

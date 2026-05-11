@@ -5,6 +5,7 @@ import type {
   StackNetwork,
   StackParameterDefinition,
   StackParameterValue,
+  StackServiceDefinition,
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
@@ -19,6 +20,8 @@ import {
   synthesiseDefaultNetworkIfNeeded,
 } from './utils';
 import { resolveEgressEnv, attachEgressNetworkIfNeeded } from './egress-injection';
+import { TailscaleService } from '../tailscale/tailscale-service';
+import { spawnPoolAddonSidecars } from './pool-addon-sidecar';
 
 const log = getLogger('stacks', 'pool-spawner');
 
@@ -112,10 +115,35 @@ export async function spawnPoolInstance(
     (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {},
   );
   const templateContext = buildStackTemplateContext(stack, params);
-  const { resolvedDefinitions } = await resolveServiceConfigs(stack.services, templateContext);
+  // Run the addon render pipeline with `instance: { instanceId }` populated so
+  // addons attached to a Pool service mint per-instance authkeys and produce
+  // per-instance synthetic sidecar definitions. The Tailscale connected
+  // service is injected so `provision()` can mint authkeys; absence is
+  // tolerated for envs where no addons are declared.
+  const tailscaleService = new TailscaleService(prisma);
+  const { resolvedDefinitions } = await resolveServiceConfigs(
+    stack.services,
+    templateContext,
+    {
+      instance: { instanceId: ctx.instanceId },
+      connectedServices: { tailscale: tailscaleService },
+    },
+  );
   const resolvedDef = resolvedDefinitions.get(ctx.serviceName);
   if (!resolvedDef) {
     return { success: false, error: 'Pool service missing from resolved definitions' };
+  }
+
+  // Pull out the per-instance synthetic sidecar definitions produced by addon
+  // expansion: anything in the rendered map that wasn't an authored service
+  // on this stack. Phase 6 — these are spawned alongside the worker below.
+  const authoredServiceNames = new Set(stack.services.map((s) => s.serviceName));
+  const syntheticSidecarDefs: StackServiceDefinition[] = [];
+  for (const [name, def] of resolvedDefinitions) {
+    if (authoredServiceNames.has(name)) continue;
+    if (!def.synthetic) continue;
+    if (def.synthetic.targetService !== ctx.serviceName) continue;
+    syntheticSidecarDefs.push(def);
   }
 
   const dockerImage = resolvedDef.dockerImage;
@@ -440,6 +468,53 @@ export async function spawnPoolInstance(
       containerId,
       error: `Container start failed: ${err instanceof Error ? err.message : String(err)}`,
     };
+  }
+
+  // Spawn per-instance addon sidecars (Phase 6). Best-effort — a sidecar
+  // failure logs but doesn't fail the pool spawn, since the worker is
+  // already up and addons are observability/connectivity sugar rather than
+  // gating prerequisites. Reaping the worker sweeps any half-started
+  // sidecars via the `mini-infra.pool-instance-id` label match.
+  if (syntheticSidecarDefs.length > 0) {
+    try {
+      const sidecarResults = await spawnPoolAddonSidecars({
+        prisma,
+        dockerExecutor,
+        stackId: ctx.stackId,
+        stackName: stack.name,
+        environmentName: stack.environment?.name ?? null,
+        environmentId: stack.environmentId,
+        serviceName: ctx.serviceName,
+        instanceId: ctx.instanceId,
+        projectName,
+        syntheticDefinitions: syntheticSidecarDefs,
+        workerNetworkNames: networkNames,
+      });
+      for (const r of sidecarResults) {
+        if (r.error) {
+          log.warn(
+            {
+              stackId: ctx.stackId,
+              serviceName: ctx.serviceName,
+              instanceId: ctx.instanceId,
+              syntheticServiceName: r.serviceName,
+              error: r.error,
+            },
+            'Per-instance addon sidecar spawn failed (continuing — reaper will clean up)',
+          );
+        }
+      }
+    } catch (err) {
+      log.warn(
+        {
+          stackId: ctx.stackId,
+          serviceName: ctx.serviceName,
+          instanceId: ctx.instanceId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'Per-instance addon spawn helper crashed (continuing — worker is up)',
+      );
+    }
   }
 
   // Poll for running state (up to 30s).

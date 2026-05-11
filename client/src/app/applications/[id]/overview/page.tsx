@@ -162,7 +162,13 @@ export default function ApplicationOverviewTab() {
         </Alert>
       )}
 
-      {hasStacks && <ConnectCard stackId={primaryStack?.id} />}
+      {hasStacks && (
+        <ConnectCard
+          stackId={primaryStack?.id}
+          stackName={primaryStack?.name}
+          envName={environment?.name}
+        />
+      )}
 
       {!hasStacks && (
         <Card>

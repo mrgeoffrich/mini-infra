@@ -8,11 +8,24 @@
 
 /**
  * Synthetic sidecar service name for the tailscale family. Solo and merged
- * applications both render under `<target>-tailscale` so the rendered stack
- * has at most one sidecar per target service regardless of which Tailscale
- * addons are declared.
+ * applications both render under `<target>-tailscale` (no instance) so the
+ * rendered stack has at most one sidecar per target service regardless of
+ * which Tailscale addons are declared.
+ *
+ * When `instanceId` is supplied (pool-instance expansion — Phase 6), the
+ * sidecar gets a per-instance service-name suffix so the renderer can emit
+ * N sidecar definitions for one pool service without colliding on
+ * `serviceName`. The pool spawner consumes these names when creating the
+ * per-instance sidecar containers; the reaper resolves them back via the
+ * `mini-infra.pool-instance-id` label on the container, not the name.
  */
-export function tailscaleSidecarServiceName(targetServiceName: string): string {
+export function tailscaleSidecarServiceName(
+  targetServiceName: string,
+  instanceId?: string,
+): string {
+  if (instanceId) {
+    return `${targetServiceName}-tailscale-${instanceId}`;
+  }
   return `${targetServiceName}-tailscale`;
 }
 

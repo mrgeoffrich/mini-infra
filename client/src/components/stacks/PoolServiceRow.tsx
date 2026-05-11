@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import type { PoolInstanceInfo, StackServiceInfo } from "@mini-infra/types";
+import {
+  buildPoolInstanceHostname,
+  type PoolInstanceInfo,
+  type StackServiceInfo,
+} from "@mini-infra/types";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -27,6 +31,13 @@ import {
 interface PoolServiceRowProps {
   stackId: string;
   service: StackServiceInfo;
+  /** Stack name — required to compute per-instance Tailscale hostnames for
+   * the new hostname column. Passed through verbatim so the row doesn't have
+   * to refetch the parent stack. */
+  stackName?: string;
+  /** Environment name — required for the same reason. Defaults to `host`
+   * inside the hostname builder for host-scoped stacks. */
+  envName?: string;
 }
 
 function formatRelative(iso: string): string {
@@ -75,9 +86,28 @@ function statusBadge(status: string): { label: string; className: string } {
  * caller (typically another service in the stack) via the pool API; the UI
  * exposes observation + a manual stop action only.
  */
-export function PoolServiceRow({ stackId, service }: PoolServiceRowProps) {
+export function PoolServiceRow({
+  stackId,
+  service,
+  stackName,
+  envName,
+}: PoolServiceRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [stopTarget, setStopTarget] = useState<PoolInstanceInfo | null>(null);
+
+  // Pool services with Tailscale addons get a per-instance hostname column.
+  // The hostname is deterministic from (stack, service, env, instance) via
+  // the same sanitisation rule the server uses to register the tailnet
+  // device, so the operator can copy/paste it into ssh / a browser without
+  // round-tripping the addon-endpoints API for each row.
+  const hasTailscaleAddon = useMemo(() => {
+    const addons = service.addons;
+    if (!addons || typeof addons !== "object") return false;
+    return (
+      "tailscale-ssh" in addons || "tailscale-web" in addons
+    );
+  }, [service.addons]);
+  const canShowHostname = hasTailscaleAddon && !!stackName;
 
   const { data: instances = [], isLoading } = usePoolInstances(
     stackId,
@@ -176,6 +206,9 @@ export function PoolServiceRow({ stackId, service }: PoolServiceRowProps) {
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground border-b">
                       <th className="py-2 pr-3 font-medium">Instance ID</th>
+                      {canShowHostname && (
+                        <th className="py-2 pr-3 font-medium">Tailnet Hostname</th>
+                      )}
                       <th className="py-2 pr-3 font-medium">Status</th>
                       <th className="py-2 pr-3 font-medium">Last Active</th>
                       <th className="py-2 pr-3 font-medium">Container</th>
@@ -185,11 +218,24 @@ export function PoolServiceRow({ stackId, service }: PoolServiceRowProps) {
                   <tbody>
                     {instances.map((inst) => {
                       const badge = statusBadge(inst.status);
+                      const hostname = canShowHostname
+                        ? buildPoolInstanceHostname(
+                            stackName ?? "",
+                            service.serviceName,
+                            envName && envName.length > 0 ? envName : "host",
+                            inst.instanceId,
+                          )
+                        : null;
                       return (
                         <tr key={inst.id} className="border-b last:border-b-0">
                           <td className="py-2 pr-3 font-mono text-xs">
                             {inst.instanceId}
                           </td>
+                          {canShowHostname && (
+                            <td className="py-2 pr-3 font-mono text-xs text-muted-foreground break-all">
+                              {hostname}
+                            </td>
+                          )}
                           <td className="py-2 pr-3">
                             <Badge className={badge.className}>{badge.label}</Badge>
                           </td>

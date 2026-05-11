@@ -58,6 +58,11 @@ export async function provisionTailscaleSsh(
   // service from racing for the same tailnet device. For the rare case of
   // a host-level stack (no environment) we fall back to `host` so the
   // triple still encodes per-resource identity.
+  //
+  // Pool-instance expansion adds a 4th `{instance-id}` segment so each
+  // instance registers as a distinct tailnet device — operators can SSH
+  // into a specific worker by name rather than load-balancing across all
+  // running instances.
   const envSlug = ctx.environment.name && ctx.environment.name.length > 0
     ? ctx.environment.name
     : 'host';
@@ -65,6 +70,7 @@ export async function provisionTailscaleSsh(
     ctx.stack.name,
     ctx.service.name,
     envSlug,
+    ctx.instance?.instanceId,
   );
 
   // Best-effort cleanup of stale offline registrations on this hostname —

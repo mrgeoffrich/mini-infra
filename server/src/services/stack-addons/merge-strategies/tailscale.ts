@@ -100,6 +100,7 @@ async function provisionTailscaleMerged(
     ctx.stack.name,
     ctx.service.name,
     envSlug,
+    ctx.instance?.instanceId,
   );
 
   // Best-effort cleanup of stale offline registrations on this hostname —
