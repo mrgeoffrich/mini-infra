@@ -103,9 +103,30 @@ export class PoolInstanceReaper {
     const running = await this.prisma.poolInstance.findMany({
       where: { status: 'running' },
     });
+    if (running.length === 0) return;
+
+    // Resolve the owning service's `serviceType` for every running row so
+    // JobPool rows can be excluded from the idle sweep (MINI-50 review
+    // finding M3). JobPool lifecycle is driven by the exit watcher +
+    // `killAfterSeconds`; idle-sweeping them would write
+    // `emitPoolInstanceIdleStopped` with `errorMessage: null` and race
+    // the watcher's terminal-status write. Pool rows continue their
+    // existing "run until idle" lifecycle here.
+    const services = await this.prisma.stackService.findMany({
+      where: {
+        OR: running.map((r) => ({ stackId: r.stackId, serviceName: r.serviceName })),
+      },
+    });
+    const serviceByKey = new Map<string, (typeof services)[number]>();
+    for (const s of services) {
+      serviceByKey.set(`${s.stackId}|${s.serviceName}`, s);
+    }
+
     const now = Date.now();
 
     for (const row of running) {
+      const svc = serviceByKey.get(`${row.stackId}|${row.serviceName}`);
+      if (svc?.serviceType === 'JobPool') continue;
       const idleForMs = now - row.lastActive.getTime();
       const limitMs = row.idleTimeoutMinutes * 60 * 1000;
       if (idleForMs < limitMs) continue;

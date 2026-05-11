@@ -59,12 +59,17 @@ const (
 	KvEgressGwHealth        = "egress-gw-health"
 )
 
-// PostgreSQL backup subjects (Phase 4).
+// PostgreSQL backup subjects.
+//
+// Note: `mini-infra.backup.completed` / `.failed` were retired alongside
+// the `BackupHistory` JetStream stream in Phase 4 of the
+// job-pool-service-type migration. Backup terminal-state events now
+// flow through the per-pool JobPool history stream — keep the Go side
+// in lockstep with `lib/types/nats-subjects.ts` so the drift check
+// stays clean.
 const (
-	SubjectBackupRun             = "mini-infra.backup.run"
-	SubjectBackupProgressPrefix  = "mini-infra.backup.progress"
-	SubjectBackupCompleted       = "mini-infra.backup.completed"
-	SubjectBackupFailed          = "mini-infra.backup.failed"
+	SubjectBackupRun            = "mini-infra.backup.run"
+	SubjectBackupProgressPrefix = "mini-infra.backup.progress"
 )
 
 // Self-update sidecar subjects (Phase 5, optional).
@@ -104,8 +109,6 @@ var AllSubjects = []string{
 	SubjectEgressGwHealth,
 	SubjectBackupRun,
 	SubjectBackupProgressPrefix,
-	SubjectBackupCompleted,
-	SubjectBackupFailed,
 	SubjectUpdateRun,
 	SubjectUpdateProgressPrefix,
 	SubjectUpdateCompleted,

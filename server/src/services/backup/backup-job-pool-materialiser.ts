@@ -75,6 +75,13 @@ export function buildTriggersFromBackupConfigurations(
       name: cronTriggerNameForDatabase(cfg.databaseId),
       schedule: cfg.schedule,
       timezone: cfg.timezone,
+      // Structured authoring metadata — the runtime env resolver reads
+      // `metadata.databaseId` first and only falls back to the
+      // positional `cron-<id>` name-parse when an older materialised
+      // trigger pre-dates this field (MINI-50 review finding M8). Using
+      // `metadata` makes the convention explicit and means a hand-edit
+      // or UI rename of `name` doesn't silently break resolution.
+      metadata: { databaseId: cfg.databaseId },
     });
   }
   // Always-on NATS-request trigger replacing the bespoke executor's
@@ -214,41 +221,59 @@ export async function refreshAllPgBackupTriggers(prisma: PrismaClient): Promise<
 /**
  * Build the per-run runtime env resolver for the pg-az-backup JobPool.
  *
+ * Runs strictly **after** the framework has reserved a `PoolInstance` row
+ * under `ctx.runId` (the atomic cap-check transaction in `runJobPool`), so
+ * an over-cap loser never reaches this resolver and never creates a
+ * `BackupOperation` row or mints a SAS handle (MINI-50 review finding H3).
+ *
  * Behaviour:
- *   - For a `cron` trigger: the trigger name is `cron-<databaseId>`. Look up
- *     the BackupConfiguration for that database, mint a fresh SAS upload
- *     handle, build the per-run env, create the `BackupOperation` DB row
- *     (so the existing UI keeps working), and return env + runIdOverride
- *     set to the `BackupOperation.id`.
- *   - For a `nats-request` trigger: the payload contains `databaseId`. Same
- *     flow as above. operationType comes from the payload (`manual` or
- *     `scheduled`); defaults to `manual` for ad-hoc requests.
- *   - For a `manual` trigger (manual HTTP route): the payload contains
- *     `databaseId`. Identical to the nats-request branch.
+ *   - Recover `databaseId` from (in priority order): `ctx.trigger.metadata.databaseId`
+ *     for materialised cron triggers, `payload.databaseId` for nats-request
+ *     and manual-route triggers, or the legacy positional `cron-<id>`
+ *     name-parse for backwards compat with un-re-applied stacks.
+ *   - Look up the BackupConfiguration, mint a fresh SAS upload handle,
+ *     build the per-run env, and create the `BackupOperation` DB row with
+ *     `id: ctx.runId` so the row's primary key matches the JobPool's
+ *     PoolInstance.instanceId and the in-container progress events land
+ *     on the same `mini-infra.backup.progress.<runId>` subject the UI
+ *     already subscribes to.
  */
 function buildPgBackupRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
   return async (prisma, _dockerExecutor, ctx) => {
     const triggerName = ctx.trigger.name;
+    const triggerMetadata = ctx.trigger.metadata ?? {};
     const payload = (ctx.payload ?? {}) as {
       databaseId?: string;
       operationType?: "manual" | "scheduled";
       userId?: string;
     };
 
-    // Derive databaseId from the trigger.
+    // Derive databaseId. Precedence:
+    //   1. trigger.metadata.databaseId — structured author-supplied (M8 fix).
+    //      Set by `buildTriggersFromBackupConfigurations()` and survives
+    //      any future operator-driven rename of trigger.name.
+    //   2. payload.databaseId — for NATS-request and manual-route triggers.
+    //   3. Positional `cron-<id>` name parse — backwards-compat for any
+    //      pre-M8 materialised triggers that pre-date the metadata field
+    //      and haven't been re-applied yet. Once the stack re-applies, the
+    //      metadata path takes over and this branch is dead. Kept so the
+    //      first apply after upgrade doesn't fail mid-cron-fire.
     let databaseId: string | undefined;
     let operationType: "manual" | "scheduled" = "manual";
 
-    if (ctx.trigger.kind === "cron" && triggerName.startsWith("cron-")) {
-      databaseId = triggerName.slice("cron-".length);
-      operationType = "scheduled";
+    if (triggerMetadata.databaseId) {
+      databaseId = triggerMetadata.databaseId;
+      operationType = ctx.trigger.kind === "cron" ? "scheduled" : "manual";
     } else if (payload.databaseId) {
       databaseId = payload.databaseId;
       operationType = payload.operationType ?? "manual";
+    } else if (ctx.trigger.kind === "cron" && triggerName.startsWith("cron-")) {
+      databaseId = triggerName.slice("cron-".length);
+      operationType = "scheduled";
     }
 
     if (!databaseId) {
-      return { env: {}, error: "pg-az-backup runtime env resolver: missing databaseId (cron trigger or payload)" };
+      return { env: {}, error: "pg-az-backup runtime env resolver: missing databaseId (trigger.metadata, payload, or cron-<id> name)" };
     }
 
     const databaseConfigService = new PostgresDatabaseManager(prisma);
@@ -274,20 +299,26 @@ function buildPgBackupRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
     const storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
     const ttlMinutes = Math.ceil(7200 / 60) + 15;
 
-    // BackupOperation row — created up front so the runId can be its `id`
-    // and the legacy UI listing keeps showing pending → running → completed.
-    // The exit watcher transitions the JobPool row terminally; the
-    // BackupOperation row's terminal state is mirrored by the
-    // backup-nats-bridge consumer (per-pool JobHistory stream).
-    const backupOperation = await prisma.backupOperation.create({
+    // BackupOperation row — `id` is the framework-supplied `ctx.runId` so
+    // the row primary key and the JobPool PoolInstance.instanceId share
+    // one identifier. Pre-H3 the resolver created the row with cuid()
+    // and asked the framework to override its runId after the fact —
+    // but that ordering put expensive resource minting *before* the
+    // atomic cap-check transaction, so cap-hit losers still committed
+    // BackupOperation rows + SAS URLs (MINI-50 review finding H3). Now
+    // the framework reserves the PoolInstance row first and hands the
+    // committed runId to the resolver, so the row created here only
+    // ever ships when the cap-check actually granted the slot.
+    const operationId = ctx.runId;
+    await prisma.backupOperation.create({
       data: {
+        id: operationId,
         databaseId,
         operationType,
         status: "pending",
         progress: 0,
       },
     });
-    const operationId = backupOperation.id;
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const blobName = `${databaseId}/${operationId}_${timestamp}.dump`;
@@ -316,7 +347,6 @@ function buildPgBackupRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
       return {
         env: {},
         error: `pg-az-backup runtime env resolver: failed to mint upload handle (${err instanceof Error ? err.message : String(err)})`,
-        runIdOverride: operationId,
       };
     }
 
@@ -348,20 +378,18 @@ function buildPgBackupRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
         operationType,
         triggerKind: ctx.trigger.kind,
         triggerName: ctx.trigger.name,
+        triggerMetadataSource: triggerMetadata.databaseId
+          ? 'metadata'
+          : payload.databaseId
+          ? 'payload'
+          : 'name-parse',
         blobName,
         providerId: storageBackend.providerId,
       },
       "pg-az-backup runtime env resolved",
     );
 
-    return {
-      env,
-      // Important: the runId is the BackupOperation.id so the in-container
-      // progress publishes land on the same `mini-infra.backup.progress.<id>`
-      // subject the UI already subscribes to, and the JobPool exit watcher's
-      // history publish keys against it.
-      runIdOverride: operationId,
-    };
+    return { env };
   };
 }
 

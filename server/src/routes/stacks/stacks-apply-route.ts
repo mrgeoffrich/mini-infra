@@ -404,21 +404,36 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
             'pg-az-backup trigger materialisation failed (continuing apply)',
           );
         }
-        // Re-run the JobPool history-stream reconciler after the materialiser
-        // wrote `jobPoolConfig` — the first reconciler pass above ran when
-        // the service row's `jobPoolConfig` was empty (template default),
-        // so the per-pool `JobHistory-<stack>-pg-az-backup` stream wasn't
-        // created. Re-running picks up the materialised config and creates
-        // the stream + DB row.
-        if (materialisedCount > 0) {
-          try {
-            await applyJobPoolStreamsForStack(prisma, stackId);
-          } catch (err) {
-            logger.warn(
-              { stackId, err: err instanceof Error ? err.message : String(err) },
-              'JobPool history-stream re-reconcile after materialise failed (continuing apply)',
-            );
-          }
+        // Re-run the JobPool history-stream reconciler after every
+        // successful reconciler.apply — not just when the materialiser
+        // ran. Three reasons:
+        //
+        // 1. User-authored JobPool templates write `jobPoolConfig`
+        //    directly on the service row at apply time (via the
+        //    file-loader / draft path). The first pass at line ~270 ran
+        //    *before* `reconciler.apply` inserted those services, so
+        //    no stream was created. Without this unconditional re-run,
+        //    the registry refresh below would let triggers fire against
+        //    a non-existent stream and the first run's `completed` /
+        //    `failed` history event would be silently dropped by the
+        //    JetStream publisher's `unchecked: true` swallow (MINI-50
+        //    review finding M4).
+        //
+        // 2. The pg-az-backup materialiser also writes `jobPoolConfig`,
+        //    so the previous `materialisedCount > 0` gate covered that
+        //    case — but it left the user-authored case exposed.
+        //
+        // 3. The reconciler is idempotent; a redundant pass on a
+        //    stack that has no JobPool services is a single
+        //    `findMany({ where: { serviceType: 'JobPool' } })` + early
+        //    return. Cheap.
+        try {
+          await applyJobPoolStreamsForStack(prisma, stackId);
+        } catch (err) {
+          logger.warn(
+            { stackId, materialisedCount, err: err instanceof Error ? err.message : String(err) },
+            'JobPool history-stream re-reconcile after reconciler.apply failed (continuing apply)',
+          );
         }
         const cronRegistry = JobPoolCronRegistry.getInstance();
         if (cronRegistry) {

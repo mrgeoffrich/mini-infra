@@ -124,18 +124,25 @@ function buildRestoreRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
       );
     }
 
-    // Create the RestoreOperation row up front. The runId == operation.id so
-    // the JobPool history events and any in-container progress publishes
-    // share one identifier with the row the UI is polling.
-    const restoreOperation = await prisma.restoreOperation.create({
+    // RestoreOperation row — `id` is the framework-supplied `ctx.runId` so
+    // the row primary key and the JobPool PoolInstance.instanceId share
+    // one identifier. Same H3 fix shape as `pg-az-backup`: the framework
+    // reserves the PoolInstance row first and hands the committed runId
+    // to the resolver, so a cap-hit loser never creates an orphan
+    // RestoreOperation row or mints a download SAS handle. This matters
+    // most for restore because `maxConcurrent: 1` makes the contention
+    // surface every double-click on the Restore button (MINI-50 review
+    // finding H3).
+    const operationId = ctx.runId;
+    await prisma.restoreOperation.create({
       data: {
+        id: operationId,
         databaseId,
         backupUrl,
         status: "pending",
         progress: 0,
       },
     });
-    const operationId = restoreOperation.id;
 
     // Mint the download handle for the container. The container reads
     // `STORAGE_PROVIDER` + provider-specific env (AZURE_SAS_URL for azure,
@@ -169,7 +176,6 @@ function buildRestoreRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
       return {
         env: {},
         error: `restore-executor runtime env resolver: failed to mint download handle (${err instanceof Error ? err.message : String(err)})`,
-        runIdOverride: operationId,
       };
     }
 
@@ -189,7 +195,6 @@ function buildRestoreRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
       return {
         env: {},
         error: `restore-executor runtime env resolver: provider '${storageBackend.providerId}' did not return a download handle`,
-        runIdOverride: operationId,
       };
     }
 
@@ -224,13 +229,7 @@ function buildRestoreRuntimeEnvResolver(): JobPoolRuntimeEnvResolver {
       "restore-executor runtime env resolved",
     );
 
-    return {
-      env,
-      // The runId == RestoreOperation.id so JobPool history events line up
-      // with the existing UI list query, and the exit watcher's
-      // completed/failed history publish keys against it.
-      runIdOverride: operationId,
-    };
+    return { env };
   };
 }
 
