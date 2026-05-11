@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '../../generated/prisma/client';
-import type { JobPoolConfig, PoolInstance as PoolInstanceDb } from '@mini-infra/types';
+import type { JobPoolConfig, JobPoolTrigger, PoolInstance as PoolInstanceDb } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { spawnPoolInstance } from './pool-spawner';
@@ -12,21 +12,55 @@ const log = getLogger('stacks', 'job-pool-spawner');
 /**
  * Sentinel `idleTimeoutMinutes` value written to PoolInstance rows that back a
  * JobPool run. The Pool-instance reaper still uses `idleTimeoutMinutes` to
- * idle-sweep stuck rows; for JobPool, the exit watcher (Phase 2) and
- * `killAfterSeconds` (Phase 2 reaper extension) are the real lifecycle drivers,
- * but until they ship a generous default ensures the reaper doesn't false-kill
- * a long-running job. 24h matches the upper bound the pool schema allows.
+ * idle-sweep stuck rows for *Pool* services; JobPool rows are excluded from
+ * that sweep at the reaper layer (MINI-50 review finding M3), and the exit
+ * watcher + `killAfterSeconds` are the real JobPool lifecycle drivers. We
+ * still set a generous default here so the column stays non-null. 24h matches
+ * the upper bound the pool schema allows.
  */
 const JOB_POOL_DEFAULT_IDLE_MINUTES = 24 * 60;
+
+/**
+ * Docker label that carries the retry-attempt counter through the spawn →
+ * Docker → die-event round trip. The exit watcher reads it off the `die`
+ * event labels so each scheduled retry receives the **correct** running
+ * count — without this label, every retry would believe it was attempt 1
+ * and `onFailure.retries >= 1` would loop forever (MINI-50 review finding H1).
+ *
+ * Exported so the watcher and unit tests can reference the same string.
+ */
+export const RETRY_ATTEMPT_LABEL = 'mini-infra.job-pool-retry-attempt';
+
+/** Docker label that carries the trigger metadata JSON (M8). */
+export const TRIGGER_METADATA_LABEL = 'mini-infra.job-pool-trigger-metadata';
 
 export type JobPoolTriggerKind = 'cron' | 'nats-request' | 'manual';
 
 export interface RunJobPoolContext {
   stackId: string;
   serviceName: string;
-  trigger: { kind: JobPoolTriggerKind; name: string };
+  trigger: {
+    kind: JobPoolTriggerKind;
+    name: string;
+    /**
+     * Optional structured authoring metadata for the trigger. Mirrors the
+     * `JobPoolTrigger.metadata` shape — when a trigger registry (cron /
+     * nats / manual route) fires `runJobPool`, it copies the matched
+     * trigger's metadata in here so the resolver can read structured keys
+     * without parsing the trigger name.
+     */
+    metadata?: Record<string, string>;
+  };
   /** Optional payload forwarded as `JOB_PAYLOAD` env var. */
   payload?: Record<string, unknown>;
+  /**
+   * Number of retries already attempted for this run lineage. Defaults to 0.
+   * The exit-watcher → retry-scheduler → runJobPool chain propagates this
+   * forward so a non-zero exit on attempt N spawns attempt N+1 with the
+   * counter advanced, and the scheduler's `attemptedRetries < retries`
+   * guard bounds the chain (MINI-50 review finding H1).
+   */
+  attemptedRetries?: number;
 }
 
 export type RunJobPoolResult =
@@ -54,14 +88,47 @@ export type RunJobPoolResult =
     };
 
 /**
- * Direct internal entry point for running a JobPool service once. Reserves a
- * `PoolInstance` row (atomic cap-check + insert) and delegates the container
- * spawn to `spawnPoolInstance()`, which already does NATS+Vault injection,
- * network attachment, and image-pull-with-auth.
+ * Resolve the trigger-declared `runId` strategy for this run. Most resolvers
+ * want the framework's UUID, but the pg-az-backup / restore-executor
+ * materialisers seed a runId from a domain row id (BackupOperation /
+ * RestoreOperation) so the in-container progress subject lines up with the
+ * UI's existing listing query. The resolver still uses `ctx.runId` to write
+ * its row's primary key — this helper just chooses which `runId` the
+ * framework reserves the `PoolInstance` row under.
  *
- * Phase 1 — no trigger sources are wired up yet, so the only callers are
- * tests and (eventually) Phase 3's trigger registries. The Phase 3 manual
- * HTTP route in `stacks-job-pool-routes.ts` still returns 501 until then.
+ * Today the only signal is `payload.runId` (for the manual-route flow that
+ * explicitly forwards a pre-generated id from an external pre-flight pass).
+ * Cron / nats-request always get a fresh UUID — by the time the resolver
+ * runs, the row is already committed so the resolver has no opportunity to
+ * influence the framework's PK choice. This matches the H3 fix's intent:
+ * cap-check + reservation **before** any expensive resolver work.
+ */
+function pickRunId(payload: Record<string, unknown> | undefined): string {
+  const fromPayload = payload?.runId;
+  if (typeof fromPayload === 'string' && fromPayload.length > 0) {
+    return fromPayload;
+  }
+  return randomUUID();
+}
+
+/**
+ * Direct internal entry point for running a JobPool service once.
+ *
+ * Sequencing (load-bearing — see MINI-50 review finding H3):
+ *  1. Load the service + stack and validate cheaply.
+ *  2. Fast pre-check of the concurrency cap as a cheap optimisation.
+ *  3. **Atomic transaction**: re-check cap and create the `PoolInstance`
+ *     row with `id: runId` in a single SQLite transaction so two
+ *     concurrent runs can't over-commit. Losers return `concurrency_cap`
+ *     **before** any expensive per-run resource minting happens.
+ *  4. Only **after** the row is reserved, invoke the runtime env resolver
+ *     (which may mint an Azure SAS URL, write a BackupOperation row, etc.).
+ *  5. Spawn the container.
+ *
+ * Pre-fix, the resolver ran between step (2) and (3), so two concurrent
+ * triggers under a `maxConcurrent: 1` cap would both create
+ * BackupOperation rows + mint SAS handles before one of them lost the
+ * atomic check — orphan rows + leaked credential windows in production.
  */
 export async function runJobPool(
   prisma: PrismaClient,
@@ -69,6 +136,7 @@ export async function runJobPool(
   ctx: RunJobPoolContext,
 ): Promise<RunJobPoolResult> {
   const { stackId, serviceName, trigger } = ctx;
+  const attemptedRetries = ctx.attemptedRetries ?? 0;
 
   const service = await prisma.stackService.findFirst({
     where: { stackId, serviceName, serviceType: 'JobPool' },
@@ -96,12 +164,9 @@ export async function runJobPool(
     };
   }
 
-  // Fast pre-check of the cap — the resolver below may mint expensive
-  // resources (e.g. a SAS URL backed by an Azure round-trip for
-  // pg-az-backup), so failing cap-hits as early as possible avoids wasted
-  // work. The final atomic cap-check + reserve still runs after the
-  // resolver, since a concurrent run can land between this check and the
-  // resolver returning.
+  // Fast pre-check of the cap. The atomic transaction below is the
+  // authoritative check; this just avoids generating a runId and hitting the
+  // transaction for an already-over-cap pool.
   if (jobPoolConfig.maxConcurrent !== null) {
     const activeCount = await prisma.poolInstance.count({
       where: {
@@ -130,59 +195,16 @@ export async function runJobPool(
     }
   }
 
-  // The `runId` doubles as the `PoolInstance.instanceId` so the reaper's
-  // partial unique index `(stackId, serviceName, instanceId)` doesn't conflict
-  // between concurrent runs of the same JobPool. Containers spawned by
-  // `spawnPoolInstance` derive their Docker name from it.
-  //
-  // A per-pool runtime env resolver can override the runId — used by the
-  // pg-az-backup migration so a `BackupOperation.id` flows through as the
-  // PoolInstance.instanceId, which makes the in-container progress subject
-  // (`mini-infra.backup.progress.<runId>`) and the JobPool history events
-  // share one identifier with the existing `BackupOperation` row. The
-  // resolver also supplies per-run env (POSTGRES_*, AZURE_SAS_URL, etc.)
-  // that mini-infra needs to mint per-run via the storage backend.
-  const resolver = jobPoolRuntimeEnvResolvers.getResolver(stackId, serviceName);
-  let resolverEnv: Record<string, string> = {};
-  let resolverRunId: string | undefined;
-  if (resolver) {
-    try {
-      const resolved = await resolver(prisma, dockerExecutor, {
-        stackId,
-        serviceName,
-        trigger,
-        payload: ctx.payload,
-      });
-      if (resolved.error) {
-        log.warn(
-          { stackId, serviceName, trigger: trigger.name, reason: resolved.error },
-          'JobPool runtime env resolver aborted spawn',
-        );
-        return {
-          ok: false,
-          reason: 'spawn_failed',
-          message: resolved.error,
-          instanceRowId: '',
-        };
-      }
-      resolverEnv = resolved.env ?? {};
-      if (resolved.runIdOverride) {
-        resolverRunId = resolved.runIdOverride;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log.error(
-        { stackId, serviceName, trigger: trigger.name, err: msg },
-        'JobPool runtime env resolver threw',
-      );
-      return { ok: false, reason: 'spawn_failed', message: msg, instanceRowId: '' };
-    }
-  }
-  const runId = resolverRunId ?? randomUUID();
+  // Generate the runId now — the atomic transaction reserves the row under
+  // this id, so the resolver (which runs strictly after) can write any
+  // external rows keyed against the same value.
+  const runId = pickRunId(ctx.payload);
 
   // Atomic cap-check + reservation. SQLite serialises writes so the count +
   // create transaction can't deliver two over-the-cap rows on concurrent
-  // calls. Mirrors the pattern in `stacks-pool-routes.ts`.
+  // calls. Mirrors the pattern in `stacks-pool-routes.ts`. The resolver
+  // runs strictly AFTER this transaction commits, so cap-hit losers never
+  // create a BackupOperation row or mint a SAS handle (H3 fix).
   const MAX_REACHED = Symbol('jobpool-max-reached');
   type TxResult = { row: PoolInstanceDb };
 
@@ -248,6 +270,70 @@ export async function runJobPool(
   }
 
   const row = txResult.row;
+
+  // Resolver phase — runs *after* the atomic reservation. Pull the trigger
+  // metadata from the live JobPool config so the resolver sees the same
+  // declared metadata the template author wrote (M8). Triggers that didn't
+  // declare metadata get an empty object, not undefined, so the resolver
+  // can read keys without optional-chaining everywhere.
+  const declaredTrigger = (jobPoolConfig.triggers as JobPoolTrigger[]).find(
+    (t) => t.name === trigger.name,
+  );
+  const triggerMetadata: Record<string, string> = {
+    ...(declaredTrigger?.metadata ?? {}),
+    ...(trigger.metadata ?? {}),
+  };
+
+  const resolver = jobPoolRuntimeEnvResolvers.getResolver(stackId, serviceName);
+  let resolverEnv: Record<string, string> = {};
+  if (resolver) {
+    try {
+      const resolved = await resolver(prisma, dockerExecutor, {
+        stackId,
+        serviceName,
+        trigger: { kind: trigger.kind, name: trigger.name, metadata: triggerMetadata },
+        payload: ctx.payload,
+        runId,
+      });
+      if (resolved.error) {
+        log.warn(
+          { stackId, serviceName, trigger: trigger.name, reason: resolved.error, runId },
+          'JobPool runtime env resolver aborted spawn',
+        );
+        // Transition the reserved row to `error` so the lifecycle stays
+        // observable — the resolver had a chance to write its own
+        // domain-specific failure record (BackupOperation.failed, etc.)
+        // before we got here.
+        await prisma.poolInstance.update({
+          where: { id: row.id },
+          data: {
+            status: 'error',
+            errorMessage: resolved.error,
+            stoppedAt: new Date(),
+          },
+        }).catch(() => { /* already logged downstream */ });
+        return {
+          ok: false,
+          reason: 'spawn_failed',
+          message: resolved.error,
+          instanceRowId: row.id,
+        };
+      }
+      resolverEnv = resolved.env ?? {};
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error(
+        { stackId, serviceName, trigger: trigger.name, runId, err: msg },
+        'JobPool runtime env resolver threw',
+      );
+      await prisma.poolInstance.update({
+        where: { id: row.id },
+        data: { status: 'error', errorMessage: msg, stoppedAt: new Date() },
+      }).catch(() => { /* already logged downstream */ });
+      return { ok: false, reason: 'spawn_failed', message: msg, instanceRowId: row.id };
+    }
+  }
+
   const callerEnv: Record<string, string> = {};
   // Resolver-supplied env goes in first so the standard JOB_* keys below
   // always win on conflict — the resolver shouldn't be naming variables
@@ -276,9 +362,24 @@ export async function runJobPool(
       // round trip via these labels; the exit watcher reads them when
       // it builds the history payload. Trigger name is sanitised to
       // satisfy Docker's label-value constraints (no control chars).
+      //
+      // RETRY_ATTEMPT_LABEL carries the retry-counter so the watcher
+      // schedules the *next* retry with the correct attempt count (H1).
+      // Stamped on every spawn — attempt 0 (first run), attempt N (after
+      // the watcher chained N-1 retries before this one).
       extraLabels: {
         'mini-infra.job-pool-trigger-kind': trigger.kind,
         'mini-infra.job-pool-trigger-name': trigger.name.replace(/[^A-Za-z0-9._#-]/g, '_'),
+        [RETRY_ATTEMPT_LABEL]: String(attemptedRetries),
+        // Trigger metadata as a JSON blob — the watcher doesn't need it
+        // (the resolver consumed it on the way in), but it's useful for
+        // post-hoc debugging via `docker inspect` and keeps the
+        // attribution round trip self-describing.
+        ...(Object.keys(triggerMetadata).length > 0
+          ? {
+              [TRIGGER_METADATA_LABEL]: JSON.stringify(triggerMetadata).slice(0, 4096),
+            }
+          : {}),
       },
     });
 

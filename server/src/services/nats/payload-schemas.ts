@@ -61,33 +61,12 @@ export const backupProgressSchema = z.object({
 });
 export type BackupProgress = z.infer<typeof backupProgressSchema>;
 
-/**
- * Completion event published to JetStream `BackupHistory` stream.
- * Durable — replayed on server restart to populate the events list on cold
- * load and to repair DB records missed during a server outage.
- */
-export const backupCompletedSchema = z.object({
-  operationId: z.string().min(1).max(64),
-  databaseId: z.string().min(1).max(64),
-  sizeBytes: z.number().int().nonnegative().optional(),
-  storageObjectUrl: z.string().max(2048).optional(),
-  storageProvider: z.string().max(64).optional(),
-  completedAtMs: z.number().int().nonnegative(),
-});
-export type BackupCompleted = z.infer<typeof backupCompletedSchema>;
-
-/**
- * Failure event published to JetStream `BackupHistory` stream.
- * Published on both application-level failures (non-zero exit) and the
- * hard-crash fallback path in the container watcher.
- */
-export const backupFailedSchema = z.object({
-  operationId: z.string().min(1).max(64),
-  databaseId: z.string().min(1).max(64),
-  errorMessage: z.string().max(1024),
-  failedAtMs: z.number().int().nonnegative(),
-});
-export type BackupFailed = z.infer<typeof backupFailedSchema>;
+// `backupCompletedSchema` / `backupFailedSchema` were retired alongside the
+// `BackupHistory` JetStream stream in Phase 4 of the job-pool-service-type
+// migration. Backup terminal-state events now flow through the per-pool
+// JobPool history stream — see `JobPoolSubject.completed` / `.failed` plus
+// `jobPoolRunCompletedSchema` / `jobPoolRunFailedSchema` below. Removed
+// here to drop the dead schema + subject registrations.
 
 // ====================================================================
 // JobPool run lifecycle (Phase 2 of job-pool-service-type)
@@ -611,8 +590,6 @@ export const payloadSchemas: Record<KnownNatsSubject, SubjectSchemaEntry> = {
   },
   // progressPrefix is a wildcard parent — callers use unchecked:true and validate inline
   [BackupSubject.progressPrefix]: { request: backupProgressSchema },
-  [BackupSubject.completed]: { request: backupCompletedSchema },
-  [BackupSubject.failed]: { request: backupFailedSchema },
   [UpdateSubject.run]: { request: z.unknown() },
   [UpdateSubject.progressPrefix]: { request: z.unknown() },
   [UpdateSubject.completed]: { request: z.unknown() },

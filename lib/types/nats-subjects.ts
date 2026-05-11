@@ -98,16 +98,22 @@ export const EgressGwSubject = {
   health: "mini-infra.egress.gw.health",
 } as const;
 
-/** Phase 4: PostgreSQL backup subjects. Reserved. */
+/**
+ * PostgreSQL backup subjects.
+ *
+ * Note: `mini-infra.backup.completed` / `.failed` were retired in Phase 4 of
+ * the job-pool-service-type migration — backup terminal-state events now
+ * flow through the per-pool JobPool history stream
+ * (`mini-infra.job-pool.<stackId>.pg-az-backup.completed/.failed`) so any
+ * future JobPool template gets the same observability for free. The
+ * `BackupHistory` JetStream stream + consumer were torn down at the same
+ * time; see `system-nats-bootstrap.ts` for the retirement marker.
+ */
 export const BackupSubject = {
   /** Command: scheduler invokes a backup run. */
   run: "mini-infra.backup.run",
   /** Event prefix: per-run progress (`...progress.<runId>`). Plain pub/sub. */
   progressPrefix: "mini-infra.backup.progress",
-  /** Event: backup finished successfully; JetStream durable. */
-  completed: "mini-infra.backup.completed",
-  /** Event: backup failed; JetStream durable. */
-  failed: "mini-infra.backup.failed",
 } as const;
 
 /**
@@ -262,8 +268,6 @@ export const ALL_NATS_SUBJECTS: readonly string[] = [
   EgressGwSubject.health,
   BackupSubject.run,
   BackupSubject.progressPrefix,
-  BackupSubject.completed,
-  BackupSubject.failed,
   UpdateSubject.run,
   UpdateSubject.progressPrefix,
   UpdateSubject.completed,

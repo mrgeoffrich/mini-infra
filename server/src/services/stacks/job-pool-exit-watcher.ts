@@ -10,6 +10,7 @@ import {
   publishJobPoolFailed,
 } from './job-pool-history-publisher';
 import { scheduleJobPoolRetry } from './job-pool-retry-scheduler';
+import { RETRY_ATTEMPT_LABEL, TRIGGER_METADATA_LABEL } from './job-pool-spawner';
 import type { DockerExecutorService } from '../docker-executor';
 
 const log = getLogger('stacks', 'job-pool-exit-watcher');
@@ -126,20 +127,50 @@ export class JobPoolExitWatcher {
     const jobPoolConfig = service.jobPoolConfig as unknown as JobPoolConfig | null;
     const startedAtMs = row.lastActive.getTime();
     const finishedAtMs = Date.now();
-    const exitCode = event.exitCode ?? 0;
 
     // Carry trigger attribution forward. JobPool runs spawned via
     // `runJobPool` stamp `JOB_TRIGGER_KIND` / `JOB_TRIGGER_NAME` on the
-    // container, but Docker's `die` event only carries labels, not env
-    // vars. We pulled the labels through `pool-spawner.ts:labels` so the
-    // attribution survives — but the spawner doesn't currently expose
-    // trigger labels, so until Phase 3 stamps them we default to `manual`
-    // / 'unknown'. The history payload still parses cleanly.
+    // container (Phase 2+) so the watcher can read them off the `die`
+    // event labels. Older containers spawned before label-stamping
+    // shipped fall back to `manual` / `unknown` for backwards-compat.
     const triggerKind = (event.labels['mini-infra.job-pool-trigger-kind'] as
       | 'cron'
       | 'nats-request'
       | 'manual') ?? 'manual';
     const triggerName = event.labels['mini-infra.job-pool-trigger-name'] ?? 'unknown';
+
+    // Recover the retry-attempt counter from the spawner's label stamp
+    // (MINI-50 review finding H1). Containers that pre-date the stamp
+    // default to 0 — the watcher still honours the retry budget; the
+    // first observed retry chain will start at 1 and bound from there.
+    const retryAttemptLabel = event.labels[RETRY_ATTEMPT_LABEL];
+    const attemptedRetries =
+      retryAttemptLabel !== undefined && /^\d+$/.test(retryAttemptLabel)
+        ? Math.min(Number.parseInt(retryAttemptLabel, 10), 1_000_000)
+        : 0;
+
+    // Recover the trigger metadata blob (M8). The resolver already consumed
+    // it on the way in; we re-propagate it via the retry scheduler so a
+    // chained retry sees the same metadata its predecessor did.
+    const triggerMetadata = parseTriggerMetadata(event.labels[TRIGGER_METADATA_LABEL]);
+
+    // Treat a missing/unparseable `exitCode` as failure. The Docker event
+    // stream only forwards `exitCode` when the `Actor.Attributes` map both
+    // contains a finite parseable integer (see `docker.ts:425-432`); a
+    // daemon glitch or abnormal exit can produce a `die` event without
+    // one. Pre-fix the watcher coerced `undefined` to 0 and marked the
+    // run completed — a false-success operators saw as a successful
+    // backup (MINI-50 review finding H2). We now route undefined through
+    // the failure branch with a distinct error message + exit code -1
+    // (the failed schema's `z.number().int()` permits the sentinel).
+    let exitCode: number;
+    let errorOverride: string | null = null;
+    if (event.exitCode === undefined) {
+      exitCode = -1;
+      errorOverride = 'Container died without a reported exit code';
+    } else {
+      exitCode = event.exitCode;
+    }
 
     const succeeded = exitCode === 0;
     try {
@@ -152,7 +183,9 @@ export class JobPoolExitWatcher {
           stoppedAt: new Date(finishedAtMs),
           // Preserve any prior errorMessage (e.g. the reaper's kill marker)
           // when transitioning a non-zero exit; succeed-overrides nothing.
-          errorMessage: succeeded ? null : row.errorMessage ?? `Container exited with code ${exitCode}`,
+          errorMessage: succeeded
+            ? null
+            : errorOverride ?? row.errorMessage ?? `Container exited with code ${exitCode}`,
         },
       });
     } catch (err) {
@@ -187,7 +220,8 @@ export class JobPoolExitWatcher {
       return true;
     }
 
-    const errorMessage = row.errorMessage ?? `Container exited with code ${exitCode}`;
+    const errorMessage =
+      errorOverride ?? row.errorMessage ?? `Container exited with code ${exitCode}`;
     await publishJobPoolFailed({
       stackId,
       serviceName: row.serviceName,
@@ -200,24 +234,26 @@ export class JobPoolExitWatcher {
       finishedAtMs,
     });
     log.info(
-      { stackId, serviceName: row.serviceName, runId: instanceId, exitCode, errorMessage },
+      { stackId, serviceName: row.serviceName, runId: instanceId, exitCode, errorMessage, attemptedRetries },
       'JobPool run failed',
     );
 
     // Retry handling — non-zero exits only. Killed-by-reaper runs already
     // have a row.errorMessage of KILL_AFTER_SECONDS_ERROR; we still honor
     // the retry policy for them (the plan doc doesn't carve out an
-    // exception). Retries are not chained across themselves: the
-    // scheduler caps at `onFailure.retries`.
+    // exception). The scheduler's `attemptedRetries < retries` guard
+    // bounds the chain; we pass `attemptedRetries + 1` so the next retry
+    // is reflected as attempt N+1 in its container label, and the chain
+    // terminates when `attemptedRetries >= retries` (H1).
     if (jobPoolConfig?.onFailure && jobPoolConfig.onFailure.retries > 0) {
       try {
         const docker = await this.lazyDockerExecutor();
         scheduleJobPoolRetry(this.prisma, docker, {
           stackId,
           serviceName: row.serviceName,
-          attemptedRetries: 0,
+          attemptedRetries: attemptedRetries + 1,
           onFailure: jobPoolConfig.onFailure,
-          trigger: { kind: triggerKind, name: triggerName },
+          trigger: { kind: triggerKind, name: triggerName, metadata: triggerMetadata },
         });
       } catch (err) {
         log.warn(
@@ -238,5 +274,27 @@ export class JobPoolExitWatcher {
     if (this.retryDockerExecutor) return this.retryDockerExecutor;
     this.retryDockerExecutor = await this.dockerExecutorFactory();
     return this.retryDockerExecutor;
+  }
+}
+
+/**
+ * Parse the `mini-infra.job-pool-trigger-metadata` Docker label back into a
+ * plain `Record<string, string>`. The spawner stamps a JSON-encoded blob
+ * (capped at 4096 chars by `slice()`); a missing or unparseable label
+ * yields an empty object — the metadata field is optional and a broken
+ * round trip should not break the retry chain.
+ */
+function parseTriggerMetadata(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'string') result[k] = v;
+    }
+    return result;
+  } catch {
+    return {};
   }
 }
