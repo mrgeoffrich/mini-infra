@@ -100,10 +100,17 @@ export async function spawnPoolInstance(
   });
   if (!stack) return { success: false, error: 'Stack not found' };
 
+  // Accept both `Pool` (Phase 1 — caller-driven ensure-instance) and `JobPool`
+  // (this plan's Phase 1 — triggered one-shot runs). Both ride the same
+  // PoolInstance lifecycle, dynamicEnv injection, and network-attachment
+  // machinery; the differences (idle vs. exit-driven, ensure vs. trigger)
+  // live above this layer in the dispatcher and exit watcher (Phase 2+).
   const service = stack.services.find(
-    (s) => s.serviceName === ctx.serviceName && s.serviceType === 'Pool',
+    (s) =>
+      s.serviceName === ctx.serviceName &&
+      (s.serviceType === 'Pool' || s.serviceType === 'JobPool'),
   );
-  if (!service) return { success: false, error: 'Pool service not found' };
+  if (!service) return { success: false, error: 'Pool/JobPool service not found' };
 
   // Resolve `{{params.X}}`, `{{volumes.X}}`, etc. on the service definition —
   // mirrors what stack-reconciler does on apply. Pool services were skipped
@@ -149,8 +156,18 @@ export async function spawnPoolInstance(
   const dockerImage = resolvedDef.dockerImage;
   const dockerTag = resolvedDef.dockerTag;
   const containerConfig = resolvedDef.containerConfig as StackContainerConfig;
+  // poolConfig is required for Pool services but absent on JobPool services.
+  // Either pool authoring block must be present for the spawn to make sense;
+  // beyond that gate `poolConfig` / `jobPoolConfig` aren't read here — the
+  // per-spawn knobs (idle timer, cap, lifecycle) live on the rows above.
   const poolConfig = (resolvedDef.poolConfig ?? null) as PoolConfig | null;
-  if (!poolConfig) return { success: false, error: 'Pool service missing poolConfig' };
+  const jobPoolConfig = resolvedDef.jobPoolConfig ?? null;
+  if (service.serviceType === 'Pool' && !poolConfig) {
+    return { success: false, error: 'Pool service missing poolConfig' };
+  }
+  if (service.serviceType === 'JobPool' && !jobPoolConfig) {
+    return { success: false, error: 'JobPool service missing jobPoolConfig' };
+  }
 
   const projectName = stack.environment
     ? `${stack.environment.name}-${stack.name}`

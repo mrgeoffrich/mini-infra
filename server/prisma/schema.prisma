@@ -1047,6 +1047,7 @@ enum StackServiceType {
   StatelessWeb
   AdoptedWeb
   Pool
+  JobPool
 }
 
 enum StackTemplateSource {
@@ -1423,6 +1424,7 @@ model StackService {
   routing         Json?            // StackServiceRouting (required for StatelessWeb/AdoptedWeb, forbidden for Stateful)
   adoptedContainer Json?           // AdoptedContainerRef (required for AdoptedWeb)
   poolConfig      Json?            // PoolConfig (required for Pool services)
+  jobPoolConfig   Json?            // JobPoolConfig (required for JobPool services)
   poolManagementTokenHash   String? // bcrypt hash, rotated on every apply
   vaultAppRoleId              String?
   vaultAppRole                VaultAppRole? @relation("ServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
@@ -1650,6 +1652,7 @@ model StackTemplateService {
   routing         Json?                 // StackServiceRouting | null
   adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
   poolConfig      Json?                 // PoolConfig (required for Pool services)
+  jobPoolConfig   Json?                 // JobPoolConfig (required for JobPool services)
   vaultAppRoleId  String?               // Optional per-service Vault AppRole binding (resolved concrete ID)
   vaultAppRole    VaultAppRole?         @relation("TemplateServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   // Phase 2 — symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time.

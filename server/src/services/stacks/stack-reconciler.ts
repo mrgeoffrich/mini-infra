@@ -699,9 +699,11 @@ export class StackReconciler {
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
       if (!activeServiceNames.has(serviceName)) continue;
-      // Pool services never get a container at apply time — skip resolution
-      // entirely so we don't waste a Vault mint on something we won't use.
-      if (serviceDef.serviceType === 'Pool') continue;
+      // Pool and JobPool services never get a container at apply time — skip
+      // resolution entirely so we don't waste a Vault mint on something we
+      // won't use. (Per-instance / per-run credential injection happens on
+      // spawn in `pool-spawner.ts`.)
+      if (serviceDef.serviceType === 'Pool' || serviceDef.serviceType === 'JobPool') continue;
       const dynamicEnv = serviceDef.containerConfig?.dynamicEnv;
       if (!dynamicEnv) continue;
 
@@ -842,8 +844,9 @@ export class StackReconciler {
     // Pull all images (regardless of action — we always want latest)
     const pulledImageIds = new Map<string, string>();
     for (const svc of stack.services) {
-      // Pool services don't run containers at apply time, so don't pull/compare.
-      if (svc.serviceType === 'Pool') continue;
+      // Pool and JobPool services don't run containers at apply time, so
+      // don't pull/compare. Per-instance / per-run pulls happen on spawn.
+      if (svc.serviceType === 'Pool' || svc.serviceType === 'JobPool') continue;
       const def = resolvedDefinitions.get(svc.serviceName);
       if (!def) continue;
       const imageRef = `${def.dockerImage}:${def.dockerTag}`;
