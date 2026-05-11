@@ -12,6 +12,7 @@ import {
   stackResourceInputSchema,
   stackServiceCommonFieldsSchema,
   refineAddonsBlock,
+  refinePoolAndJobPoolConstraints,
 } from "./schemas";
 import { productionAddonRegistry } from "../stack-addons/registry";
 import {
@@ -59,6 +60,9 @@ const templateConfigFileSchema = z.object({
 // `stackServiceCommonFieldsSchema` so adding a new common field can't drift
 // silently (customer feedback #1). Leaf-specific fields and the
 // stricter-than-HTTP refine (Stateful must not have routing) stay here.
+// `poolConfig` and `jobPoolConfig` live on the common base so the same
+// per-serviceType constraints (`refinePoolAndJobPoolConstraints`) fire for
+// both authoring surfaces (MINI-50 review finding M1).
 const templateServiceSchema = stackServiceCommonFieldsSchema
   .refine(
     (data) => {
@@ -71,6 +75,7 @@ const templateServiceSchema = stackServiceCommonFieldsSchema
   )
   .superRefine((data, ctx) => {
     refineAddonsBlock(data.addons, ctx, productionAddonRegistry);
+    refinePoolAndJobPoolConstraints(data, ctx);
   });
 
 // =====================

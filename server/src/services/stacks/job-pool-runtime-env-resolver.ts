@@ -8,37 +8,56 @@ const log = getLogger('stacks', 'job-pool-runtime-env-resolver');
 /**
  * Context handed to a runtime env resolver when a JobPool run is about to
  * spawn. Resolvers see the trigger that fired (cron / nats-request / manual)
- * by name + kind, plus any caller-supplied payload (e.g. a NATS-request body
- * or the JSON body POSTed to the manual HTTP route). The resolver returns the
- * extra env to merge into `callerEnv` before spawn, plus an optional
- * `runIdOverride` — the JobPool spawner uses `randomUUID()` by default, but
- * some callers need the runId to match an externally-owned record (e.g.
- * `BackupOperation.id`) so they can correlate progress events back to a DB
- * row without an extra round trip.
+ * by name + kind, plus the trigger's optional `metadata` map (structured
+ * authoring keys like `databaseId` — see `JobPoolTrigger.metadata` in
+ * `@mini-infra/types`), and any caller-supplied payload (e.g. a NATS-request
+ * body or the JSON body POSTed to the manual HTTP route).
  *
+ * `runId` is the canonical run identifier — the framework generates it via
+ * `randomUUID()` (or uses an externally-supplied identifier) **before** the
+ * resolver runs. Resolvers needing to correlate the run with an
+ * externally-owned record (e.g. `BackupOperation.id`) write the record with
+ * `id: runId` rather than asking the framework to override their own UUID
+ * after the fact — this ordering is load-bearing for the atomic-cap-check
+ * race fix (MINI-50 review finding H3).
+ *
+ * The resolver returns the extra env to merge into `callerEnv` before spawn.
  * A resolver throwing (or returning a string `error`) cancels the spawn —
  * the trigger sees a `spawn_failed` result with the error message.
  */
 export interface JobPoolRuntimeEnvContext {
   stackId: string;
   serviceName: string;
-  trigger: { kind: JobPoolTriggerKind; name: string };
+  trigger: {
+    kind: JobPoolTriggerKind;
+    name: string;
+    /**
+     * Structured authoring metadata attached to the trigger by the template
+     * or materialiser. Resolvers should prefer `metadata.<key>` over parsing
+     * keys out of `name` so an operator-driven rename can't silently break
+     * resolution (MINI-50 review finding M8).
+     */
+    metadata?: Record<string, string>;
+  };
   /** Caller-supplied payload (NATS request body or manual HTTP body). */
   payload?: Record<string, unknown>;
+  /**
+   * The framework-generated runId for this attempt. Already reserved against
+   * the atomic concurrency cap before the resolver fires — resolvers should
+   * use this value as the primary key of any external row they create
+   * (e.g. `prisma.backupOperation.create({ data: { id: ctx.runId, ... } })`).
+   */
+  runId: string;
 }
 
 export interface JobPoolRuntimeEnvResult {
   /** Extra env to merge into `callerEnv` before container spawn. */
   env: Record<string, string>;
   /**
-   * If set, overrides the `randomUUID()`-generated runId. Must be a string
-   * the container can use unmodified (NATS subject token, Docker label value).
-   */
-  runIdOverride?: string;
-  /**
    * If set, the resolver aborted the spawn with a human-readable reason.
    * `runJobPool` surfaces this as a `spawn_failed` result. The `PoolInstance`
-   * row is never created when a resolver returns an error.
+   * row was already reserved before the resolver ran, so it's transitioned to
+   * `error` rather than deleted — the lifecycle stays observable.
    */
   error?: string;
 }

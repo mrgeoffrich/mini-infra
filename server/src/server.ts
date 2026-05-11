@@ -525,8 +525,13 @@ const initializeServices = async () => {
           "./services/nats/nats-system-bootstrap"
         );
         void bootstrapNatsSystemResources();
-        // ALT-29: start the backup NATS bridge (progress → Socket.IO
-        // fan-out + BackupHistory JetStream consumer for cold-boot replay).
+        // ALT-29: start the backup/restore NATS bridge — fans
+        // `mini-infra.backup.progress.>` events out as Socket.IO updates,
+        // and consumes per-pool JobPool history streams to repair stale
+        // BackupOperation / RestoreOperation rows on cold boot. The
+        // legacy `BackupHistory` JetStream consumer was retired in Phase 4
+        // of the job-pool-service-type migration (the per-pool JobHistory
+        // streams now own that observability surface).
         const { startBackupNatsBridge } = await import("./services/backup");
         startBackupNatsBridge(prisma);
       } catch (err) {

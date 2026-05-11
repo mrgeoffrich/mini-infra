@@ -72,33 +72,12 @@ const templateVaultSectionSchema = z.object({
 
 const natsSubjectSchema = z.string().min(1).max(255).regex(/^[A-Za-z0-9_$*>\-.]+$/);
 
-// Subjects in app-author roles[].publish/subscribe are *relative* to the stack's
-// subjectPrefix and the orchestrator prepends. Wildcards inside the relative
-// path are fine; what's forbidden is breaking out of the prefix or hitting
-// reserved namespaces. Static rules:
-//   - cannot start with `>` or `*` (would shadow whole prefix tree)
-//   - cannot start with `_INBOX.` (use inboxAuto instead)
-//   - cannot start with `$SYS.` (system-account namespace)
-//   - cannot contain `..` or empty tokens
-//
-// Exported so the file-loader path can reuse the same strict shape.
-export const natsRelativeSubjectSchema = z
-  .string()
-  .min(1)
-  .max(255)
-  .regex(/^[A-Za-z0-9_*>\-.]+$/, "subject must contain only letters, numbers, '_', '-', '.', '*', '>'")
-  .refine((s) => !s.startsWith(">") && !s.startsWith("*"), {
-    message: "relative subject must not start with a wildcard ('>' or '*') — that would shadow the entire stack prefix",
-  })
-  .refine((s) => !s.startsWith("_INBOX."), {
-    message: "relative subject must not target '_INBOX.>' directly — use the inboxAuto field on the role",
-  })
-  .refine((s) => !s.startsWith("$SYS.") && s !== "$SYS", {
-    message: "relative subject must not target the '$SYS.>' system-account namespace",
-  })
-  .refine((s) => !s.includes("..") && !s.split(".").some((tok) => tok.length === 0), {
-    message: "relative subject must not contain empty tokens ('..' or leading/trailing dots)",
-  });
+// Imported + re-exported from `./nats-subject-shapes` so the structural
+// rules live in a single neutral module that both `schemas.ts` (JobPool
+// trigger subjects) and this file (role-nested authoring surface) can
+// import without a circular dependency (MINI-50 review finding M2).
+import { natsRelativeSubjectSchema } from "./nats-subject-shapes";
+export { natsRelativeSubjectSchema };
 
 // Subject scope for a signer: a relative path with no wildcards (the signing
 // key is constrained to `<prefix>.<scope>.>`; scope itself must be concrete).
