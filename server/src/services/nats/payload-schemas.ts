@@ -163,6 +163,54 @@ export const jobPoolRunSkippedSchema = z.object({
 export type JobPoolRunSkipped = z.infer<typeof jobPoolRunSkippedSchema>;
 
 // ====================================================================
+// JobPool nats-request trigger envelope (Phase 3 of job-pool-service-type)
+// ====================================================================
+//
+// `nats-request` triggers subscribe to a user-declared subject (e.g.
+// `mini-infra.backup.run`). The request body is opaque from the registry's
+// POV — it's forwarded to the spawned container as `JOB_PAYLOAD` — so the
+// inbound schema is a free-form JSON object capped at a sensible size.
+//
+// The reply schema is fixed: on success the registry replies `{ runId }`,
+// on a cap-hit `{ error: "concurrency_cap_reached", maxConcurrent }`, and on
+// any other server-side failure `{ error: <message> }`. Both shapes are
+// pinned here so future consumers parse with the same discriminator.
+//
+// The bus's per-subject validator can't bind to a user-declared subject
+// (the registry doesn't know the subjects at boot), so call sites pass
+// `unchecked: true` and validate inline against these schemas.
+
+export const jobPoolTriggerRequestSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (val) => {
+      // Cap the serialised body at 16 KiB — Docker env vars degrade past
+      // ~32 KiB and we want to leave headroom for other JOB_* vars.
+      try {
+        return JSON.stringify(val).length <= 16 * 1024;
+      } catch {
+        return false;
+      }
+    },
+    { message: "payload must serialise to <= 16 KiB" },
+  );
+export type JobPoolTriggerRequest = z.infer<typeof jobPoolTriggerRequestSchema>;
+
+export const jobPoolTriggerReplySchema = z.union([
+  z.object({ runId: z.string().min(1).max(64) }),
+  z.object({
+    error: z.string().min(1).max(256),
+    /**
+     * Only set on `concurrency_cap_reached` replies — the configured cap
+     * value at the time the trigger fired. Surfaces in the caller's error
+     * UI without a second round-trip.
+     */
+    maxConcurrent: z.number().int().min(1).optional(),
+  }),
+]);
+export type JobPoolTriggerReply = z.infer<typeof jobPoolTriggerReplySchema>;
+
+// ====================================================================
 // Egress gateway (Phase 3) — real schemas, replacing the Phase 1 stubs.
 // ====================================================================
 

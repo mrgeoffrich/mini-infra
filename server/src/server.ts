@@ -49,6 +49,8 @@ import {
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
 import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
+import { JobPoolCronRegistry } from "./services/stacks/job-pool-cron-registry";
+import { JobPoolNatsRegistry } from "./services/stacks/job-pool-nats-registry";
 import { TlsConfigService } from "./services/tls/tls-config";
 import { StorageCertificateStore } from "./services/tls/storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
@@ -95,6 +97,8 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
 let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
+let jobPoolCronRegistry: JobPoolCronRegistry | null = null;
+let jobPoolNatsRegistry: JobPoolNatsRegistry | null = null;
 
 /**
  * Initialize the internal auth secret from the database, generating one if
@@ -281,16 +285,43 @@ const initializeServices = async () => {
     // subscribes to Docker `die` events to finalise JobPool runs, publish
     // history events to JetStream, and schedule retries.
     console.log("[STARTUP] Initializing JobPool exit watcher...");
-    jobPoolExitWatcher = new JobPoolExitWatcher(prisma, async () => {
+    const resolveJobPoolDockerExecutor = async () => {
       const { DockerExecutorService } = await import(
         "./services/docker-executor"
       );
       const exec = new DockerExecutorService();
       await exec.initialize();
       return exec;
-    });
+    };
+    jobPoolExitWatcher = new JobPoolExitWatcher(prisma, resolveJobPoolDockerExecutor);
     jobPoolExitWatcher.start();
     console.log("[STARTUP] ✓ JobPool exit watcher initialized");
+
+    // Initialize JobPool trigger registries (Phase 3): cron + nats-request.
+    // `loadAll()` rebuilds the live registration set from the DB so a
+    // restart re-establishes every declared trigger without an apply.
+    console.log("[STARTUP] Initializing JobPool trigger registries...");
+    jobPoolCronRegistry = new JobPoolCronRegistry(prisma, resolveJobPoolDockerExecutor);
+    JobPoolCronRegistry.setInstance(jobPoolCronRegistry);
+    try {
+      await jobPoolCronRegistry.loadAll();
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "JobPoolCronRegistry.loadAll failed at startup (apply-time refresh will reconcile)",
+      );
+    }
+    jobPoolNatsRegistry = new JobPoolNatsRegistry(prisma, resolveJobPoolDockerExecutor);
+    JobPoolNatsRegistry.setInstance(jobPoolNatsRegistry);
+    try {
+      await jobPoolNatsRegistry.loadAll();
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "JobPoolNatsRegistry.loadAll failed at startup (apply-time refresh will reconcile)",
+      );
+    }
+    console.log("[STARTUP] ✓ JobPool trigger registries initialized");
 
     // Initialize backup scheduler
     console.log("[STARTUP] Initializing backup scheduler...");
@@ -815,6 +846,27 @@ startServer()
       if (poolInstanceReaper) {
         poolInstanceReaper.stop();
         logger.info("Pool instance reaper stopped");
+      }
+
+      // Stop JobPool trigger registries before tearing down the bus —
+      // the NATS registry's cancel handlers go through the bus.
+      if (jobPoolCronRegistry) {
+        try {
+          jobPoolCronRegistry.stopAll();
+          logger.info("JobPool cron registry stopped");
+        } catch (err) {
+          logger.warn({ err }, "JobPool cron registry stop failed (non-fatal)");
+        }
+        JobPoolCronRegistry.setInstance(null);
+      }
+      if (jobPoolNatsRegistry) {
+        try {
+          jobPoolNatsRegistry.stopAll();
+          logger.info("JobPool NATS registry stopped");
+        } catch (err) {
+          logger.warn({ err }, "JobPool NATS registry stop failed (non-fatal)");
+        }
+        JobPoolNatsRegistry.setInstance(null);
       }
 
       // Stop the fw-agent health watcher before draining the bus —
