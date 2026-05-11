@@ -141,6 +141,16 @@ export interface StackContainerConfig {
   command?: string[];
   entrypoint?: string[];
   capAdd?: string[];
+  /**
+   * Host devices to expose into the container (Docker `HostConfig.Devices`).
+   * Each entry is a path on the host (e.g. `/dev/net/tun`) — the container
+   * sees the device at the same path with default cgroup permissions.
+   * Currently populated only by env-injection addons (e.g. `claude-shell`)
+   * that need to bring up kernel-mode networking inside the workload
+   * container. Operator-authored values flow through the reconciler the
+   * same way; the container-create path picks the field up as it lands.
+   */
+  devices?: string[];
   user?: string;
   env?: Record<string, string>;
   /**

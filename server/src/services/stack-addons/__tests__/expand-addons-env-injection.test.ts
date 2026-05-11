@@ -74,6 +74,8 @@ function makeFixtureAddon(opts: {
   mountsForTarget?: EnvInjectionProvisionedValues['mountsForTarget'];
   labelsForTarget?: Record<string, string>;
   requiredEgress?: string[];
+  capAddForTarget?: string[];
+  devicesForTarget?: string[];
 } = {}): RegisteredAddon {
   const id = opts.id ?? 'fixture-env-injection';
   const definition: EnvInjectionAddonDefinition = {
@@ -99,6 +101,8 @@ function makeFixtureAddon(opts: {
         mountsForTarget: opts.mountsForTarget,
         labelsForTarget: opts.labelsForTarget,
         requiredEgress: opts.requiredEgress,
+        capAddForTarget: opts.capAddForTarget,
+        devicesForTarget: opts.devicesForTarget,
       };
     },
   };
@@ -319,6 +323,151 @@ describe('expandAddons — env-injection mode', () => {
         syntheticServiceName: 'shell',
       },
     ]);
+  });
+
+  it('merges capAddForTarget onto the target without duplicating caps the target already declared', async () => {
+    // The env-injection mode exists for cases where the target image runs
+    // the agent the addon would otherwise sidecar (e.g. claude-shell's
+    // in-process tailscaled). The addon's caps must land on the target,
+    // and must dedupe against any caps the operator already declared.
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'caps-fixture',
+        envForTarget: { FOO: 'bar' },
+        capAddForTarget: ['NET_ADMIN', 'SYS_MODULE'],
+      }),
+    );
+
+    const target = makeStateful('shell', {
+      addons: { 'caps-fixture': {} },
+      containerConfig: {
+        env: { WORKSPACE_DIR: '/workspace' },
+        restartPolicy: 'unless-stopped',
+        capAdd: ['NET_ADMIN', 'SYS_PTRACE'], // operator-declared, partial overlap
+      },
+    });
+
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].containerConfig.capAdd).toEqual(
+      expect.arrayContaining(['NET_ADMIN', 'SYS_PTRACE', 'SYS_MODULE']),
+    );
+    // Deduplicated — exactly one NET_ADMIN entry.
+    expect(
+      rendered[0].containerConfig.capAdd!.filter((c) => c === 'NET_ADMIN'),
+    ).toHaveLength(1);
+  });
+
+  it('merges devicesForTarget onto the target without duplicating devices the target already declared', async () => {
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'devices-fixture',
+        envForTarget: { FOO: 'bar' },
+        devicesForTarget: ['/dev/net/tun', '/dev/fuse'],
+      }),
+    );
+
+    const target = makeStateful('shell', {
+      addons: { 'devices-fixture': {} },
+      containerConfig: {
+        env: { WORKSPACE_DIR: '/workspace' },
+        restartPolicy: 'unless-stopped',
+        devices: ['/dev/net/tun'], // overlaps with addon-supplied entry
+      },
+    });
+
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered).toHaveLength(1);
+    expect(rendered[0].containerConfig.devices).toEqual(
+      expect.arrayContaining(['/dev/net/tun', '/dev/fuse']),
+    );
+    // Deduplicated — exactly one /dev/net/tun entry.
+    expect(
+      rendered[0].containerConfig.devices!.filter((d) => d === '/dev/net/tun'),
+    ).toHaveLength(1);
+  });
+
+  it('writes capAdd onto a target that did not declare any caps', async () => {
+    // Fresh target — `capAdd` was undefined before expansion. The merge must
+    // populate the field rather than leaving the addon's caps on the floor.
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'caps-fresh',
+        envForTarget: { FOO: 'bar' },
+        capAddForTarget: ['NET_ADMIN'],
+      }),
+    );
+
+    const target = makeStateful('shell', { addons: { 'caps-fresh': {} } });
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered[0].containerConfig.capAdd).toEqual(['NET_ADMIN']);
+  });
+
+  it('writes devices onto a target that did not declare any devices', async () => {
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'devices-fresh',
+        envForTarget: { FOO: 'bar' },
+        devicesForTarget: ['/dev/net/tun'],
+      }),
+    );
+
+    const target = makeStateful('shell', { addons: { 'devices-fresh': {} } });
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered[0].containerConfig.devices).toEqual(['/dev/net/tun']);
+  });
+
+  it('does not touch capAdd / devices when the addon supplies neither and the target declared neither', async () => {
+    // Hash-stability guarantee: targets that don't interact with caps/devices
+    // at all must come out byte-identical (modulo the env/label merge that
+    // every env-injection addon does). The merge writes `undefined` for
+    // these fields rather than an empty array so the rendered shape matches
+    // the authored shape.
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'no-caps-no-devices',
+        envForTarget: { FOO: 'bar' },
+      }),
+    );
+
+    const target = makeStateful('shell', {
+      addons: { 'no-caps-no-devices': {} },
+    });
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered[0].containerConfig.capAdd).toBeUndefined();
+    expect(rendered[0].containerConfig.devices).toBeUndefined();
+  });
+
+  it('preserves operator-declared capAdd when the addon supplies none', async () => {
+    // Common case: an env-injection addon that only injects env (no caps or
+    // devices of its own) must leave the operator's caps alone — not erase
+    // them to undefined.
+    const registry = createAddonRegistry();
+    registry.register(
+      makeFixtureAddon({
+        id: 'env-only',
+        envForTarget: { FOO: 'bar' },
+      }),
+    );
+
+    const target = makeStateful('shell', {
+      addons: { 'env-only': {} },
+      containerConfig: {
+        env: { WORKSPACE_DIR: '/workspace' },
+        restartPolicy: 'unless-stopped',
+        capAdd: ['SYS_PTRACE'],
+        devices: ['/dev/kvm'],
+      },
+    });
+
+    const rendered = await expandAddons([target], { ...baseContext, registry });
+    expect(rendered[0].containerConfig.capAdd).toEqual(['SYS_PTRACE']);
+    expect(rendered[0].containerConfig.devices).toEqual(['/dev/kvm']);
   });
 
   it('dryRun applies the addon-id label without running provision()', async () => {
