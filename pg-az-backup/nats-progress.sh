@@ -51,15 +51,35 @@ fi
 
 SUBJECT="mini-infra.backup.progress.${JOB_RUN_ID}"
 
-# JSON-encode the body with `nats` does NOT support per-field escaping, so we
-# build the payload by hand. The message is the only field that needs
-# escaping (status is enum, progress is int, operationId is the run id). Use
-# jq when available for safety; fall back to a conservative escaper that
-# strips backslashes and quotes so a stray character can't break the JSON.
-PAYLOAD=$(cat <<EOF
-{"operationId":"${JOB_RUN_ID}","status":"${STATUS}","progress":${PROGRESS},"message":"${MESSAGE//\"/\\\"}"}
-EOF
-)
+# JSON-encode the payload via `jq` — the pre-fix hand-rolled escaper only
+# escaped double quotes via `${MESSAGE//\"/\\\"}`, so a message containing
+# a literal backslash, newline, tab, or control character produced invalid
+# JSON that the server-side `backup-nats-bridge` then dropped silently
+# (MINI-50 review finding M6). Today `MESSAGE` is set from controlled
+# string literals in `backup.sh`, but the moment anyone interpolates a
+# DB name or path into it the silent-drop bug surfaces. `jq -nc` does
+# the right escaping for every JSON-fragile character with zero ceremony.
+#
+# `--argjson progress "$PROGRESS"` lets jq accept the int unquoted; bad
+# input falls through to the `--arg progress "$PROGRESS"` branch which
+# stringifies it (a non-numeric progress value is itself broken, but
+# better a parseable string than a bus drop). The bridge schema accepts
+# string progress and coerces.
+if ! PAYLOAD=$(jq -cn \
+        --arg op "$JOB_RUN_ID" \
+        --arg status "$STATUS" \
+        --argjson progress "$PROGRESS" \
+        --arg message "$MESSAGE" \
+        '{operationId:$op, status:$status, progress:$progress, message:$message}' 2>/tmp/.nats-jq.err); then
+    # jq rejected (most likely --argjson failed on a non-numeric progress).
+    # Retry with everything stringified so we still publish *something*.
+    PAYLOAD=$(jq -cn \
+        --arg op "$JOB_RUN_ID" \
+        --arg status "$STATUS" \
+        --arg progress "$PROGRESS" \
+        --arg message "$MESSAGE" \
+        '{operationId:$op, status:$status, progress:$progress, message:$message}')
+fi
 
 # Publish — best-effort. `nats pub` honors --server and --creds. `-q` quiets
 # the success message; non-zero exit is logged but doesn't propagate.
