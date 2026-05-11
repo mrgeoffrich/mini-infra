@@ -154,6 +154,17 @@ ENV EGRESS_FW_AGENT_IMAGE_TAG=${EGRESS_FW_AGENT_IMAGE_TAG}
 ARG PG_BACKUP_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev
 ENV PG_BACKUP_IMAGE_TAG=${PG_BACKUP_IMAGE_TAG}
 
+# Phase 4 (MINI-53) split the legacy `PG_BACKUP_IMAGE_TAG` (full `image:tag`)
+# into two pieces so the pg-az-backup stack template's `dockerImage`
+# + `dockerTag` fields can each substitute one piece — the apply-time
+# `dockerImage:dockerTag` concat then reconstructs the original string. The
+# split matches the egress-gateway template's `<image>` + literal `:latest`
+# pattern. Default values keep the existing ghcr.io:dev wiring intact.
+ARG PG_BACKUP_TEMPLATE_IMAGE=ghcr.io/mrgeoffrich/mini-infra-pg-backup
+ENV PG_BACKUP_TEMPLATE_IMAGE=${PG_BACKUP_TEMPLATE_IMAGE}
+ARG PG_BACKUP_TEMPLATE_TAG=dev
+ENV PG_BACKUP_TEMPLATE_TAG=${PG_BACKUP_TEMPLATE_TAG}
+
 # Bake in the application version for display in the UI.
 ARG BUILD_VERSION=dev
 ENV BUILD_VERSION=${BUILD_VERSION}

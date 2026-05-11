@@ -2,18 +2,40 @@
 
 One-shot container that backs up a PostgreSQL database to whichever Storage
 backend is active (Azure Blob via SAS URL, or Google Drive via OAuth token),
-or restores from one. The server schedules this container via the stack
-engine — it runs, streams `pg_dump` → upload, and exits.
+or restores from one.
+
+**Phase 4 (MINI-53)** — this container now runs as a `JobPool` service inside
+the `pg-az-backup` system stack template. The JobPool framework
+(`server/src/services/stacks/job-pool-*.ts`) drives spawn lifecycle from
+cron triggers (one per `BackupConfiguration` row) and a NATS-request
+trigger on `mini-infra.backup.run`. The pre-Phase-4 bespoke executor +
+scheduler + in-memory queue are gone.
+
+Per-pool concurrency cap is 2 (`jobPoolConfig.maxConcurrent`). Before
+Phase 4 this was a process-wide cap; now each applied pg-az-backup pool
+has its own slot. If multiple env-scoped pg-az-backup stacks are applied
+they each get their own 2-slot cap — running two scheduled backups for
+the same database via two different env stacks would result in duplicate
+runs. **For Phase 4 we recommend a single applied pg-az-backup stack**
+(documented constraint, not enforced by code).
+
+In-container NATS progress publishing: `nats-progress.sh` writes
+`mini-infra.backup.progress.<runId>` directly using the injected
+`NATS_URL` + `NATS_CREDS`. The runId is the `BackupOperation.id` flowed
+through by the runtime env resolver (`backup-job-pool-materialiser.ts`).
+The server-mediated stdout-parsing bridge that previously fed this
+subject is gone.
 
 ## Structure
 
 ```
 pg-az-backup/
-├── Dockerfile                  # Alpine + bash + curl + postgresql-client + gzip + node + googleapis
+├── Dockerfile                  # Alpine + bash + curl + postgresql-client + gzip + node + googleapis + nats-cli
 ├── package.json                # googleapis dep used by the .mjs upload/download scripts
 ├── run.sh                      # Entry point: validates env, dispatches to backup or restore
 ├── backup.sh                   # pg_dump → gzip → branch on STORAGE_PROVIDER → upload
 ├── restore.sh                  # branch on STORAGE_PROVIDER → download → pg_restore (or psql)
+├── nats-progress.sh            # In-container NATS progress publisher (MINI-53)
 ├── upload-google-drive.mjs     # Drive v3 resumable upload from a file path
 ├── download-google-drive.mjs   # Stream Drive file content to stdout / a path
 └── envvars.txt                 # Documented env contract (kept in sync with run.sh)

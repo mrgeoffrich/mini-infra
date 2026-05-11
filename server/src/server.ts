@@ -27,7 +27,10 @@ clearLoggerCache();
 const logger = getLogger("platform", "server");
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
-import { BackupSchedulerService } from "./services/backup";
+import {
+  installPgBackupRuntimeEnvResolver,
+  refreshAllPgBackupTriggers,
+} from "./services/backup";
 import { RestoreExecutorService } from "./services/restore-executor";
 import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
 import { initializeDevApiKey } from "./services/dev-api-key";
@@ -84,7 +87,10 @@ import {
 // Global scheduler instances
 let egressShutdown: EgressShutdownFn | null = null;
 let connectivityScheduler: ConnectivityScheduler | null = null;
-let backupScheduler: BackupSchedulerService | null = null;
+// Phase 4 (MINI-53): BackupSchedulerService retired. Cron handling lives in
+// `JobPoolCronRegistry`; per-database schedules flow from
+// `BackupConfiguration` rows into the pg-az-backup template's `triggers[]`
+// via `refreshAllPgBackupTriggers()`.
 let restoreExecutorService: RestoreExecutorService | null = null;
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
@@ -323,12 +329,25 @@ const initializeServices = async () => {
     }
     console.log("[STARTUP] ✓ JobPool trigger registries initialized");
 
-    // Initialize backup scheduler
-    console.log("[STARTUP] Initializing backup scheduler...");
-    backupScheduler = new BackupSchedulerService(prisma);
-    BackupSchedulerService.setInstance(backupScheduler);
-    await backupScheduler.initialize();
-    console.log("[STARTUP] ✓ Backup scheduler initialized");
+    // Phase 4 (MINI-53): the bespoke BackupSchedulerService is gone. Instead
+    // register the per-run runtime env resolver against the pg-az-backup
+    // JobPool service (wildcard match — every applied pg-az-backup stack
+    // shares one resolver) so `runJobPool()` can mint per-run env at spawn
+    // time. The actual cron registrations land via `JobPoolCronRegistry`
+    // (already loaded above) — we just need to re-materialise triggers from
+    // BackupConfiguration rows in case rows were added while the server was
+    // down.
+    console.log("[STARTUP] Installing pg-az-backup runtime env resolver and refreshing triggers...");
+    installPgBackupRuntimeEnvResolver();
+    try {
+      await refreshAllPgBackupTriggers(prisma);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "refreshAllPgBackupTriggers failed at startup (next BackupConfiguration mutation will reconcile)",
+      );
+    }
+    console.log("[STARTUP] ✓ pg-az-backup runtime env resolver installed");
 
     // Initialize restore executor service
     console.log("[STARTUP] Initializing restore executor service...");
@@ -798,10 +817,10 @@ startServer()
         logger.info("PostgreSQL database health scheduler stopped");
       }
 
-      if (backupScheduler) {
-        await backupScheduler.shutdown();
-        logger.info("Backup scheduler stopped");
-      }
+      // Phase 4 (MINI-53): BackupSchedulerService is gone. The
+      // JobPoolCronRegistry's `stopAll()` (already called below via its own
+      // shutdown wiring) handles the live cron entries that drive backup
+      // runs now.
 
       if (restoreExecutorService) {
         await restoreExecutorService.shutdown();

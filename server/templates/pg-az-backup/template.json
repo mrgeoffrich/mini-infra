@@ -1,0 +1,72 @@
+{
+  "name": "pg-az-backup",
+  "displayName": "PostgreSQL Backup",
+  "builtinVersion": 1,
+  "scope": "environment",
+  "category": "infrastructure",
+  "description": "JobPool-driven PostgreSQL backup runner. One stack per environment carries one JobPool service that materialises a cron trigger per configured BackupConfiguration row plus a NATS-request trigger on `mini-infra.backup.run`. Per-run env (POSTGRES_*, AZURE_SAS_URL) is resolved from `BackupConfiguration` + a freshly-minted SAS upload handle by the server's apply-time runtime env resolver — the template carries only the static framework wiring (image, dynamicEnv, NATS role, required egress).",
+  "parameters": [],
+  "requires": [
+    { "kind": "stack", "templateName": "nats", "minState": "synced", "scopeMatch": "host" }
+  ],
+  "resourceInputs": [
+    { "type": "docker-network", "purpose": "nats", "optional": false },
+    { "type": "docker-network", "purpose": "database", "optional": false }
+  ],
+  "networks": [],
+  "volumes": [],
+  "nats": {
+    "subjectPrefix": "mini-infra.backup",
+    "roles": [
+      {
+        "name": "backup",
+        "publish": [
+          "progress.>"
+        ],
+        "subscribe": []
+      }
+    ]
+  },
+  "services": [
+    {
+      "serviceName": "pg-az-backup",
+      "serviceType": "JobPool",
+      "dockerImage": "${PG_BACKUP_TEMPLATE_IMAGE}",
+      "dockerTag": "${PG_BACKUP_TEMPLATE_TAG}",
+      "natsRole": "backup",
+      "containerConfig": {
+        "env": {
+          "STACK_ID": "{{stack.id}}"
+        },
+        "dynamicEnv": {
+          "NATS_URL": { "kind": "nats-url" },
+          "NATS_CREDS": { "kind": "nats-creds" }
+        },
+        "joinResourceNetworks": ["nats", "database"],
+        "requiredEgress": [
+          "*.blob.core.windows.net",
+          "*.dfs.core.windows.net",
+          "login.microsoftonline.com",
+          "oauth2.googleapis.com",
+          "accounts.google.com",
+          "www.googleapis.com"
+        ],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "jobPoolConfig": {
+        "maxConcurrent": 2,
+        "managedBy": null,
+        "triggers": [],
+        "history": { "retainDays": 30, "maxBytes": "1GiB" },
+        "killAfterSeconds": 7200,
+        "onFailure": { "retries": 0, "backoff": "fixed" }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ]
+}

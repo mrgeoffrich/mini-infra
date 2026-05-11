@@ -18,6 +18,7 @@ import { applyJobPoolStreamsForStack } from '../../services/stacks/job-pool-stre
 import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
 import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
 import { dryRunJobPoolCredentials } from '../../services/stacks/job-pool-credential-dry-run';
+import { materialiseTriggersForStack } from '../../services/backup/backup-job-pool-materialiser';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
@@ -387,6 +388,38 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       // surface as a warning in the logs, not as an apply failure (the
       // services themselves are already up).
       if (result.success) {
+        // Phase 4 (MINI-53): materialise pg-az-backup template triggers from
+        // BackupConfiguration rows BEFORE the registry refresh below. The
+        // materialiser is a no-op for non-pg-az-backup stacks. Catch and
+        // continue — a materialisation failure means the cron triggers
+        // won't reflect the latest BackupConfiguration set, but the apply
+        // itself succeeded and the next mutation will reconcile.
+        let materialisedCount = 0;
+        try {
+          const matResult = await materialiseTriggersForStack(prisma, stackId);
+          materialisedCount = matResult.triggerCount;
+        } catch (err) {
+          logger.warn(
+            { stackId, err: err instanceof Error ? err.message : String(err) },
+            'pg-az-backup trigger materialisation failed (continuing apply)',
+          );
+        }
+        // Re-run the JobPool history-stream reconciler after the materialiser
+        // wrote `jobPoolConfig` — the first reconciler pass above ran when
+        // the service row's `jobPoolConfig` was empty (template default),
+        // so the per-pool `JobHistory-<stack>-pg-az-backup` stream wasn't
+        // created. Re-running picks up the materialised config and creates
+        // the stream + DB row.
+        if (materialisedCount > 0) {
+          try {
+            await applyJobPoolStreamsForStack(prisma, stackId);
+          } catch (err) {
+            logger.warn(
+              { stackId, err: err instanceof Error ? err.message : String(err) },
+              'JobPool history-stream re-reconcile after materialise failed (continuing apply)',
+            );
+          }
+        }
         const cronRegistry = JobPoolCronRegistry.getInstance();
         if (cronRegistry) {
           try {

@@ -5,6 +5,7 @@ import type { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { spawnPoolInstance } from './pool-spawner';
 import { publishJobPoolRunSkipped } from './job-pool-history-publisher';
+import { jobPoolRuntimeEnvResolvers } from './job-pool-runtime-env-resolver';
 
 const log = getLogger('stacks', 'job-pool-spawner');
 
@@ -95,11 +96,89 @@ export async function runJobPool(
     };
   }
 
+  // Fast pre-check of the cap — the resolver below may mint expensive
+  // resources (e.g. a SAS URL backed by an Azure round-trip for
+  // pg-az-backup), so failing cap-hits as early as possible avoids wasted
+  // work. The final atomic cap-check + reserve still runs after the
+  // resolver, since a concurrent run can land between this check and the
+  // resolver returning.
+  if (jobPoolConfig.maxConcurrent !== null) {
+    const activeCount = await prisma.poolInstance.count({
+      where: {
+        stackId,
+        serviceName,
+        status: { in: ['starting', 'running'] },
+      },
+    });
+    if (activeCount >= jobPoolConfig.maxConcurrent) {
+      void publishJobPoolRunSkipped({
+        stackId,
+        serviceName,
+        reason: 'concurrency_cap',
+        triggerKind: trigger.kind,
+        triggerName: trigger.name,
+        scheduledAtMs: Date.now(),
+        maxConcurrent: jobPoolConfig.maxConcurrent,
+      }).catch(() => {
+        /* logged inside publisher */
+      });
+      return {
+        ok: false,
+        reason: 'concurrency_cap',
+        maxConcurrent: jobPoolConfig.maxConcurrent,
+      };
+    }
+  }
+
   // The `runId` doubles as the `PoolInstance.instanceId` so the reaper's
   // partial unique index `(stackId, serviceName, instanceId)` doesn't conflict
   // between concurrent runs of the same JobPool. Containers spawned by
   // `spawnPoolInstance` derive their Docker name from it.
-  const runId = randomUUID();
+  //
+  // A per-pool runtime env resolver can override the runId — used by the
+  // pg-az-backup migration so a `BackupOperation.id` flows through as the
+  // PoolInstance.instanceId, which makes the in-container progress subject
+  // (`mini-infra.backup.progress.<runId>`) and the JobPool history events
+  // share one identifier with the existing `BackupOperation` row. The
+  // resolver also supplies per-run env (POSTGRES_*, AZURE_SAS_URL, etc.)
+  // that mini-infra needs to mint per-run via the storage backend.
+  const resolver = jobPoolRuntimeEnvResolvers.getResolver(stackId, serviceName);
+  let resolverEnv: Record<string, string> = {};
+  let resolverRunId: string | undefined;
+  if (resolver) {
+    try {
+      const resolved = await resolver(prisma, dockerExecutor, {
+        stackId,
+        serviceName,
+        trigger,
+        payload: ctx.payload,
+      });
+      if (resolved.error) {
+        log.warn(
+          { stackId, serviceName, trigger: trigger.name, reason: resolved.error },
+          'JobPool runtime env resolver aborted spawn',
+        );
+        return {
+          ok: false,
+          reason: 'spawn_failed',
+          message: resolved.error,
+          instanceRowId: '',
+        };
+      }
+      resolverEnv = resolved.env ?? {};
+      if (resolved.runIdOverride) {
+        resolverRunId = resolved.runIdOverride;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error(
+        { stackId, serviceName, trigger: trigger.name, err: msg },
+        'JobPool runtime env resolver threw',
+      );
+      return { ok: false, reason: 'spawn_failed', message: msg, instanceRowId: '' };
+    }
+  }
+  const runId = resolverRunId ?? randomUUID();
 
   // Atomic cap-check + reservation. SQLite serialises writes so the count +
   // create transaction can't deliver two over-the-cap rows on concurrent
@@ -170,6 +249,11 @@ export async function runJobPool(
 
   const row = txResult.row;
   const callerEnv: Record<string, string> = {};
+  // Resolver-supplied env goes in first so the standard JOB_* keys below
+  // always win on conflict — the resolver shouldn't be naming variables
+  // that collide with the framework contract, but if it does the framework
+  // is the source of truth.
+  Object.assign(callerEnv, resolverEnv);
   if (ctx.payload && Object.keys(ctx.payload).length > 0) {
     callerEnv.JOB_PAYLOAD = JSON.stringify(ctx.payload);
   }
