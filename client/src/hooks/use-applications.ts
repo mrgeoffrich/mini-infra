@@ -432,7 +432,23 @@ export function useCreateApplication() {
   const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: async (request: CreateStackTemplateRequest & { onStackCreated?: (stackId: string) => void }) => {
+    mutationFn: async (
+      request: CreateStackTemplateRequest & {
+        onStackCreated?: (stackId: string) => void;
+        /**
+         * Optional async hook fired AFTER `POST /:templateId/instantiate`
+         * returns the new stack id but BEFORE the apply kicks off. Used by
+         * the Claude Shell preset to upload a Vault-stored git deploy key
+         * (`PUT /api/stacks/:stackId/services/:serviceName/git-deploy-key`)
+         * in the same submission so the very first apply sees the key.
+         *
+         * The callback's failure is fatal — the apply is skipped and the
+         * outer mutation rejects, so the operator gets one clear error
+         * rather than a healthy-stack-with-missing-credentials half state.
+         */
+        onStackInstantiated?: (stackId: string) => Promise<void> | void;
+      },
+    ) => {
       // Create template
       const result = await createApplication(request, correlationId);
       // Publish the draft immediately
@@ -446,13 +462,23 @@ export function useCreateApplication() {
             { name: result.data.name, environmentId: request.environmentId },
             correlationId,
           );
+          // Run the post-instantiate hook (e.g. claude-shell deploy-key upload)
+          // before kicking off apply so the first apply already sees Vault.
+          if (request.onStackInstantiated) {
+            await request.onStackInstantiated(stackResult.data.id);
+          }
           // Register task tracking before apply starts
           request.onStackCreated?.(stackResult.data.id);
           // Apply is fire-and-forget (progress via Socket.IO)
           await applyStack(stackResult.data.id, correlationId);
-        } catch {
+          return { ...result, stackId: stackResult.data.id };
+        } catch (err) {
           // Template was created successfully, but deploy failed
-          toast.error("Application created but deployment failed. You can retry from the applications list.");
+          toast.error(
+            err instanceof Error
+              ? `Application created but deployment failed: ${err.message}`
+              : "Application created but deployment failed. You can retry from the applications list.",
+          );
           return result; // Return success for the create
         }
       }

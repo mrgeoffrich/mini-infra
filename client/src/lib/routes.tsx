@@ -31,6 +31,7 @@ import { TunnelsPage } from "@/app/tunnels/page";
 import { UserSettingsPage } from "@/app/user/settings/page";
 import ApplicationsPage from "@/app/applications/page";
 import NewApplicationPage from "@/app/applications/new/page";
+import NewClaudeShellPage from "@/app/applications/new/claude-shell/page";
 import ApplicationDetailLayout from "@/app/applications/[id]/layout";
 import ApplicationDetailIndex from "@/app/applications/[id]/page";
 import ApplicationOverviewTab from "@/app/applications/[id]/overview/page";
@@ -196,6 +197,10 @@ export const router = createBrowserRouter([
       {
         path: "applications/new",
         element: <NewApplicationPage />,
+      },
+      {
+        path: "applications/new/claude-shell",
+        element: <NewClaudeShellPage />,
       },
       {
         path: "applications/adopt",
