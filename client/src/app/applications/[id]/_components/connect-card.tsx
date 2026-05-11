@@ -190,13 +190,20 @@ function ServiceGroup({
   stackName: string | undefined;
   envName: string | undefined;
 }) {
+  // Badge name reflects the addon family attached to this target.
+  // - `claude-shell` is an env-injection-mode addon — its rows are produced
+  //   by labelling the target with `mini-infra.addon: claude-shell`, and
+  //   the badge names it directly.
+  // - Sidecar-mode rows (`tailscale-ssh`, `tailscale-web`) collapse under
+  //   one "tailscale" label since they often co-attach on one service.
+  const badgeName = deriveBadgeName(group.endpoints);
   return (
     <div>
       <div className="flex items-center gap-2 pb-1">
         <span className="text-xs font-medium text-muted-foreground">
           {group.targetService}
         </span>
-        <AddonBadge addonName="tailscale" />
+        <AddonBadge addonName={badgeName} />
       </div>
       <ul className="divide-y">
         {group.endpoints.map((endpoint) => {
@@ -231,6 +238,19 @@ function ServiceGroup({
       </ul>
     </div>
   );
+}
+
+/**
+ * Pick a single addon-badge label for a group of endpoints attached to one
+ * target. `claude-shell` is the env-injection-mode addon; sidecar-mode
+ * tailscale-ssh / tailscale-web collapse under one "tailscale" label since
+ * a single service can have both at once and the user sees them as one
+ * Tailscale-family attachment.
+ */
+function deriveBadgeName(endpoints: TailscaleAddonEndpoint[]): string {
+  const allIds = new Set(endpoints.flatMap((e) => e.addonIds));
+  if (allIds.has("claude-shell")) return "claude-shell";
+  return "tailscale";
 }
 
 function groupByTargetService(

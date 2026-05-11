@@ -129,11 +129,23 @@ export interface TailscaleDeviceStatusEvent {
  * lives in one place — the panel renders these strings as-is.
  */
 export interface TailscaleAddonEndpoint {
-  /** Authored service this sidecar wraps. */
+  /** Authored service this endpoint reaches. */
   targetService: string;
-  /** Synthetic sidecar service name (e.g. `web-app-tailscale`). */
+  /**
+   * Source service name for the row.
+   * - Sidecar-mode addons (`tailscale-ssh`, `tailscale-web`): the synthetic
+   *   sidecar service name (e.g. `web-app-tailscale`).
+   * - Env-injection-mode addons (`claude-shell`): the target service name
+   *   itself, since the addon merges its outputs onto the target rather
+   *   than materialising a peer. Used by the client as a React-key suffix
+   *   so it just needs to be unique per row.
+   */
   syntheticServiceName: string;
-  /** `tailscale-ssh` and/or `tailscale-web` ids that produced this endpoint. */
+  /**
+   * Addon ids that produced this endpoint.
+   * - `tailscale-ssh` and/or `tailscale-web` for sidecar-mode endpoints.
+   * - `claude-shell` for the env-injection-mode SSH endpoint.
+   */
   addonIds: string[];
   /** SSH or HTTPS — drives the action affordance on the row. */
   kind: "ssh" | "https";
