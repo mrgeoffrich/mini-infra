@@ -122,6 +122,15 @@ export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
   entrypoint: z.array(z.string()).optional(),
   capAdd: z.array(z.string()).optional(),
+  // Host devices to expose into the container — translated into
+  // `HostConfig.Devices` at container-create time (see
+  // `parseDeviceSpec` in `docker-executor/utils.ts`). Each entry may be a
+  // bare path (e.g. `/dev/net/tun`), `HOST:CONTAINER`, or
+  // `HOST:CONTAINER:PERMS`. Currently populated by env-injection addons
+  // (e.g. `claude-shell`) that need to bring up kernel-mode networking
+  // inside the workload container; operator-authored values flow through
+  // the same path.
+  devices: z.array(z.string().min(1)).optional(),
   user: z.string().optional(),
   egressBypass: z.boolean().optional(),
   env: z.record(z.string(), z.string()).optional(),
