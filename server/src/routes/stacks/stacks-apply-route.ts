@@ -14,6 +14,11 @@ import { findEmptyStackParameters } from '../../services/stacks/parameter-valida
 import { evaluatePrerequisites } from '../../services/stacks/template-prerequisites';
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
+import { applyJobPoolStreamsForStack } from '../../services/stacks/job-pool-stream-reconciler';
+import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
+import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
+import { dryRunJobPoolCredentials } from '../../services/stacks/job-pool-credential-dry-run';
+import { materialiseTriggersForStack } from '../../services/backup/backup-job-pool-materialiser';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
@@ -278,6 +283,29 @@ export async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       if (natsPhase.status === 'error') {
         throw new Error(natsPhase.error ?? 'NATS reconciliation phase failed');
       }
+      // JobPool history streams (Phase 2 of job-pool-service-type): reconcile
+      // one per-pool JetStream stream per JobPool service on the stack.
+      // No-op when the stack has no JobPool services. Failures are logged
+      // inside the reconciler — JobPool history streams are observability,
+      // not correctness-critical, so a NATS-side blip can't fail the apply.
+      try {
+        await applyJobPoolStreamsForStack(prisma, stackId);
+      } catch (err) {
+        logger.warn(
+          { stackId, err: err instanceof Error ? err.message : String(err) },
+          'JobPool history-stream reconcile failed (continuing apply)',
+        );
+      }
+
+      // JobPool credential dry-run (Phase 3 of job-pool-service-type): apply
+      // fails fast if any JobPool service declares a `dynamicEnv` binding
+      // that resolves to a missing Vault path / NATS credential. Without
+      // this gate, a misconfigured pool silently apples — and only the
+      // first triggered run discovers the problem.
+      //
+      // Throws on failure; the catch below converts that into the standard
+      // apply-failure surface (userEvent.fail + apply-failed Socket.IO event).
+      await dryRunJobPoolCredentials(prisma, stackId);
 
       // Re-promote `requiredEgress` declarations into template-source
       // EgressRules so addon-derived patterns (e.g. Tailscale's control-plane
@@ -370,6 +398,86 @@ export async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       // accumulate silently across versions.
       if (result.success) {
         await doPruneOrphanedInputValues(prisma, stackId);
+      }
+
+      // JobPool trigger registries (Phase 3): reconcile declared cron +
+      // nats-request triggers against live registrations. Only when the
+      // apply itself succeeded — a partially-applied stack should not have
+      // its triggers re-registered, because the underlying `StackService`
+      // rows may no longer match the operator's intent. The next successful
+      // apply re-establishes them. Registry failures are non-fatal: they
+      // surface as a warning in the logs, not as an apply failure (the
+      // services themselves are already up).
+      if (result.success) {
+        // Phase 4 (MINI-53): materialise pg-az-backup template triggers from
+        // BackupConfiguration rows BEFORE the registry refresh below. The
+        // materialiser is a no-op for non-pg-az-backup stacks. Catch and
+        // continue — a materialisation failure means the cron triggers
+        // won't reflect the latest BackupConfiguration set, but the apply
+        // itself succeeded and the next mutation will reconcile.
+        let materialisedCount = 0;
+        try {
+          const matResult = await materialiseTriggersForStack(prisma, stackId);
+          materialisedCount = matResult.triggerCount;
+        } catch (err) {
+          logger.warn(
+            { stackId, err: err instanceof Error ? err.message : String(err) },
+            'pg-az-backup trigger materialisation failed (continuing apply)',
+          );
+        }
+        // Re-run the JobPool history-stream reconciler after every
+        // successful reconciler.apply — not just when the materialiser
+        // ran. Three reasons:
+        //
+        // 1. User-authored JobPool templates write `jobPoolConfig`
+        //    directly on the service row at apply time (via the
+        //    file-loader / draft path). The first pass at line ~270 ran
+        //    *before* `reconciler.apply` inserted those services, so
+        //    no stream was created. Without this unconditional re-run,
+        //    the registry refresh below would let triggers fire against
+        //    a non-existent stream and the first run's `completed` /
+        //    `failed` history event would be silently dropped by the
+        //    JetStream publisher's `unchecked: true` swallow (MINI-50
+        //    review finding M4).
+        //
+        // 2. The pg-az-backup materialiser also writes `jobPoolConfig`,
+        //    so the previous `materialisedCount > 0` gate covered that
+        //    case — but it left the user-authored case exposed.
+        //
+        // 3. The reconciler is idempotent; a redundant pass on a
+        //    stack that has no JobPool services is a single
+        //    `findMany({ where: { serviceType: 'JobPool' } })` + early
+        //    return. Cheap.
+        try {
+          await applyJobPoolStreamsForStack(prisma, stackId);
+        } catch (err) {
+          logger.warn(
+            { stackId, materialisedCount, err: err instanceof Error ? err.message : String(err) },
+            'JobPool history-stream re-reconcile after reconciler.apply failed (continuing apply)',
+          );
+        }
+        const cronRegistry = JobPoolCronRegistry.getInstance();
+        if (cronRegistry) {
+          try {
+            await cronRegistry.refresh(stackId);
+          } catch (err) {
+            logger.warn(
+              { stackId, err: err instanceof Error ? err.message : String(err) },
+              'JobPool cron registry refresh failed (continuing apply)',
+            );
+          }
+        }
+        const natsRegistry = JobPoolNatsRegistry.getInstance();
+        if (natsRegistry) {
+          try {
+            await natsRegistry.refresh(stackId);
+          } catch (err) {
+            logger.warn(
+              { stackId, err: err instanceof Error ? err.message : String(err) },
+              'JobPool NATS registry refresh failed (continuing apply)',
+            );
+          }
+        }
       }
 
       await finalizeApplyEvent(userEvent, result);

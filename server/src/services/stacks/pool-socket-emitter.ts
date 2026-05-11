@@ -59,3 +59,64 @@ export function emitPoolInstanceStopped(payload: {
     emitToChannel(Channel.POOLS, ServerEvent.POOL_INSTANCE_STOPPED, payload);
   } catch { /* never break the caller */ }
 }
+
+/**
+ * JobPool run terminated with exit code 0. Mirrors the NATS event published
+ * to the per-pool JetStream history stream; this one is the realtime
+ * fan-out for connected UI clients.
+ */
+export function emitJobPoolRunCompleted(payload: {
+  stackId: string;
+  serviceName: string;
+  runId: string;
+  triggerKind: 'cron' | 'nats-request' | 'manual';
+  triggerName: string;
+  /** Always 0 for completed runs; non-zero exits use `emitJobPoolRunFailed`. */
+  exitCode: 0;
+  startedAtMs: number;
+  finishedAtMs: number;
+}): void {
+  try {
+    emitToChannel(Channel.POOLS, ServerEvent.JOB_POOL_RUN_COMPLETED, payload);
+  } catch { /* never break the caller */ }
+}
+
+/**
+ * JobPool run terminated with a non-zero exit code, or was killed by the
+ * `killAfterSeconds` reaper (in which case `exitCode === -1`).
+ */
+export function emitJobPoolRunFailed(payload: {
+  stackId: string;
+  serviceName: string;
+  runId: string;
+  triggerKind: 'cron' | 'nats-request' | 'manual';
+  triggerName: string;
+  exitCode: number;
+  errorMessage: string;
+  startedAtMs: number;
+  finishedAtMs: number;
+}): void {
+  try {
+    emitToChannel(Channel.POOLS, ServerEvent.JOB_POOL_RUN_FAILED, payload);
+  } catch { /* never break the caller */ }
+}
+
+/**
+ * Trigger fired but the JobPool's concurrency cap was already hit, so no run
+ * was started. `PoolInstance` row is never created in this branch — only the
+ * event is emitted, so the UI can surface "missed beats" without polluting
+ * the pool's run history.
+ */
+export function emitJobPoolRunSkipped(payload: {
+  stackId: string;
+  serviceName: string;
+  reason: 'concurrency_cap';
+  triggerKind: 'cron' | 'nats-request' | 'manual';
+  triggerName: string;
+  scheduledAtMs: number;
+  maxConcurrent: number;
+}): void {
+  try {
+    emitToChannel(Channel.POOLS, ServerEvent.JOB_POOL_RUN_SKIPPED, payload);
+  } catch { /* never break the caller */ }
+}

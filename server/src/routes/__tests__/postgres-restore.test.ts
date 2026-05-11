@@ -1,8 +1,9 @@
 // Hoist mock variables that are used inside vi.mock() factory functions
 const {
   mockPrismaInstance,
-  mockRestoreExecutorService,
   mockStorageBackend,
+  mockRunJobPool,
+  mockBackupValidator,
 } = vi.hoisted(() => {
   const objects: Array<{
     name: string;
@@ -22,11 +23,15 @@ const {
       restoreOperation: {
         findFirst: vi.fn(),
         findMany: vi.fn(),
+        findUnique: vi.fn(),
         count: vi.fn(),
       },
-    },
-    mockRestoreExecutorService: {
-      queueRestore: vi.fn(),
+      backupOperation: {
+        findFirst: vi.fn(),
+      },
+      stackService: {
+        findFirst: vi.fn(),
+      },
     },
     mockStorageBackend: {
       providerId: "azure",
@@ -34,11 +39,21 @@ const {
       getDownloadHandle: vi.fn(async (_ref: unknown, name: string) => ({
         redirectUrl: `https://storage.blob.core.windows.net/backups/${name}?sas`,
       })),
+      head: vi.fn(async () => ({
+        size: 1024,
+        lastModified: new Date(),
+        contentType: "application/octet-stream",
+        etag: "etag",
+      })),
       // Test hook so test cases can seed the listing.
       __setObjects: (next: typeof objects) => {
         objects.length = 0;
         objects.push(...next);
       },
+    },
+    mockRunJobPool: vi.fn(),
+    mockBackupValidator: {
+      validateBackupFile: vi.fn(),
     },
   };
 });
@@ -51,19 +66,34 @@ vi.mock("../../generated/prisma/client", () => ({
 // Mock the prisma instance that the route actually imports
 vi.mock("../../lib/prisma", () => ({ default: mockPrismaInstance }));
 
-// Mock all services that RestoreExecutorService depends on
-vi.mock("../../services/docker-executor");
-vi.mock("../../services/postgres/postgres-database-manager");
-
-// Mock the RestoreExecutorService
-vi.mock("../../services/restore-executor", () => ({
-  RestoreExecutorService: vi.fn(function() { return mockRestoreExecutorService; }),
+// Mock docker-executor — the route invokes it to initialise a per-request
+// executor before delegating to runJobPool.
+vi.mock("../../services/docker-executor", () => ({
+  DockerExecutorService: vi.fn(function() {
+    return { initialize: vi.fn().mockResolvedValue(undefined) };
+  }),
 }));
 
-// Mock the restore executor instance functions
-vi.mock("../../services/restore-executor/restore-executor-instance", () => ({
-  getRestoreExecutorService: vi.fn(function() { return mockRestoreExecutorService; }),
-  setRestoreExecutorService: vi.fn(),
+// Mock the JobPool spawner — every successful test path lands here.
+vi.mock("../../services/stacks/job-pool-spawner", () => ({
+  runJobPool: (...args: unknown[]) => mockRunJobPool(...args),
+}));
+
+// Mock the restore-executor's BackupValidator (Phase 5: the route runs this
+// server-side before spawning the JobPool).
+vi.mock("../../services/restore-executor/backup-validator", () => ({
+  BackupValidator: vi.fn(function () {
+    return mockBackupValidator;
+  }),
+}));
+
+// Mock the materialiser — only the service-name constant is consumed by the
+// route. Keep this independent of `services/restore-executor` so the barrel
+// re-export doesn't get pulled in.
+vi.mock("../../services/restore-executor/restore-job-pool-materialiser", () => ({
+  RESTORE_EXECUTOR_SERVICE_NAME: "restore-executor",
+  installRestoreRuntimeEnvResolver: vi.fn(),
+  RESTORE_EXECUTOR_TEMPLATE_NAME: "restore-executor",
 }));
 
 // Mock the StorageService — the route resolves backends via this.
@@ -202,7 +232,6 @@ vi.mock("../../lib/in-memory-queue", () => {
 import request from "supertest";
 import express from "express";
 import { PrismaClient } from "../../generated/prisma/client";
-import { RestoreExecutorService } from "../../services/restore-executor";
 import { ProviderNoLongerConfiguredError } from "../../services/storage/storage-service";
 import router from "../postgres-restore";
 
@@ -238,9 +267,24 @@ describe("PostgreSQL Restore API", () => {
         mockDatabase,
       );
       mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
-      mockRestoreExecutorService.queueRestore.mockResolvedValue(
-        mockQueuedRestore,
-      );
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
+      mockPrismaClient.stackService.findFirst.mockResolvedValue({
+        stackId: "restore-stack-1",
+      });
+      mockBackupValidator.validateBackupFile.mockResolvedValue({
+        isValid: true,
+        sizeBytes: 1024,
+        lastModified: new Date(),
+      });
+      mockRunJobPool.mockResolvedValue({
+        ok: true,
+        runId: "restore-operation-1",
+        instanceRowId: "row-1",
+        containerId: "container-1",
+      });
+      mockPrismaClient.restoreOperation.findUnique.mockResolvedValue({
+        ...mockQueuedRestore,
+      });
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -259,11 +303,20 @@ describe("PostgreSQL Restore API", () => {
         databaseName: "testdb",
       });
 
-      expect(mockRestoreExecutorService.queueRestore).toHaveBeenCalledWith(
-        "test-db-id",
-        "https://storage.blob.core.windows.net/backups/backup.sql",
-        "test-user-id",
-        undefined,
+      expect(mockRunJobPool).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          stackId: "restore-stack-1",
+          serviceName: "restore-executor",
+          trigger: { kind: "manual", name: "manual-http" },
+          payload: expect.objectContaining({
+            databaseId: "test-db-id",
+            backupUrl:
+              "https://storage.blob.core.windows.net/backups/backup.sql",
+            userId: "test-user-id",
+          }),
+        }),
       );
     });
 
@@ -392,9 +445,16 @@ describe("PostgreSQL Restore API", () => {
         mockDatabase,
       );
       mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
-      mockRestoreExecutorService.queueRestore.mockRejectedValue(
-        new Error("Queue service unavailable"),
-      );
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
+      mockPrismaClient.stackService.findFirst.mockResolvedValue({
+        stackId: "restore-stack-1",
+      });
+      mockBackupValidator.validateBackupFile.mockResolvedValue({
+        isValid: true,
+        sizeBytes: 1024,
+        lastModified: new Date(),
+      });
+      mockRunJobPool.mockRejectedValue(new Error("Queue service unavailable"));
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -431,9 +491,25 @@ describe("PostgreSQL Restore API", () => {
         mockDatabase,
       );
       mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
-      mockRestoreExecutorService.queueRestore.mockRejectedValue(
-        new ProviderNoLongerConfiguredError("azure"),
+      // The originating backup row points at a provider we no longer
+      // have configured — `getBackendByProviderIdOrThrow` raises
+      // ProviderNoLongerConfiguredError before validation, the catch
+      // block at the bottom of the route maps it to 409.
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue({
+        storageProviderAtCreation: "azure",
+      });
+
+      const StorageServiceModule = await import(
+        "../../services/storage/storage-service"
       );
+      const getInstanceSpy = vi
+        .spyOn(StorageServiceModule.StorageService, "getInstance")
+        .mockReturnValue({
+          getActiveBackend: vi.fn().mockResolvedValue(mockStorageBackend),
+          getBackendByProviderIdOrThrow: vi.fn().mockRejectedValue(
+            new ProviderNoLongerConfiguredError("azure"),
+          ),
+        } as never);
 
       const response = await request(app)
         .post("/api/postgres/restore/test-db-id")
@@ -447,6 +523,8 @@ describe("PostgreSQL Restore API", () => {
       expect(response.body.error).toBe("PROVIDER_NO_LONGER_CONFIGURED");
       expect(response.body.providerId).toBe("azure");
       expect(response.body.message).toMatch(/no longer configured/i);
+
+      getInstanceSpy.mockRestore();
     });
   });
 

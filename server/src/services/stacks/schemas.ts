@@ -1,4 +1,5 @@
 import { z } from "zod";
+import * as cron from "node-cron";
 import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
@@ -8,6 +9,7 @@ import {
   isValidEgressPattern,
 } from '@mini-infra/types';
 import { productionAddonRegistry, type AddonRegistry } from '../stack-addons/registry';
+import { natsRelativeSubjectSchema } from './nats-subject-shapes';
 // Note: isValidEgressPattern uses EGRESS_FQDN_RE + EGRESS_WILDCARD_RE from
 // lib/types/egress.ts. The egress route (server/src/routes/egress.ts) has
 // equivalent inline copies (FQDN_RE / WILDCARD_RE) that predate this constant;
@@ -117,6 +119,136 @@ export const poolConfigSchema = z.object({
   maxInstances: z.number().int().min(1).nullable(),
   managedBy: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/).nullable(),
 });
+
+// JobPool trigger and config validators (Phase 1, MINI-50). The structural
+// JobPool authoring surface — `triggers[]`, `maxConcurrent`, `history`,
+// `killAfterSeconds`, `onFailure`. The cron `schedule` is validated through
+// `node-cron`'s parser (the same parser node-cron uses to schedule, so any
+// string that survives this check is guaranteed schedulable in Phase 3). NATS
+// subjects use `natsRelativeSubjectSchema` so the structural rules ($SYS-
+// protection, no wildcards-at-start, no _INBOX) match the rest of the bus —
+// the runtime prefix allowlist (`nats-prefix-allowlist-service.ts`) layers on
+// top at apply/subscribe time and is not enforced at template-load.
+//
+// `name` on each trigger is a short identifier that history events and
+// run-skipped logs attribute the run to ("ran from `nightly-prod` cron").
+const triggerNameSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(
+    /^[a-zA-Z0-9_-]+$/,
+    "trigger name can only contain letters, numbers, '_', '-'",
+  );
+
+// Structural subject rules for a `nats-request` trigger. Imported from the
+// shared `nats-subject-shapes` module so the regex + refines stay in lockstep
+// with the role-nested NATS authoring path in `stack-template-schemas.ts`
+// (MINI-50 review finding M2). The runtime prefix-allowlist check is layered
+// on top at subscribe-time in Phase 3 by `nats-prefix-allowlist-service.ts`.
+const triggerNatsSubjectSchema = natsRelativeSubjectSchema;
+
+/**
+ * Optional `metadata` block on a trigger. Carries structured authoring
+ * context (e.g. `{ databaseId }`) that the runtime env resolver can read
+ * without parsing it out of the `name` field. Keys + values are constrained
+ * to strings so the map round-trips cleanly through Zod, JSON, and Docker
+ * labels without surprise coercion. Size-capped to keep history payloads
+ * tractable.
+ */
+const triggerMetadataSchema = z
+  .record(
+    z.string().min(1).max(64).regex(/^[a-zA-Z_][a-zA-Z0-9_-]*$/, "trigger metadata keys must look like identifier tokens"),
+    z.string().max(512),
+  )
+  .refine((m) => Object.keys(m).length <= 16, {
+    message: "trigger metadata may contain at most 16 keys",
+  })
+  .optional();
+
+export const jobPoolTriggerSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('cron'),
+    schedule: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((s) => cron.validate(s), {
+        message: 'cron schedule is not parseable by node-cron',
+      }),
+    timezone: z.string().min(1).max(100).optional(),
+    name: triggerNameSchema,
+    metadata: triggerMetadataSchema,
+  }),
+  z.object({
+    kind: z.literal('nats-request'),
+    subject: triggerNatsSubjectSchema,
+    ackWithRunId: z.boolean(),
+    name: triggerNameSchema,
+    metadata: triggerMetadataSchema,
+  }),
+  z.object({
+    kind: z.literal('manual'),
+    name: triggerNameSchema,
+    metadata: triggerMetadataSchema,
+  }),
+]);
+
+export const jobPoolConfigSchema = z
+  .object({
+    // `null` = unlimited, otherwise must be at least 1. `0` is explicitly
+    // forbidden — it would mean "the pool can never run" which is a
+    // misconfiguration, not a feature.
+    maxConcurrent: z.number().int().min(1).nullable(),
+    // Reserved for a future where another stack owns the spawn token. Unused
+    // in v1 — accept null or a service-name-shaped string for forward compat.
+    managedBy: z
+      .string()
+      .min(1)
+      .max(100)
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .nullable(),
+    // Empty `triggers` are tolerated so system templates whose triggers
+    // are materialised at apply time (pg-az-backup writes triggers from
+    // BackupConfiguration rows; restore-executor declares zero by design)
+    // can round-trip through the file-loader schema. A pool with zero
+    // triggers is inert — `JobPoolCronRegistry.refresh()` registers
+    // nothing, `JobPoolNatsRegistry.subscribe()` subscribes to nothing,
+    // and the manual HTTP route still works because the route doesn't
+    // consult `triggers[]`. The constraint was previously `.min(1)` but
+    // hit the materialiser-populated case immediately once the JobPool
+    // schema started being applied at template-load (MINI-50 review
+    // finding M1 fix surfaced this).
+    triggers: z.array(jobPoolTriggerSchema),
+    history: z.object({
+      retainDays: z.number().int().min(1),
+      maxBytes: z.string().min(1).optional(),
+    }),
+    killAfterSeconds: z.number().int().min(1).nullable().optional(),
+    onFailure: z
+      .object({
+        retries: z.number().int().min(0),
+        backoff: z.enum(['fixed', 'exponential']),
+      })
+      .optional(),
+  })
+  .superRefine((cfg, ctx) => {
+    // Each trigger's `name` must be unique within the pool — names land in
+    // history events and run-skipped logs as the attribution key, so a
+    // duplicate would make a run untraceable to its source trigger.
+    const seen = new Set<string>();
+    for (let i = 0; i < cfg.triggers.length; i++) {
+      const n = cfg.triggers[i].name;
+      if (seen.has(n)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['triggers', i, 'name'],
+          message: `Duplicate trigger name "${n}"`,
+        });
+      }
+      seen.add(n);
+    }
+  });
 
 export const stackContainerConfigSchema = z.object({
   command: z.array(z.string()).optional(),
@@ -426,11 +558,75 @@ export const stackServiceCommonFieldsSchema = z.object({
   // Symbolic reference to a nats.signers[].name. Causes NATS_SIGNER_SEED to
   // be auto-injected as dynamicEnv at apply time.
   natsSigner: z.string().min(1).optional(),
+  // Pool services declare their lifecycle knobs here. Lifted onto the
+  // common base so the file-loaded template path (templateServiceSchema)
+  // validates them with the same shape as the HTTP draft path, and the
+  // shared `refinePoolServiceConstraints` helper fires for both authoring
+  // surfaces (MINI-50 review finding M1).
+  poolConfig: poolConfigSchema.optional(),
+  // JobPool services declare their trigger set + concurrency cap +
+  // history-stream knobs here. Lifted onto the common base for the same
+  // drift-prevention reason as `poolConfig` — a YAML JobPool template
+  // would otherwise slip past both leaf-schema refines and fail later
+  // in the spawn pipeline with a less helpful error.
+  jobPoolConfig: jobPoolConfigSchema.optional(),
   // Service Addons declarations — a map of addon-id → addon-config. Per-entry
   // validation happens in `addonsBlockSchema` below, which superRefines each
   // entry against the registered addon's manifest configSchema.
   addons: z.record(z.string().min(1), z.unknown()).optional(),
 });
+
+/**
+ * Shared serviceType-shape refines for `Pool` and `JobPool` services. Both
+ * authoring surfaces — `stackServiceDefinitionSchema` (HTTP/DB) and
+ * `templateServiceSchema` (file-loaded templates) — must apply these so a
+ * misconfigured service (e.g. JobPool with routing, or Pool without
+ * poolConfig) is rejected at the boundary rather than at apply time.
+ *
+ * The refines are defined as a single superRefine so they share the same
+ * `data` capture closure and produce path-anchored error messages.
+ */
+export function refinePoolAndJobPoolConstraints<
+  T extends {
+    serviceType: string;
+    poolConfig?: unknown;
+    jobPoolConfig?: unknown;
+    routing?: unknown;
+  },
+>(data: T, ctx: z.RefinementCtx): void {
+  if (data.serviceType === 'Pool') {
+    if (!data.poolConfig) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['poolConfig'],
+        message: 'Pool services must have poolConfig',
+      });
+    }
+    if (data.routing) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['routing'],
+        message: 'Pool services cannot have routing',
+      });
+    }
+  }
+  if (data.serviceType === 'JobPool') {
+    if (!data.jobPoolConfig) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['jobPoolConfig'],
+        message: 'JobPool services must have jobPoolConfig',
+      });
+    }
+    if (data.routing) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['routing'],
+        message: 'JobPool services cannot have routing',
+      });
+    }
+  }
+}
 
 /**
  * Per-entry validation of the `addons:` block against the configured registry.
@@ -478,7 +674,6 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     // the loader (configFiles) or set at apply time (vaultAppRoleId).
     configFiles: z.array(stackConfigFileSchema).optional(),
     adoptedContainer: adoptedContainerSchema.optional(),
-    poolConfig: poolConfigSchema.optional(),
     // Resolved concrete IDs — set at apply time only, never present in
     // template/draft input. Symbolic *Ref siblings live on the common base.
     vaultAppRoleId: z.string().min(1).nullable().optional(),
@@ -486,6 +681,7 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
   })
   .superRefine((data, ctx) => {
     refineAddonsBlock(data.addons, ctx, productionAddonRegistry);
+    refinePoolAndJobPoolConstraints(data, ctx);
   })
   .refine(
     (data) => {
@@ -518,28 +714,6 @@ export const stackServiceDefinitionSchema = stackServiceCommonFieldsSchema
     },
     {
       message: "AdoptedWeb services must have adoptedContainer",
-    }
-  )
-  .refine(
-    (data) => {
-      if (data.serviceType === "Pool" && !data.poolConfig) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "Pool services must have poolConfig",
-    }
-  )
-  .refine(
-    (data) => {
-      if (data.serviceType === "Pool" && data.routing) {
-        return false;
-      }
-      return true;
-    },
-    {
-      message: "Pool services cannot have routing",
     }
   );
 
@@ -656,6 +830,7 @@ export const updateStackServiceSchema = z.object({
   routing: stackServiceRoutingSchema.nullable().optional(),
   adoptedContainer: adoptedContainerSchema.nullable().optional(),
   poolConfig: poolConfigSchema.nullable().optional(),
+  jobPoolConfig: jobPoolConfigSchema.nullable().optional(),
   vaultAppRoleId: z.string().nullable().optional(),
   natsCredentialId: z.string().nullable().optional(),
 });

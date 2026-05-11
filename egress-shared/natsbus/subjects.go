@@ -59,12 +59,17 @@ const (
 	KvEgressGwHealth        = "egress-gw-health"
 )
 
-// PostgreSQL backup subjects (Phase 4).
+// PostgreSQL backup subjects.
+//
+// Note: `mini-infra.backup.completed` / `.failed` were retired alongside
+// the `BackupHistory` JetStream stream in Phase 4 of the
+// job-pool-service-type migration. Backup terminal-state events now
+// flow through the per-pool JobPool history stream — keep the Go side
+// in lockstep with `lib/types/nats-subjects.ts` so the drift check
+// stays clean.
 const (
-	SubjectBackupRun             = "mini-infra.backup.run"
-	SubjectBackupProgressPrefix  = "mini-infra.backup.progress"
-	SubjectBackupCompleted       = "mini-infra.backup.completed"
-	SubjectBackupFailed          = "mini-infra.backup.failed"
+	SubjectBackupRun            = "mini-infra.backup.run"
+	SubjectBackupProgressPrefix = "mini-infra.backup.progress"
 )
 
 // Self-update sidecar subjects (Phase 5, optional).
@@ -74,6 +79,16 @@ const (
 	SubjectUpdateCompleted          = "mini-infra.update.completed"
 	SubjectUpdateFailed             = "mini-infra.update.failed"
 	SubjectUpdateHealthCheckPassed  = "mini-infra.update.health-check-passed"
+)
+
+// JobPool run-lifecycle subjects (Phase 2 of job-pool-service-type).
+//
+// Per-pool subjects are built at runtime as
+// `mini-infra.job-pool.<stackId>.<serviceName>.<verb>`. The base prefix below
+// is what the drift check pins against; concrete per-pool subjects are not
+// listed here (the set is unbounded).
+const (
+	SubjectJobPoolBase = "mini-infra.job-pool"
 )
 
 // AllSubjects is the flat list used by the TS↔Go drift check. Order matches
@@ -94,11 +109,10 @@ var AllSubjects = []string{
 	SubjectEgressGwHealth,
 	SubjectBackupRun,
 	SubjectBackupProgressPrefix,
-	SubjectBackupCompleted,
-	SubjectBackupFailed,
 	SubjectUpdateRun,
 	SubjectUpdateProgressPrefix,
 	SubjectUpdateCompleted,
 	SubjectUpdateFailed,
 	SubjectUpdateHealthCheckPassed,
+	SubjectJobPoolBase,
 }

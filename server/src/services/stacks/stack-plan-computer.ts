@@ -83,9 +83,12 @@ export class StackPlanComputer {
     for (const svc of stack.services) {
       const desiredHash = serviceHashes.get(svc.serviceName)!;
 
-      // Pool services are templates for on-demand instances; they never run
-      // their own container at apply time. Always emit a no-op for them.
-      if (svc.serviceType === 'Pool') {
+      // Pool and JobPool services are templates for on-demand / triggered
+      // instances; they never run their own container at apply time. Always
+      // emit a no-op for them — apply-time orchestration for both is a Phase-3
+      // ahead concern (Pool: instance-ensure HTTP route, JobPool: trigger
+      // registries).
+      if (svc.serviceType === 'Pool' || svc.serviceType === 'JobPool') {
         actions.push({ serviceName: svc.serviceName, action: 'no-op' });
         continue;
       }

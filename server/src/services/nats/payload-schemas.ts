@@ -19,6 +19,7 @@ import {
   BackupSubject,
   EgressFwSubject,
   EgressGwSubject,
+  JobPoolSubject,
   SystemSubject,
   UpdateSubject,
 } from "@mini-infra/types";
@@ -60,33 +61,133 @@ export const backupProgressSchema = z.object({
 });
 export type BackupProgress = z.infer<typeof backupProgressSchema>;
 
-/**
- * Completion event published to JetStream `BackupHistory` stream.
- * Durable — replayed on server restart to populate the events list on cold
- * load and to repair DB records missed during a server outage.
- */
-export const backupCompletedSchema = z.object({
-  operationId: z.string().min(1).max(64),
-  databaseId: z.string().min(1).max(64),
-  sizeBytes: z.number().int().nonnegative().optional(),
-  storageObjectUrl: z.string().max(2048).optional(),
-  storageProvider: z.string().max(64).optional(),
-  completedAtMs: z.number().int().nonnegative(),
-});
-export type BackupCompleted = z.infer<typeof backupCompletedSchema>;
+// `backupCompletedSchema` / `backupFailedSchema` were retired alongside the
+// `BackupHistory` JetStream stream in Phase 4 of the job-pool-service-type
+// migration. Backup terminal-state events now flow through the per-pool
+// JobPool history stream — see `JobPoolSubject.completed` / `.failed` plus
+// `jobPoolRunCompletedSchema` / `jobPoolRunFailedSchema` below. Removed
+// here to drop the dead schema + subject registrations.
 
-/**
- * Failure event published to JetStream `BackupHistory` stream.
- * Published on both application-level failures (non-zero exit) and the
- * hard-crash fallback path in the container watcher.
- */
-export const backupFailedSchema = z.object({
-  operationId: z.string().min(1).max(64),
-  databaseId: z.string().min(1).max(64),
-  errorMessage: z.string().max(1024),
-  failedAtMs: z.number().int().nonnegative(),
+// ====================================================================
+// JobPool run lifecycle (Phase 2 of job-pool-service-type)
+// ====================================================================
+//
+// Subjects are parameterised by `<stackId>` and `<serviceName>` — see the
+// builder functions on `JobPoolSubject`. The registry below pins schemas to
+// the static parent `JobPoolSubject.base` ("mini-infra.job-pool"); the bus's
+// validateRequest path doesn't currently match per-id subjects to a parent,
+// so call sites that publish on the per-pool subjects pass `unchecked: true`
+// and validate inline with the same schemas. The schemas are exported so the
+// exit watcher, the run-skipped emitter, and the future Phase-4/5 consumers
+// all parse against the exact same shape.
+
+const triggerKindSchema = z.enum(["cron", "nats-request", "manual"]);
+
+const jobPoolRunBaseSchema = z.object({
+  /** Owning stack ID — also embedded in the subject for routing. */
+  stackId: z.string().min(1).max(64),
+  /** Owning service name within the stack. */
+  serviceName: z.string().min(1).max(100),
+  /** Unique run identifier — matches `PoolInstance.instanceId`. */
+  runId: z.string().min(1).max(64),
+  /** Which trigger fired this run (cron, nats-request, manual). */
+  triggerKind: triggerKindSchema,
+  /** Operator-facing label for the specific trigger (e.g. `nightly-prod`). */
+  triggerName: z.string().min(1).max(100),
 });
-export type BackupFailed = z.infer<typeof backupFailedSchema>;
+
+export const jobPoolRunCompletedSchema = jobPoolRunBaseSchema.extend({
+  /** Container exit code (always 0 for completed runs). */
+  exitCode: z.literal(0),
+  /** Wall-clock time the run finished, ms since epoch. */
+  finishedAtMs: z.number().int().nonnegative(),
+  /** Wall-clock time the run started, ms since epoch. */
+  startedAtMs: z.number().int().nonnegative(),
+});
+export type JobPoolRunCompleted = z.infer<typeof jobPoolRunCompletedSchema>;
+
+export const jobPoolRunFailedSchema = jobPoolRunBaseSchema.extend({
+  /**
+   * Container exit code on real container exits, or `-1` when the run was
+   * force-failed without a real container exit (kill-after-seconds reaper
+   * sweep or watcher-detected anomaly).
+   */
+  exitCode: z.number().int(),
+  /** Free-form failure reason — used for the operator-facing message. */
+  errorMessage: z.string().max(1024),
+  /** Wall-clock time the run finished, ms since epoch. */
+  finishedAtMs: z.number().int().nonnegative(),
+  /** Wall-clock time the run started, ms since epoch. */
+  startedAtMs: z.number().int().nonnegative(),
+});
+export type JobPoolRunFailed = z.infer<typeof jobPoolRunFailedSchema>;
+
+export const jobPoolRunSkippedSchema = z.object({
+  stackId: z.string().min(1).max(64),
+  serviceName: z.string().min(1).max(100),
+  /** Why the trigger was rejected — currently always concurrency cap. */
+  reason: z.literal("concurrency_cap"),
+  /** Which trigger tried to fire. */
+  triggerKind: triggerKindSchema,
+  triggerName: z.string().min(1).max(100),
+  /**
+   * Wall-clock time the trigger was scheduled to fire. For cron, this is
+   * the cron's fire time; for nats-request / manual it's `Date.now()` at
+   * the call site. ms since epoch.
+   */
+  scheduledAtMs: z.number().int().nonnegative(),
+  /** Concurrency limit at the time the cap was hit — for the UI surface. */
+  maxConcurrent: z.number().int().min(1),
+});
+export type JobPoolRunSkipped = z.infer<typeof jobPoolRunSkippedSchema>;
+
+// ====================================================================
+// JobPool nats-request trigger envelope (Phase 3 of job-pool-service-type)
+// ====================================================================
+//
+// `nats-request` triggers subscribe to a user-declared subject (e.g.
+// `mini-infra.backup.run`). The request body is opaque from the registry's
+// POV — it's forwarded to the spawned container as `JOB_PAYLOAD` — so the
+// inbound schema is a free-form JSON object capped at a sensible size.
+//
+// The reply schema is fixed: on success the registry replies `{ runId }`,
+// on a cap-hit `{ error: "concurrency_cap_reached", maxConcurrent }`, and on
+// any other server-side failure `{ error: <message> }`. Both shapes are
+// pinned here so future consumers parse with the same discriminator.
+//
+// The bus's per-subject validator can't bind to a user-declared subject
+// (the registry doesn't know the subjects at boot), so call sites pass
+// `unchecked: true` and validate inline against these schemas.
+
+export const jobPoolTriggerRequestSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (val) => {
+      // Cap the serialised body at 16 KiB — Docker env vars degrade past
+      // ~32 KiB and we want to leave headroom for other JOB_* vars.
+      try {
+        return JSON.stringify(val).length <= 16 * 1024;
+      } catch {
+        return false;
+      }
+    },
+    { message: "payload must serialise to <= 16 KiB" },
+  );
+export type JobPoolTriggerRequest = z.infer<typeof jobPoolTriggerRequestSchema>;
+
+export const jobPoolTriggerReplySchema = z.union([
+  z.object({ runId: z.string().min(1).max(64) }),
+  z.object({
+    error: z.string().min(1).max(256),
+    /**
+     * Only set on `concurrency_cap_reached` replies — the configured cap
+     * value at the time the trigger fired. Surfaces in the caller's error
+     * UI without a second round-trip.
+     */
+    maxConcurrent: z.number().int().min(1).optional(),
+  }),
+]);
+export type JobPoolTriggerReply = z.infer<typeof jobPoolTriggerReplySchema>;
 
 // ====================================================================
 // Egress gateway (Phase 3) — real schemas, replacing the Phase 1 stubs.
@@ -489,11 +590,20 @@ export const payloadSchemas: Record<KnownNatsSubject, SubjectSchemaEntry> = {
   },
   // progressPrefix is a wildcard parent — callers use unchecked:true and validate inline
   [BackupSubject.progressPrefix]: { request: backupProgressSchema },
-  [BackupSubject.completed]: { request: backupCompletedSchema },
-  [BackupSubject.failed]: { request: backupFailedSchema },
   [UpdateSubject.run]: { request: z.unknown() },
   [UpdateSubject.progressPrefix]: { request: z.unknown() },
   [UpdateSubject.completed]: { request: z.unknown() },
   [UpdateSubject.failed]: { request: z.unknown() },
   [UpdateSubject.healthCheckPassed]: { request: z.unknown() },
+  // JobPool: the static base is a parent — concrete per-pool subjects use
+  // `unchecked: true` at publish sites and validate inline. The bus's
+  // exact-match lookup never resolves a per-pool subject to this entry, but
+  // its presence keeps `KnownNatsSubject` exhaustive.
+  [JobPoolSubject.base]: {
+    request: z.union([
+      jobPoolRunCompletedSchema,
+      jobPoolRunFailedSchema,
+      jobPoolRunSkippedSchema,
+    ]),
+  },
 };

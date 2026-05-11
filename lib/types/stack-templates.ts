@@ -16,6 +16,7 @@ import type {
   StackResourceInput,
   AdoptedContainerRef,
   PoolConfig,
+  JobPoolConfig,
 } from './stacks';
 import type { EnvironmentNetworkType } from './environments';
 import type { StackTemplatePrerequisite } from './template-prerequisites';
@@ -403,6 +404,8 @@ export interface StackTemplateServiceInfo {
   routing: StackServiceRouting | null;
   adoptedContainer?: AdoptedContainerRef;
   poolConfig?: PoolConfig | null;
+  /** JobPool authoring block; null/undefined when the service is not a JobPool. */
+  jobPoolConfig?: JobPoolConfig | null;
   vaultAppRoleId?: string | null;
   /** Symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time (PR 2). */
   vaultAppRoleRef?: string | null;

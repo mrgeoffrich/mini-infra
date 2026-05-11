@@ -1,7 +1,28 @@
 import { getLogger } from "../../lib/logger-factory";
 import type { StorageBackend } from "@mini-infra/types";
 import { parseBackupUrl } from "./utils";
-import type { BackupValidationResult } from "./types";
+
+/**
+ * Result of a pre-flight backup-file check.
+ *
+ * Pre-Phase-5 this type lived in `./types.ts` alongside a few queue/job
+ * types the bespoke executor needed. Phase 5 (MINI-54) deleted the executor;
+ * the only surviving consumer of this type is `BackupValidator.validateBackupFile`,
+ * so the type now lives inline here.
+ */
+export interface BackupValidationResult {
+  isValid: boolean;
+  error?: string;
+  sizeBytes?: number;
+  lastModified?: Date;
+  metadata?: {
+    contentType?: string;
+    etag?: string;
+    containerName?: string;
+    blobName?: string;
+    ageInDays?: number;
+  };
+}
 
 /**
  * BackupValidator validates backup files in the active StorageBackend

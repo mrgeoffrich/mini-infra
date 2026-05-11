@@ -1047,6 +1047,7 @@ enum StackServiceType {
   StatelessWeb
   AdoptedWeb
   Pool
+  JobPool
 }
 
 enum StackTemplateSource {
@@ -1423,6 +1424,7 @@ model StackService {
   routing         Json?            // StackServiceRouting (required for StatelessWeb/AdoptedWeb, forbidden for Stateful)
   adoptedContainer Json?           // AdoptedContainerRef (required for AdoptedWeb)
   poolConfig      Json?            // PoolConfig (required for Pool services)
+  jobPoolConfig   Json?            // JobPoolConfig (required for JobPool services)
   poolManagementTokenHash   String? // bcrypt hash, rotated on every apply
   vaultAppRoleId              String?
   vaultAppRole                VaultAppRole? @relation("ServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
@@ -1455,12 +1457,22 @@ model PoolInstance {
   serviceName        String
   instanceId         String
   containerId        String?
-  status             String    // starting | running | stopping | stopped | error
+  // starting | running | stopping | stopped | error | completed | failed
+  // JobPool runs terminate as completed (exit 0) or failed (non-zero exit or
+  // killed by `killAfterSeconds`); Pool instances continue using the original
+  // five statuses.
+  status             String
   idleTimeoutMinutes Int
   lastActive         DateTime  @default(now())
   createdAt          DateTime  @default(now())
   stoppedAt          DateTime?
   errorMessage       String?
+  // JobPool exit watcher (Phase 2 of job-pool-service-type): captured on
+  // `die` events. `exitCode` is the container's reported exit code (or -1
+  // when the row was forced failed without a real exit). `finishedAt` is
+  // wall-clock at the time of the transition. Both stay null on Pool rows.
+  exitCode           Int?
+  finishedAt         DateTime?
 
   @@index([stackId])
   @@index([stackId, serviceName])
@@ -1650,6 +1662,7 @@ model StackTemplateService {
   routing         Json?                 // StackServiceRouting | null
   adoptedContainer Json?                // AdoptedContainerRef (required for AdoptedWeb)
   poolConfig      Json?                 // PoolConfig (required for Pool services)
+  jobPoolConfig   Json?                 // JobPoolConfig (required for JobPool services)
   vaultAppRoleId  String?               // Optional per-service Vault AppRole binding (resolved concrete ID)
   vaultAppRole    VaultAppRole?         @relation("TemplateServiceVaultAppRole", fields: [vaultAppRoleId], references: [id], onDelete: SetNull)
   // Phase 2 — symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time.

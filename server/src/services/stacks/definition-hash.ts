@@ -4,6 +4,8 @@ import {
   StackConfigFile,
   StackContainerConfig,
   SyntheticServiceInfo,
+  JobPoolConfig,
+  JobPoolTrigger,
 } from '@mini-infra/types';
 
 /**
@@ -18,6 +20,43 @@ function stripDynamic(cc: StackContainerConfig | undefined): StackContainerConfi
   const { dynamicEnv: _omit, ...rest } = cc;
   void _omit;
   return rest;
+}
+
+/**
+ * Canonicalise a JobPoolConfig for hashing. Sorts `triggers[]` by
+ * `(kind, name)` so the hash is stable across re-orderings the operator
+ * might do in the template. Only the drift-relevant fields are included —
+ * `managedBy` is reserved-for-future and not hashed; `maxConcurrent` is
+ * not hashed either (changing the cap doesn't require a service recreate,
+ * just a registry refresh at apply time).
+ */
+function canonicaliseJobPoolConfig(cfg: JobPoolConfig | null | undefined): unknown {
+  if (!cfg) return null;
+  const sortedTriggers = [...(cfg.triggers ?? [])]
+    .map(canonicaliseTrigger)
+    .sort((a, b) => {
+      const ka = `${a.kind}:${a.name}`;
+      const kb = `${b.kind}:${b.name}`;
+      return ka.localeCompare(kb);
+    });
+  return {
+    triggers: sortedTriggers,
+    history: cfg.history ?? null,
+    killAfterSeconds: cfg.killAfterSeconds ?? null,
+    onFailure: cfg.onFailure ?? null,
+  };
+}
+
+/** Normalise a trigger to a plain object that only contains the kind-specific fields. */
+function canonicaliseTrigger(t: JobPoolTrigger): { kind: string; name: string } & Record<string, unknown> {
+  switch (t.kind) {
+    case 'cron':
+      return { kind: 'cron', name: t.name, schedule: t.schedule, timezone: t.timezone ?? null };
+    case 'nats-request':
+      return { kind: 'nats-request', name: t.name, subject: t.subject, ackWithRunId: t.ackWithRunId };
+    case 'manual':
+      return { kind: 'manual', name: t.name };
+  }
 }
 
 function stableStringify(obj: unknown): string {
@@ -71,6 +110,15 @@ export function computeDefinitionHash(
       // means changing addon-config triggers a recreate of the target while
       // mint-on-render values (authkeys, secrets) never enter this hash.
       addons: service.addons ?? null,
+      // JobPool drift inputs (Phase 3): the fields that affect *what* the
+      // pool does — triggers, history retention, kill-after-seconds,
+      // retry policy. The running-or-not state of `PoolInstance` rows is
+      // deliberately NOT hashed (it oscillates per-run; that's not drift).
+      // Per-instance/per-run credential injection happens at spawn time
+      // and is already excluded via `stripDynamic`.
+      jobPoolConfig: service.serviceType === 'JobPool'
+        ? canonicaliseJobPoolConfig(service.jobPoolConfig)
+        : null,
     };
   }
 

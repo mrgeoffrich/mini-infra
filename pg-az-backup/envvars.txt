@@ -22,3 +22,9 @@ ENV RESTORE no
 ENV DROP_PUBLIC no
 ENV BACKUP_FORMAT plain
 ENV COMPRESSION_LEVEL 6
+
+# Phase 4 (MINI-53) — JobPool-driven NATS progress publishing
+# Injected by the runtime env resolver / template dynamicEnv.
+ENV NATS_URL **None**
+ENV NATS_CREDS **None**
+ENV JOB_RUN_ID **None**

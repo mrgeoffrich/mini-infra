@@ -21,6 +21,11 @@ services:
         AGENT_SIDECAR_IMAGE_TAG: ${AGENT_SIDECAR_IMAGE_TAG}
         EGRESS_GATEWAY_IMAGE_TAG: ${EGRESS_GATEWAY_IMAGE_TAG}
         EGRESS_FW_AGENT_IMAGE_TAG: ${EGRESS_FW_AGENT_IMAGE_TAG}
+        # Phase 4 (MINI-53) split pg-az-backup image into base + tag so the
+        # stack template can substitute the two pieces separately.
+        PG_BACKUP_TEMPLATE_IMAGE: ${PG_BACKUP_TEMPLATE_IMAGE}
+        PG_BACKUP_TEMPLATE_TAG: ${PG_BACKUP_TEMPLATE_TAG}
+        PG_BACKUP_IMAGE_TAG: ${PG_BACKUP_IMAGE_TAG}
     user: root
     restart: unless-stopped
     depends_on:

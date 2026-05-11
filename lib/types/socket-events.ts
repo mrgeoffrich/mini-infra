@@ -221,6 +221,12 @@ export const ServerEvent = {
   POOL_INSTANCE_FAILED: "pool:instance:failed",
   POOL_INSTANCE_IDLE_STOPPED: "pool:instance:idle-stopped",
   POOL_INSTANCE_STOPPED: "pool:instance:stopped",
+  // JobPool runs (Phase 2 of job-pool-service-type — exit watcher fans
+  // container `die` events out to the client via these events on the same
+  // `pools` channel as the long-running Pool lifecycle events above).
+  JOB_POOL_RUN_COMPLETED: "job-pool:run:completed",
+  JOB_POOL_RUN_FAILED: "job-pool:run:failed",
+  JOB_POOL_RUN_SKIPPED: "job-pool:run:skipped",
   // Vault
   VAULT_BOOTSTRAP_STARTED: "vault:bootstrap:started",
   VAULT_BOOTSTRAP_STEP: "vault:bootstrap:step",
@@ -534,6 +540,42 @@ export interface ServerToClientEvents {
     stackId: string;
     serviceName: string;
     instanceId: string;
+  }) => void;
+
+  // ── JobPool runs (Phase 2 of job-pool-service-type) ─
+  /** A JobPool run completed with exit code 0. */
+  "job-pool:run:completed": (data: {
+    stackId: string;
+    serviceName: string;
+    runId: string;
+    triggerKind: "cron" | "nats-request" | "manual";
+    triggerName: string;
+    exitCode: 0;
+    startedAtMs: number;
+    finishedAtMs: number;
+  }) => void;
+  /** A JobPool run failed (non-zero exit or killed by killAfterSeconds). */
+  "job-pool:run:failed": (data: {
+    stackId: string;
+    serviceName: string;
+    runId: string;
+    triggerKind: "cron" | "nats-request" | "manual";
+    triggerName: string;
+    /** Real exit code, or -1 for kill-after-seconds / non-exit failures. */
+    exitCode: number;
+    errorMessage: string;
+    startedAtMs: number;
+    finishedAtMs: number;
+  }) => void;
+  /** A trigger fired but the JobPool's concurrency cap was already hit. */
+  "job-pool:run:skipped": (data: {
+    stackId: string;
+    serviceName: string;
+    reason: "concurrency_cap";
+    triggerKind: "cron" | "nats-request" | "manual";
+    triggerName: string;
+    scheduledAtMs: number;
+    maxConcurrent: number;
   }) => void;
 
   // ── Vault ──────────────────────────────────────────

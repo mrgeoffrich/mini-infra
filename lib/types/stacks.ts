@@ -4,7 +4,7 @@
 
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
-export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool'] as const;
+export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
@@ -91,8 +91,70 @@ export interface PoolConfig {
   managedBy: string | null;
 }
 
-/** Lifecycle statuses for a pool instance row. */
-export const POOL_INSTANCE_STATUSES = ['starting', 'running', 'stopping', 'stopped', 'error'] as const;
+/**
+ * Per-service configuration for a `JobPool` service. JobPools spawn one-shot
+ * containers in response to triggers (cron, NATS request, manual HTTP), reusing
+ * the Pool spawn / `PoolInstance` lifecycle machinery but driven by container
+ * exit rather than idle timers (exit watcher lands in Phase 2; Phase 1 only
+ * defines the type, validates it, persists it, and offers a direct
+ * `runJobPool()` entry point).
+ */
+export interface JobPoolConfig {
+  /** Hard cap on simultaneous in-flight runs. `null` = unlimited. */
+  maxConcurrent: number | null;
+
+  /** Reserved — name of a caller service that holds the spawn token. Unused in v1. */
+  managedBy: string | null;
+
+  /** Triggers declared by the template. At least one required. */
+  triggers: JobPoolTrigger[];
+
+  /** Per-pool JetStream history stream config. */
+  history: { retainDays: number; maxBytes?: string };
+
+  /** Safety: kill a runaway run after N seconds. Replaces Pool's idle timer. */
+  killAfterSeconds?: number | null;
+
+  /** In-job retry policy on non-zero exit. Optional. */
+  onFailure?: { retries: number; backoff: 'fixed' | 'exponential' };
+}
+
+/**
+ * Optional structured identification carried alongside a trigger's
+ * human-readable `name`. Authors (templates / materialisers) stash domain
+ * keys like `databaseId` here so the runtime env resolver can read them
+ * structurally rather than parsing them out of the `name` field — the
+ * `cron-<databaseId>` positional convention used by pg-az-backup at Phase 4
+ * is brittle the moment a UI lets operators rename triggers (MINI-50 review
+ * finding M8).
+ *
+ * Values are restricted to strings so the field round-trips cleanly through
+ * Zod, JSON, and Docker labels without surprise coercion. Keep the map
+ * small — it rides on every history publish and every container spawn.
+ */
+export type JobPoolTrigger =
+  | { kind: 'cron'; schedule: string; timezone?: string; name: string; metadata?: Record<string, string> }
+  | { kind: 'nats-request'; subject: string; ackWithRunId: boolean; name: string; metadata?: Record<string, string> }
+  | { kind: 'manual'; name: string; metadata?: Record<string, string> };
+
+/**
+ * Lifecycle statuses for a pool instance row.
+ *
+ * Pool instances use a subset: `starting`/`running`/`stopping`/`stopped`/`error`.
+ * JobPool instances additionally transition to terminal `completed` (exit 0)
+ * or `failed` (non-zero exit, killed by `killAfterSeconds`, or exit watcher
+ * surfacing). The exit watcher (Phase 2) is the only thing that ever writes
+ * `completed` / `failed`; pre-Phase-2 rows never hold those values.
+ */
+export const POOL_INSTANCE_STATUSES = [
+  'starting',
+  'running',
+  'stopping',
+  'stopped',
+  'error',
+  'completed',
+  'failed',
+] as const;
 export type PoolInstanceStatus = typeof POOL_INSTANCE_STATUSES[number];
 
 /** DB shape for a pool instance (Date fields). */
@@ -108,6 +170,18 @@ export interface PoolInstance {
   createdAt: Date;
   stoppedAt: Date | null;
   errorMessage: string | null;
+  /**
+   * Container exit code captured by the JobPool exit watcher when status is
+   * `completed` (always 0) or `failed` (non-zero, or `-1` when the row was
+   * forced failed without a real exit — e.g. kill-after-seconds overrun).
+   * `null` on Pool rows and on JobPool rows that haven't terminated yet.
+   */
+  exitCode: number | null;
+  /**
+   * Wall-clock time the JobPool run finished (success or failure). `null`
+   * on Pool rows and on still-running JobPool rows.
+   */
+  finishedAt: Date | null;
 }
 
 /** API response shape for a pool instance (string dates). */
@@ -123,6 +197,8 @@ export interface PoolInstanceInfo {
   createdAt: string;
   stoppedAt: string | null;
   errorMessage: string | null;
+  exitCode: number | null;
+  finishedAt: string | null;
 }
 
 /** Request body for POST /api/stacks/:stackId/pools/:serviceName/instances */
@@ -329,6 +405,7 @@ export interface StackService {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  jobPoolConfig: JobPoolConfig | null;
   vaultAppRoleId: string | null;
   lastAppliedVaultAppRoleId: string | null;
   natsCredentialId: string | null;
@@ -427,6 +504,7 @@ export interface StackServiceInfo {
   routing: StackServiceRouting | null;
   adoptedContainer: AdoptedContainerRef | null;
   poolConfig: PoolConfig | null;
+  jobPoolConfig: JobPoolConfig | null;
   /** Service Addons authoring block; null when no addons declared. */
   addons: Record<string, unknown> | null;
   createdAt: string;
@@ -467,6 +545,7 @@ export interface StackServiceDefinition {
   routing?: StackServiceRouting;
   adoptedContainer?: AdoptedContainerRef;
   poolConfig?: PoolConfig;
+  jobPoolConfig?: JobPoolConfig | null;
   vaultAppRoleId?: string | null;
   /** Symbolic reference to a vault.appRoles[].name in the owning template draft.
    *  Resolved to a concrete vaultAppRoleId at apply time. */
@@ -536,6 +615,7 @@ type SerializableStackService = {
   routing?: StackServiceRouting | null;
   adoptedContainer?: AdoptedContainerRef | null;
   poolConfig?: PoolConfig | null;
+  jobPoolConfig?: JobPoolConfig | null;
   vaultAppRoleId?: string | null;
   addons?: Record<string, unknown> | null;
   synthetic?: SyntheticServiceInfo;
@@ -568,6 +648,7 @@ export function serializeStack(
       routing: s.routing ?? undefined,
       adoptedContainer: s.adoptedContainer ?? undefined,
       poolConfig: s.poolConfig ?? undefined,
+      jobPoolConfig: s.jobPoolConfig ?? undefined,
       vaultAppRoleId: s.vaultAppRoleId ?? undefined,
       addons: s.addons ?? undefined,
       synthetic: s.synthetic,

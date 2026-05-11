@@ -429,6 +429,16 @@ export async function run(argv: string[]): Promise<void> {
   // the concat instead.
   const egressFwAgentImageTag = `localhost:${registryPort}/mini-infra-egress-fw-agent`;
   const egressFwAgentPushRef = `${egressFwAgentImageTag}:latest`;
+  // Phase 4 (MINI-53): pg-az-backup container now ships an in-container NATS
+  // publisher and a redesigned env contract — until the image lands on
+  // ghcr.io as `:dev` with those changes baked in, dev needs a locally-built
+  // variant. Image (without tag) is what the new pg-az-backup stack
+  // template's `dockerImage` field substitutes; tag is appended by the
+  // template as `:latest`. PG_BACKUP_IMAGE_TAG (full image:tag) is also set
+  // so the legacy direct-spawn path in restore-executor still resolves the
+  // same locally-built image.
+  const pgBackupImageTag = `localhost:${registryPort}/mini-infra-pg-backup`;
+  const pgBackupPushRef = `${pgBackupImageTag}:latest`;
 
   const sidecarBuildSpecs: SidecarBuildSpec[] = [
     {
@@ -448,6 +458,12 @@ export async function run(argv: string[]): Promise<void> {
       dockerfile: path.join(PROJECT_ROOT, 'egress-fw-agent', 'Dockerfile'),
       contextDir: PROJECT_ROOT,
       tag: egressFwAgentPushRef,
+    },
+    {
+      name: 'pg-az-backup',
+      dockerfile: path.join(PROJECT_ROOT, 'pg-az-backup', 'Dockerfile'),
+      contextDir: path.join(PROJECT_ROOT, 'pg-az-backup'),
+      tag: pgBackupPushRef,
     },
   ];
 
@@ -528,6 +544,13 @@ export async function run(argv: string[]): Promise<void> {
     AGENT_SIDECAR_IMAGE_TAG: agentSidecarImageTag,
     EGRESS_GATEWAY_IMAGE_TAG: egressGatewayImageTag,
     EGRESS_FW_AGENT_IMAGE_TAG: egressFwAgentImageTag,
+    // Phase 4 (MINI-53): the new pg-az-backup template substitutes the image
+    // and tag separately. The legacy full-string PG_BACKUP_IMAGE_TAG stays
+    // set so the restore-executor's still-direct-spawn path continues to
+    // resolve the same locally-built image.
+    PG_BACKUP_TEMPLATE_IMAGE: pgBackupImageTag,
+    PG_BACKUP_TEMPLATE_TAG: 'latest',
+    PG_BACKUP_IMAGE_TAG: pgBackupPushRef,
     EGRESS_POOL_CIDR: egressPoolCidr,
     PROJECT_ROOT,
     PROFILE: profile,

@@ -27,9 +27,11 @@ clearLoggerCache();
 const logger = getLogger("platform", "server");
 import DockerService from "./services/docker";
 import { ConnectivityScheduler } from "./lib/connectivity-scheduler";
-import { BackupSchedulerService } from "./services/backup";
-import { RestoreExecutorService } from "./services/restore-executor";
-import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
+import {
+  installPgBackupRuntimeEnvResolver,
+  refreshAllPgBackupTriggers,
+} from "./services/backup";
+import { installRestoreRuntimeEnvResolver } from "./services/restore-executor";
 import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey, getAgentApiKey } from "./services/agent-api-key";
@@ -48,6 +50,9 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
+import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
+import { JobPoolCronRegistry } from "./services/stacks/job-pool-cron-registry";
+import { JobPoolNatsRegistry } from "./services/stacks/job-pool-nats-registry";
 import { TlsConfigService } from "./services/tls/tls-config";
 import { StorageCertificateStore } from "./services/tls/storage-certificate-store";
 import { AcmeClientManager } from "./services/tls/acme-client-manager";
@@ -81,8 +86,14 @@ import {
 // Global scheduler instances
 let egressShutdown: EgressShutdownFn | null = null;
 let connectivityScheduler: ConnectivityScheduler | null = null;
-let backupScheduler: BackupSchedulerService | null = null;
-let restoreExecutorService: RestoreExecutorService | null = null;
+// Phase 4 (MINI-53): BackupSchedulerService retired. Cron handling lives in
+// `JobPoolCronRegistry`; per-database schedules flow from
+// `BackupConfiguration` rows into the pg-az-backup template's `triggers[]`
+// via `refreshAllPgBackupTriggers()`.
+// Phase 5 (MINI-54): RestoreExecutorService retired. Manual restore triggers
+// land via `POST /api/postgres/restore/:databaseId` → the JobPool spawner →
+// `restore-executor` system stack template. The runtime env resolver is
+// installed once at boot below (alongside the pg-az-backup resolver).
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
@@ -93,6 +104,9 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // which both startup and the settings route call to keep it aligned with the
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
+let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
+let jobPoolCronRegistry: JobPoolCronRegistry | null = null;
+let jobPoolNatsRegistry: JobPoolNatsRegistry | null = null;
 
 /**
  * Initialize the internal auth secret from the database, generating one if
@@ -268,26 +282,84 @@ const initializeServices = async () => {
     console.log("[STARTUP] ✓ Connectivity scheduler initialized");
 
     // Initialize pool instance reaper (stops idle pool instances on a 60s
-    // cadence; also force-fails spawns stuck in `starting` for >5 min).
+    // cadence; also force-fails spawns stuck in `starting` for >5 min and
+    // kills JobPool runs that exceed `killAfterSeconds`).
     console.log("[STARTUP] Initializing pool instance reaper...");
     poolInstanceReaper = new PoolInstanceReaper(prisma);
     poolInstanceReaper.start();
     console.log("[STARTUP] ✓ Pool instance reaper initialized");
 
-    // Initialize backup scheduler
-    console.log("[STARTUP] Initializing backup scheduler...");
-    backupScheduler = new BackupSchedulerService(prisma);
-    BackupSchedulerService.setInstance(backupScheduler);
-    await backupScheduler.initialize();
-    console.log("[STARTUP] ✓ Backup scheduler initialized");
+    // Initialize JobPool exit watcher (Phase 2 of job-pool-service-type):
+    // subscribes to Docker `die` events to finalise JobPool runs, publish
+    // history events to JetStream, and schedule retries.
+    console.log("[STARTUP] Initializing JobPool exit watcher...");
+    const resolveJobPoolDockerExecutor = async () => {
+      const { DockerExecutorService } = await import(
+        "./services/docker-executor"
+      );
+      const exec = new DockerExecutorService();
+      await exec.initialize();
+      return exec;
+    };
+    jobPoolExitWatcher = new JobPoolExitWatcher(prisma, resolveJobPoolDockerExecutor);
+    jobPoolExitWatcher.start();
+    console.log("[STARTUP] ✓ JobPool exit watcher initialized");
 
-    // Initialize restore executor service
-    console.log("[STARTUP] Initializing restore executor service...");
-    restoreExecutorService = new RestoreExecutorService(prisma);
-    setRestoreExecutorService(restoreExecutorService);
-    await restoreExecutorService.initialize();
-    logger.info("RestoreExecutorService initialized successfully");
-    console.log("[STARTUP] ✓ Restore executor service initialized");
+    // Initialize JobPool trigger registries (Phase 3): cron + nats-request.
+    // `loadAll()` rebuilds the live registration set from the DB so a
+    // restart re-establishes every declared trigger without an apply.
+    console.log("[STARTUP] Initializing JobPool trigger registries...");
+    jobPoolCronRegistry = new JobPoolCronRegistry(prisma, resolveJobPoolDockerExecutor);
+    JobPoolCronRegistry.setInstance(jobPoolCronRegistry);
+    try {
+      await jobPoolCronRegistry.loadAll();
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "JobPoolCronRegistry.loadAll failed at startup (apply-time refresh will reconcile)",
+      );
+    }
+    jobPoolNatsRegistry = new JobPoolNatsRegistry(prisma, resolveJobPoolDockerExecutor);
+    JobPoolNatsRegistry.setInstance(jobPoolNatsRegistry);
+    try {
+      await jobPoolNatsRegistry.loadAll();
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "JobPoolNatsRegistry.loadAll failed at startup (apply-time refresh will reconcile)",
+      );
+    }
+    console.log("[STARTUP] ✓ JobPool trigger registries initialized");
+
+    // Phase 4 (MINI-53): the bespoke BackupSchedulerService is gone. Instead
+    // register the per-run runtime env resolver against the pg-az-backup
+    // JobPool service (wildcard match — every applied pg-az-backup stack
+    // shares one resolver) so `runJobPool()` can mint per-run env at spawn
+    // time. The actual cron registrations land via `JobPoolCronRegistry`
+    // (already loaded above) — we just need to re-materialise triggers from
+    // BackupConfiguration rows in case rows were added while the server was
+    // down.
+    console.log("[STARTUP] Installing pg-az-backup runtime env resolver and refreshing triggers...");
+    installPgBackupRuntimeEnvResolver();
+    try {
+      await refreshAllPgBackupTriggers(prisma);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "refreshAllPgBackupTriggers failed at startup (next BackupConfiguration mutation will reconcile)",
+      );
+    }
+    console.log("[STARTUP] ✓ pg-az-backup runtime env resolver installed");
+
+    // Phase 5 (MINI-54): restore-executor migrated to a JobPool service.
+    // Install the wildcard runtime env resolver that creates the
+    // `RestoreOperation` row + mints per-run env on every manual restore
+    // trigger. Idempotent; no per-trigger refresh is needed (manual-only,
+    // no cron/nats-request triggers to reconcile).
+    console.log("[STARTUP] Installing restore-executor runtime env resolver...");
+    installRestoreRuntimeEnvResolver();
+    logger.info("Restore-executor runtime env resolver installed successfully");
+    console.log("[STARTUP] ✓ Restore-executor runtime env resolver installed");
 
     // Initialize PostgreSQL database health scheduler
     console.log("[STARTUP] Initializing PostgreSQL database health scheduler...");
@@ -453,8 +525,13 @@ const initializeServices = async () => {
           "./services/nats/nats-system-bootstrap"
         );
         void bootstrapNatsSystemResources();
-        // ALT-29: start the backup NATS bridge (progress → Socket.IO
-        // fan-out + BackupHistory JetStream consumer for cold-boot replay).
+        // ALT-29: start the backup/restore NATS bridge — fans
+        // `mini-infra.backup.progress.>` events out as Socket.IO updates,
+        // and consumes per-pool JobPool history streams to repair stale
+        // BackupOperation / RestoreOperation rows on cold boot. The
+        // legacy `BackupHistory` JetStream consumer was retired in Phase 4
+        // of the job-pool-service-type migration (the per-pool JobHistory
+        // streams now own that observability surface).
         const { startBackupNatsBridge } = await import("./services/backup");
         startBackupNatsBridge(prisma);
       } catch (err) {
@@ -749,15 +826,14 @@ startServer()
         logger.info("PostgreSQL database health scheduler stopped");
       }
 
-      if (backupScheduler) {
-        await backupScheduler.shutdown();
-        logger.info("Backup scheduler stopped");
-      }
+      // Phase 4 (MINI-53): BackupSchedulerService is gone. The
+      // JobPoolCronRegistry's `stopAll()` (already called below via its own
+      // shutdown wiring) handles the live cron entries that drive backup
+      // runs now.
 
-      if (restoreExecutorService) {
-        await restoreExecutorService.shutdown();
-        logger.info("Restore executor service stopped");
-      }
+      // Phase 5 (MINI-54): RestoreExecutorService gone. The JobPool exit
+      // watcher (`stopAll()` already called below via its own shutdown
+      // wiring) handles the in-flight restore container's lifecycle now.
 
       if (selfBackupScheduler) {
         await selfBackupScheduler.shutdown();
@@ -797,6 +873,27 @@ startServer()
       if (poolInstanceReaper) {
         poolInstanceReaper.stop();
         logger.info("Pool instance reaper stopped");
+      }
+
+      // Stop JobPool trigger registries before tearing down the bus —
+      // the NATS registry's cancel handlers go through the bus.
+      if (jobPoolCronRegistry) {
+        try {
+          jobPoolCronRegistry.stopAll();
+          logger.info("JobPool cron registry stopped");
+        } catch (err) {
+          logger.warn({ err }, "JobPool cron registry stop failed (non-fatal)");
+        }
+        JobPoolCronRegistry.setInstance(null);
+      }
+      if (jobPoolNatsRegistry) {
+        try {
+          jobPoolNatsRegistry.stopAll();
+          logger.info("JobPool NATS registry stopped");
+        } catch (err) {
+          logger.warn({ err }, "JobPool NATS registry stop failed (non-fatal)");
+        }
+        JobPoolNatsRegistry.setInstance(null);
       }
 
       // Stop the fw-agent health watcher before draining the bus —
