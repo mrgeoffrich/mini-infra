@@ -164,6 +164,14 @@ export const routeConfig: Record<string, RouteConfig> = {
         showInNav: false,
         helpDoc: "applications/application-management",
       },
+      newClaudeShell: {
+        path: "/applications/new/claude-shell",
+        title: "New Claude Shell",
+        breadcrumbLabel: "Claude Shell",
+        parent: "/applications",
+        showInNav: false,
+        helpDoc: "applications/application-management",
+      },
       detail: {
         path: "/applications/:id",
         title: "Application Details",

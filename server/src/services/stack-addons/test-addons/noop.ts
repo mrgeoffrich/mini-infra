@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import type {
-  AddonDefinition,
+  SidecarAddonDefinition,
   ProvisionContext,
-  ProvisionedValues,
+  SidecarProvisionedValues,
   StackServiceDefinition,
 } from '@mini-infra/types';
 import type { RegisteredAddon } from '../registry';
@@ -28,9 +28,10 @@ const noopConfigSchema = z
 
 type NoopConfig = z.infer<typeof noopConfigSchema>;
 
-const noopDefinition: AddonDefinition = {
+const noopDefinition: SidecarAddonDefinition = {
   manifest: {
     id: 'noop',
+    mode: 'sidecar',
     description:
       'No-op test addon. Adds an empty alpine sidecar; takes no external dependencies.',
     appliesTo: ['Stateful', 'StatelessWeb', 'Pool'],
@@ -38,7 +39,7 @@ const noopDefinition: AddonDefinition = {
   targetIntegration: {
     network: 'peer-on-target-network',
   },
-  async provision(ctx: ProvisionContext): Promise<ProvisionedValues> {
+  async provision(ctx: ProvisionContext): Promise<SidecarProvisionedValues> {
     const config = ctx.addonConfig as NoopConfig;
     return {
       envForSidecar: {
@@ -52,7 +53,7 @@ const noopDefinition: AddonDefinition = {
   },
   buildServiceDefinition(
     ctx: ProvisionContext,
-    provisioned: ProvisionedValues,
+    provisioned: SidecarProvisionedValues,
   ): StackServiceDefinition {
     return {
       serviceName: `${ctx.service.name}-noop`,

@@ -1,6 +1,6 @@
 import type {
   ProvisionContext,
-  ProvisionedValues,
+  SidecarProvisionedValues,
   StackServiceDefinition,
 } from '@mini-infra/types';
 import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
@@ -13,7 +13,7 @@ import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
  */
 export function buildTailscaleSshServiceDefinition(
   ctx: ProvisionContext,
-  provisioned: ProvisionedValues,
+  provisioned: SidecarProvisionedValues,
 ): StackServiceDefinition {
   return buildTailscaleSidecarDefinition({
     ctx,

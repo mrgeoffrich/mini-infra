@@ -3,7 +3,7 @@ import {
   buildTailscaleTagSet,
   sanitizeTailscaleHostname,
   type ProvisionContext,
-  type ProvisionedValues,
+  type SidecarProvisionedValues,
 } from '@mini-infra/types';
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
@@ -42,7 +42,7 @@ function asLookup(input: unknown): AddonConnectedServicesLookup {
  */
 export async function provisionTailscaleSsh(
   ctx: ProvisionContext,
-): Promise<ProvisionedValues> {
+): Promise<SidecarProvisionedValues> {
   const config = ctx.addonConfig as TailscaleSshConfig;
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;

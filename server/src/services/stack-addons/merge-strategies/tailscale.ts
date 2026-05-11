@@ -4,7 +4,7 @@ import {
   sanitizeTailscaleHostname,
   type AddonMergeStrategy,
   type ProvisionContext,
-  type ProvisionedValues,
+  type SidecarProvisionedValues,
   type StackConfigFile,
   type StackServiceDefinition,
   type TargetIntegration,
@@ -82,7 +82,7 @@ function resolveMembers(
 async function provisionTailscaleMerged(
   ctx: ProvisionContext,
   members: ReadonlyArray<{ addonId: string; config: unknown }>,
-): Promise<ProvisionedValues> {
+): Promise<SidecarProvisionedValues> {
   const resolved = resolveMembers(members);
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;
@@ -176,7 +176,7 @@ async function provisionTailscaleMerged(
 
 function buildMergedServiceDefinition(
   ctx: ProvisionContext,
-  provisioned: ProvisionedValues,
+  provisioned: SidecarProvisionedValues,
   members: ReadonlyArray<{ addonId: string; config: unknown }>,
 ): StackServiceDefinition {
   const memberIds = members.map((m) => m.addonId).sort();
