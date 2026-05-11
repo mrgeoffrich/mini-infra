@@ -45,6 +45,7 @@ import {
   type JobPoolRunFailed,
 } from "../nats/payload-schemas";
 import { PG_AZ_BACKUP_SERVICE_NAME } from "./backup-job-pool-materialiser";
+import { RESTORE_EXECUTOR_SERVICE_NAME } from "../restore-executor";
 
 const log = getLogger("backup", "backup-nats-bridge");
 
@@ -116,48 +117,63 @@ export function startBackupNatsBridge(prisma: PrismaClient): void {
       if (tokens.length < 5) return;
       const serviceName = tokens[3];
       const verb = tokens[4];
-      if (serviceName !== PG_AZ_BACKUP_SERVICE_NAME) return;
+      // Phase 5 (MINI-54): bridge both pg-az-backup AND restore-executor
+      // per-pool history events. The two pools share the POSTGRES Socket.IO
+      // channel + the same POSTGRES_OPERATION* events — the `type` field
+      // (`backup` | `restore`) discriminates.
+      const isBackup = serviceName === PG_AZ_BACKUP_SERVICE_NAME;
+      const isRestore = serviceName === RESTORE_EXECUTOR_SERVICE_NAME;
+      if (!isBackup && !isRestore) return;
       if (verb !== "completed" && verb !== "failed") return;
 
+      const opType: "backup" | "restore" = isBackup ? "backup" : "restore";
       const schema = verb === "completed" ? jobPoolRunCompletedSchema : jobPoolRunFailedSchema;
       const parsed = schema.safeParse(msg);
       if (!parsed.success) {
         log.warn(
-          { subject, issues: parsed.error.issues.slice(0, 3) },
-          "pg-az-backup history message failed validation — skipping",
+          { subject, serviceName, issues: parsed.error.issues.slice(0, 3) },
+          "JobPool history message failed validation — skipping",
         );
         return;
       }
 
       if (verb === "completed") {
         const data = parsed.data as JobPoolRunCompleted;
-        await repairCompletedRecord(prisma, data);
+        if (isBackup) {
+          await repairCompletedBackupRecord(prisma, data);
+        } else {
+          await repairCompletedRestoreRecord(prisma, data);
+        }
         try {
           emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION_COMPLETED, {
             operationId: data.runId,
-            type: "backup",
+            type: opType,
             success: true,
           });
         } catch (emitErr) {
           log.error(
-            { runId: data.runId, err: emitErr instanceof Error ? emitErr.message : String(emitErr) },
-            "Failed to emit backup completed to Socket.IO",
+            { runId: data.runId, opType, err: emitErr instanceof Error ? emitErr.message : String(emitErr) },
+            "Failed to emit completed to Socket.IO",
           );
         }
       } else {
         const data = parsed.data as JobPoolRunFailed;
-        await repairFailedRecord(prisma, data);
+        if (isBackup) {
+          await repairFailedBackupRecord(prisma, data);
+        } else {
+          await repairFailedRestoreRecord(prisma, data);
+        }
         try {
           emitToChannel(Channel.POSTGRES, ServerEvent.POSTGRES_OPERATION_COMPLETED, {
             operationId: data.runId,
-            type: "backup",
+            type: opType,
             success: false,
             error: data.errorMessage,
           });
         } catch (emitErr) {
           log.error(
-            { runId: data.runId, err: emitErr instanceof Error ? emitErr.message : String(emitErr) },
-            "Failed to emit backup failed to Socket.IO",
+            { runId: data.runId, opType, err: emitErr instanceof Error ? emitErr.message : String(emitErr) },
+            "Failed to emit failed to Socket.IO",
           );
         }
       }
@@ -167,7 +183,7 @@ export function startBackupNatsBridge(prisma: PrismaClient): void {
 
   log.info(
     { subject: `${JobPoolSubject.base}.>` },
-    "Subscribed to per-pool JobPool history events (filtered to pg-az-backup)",
+    "Subscribed to per-pool JobPool history events (filtered to pg-az-backup + restore-executor)",
   );
 }
 
@@ -183,7 +199,7 @@ export function startBackupNatsBridge(prisma: PrismaClient): void {
  * completed/failed status flips correctly and the size/URL columns stay
  * whatever the executor set during its `BackupOperation.update` mid-run.
  */
-async function repairCompletedRecord(
+async function repairCompletedBackupRecord(
   prisma: PrismaClient,
   data: JobPoolRunCompleted,
 ): Promise<void> {
@@ -208,7 +224,7 @@ async function repairCompletedRecord(
   }
 }
 
-async function repairFailedRecord(
+async function repairFailedBackupRecord(
   prisma: PrismaClient,
   data: JobPoolRunFailed,
 ): Promise<void> {
@@ -230,6 +246,63 @@ async function repairFailedRecord(
     log.error(
       { runId: data.runId, err: err instanceof Error ? err.message : String(err) },
       "pg-az-backup JobPool history: failed to repair failed record",
+    );
+  }
+}
+
+/**
+ * Phase 5 (MINI-54) — restore equivalents of the backup repair helpers. The
+ * RestoreOperation table has the same status/progress/errorMessage/
+ * completedAt columns, so the body is structurally identical to its backup
+ * sibling — different table only.
+ */
+async function repairCompletedRestoreRecord(
+  prisma: PrismaClient,
+  data: JobPoolRunCompleted,
+): Promise<void> {
+  try {
+    const op = await prisma.restoreOperation.findUnique({ where: { id: data.runId } });
+    if (!op || op.status === "completed" || op.status === "failed") return;
+
+    await prisma.restoreOperation.update({
+      where: { id: data.runId },
+      data: {
+        status: "completed",
+        progress: 100,
+        completedAt: new Date(data.finishedAtMs),
+      },
+    });
+    log.info({ runId: data.runId }, "restore-executor JobPool history: repaired RestoreOperation to completed");
+  } catch (err) {
+    log.error(
+      { runId: data.runId, err: err instanceof Error ? err.message : String(err) },
+      "restore-executor JobPool history: failed to repair completed record",
+    );
+  }
+}
+
+async function repairFailedRestoreRecord(
+  prisma: PrismaClient,
+  data: JobPoolRunFailed,
+): Promise<void> {
+  try {
+    const op = await prisma.restoreOperation.findUnique({ where: { id: data.runId } });
+    if (!op || op.status === "completed" || op.status === "failed") return;
+
+    await prisma.restoreOperation.update({
+      where: { id: data.runId },
+      data: {
+        status: "failed",
+        progress: 0,
+        errorMessage: data.errorMessage,
+        completedAt: new Date(data.finishedAtMs),
+      },
+    });
+    log.info({ runId: data.runId }, "restore-executor JobPool history: repaired RestoreOperation to failed");
+  } catch (err) {
+    log.error(
+      { runId: data.runId, err: err instanceof Error ? err.message : String(err) },
+      "restore-executor JobPool history: failed to repair failed record",
     );
   }
 }

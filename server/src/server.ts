@@ -31,8 +31,7 @@ import {
   installPgBackupRuntimeEnvResolver,
   refreshAllPgBackupTriggers,
 } from "./services/backup";
-import { RestoreExecutorService } from "./services/restore-executor";
-import { setRestoreExecutorService } from "./services/restore-executor/restore-executor-instance";
+import { installRestoreRuntimeEnvResolver } from "./services/restore-executor";
 import { initializeDevApiKey } from "./services/dev-api-key";
 import { seedDefaultPresets } from "./services/permission-preset-service";
 import { initializeAgentApiKey, getAgentApiKey } from "./services/agent-api-key";
@@ -91,7 +90,10 @@ let connectivityScheduler: ConnectivityScheduler | null = null;
 // `JobPoolCronRegistry`; per-database schedules flow from
 // `BackupConfiguration` rows into the pg-az-backup template's `triggers[]`
 // via `refreshAllPgBackupTriggers()`.
-let restoreExecutorService: RestoreExecutorService | null = null;
+// Phase 5 (MINI-54): RestoreExecutorService retired. Manual restore triggers
+// land via `POST /api/postgres/restore/:databaseId` → the JobPool spawner →
+// `restore-executor` system stack template. The runtime env resolver is
+// installed once at boot below (alongside the pg-az-backup resolver).
 let postgresDatabaseHealthScheduler: PostgresDatabaseHealthScheduler | null = null;
 let selfBackupScheduler: SelfBackupScheduler | null = null;
 let tlsRenewalScheduler: CertificateRenewalScheduler | null = null;
@@ -349,13 +351,15 @@ const initializeServices = async () => {
     }
     console.log("[STARTUP] ✓ pg-az-backup runtime env resolver installed");
 
-    // Initialize restore executor service
-    console.log("[STARTUP] Initializing restore executor service...");
-    restoreExecutorService = new RestoreExecutorService(prisma);
-    setRestoreExecutorService(restoreExecutorService);
-    await restoreExecutorService.initialize();
-    logger.info("RestoreExecutorService initialized successfully");
-    console.log("[STARTUP] ✓ Restore executor service initialized");
+    // Phase 5 (MINI-54): restore-executor migrated to a JobPool service.
+    // Install the wildcard runtime env resolver that creates the
+    // `RestoreOperation` row + mints per-run env on every manual restore
+    // trigger. Idempotent; no per-trigger refresh is needed (manual-only,
+    // no cron/nats-request triggers to reconcile).
+    console.log("[STARTUP] Installing restore-executor runtime env resolver...");
+    installRestoreRuntimeEnvResolver();
+    logger.info("Restore-executor runtime env resolver installed successfully");
+    console.log("[STARTUP] ✓ Restore-executor runtime env resolver installed");
 
     // Initialize PostgreSQL database health scheduler
     console.log("[STARTUP] Initializing PostgreSQL database health scheduler...");
@@ -822,10 +826,9 @@ startServer()
       // shutdown wiring) handles the live cron entries that drive backup
       // runs now.
 
-      if (restoreExecutorService) {
-        await restoreExecutorService.shutdown();
-        logger.info("Restore executor service stopped");
-      }
+      // Phase 5 (MINI-54): RestoreExecutorService gone. The JobPool exit
+      // watcher (`stopAll()` already called below via its own shutdown
+      // wiring) handles the in-flight restore container's lifecycle now.
 
       if (selfBackupScheduler) {
         await selfBackupScheduler.shutdown();

@@ -6,7 +6,10 @@ const logger = getLogger("backup", "postgres-restore");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { getRestoreExecutorService } from "../services/restore-executor/restore-executor-instance";
+import { DockerExecutorService } from "../services/docker-executor";
+import { BackupValidator } from "../services/restore-executor/backup-validator";
+import { RESTORE_EXECUTOR_SERVICE_NAME } from "../services/restore-executor/restore-job-pool-materialiser";
+import { runJobPool } from "../services/stacks/job-pool-spawner";
 import {
   ProviderNoLongerConfiguredError,
   StorageService,
@@ -499,16 +502,151 @@ router.post(
         // For now, we assume the user has already created the target database
       }
 
-      // Queue the restore operation
-      const restoreExecutorService = getRestoreExecutorService();
-      const restoreOperation = await restoreExecutorService.queueRestore(
-        databaseId,
+      // Phase 5 (MINI-54): server-side pre-flight validation. The bespoke
+      // queue used to do this inside the runner; with JobPool we validate
+      // before spawning so a bad request returns 400 with no container.
+      // Resolve the backend for the originating provider, then validate.
+      const storageService = StorageService.getInstance(prisma);
+      const ownerRow = await prisma.backupOperation.findFirst({
+        where: { storageObjectUrl: validatedData.backupUrl },
+        select: { storageProviderAtCreation: true },
+      });
+      const storageBackend = ownerRow?.storageProviderAtCreation
+        ? await storageService.getBackendByProviderIdOrThrow(
+            ownerRow.storageProviderAtCreation as Parameters<
+              typeof storageService.getBackendByProviderIdOrThrow
+            >[0],
+          )
+        : await storageService.getActiveBackend();
+
+      const validator = new BackupValidator(storageBackend);
+      const validation = await validator.validateBackupFile(
         validatedData.backupUrl,
-        user.id,
-        validatedData.restoreToNewDatabase
-          ? validatedData.newDatabaseName
-          : undefined,
+        databaseId,
       );
+      if (!validation.isValid) {
+        logger.warn(
+          { requestId, userId: user?.id, databaseId, backupUrl: validatedData.backupUrl, error: validation.error },
+          "Restore blocked: backup file validation failed",
+        );
+        return res.status(400).json({
+          success: false,
+          error: "Backup validation failed",
+          message: validation.error ?? "Backup file failed pre-flight validation",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // Locate the applied restore-executor JobPool stack. For Phase 5 the
+      // constraint is "at most one applied restore-executor stack" (same
+      // shape as pg-az-backup) — grab the first one. Failure here means an
+      // operator hasn't deployed the template yet; surface as 503 so the
+      // UI can hint the right next step.
+      const restoreService = await prisma.stackService.findFirst({
+        where: {
+          serviceName: RESTORE_EXECUTOR_SERVICE_NAME,
+          serviceType: "JobPool",
+        },
+        select: { stackId: true },
+      });
+      if (!restoreService) {
+        logger.warn(
+          { requestId, userId: user?.id, databaseId },
+          "Restore blocked: no restore-executor stack is currently applied",
+        );
+        return res.status(503).json({
+          success: false,
+          error: "Restore template not deployed",
+          message:
+            "No restore-executor stack is currently applied. Deploy the restore-executor template from the template catalog before triggering a restore.",
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      const dockerExecutor = new DockerExecutorService();
+      await dockerExecutor.initialize();
+
+      const result = await runJobPool(prisma, dockerExecutor, {
+        stackId: restoreService.stackId,
+        serviceName: RESTORE_EXECUTOR_SERVICE_NAME,
+        trigger: { kind: "manual", name: "manual-http" },
+        payload: {
+          databaseId,
+          backupUrl: validatedData.backupUrl,
+          targetDatabaseName: validatedData.restoreToNewDatabase
+            ? validatedData.newDatabaseName
+            : undefined,
+          userId: user.id,
+        },
+      });
+
+      if (!result.ok) {
+        if (result.reason === "concurrency_cap") {
+          logger.warn(
+            { requestId, userId: user?.id, databaseId, maxConcurrent: result.maxConcurrent },
+            "Restore blocked: concurrency cap reached",
+          );
+          return res.status(429).json({
+            success: false,
+            error: "Restore in progress",
+            message: `A restore is already in progress (max concurrent: ${result.maxConcurrent})`,
+            timestamp: new Date().toISOString(),
+            requestId,
+          });
+        }
+        if (result.reason === "service_not_found" || result.reason === "stack_not_found") {
+          return res.status(503).json({
+            success: false,
+            error: "Restore service unavailable",
+            message: result.message,
+            timestamp: new Date().toISOString(),
+            requestId,
+          });
+        }
+        if (result.reason === "stack_in_error") {
+          return res.status(503).json({
+            success: false,
+            error: "Restore stack in error",
+            message: result.message,
+            timestamp: new Date().toISOString(),
+            requestId,
+          });
+        }
+        // spawn_failed
+        logger.error(
+          { requestId, userId: user?.id, databaseId, error: result.message },
+          "Restore spawn failed",
+        );
+        return res.status(500).json({
+          success: false,
+          error: "Restore spawn failed",
+          message: result.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
+      // The runtime env resolver created the RestoreOperation row whose id
+      // == result.runId. Fetch it back so the HTTP response matches the
+      // legacy shape.
+      const restoreOperation = await prisma.restoreOperation.findUnique({
+        where: { id: result.runId },
+      });
+      if (!restoreOperation) {
+        logger.error(
+          { requestId, userId: user?.id, databaseId, runId: result.runId },
+          "Restore JobPool spawned but no RestoreOperation row was created",
+        );
+        return res.status(500).json({
+          success: false,
+          error: "Restore operation row missing",
+          message: `JobPool spawned runId ${result.runId} but no RestoreOperation row exists`,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
 
       logger.debug(
         {
@@ -523,7 +661,7 @@ router.post(
         success: true,
         data: {
           operationId: restoreOperation.id,
-          status: restoreOperation.status,
+          status: restoreOperation.status as RestoreOperationStatus,
           message: "Restore operation queued successfully",
           backupUrl: restoreOperation.backupUrl,
           databaseName: database.database,
