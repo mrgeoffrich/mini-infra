@@ -541,12 +541,38 @@ async function applyEnvInjectionGroup(
   const addonEgress = provisioned.requiredEgress ?? [];
   const mergedEgress = Array.from(new Set([...existingEgress, ...addonEgress]));
 
+  // Capabilities + devices: dedupe the same way egress does. The env-injection
+  // mode exists for cases where the target image runs the agent the addon
+  // would otherwise sidecar (e.g. `claude-shell` runs `tailscaled` in-process),
+  // so the target needs whatever caps + devices the would-be sidecar needed
+  // (`NET_ADMIN` + `/dev/net/tun` for tailscaled in kernel mode). The merge
+  // is additive — operator-declared caps/devices are preserved verbatim,
+  // addon-supplied ones are appended without duplicates. We avoid writing
+  // empty arrays onto fields the target never declared so the rendered
+  // shape stays identical to the authored shape for addons that don't
+  // touch caps/devices (matters for hash-based drift detection).
+  const existingCapAdd = renderedTarget.containerConfig.capAdd;
+  const addonCapAdd = provisioned.capAddForTarget ?? [];
+  const mergedCapAdd =
+    existingCapAdd !== undefined || addonCapAdd.length > 0
+      ? Array.from(new Set([...(existingCapAdd ?? []), ...addonCapAdd]))
+      : undefined;
+
+  const existingDevices = renderedTarget.containerConfig.devices;
+  const addonDevices = provisioned.devicesForTarget ?? [];
+  const mergedDevices =
+    existingDevices !== undefined || addonDevices.length > 0
+      ? Array.from(new Set([...(existingDevices ?? []), ...addonDevices]))
+      : undefined;
+
   renderedTarget.containerConfig = {
     ...renderedTarget.containerConfig,
     env: mergedEnv,
     mounts: mergedMounts,
     labels: mergedLabels,
     requiredEgress: mergedEgress,
+    ...(mergedCapAdd !== undefined ? { capAdd: mergedCapAdd } : {}),
+    ...(mergedDevices !== undefined ? { devices: mergedDevices } : {}),
   };
 
   progress.onProvisioned?.({

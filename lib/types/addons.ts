@@ -207,6 +207,25 @@ export interface EnvInjectionProvisionedValues {
    * picks them up identically to sidecar-mode addons.
    */
   requiredEgress?: string[];
+  /**
+   * Linux capabilities (e.g. `NET_ADMIN`, `SYS_MODULE`) appended to the
+   * target's `containerConfig.capAdd`. Required when the target image runs
+   * an agent that the addon would otherwise sidecar — e.g. the
+   * `claude-shell` image runs `tailscaled` in-process and therefore needs
+   * the same `NET_ADMIN` + `SYS_MODULE` caps a `tailscale-ssh` sidecar
+   * would have carried. Deduped against any caps the operator already
+   * declared on the target.
+   */
+  capAddForTarget?: string[];
+  /**
+   * Device specs (e.g. `/dev/net/tun`) appended to the target's
+   * `containerConfig.devices`. Same precedent as `capAddForTarget` — the
+   * env-injection mode exists so the target image can run the agent
+   * directly, which in turn requires whatever host devices the agent
+   * needs at runtime. Deduped against any devices the operator already
+   * declared on the target.
+   */
+  devicesForTarget?: string[];
   /** Available for downstream interpolation; unused by the framework. */
   templateVars?: Record<string, unknown>;
 }
