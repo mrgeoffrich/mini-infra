@@ -5,8 +5,8 @@ import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
 import { StorageService } from "../storage/storage-service";
 import { UserPreferencesService } from "../user-preferences";
-import { BackupSchedulerService } from "./backup-scheduler";
 import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
+import { refreshAllPgBackupTriggers } from "./backup-job-pool-materialiser";
 
 export class BackupConfigurationManager {
   private prisma: PrismaClient;
@@ -95,36 +95,24 @@ export class BackupConfigurationManager {
         },
       });
 
-      // Register with scheduler if schedule is provided
-      if (config.schedule) {
-        const scheduler = BackupSchedulerService.getInstance();
-        if (scheduler) {
-          try {
-            await scheduler.registerSchedule(
-              databaseId,
-              config.schedule,
-              timezone,
-              "system", // System-initiated backup
-            );
-
-            // Enable the schedule if the config is enabled
-            if (config.isEnabled ?? true) {
-              await scheduler.enableSchedule(databaseId);
-            }
-          } catch (scheduleError) {
-            getLogger("backup", "backup-configuration-manager").warn(
-              {
-                configId: createdConfig.id,
-                databaseId: databaseId,
-                scheduleError:
-                  scheduleError instanceof Error
-                    ? scheduleError.message
-                    : "Unknown error",
-              },
-              "Failed to register backup schedule, but configuration was created",
-            );
-          }
-        }
+      // Phase 4 (MINI-53): the cron schedule is no longer registered with a
+      // bespoke scheduler — it flows into the pg-az-backup JobPool template's
+      // `triggers[]` via the materialiser. Refresh every applied stack so
+      // the new BackupConfiguration row's cron entry takes effect.
+      try {
+        await refreshAllPgBackupTriggers(this.prisma);
+      } catch (materialiseError) {
+        getLogger("backup", "backup-configuration-manager").warn(
+          {
+            configId: createdConfig.id,
+            databaseId,
+            err:
+              materialiseError instanceof Error
+                ? materialiseError.message
+                : String(materialiseError),
+          },
+          "Failed to materialise pg-az-backup triggers after configuration create (configuration saved)",
+        );
       }
 
       getLogger("backup", "backup-configuration-manager").info(
@@ -265,49 +253,27 @@ export class BackupConfigurationManager {
         data: updateData,
       });
 
-      // Update scheduler if schedule-related fields changed
-      const scheduler = BackupSchedulerService.getInstance();
+      // Phase 4 (MINI-53): cron handling moved to JobPoolCronRegistry via the
+      // pg-az-backup template's `triggers[]`. Re-materialise on schedule /
+      // timezone / enabled changes so cron registrations update immediately.
       if (
-        scheduler &&
-        (updates.schedule !== undefined ||
-          updates.timezone !== undefined ||
-          updates.isEnabled !== undefined)
+        updates.schedule !== undefined ||
+        updates.timezone !== undefined ||
+        updates.isEnabled !== undefined
       ) {
         try {
-          const finalSchedule = updates.schedule ?? existingConfig.schedule;
-          const finalTimezone = updates.timezone ?? existingConfig.timezone;
-          const finalEnabled = updates.isEnabled ?? existingConfig.isEnabled;
-
-          if (finalSchedule) {
-            // Re-register the schedule with new parameters
-            await scheduler.registerSchedule(
-              existingConfig.databaseId,
-              finalSchedule,
-              finalTimezone,
-              "system", // System-initiated backup
-            );
-
-            // Enable or disable based on the final enabled state
-            if (finalEnabled) {
-              await scheduler.enableSchedule(existingConfig.databaseId);
-            } else {
-              await scheduler.disableSchedule(existingConfig.databaseId);
-            }
-          } else {
-            // No schedule - unregister if one exists
-            await scheduler.unregisterSchedule(existingConfig.databaseId);
-          }
-        } catch (scheduleError) {
+          await refreshAllPgBackupTriggers(this.prisma);
+        } catch (materialiseError) {
           getLogger("backup", "backup-configuration-manager").warn(
             {
-              configId: configId,
+              configId,
               databaseId: existingConfig.databaseId,
-              scheduleError:
-                scheduleError instanceof Error
-                  ? scheduleError.message
-                  : "Unknown error",
+              err:
+                materialiseError instanceof Error
+                  ? materialiseError.message
+                  : String(materialiseError),
             },
-            "Failed to update backup schedule, but configuration was updated",
+            "Failed to materialise pg-az-backup triggers after configuration update (configuration saved)",
           );
         }
       }
@@ -378,30 +344,30 @@ export class BackupConfigurationManager {
         throw new Error("Backup configuration not found");
       }
 
-      // Unregister from scheduler before deleting
-      const scheduler = BackupSchedulerService.getInstance();
-      if (scheduler) {
-        try {
-          await scheduler.unregisterSchedule(config.databaseId);
-        } catch (scheduleError) {
-          getLogger("backup", "backup-configuration-manager").warn(
-            {
-              configId: configId,
-              databaseId: config.databaseId,
-              scheduleError:
-                scheduleError instanceof Error
-                  ? scheduleError.message
-                  : "Unknown error",
-            },
-            "Failed to unregister backup schedule during deletion",
-          );
-        }
-      }
-
-      // Delete configuration
+      // Delete configuration first; the JobPool trigger refresh below picks
+      // up the now-absent row and removes the corresponding cron trigger.
       await this.prisma.backupConfiguration.delete({
         where: { id: configId },
       });
+
+      // Phase 4 (MINI-53): cron handling moved to JobPoolCronRegistry via the
+      // pg-az-backup template's `triggers[]`. Re-materialise so the
+      // now-deleted config's cron trigger is removed from the registry.
+      try {
+        await refreshAllPgBackupTriggers(this.prisma);
+      } catch (materialiseError) {
+        getLogger("backup", "backup-configuration-manager").warn(
+          {
+            configId,
+            databaseId: config.databaseId,
+            err:
+              materialiseError instanceof Error
+                ? materialiseError.message
+                : String(materialiseError),
+          },
+          "Failed to materialise pg-az-backup triggers after configuration delete (configuration deleted)",
+        );
+      }
 
       getLogger("backup", "backup-configuration-manager").info(
         {

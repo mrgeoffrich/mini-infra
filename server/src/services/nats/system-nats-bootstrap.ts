@@ -50,6 +50,12 @@ const SYSTEM_PREFIX_BINDINGS: Array<{ prefix: string; templateNames: string[] }>
   // Phase 3: egress gateway claims the `mini-infra.egress.gw.>` subject tree.
   { prefix: subjectPrefixOf(EgressGwSubject.decisions, 3), templateNames: ["egress-gateway"] },
   // Phase 2 will add the equivalent for `mini-infra.egress.fw` here.
+  // Phase 4 (MINI-53): pg-az-backup claims `mini-infra.backup.>` so the
+  // template's `nats.subjectPrefix: "mini-infra.backup"` passes the
+  // prefix-allowlist gate at apply time. Subject set:
+  // `mini-infra.backup.progress.<runId>` published by the container, and
+  // `mini-infra.backup.run` served by the JobPoolNatsRegistry.
+  { prefix: subjectPrefixOf(BackupSubject.progressPrefix, 2), templateNames: ["pg-az-backup"] },
 ];
 
 /**
@@ -115,28 +121,12 @@ const SYSTEM_STREAMS: SystemStreamSpec[] = [
       },
     ],
   },
-  {
-    name: NatsStreamName.backupHistory, // "BackupHistory"
-    subjects: [BackupSubject.completed, BackupSubject.failed],
-    // Limits retention: history stream for replay on cold load and recovery
-    // from missed events during server restarts. Each backup run produces at
-    // most one message; 1 GiB / 30 d is conservative but consistent with
-    // plan §7 estimates.
-    retention: "limits",
-    maxBytes: 1024 * 1024 * 1024, // 1 GiB
-    maxAgeSeconds: 30 * 24 * 3600, // 30 d
-    description: "Phase 4 (ALT-29): backup run completed/failed events for durable replay.",
-    consumers: [
-      {
-        name: NatsConsumerName.backupHistoryServer,
-        durableName: NatsConsumerName.backupHistoryServer,
-        description:
-          "Mini Infra server consumer: emits Socket.IO events and repairs stale DB records on cold-boot replay.",
-        ackWaitSeconds: 30,
-        maxDeliver: 5,
-      },
-    ],
-  },
+  // Phase 4 (MINI-53): the `BackupHistory` JetStream stream (subjects
+  // `mini-infra.backup.completed` / `.failed`) is retired. Backup
+  // lifecycle events now flow through the per-pool
+  // `JobHistory-<stack>-pg-az-backup` stream produced by
+  // `job-pool-stream-reconciler.ts`. The bridge's BackupHistory consumer is
+  // gone too; `backup-nats-bridge.ts` now consumes the per-pool stream.
 ];
 
 /**
