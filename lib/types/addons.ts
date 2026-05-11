@@ -302,12 +302,41 @@ export interface SidecarAddonDefinition {
 }
 
 /**
+ * Static subset of `EnvInjectionProvisionedValues` that an addon can compute
+ * synchronously at plan time without running `provision()`. Excludes
+ * `envForTarget` and `templateVars` because those typically depend on
+ * minted secrets / dynamic values that we explicitly do not want to compute
+ * in the dryRun path. The remaining fields — `requiredEgress`, mounts,
+ * caps, devices, labels — are static per-addon (or computable purely from
+ * `ProvisionContext` without side effects), and the render pipeline merges
+ * them onto the target in dryRun mode so plan-time consumers (e.g. the
+ * egress-rule reconciler) see the same hostnames / mounts / caps / devices
+ * the apply path would write.
+ */
+export type EnvInjectionPlanStubValues = Pick<
+  EnvInjectionProvisionedValues,
+  | 'requiredEgress'
+  | 'mountsForTarget'
+  | 'capAddForTarget'
+  | 'devicesForTarget'
+  | 'labelsForTarget'
+>;
+
+/**
  * Env-injection-mode addon contract. No synthetic sidecar is materialised —
  * `provision()` returns env / mounts / labels / requiredEgress that the
  * render pipeline merges directly onto the target service. The
- * `buildServiceDefinition()` / `targetIntegration` / `planStub` hooks are
- * intentionally absent from this shape so callers can't accidentally call
- * them on an env-injection addon.
+ * `buildServiceDefinition()` / `targetIntegration` hooks are intentionally
+ * absent from this shape so callers can't accidentally call them on an
+ * env-injection addon.
+ *
+ * `planStub` is an optional synchronous, side-effect-free hook the framework
+ * calls in `dryRun` mode (plan-time / egress-reconciler paths) to surface the
+ * static parts of the provisioned values without minting credentials or
+ * touching Vault. Implementations must NOT read Vault, mint authkeys, or
+ * make network calls — the function is called from synchronous-read code
+ * paths and any side effects there would bleed into plan-time UIs. Return
+ * only the fields that are deterministic per (stack, service, environment).
  */
 export interface EnvInjectionAddonDefinition {
   manifest: AddonManifest & { mode: 'env-injection' };
@@ -317,6 +346,7 @@ export interface EnvInjectionAddonDefinition {
     provisioned: EnvInjectionProvisionedValues,
   ): Promise<void>;
   status?(ctx: StatusContext): Promise<AddonStatus>;
+  planStub?(ctx: ProvisionContext): EnvInjectionPlanStubValues;
 }
 
 /**
