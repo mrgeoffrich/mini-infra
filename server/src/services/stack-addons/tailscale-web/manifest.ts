@@ -42,14 +42,18 @@ export const tailscaleWebConfigSchema = z
 
 export type TailscaleWebConfig = z.infer<typeof tailscaleWebConfigSchema>;
 
-export const tailscaleWebManifest: AddonManifest = {
+export const tailscaleWebManifest = {
   id: 'tailscale-web',
   kind: 'tailscale',
+  // Explicit for clarity even though `sidecar` is the framework default — this
+  // addon materialises a tailscaled peer container; the env-injection mode
+  // added in Phase 2 of the claude-shell plan does NOT apply here.
+  mode: 'sidecar',
   description:
     'Expose the target service over HTTPS on the tailnet with auto-provisioned TLS. Materialises a tailscaled sidecar running `tailscale serve` against ${TS_CERT_DOMAIN}:443 → http://<target>:<port>.',
   appliesTo: ['Stateful', 'StatelessWeb', 'Pool'],
   requiresConnectedService: 'tailscale',
-};
+} as const satisfies AddonManifest;
 
 export const tailscaleWebTargetIntegration: TargetIntegration = {
   // Sidecar joins the same Docker network as the target. `tailscale serve`

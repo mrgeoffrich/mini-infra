@@ -37,14 +37,18 @@ export const tailscaleSshConfigSchema = z
 
 export type TailscaleSshConfig = z.infer<typeof tailscaleSshConfigSchema>;
 
-export const tailscaleSshManifest: AddonManifest = {
+export const tailscaleSshManifest = {
   id: 'tailscale-ssh',
   kind: 'tailscale',
+  // Explicit for clarity even though `sidecar` is the framework default — this
+  // addon materialises a tailscaled peer container; the env-injection mode
+  // added in Phase 2 of the claude-shell plan does NOT apply here.
+  mode: 'sidecar',
   description:
     'Operator SSH into the target service via Tailscale identity. Materialises a tailscaled sidecar joined to the target container, gated by the tailnet ACL ssh check policy.',
   appliesTo: ['Stateful', 'StatelessWeb', 'Pool'],
   requiresConnectedService: 'tailscale',
-};
+} as const satisfies AddonManifest;
 
 export const tailscaleSshTargetIntegration: TargetIntegration = {
   // Sidecar joins the same Docker network as the target and reaches it by

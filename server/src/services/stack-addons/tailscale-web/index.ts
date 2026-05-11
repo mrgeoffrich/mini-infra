@@ -1,4 +1,4 @@
-import type { AddonDefinition, ProvisionContext } from '@mini-infra/types';
+import type { SidecarAddonDefinition, ProvisionContext } from '@mini-infra/types';
 import { productionAddonRegistry, type RegisteredAddon } from '../registry';
 import {
   tailscaleWebConfigSchema,
@@ -17,7 +17,7 @@ import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
  * `tailscale-ssh` — when both are declared on the same service the merge
  * strategy collapses them into one sidecar.
  */
-export const tailscaleWebDefinition: AddonDefinition = {
+export const tailscaleWebDefinition: SidecarAddonDefinition = {
   manifest: tailscaleWebManifest,
   targetIntegration: tailscaleWebTargetIntegration,
   provision: provisionTailscaleWeb,
