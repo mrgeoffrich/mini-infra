@@ -160,7 +160,28 @@ interface RunApplyArgs {
   applyArgs: ReturnType<typeof applyStackSchema.parse>;
 }
 
-async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
+/**
+ * Kick off a background apply for the given stack, identical to the surface
+ * the `POST /:stackId/apply` route uses. Exported so other routes can trigger
+ * an apply as a side effect of a state-changing operation (e.g. the
+ * `git-deploy-key` DELETE handler triggers a re-apply so the env var
+ * disappears from the running container without an operator round-trip —
+ * review #5).
+ *
+ * Caller responsibilities:
+ *   - The stack MUST exist and have no in-progress apply (use
+ *     `stackOperationLock.has(stackId)` to gate); this function does not
+ *     pre-check those.
+ *   - Failures are surfaced via `emitStackApplyFailed` / the user-event log,
+ *     not returned to the caller. The promise resolves once the background
+ *     work is scheduled.
+ *
+ * The implementation lives at the apply route to keep the apply pipeline
+ * (Vault phase, NATS phase, egress reconciliation, reconciler.apply) in a
+ * single place; exporting the entry point keeps the side-effect callers
+ * decoupled from those internals.
+ */
+export async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
   const { stackId, triggeredBy, isForcePull, applyArgs } = args;
   const userEvent = new StackUserEvent(prisma);
 

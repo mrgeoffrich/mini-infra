@@ -10,6 +10,8 @@ import {
 } from "../../services/vault/vault-kv-service";
 import { UserEventService } from "../../services/user-events/user-event-service";
 import type { UserEventStatus } from "@mini-infra/types";
+import { runApplyInBackground } from "./stacks-apply-route";
+import { stackOperationLock } from "../../services/stacks/operation-lock";
 
 const log = getLogger("stacks", "stacks-git-deploy-key-route");
 
@@ -320,6 +322,40 @@ router.delete(
         serviceName,
         "completed",
       );
+
+      // Auto-reapply so `GIT_SSH_KEY` clears from the running container on
+      // the next reconcile without requiring the operator to trigger an
+      // apply by hand (review #5). Skip when an apply is already in
+      // flight — the in-flight one is about to read whatever Vault has,
+      // and queueing a redundant trigger would race against it.
+      if (!stackOperationLock.has(stackId)) {
+        try {
+          void runApplyInBackground({
+            stackId,
+            triggeredBy: userId ?? undefined,
+            isForcePull: false,
+            applyArgs: {},
+          });
+          log.info(
+            { stackId, serviceName, userId },
+            "git-deploy-key:deleted → triggered re-apply",
+          );
+        } catch (err) {
+          log.warn(
+            {
+              err: err instanceof Error ? err.message : String(err),
+              stackId,
+              serviceName,
+            },
+            "git-deploy-key:deleted → re-apply trigger failed (non-fatal); operator can re-apply manually",
+          );
+        }
+      } else {
+        log.info(
+          { stackId, serviceName },
+          "git-deploy-key:deleted → skipping re-apply (apply already in flight)",
+        );
+      }
       return res.json({ success: true, data: { hasKey: false } });
     } catch (err) {
       if (err instanceof VaultKVError) {

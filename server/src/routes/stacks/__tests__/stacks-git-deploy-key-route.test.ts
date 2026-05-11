@@ -41,15 +41,32 @@ vi.mock('../../../middleware/auth', () => ({
 // hitting Prisma. The route awaits these calls but the failure path is
 // non-fatal, so resolving with a stub object is safe. `vi.hoisted` is
 // required because `vi.mock` runs before normal top-level consts initialize.
-const { mockCreateEvent } = vi.hoisted(() => ({
-  mockCreateEvent: vi.fn().mockResolvedValue({ id: 'evt-1' }),
-}));
+const { mockCreateEvent, mockRunApplyInBackground, mockOperationLockHas } =
+  vi.hoisted(() => ({
+    mockCreateEvent: vi.fn().mockResolvedValue({ id: 'evt-1' }),
+    mockRunApplyInBackground: vi.fn().mockResolvedValue(undefined),
+    mockOperationLockHas: vi.fn().mockReturnValue(false),
+  }));
 vi.mock('../../../services/user-events/user-event-service', () => {
   class MockUserEventService {
     createEvent = mockCreateEvent;
   }
   return { UserEventService: MockUserEventService };
 });
+
+// Stub the apply-trigger surface so the DELETE-auto-reapply regression test
+// can assert the trigger fires without standing up the apply pipeline.
+vi.mock('../stacks-apply-route', () => ({
+  runApplyInBackground: (...args: unknown[]) => mockRunApplyInBackground(...args),
+}));
+
+// Stub the operation lock so the test can drive the "apply already in
+// flight → skip" branch deterministically.
+vi.mock('../../../services/stacks/operation-lock', () => ({
+  stackOperationLock: {
+    has: (...args: unknown[]) => mockOperationLockHas(...args),
+  },
+}));
 
 // Prisma stub: route guards "does this stack service exist?" via
 // `stackService.findFirst`. Default returns a row; specific tests override
@@ -99,6 +116,10 @@ beforeEach(() => {
   mockStackServiceFindFirst.mockReset();
   mockCreateEvent.mockReset();
   mockCreateEvent.mockResolvedValue({ id: 'evt-1' });
+  mockRunApplyInBackground.mockReset();
+  mockRunApplyInBackground.mockResolvedValue(undefined);
+  mockOperationLockHas.mockReset();
+  mockOperationLockHas.mockReturnValue(false);
   // Default: stack service exists.
   mockStackServiceFindFirst.mockResolvedValue({ id: 'svc-1' });
 });
@@ -440,6 +461,61 @@ describe('DELETE /:stackId/services/:serviceName/git-deploy-key', () => {
         }),
       }),
     );
+  });
+
+  it('auto-triggers a re-apply on successful delete so GIT_SSH_KEY clears (review #5)', async () => {
+    mockKvService.read.mockResolvedValue({ privateKey: FAKE_PEM });
+    mockKvService.delete.mockResolvedValue(undefined);
+
+    await supertest(buildApp())
+      .delete('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(200);
+
+    expect(mockRunApplyInBackground).toHaveBeenCalledTimes(1);
+    expect(mockRunApplyInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stackId: 'stack-1',
+        triggeredBy: 'test-user',
+        isForcePull: false,
+      }),
+    );
+  });
+
+  it('skips the auto-reapply when an apply is already in flight on this stack', async () => {
+    mockKvService.read.mockResolvedValue({ privateKey: FAKE_PEM });
+    mockKvService.delete.mockResolvedValue(undefined);
+    mockOperationLockHas.mockReturnValue(true);
+
+    await supertest(buildApp())
+      .delete('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(200);
+
+    // Vault delete still happened — only the trigger is gated.
+    expect(mockKvService.delete).toHaveBeenCalled();
+    expect(mockRunApplyInBackground).not.toHaveBeenCalled();
+  });
+
+  it('does NOT trigger a re-apply when DELETE is a 404 (no key was set)', async () => {
+    mockKvService.read.mockResolvedValue(null);
+
+    await supertest(buildApp())
+      .delete('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(404);
+
+    expect(mockRunApplyInBackground).not.toHaveBeenCalled();
+  });
+
+  it('does NOT trigger a re-apply when DELETE fails (Vault error)', async () => {
+    mockKvService.read.mockResolvedValue({ privateKey: FAKE_PEM });
+    mockKvService.delete.mockRejectedValue(
+      new VaultKVError('permission denied', 'vault_permission_denied', 403),
+    );
+
+    await supertest(buildApp())
+      .delete('/api/stacks/stack-1/services/shell/git-deploy-key')
+      .expect(403);
+
+    expect(mockRunApplyInBackground).not.toHaveBeenCalled();
   });
 
   it('returns 404 when no key is set for this service', async () => {

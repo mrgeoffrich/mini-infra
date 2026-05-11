@@ -109,9 +109,9 @@ DELETE /api/stacks/:stackId/services/shell/git-deploy-key
 
 All three routes require the same `stacks:write` permission you need to edit the stack itself.
 
-**Important quirk:** `DELETE` removes the Vault entry but does **not** automatically re-apply the stack. The running container still has the old `GIT_SSH_KEY` env var until you trigger an apply (from the stack detail page or the API). If you want to be sure the key is gone from the live container, run an apply after the delete.
+`DELETE` removes the Vault entry **and** automatically triggers a re-apply of the stack, so the `GIT_SSH_KEY` env var clears from the running container on the next reconcile. If an apply is already in progress when `DELETE` lands, the auto-trigger is skipped (the in-flight apply is about to read whatever Vault has) — re-apply manually from the stack detail page in that case.
 
-**Rotating** a key is the same as uploading — `PUT` overwrites the previous value. The next apply picks up the new key.
+**Rotating** a key is the same as uploading — `PUT` overwrites the previous value. The next apply picks up the new key. (`PUT` does not auto-trigger a re-apply — re-apply manually after a rotation if you want the new key live immediately.)
 
 The key material is never returned by any endpoint. `GET` only tells you whether one is set.
 
