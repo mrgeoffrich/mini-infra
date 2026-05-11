@@ -1,9 +1,36 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   TAILSCALE_CONTROL_PLANE_HOSTNAMES,
   TAILSCALE_DEFAULT_TAG,
   type StackServiceDefinition,
 } from '@mini-infra/types';
+
+// The claude-shell addon's `provision()` reads the optional git deploy key
+// from Vault KV (Phase 5). Stub `getVaultKVService()` so the tests don't
+// require a live Vault — the default stub returns `null` ("no key set"),
+// and individual tests override `mockKvRead` to simulate a present key.
+const mockKvRead = vi.fn();
+vi.mock('../../vault/vault-kv-service', async () => {
+  const paths = await vi.importActual<
+    typeof import('../../vault/vault-kv-paths')
+  >('../../vault/vault-kv-paths');
+  return {
+    KV_MOUNT: paths.KV_MOUNT,
+    VaultKVError: paths.VaultKVError,
+    validateKvPath: paths.validateKvPath,
+    validateKvFieldName: paths.validateKvFieldName,
+    getVaultKVService: () => ({ read: mockKvRead }),
+  };
+});
+
+beforeEach(() => {
+  mockKvRead.mockReset();
+  // Default: no git-deploy-key configured for any stack/service.
+  mockKvRead.mockResolvedValue(null);
+});
+
+// Imports below MUST come after the vi.mock so the stub is in place when the
+// addon module evaluates its import of `getVaultKVService`.
 import { createAddonRegistry } from '../registry';
 import { expandAddons } from '../expand-addons';
 import { claudeShellAddon } from '../claude-shell';
@@ -220,10 +247,91 @@ describe('claude-shell addon — expansion', () => {
     );
   });
 
-  it('does NOT inject GIT_SSH_KEY in Phase 3 (deferred to Phase 5)', async () => {
-    // Pin this so Phase 5's plumbing change is forced to be explicit. The
-    // entrypoint already handles GIT_SSH_KEY being absent; this test fails
-    // loudly if a future change accidentally emits a fake/empty value.
+  it('does NOT inject GIT_SSH_KEY when no Vault deploy-key path is present', async () => {
+    // Phase 5: the addon reads from Vault KV at provision time. When the
+    // path is absent the entrypoint's `[[ -n "${GIT_SSH_KEY:-}" ]]` guard
+    // skips writing the key — anonymous clones still work for public repos.
+    mockKvRead.mockResolvedValue(null);
+
+    const registry = createAddonRegistry();
+    registry.register(claudeShellAddon);
+
+    const target = makeStateful('shell', {
+      addons: { 'claude-shell': {} },
+    });
+
+    const rendered = await withStubbedFetch(() =>
+      expandAddons([target], {
+        ...baseContext,
+        registry,
+        connectedServices: { tailscale: makeStubTailscaleService() },
+      }),
+    );
+
+    expect(rendered[0].containerConfig.env).not.toHaveProperty('GIT_SSH_KEY');
+    expect(mockKvRead).toHaveBeenCalledWith(
+      'stacks/stack-1/services/shell/git-deploy-key',
+    );
+  });
+
+  it('injects GIT_SSH_KEY when the Vault deploy-key path holds a privateKey', async () => {
+    // Phase 5: the addon reads the convention path
+    // `stacks/${stackId}/services/${serviceName}/git-deploy-key` and emits
+    // the `privateKey` field as `GIT_SSH_KEY`. The actual key material is
+    // opaque to the addon — we use a clearly-fake marker so the test never
+    // accidentally hard-codes a real private key.
+    const FAKE_PEM_MARKER = 'TEST_FAKE_PEM_DO_NOT_USE_AS_REAL_KEY';
+    mockKvRead.mockResolvedValue({ privateKey: FAKE_PEM_MARKER });
+
+    const registry = createAddonRegistry();
+    registry.register(claudeShellAddon);
+
+    const target = makeStateful('shell', {
+      addons: {
+        'claude-shell': { gitRepo: 'git@github.com:example/private.git' },
+      },
+    });
+
+    const rendered = await withStubbedFetch(() =>
+      expandAddons([target], {
+        ...baseContext,
+        registry,
+        connectedServices: { tailscale: makeStubTailscaleService() },
+      }),
+    );
+
+    expect(rendered[0].containerConfig.env?.GIT_SSH_KEY).toBe(FAKE_PEM_MARKER);
+    expect(mockKvRead).toHaveBeenCalledWith(
+      'stacks/stack-1/services/shell/git-deploy-key',
+    );
+  });
+
+  it('does NOT inject GIT_SSH_KEY when the Vault path exists but privateKey field is missing', async () => {
+    // Defensive: if some operator wrote the wrong field name we want to fail
+    // closed (no env injection) rather than emit an empty `GIT_SSH_KEY`.
+    mockKvRead.mockResolvedValue({ notTheRightField: 'oops' });
+
+    const registry = createAddonRegistry();
+    registry.register(claudeShellAddon);
+
+    const target = makeStateful('shell', {
+      addons: { 'claude-shell': {} },
+    });
+
+    const rendered = await withStubbedFetch(() =>
+      expandAddons([target], {
+        ...baseContext,
+        registry,
+        connectedServices: { tailscale: makeStubTailscaleService() },
+      }),
+    );
+
+    expect(rendered[0].containerConfig.env).not.toHaveProperty('GIT_SSH_KEY');
+  });
+
+  it('does NOT inject GIT_SSH_KEY when the Vault path exists but privateKey is an empty string', async () => {
+    mockKvRead.mockResolvedValue({ privateKey: '' });
+
     const registry = createAddonRegistry();
     registry.register(claudeShellAddon);
 

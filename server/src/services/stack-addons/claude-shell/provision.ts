@@ -7,7 +7,69 @@ import {
 } from '@mini-infra/types';
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
+import { getLogger } from '../../../lib/logger-factory';
+import {
+  getVaultKVService,
+  VaultKVError,
+  type VaultKVService,
+} from '../../vault/vault-kv-service';
 import type { ClaudeShellConfig } from './manifest';
+
+const log = getLogger('stacks', 'claude-shell-provision');
+
+/**
+ * Vault KV path convention for the per-service git deploy key (plan §4.3).
+ * Mirrored in `stacks-git-deploy-key-route.ts`; the convention lives in two
+ * places intentionally — the route owns the write surface, the addon owns
+ * the read surface, and both must agree without one importing the other's
+ * module (the addon already has a tightly-scoped import surface).
+ */
+function buildGitDeployKeyPath(stackId: string, serviceName: string): string {
+  return `stacks/${stackId}/services/${serviceName}/git-deploy-key`;
+}
+
+/**
+ * Read the per-service git deploy key from Vault KV at apply time. Returns
+ * `null` when the path is absent (no key configured for this service) or
+ * when the path exists but has no `privateKey` field. Re-raises any other
+ * Vault error so apply fails clearly when Vault is reachable but
+ * permission-denied / sealed / etc.
+ *
+ * NEVER LOGS THE KEY MATERIAL. Logs the marker `present` / `absent` only.
+ *
+ * Exposed only via `provisionClaudeShell` — the KV service is passed in so
+ * tests can stub it without touching the singleton.
+ */
+async function readGitDeployKey(
+  kv: Pick<VaultKVService, 'read'>,
+  stackId: string,
+  serviceName: string,
+): Promise<string | null> {
+  const path = buildGitDeployKeyPath(stackId, serviceName);
+  try {
+    const data = await kv.read(path);
+    if (data === null) {
+      log.debug({ stackId, serviceName }, 'git-deploy-key: absent (no path)');
+      return null;
+    }
+    const raw = (data as Record<string, unknown>).privateKey;
+    if (typeof raw !== 'string' || raw.length === 0) {
+      log.debug(
+        { stackId, serviceName },
+        'git-deploy-key: absent (path present but privateKey field missing/empty)',
+      );
+      return null;
+    }
+    log.info({ stackId, serviceName }, 'git-deploy-key: present (injecting GIT_SSH_KEY)');
+    return raw;
+  } catch (err) {
+    if (err instanceof VaultKVError && err.code === 'path_not_found') {
+      log.debug({ stackId, serviceName }, 'git-deploy-key: absent (path_not_found)');
+      return null;
+    }
+    throw err;
+  }
+}
 
 /**
  * Connected-service lookup the addon framework hands into `provision()`.
@@ -51,13 +113,20 @@ function asLookup(input: unknown): AddonConnectedServicesLookup {
  * which sets the same caps on the sidecar peer; here we set them on the
  * target instead, since the target runs tailscaled itself.
  *
- * `GIT_SSH_KEY` is NOT emitted here — Phase 5 plumbs the Vault deploy-key
- * path. The entrypoint already handles `GIT_SSH_KEY` being absent (it just
- * skips writing the key and the clone will fail/skip for private repos,
- * which is the correct behaviour for Phase 3 — public repos clone fine).
+ * `GIT_SSH_KEY` is emitted when a per-service git deploy key has been
+ * written to Vault at the path `stacks/${stackId}/services/${serviceName}/git-deploy-key`
+ * (plan §4.3, Phase 5). The Phase 1 entrypoint handles the absence
+ * gracefully so unauthenticated public-repo clones still work — for a
+ * private repo the operator uploads the key via the
+ * `/api/stacks/:stackId/services/:serviceName/git-deploy-key` route.
+ *
+ * Test seam: the optional second argument lets tests substitute a fake
+ * VaultKVService so the addon can be exercised without standing up Vault.
+ * Production callers leave it undefined and the singleton is used.
  */
 export async function provisionClaudeShell(
   ctx: ProvisionContext,
+  kvOverride?: Pick<VaultKVService, 'read'>,
 ): Promise<EnvInjectionProvisionedValues> {
   const config = ctx.addonConfig as ClaudeShellConfig;
   const lookup = asLookup(ctx.connectedServices);
@@ -109,6 +178,22 @@ export async function provisionClaudeShell(
   };
   if (config.gitRepo) {
     envForTarget.GIT_REPO_URL = config.gitRepo;
+  }
+
+  // Phase 5: optional git deploy key from Vault. Reading the value at
+  // provision time (rather than emitting a `dynamicEnv: { kind: 'vault-kv' }`
+  // entry resolved later) keeps the addon's surface small — claude-shell
+  // doesn't have a vaultAppRole binding, and the rest of the dynamicEnv
+  // pipeline is structured around AppRole-bound services. The injector reads
+  // through the same admin-token broker that resolves vault-kv dynamicEnv
+  // entries, so the privilege model is unchanged.
+  //
+  // NEVER LOG OR ECHO THE KEY MATERIAL. `readGitDeployKey` only emits the
+  // present/absent marker.
+  const kv = kvOverride ?? getVaultKVService();
+  const gitSshKey = await readGitDeployKey(kv, ctx.stack.id, ctx.service.name);
+  if (gitSshKey) {
+    envForTarget.GIT_SSH_KEY = gitSshKey;
   }
 
   return {
