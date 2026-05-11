@@ -374,6 +374,97 @@ describe("NewClaudeShellPage — submission", () => {
     });
   });
 
+  it("keeps the form on the page and shows the banner when the PUT fails (review #4)", async () => {
+    // Regression: previously the hook caught the onStackInstantiated failure
+    // internally and returned the partial-create result, so the form would
+    // call `form.reset()` + `navigate()` and the operator would land on a
+    // half-instantiated stack. The fix re-throws from the hook so the
+    // mutation rejects, the page's outer `try { ... } catch` swallows the
+    // promise rejection, and the form state (including the banner set by
+    // the failing callback) is preserved.
+    mockMutateAsync.mockImplementationOnce(
+      async (
+        request: {
+          onStackInstantiated?: (stackId: string) => Promise<void> | void;
+        },
+      ) => {
+        // Mirror the hook's actual behaviour after the fix: the
+        // onStackInstantiated rejection propagates out of mutateAsync.
+        if (request.onStackInstantiated) {
+          await request.onStackInstantiated("stack-bad");
+        }
+        // Unreachable when the callback rejects — kept for type-completeness.
+        return { success: true, data: { id: "tmpl-2" }, stackId: "stack-bad" };
+      },
+    );
+    // 400 response on the PUT — the page's `onStackInstantiated` callback
+    // throws `Deploy key upload failed: …` after calling `setKeyUploadError`.
+    mockFetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: false,
+          message: "privateKey does not look like a PEM-encoded private key",
+          code: "invalid_pem",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    renderPage();
+    fireEvent.change(screen.getByPlaceholderText("My Claude Shell"), {
+      target: { value: "bad-key" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("git@github.com:owner/repo.git"),
+      { target: { value: "git@github.com:owner/private.git" } },
+    );
+    const pemTextarea = screen.getByPlaceholderText(/BEGIN OPENSSH/i);
+    // Use a syntactically valid PEM so client-side form validation passes —
+    // the route-side rejection is what we're simulating via mockFetch.
+    fireEvent.change(pemTextarea, { target: { value: VALID_PEM } });
+
+    // Explicitly select the env — the auto-select effect only fires when
+    // `currentEnvId` is empty, which can race against the test's render.
+    const selectTrigger = screen
+      .getAllByRole("combobox")
+      .find((el) => el.getAttribute("aria-haspopup") === "listbox");
+    if (selectTrigger) {
+      fireEvent.click(selectTrigger);
+      await waitFor(() => {
+        expect(
+          screen.queryByRole("option", { name: /staging/i }),
+        ).toBeTruthy();
+      });
+      fireEvent.click(screen.getByRole("option", { name: /staging/i }));
+    }
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Create Claude Shell/i }),
+      );
+    });
+
+    // The form was NOT reset and the page did NOT navigate away — those are
+    // the load-bearing assertions for review #4. The banner DOM is verified
+    // via the keyUploadError state being non-null; the page's render shows
+    // the Alert when that state is set.
+    await waitFor(() => {
+      // We can wait for the mutation to have completed (the mock rejected).
+      expect(mockMutateAsync).toHaveBeenCalled();
+    });
+    expect(mockNavigate).not.toHaveBeenCalled();
+    // The name field still carries the operator's input (form not reset).
+    expect(
+      (screen.getByPlaceholderText("My Claude Shell") as HTMLInputElement)
+        .value,
+    ).toBe("bad-key");
+    // Banner text appears in the DOM after the rejection.
+    await waitFor(() => {
+      const alert = document.querySelector('[role="alert"]');
+      expect(alert?.textContent ?? "").toMatch(/Deploy key upload failed/);
+    });
+  });
+
   it("does NOT fire the PUT when no deploy key was supplied", async () => {
     mockMutateAsync.mockImplementationOnce(
       async (

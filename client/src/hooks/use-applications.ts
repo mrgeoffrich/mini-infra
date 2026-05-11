@@ -456,24 +456,37 @@ export function useCreateApplication() {
 
       // If deployImmediately, instantiate and apply
       if (request.deployImmediately && request.environmentId) {
+        const stackResult = await instantiateApplication(
+          result.data.id,
+          { name: result.data.name, environmentId: request.environmentId },
+          correlationId,
+        );
+        // Run the post-instantiate hook (e.g. claude-shell deploy-key upload)
+        // before kicking off apply so the first apply already sees Vault.
+        // Failure here MUST reject so the form stays on the page and the
+        // operator can correct the input (review #4). Returning the
+        // partial-create result would let the form `.reset()` + navigate
+        // away while a half-created stack sits behind in the backend.
+        //
+        // Edge case: when `onStackInstantiated` throws, the stack template
+        // is already created + instantiated. We intentionally leave the
+        // stack un-applied — the operator can retry the key upload from
+        // the stack detail page (option (c) per the review). The form's
+        // banner + outer `onError` toast surface the failure.
+        if (request.onStackInstantiated) {
+          await request.onStackInstantiated(stackResult.data.id);
+        }
         try {
-          const stackResult = await instantiateApplication(
-            result.data.id,
-            { name: result.data.name, environmentId: request.environmentId },
-            correlationId,
-          );
-          // Run the post-instantiate hook (e.g. claude-shell deploy-key upload)
-          // before kicking off apply so the first apply already sees Vault.
-          if (request.onStackInstantiated) {
-            await request.onStackInstantiated(stackResult.data.id);
-          }
           // Register task tracking before apply starts
           request.onStackCreated?.(stackResult.data.id);
           // Apply is fire-and-forget (progress via Socket.IO)
           await applyStack(stackResult.data.id, correlationId);
           return { ...result, stackId: stackResult.data.id };
         } catch (err) {
-          // Template was created successfully, but deploy failed
+          // Template was created + instantiated successfully, but the
+          // apply trigger itself failed (network blip, server-side
+          // validation, etc.). The stack is durable — toast the partial
+          // success and let the operator retry from the applications list.
           toast.error(
             err instanceof Error
               ? `Application created but deployment failed: ${err.message}`
