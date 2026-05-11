@@ -76,6 +76,16 @@ const (
 	SubjectUpdateHealthCheckPassed  = "mini-infra.update.health-check-passed"
 )
 
+// JobPool run-lifecycle subjects (Phase 2 of job-pool-service-type).
+//
+// Per-pool subjects are built at runtime as
+// `mini-infra.job-pool.<stackId>.<serviceName>.<verb>`. The base prefix below
+// is what the drift check pins against; concrete per-pool subjects are not
+// listed here (the set is unbounded).
+const (
+	SubjectJobPoolBase = "mini-infra.job-pool"
+)
+
 // AllSubjects is the flat list used by the TS↔Go drift check. Order matches
 // `ALL_NATS_SUBJECTS` in `lib/types/nats-subjects.ts` (subjects-as-set
 // equality is what the check enforces, but mirroring the order makes diffs
@@ -101,4 +111,5 @@ var AllSubjects = []string{
 	SubjectUpdateCompleted,
 	SubjectUpdateFailed,
 	SubjectUpdateHealthCheckPassed,
+	SubjectJobPoolBase,
 }

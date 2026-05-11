@@ -6,6 +6,14 @@ export interface DockerContainerEvent {
   containerName: string;
   labels: Record<string, string>;
   time: number;
+  /**
+   * Container exit code, present only on `die` events (Docker writes
+   * `exitCode` into the event's `Actor.Attributes`). Parsed as an integer
+   * when present, otherwise `undefined`. The JobPool exit watcher reads this
+   * to decide between `completed` and `failed` lifecycle transitions; other
+   * consumers can ignore it.
+   */
+  exitCode?: number;
 }
 
 export interface PatternDetectorOptions {

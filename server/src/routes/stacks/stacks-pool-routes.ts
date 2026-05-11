@@ -144,6 +144,8 @@ function serializeInstance(row: PoolInstanceDb): PoolInstanceInfo {
     createdAt: row.createdAt.toISOString(),
     stoppedAt: row.stoppedAt?.toISOString() ?? null,
     errorMessage: row.errorMessage,
+    exitCode: row.exitCode,
+    finishedAt: row.finishedAt?.toISOString() ?? null,
   };
 }
 

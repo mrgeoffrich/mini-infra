@@ -14,6 +14,7 @@ import { findEmptyStackParameters } from '../../services/stacks/parameter-valida
 import { evaluatePrerequisites } from '../../services/stacks/template-prerequisites';
 import { runStackVaultApplyPhase } from '../../services/stacks/stack-vault-apply-orchestrator';
 import { runStackNatsApplyPhase } from '../../services/stacks/stack-nats-apply-orchestrator';
+import { applyJobPoolStreamsForStack } from '../../services/stacks/job-pool-stream-reconciler';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
 import {
@@ -256,6 +257,19 @@ async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       });
       if (natsPhase.status === 'error') {
         throw new Error(natsPhase.error ?? 'NATS reconciliation phase failed');
+      }
+      // JobPool history streams (Phase 2 of job-pool-service-type): reconcile
+      // one per-pool JetStream stream per JobPool service on the stack.
+      // No-op when the stack has no JobPool services. Failures are logged
+      // inside the reconciler — JobPool history streams are observability,
+      // not correctness-critical, so a NATS-side blip can't fail the apply.
+      try {
+        await applyJobPoolStreamsForStack(prisma, stackId);
+      } catch (err) {
+        logger.warn(
+          { stackId, err: err instanceof Error ? err.message : String(err) },
+          'JobPool history-stream reconcile failed (continuing apply)',
+        );
       }
 
       // Re-promote `requiredEgress` declarations into template-source

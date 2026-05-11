@@ -367,13 +367,24 @@ class DockerService {
                   }
                 }
 
-                // Fire typed container event callbacks (e.g., crash loop detector)
+                // Fire typed container event callbacks (e.g., crash loop detector,
+                // JobPool exit watcher). `exitCode` is only meaningful on `die`
+                // events — Docker still includes the attribute on other actions
+                // sometimes but the value is the prior `die`'s code, so we
+                // only forward it when the action is actually `die`.
+                const exitCodeAttr = event.Actor?.Attributes?.exitCode;
+                let exitCode: number | undefined;
+                if (event.Action === "die" && exitCodeAttr !== undefined) {
+                  const parsed = Number.parseInt(String(exitCodeAttr), 10);
+                  if (Number.isFinite(parsed)) exitCode = parsed;
+                }
                 const typedEvent: DockerContainerEvent = {
                   action: event.Action,
                   containerId: event.id || event.Actor?.ID || "",
                   containerName: event.Actor?.Attributes?.name || "",
                   labels: event.Actor?.Attributes || {},
                   time: event.time || Math.floor(Date.now() / 1000),
+                  ...(exitCode !== undefined ? { exitCode } : {}),
                 };
                 for (const cb of this.containerEventCallbacks) {
                   try {

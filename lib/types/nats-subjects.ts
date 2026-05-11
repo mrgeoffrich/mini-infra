@@ -110,6 +110,83 @@ export const BackupSubject = {
   failed: "mini-infra.backup.failed",
 } as const;
 
+/**
+ * JobPool run-lifecycle subjects (Phase 2 of job-pool-service-type).
+ *
+ * Subjects are parameterised by `<stackId>` and `<serviceName>` — the
+ * declaring stack + service. The history stream that captures the durable
+ * `completed`/`failed` events is per-pool (`JobHistory-<stackId>-<service>`);
+ * `run-skipped` is plain pub/sub for observability of cap-hit scheduled runs.
+ *
+ * Use the builder functions rather than concatenating strings manually so
+ * the depth check in the operator-path prefix bootstrap stays correct.
+ */
+export const JobPoolSubject = {
+  /** Static base — every per-pool subject starts with this token. */
+  base: "mini-infra.job-pool",
+  /** Event (JetStream): a run finished with exit code 0. */
+  completed: (stackId: string, serviceName: string): string =>
+    `mini-infra.job-pool.${stackId}.${serviceName}.completed`,
+  /** Event (JetStream): a run finished with a non-zero exit code (or was killed). */
+  failed: (stackId: string, serviceName: string): string =>
+    `mini-infra.job-pool.${stackId}.${serviceName}.failed`,
+  /** Event (plain pub/sub): a trigger fired but the cap was hit, so no run was started. */
+  runSkipped: (stackId: string, serviceName: string): string =>
+    `mini-infra.job-pool.${stackId}.${serviceName}.run-skipped`,
+  /** Wildcard parent used by stream/consumer subscription filters. */
+  wildcardForPool: (stackId: string, serviceName: string): string =>
+    `mini-infra.job-pool.${stackId}.${serviceName}.>`,
+} as const;
+
+/**
+ * Maximum length of a JetStream stream name. NATS itself permits up to 256
+ * characters, but the SDK validation and most operational tooling assume
+ * shorter names; we keep our per-pool names within 32 chars to match the
+ * length of all other Mini Infra stream constants. Names that would exceed
+ * this collapse the variable portion (`<stackId>-<service>`) onto an 8-char
+ * blake-2b-ish hex digest so two different (stackId, service) pairs always
+ * produce two different stream names.
+ */
+const JOB_HISTORY_STREAM_NAME_MAX = 32;
+
+/** Stable, dependency-free 32-bit FNV-1a hash → 8-char hex suffix. */
+function shortHashHex(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+/**
+ * Derive the JetStream stream name for a JobPool's history stream. Stable for
+ * a given (stackId, serviceName) pair — both the operator-path stream creator
+ * and any future client-side history reader must call this so the two sides
+ * never drift on which stream to address.
+ *
+ * Format: `JobHistory-<stackId-suffix>-<serviceName>`. When the obvious join
+ * would exceed `JOB_HISTORY_STREAM_NAME_MAX`, the variable portion is replaced
+ * by a deterministic short hash so the name stays under the limit.
+ */
+export function jobHistoryStreamName(stackId: string, serviceName: string): string {
+  // Sanitize to the character set NATS allows in stream names (no `.`, no
+  // `*`, no `>`, no spaces). The stack ID is a cuid/ULID-ish opaque token in
+  // practice but a sanitisation pass keeps a forward-compat door open if the
+  // ID scheme ever changes.
+  const safeStack = stackId.replace(/[^A-Za-z0-9_-]/g, "");
+  const safeService = serviceName.replace(/[^A-Za-z0-9_-]/g, "");
+  const candidate = `JobHistory-${safeStack}-${safeService}`;
+  if (candidate.length <= JOB_HISTORY_STREAM_NAME_MAX) return candidate;
+  // Hash the unsanitised inputs together so collisions are vanishingly
+  // unlikely even on stack-IDs that share a sanitised prefix.
+  const hash = shortHashHex(`${stackId}|${serviceName}`);
+  // Keep a short readable service prefix so operators can still spot which
+  // pool a stream belongs to from `nats stream ls`.
+  const readable = safeService.slice(0, 12);
+  return `JobHistory-${hash}-${readable}`.slice(0, JOB_HISTORY_STREAM_NAME_MAX);
+}
+
 /** Phase 5 (optional): self-update sidecar subjects. Reserved. */
 export const UpdateSubject = {
   run: "mini-infra.update.run",
@@ -130,6 +207,8 @@ export const NatsWildcard = {
   backupProgressAll: "mini-infra.backup.progress.>",
   updateAll: "mini-infra.update.>",
   updateProgressAll: "mini-infra.update.progress.>",
+  /** Every JobPool run-lifecycle subject across every pool. */
+  jobPoolAll: "mini-infra.job-pool.>",
 } as const;
 
 /**
@@ -190,4 +269,10 @@ export const ALL_NATS_SUBJECTS: readonly string[] = [
   UpdateSubject.completed,
   UpdateSubject.failed,
   UpdateSubject.healthCheckPassed,
+  // JobPool (Phase 2): subjects are parameterised per (stackId, serviceName).
+  // The static base lives in the registry as a parent so the
+  // KnownNatsSubject type stays exhaustive; concrete per-pool subjects use
+  // `unchecked: true` at publish/subscribe sites and validate inline against
+  // the same Zod schemas exported from payload-schemas.ts.
+  JobPoolSubject.base,
 ] as const;
