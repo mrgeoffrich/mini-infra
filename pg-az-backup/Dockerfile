@@ -7,7 +7,7 @@ FROM alpine:3.23
 # so we grab the upstream-published static Linux binary. Pinning to a
 # specific release keeps the image build deterministic.
 RUN apk update && apk upgrade && \
-    apk add --no-cache bash curl postgresql-client gzip nodejs npm ca-certificates
+    apk add --no-cache bash curl postgresql-client gzip nodejs npm ca-certificates jq
 
 ARG NATS_CLI_VERSION=0.4.0
 # `unzip` is a virtual dep — installed before extracting the NATS CLI zip and

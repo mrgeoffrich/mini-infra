@@ -63,14 +63,54 @@ fi
 
 LOCAL_FILE="downloaded_backup"
 
+# JobPool-spawned containers race the egress-gateway's container-map push
+# when they bring up a brand-new container — for a few seconds the egress
+# gateway sees the container's source IP as "unmapped" and returns HTTP
+# 403 to all CONNECTs. Backport the 6-attempt retry shape from
+# `backup.sh:91-128` so a fresh-spawn restore doesn't fail on the first
+# download attempt (MINI-50 review finding M7 — the framework-level
+# pool-spawner ack fix is filed as MINI-63 follow-up). The retry budget
+# covers the worst-case observed 5-second propagation delay; if every
+# retry trips 403 it's a real egress-policy issue and the script exits
+# non-zero so the JobPool exit watcher records the failure.
+azure_download() {
+    curl -s -o "$LOCAL_FILE" -D /tmp/download-headers.txt -w "%{http_code}" "$AZURE_SAS_URL"
+}
+
 case "$STORAGE_PROVIDER" in
     azure)
         log "Downloading backup from Azure Blob Storage"
-        HTTP_CODE=$(curl -s -o "$LOCAL_FILE" -w "%{http_code}" "$AZURE_SAS_URL")
-        if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            log "Download completed successfully"
-        else
-            echo "Error: Azure download failed with HTTP ${HTTP_CODE}" >&2
+        DOWNLOAD_ATTEMPTS=0
+        HTTP_CODE=000
+        while [ "$DOWNLOAD_ATTEMPTS" -lt 6 ]; do
+            DOWNLOAD_ATTEMPTS=$((DOWNLOAD_ATTEMPTS + 1))
+            HTTP_CODE=$(azure_download || echo 000)
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+                log "Download completed successfully (HTTP ${HTTP_CODE}, attempt ${DOWNLOAD_ATTEMPTS})"
+                break
+            fi
+            if [ "$HTTP_CODE" = "403" ]; then
+                # curl writes the response body into $LOCAL_FILE on a 403 — peek
+                # at it to detect the egress-gateway not-mapped marker. If it
+                # matches, sleep + retry. If it doesn't, fall through to the
+                # generic retry (still bounded by the budget).
+                BODY=$(head -c 200 "$LOCAL_FILE" 2>/dev/null || true)
+                if echo "$BODY" | grep -q "is not mapped to a managed stack"; then
+                    log "Download attempt ${DOWNLOAD_ATTEMPTS} hit egress-gateway IP-not-mapped race — sleeping 2s and retrying"
+                    rm -f "$LOCAL_FILE"
+                    sleep 2
+                    continue
+                fi
+            fi
+            log "Download attempt ${DOWNLOAD_ATTEMPTS} failed (HTTP ${HTTP_CODE})"
+            rm -f "$LOCAL_FILE"
+            sleep 2
+        done
+        if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Error: Azure download failed after ${DOWNLOAD_ATTEMPTS} attempts (last HTTP ${HTTP_CODE})" >&2
+            echo "Last response body:" >&2
+            head -c 500 "$LOCAL_FILE" 2>/dev/null >&2 || true
+            echo >&2
             rm -f "$LOCAL_FILE"
             exit 1
         fi
