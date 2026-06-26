@@ -84,4 +84,6 @@ __pycache__/
 
 # Per-worktree dev environment snapshot written by deployment/development/worktree_start.sh
 environment-details.xml
+# Local debugging target + API key (never commit — contains a live key)
+environment-config.xml
 .tmp/
