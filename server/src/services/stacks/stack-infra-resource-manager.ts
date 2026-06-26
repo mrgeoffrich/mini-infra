@@ -7,6 +7,7 @@ import type {
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import type { StackContainerManager } from './stack-container-manager';
+import { connectSelfToNetwork } from './self-network-reattach';
 
 /**
  * Manages Docker networks and InfraResource records that back a stack's
@@ -196,26 +197,14 @@ export class StackInfraResourceManager {
       return;
     }
 
-    const docker = this.dockerExecutor.getDockerClient();
-
     for (const output of resourceOutputs) {
       if (!output.joinSelf || output.type !== 'docker-network') continue;
 
       const netName = outputNetworkMap.get(output.purpose);
       if (!netName) continue;
 
-      try {
-        const network = docker.getNetwork(netName);
-        await network.connect({ Container: selfId });
+      if (await connectSelfToNetwork(this.dockerExecutor, selfId, netName, log)) {
         log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
-      } catch (err) {
-        const e = err as { message?: string; statusMessage?: string; statusCode?: number };
-        const msg = e?.message || e?.statusMessage || '';
-        if (!msg.includes('already exists') && e?.statusCode !== 403) {
-          log.warn({ network: netName, purpose: output.purpose, error: msg }, 'Failed to join self to infra resource network');
-        } else {
-          log.debug({ network: netName }, 'Already connected to infra resource network');
-        }
       }
     }
   }
