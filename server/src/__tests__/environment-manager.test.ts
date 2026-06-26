@@ -44,11 +44,9 @@ vi.mock('../services/docker', () => ({
 }));
 
 // Mock EgressNetworkAllocator
-const mockAllocateSubnet = vi.fn().mockResolvedValue({ subnet: '172.30.0.0/24', gateway: '172.30.0.1' });
 vi.mock('../services/egress/egress-network-allocator', () => ({
   EgressNetworkAllocator: function() {
     return {
-      allocateSubnet: mockAllocateSubnet,
       allocateGatewayIp: vi.fn().mockResolvedValue('172.30.0.2'),
     };
   },
@@ -128,6 +126,9 @@ describe('EnvironmentManager', () => {
         getNetwork: vi.fn().mockReturnValue({
           connect: vi.fn().mockResolvedValue(undefined),
           disconnect: vi.fn().mockResolvedValue(undefined),
+          inspect: vi.fn().mockResolvedValue({
+            IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+          }),
         }),
       }),
     } as any;
@@ -141,7 +142,6 @@ describe('EnvironmentManager', () => {
       duration: 100,
     });
     mockReconcilerStopStack.mockResolvedValue({ success: true, stoppedContainers: 1 });
-    mockAllocateSubnet.mockResolvedValue({ subnet: '172.30.0.0/24', gateway: '172.30.0.1' });
 
     environmentManager = EnvironmentManager.getInstance(mockPrisma);
   });
@@ -332,10 +332,10 @@ describe('EnvironmentManager', () => {
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
 
-      // Make egress subnet allocation throw — provisionEgressGateway swallows
-      // it, but the UserEvent should still finalise as `completed` (env is
-      // usable) with a warning entry in the logs. The HTTP response is unaffected.
-      mockAllocateSubnet.mockRejectedValueOnce(new Error('allocator unavailable'));
+      // Make an egress provisioning step throw — provisionEgressGateway swallows
+      // it, but the UserEvent should still finalise (env is usable) with a
+      // warning entry in the logs. The HTTP response is unaffected.
+      mockDockerExecutor.networkExists.mockRejectedValueOnce(new Error('docker unavailable'));
 
       const request = { name: 'test-env', type: 'nonproduction' as const };
 
