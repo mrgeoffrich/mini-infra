@@ -66,6 +66,7 @@ import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
+import { reattachSelfToManagedNetworks } from "./services/stacks/self-network-reattach";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
@@ -163,6 +164,26 @@ const initializeServices = async () => {
     await dockerService.initialize();
     console.log("[STARTUP] ✓ Docker service initialized");
 
+    // Re-attach the server container to its managed infra networks (vault, nats,
+    // dataplane, database, and each env's egress network — every `joinSelf`
+    // infra-resource network). These are joined at stack-apply time, but a
+    // container recreate (e.g. `docker compose up -d`) wipes them and the
+    // already-synced host stacks don't re-apply on boot, so the server would
+    // otherwise be unable to reach Vault/NATS/managed DBs. Best-effort — never
+    // blocks boot. Runs inline now (Docker connected at boot on a configured
+    // host) and again from the onConnect callback below (covers the degraded
+    // worktree case where Docker connects only after the seeder posts the host).
+    const reattachInfraNetworks = async () => {
+      try {
+        const exec = new DockerExecutorService();
+        await exec.initialize();
+        await reattachSelfToManagedNetworks(exec, prisma, logger);
+      } catch (err) {
+        logger.warn({ err }, "Re-attaching to managed infra networks failed (non-fatal)");
+      }
+    };
+    await reattachInfraNetworks();
+
     // Re-provision sidecars after Docker reconnects. On a fresh-boot worktree
     // the DB has no docker host yet, so initialize() lands in degraded mode
     // and the inline ensureXxx calls below fail. Once the seeder posts the
@@ -171,6 +192,9 @@ const initializeServices = async () => {
     // Both ensureXxx are idempotent — safe if they already succeeded inline.
     dockerService.onConnect(async () => {
       logger.info("Docker connected, re-provisioning sidecars");
+      // Re-attach to managed infra networks first so Vault/NATS are reachable
+      // for the fw-agent bootstrap (and everything else) below.
+      await reattachInfraNetworks();
       try {
         // ALT-27: fw-agent is now a host-scope stack. The bootstrap is
         // idempotent — if the stack is already applied this is a couple
