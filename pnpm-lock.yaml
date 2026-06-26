@@ -8,7 +8,7 @@ overrides:
   lodash: ^4.18.0
   defu: ^6.1.5
   path-to-regexp: ^8.4.0
-  js-yaml: ^4.1.1
+  js-yaml: ^5.0.0
   '@azure/msal-node': ^5.1.5
   '@hono/node-server': ^1.19.14
   vite: ~8.0.16
@@ -21,15 +21,12 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0
     devDependencies:
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
       concurrently:
         specifier: ^10.0.3
         version: 10.0.3
       js-yaml:
-        specifier: ^4.1.1
-        version: 4.1.1
+        specifier: ^5.0.0
+        version: 5.0.0
       tsx:
         specifier: ^4.22.4
         version: 4.22.4
@@ -220,9 +217,6 @@ importers:
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.5.0(jiti@2.7.0))
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
       '@types/node':
         specifier: ^26.0.0
         version: 26.0.0
@@ -248,8 +242,8 @@ importers:
         specifier: ^17.6.0
         version: 17.6.0
       js-yaml:
-        specifier: ^4.1.1
-        version: 4.1.1
+        specifier: ^5.0.0
+        version: 5.0.0
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
@@ -2370,9 +2364,6 @@ packages:
   '@types/http-errors@2.0.5':
     resolution: {integrity: sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg==}
 
-  '@types/js-yaml@4.0.9':
-    resolution: {integrity: sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg==}
-
   '@types/json-schema@7.0.15':
     resolution: {integrity: sha512-5+fP8P8MFNC+AyZCDxrB2pkZFPGzqQWUzpSeuuVLvm8VMcorNYavBqoFcxK8bQz4Qsbn4oUEEem4wDLfcysGHA==}
 
@@ -3905,8 +3896,8 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@4.1.1:
-    resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
+  js-yaml@5.0.0:
+    resolution: {integrity: sha512-GSvaPUbk1U+FMZ7rJzF+F8e5YVtu7KnD40et/5rBXXRBv2jCO9L3qCewvIDDdudC0QycTFlf6EAA+h3kxBsuUw==}
     hasBin: true
 
   jsdom@29.1.1:
@@ -7540,8 +7531,6 @@ snapshots:
 
   '@types/http-errors@2.0.5': {}
 
-  '@types/js-yaml@4.0.9': {}
-
   '@types/json-schema@7.0.15': {}
 
   '@types/jsonwebtoken@9.0.10':
@@ -9205,7 +9194,7 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@4.1.1:
+  js-yaml@5.0.0:
     dependencies:
       argparse: 2.0.1
 

@@ -1,4 +1,4 @@
-import yaml from "js-yaml";
+import * as yaml from "js-yaml";
 import type {
   DraftVersionInput,
   StackTemplateVersionInfo,
@@ -92,8 +92,6 @@ export function serializeVersionToYaml(
     lineWidth: 120,
     noRefs: true,
     sortKeys: false,
-    // `content` inside configFiles is often multi-line; use block scalar.
-    styles: { "!!null": "empty" },
   });
 }
 
