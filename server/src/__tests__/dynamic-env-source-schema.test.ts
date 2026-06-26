@@ -25,6 +25,21 @@ describe('dynamicEnvSource — discriminated union', () => {
   it('accepts pool-management-token referencing a service name', () => {
     expect(parseDyn({ A: { kind: 'pool-management-token', poolService: 'worker' } }).success).toBe(true);
   });
+
+  it('accepts cloudflare-tunnel-token', () => {
+    expect(parseDyn({ TUNNEL_TOKEN: { kind: 'cloudflare-tunnel-token' } }).success).toBe(true);
+  });
+
+  it('accepts cloudflare-tunnel-token with restartPolicy="unless-stopped" (durable credential, not single-use)', () => {
+    // The cloudflared connector stays up (unless-stopped) and re-reads its
+    // token from env on every restart. Unlike vault-wrapped-secret-id, the
+    // token is durable, so it must NOT trip the single-use restart guard.
+    const r = stackContainerConfigSchema.safeParse({
+      dynamicEnv: { TUNNEL_TOKEN: { kind: 'cloudflare-tunnel-token' } },
+      restartPolicy: 'unless-stopped',
+    });
+    expect(r.success).toBe(true);
+  });
 });
 
 describe('dynamicEnvSource — vault-kv (new in Phase 1)', () => {
