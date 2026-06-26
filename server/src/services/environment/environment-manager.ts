@@ -601,38 +601,66 @@ export class EnvironmentManager {
       await executor.initialize();
       const allocator = new EgressNetworkAllocator(this.prisma);
 
-      // Step 1: Determine subnet. If the egress network already exists (e.g.
-      // from a prior failed attempt, or external creation), use its subnet so
-      // we stay consistent with reality. Otherwise allocate a fresh /24 from
-      // the pool.
+      // Step 1: Create the egress Docker network if it doesn't exist yet,
+      // letting Docker's IPAM assign the subnet. We deliberately don't prescribe
+      // a subnet — a hardcoded pool collides with whatever other networks
+      // already exist on the host, whereas Docker never double-allocates within
+      // a daemon and skips ranges that overlap host routes. Creating it up-front
+      // (before the egress-gateway stack apply) lets mini-infra-server join
+      // (Step 3b) and lets us pick a non-colliding gateway IP (Step 3c) before
+      // any container races onto the network.
+      const networkAlreadyExists = await executor.networkExists(egressNetworkName);
+      if (!networkAlreadyExists) {
+        try {
+          await executor.createNetwork(egressNetworkName, '', {
+            driver: 'bridge',
+            labels: {
+              'mini-infra.infra-resource': 'true',
+              'mini-infra.resource-purpose': 'egress',
+              'mini-infra.environment': environmentId,
+            },
+          });
+        } catch (netErr) {
+          const msg = netErr instanceof Error ? netErr.message : String(netErr);
+          this.logger.error({ environmentId, err: msg }, 'Failed to create egress network for env');
+          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: egress network create failed: ${msg}`);
+          // Fall through — the network may already exist (race / prior run); the
+          // inspect below is the source of truth and returns if it's truly absent.
+        }
+      }
+
+      // Step 2: Read back the subnet + bridge gateway Docker assigned (the same
+      // path serves an already-existing network) and record them on the egress
+      // InfraResource. The record is a cache of Docker's truth, refreshed from
+      // inspect — never a value we feed back into network creation. Downstream
+      // consumers and allocateGatewayIp's fallback read the subnet from here.
       let subnet: string;
       let gateway: string;
-      const networkAlreadyExists = await executor.networkExists(egressNetworkName);
-      if (networkAlreadyExists) {
+      try {
         const dockerClient = executor.getDockerClient();
         const inspect = await dockerClient.getNetwork(egressNetworkName).inspect();
         const ipamCfg = inspect.IPAM?.Config?.[0];
         if (!ipamCfg?.Subnet) {
-          throw new Error(`Existing network ${egressNetworkName} has no IPAM subnet`);
+          throw new Error(`Egress network ${egressNetworkName} has no IPAM subnet`);
         }
         subnet = ipamCfg.Subnet;
         const subnetOctets = subnet.split('/')[0].split('.');
         gateway = ipamCfg.Gateway ?? `${subnetOctets.slice(0, 3).join('.')}.1`;
-        this.logger.info({ environmentId, subnet, gateway, egressNetworkName }, 'Reusing existing egress network subnet');
-      } else {
-        const allocated = await allocator.allocateSubnet();
-        subnet = allocated.subnet;
-        gateway = allocated.gateway;
+        this.logger.info({ environmentId, subnet, gateway, egressNetworkName }, 'Recorded egress network subnet from Docker');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress network ${egressNetworkName} ready (subnet ${subnet})`);
+      } catch (inspectErr) {
+        const msg = inspectErr instanceof Error ? inspectErr.message : String(inspectErr);
+        this.logger.error({ environmentId, egressNetworkName, err: msg }, 'Failed to inspect egress network for subnet');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: could not read egress network subnet: ${msg}`);
+        return;
       }
 
       // Note: egressGatewayIp is allocated after the network exists and the
       // mini-infra-server has joined, so we can pick the first IP that isn't
       // already taken. See "Step 3c" below.
 
-      // Step 2: Pre-create the InfraResource record with the subnet in metadata
-      // so that when the egress-gateway stack runs reconcileOutputs it reuses
-      // this subnet for the egress network. Use upsert-by-findFirst since
-      // SQLite NULL uniqueness prevents true upsert.
+      // Record the subnet + gateway on the egress InfraResource. Use
+      // upsert-by-findFirst since SQLite NULL uniqueness prevents true upsert.
       const existingResource = await this.prisma.infraResource.findFirst({
         where: { type: 'docker-network', purpose: 'egress', scope: 'environment', environmentId },
       });
@@ -655,30 +683,6 @@ export class EnvironmentManager {
             metadata: { subnet, gateway } as Prisma.InputJsonValue,
           },
         });
-      }
-
-      // Step 3a: Create the egress Docker network up-front with the allocated
-      // subnet. We do this before the egress-gateway stack apply so that
-      // mini-infra-server can join (Step 3b) and we can pick a non-colliding
-      // gateway IP (Step 3c) before any container races onto the network.
-      if (!networkAlreadyExists) {
-        try {
-          await executor.createNetwork(egressNetworkName, '', {
-            driver: 'bridge',
-            labels: {
-              'mini-infra.infra-resource': 'true',
-              'mini-infra.resource-purpose': 'egress',
-              'mini-infra.environment': environmentId,
-            },
-            ipam: { subnet, gateway },
-          });
-          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress network ${egressNetworkName} created (subnet ${subnet})`);
-        } catch (netErr) {
-          const msg = netErr instanceof Error ? netErr.message : String(netErr);
-          this.logger.error({ environmentId, err: msg }, 'Failed to create egress network for env');
-          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: egress network create failed: ${msg}`);
-          // Continue — stack apply may still succeed if something else creates the network
-        }
       }
 
       // Step 3b: Connect the mini-infra-server container itself to this env's

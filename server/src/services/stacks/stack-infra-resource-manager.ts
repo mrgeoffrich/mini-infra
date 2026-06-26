@@ -53,34 +53,13 @@ export class StackInfraResourceManager {
           labels['mini-infra.environment'] = stack.environmentId;
         }
 
-        // For environment-scoped egress networks, use the subnet pre-allocated
-        // by EgressNetworkAllocator and persisted on InfraResource.metadata.subnet.
-        // This gives the egress gateway a stable, known network segment.
-        let ipamConfig: { subnet: string; gateway?: string } | undefined;
-        if (output.purpose === 'egress' && stack.environmentId) {
-          // Check for an existing InfraResource record that may carry a pre-allocated subnet
-          const existingResource = await this.prisma.infraResource.findFirst({
-            where: {
-              type: 'docker-network',
-              purpose: 'egress',
-              scope: 'environment',
-              environmentId: stack.environmentId,
-            },
-            select: { metadata: true },
-          });
-          const meta = existingResource?.metadata as Record<string, unknown> | null;
-          const subnet = meta?.['subnet'];
-          const gateway = meta?.['gateway'];
-          if (typeof subnet === 'string') {
-            ipamConfig = {
-              subnet,
-              ...(typeof gateway === 'string' ? { gateway } : {}),
-            };
-            log.info({ network: name, subnet, gateway }, 'Using pre-allocated subnet for egress network');
-          }
-        }
-
-        await this.dockerExecutor.createNetwork(name, '', { driver: 'bridge', labels, ipam: ipamConfig });
+        // Every network — egress included — lets Docker's IPAM assign the
+        // subnet. The egress network is normally created up-front during
+        // environment provisioning (see EnvironmentManager.provisionEgressGateway),
+        // so this path only runs as a fallback when it's missing; either way we
+        // don't prescribe a subnet, which is what keeps it from overlapping
+        // other networks on a shared host.
+        await this.dockerExecutor.createNetwork(name, '', { driver: 'bridge', labels });
       }
 
       // Use findFirst + create/update instead of upsert because host-scoped resources
