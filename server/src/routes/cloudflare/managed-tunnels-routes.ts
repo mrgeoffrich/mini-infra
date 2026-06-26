@@ -5,6 +5,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import prisma from "../../lib/prisma";
 import { CloudflareService } from "../../services/cloudflare";
+import { StackTemplateService } from "../../services/stacks/stack-template-service";
 import { tunnelCache } from "../../services/cloudflare/tunnel-cache";
 import {
   ManagedTunnelListResponse,
@@ -139,70 +140,55 @@ export function createManagedTunnelsRouter(
         });
       }
 
+      // Ensure the cloudflare-tunnel connector stack exists for this
+      // environment. It is never auto-provisioned on environment creation
+      // (stack creation is user-initiated via template instantiation), so
+      // without this the Tunnels page would strand the user at "Not Deployed"
+      // with no stack for the Deploy button to act on. Idempotent — reuses an
+      // already-instantiated stack. The connector reads its token dynamically
+      // at apply time (dynamicEnv: cloudflare-tunnel-token), so there is no
+      // stack parameter to wire and creation order no longer matters.
+      let stack = await prisma.stack.findFirst({
+        where: {
+          name: "cloudflare-tunnel",
+          environmentId,
+          status: { not: "removed" },
+        },
+        select: { id: true, status: true },
+      });
+
+      if (!stack) {
+        const template = await prisma.stackTemplate.findUnique({
+          where: {
+            name_source: { name: "cloudflare-tunnel", source: "system" },
+          },
+          select: { id: true },
+        });
+        if (!template) {
+          return res.status(500).json({
+            success: false,
+            error:
+              "The cloudflare-tunnel system template is missing — cannot provision the connector stack",
+          });
+        }
+        const created = await new StackTemplateService(
+          prisma,
+        ).createStackFromTemplate({ templateId: template.id, environmentId }, userId);
+        stack = { id: created.id, status: created.status };
+        logger.info(
+          { environmentId, stackId: created.id },
+          "Auto-provisioned cloudflare-tunnel connector stack for managed tunnel",
+        );
+      }
+
       const result = await cloudflareConfigService.createManagedTunnel(
         environmentId,
         parsed.data.name,
         userId,
       );
 
-      // Propagate the freshly-issued token to the cloudflare-tunnel stack
-      // so its next deploy can authenticate. If the stack update fails we
-      // roll back the tunnel creation so the system doesn't end up with
-      // a tunnel that no stack knows about.
       const token =
         await cloudflareConfigService.getManagedTunnelToken(environmentId);
-      const stack = await prisma.stack.findFirst({
-        where: {
-          name: "cloudflare-tunnel",
-          environmentId,
-          status: { not: "removed" },
-        },
-        select: { id: true, status: true, parameterValues: true },
-      });
-
-      if (token && stack) {
-        try {
-          const existingParams =
-            (stack.parameterValues as Record<string, string>) ?? {};
-          await prisma.stack.update({
-            where: { id: stack.id },
-            data: {
-              parameterValues: {
-                ...existingParams,
-                "tunnel-token": token,
-              },
-              status: "pending",
-            },
-          });
-        } catch (stackError) {
-          logger.error(
-            {
-              error:
-                stackError instanceof Error
-                  ? stackError.message
-                  : "Unknown",
-            },
-            "Failed to update stack after tunnel creation, rolling back",
-          );
-          try {
-            await cloudflareConfigService.deleteManagedTunnel(
-              environmentId,
-              userId,
-            );
-          } catch (rollbackError) {
-            logger.error(
-              {
-                error:
-                  rollbackError instanceof Error
-                    ? rollbackError.message
-                    : "Unknown",
-              },
-              "Failed to roll back tunnel creation — manual cleanup may be required",
-            );
-          }
-          throw stackError;
-        }
-      }
 
       tunnelCache.clear();
 
@@ -213,8 +199,8 @@ export function createManagedTunnelsRouter(
           tunnelName: result.tunnelName,
           environmentId,
           hasToken: !!token,
-          stackId: stack?.id,
-          stackStatus: token && stack ? "pending" : stack?.status,
+          stackId: stack.id,
+          stackStatus: stack.status,
         },
         message: "Managed tunnel created successfully",
       };

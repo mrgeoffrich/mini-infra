@@ -43,6 +43,7 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
+import { CloudflareTunnelTokenInjector } from '../cloudflare/cloudflare-tunnel-token-injector';
 import { revokeStackNatsSigningKeys } from './stack-nats-revocation';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
@@ -672,6 +673,7 @@ export class StackReconciler {
   private async resolveVaultEnv(
     stack: {
       id: string;
+      environmentId: string | null;
       vaultAppRoleId: string | null;
       vaultFailClosed: boolean;
       lastAppliedVaultAppRoleId: string | null;
@@ -697,6 +699,7 @@ export class StackReconciler {
     const vaultReady = vaultServicesReady();
     const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
     const natsInjector = new NatsCredentialInjector(this.prisma);
+    const tunnelTokenInjector = new CloudflareTunnelTokenInjector(this.prisma);
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
       if (!activeServiceNames.has(serviceName)) continue;
@@ -724,6 +727,37 @@ export class StackReconciler {
       const hasPoolTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'pool-management-token',
       );
+      const hasTunnelTokenEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind === 'cloudflare-tunnel-token',
+      );
+
+      // Cloudflare tunnel token resolves inline from the managed-tunnel store —
+      // no Vault / NATS / AppRole involved. It's independent of the other kinds,
+      // so resolve + merge it up front; a tunnel-token-only service (the
+      // cloudflared connector) then falls through the Vault/NATS gates below
+      // and keeps these values. Fails closed if no managed tunnel exists.
+      if (hasTunnelTokenEntries) {
+        try {
+          const values = await tunnelTokenInjector.resolve(
+            stack.environmentId,
+            serviceDef.containerConfig,
+          );
+          if (values) {
+            const existing = overrides.get(serviceName) ?? {};
+            overrides.set(serviceName, { ...existing, ...values });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.error(
+            { service: serviceName, err: msg },
+            'Cloudflare tunnel token resolution failed',
+          );
+          throw new Error(
+            `Cloudflare tunnel token injection failed for service "${serviceName}": ${msg}`,
+            { cause: err },
+          );
+        }
+      }
 
       const svcRow = serviceByName.get(serviceName) ?? {
         vaultAppRoleId: null,
@@ -742,7 +776,10 @@ export class StackReconciler {
             if (token) values[key] = token;
           }
         }
-        if (Object.keys(values).length > 0) overrides.set(serviceName, values);
+        if (Object.keys(values).length > 0) {
+          const existing = overrides.get(serviceName) ?? {};
+          overrides.set(serviceName, { ...existing, ...values });
+        }
         continue;
       }
 
