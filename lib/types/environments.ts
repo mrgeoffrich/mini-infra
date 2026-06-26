@@ -130,9 +130,7 @@ export interface EnvironmentDeleteCheck {
   canDelete: boolean;
   dependencies: {
     stacks: EnvironmentDependencyItem[];
-    deploymentConfigurations: EnvironmentDependencyItem[];
     haproxyFrontends: EnvironmentDependencyItem[];
     haproxyBackends: EnvironmentDependencyItem[];
-    stackTemplates: EnvironmentDependencyItem[];
   };
 }
