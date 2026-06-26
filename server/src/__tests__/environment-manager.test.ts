@@ -1,6 +1,7 @@
 import { PrismaClient } from "../generated/prisma/client";
 import { EnvironmentManager } from '../services/environment';
 import { DockerExecutorService } from '../services/docker-executor';
+import DockerService from '../services/docker';
 
 // Mock prisma module so docker-executor/index.ts doesn't try to resolve DATABASE_URL at import time
 vi.mock('../lib/prisma', () => ({ default: {} }));
@@ -397,6 +398,89 @@ describe('EnvironmentManager', () => {
       const result = await environmentManager.getEnvironmentById('non-existent');
 
       expect(result).toBeNull();
+    });
+
+    describe('egressNetwork', () => {
+      const baseEnv = {
+        id: 'env-1',
+        name: 'test-env',
+        type: 'nonproduction',
+        networkType: 'local',
+        networks: [],
+        egressGatewayIp: '172.24.0.3',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      it('reports status "missing" when no egress resource exists', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue({ ...baseEnv, egressGatewayIp: null } as any);
+        mockPrisma.infraResource.findFirst.mockResolvedValue(null);
+
+        const result = await environmentManager.getEnvironmentById('env-1');
+
+        expect(result!.egressNetwork).toEqual({
+          name: 'test-env-egress',
+          subnet: null,
+          bridgeGateway: null,
+          gatewayContainerIp: null,
+          status: 'missing',
+        });
+      });
+
+      it('reports status "present" with the recorded subnet when the Docker network is live', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue(baseEnv as any);
+        mockPrisma.infraResource.findFirst.mockResolvedValue({
+          metadata: { subnet: '172.24.0.0/16', gateway: '172.24.0.1' },
+        } as any);
+        const spy = vi.spyOn(DockerService, 'getInstance').mockReturnValue({
+          isConnected: () => true,
+          listNetworks: vi.fn().mockResolvedValue([{ name: 'test-env-egress' }]),
+        } as any);
+
+        const result = await environmentManager.getEnvironmentById('env-1');
+
+        expect(result!.egressNetwork).toEqual({
+          name: 'test-env-egress',
+          subnet: '172.24.0.0/16',
+          bridgeGateway: '172.24.0.1',
+          gatewayContainerIp: '172.24.0.3',
+          status: 'present',
+        });
+        spy.mockRestore();
+      });
+
+      it('reports status "error" when a subnet is recorded but the Docker network is gone', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue(baseEnv as any);
+        mockPrisma.infraResource.findFirst.mockResolvedValue({
+          metadata: { subnet: '172.24.0.0/16', gateway: '172.24.0.1' },
+        } as any);
+        const spy = vi.spyOn(DockerService, 'getInstance').mockReturnValue({
+          isConnected: () => true,
+          listNetworks: vi.fn().mockResolvedValue([{ name: 'some-other-network' }]),
+        } as any);
+
+        const result = await environmentManager.getEnvironmentById('env-1');
+
+        expect(result!.egressNetwork!.status).toBe('error');
+        expect(result!.egressNetwork!.subnet).toBe('172.24.0.0/16');
+        spy.mockRestore();
+      });
+
+      it('trusts the DB record (status "present") when Docker is unreachable', async () => {
+        mockPrisma.environment.findUnique.mockResolvedValue(baseEnv as any);
+        mockPrisma.infraResource.findFirst.mockResolvedValue({
+          metadata: { subnet: '172.24.0.0/16', gateway: '172.24.0.1' },
+        } as any);
+        const spy = vi.spyOn(DockerService, 'getInstance').mockReturnValue({
+          isConnected: () => false,
+          listNetworks: vi.fn(),
+        } as any);
+
+        const result = await environmentManager.getEnvironmentById('env-1');
+
+        expect(result!.egressNetwork!.status).toBe('present');
+        spy.mockRestore();
+      });
     });
   });
 
