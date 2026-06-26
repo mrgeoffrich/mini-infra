@@ -685,7 +685,7 @@ export class GoogleDriveBackend implements StorageBackend {
     let pageToken: string | undefined;
     do {
       try {
-        const res: import("gaxios").GaxiosResponse<drive_v3.Schema$FileList> =
+        const res =
           await drive.files.list({
             q: `'${ref.id}' in parents and trashed=false and createdTime < '${cutoff.toISOString()}'`,
             fields: "files(id, name, size, createdTime), nextPageToken",
