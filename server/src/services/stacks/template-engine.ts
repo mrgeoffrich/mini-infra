@@ -59,6 +59,27 @@ export interface BuildTemplateContextOptions {
   inputs?: Record<string, string>;
 }
 
+/**
+ * Compute the docker-compose-style project name that prefixes every resource a
+ * stack owns: containers (`<project>-<service>`), networks (`<project>_<net>`)
+ * and volumes (`<project>_<vol>`). Host-scoped stacks use `mini-infra-<name>`;
+ * environment-scoped stacks use `<environment>-<name>`.
+ *
+ * This is the single source of truth for stack resource naming. Anything that
+ * needs to address a stack's containers or networks by name (e.g. the
+ * monitoring proxy reaching Prometheus/Loki, or the app joining the monitoring
+ * network) must derive the name from here so it cannot drift from what the
+ * reconciler actually creates.
+ */
+export function getStackProjectName(stack: {
+  name: string;
+  environment?: { name: string } | null;
+}): string {
+  return stack.environment
+    ? `${stack.environment.name}-${stack.name}`
+    : `mini-infra-${stack.name}`;
+}
+
 export function buildTemplateContext(
   stack: { name: string; networks: StackNetwork[]; volumes: StackVolume[] },
   services: {
@@ -70,7 +91,7 @@ export function buildTemplateContext(
   options: BuildTemplateContextOptions = {}
 ): TemplateContext {
   const { stackId, environment, params, inputs } = options;
-  const projectName = environment ? `${environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
+  const projectName = getStackProjectName({ name: stack.name, environment });
 
   const svcMap: Record<string, { containerName: string; image: string }> = {};
   const envMap: Record<string, string> = {};

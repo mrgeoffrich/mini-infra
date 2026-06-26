@@ -1,5 +1,6 @@
 import {
   buildTemplateContext,
+  getStackProjectName,
   resolveTemplate,
   resolveStackConfigFiles,
   TemplateContext,
@@ -151,5 +152,43 @@ describe('resolveStackConfigFiles', () => {
     // Non-content fields unchanged
     expect(resolved[0].volumeName).toBe('config');
     expect(resolved[0].path).toBe('/etc/loki/config.yaml');
+  });
+});
+
+describe('getStackProjectName', () => {
+  it('prefixes host-scoped stacks with mini-infra-', () => {
+    expect(getStackProjectName({ name: 'monitoring', environment: null })).toBe('mini-infra-monitoring');
+    expect(getStackProjectName({ name: 'nats' })).toBe('mini-infra-nats');
+  });
+
+  it('prefixes environment-scoped stacks with the environment name', () => {
+    expect(getStackProjectName({ name: 'web', environment: { name: 'prod' } })).toBe('prod-web');
+  });
+
+  it('matches the container/network names the monitoring proxy + network-join address', () => {
+    // Drift guard: routes/monitoring.ts reaches Prometheus/Loki by container
+    // name and monitoring-service.ts joins the network by name. Both derive
+    // from getStackProjectName, so they must equal what buildTemplateContext
+    // (i.e. the reconciler) actually creates — otherwise metrics/logs silently
+    // break even though the stack is healthy.
+    const ctx = buildTemplateContext(
+      {
+        name: 'monitoring',
+        networks: [{ name: 'monitoring_network' }],
+        volumes: [{ name: 'prometheus_data' }],
+      },
+      [
+        { serviceName: 'prometheus', dockerImage: 'prom/prometheus', dockerTag: 'v3.3.0', containerConfig: {} },
+        { serviceName: 'loki', dockerImage: 'grafana/loki', dockerTag: '2.9.0', containerConfig: {} },
+      ],
+      {} // host-scoped: no environment
+    );
+    const project = getStackProjectName({ name: 'monitoring', environment: null });
+    expect(ctx.services.prometheus.containerName).toBe(`${project}-prometheus`);
+    expect(ctx.services.loki.containerName).toBe(`${project}-loki`);
+    expect(ctx.networks.monitoring_network).toBe(`${project}_monitoring_network`);
+    // Pin the concrete values so a future change to the naming scheme trips loudly.
+    expect(ctx.services.prometheus.containerName).toBe('mini-infra-monitoring-prometheus');
+    expect(ctx.networks.monitoring_network).toBe('mini-infra-monitoring_monitoring_network');
   });
 });

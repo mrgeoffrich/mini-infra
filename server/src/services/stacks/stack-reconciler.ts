@@ -23,6 +23,7 @@ import { DockerExecutorService } from '../docker-executor';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
+import { getStackProjectName } from './template-engine';
 import { getLogger } from '../../lib/logger-factory';
 import { withOperation } from '../../lib/logging-context';
 import {
@@ -125,7 +126,7 @@ export class StackReconciler {
     });
 
     try {
-      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
+      const projectName = getStackProjectName(stack);
 
       // Build template context with parameters and resolve service definitions
       const params = mergeParameterValues(
@@ -487,7 +488,7 @@ export class StackReconciler {
     });
 
     try {
-      const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
+      const projectName = getStackProjectName(stack);
       const params = mergeParameterValues(
         (stack.parameters as unknown as StackParameterDefinition[]) ?? [],
         (stack.parameterValues as unknown as Record<string, StackParameterValue>) ?? {}
@@ -983,7 +984,7 @@ export class StackReconciler {
       include: { services: true, environment: true },
     });
 
-    const projectName = stack.environment ? `${stack.environment.name}-${stack.name}` : `mini-infra-${stack.name}`;
+    const projectName = getStackProjectName(stack);
     // Include any synthesised default network so destroy reaps it as well.
     const networks = synthesiseDefaultNetworkIfNeeded(
       (stack.networks as unknown as StackNetwork[]) ?? [],

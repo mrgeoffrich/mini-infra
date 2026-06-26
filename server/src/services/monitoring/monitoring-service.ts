@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import { hostname } from 'os';
 import Docker from 'dockerode';
 import { DockerExecutorService } from '../docker-executor';
+import { getStackProjectName } from '../stacks/template-engine';
 import { getLogger } from '../../lib/logger-factory';
 import {
   IApplicationService,
@@ -83,7 +84,11 @@ export class MonitoringService implements IApplicationService {
     ]
   };
 
-  constructor(projectName: string = 'monitoring') {
+  // Default must match the reconciler's project name for the host-scoped
+  // `monitoring` stack (`mini-infra-monitoring`) so the app joins the right
+  // network (`mini-infra-monitoring_monitoring_network`) and the Prometheus/Loki
+  // URLs resolve to the actual `mini-infra-monitoring-*` containers.
+  constructor(projectName: string = getStackProjectName({ name: 'monitoring', environment: null })) {
     this.dockerExecutor = new DockerExecutorService();
     this.projectName = projectName;
     this.telegrafContainerName = `${this.projectName}-telegraf`;

@@ -7,15 +7,20 @@ import { MonitoringStatusResponse } from '@mini-infra/types';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../services/stacks/utils';
+import { getStackProjectName } from '../services/stacks/template-engine';
 
 const router = Router();
 const logger = getLogger("platform", "monitoring");
 
-// When the server runs inside Docker, use container names on the shared network.
+// When the server runs inside Docker, reach Prometheus/Loki by their container
+// names on the shared monitoring network. The names must match exactly what the
+// stack reconciler creates for the host-scoped `monitoring` stack — project
+// `mini-infra-monitoring`, so containers `mini-infra-monitoring-{prometheus,loki}`.
 // When running on the host, use localhost with the published ports.
+const MONITORING_PROJECT = getStackProjectName({ name: 'monitoring', environment: null });
 const inDocker = existsSync('/.dockerenv');
-const PROMETHEUS_URL = inDocker ? 'http://monitoring-prometheus:9090' : 'http://localhost:9090';
-const LOKI_URL = inDocker ? 'http://monitoring-loki:3100' : 'http://localhost:3100';
+const PROMETHEUS_URL = inDocker ? `http://${MONITORING_PROJECT}-prometheus:9090` : 'http://localhost:9090';
+const LOKI_URL = inDocker ? `http://${MONITORING_PROJECT}-loki:3100` : 'http://localhost:3100';
 
 async function getMonitoringStack() {
   return prisma.stack.findFirst({
