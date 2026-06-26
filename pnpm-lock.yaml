@@ -419,12 +419,6 @@ importers:
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
-      '@types/cloudflare':
-        specifier: ^3.0.0
-        version: 3.0.0
-      '@types/config':
-        specifier: ^4.4.0
-        version: 4.4.0
       '@types/cookie-parser':
         specifier: ^1.4.10
         version: 1.4.10(@types/express@5.0.6)
@@ -2293,14 +2287,6 @@ packages:
 
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
-
-  '@types/cloudflare@3.0.0':
-    resolution: {integrity: sha512-OaXscUmrUA3RrDzeCYoa51KH4r9jN6sLWGti3TXsO8R59qCHmHbd5sbe/p1yECzFhUxjcZYA2pIWRpImiyBE+A==}
-    deprecated: This is a stub types definition. cloudflare provides its own type definitions, so you do not need this installed.
-
-  '@types/config@4.4.0':
-    resolution: {integrity: sha512-+82/thz8il6uR6mWFuMTWyC+jSXE4PIZUPmAfKUDOuvNULq3BPLM+tSKsAe3eOIOMKx5azvg3Q3JljWV9yX7aw==}
-    deprecated: This is a stub types definition. config provides its own type definitions, so you do not need this installed.
 
   '@types/connect@3.4.38':
     resolution: {integrity: sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug==}
@@ -7404,16 +7390,6 @@ snapshots:
     dependencies:
       '@types/deep-eql': 4.0.2
       assertion-error: 2.0.1
-
-  '@types/cloudflare@3.0.0':
-    dependencies:
-      cloudflare: 5.2.0
-    transitivePeerDependencies:
-      - encoding
-
-  '@types/config@4.4.0':
-    dependencies:
-      config: 4.4.1
 
   '@types/connect@3.4.38':
     dependencies:
