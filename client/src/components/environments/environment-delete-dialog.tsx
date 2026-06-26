@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { IconLoader2, IconAlertTriangle, IconNetwork, IconStack2, IconLayoutNavbar, IconServer, IconTemplate } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconNetwork, IconStack2, IconLayoutNavbar, IconServer } from "@tabler/icons-react";
 
 interface EnvironmentDeleteDialogProps {
   open: boolean;
@@ -113,10 +113,8 @@ export function EnvironmentDeleteDialog({
                 <div className="font-medium mb-2">Cannot delete — remove these resources first:</div>
                 <div className="space-y-1.5 text-sm">
                   <DependencyList icon={IconStack2} label="Stacks" items={deleteCheck.data!.dependencies.stacks} />
-                  <DependencyList icon={IconServer} label="Deployment Configs" items={deleteCheck.data!.dependencies.deploymentConfigurations} />
                   <DependencyList icon={IconLayoutNavbar} label="HAProxy Frontends" items={deleteCheck.data!.dependencies.haproxyFrontends} />
                   <DependencyList icon={IconServer} label="HAProxy Backends" items={deleteCheck.data!.dependencies.haproxyBackends} />
-                  <DependencyList icon={IconTemplate} label="Stack Templates" items={deleteCheck.data!.dependencies.stackTemplates} />
                 </div>
               </AlertDescription>
             </Alert>
@@ -213,7 +211,7 @@ function DependencyList({
   label: string;
   items: EnvironmentDependencyItem[];
 }) {
-  if (items.length === 0) return null;
+  if (!items || items.length === 0) return null;
   return (
     <div className="flex items-start gap-1.5">
       <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0" />
