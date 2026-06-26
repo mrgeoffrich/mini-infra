@@ -4,6 +4,16 @@ packages:
   - lib
   - acme
 
+# Dependency cooldown (supply-chain defence): pnpm refuses to install any
+# version published less than 5 days ago, including transitive deps. Most
+# compromised releases are flagged and yanked within hours, so the delay
+# filters smash-and-grab attacks at the install layer. 7200 minutes = 5 days.
+# Added in pnpm 10.16; we run 10.32. Workspace-linked packages (workspace:)
+# are never fetched from the registry, so the cooldown doesn't apply to them.
+# To always-allow a trusted package despite the cooldown, add it under
+# minimumReleaseAgeExclude (by name; supports globs, e.g. '@mini-infra/*').
+minimumReleaseAge: 7200
+
 # Transitive dependency version pins. These were previously in the root
 # package.json `overrides` field under npm.
 overrides:

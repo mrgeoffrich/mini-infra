@@ -1,0 +1,71 @@
+# Dependabot version updates with a 5-day cooldown (supply-chain defence).
+#
+# Dependabot won't open a version-update PR until the target version has been
+# published for at least 5 days, mirroring the install-layer cooldown in
+# pnpm-workspace.yaml (minimumReleaseAge) and each package's .npmrc
+# (min-release-age). IMPORTANT: cooldown applies to *version* updates only —
+# Dependabot security updates are intentionally exempt so vulnerability fixes
+# can still land fast.
+#
+# Grouping rolls minor/patch bumps into a single PR per area to cut noise;
+# majors still come through as individual PRs so they can be reviewed on their own.
+version: 2
+updates:
+  # pnpm workspace: root + client / server / lib / acme (via pnpm-lock.yaml).
+  - package-ecosystem: npm
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      workspace-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Standalone npm packages — each has its own package-lock.json.
+  - package-ecosystem: npm
+    directories:
+      - "/agent-sidecar"
+      - "/update-sidecar"
+      - "/pg-az-backup"
+      - "/deployment/development"
+      - "/claude-shell"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      sidecar-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions used by .github/workflows/*.
+  - package-ecosystem: github-actions
+    directories:
+      - "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
