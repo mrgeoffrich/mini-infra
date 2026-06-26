@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import { Environment } from "@mini-infra/types";
 import { useEnvironment } from "@/hooks/use-environments";
-import { StacksList } from "@/components/environments";
+import { StacksList, EgressNetworkCard } from "@/components/environments";
 import { useUserStacks } from "@/hooks/use-applications";
 import { EnvironmentEditDialog } from "@/components/environments/environment-edit-dialog";
 import { EnvironmentDeleteDialog } from "@/components/environments/environment-delete-dialog";
@@ -311,6 +311,10 @@ export function EnvironmentDetailPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="px-4 lg:px-6 max-w-full mb-6">
+        <EgressNetworkCard egressNetwork={environment.egressNetwork} />
       </div>
 
       <div className="px-4 lg:px-6 max-w-full">

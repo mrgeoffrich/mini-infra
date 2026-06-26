@@ -5,6 +5,8 @@ import {
   EnvironmentType,
   EnvironmentNetworkType,
   EnvironmentNetwork,
+  EgressNetworkInfo,
+  EgressNetworkStatus,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
 } from '@mini-infra/types';
@@ -218,12 +220,74 @@ export class EnvironmentManager {
         return null;
       }
 
-      return this.mapPrismaToEnvironment(environment);
+      const mapped = this.mapPrismaToEnvironment(environment);
+      mapped.egressNetwork = await this.getEgressNetworkInfo(
+        environment.id,
+        environment.name,
+        environment.egressGatewayIp ?? null,
+      );
+      return mapped;
 
     } catch (error) {
       this.logger.error({ error, environmentId: id }, 'Failed to get environment by ID');
       throw error;
     }
+  }
+
+  /**
+   * Build the egress-network view for the environment detail screen. The subnet
+   * and bridge gateway are read from the egress InfraResource record (where
+   * provisioning persisted whatever Docker's IPAM assigned); the gateway
+   * container IP comes from Environment.egressGatewayIp. Status is derived by
+   * cross-checking the live Docker network — `present` when the record and the
+   * network both exist, `error` when a subnet was recorded but the network is
+   * gone, `missing` when no egress network was ever provisioned. The Docker
+   * check is best-effort: if the daemon is unreachable we trust the DB record
+   * rather than failing the read.
+   */
+  private async getEgressNetworkInfo(
+    environmentId: string,
+    environmentName: string,
+    egressGatewayIp: string | null,
+  ): Promise<EgressNetworkInfo> {
+    const name = `${environmentName}-egress`;
+
+    const resource = await this.prisma.infraResource.findFirst({
+      where: { type: 'docker-network', purpose: 'egress', scope: 'environment', environmentId },
+      select: { metadata: true },
+    });
+    const meta = (resource?.metadata as Record<string, unknown> | null) ?? null;
+    const subnet = typeof meta?.['subnet'] === 'string' ? (meta['subnet'] as string) : null;
+    const bridgeGateway = typeof meta?.['gateway'] === 'string' ? (meta['gateway'] as string) : null;
+
+    let status: EgressNetworkStatus;
+    if (!resource) {
+      status = 'missing';
+    } else {
+      let networkExists: boolean | null = null;
+      try {
+        const docker = DockerService.getInstance();
+        if (docker.isConnected()) {
+          const networks = await docker.listNetworks();
+          networkExists = networks.some(n => n.name === name);
+        }
+      } catch (err) {
+        this.logger.warn(
+          { error: err instanceof Error ? err.message : String(err), environmentId, name },
+          'Could not query Docker to derive egress network status; trusting DB record',
+        );
+      }
+      // networkExists === null → Docker unreachable; trust the record (present).
+      status = networkExists === false ? 'error' : 'present';
+    }
+
+    return {
+      name,
+      subnet,
+      bridgeGateway,
+      gatewayContainerIp: egressGatewayIp,
+      status,
+    };
   }
 
   public async getEnvironmentByName(name: string): Promise<Environment | null> {
