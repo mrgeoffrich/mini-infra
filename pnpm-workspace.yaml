@@ -29,6 +29,24 @@ overrides:
   # release to keep the tree green. Remove this line once 8.1.x has cleared
   # the 5-day window and let vite float on its caret again.
   vite: ~8.0.16
+  # Security pins for open Dependabot alerts on transitive pnpm-lock deps
+  # (the npm-side lockfiles already carry these fixes). Each value is the
+  # first patched version from the GitHub advisory; the caret lets future
+  # patch releases float. undici and brace-expansion are major-scoped because
+  # a second, non-vulnerable major (undici 8.x, brace-expansion 2.x) is also
+  # installed and must be left untouched.
+  protobufjs: ^7.6.3
+  '@protobufjs/utf8': ^1.1.1
+  hono: ^4.12.25
+  ws: ^8.21.0
+  fast-uri: ^3.1.2
+  fast-xml-builder: ^1.1.7
+  ip-address: ^10.1.1
+  qs: ^6.15.2
+  '@grpc/grpc-js': ^1.14.4
+  '@babel/core': ^7.29.6
+  'undici@7': ^7.28.0
+  'brace-expansion@5': ^5.0.6
 
 # pnpm 10 blocks postinstall scripts by default. Native modules and
 # Prisma tooling need their install scripts to run, so allow them.
