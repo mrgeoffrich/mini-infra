@@ -8,6 +8,6 @@
     "test": "echo 'no tests' && exit 0"
   },
   "dependencies": {
-    "googleapis": "^172.0.0"
+    "googleapis": "^173.0.0"
   }
 }

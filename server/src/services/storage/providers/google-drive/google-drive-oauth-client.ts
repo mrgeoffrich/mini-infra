@@ -13,7 +13,7 @@
  * scope, different token lifecycle, different storage).
  */
 
-import { google, Auth } from "googleapis";
+import { google } from "googleapis";
 
 /** Minimum scope needed for app-created Drive folders/files. */
 export const GOOGLE_DRIVE_OAUTH_SCOPES = [
@@ -27,7 +27,7 @@ export interface GoogleDriveTokenSet {
 }
 
 export class GoogleDriveOAuthClient {
-  private readonly oauth2: Auth.OAuth2Client;
+  private readonly oauth2: InstanceType<typeof google.auth.OAuth2>;
 
   constructor(
     readonly clientId: string,
@@ -105,7 +105,7 @@ export class GoogleDriveOAuthClient {
    * responsible for passing an access token that's known to be fresh — wire
    * via {@link GoogleDriveTokenManager.getValidAccessToken}.
    */
-  withAccessToken(accessToken: string): Auth.OAuth2Client {
+  withAccessToken(accessToken: string): InstanceType<typeof google.auth.OAuth2> {
     const c = new google.auth.OAuth2(
       this.clientId,
       this.clientSecret,
