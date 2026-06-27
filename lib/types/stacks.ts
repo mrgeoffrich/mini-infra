@@ -50,6 +50,16 @@ export type DynamicEnvSource =
   | { kind: 'nats-url' }
   | { kind: 'nats-creds' }
   /**
+   * Cloudflare tunnel connector token for the stack's environment. Resolved
+   * at apply time from the managed-tunnel store (the token issued when the
+   * managed tunnel was created) and injected as a plain env var — cloudflared
+   * reads `TUNNEL_TOKEN` natively. Resolving dynamically (rather than baking
+   * the token into a stack parameter) means the instantiate / create-tunnel /
+   * deploy steps are order-independent: the live token is always read fresh on
+   * each apply. Fails closed if no managed tunnel exists for the environment.
+   */
+  | { kind: 'cloudflare-tunnel-token' }
+  /**
    * Read a single field from a Vault KV v2 path at apply time using the
    * Mini Infra admin token. The container receives the value as a plain
    * env var — no Vault client SDK or AppRole needed by the running app.
