@@ -78,8 +78,11 @@ COPY server ./server
 
 # Generate Prisma client and build backend.
 # `pnpm --filter ... exec` scopes prisma resolution to the server workspace.
+# Raise the tsc heap: the server's type surface (Azure/Google/Cloudflare/agent
+# SDKs) exceeds Node's default ~2GB old-space, OOMing `tsc` in constrained
+# build containers. 4GB clears it with headroom.
 RUN pnpm --filter mini-infra-server exec prisma generate && \
-    pnpm --filter mini-infra-server build
+    NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter mini-infra-server build
 
 # ============================================
 # Stage 4a: Deploy (self-contained prod tree for server)

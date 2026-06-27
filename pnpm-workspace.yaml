@@ -20,9 +20,15 @@ overrides:
   lodash: ^4.18.0
   defu: ^6.1.5
   path-to-regexp: ^8.4.0
-  js-yaml: ^4.1.1
+  js-yaml: ^5.0.0
   '@azure/msal-node': ^5.1.5
   '@hono/node-server': ^1.19.14
+  # TEMPORARY (dep-update branch): vite 8.1.0 (+ its rolldown 1.1.3 native
+  # bindings) was <5 days old when the workspace was bumped to vitest 4.1.9,
+  # so the cooldown above blocked it. Pin vite to the newest installable
+  # release to keep the tree green. Remove this line once 8.1.x has cleared
+  # the 5-day window and let vite float on its caret again.
+  vite: ~8.0.16
 
 # pnpm 10 blocks postinstall scripts by default. Native modules and
 # Prisma tooling need their install scripts to run, so allow them.

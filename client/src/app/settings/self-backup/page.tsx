@@ -88,6 +88,7 @@ import {
   useStorageLocationsList,
   useStorageSettings,
 } from "@/hooks/use-storage-settings";
+import { StorageLocationSelector } from "@/components/storage/StorageLocationSelector";
 import { useFormattedDateTime } from "@/hooks/use-formatted-date";
 import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import { formatBytes, formatDuration, cn } from "@/lib/utils";
@@ -410,6 +411,36 @@ export default function SelfBackupSettingsPage() {
                         </Button>
                       ))}
                     </div>
+                  </FormItem>
+                )}
+              />
+
+              {/* Storage Location */}
+              <FormField
+                control={form.control}
+                name="storageLocationId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Storage Location</FormLabel>
+                    <FormControl>
+                      <StorageLocationSelector
+                        provider={activeProviderId}
+                        value={field.value}
+                        onChange={field.onChange}
+                        disabled={!isStorageConnected}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Where database backups are stored. Configured on the{" "}
+                      <Link
+                        to="/connectivity-storage"
+                        className="underline underline-offset-2"
+                      >
+                        Storage
+                      </Link>{" "}
+                      page.
+                    </FormDescription>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
