@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 7,
+  "builtinVersion": 8,
   "scope": "environment",
   "networkType": "internet",
   "category": "infrastructure",
@@ -20,6 +20,9 @@
       "dockerTag": "latest",
       "containerConfig": {
         "command": ["tunnel", "--no-autoupdate", "run"],
+        "env": {
+          "TUNNEL_METRICS": "127.0.0.1:2000"
+        },
         "dynamicEnv": {
           "TUNNEL_TOKEN": { "kind": "cloudflare-tunnel-token" }
         },
@@ -27,7 +30,7 @@
         "joinResourceNetworks": ["tunnel"],
         "restartPolicy": "unless-stopped",
         "healthcheck": {
-          "test": ["CMD-SHELL", "wget --spider -q http://localhost:2000/ready || exit 1"],
+          "test": ["CMD", "cloudflared", "tunnel", "ready"],
           "interval": 30,
           "timeout": 5,
           "retries": 3,
