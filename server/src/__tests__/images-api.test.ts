@@ -128,14 +128,14 @@ describe("GET /api/images/inspect-ports", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 502 when auth fails", async () => {
+  it("returns 401 when auth fails", async () => {
     mockGetExposedPorts.mockRejectedValue(new Error("Authentication failed"));
 
     const res = await request(app)
       .get("/api/images/inspect-ports")
       .query({ image: "private/image", tag: "latest" });
 
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(401);
   });
 
   it("returns empty ports array when image has no EXPOSE", async () => {

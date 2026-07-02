@@ -48,7 +48,7 @@ async function validateImage({
   if (res.status === 404) {
     return { status: "not-found", message };
   }
-  if (res.status === 502 && /authentication/i.test(message)) {
+  if (res.status === 401 || res.status === 403) {
     return { status: "auth-required", message };
   }
   return { status: "error", message };

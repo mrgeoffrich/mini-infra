@@ -56,7 +56,7 @@ export default function createImagesRouter(
           return res.status(404).json({ success: false, error: message });
         }
         if (message.includes("Authentication")) {
-          return res.status(502).json({ success: false, error: message });
+          return res.status(401).json({ success: false, error: message });
         }
         res.status(502).json({ success: false, error: "Failed to inspect image" });
       }

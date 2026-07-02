@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { getLogger } from "../../lib/logger-factory";
 import { RegistryCredentialService } from "../registry-credential";
+import { getRegistryAuthHeader } from "../registry-auth";
 import type { DockerRegistryTestOptions, DockerRegistryTestResult } from "./types";
 
 /**
@@ -324,7 +325,7 @@ export class RegistryManager {
       const imageParts = this.parseImageName(options.image);
 
       // Get authentication token (handles both Basic auth and OAuth2 token flow)
-      const authHeader = await this.getRegistryAuthHeader(
+      const authHeader = await getRegistryAuthHeader(
         imageParts.registry,
         imageParts.repository,
         options.registryUsername,
@@ -438,87 +439,6 @@ export class RegistryManager {
           errorCode,
         },
       };
-    }
-  }
-
-  /**
-   * Get authentication header for Docker registry
-   * Handles both Basic auth and OAuth2 token flow
-   */
-  private async getRegistryAuthHeader(
-    registry: string,
-    repository: string,
-    username?: string,
-    password?: string,
-  ): Promise<string | null> {
-    if (!username || !password) {
-      return null;
-    }
-
-    try {
-      // First, try to get authentication challenge from registry
-      const testUrl = `https://${registry}/v2/`;
-      const testResponse = await fetch(testUrl, { method: "GET" });
-
-      // Check if registry requires token authentication
-      const wwwAuthenticate = testResponse.headers.get("www-authenticate");
-
-      if (wwwAuthenticate && wwwAuthenticate.includes("Bearer")) {
-        // Extract realm and service from WWW-Authenticate header
-        const realmMatch = wwwAuthenticate.match(/realm="([^"]+)"/);
-        const serviceMatch = wwwAuthenticate.match(/service="([^"]+)"/);
-
-        if (realmMatch) {
-          const realm = realmMatch[1];
-          const service = serviceMatch ? serviceMatch[1] : registry;
-
-          // Build token URL
-          const tokenUrl = new URL(realm);
-          tokenUrl.searchParams.set("service", service);
-          tokenUrl.searchParams.set("scope", `repository:${repository}:pull`);
-
-          // Request token with Basic auth
-          const authString = Buffer.from(`${username}:${password}`).toString("base64");
-          const tokenResponse = await fetch(tokenUrl.toString(), {
-            headers: {
-              Authorization: `Basic ${authString}`,
-            },
-          });
-
-          if (tokenResponse.ok) {
-            const tokenData = await tokenResponse.json();
-            if (tokenData.token) {
-              getLogger("docker", "registry-manager").debug(
-                { registry, repository },
-                "Successfully obtained OAuth2 token for registry",
-              );
-              return `Bearer ${tokenData.token}`;
-            } else if (tokenData.access_token) {
-              return `Bearer ${tokenData.access_token}`;
-            }
-          }
-        }
-      }
-
-      // Fall back to Basic authentication
-      getLogger("docker", "registry-manager").debug(
-        { registry },
-        "Using Basic authentication for registry",
-      );
-      const authString = Buffer.from(`${username}:${password}`).toString("base64");
-      return `Basic ${authString}`;
-    } catch (error) {
-      getLogger("docker", "registry-manager").warn(
-        {
-          error: error instanceof Error ? error.message : String(error),
-          registry,
-        },
-        "Failed to get registry auth header, falling back to Basic auth",
-      );
-
-      // Fall back to Basic auth on any error
-      const authString = Buffer.from(`${username}:${password}`).toString("base64");
-      return `Basic ${authString}`;
     }
   }
 
