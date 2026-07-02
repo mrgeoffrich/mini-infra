@@ -34,7 +34,12 @@ import { UsersTab } from "@/components/postgres-server/users-tab";
 import { BackupsTab } from "@/components/postgres-server/backups-tab";
 import { HealthStatusBadge } from "@/components/postgres-server/health-status-badge";
 import { ServerModal } from "@/components/postgres-server/server-modal";
-import { usePostgresServer } from "@/hooks/use-postgres-servers";
+import {
+  usePostgresServer,
+  useSyncPostgresServer,
+  useTestExistingServerConnection,
+  useDeletePostgresServer,
+} from "@/hooks/use-postgres-servers";
 import { useManagedDatabaseUsers } from "@/hooks/use-managed-database-users";
 import { useManagedDatabases } from "@/hooks/use-managed-databases";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,6 +54,10 @@ export default function PostgresServerDetailsPage() {
   const { data: response, isLoading, error } = usePostgresServer(serverId!);
   const server = response?.data;
 
+  const syncServer = useSyncPostgresServer();
+  const testConnection = useTestExistingServerConnection();
+  const deleteServer = useDeletePostgresServer();
+
   // Fetch users for the database modal and grants management
   const { data: usersResponse } = useManagedDatabaseUsers(serverId);
   const availableUsers = usersResponse?.data || [];
@@ -58,20 +67,11 @@ export default function PostgresServerDetailsPage() {
   const availableDatabases = databasesResponse?.data || [];
 
   const handleSync = async () => {
-    toast.promise(
-      fetch(`/api/postgres-servers/${serverId}/sync`, {
-        method: "POST",
-        credentials: "include",
-      }).then((res) => {
-        if (!res.ok) throw new Error("Failed to sync server");
-        return res.json();
-      }),
-      {
-        loading: "Syncing server data...",
-        success: "Server synced successfully",
-        error: "Failed to sync server",
-      }
-    );
+    toast.promise(syncServer.mutateAsync(serverId!), {
+      loading: "Syncing server data...",
+      success: "Server synced successfully",
+      error: "Failed to sync server",
+    });
   };
 
   const handleEdit = () => {
@@ -79,20 +79,16 @@ export default function PostgresServerDetailsPage() {
   };
 
   const handleTestConnection = async () => {
-    toast.promise(
-      fetch(`/api/postgres-servers/${serverId}/test-connection`, {
-        method: "POST",
-        credentials: "include",
-      }).then((res) => {
-        if (!res.ok) throw new Error("Connection test failed");
-        return res.json();
-      }),
-      {
-        loading: "Testing connection...",
-        success: "Connection successful",
-        error: "Connection failed",
+    try {
+      const result = await testConnection.mutateAsync(serverId!);
+      if (result.success) {
+        toast.success(result.message || "Connection successful");
+      } else {
+        toast.error(result.error || "Connection failed");
       }
-    );
+    } catch (error) {
+      toast.error((error instanceof Error ? error.message : String(error)) || "Connection failed");
+    }
   };
 
   const handleDelete = async () => {
@@ -105,12 +101,7 @@ export default function PostgresServerDetailsPage() {
     }
 
     try {
-      const res = await fetch(`/api/postgres-servers/${serverId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!res.ok) throw new Error("Failed to delete server");
+      await deleteServer.mutateAsync(serverId!);
 
       toast.success("Server deleted successfully");
       navigate("/postgres-server");

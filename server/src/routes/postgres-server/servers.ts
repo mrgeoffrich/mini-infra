@@ -250,6 +250,39 @@ router.delete("/:id", requirePermission('postgres:write'), async (req, res) => {
 });
 
 /**
+ * POST /api/postgres-server/servers/:id/sync
+ * Sync databases and users for an existing server from the live PostgreSQL instance
+ */
+router.post("/:id/sync", requirePermission('postgres:write'), async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const serverId = String(req.params.id);
+
+    const syncResults = await postgresServerService.syncServer(serverId, userId);
+
+    res.json({
+      success: true,
+      data: syncResults,
+      message: "Server synced successfully",
+    });
+  } catch (error) {
+    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
+      return res.status(404).json({
+        success: false,
+        error: "Server not found",
+      });
+    }
+
+    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync server");
+    res.status(500).json({
+      success: false,
+      error: "Failed to sync server",
+      message: (error instanceof Error ? error.message : String(error)),
+    });
+  }
+});
+
+/**
  * POST /api/postgres-server/servers/test-connection
  * Test connection to a PostgreSQL server (without creating a server record)
  */

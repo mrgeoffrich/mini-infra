@@ -4,6 +4,7 @@ import {
   PostgresServerResponse,
   PostgresServerCreateResponse,
   PostgresServerDeleteResponse,
+  PostgresServerSyncResponse,
   CreatePostgresServerRequest,
   UpdatePostgresServerRequest,
   TestServerConnectionRequest,
@@ -156,6 +157,28 @@ async function deletePostgresServer(
   return data;
 }
 
+async function syncPostgresServer(
+  id: string,
+  correlationId: string,
+): Promise<PostgresServerSyncResponse> {
+  const response = await fetch(`/api/postgres-server/servers/${id}/sync`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Correlation-ID": correlationId,
+    },
+  });
+
+  const data: PostgresServerSyncResponse = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.message || "Failed to sync server");
+  }
+
+  return data;
+}
+
 async function testServerConnection(
   request: TestServerConnectionRequest,
   correlationId: string,
@@ -274,6 +297,26 @@ export function useDeletePostgresServer() {
     onSuccess: () => {
       // Invalidate servers list to refetch
       queryClient.invalidateQueries({ queryKey: ["postgres-servers"] });
+    },
+  });
+}
+
+/**
+ * Hook to sync a server's databases and users from the live PostgreSQL instance
+ */
+export function useSyncPostgresServer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => syncPostgresServer(id, generateCorrelationId()),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ["postgres-servers", id] });
+      queryClient.invalidateQueries({
+        queryKey: ["postgres-servers", id, "databases"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["postgres-servers", id, "users"],
+      });
     },
   });
 }

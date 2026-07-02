@@ -117,6 +117,12 @@ export interface PostgresServerCreateResponse {
   message?: string;
 }
 
+export interface PostgresServerSyncResponse {
+  success: boolean;
+  data: PostgresServerSyncResults;
+  message?: string;
+}
+
 export interface PostgresServerListResponse {
   success: boolean;
   data: PostgresServerInfo[];
