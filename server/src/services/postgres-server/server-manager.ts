@@ -3,6 +3,7 @@ import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
 import databaseManagerService from "./database-manager";
 import userManagerService from "./user-manager";
+import { PostgresServerSyncResults } from "@mini-infra/types";
 
 const logger = getLogger("db", "server-manager");
 
@@ -95,34 +96,56 @@ export class PostgresServerService {
     logger.info({ serverId: server.id, name: server.name }, "PostgreSQL server created");
 
     // Perform initial sync of databases and users
-    const syncResults = {
-      databasesSync: { success: false, count: 0, error: undefined as string | undefined },
-      usersSync: { success: false, count: 0, error: undefined as string | undefined },
+    const syncResults = await this.performSync(server.id, params.userId);
+
+    return { server: this.transformServer(server), syncResults };
+  }
+
+  /**
+   * Sync databases and users for a server from the live PostgreSQL instance
+   */
+  private async performSync(serverId: string, userId: string): Promise<PostgresServerSyncResults> {
+    const syncResults: PostgresServerSyncResults = {
+      databasesSync: { success: false, count: 0, error: undefined },
+      usersSync: { success: false, count: 0, error: undefined },
     };
 
-    // Sync databases
     try {
-      logger.info({ serverId: server.id }, "Performing initial database sync");
-      const dbSyncResult = await databaseManagerService.syncDatabases(server.id, params.userId);
+      logger.info({ serverId }, "Syncing databases");
+      const dbSyncResult = await databaseManagerService.syncDatabases(serverId, userId);
       syncResults.databasesSync = { success: true, count: dbSyncResult.synced, error: undefined };
-      logger.info({ serverId: server.id, count: dbSyncResult.synced }, "Initial database sync completed");
+      logger.info({ serverId, count: dbSyncResult.synced }, "Database sync completed");
     } catch (error) {
-      logger.error({ serverId: server.id, error: (error instanceof Error ? error.message : String(error)) }, "Initial database sync failed");
+      logger.error({ serverId, error: (error instanceof Error ? error.message : String(error)) }, "Database sync failed");
       syncResults.databasesSync = { success: false, count: 0, error: (error instanceof Error ? error.message : String(error)) };
     }
 
-    // Sync users
     try {
-      logger.info({ serverId: server.id }, "Performing initial user sync");
-      const userSyncResult = await userManagerService.syncUsers(server.id, params.userId);
+      logger.info({ serverId }, "Syncing users");
+      const userSyncResult = await userManagerService.syncUsers(serverId, userId);
       syncResults.usersSync = { success: true, count: userSyncResult.synced, error: undefined };
-      logger.info({ serverId: server.id, count: userSyncResult.synced }, "Initial user sync completed");
+      logger.info({ serverId, count: userSyncResult.synced }, "User sync completed");
     } catch (error) {
-      logger.error({ serverId: server.id, error: (error instanceof Error ? error.message : String(error)) }, "Initial user sync failed");
+      logger.error({ serverId, error: (error instanceof Error ? error.message : String(error)) }, "User sync failed");
       syncResults.usersSync = { success: false, count: 0, error: (error instanceof Error ? error.message : String(error)) };
     }
 
-    return { server: this.transformServer(server), syncResults };
+    return syncResults;
+  }
+
+  /**
+   * Sync an existing server's databases and users from the live PostgreSQL instance
+   */
+  async syncServer(serverId: string, userId: string): Promise<PostgresServerSyncResults> {
+    const server = await prisma.postgresServer.findFirst({
+      where: { id: serverId, userId },
+    });
+
+    if (!server) {
+      throw new Error("Server not found");
+    }
+
+    return this.performSync(serverId, userId);
   }
 
   /**
