@@ -106,4 +106,51 @@ describe('computeDefinitionHash', () => {
     const hash = computeDefinitionHash(makeService());
     expect(hash).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
+
+  describe('AdoptedWeb', () => {
+    function makeAdopted(
+      overrides: Partial<StackServiceDefinition> = {},
+    ): StackServiceDefinition {
+      return {
+        serviceName: 'legacy-web',
+        serviceType: 'AdoptedWeb',
+        dockerImage: 'adopted',
+        dockerTag: 'n/a',
+        containerConfig: {},
+        dependsOn: [],
+        order: 0,
+        routing: { hostname: 'legacy.example.com', listeningPort: 8080 },
+        adoptedContainer: { containerName: 'legacy', listeningPort: 8080 },
+        ...overrides,
+      };
+    }
+
+    it('is stable for an adopted service with no linked networks', () => {
+      // Existing adopted services (no join fields) must keep a consistent hash
+      // so widening the canonical never marks them as drifted.
+      expect(computeDefinitionHash(makeAdopted())).toBe(
+        computeDefinitionHash(makeAdopted()),
+      );
+    });
+
+    it('changes hash when a linked-container network is added', () => {
+      const before = makeAdopted();
+      const after = makeAdopted({
+        containerConfig: { joinNetworks: ['db_default'] },
+      });
+      expect(computeDefinitionHash(before)).not.toBe(
+        computeDefinitionHash(after),
+      );
+    });
+
+    it('changes hash when the linked network set changes', () => {
+      const a = makeAdopted({
+        containerConfig: { joinNetworks: ['db_default'] },
+      });
+      const b = makeAdopted({
+        containerConfig: { joinNetworks: ['other_default'] },
+      });
+      expect(computeDefinitionHash(a)).not.toBe(computeDefinitionHash(b));
+    });
+  });
 });

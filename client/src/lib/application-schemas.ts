@@ -31,12 +31,34 @@ export const healthCheckSchema = z.object({
   startPeriod: z.number().int().min(0),
 });
 
+// Field-level routing validation is intentionally lenient on `hostname`: a
+// non-routed service (e.g. Stateful) keeps a leftover `routing` object with an
+// empty hostname, and it must not fail validation. The "hostname is required
+// when routing is enabled" rule is enforced by `requireRoutingHostnameWhenEnabled`
+// on the final create/edit schemas, so the error only fires (and only surfaces)
+// when the routing step is actually in play.
 export const routingSchema = z.object({
-  hostname: z.string().min(1, "Hostname is required"),
+  hostname: z.string(),
   listeningPort: z.number().int().min(1).max(65535),
   enableSsl: z.boolean().optional(),
   enableTunnel: z.boolean().optional(),
 });
+
+/**
+ * A link from this application's container to another container it needs to
+ * reach over the Docker network (e.g. a database). The durable, round-tripped
+ * unit is the `networkName` (folded into `containerConfig.joinNetworks`). The
+ * `containerName` is a best-effort label captured when the user picks a
+ * container — it powers the read-only host hint but can't be recovered from
+ * `joinNetworks` alone, so it's optional (re-derived from live network
+ * membership when an application is re-opened for editing).
+ */
+export const linkedContainerSchema = z.object({
+  containerName: z.string().optional(),
+  networkName: z.string().min(1, "Network is required"),
+});
+
+export type LinkedContainer = z.infer<typeof linkedContainerSchema>;
 
 export const serviceNameSchema = z
   .string()
@@ -53,6 +75,7 @@ export const applicationConfigBaseSchema = z.object({
   ports: z.array(portMappingSchema),
   envVars: z.array(envVarSchema),
   volumeMounts: z.array(volumeMountSchema),
+  linkedContainers: z.array(linkedContainerSchema),
   enableHealthCheck: z.boolean(),
   healthCheck: healthCheckSchema.optional(),
   restartPolicy: z.enum(RESTART_POLICIES),
@@ -71,6 +94,28 @@ export type ApplicationRoutingData = z.infer<
   typeof applicationRoutingBaseSchema
 >;
 
+/**
+ * Require a hostname only when routing is enabled. Applied as a superRefine on
+ * the final create/edit schemas (not the mergeable base, which must stay a
+ * ZodObject). The issue path targets `routing.hostname` so the RoutingCard's
+ * field-level message still renders it.
+ */
+function requireRoutingHostnameWhenEnabled(
+  data: { enableRouting: boolean; routing?: { hostname?: string } },
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    data.enableRouting &&
+    (!data.routing || data.routing.hostname?.trim().length === 0 || !data.routing.hostname)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["routing", "hostname"],
+      message: "Hostname is required",
+    });
+  }
+}
+
 // ---- Create form schema (includes deploy + health check options) ----
 
 export const createApplicationFormSchema = z
@@ -84,7 +129,8 @@ export const createApplicationFormSchema = z
     deployImmediately: z.boolean(),
   })
   .merge(applicationConfigBaseSchema)
-  .merge(applicationRoutingBaseSchema);
+  .merge(applicationRoutingBaseSchema)
+  .superRefine(requireRoutingHostnameWhenEnabled);
 
 export type CreateApplicationFormData = z.infer<
   typeof createApplicationFormSchema
@@ -100,6 +146,7 @@ export const createApplicationDefaults: CreateApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
+  linkedContainers: [],
   enableRouting: true,
   routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
@@ -126,7 +173,8 @@ export const editApplicationFormSchema = z
     dockerTag: z.string().min(1, "Tag is required"),
   })
   .merge(applicationConfigBaseSchema)
-  .merge(applicationRoutingBaseSchema);
+  .merge(applicationRoutingBaseSchema)
+  .superRefine(requireRoutingHostnameWhenEnabled);
 
 export type EditApplicationFormData = z.infer<typeof editApplicationFormSchema>;
 
@@ -140,6 +188,7 @@ export const editApplicationDefaults: EditApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
+  linkedContainers: [],
   enableRouting: false,
   routing: undefined,
   restartPolicy: "unless-stopped",
