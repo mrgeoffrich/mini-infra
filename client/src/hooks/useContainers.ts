@@ -8,6 +8,7 @@ import {
   Channel,
   ServerEvent,
   ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 import { apiFetch, ApiRequestError } from "@/lib/api-client";
@@ -69,7 +70,7 @@ export function useContainers(options: UseContainersOptions = {}) {
   useSocketEvent(
     ServerEvent.CONTAINERS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["containers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
     },
     enabled,
   );
@@ -79,7 +80,7 @@ export function useContainers(options: UseContainersOptions = {}) {
     ServerEvent.CONTAINER_STATUS,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
-        { queryKey: ["containers"] },
+        { queryKey: queryKeys.containers.all },
         (old) => {
           if (!old) return old;
           return {
@@ -99,7 +100,7 @@ export function useContainers(options: UseContainersOptions = {}) {
     ServerEvent.CONTAINER_REMOVED,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
-        { queryKey: ["containers"] },
+        { queryKey: queryKeys.containers.all },
         (old) => {
           if (!old) return old;
           const filtered = old.containers.filter((c) => c.id !== data.id);
@@ -115,7 +116,7 @@ export function useContainers(options: UseContainersOptions = {}) {
   );
 
   return useQuery({
-    queryKey: ["containers", queryParams],
+    queryKey: queryKeys.containers.list(queryParams),
     queryFn: () => fetchContainers(queryParams),
     enabled,
     refetchInterval,

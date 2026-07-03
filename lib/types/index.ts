@@ -113,6 +113,9 @@ export * from "./pool-addons";
 // API route registry (ApiBase/ApiRoute/ALL_API_ROUTES)
 export * from "./api-routes";
 
+// TanStack Query key factory (queryKeys)
+export * from "./query-keys";
+
 // ====================
 // Type Utilities
 // ====================
