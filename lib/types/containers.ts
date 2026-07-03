@@ -126,6 +126,12 @@ export interface ContainerCacheResponse {
   requestId?: string;
 }
 
+export interface ContainerCacheFlushResponse {
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
 // ====================
 // Container Action Types
 // ====================

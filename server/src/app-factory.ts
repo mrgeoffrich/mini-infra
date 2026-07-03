@@ -8,7 +8,6 @@ import express, {
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
-import expressListEndpoints from "express-list-endpoints";
 import path from "path";
 import { randomUUID } from "crypto";
 import appConfig from "./lib/config-new";
@@ -87,6 +86,11 @@ import natsPrefixAllowlistRoutes from "./routes/nats-prefix-allowlist";
 import egressRoutes from "./routes/egress";
 import egressFwAgentRoutes from "./routes/egress-fw-agent";
 import { listRouteMeta } from "./lib/openapi-registry";
+import {
+  beginRouteMountTracking,
+  enumerateRoutes,
+  type RawRoute,
+} from "./lib/route-enumerator";
 import { ApiBase } from "@mini-infra/types";
 
 type RouteDefinition = {
@@ -103,27 +107,63 @@ export type CreateAppOptions = {
 };
 
 // Path prefixes that have been migrated to describeRoute(). Expand as more routes adopt it.
-// A warning fires in development for any route under these prefixes that lacks registry metadata.
-const MIGRATED_ROUTE_PREFIXES = ["/api/diagnostics"];
+// A dev-time warning (see warnOnRouteMetadataDrift below) fires for any route
+// under these prefixes that lacks registry metadata, and
+// `server/src/__tests__/api-routes-drift.test.ts` promotes the same check
+// into a hard CI assertion (the "coverage ratchet") via
+// `findRouteMetadataDrift()` below, so this list can't silently regress.
+export const MIGRATED_ROUTE_PREFIXES = ["/api/diagnostics", "/api/containers"];
 
-function warnOnRouteMetadataDrift(app: express.Application): void {
-  try {
-    const endpoints = expressListEndpoints(app);
-    const registryKeys = new Set(
-      listRouteMeta().map((m) => `${m.method.toUpperCase()} ${m.path}`),
-    );
-    const missing: string[] = [];
-    for (const endpoint of endpoints) {
-      if (!MIGRATED_ROUTE_PREFIXES.some((p) => endpoint.path.startsWith(p))) {
-        continue;
-      }
-      for (const method of endpoint.methods) {
-        const key = `${method} ${endpoint.path}`;
-        if (!registryKeys.has(key)) {
-          missing.push(key);
-        }
-      }
+/**
+ * Pure comparison: given an already-enumerated live route list (see
+ * `enumerateRoutes()` in `./lib/route-enumerator`) and a set of migrated
+ * prefixes, return the `"METHOD /path"` keys that fall under a migrated
+ * prefix but have no `describeRoute()` metadata registered for them.
+ *
+ * Exported so both the dev-time warning below and the CI ratchet test
+ * (`api-routes-drift.test.ts`) share one implementation instead of two
+ * copies that could drift apart.
+ */
+export function findRouteMetadataDrift(
+  routes: RawRoute[],
+  migratedPrefixes: string[] = MIGRATED_ROUTE_PREFIXES,
+): string[] {
+  const registryKeys = new Set(
+    listRouteMeta().map((m) => `${m.method.toUpperCase()} ${m.path}`),
+  );
+  const missing: string[] = [];
+  for (const route of routes) {
+    if (!migratedPrefixes.some((p) => route.path.startsWith(p))) {
+      continue;
     }
+    const key = `${route.method.toUpperCase()} ${route.path}`;
+    if (!registryKeys.has(key)) {
+      missing.push(key);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Dev-time console warning for describeRoute metadata drift.
+ *
+ * NOTE: this walks `routes` captured via `enumerateRoutes()` while mount-path
+ * tracking (see `./lib/route-enumerator`) is active only around the
+ * top-level `app.use(route.path, router)` loop in `createApp()` below — it
+ * does NOT see mount paths for *nested* `router.use(subPath, subRouter)`
+ * calls made at route-module import time (those run before this function
+ * could ever install the tracking patch; see the enumerator's own doc
+ * comment for why). That's a non-issue for every prefix currently in
+ * `MIGRATED_ROUTE_PREFIXES` (`diagnostics.ts`/`containers.ts` both register
+ * every route directly on their top-level router, no nested sub-mounts) but
+ * would need the full "patch before first import" treatment — like
+ * `api-routes-drift.test.ts` uses — if a prefix with nested sub-mounts is
+ * added later. The CI ratchet test uses that fuller treatment already, so it
+ * stays correct regardless.
+ */
+function warnOnRouteMetadataDrift(routes: RawRoute[]): void {
+  try {
+    const missing = findRouteMetadataDrift(routes);
     if (missing.length > 0) {
       console.warn(
         `⚠ describeRoute drift: ${missing.length} route(s) under migrated prefixes missing OpenAPI metadata:\n  ` +
@@ -310,6 +350,14 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
     });
   }) as RequestHandler);
 
+  // Mount-path tracking (see ./lib/route-enumerator) only needs to be active
+  // while these top-level `app.use(route.path, router)` calls run — it tags
+  // each pushed stack layer with its literal mount path so
+  // `enumerateRoutes()` can recover full paths afterwards even though
+  // Express 5's compiled matchers no longer expose them. Cheap to leave on
+  // unconditionally; the drift check below is the only consumer, gated
+  // separately.
+  const stopRouteMountTracking = beginRouteMountTracking();
   for (const route of routeDefinitions) {
     if (!includeRouteIds.has(route.id)) {
       continue;
@@ -334,9 +382,10 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
       throw error;
     }
   }
+  stopRouteMountTracking();
 
   if (appConfig.server.nodeEnv === "development" && !options.quiet) {
-    warnOnRouteMetadataDrift(app);
+    warnOnRouteMetadataDrift(enumerateRoutes(app));
   }
 
   if (appConfig.server.nodeEnv === "production") {

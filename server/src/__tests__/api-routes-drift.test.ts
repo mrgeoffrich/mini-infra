@@ -32,13 +32,21 @@ import {
 
 describe("API route registry drift-check", () => {
   let liveRoutes: RawRoute[];
+  let migratedRoutePrefixes: string[];
+  let findRouteMetadataDrift: (
+    routes: RawRoute[],
+    migratedPrefixes?: string[],
+  ) => string[];
 
   beforeAll(async () => {
     const stopTracking = beginRouteMountTracking();
-    const { createApp } = await import("../app-factory");
-    const app = createApp({ quiet: true });
+    const appFactory = await import("../app-factory");
+    const app = appFactory.createApp({ quiet: true });
     liveRoutes = enumerateRoutes(app);
     stopTracking();
+
+    migratedRoutePrefixes = appFactory.MIGRATED_ROUTE_PREFIXES;
+    findRouteMetadataDrift = appFactory.findRouteMetadataDrift;
   });
 
   it("boots with a non-trivial route set (sanity check on the harness itself)", () => {
@@ -81,6 +89,81 @@ describe("API route registry drift-check", () => {
       r.path.startsWith(ApiBase.devApiKey),
     );
     expect(devRoutes).toEqual([]);
+  });
+});
+
+/**
+ * Phase 9 of the frontend/backend contract migration: promotes the
+ * dev-only `console.warn` in `app-factory.ts` (`warnOnRouteMetadataDrift`)
+ * into a hard CI gate. `MIGRATED_ROUTE_PREFIXES` is a growing allowlist of
+ * path prefixes ("/api/diagnostics", "/api/containers", ...) whose every
+ * live route MUST carry `describeRoute()` metadata (registered via
+ * `rememberRouteMeta()` — see `lib/openapi-registry.ts`). This is the
+ * "coverage ratchet": once a prefix is added here, no route under it can
+ * ever be added, renamed, or left un-migrated without this test failing —
+ * coverage can only grow, never silently regress.
+ *
+ * Reuses `liveRoutes` from the `beforeAll` above (same
+ * `beginRouteMountTracking()` + dynamic-import dance — see the module
+ * doc-comment at the top of this file for why that's required), so this
+ * doesn't need its own app boot.
+ */
+describe("describeRoute() metadata coverage ratchet (Phase 9)", () => {
+  let liveRoutes: RawRoute[];
+  let migratedRoutePrefixes: string[];
+  let findRouteMetadataDrift: (
+    routes: RawRoute[],
+    migratedPrefixes?: string[],
+  ) => string[];
+
+  beforeAll(async () => {
+    const stopTracking = beginRouteMountTracking();
+    const appFactory = await import("../app-factory");
+    const app = appFactory.createApp({ quiet: true });
+    liveRoutes = enumerateRoutes(app);
+    stopTracking();
+
+    migratedRoutePrefixes = appFactory.MIGRATED_ROUTE_PREFIXES;
+    findRouteMetadataDrift = appFactory.findRouteMetadataDrift;
+  });
+
+  it("has a non-empty MIGRATED_ROUTE_PREFIXES allowlist (sanity check on the harness itself)", () => {
+    expect(migratedRoutePrefixes.length).toBeGreaterThan(0);
+  });
+
+  it("covers /api/diagnostics and /api/containers", () => {
+    expect(migratedRoutePrefixes).toEqual(
+      expect.arrayContaining(["/api/diagnostics", "/api/containers"]),
+    );
+  });
+
+  it("fails when any route under a migrated prefix lacks describeRoute() metadata", () => {
+    const missing = findRouteMetadataDrift(liveRoutes, migratedRoutePrefixes);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `${missing.length} route(s) under a migrated MIGRATED_ROUTE_PREFIXES ` +
+          `prefix are missing describeRoute() metadata (see ` +
+          `server/src/lib/describe-route.ts and the route's module for the ` +
+          `pattern to follow):\n  ${missing.join("\n  ")}`,
+      );
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it("every live /api/containers route specifically has metadata (Phase 9 reference migration)", () => {
+    const containersRoutes = liveRoutes.filter((r) =>
+      r.path.startsWith(ApiBase.containers),
+    );
+    // Sanity check on the harness itself — make sure the filter actually
+    // found the containers router's routes.
+    expect(containersRoutes.length).toBeGreaterThanOrEqual(9);
+
+    const missing = findRouteMetadataDrift(containersRoutes, [
+      ApiBase.containers,
+    ]);
+    expect(missing).toEqual([]);
   });
 });
 
