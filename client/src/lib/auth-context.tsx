@@ -1,11 +1,8 @@
 import { ReactNode, useEffect } from "react";
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { apiFetch, ApiRequestError } from "./api-client";
+import { createQueryClient, resetAuthRedirectLatch } from "./query-client";
 import { toastWithCopy } from "./toast-utils";
 import {
   AuthContextType,
@@ -70,15 +67,29 @@ function clearSessionData(): void {
 
 // Helper function to parse authentication errors
 function parseAuthError(error: unknown): AuthError {
-  if (error instanceof Error) {
-    if (error.message.includes("401")) {
+  // `fetchAuthStatus` (use-auth-status.ts) wraps a non-401 `ApiRequestError`
+  // in a plain `Error` (to preserve `UseQueryResult<AuthStatus, Error>`'s
+  // typing) but keeps the original typed error as `cause`. Now that every
+  // request throws a typed error, prefer classifying by `.status`/`.isAuth`/
+  // `.isServer` over string-matching `error.message` — the old
+  // `message.includes("401")` style could false-match unrelated text (e.g.
+  // an error mentioning a port or ID that happens to contain "401").
+  const typedError =
+    error instanceof ApiRequestError
+      ? error
+      : error instanceof Error && error.cause instanceof ApiRequestError
+        ? error.cause
+        : undefined;
+
+  if (typedError) {
+    if (typedError.isAuth) {
       return {
         message: "Your session has expired. Please log in again.",
         code: "UNAUTHORIZED",
         statusCode: 401,
       };
     }
-    if (error.message.includes("403")) {
+    if (typedError.status === 403) {
       return {
         message:
           "Access denied. You don't have permission to access this resource.",
@@ -86,24 +97,27 @@ function parseAuthError(error: unknown): AuthError {
         statusCode: 403,
       };
     }
-    if (error.message.includes("429")) {
+    if (typedError.status === 429) {
       return {
         message: "Too many requests. Please wait a moment and try again.",
         code: "RATE_LIMITED",
         statusCode: 429,
       };
     }
-    if (
-      error.message.includes("500") ||
-      error.message.includes("502") ||
-      error.message.includes("503")
-    ) {
+    if (typedError.isServer) {
       return {
         message: "Server error. Please try again later.",
         code: "SERVER_ERROR",
         statusCode: 500,
       };
     }
+    return {
+      message: typedError.message,
+      code: "UNKNOWN_ERROR",
+    };
+  }
+
+  if (error instanceof Error) {
     if (
       error.message.includes("Failed to fetch") ||
       error.message.includes("NetworkError")
@@ -126,17 +140,7 @@ function parseAuthError(error: unknown): AuthError {
   };
 }
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
-      staleTime: 1 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-    },
-  },
-});
+const queryClient = createQueryClient();
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -188,6 +192,10 @@ function AuthProviderInner({ children }: AuthProviderProps) {
   // Handle session persistence and cross-tab sync on authentication state changes
   useEffect(() => {
     if (authStatus?.isAuthenticated && authStatus.user) {
+      // A future 401 (e.g. from the NEXT session expiring) should be able to
+      // trigger the global redirect handler again — see `query-client.ts`.
+      resetAuthRedirectLatch();
+
       const sessionData = getSessionData();
       const wasAlreadyAuthenticated = sessionData.lastLoginTime;
 
