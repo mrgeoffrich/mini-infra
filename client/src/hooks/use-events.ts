@@ -9,13 +9,11 @@ import {
   UserEventStatisticsResponse,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `user-event-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // User Events API Functions
@@ -27,9 +25,8 @@ async function fetchEvents(
   limit = 50,
   sortBy: keyof UserEventInfo = "startedAt",
   sortOrder: "asc" | "desc" = "desc",
-  correlationId: string,
 ): Promise<UserEventListResponse> {
-  const url = new URL(`/api/events`, window.location.origin);
+  const url = new URL(ApiRoute.events.list(), window.location.origin);
 
   // Add pagination
   url.searchParams.set("limit", limit.toString());
@@ -66,100 +63,38 @@ async function fetchEvents(
   }
   if (filters.search) url.searchParams.set("search", filters.search);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  // Envelope preserved raw (not unwrapped) — `useEvents` reads
+  // `data.data`/`data.pagination` off the full response.
+  return apiFetch<UserEventListResponse>(url.toString(), {
+    correlationIdPrefix: "user-event",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch events: ${response.statusText}`);
-  }
-
-  const data: UserEventListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch events");
-  }
-
-  return data;
 }
 
-async function fetchEvent(
-  id: string,
-  correlationId: string,
-): Promise<UserEventResponse> {
-  const response = await fetch(`/api/events/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchEvent(id: string): Promise<UserEventResponse> {
+  // Envelope preserved raw — `useEvent` reads `eventResponse.data`.
+  return apiFetch<UserEventResponse>(ApiRoute.events.get(id), {
+    correlationIdPrefix: "user-event",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch event: ${response.statusText}`);
-  }
-
-  const data: UserEventResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch event");
-  }
-
-  return data;
 }
 
-async function fetchEventStatistics(
-  correlationId: string,
-): Promise<UserEventStatisticsResponse> {
-  const response = await fetch(`/api/events/statistics`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchEventStatistics(): Promise<UserEventStatisticsResponse> {
+  // Envelope preserved raw — `useEventStatistics` reads `.data` off the result.
+  return apiFetch<UserEventStatisticsResponse>(ApiRoute.events.statistics(), {
+    correlationIdPrefix: "user-event",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch event statistics: ${response.statusText}`);
-  }
-
-  const data: UserEventStatisticsResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch event statistics");
-  }
-
-  return data;
 }
 
-async function deleteEvent(
-  id: string,
-  correlationId: string,
-): Promise<DeleteUserEventResponse> {
-  const response = await fetch(`/api/events/${id}`, {
+async function deleteEvent(id: string): Promise<DeleteUserEventResponse> {
+  // Flat response shape ({ success, message } — no nested `data`), so this
+  // stays raw rather than unwrapped.
+  return apiFetch<DeleteUserEventResponse>(ApiRoute.events.get(id), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "user-event",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete event: ${response.statusText}`);
-  }
-
-  const data: DeleteUserEventResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete event");
-  }
-
-  return data;
 }
 
 // ====================
@@ -177,6 +112,21 @@ export interface UseEventsOptions {
   sortOrder?: "asc" | "desc";
 }
 
+/**
+ * Query key for the paginated/filtered events list. No dedicated `list()`
+ * builder for events in the registry yet (see Phase 4 report) — derived from
+ * the `all` root here so it still prefix-matches `queryKeys.events.all`.
+ */
+function eventsListKey(
+  filters: UserEventFilter,
+  page: number,
+  limit: number,
+  sortBy: keyof UserEventInfo,
+  sortOrder: "asc" | "desc",
+) {
+  return [...queryKeys.events.all, filters, page, limit, sortBy, sortOrder] as const;
+}
+
 export function useEvents(options: UseEventsOptions = {}) {
   const {
     enabled = true,
@@ -190,7 +140,6 @@ export function useEvents(options: UseEventsOptions = {}) {
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the events channel for push updates
   useSocketChannel(Channel.EVENTS, enabled);
@@ -199,8 +148,8 @@ export function useEvents(options: UseEventsOptions = {}) {
   useSocketEvent(
     ServerEvent.EVENT_CREATED,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["events"] });
-      queryClient.invalidateQueries({ queryKey: ["eventStatistics"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.statistics });
     },
     enabled,
   );
@@ -209,8 +158,8 @@ export function useEvents(options: UseEventsOptions = {}) {
   useSocketEvent(
     ServerEvent.EVENT_UPDATED,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["events"] });
-      queryClient.invalidateQueries({ queryKey: ["eventStatistics"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.statistics });
     },
     enabled,
   );
@@ -219,19 +168,15 @@ export function useEvents(options: UseEventsOptions = {}) {
   const refetchInterval = options.refetchInterval ?? (connected ? false : 5000);
 
   return useQuery({
-    queryKey: ["events", filters, page, limit, sortBy, sortOrder],
-    queryFn: () =>
-      fetchEvents(filters, page, limit, sortBy, sortOrder, correlationId),
+    queryKey: eventsListKey(filters, page, limit, sortBy, sortOrder),
+    queryFn: () => fetchEvents(filters, page, limit, sortBy, sortOrder),
     enabled,
     refetchInterval,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            if (
-              (error instanceof Error ? error.message : String(error)).includes("401") ||
-              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
-            ) {
+            if (error instanceof ApiRequestError && error.isAuth) {
               return false;
             }
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -255,7 +200,6 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the events channel
   useSocketChannel(Channel.EVENTS, enabled && !!id);
@@ -265,15 +209,15 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
     ServerEvent.EVENT_UPDATED,
     (data) => {
       if (data.id === id) {
-        queryClient.invalidateQueries({ queryKey: ["event", id] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.events.detail(id) });
       }
     },
     enabled && !!id,
   );
 
   return useQuery({
-    queryKey: ["event", id],
-    queryFn: () => fetchEvent(id, correlationId),
+    queryKey: queryKeys.events.detail(id),
+    queryFn: () => fetchEvent(id),
     enabled: enabled && !!id,
     refetchInterval: connected
       ? false
@@ -288,16 +232,7 @@ export function useEvent(id: string, options: UseEventOptions = {}) {
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            if (
-              (error instanceof Error ? error.message : String(error)).includes("401") ||
-              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
-            ) {
-              return false;
-            }
-            if (
-              (error instanceof Error ? error.message : String(error)).includes("404") ||
-              (error instanceof Error ? error.message : String(error)).includes("Not found")
-            ) {
+            if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
               return false;
             }
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -314,15 +249,13 @@ export function useEventStatistics(options: { enabled?: boolean; refetchInterval
   const { enabled = true } = options;
   const { connected } = useSocket();
 
-  const correlationId = generateCorrelationId();
-
   // Statistics are invalidated by useEvents' EVENT_CREATED/EVENT_UPDATED handlers.
   // Just disable polling when socket is connected.
   const refetchInterval = options.refetchInterval ?? (connected ? false : 30000);
 
   return useQuery({
-    queryKey: ["eventStatistics"],
-    queryFn: () => fetchEventStatistics(correlationId),
+    queryKey: queryKeys.events.statistics,
+    queryFn: fetchEventStatistics,
     enabled,
     refetchInterval,
     staleTime: 20000,
@@ -332,14 +265,13 @@ export function useEventStatistics(options: { enabled?: boolean; refetchInterval
 
 export function useDeleteEvent() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteEvent(id, correlationId),
+    mutationFn: (id: string) => deleteEvent(id),
     onSuccess: (_, id) => {
-      queryClient.removeQueries({ queryKey: ["event", id] });
-      queryClient.invalidateQueries({ queryKey: ["events"] });
-      queryClient.invalidateQueries({ queryKey: ["eventStatistics"] });
+      queryClient.removeQueries({ queryKey: queryKeys.events.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.events.statistics });
     },
   });
 }

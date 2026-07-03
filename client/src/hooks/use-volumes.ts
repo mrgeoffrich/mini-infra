@@ -3,94 +3,61 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   DockerVolume,
   DockerVolumeListResponse,
-  DockerVolumeApiResponse,
   DockerVolumeDeleteResponse,
   VolumeInspection,
-  VolumeInspectionResponse,
   VolumeInspectionStartResponse,
   VolumeFileContent,
   FetchFileContentsRequest,
   FetchFileContentsResponse,
-  VolumeFileContentResponse,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { toast } from "sonner";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-function buildInspectionCorrelationId(volumeName: string): string {
-  return `get-inspection-${volumeName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
-function buildFileContentCorrelationId(
-  volumeName: string,
-  filePath: string | null,
-): string {
-  return `get-file-content-${volumeName}-${filePath}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `volumes-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+/** Best-effort extraction of a `.message` string off an unknown error body. */
+function extractBodyMessage(body: unknown): string | undefined {
+  if (typeof body === "object" && body !== null && "message" in body) {
+    const message = (body as { message?: unknown }).message;
+    return typeof message === "string" && message.length > 0 ? message : undefined;
+  }
+  return undefined;
 }
 
-async function fetchVolumes(
-  correlationId: string
-): Promise<DockerVolumeListResponse> {
-  const url = new URL(`/api/docker/volumes`, window.location.origin);
-
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Docker service is not available");
-      } catch {
-        throw new Error(
-          "Docker service is not available. Please try again later."
-        );
-      }
+async function fetchVolumes(): Promise<DockerVolumeListResponse> {
+  try {
+    return await apiFetch<DockerVolumeListResponse>(ApiRoute.docker.volumes(), {
+      correlationIdPrefix: "volumes",
+    });
+  } catch (err) {
+    // Docker-service-unavailable gets a friendlier fallback message than the
+    // generic apiFetch one, since it surfaces directly in the volumes list UI.
+    if (err instanceof ApiRequestError && err.status === 503) {
+      throw new ApiRequestError(
+        err.status,
+        err.code,
+        extractBodyMessage(err.body) ??
+          "Docker service is not available. Please try again later.",
+        err.body,
+      );
     }
-
-    throw new Error(`Failed to fetch volumes: ${response.statusText}`);
+    throw err;
   }
-
-  const data: DockerVolumeApiResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch volumes");
-  }
-
-  return data.data;
 }
 
 async function deleteVolume(volumeName: string): Promise<DockerVolumeDeleteResponse> {
-  const correlationId = `delete-volume-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-  const response = await fetch(`/api/docker/volumes/${encodeURIComponent(volumeName)}`, {
+  // Flat response shape ({ success, message, volumeName } — no nested
+  // `data`), so this stays raw rather than unwrapped.
+  return apiFetch<DockerVolumeDeleteResponse>(ApiRoute.docker.volume(volumeName), {
     method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    credentials: "include",
+    correlationIdPrefix: "delete-volume",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to delete volume");
-  }
-
-  return response.json();
 }
 
 export interface UseVolumesOptions {
@@ -107,7 +74,6 @@ export function useVolumes(options: UseVolumesOptions = {}) {
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the volumes channel for push updates
   useSocketChannel(Channel.VOLUMES, enabled);
@@ -116,7 +82,7 @@ export function useVolumes(options: UseVolumesOptions = {}) {
   useSocketEvent(
     ServerEvent.VOLUMES_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["docker-volumes"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.volumes });
     },
     enabled,
   );
@@ -126,26 +92,22 @@ export function useVolumes(options: UseVolumesOptions = {}) {
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["docker-volumes"],
-    queryFn: () => fetchVolumes(correlationId),
+    queryKey: queryKeys.docker.volumes,
+    queryFn: fetchVolumes,
     enabled,
     refetchInterval,
     placeholderData: keepPreviousData,
     retry: (failureCount: number, error: Error) => {
-      // Don't retry on authentication errors
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
-      ) {
-        return false;
-      }
+      if (error instanceof ApiRequestError) {
+        // Don't retry on authentication errors
+        if (error.isAuth) {
+          return false;
+        }
 
-      // Don't retry immediately on Docker service unavailable
-      if (
-        error.message.includes("Docker service is not available") ||
-        error.message.includes("Service Unavailable")
-      ) {
-        return false;
+        // Don't retry immediately on Docker service unavailable
+        if (error.status === 503) {
+          return false;
+        }
       }
 
       // Retry up to the specified number of times for other errors
@@ -172,7 +134,7 @@ export function useDeleteVolume(options: UseDeleteVolumeOptions = {}) {
     mutationFn: (volumeName: string) => deleteVolume(volumeName),
     onSuccess: (data, volumeName) => {
       // Invalidate volumes query to refresh the list
-      queryClient.invalidateQueries({ queryKey: ["docker-volumes"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.volumes });
 
       // Show success toast
       toast.success("Volume deleted successfully", {
@@ -200,54 +162,24 @@ export function useDeleteVolume(options: UseDeleteVolumeOptions = {}) {
 
 // Volume inspection functions
 async function startVolumeInspection(volumeName: string): Promise<VolumeInspectionStartResponse> {
-  const correlationId = `inspect-volume-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-  const response = await fetch(`/api/docker/volumes/${encodeURIComponent(volumeName)}/inspect`, {
+  // Envelope preserved raw (not unwrapped) — callers of `startVolumeInspection`
+  // via `useInspectVolume` were already typed against the full envelope.
+  return apiFetch<VolumeInspectionStartResponse>(ApiRoute.docker.volumeInspect(volumeName), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    credentials: "include",
+    correlationIdPrefix: "inspect-volume",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to start volume inspection");
-  }
-
-  return response.json();
 }
 
 async function fetchVolumeInspection(
   volumeName: string,
-  correlationId: string
 ): Promise<VolumeInspection | null> {
-  const response = await fetch(
-    `/api/docker/volumes/${encodeURIComponent(volumeName)}/inspect`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch inspection: ${response.statusText}`);
-  }
-
-  const data: VolumeInspectionResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch inspection");
-  }
-
-  // `data.data` is null when the volume has never been inspected. The list
-  // view probes this on every row mount, so the route returns 200 with null
-  // rather than 404.
-  return data.data;
+  // `data` is null when the volume has never been inspected. The list view
+  // probes this on every row mount, so the route returns 200 with null
+  // rather than 404 — apiFetch's default unwrap surfaces that null through.
+  return apiFetch<VolumeInspection | null>(ApiRoute.docker.volumeInspect(volumeName), {
+    correlationIdPrefix: "get-inspection",
+  });
 }
 
 export interface UseInspectVolumeOptions {
@@ -264,7 +196,7 @@ export function useInspectVolume(options: UseInspectVolumeOptions = {}) {
     onSuccess: (_data, volumeName) => {
       // Invalidate inspection query to start polling
       queryClient.invalidateQueries({
-        queryKey: ["volume-inspection", volumeName]
+        queryKey: queryKeys.docker.volumeInspection(volumeName),
       });
 
       // Show success toast
@@ -305,23 +237,6 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
   } = options;
 
   const queryClient = useQueryClient();
-  // Generate a correlation ID that's stable per volume target. Use a lazy
-  // state initializer so Date.now()/Math.random() are only called outside of
-  // render, then reset the value when volumeName changes.
-  const [correlationIdState, setCorrelationIdState] = React.useState<{
-    key: string;
-    value: string;
-  }>(() => ({
-    key: volumeName,
-    value: buildInspectionCorrelationId(volumeName),
-  }));
-  if (correlationIdState.key !== volumeName) {
-    setCorrelationIdState({
-      key: volumeName,
-      value: buildInspectionCorrelationId(volumeName),
-    });
-  }
-  const correlationId = correlationIdState.value;
 
   // Subscribe to the volumes channel for inspection push updates
   useSocketChannel(Channel.VOLUMES, enabled);
@@ -332,7 +247,7 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
     (data) => {
       if (data.volumeName === volumeName) {
         queryClient.invalidateQueries({
-          queryKey: ["volume-inspection", volumeName],
+          queryKey: queryKeys.docker.volumeInspection(volumeName),
         });
       }
     },
@@ -340,8 +255,8 @@ export function useVolumeInspection(options: UseVolumeInspectionOptions) {
   );
 
   const query = useQuery({
-    queryKey: ["volume-inspection", volumeName],
-    queryFn: () => fetchVolumeInspection(volumeName, correlationId),
+    queryKey: queryKeys.docker.volumeInspection(volumeName),
+    queryFn: () => fetchVolumeInspection(volumeName),
     enabled: enabled && !!volumeName,
     retry: (failureCount: number) => failureCount < 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
@@ -392,62 +307,28 @@ async function fetchFileContents(
   volumeName: string,
   filePaths: string[]
 ): Promise<FetchFileContentsResponse> {
-  const correlationId = `fetch-file-contents-${volumeName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
   const requestBody: FetchFileContentsRequest = { filePaths };
 
-  const response = await fetch(`/api/docker/volumes/${encodeURIComponent(volumeName)}/files/fetch`, {
+  // Envelope preserved raw (not unwrapped) — `useFetchFileContents`'
+  // onSuccess reads `result.data.{fetched,skipped,errors}`.
+  return apiFetch<FetchFileContentsResponse>(ApiRoute.docker.volumeFilesFetch(volumeName), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    credentials: "include",
-    body: JSON.stringify(requestBody),
+    body: requestBody,
+    correlationIdPrefix: "fetch-file-contents",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to fetch file contents");
-  }
-
-  return response.json();
 }
 
 async function fetchFileContent(
   volumeName: string,
   filePath: string,
-  correlationId: string
 ): Promise<VolumeFileContent> {
-  const url = new URL(
-    `/api/docker/volumes/${encodeURIComponent(volumeName)}/files`,
-    window.location.origin
-  );
+  const url = new URL(ApiRoute.docker.volumeFiles(volumeName), window.location.origin);
   url.searchParams.set("path", filePath);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<VolumeFileContent>(url.toString(), {
+    correlationIdPrefix: "get-file-content",
   });
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || "File content not found");
-    }
-    throw new Error(`Failed to fetch file content: ${response.statusText}`);
-  }
-
-  const data: VolumeFileContentResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch file content");
-  }
-
-  return data.data;
 }
 
 export interface UseFetchFileContentsOptions {
@@ -464,7 +345,7 @@ export function useFetchFileContents(volumeName: string, options: UseFetchFileCo
     onSuccess: (result) => {
       // Invalidate file content queries
       queryClient.invalidateQueries({
-        queryKey: ["volume-file-content", volumeName],
+        queryKey: queryKeys.docker.volumeFileContent(volumeName),
       });
 
       // Show success toast
@@ -504,37 +385,18 @@ export interface UseFileContentOptions {
 export function useFileContent(options: UseFileContentOptions) {
   const { volumeName, filePath, enabled = true } = options;
 
-  // Generate a correlation ID that's stable per (volumeName, filePath). Uses
-  // a lazy state initializer plus a derived-state reset when the key changes
-  // so impure calls (Date.now/Math.random) never run during render.
-  const fileContentKey = `${volumeName}|${filePath}`;
-  const [correlationIdState, setCorrelationIdState] = React.useState<{
-    key: string;
-    value: string;
-  }>(() => ({
-    key: fileContentKey,
-    value: buildFileContentCorrelationId(volumeName, filePath),
-  }));
-  if (correlationIdState.key !== fileContentKey) {
-    setCorrelationIdState({
-      key: fileContentKey,
-      value: buildFileContentCorrelationId(volumeName, filePath),
-    });
-  }
-  const correlationId = correlationIdState.value;
-
   return useQuery({
-    queryKey: ["volume-file-content", volumeName, filePath],
+    queryKey: queryKeys.docker.volumeFileContent(volumeName, filePath ?? undefined),
     queryFn: () => {
       if (!filePath) {
         throw new Error("File path is required");
       }
-      return fetchFileContent(volumeName, filePath, correlationId);
+      return fetchFileContent(volumeName, filePath);
     },
     enabled: enabled && !!volumeName && !!filePath,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on 404 (file content doesn't exist)
-      if (error.message.includes("File content not found")) {
+      if (error instanceof ApiRequestError && error.status === 404) {
         return false;
       }
       // Retry up to 3 times for other errors
