@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   GitHubAppSettingResponse,
   GitHubAppValidationResponse,
@@ -9,37 +10,24 @@ import type {
   GitHubAppSetupCompleteResponse,
   GitHubAgentAccessLevel,
 } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
-// Helper to unwrap the { success, data } API response envelope
-async function fetchAndUnwrap<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    credentials: "include",
-    ...options,
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({
-      message: `Request failed (${response.status})`,
-    }));
-    throw new Error(errorData.message || errorData.error || `Request failed (${response.status})`);
-  }
-
-  const result = await response.json();
-  return result.data !== undefined ? result.data : result;
+function isAuthError(error: unknown): boolean {
+  return error instanceof ApiRequestError && (error.isAuth || error.status === 403);
 }
 
 // Hook for retrieving current GitHub App settings
 export function useGitHubAppSettings() {
   return useQuery<GitHubAppSettingResponse>({
-    queryKey: ["github-app-settings"],
-    queryFn: () => fetchAndUnwrap<GitHubAppSettingResponse>("/api/settings/github-app"),
+    queryKey: queryKeys.githubAppSettings.all,
+    queryFn: () =>
+      apiFetch<GitHubAppSettingResponse>(ApiRoute.settings.githubApp(), {
+        correlationIdPrefix: "github-app",
+      }),
     staleTime: 30000,
     retry: (failureCount, error) => {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes("unauthorized") || message.includes("forbidden")) {
-          return false;
-        }
+      if (isAuthError(error)) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -52,17 +40,17 @@ export function useGitHubAppSetupComplete() {
 
   return useMutation<GitHubAppSetupCompleteResponse, Error, { code: string }>({
     mutationFn: (payload) =>
-      fetchAndUnwrap<GitHubAppSetupCompleteResponse>(
-        "/api/settings/github-app/setup/complete",
+      apiFetch<GitHubAppSetupCompleteResponse>(
+        ApiRoute.settings.githubAppSetupComplete(),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: payload,
+          correlationIdPrefix: "github-app",
         },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -73,13 +61,13 @@ export function useRefreshGitHubAppInstallation() {
 
   return useMutation<{ found: boolean; installationId?: string }, Error>({
     mutationFn: () =>
-      fetchAndUnwrap<{ found: boolean; installationId?: string }>(
-        "/api/settings/github-app/refresh-installation",
-        { method: "POST" },
+      apiFetch<{ found: boolean; installationId?: string }>(
+        ApiRoute.settings.githubAppRefreshInstallation(),
+        { method: "POST", correlationIdPrefix: "github-app" },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -90,12 +78,12 @@ export function useTestGitHubApp() {
 
   return useMutation<GitHubAppValidationResponse, Error>({
     mutationFn: () =>
-      fetchAndUnwrap<GitHubAppValidationResponse>(
-        "/api/settings/github-app/test",
-        { method: "POST" },
-      ),
+      apiFetch<GitHubAppValidationResponse>(ApiRoute.settings.githubAppTest(), {
+        method: "POST",
+        correlationIdPrefix: "github-app",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -106,13 +94,13 @@ export function useDeleteGitHubApp() {
 
   return useMutation<{ success: boolean; message?: string }, Error>({
     mutationFn: () =>
-      fetchAndUnwrap<{ success: boolean; message?: string }>(
-        "/api/settings/github-app",
-        { method: "DELETE" },
+      apiFetch<{ success: boolean; message?: string }>(
+        ApiRoute.settings.githubApp(),
+        { method: "DELETE", correlationIdPrefix: "github-app" },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -120,20 +108,19 @@ export function useDeleteGitHubApp() {
 // Hook for retrieving GitHub App packages
 export function useGitHubAppPackages(enabled?: boolean) {
   return useQuery<GitHubAppPackage[]>({
-    queryKey: ["github-app-packages"],
-    queryFn: () => fetchAndUnwrap<GitHubAppPackage[]>("/api/github-app/packages"),
+    queryKey: queryKeys.githubApp.packages,
+    queryFn: () =>
+      apiFetch<GitHubAppPackage[]>(ApiRoute.githubApp.packages(), {
+        correlationIdPrefix: "github-app",
+      }),
     enabled: enabled === undefined ? true : enabled,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not configured")
-        ) {
-          return false;
-        }
+      if (isAuthError(error)) {
+        return false;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("not configured")) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -146,23 +133,20 @@ export function useGitHubAppPackageVersions(
   enabled?: boolean,
 ) {
   return useQuery<GitHubAppPackageVersion[]>({
-    queryKey: ["github-app-package-versions", packageName],
+    queryKey: queryKeys.githubApp.packageVersions(packageName),
     queryFn: () =>
-      fetchAndUnwrap<GitHubAppPackageVersion[]>(
-        `/api/github-app/packages/${encodeURIComponent(packageName)}/versions`,
+      apiFetch<GitHubAppPackageVersion[]>(
+        ApiRoute.githubApp.packageVersions(encodeURIComponent(packageName)),
+        { correlationIdPrefix: "github-app" },
       ),
     enabled: (enabled === undefined ? true : enabled) && !!packageName,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not found")
-        ) {
-          return false;
-        }
+      if (isAuthError(error)) {
+        return false;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -172,20 +156,19 @@ export function useGitHubAppPackageVersions(
 // Hook for retrieving GitHub App repositories
 export function useGitHubAppRepositories(enabled?: boolean) {
   return useQuery<GitHubAppRepository[]>({
-    queryKey: ["github-app-repos"],
-    queryFn: () => fetchAndUnwrap<GitHubAppRepository[]>("/api/github-app/repos"),
+    queryKey: queryKeys.githubApp.repos,
+    queryFn: () =>
+      apiFetch<GitHubAppRepository[]>(ApiRoute.githubApp.repos(), {
+        correlationIdPrefix: "github-app",
+      }),
     enabled: enabled === undefined ? true : enabled,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not configured")
-        ) {
-          return false;
-        }
+      if (isAuthError(error)) {
+        return false;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("not configured")) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -199,23 +182,20 @@ export function useGitHubAppActionRuns(
   enabled?: boolean,
 ) {
   return useQuery<GitHubAppActionsRun[]>({
-    queryKey: ["github-app-action-runs", owner, repo],
+    queryKey: queryKeys.githubApp.repoActionRuns(owner, repo),
     queryFn: () =>
-      fetchAndUnwrap<GitHubAppActionsRun[]>(
-        `/api/github-app/repos/${owner}/${repo}/actions/runs`,
+      apiFetch<GitHubAppActionsRun[]>(
+        ApiRoute.githubApp.repoActionRuns(owner, repo),
+        { correlationIdPrefix: "github-app" },
       ),
     enabled: (enabled === undefined ? true : enabled) && !!owner && !!repo,
     staleTime: 30000,
     retry: (failureCount, error) => {
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not found")
-        ) {
-          return false;
-        }
+      if (isAuthError(error)) {
+        return false;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -232,18 +212,14 @@ export function useGitHubSavePackagePat() {
     { token: string }
   >({
     mutationFn: (payload) =>
-      fetchAndUnwrap<{ message: string; registryCredentialCreated?: boolean; githubUsername?: string }>(
-        "/api/settings/github-app/oauth/pat",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
+      apiFetch<{ message: string; registryCredentialCreated?: boolean; githubUsername?: string }>(
+        ApiRoute.settings.githubAppOauthPat(),
+        { method: "POST", body: payload, correlationIdPrefix: "github-app" },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
-      queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubApp.packages });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
     },
   });
 }
@@ -257,12 +233,12 @@ export function useGitHubSyncRegistry() {
     Error
   >({
     mutationFn: () =>
-      fetchAndUnwrap<{ message: string; githubUsername?: string }>(
-        "/api/settings/github-app/oauth/sync-registry",
-        { method: "POST" },
+      apiFetch<{ message: string; githubUsername?: string }>(
+        ApiRoute.settings.githubAppOauthSyncRegistry(),
+        { method: "POST", correlationIdPrefix: "github-app" },
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["registryCredentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
     },
   });
 }
@@ -277,16 +253,13 @@ export function useGitHubSaveAgentToken() {
     { token: string; accessLevel: GitHubAgentAccessLevel }
   >({
     mutationFn: (payload) =>
-      fetchAndUnwrap<{ message: string }>(
-        "/api/settings/github-app/agent/token",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      ),
+      apiFetch<{ message: string }>(ApiRoute.settings.githubAppAgentToken(), {
+        method: "POST",
+        body: payload,
+        correlationIdPrefix: "github-app",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
     },
   });
 }
@@ -297,12 +270,12 @@ export function useGitHubRevokeAgentToken() {
 
   return useMutation<{ message: string }, Error>({
     mutationFn: () =>
-      fetchAndUnwrap<{ message: string }>(
-        "/api/settings/github-app/agent/revoke",
-        { method: "POST" },
-      ),
+      apiFetch<{ message: string }>(ApiRoute.settings.githubAppAgentRevoke(), {
+        method: "POST",
+        correlationIdPrefix: "github-app",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
     },
   });
 }
@@ -313,13 +286,13 @@ export function useGitHubOAuthRevoke() {
 
   return useMutation<{ message: string }, Error>({
     mutationFn: () =>
-      fetchAndUnwrap<{ message: string }>(
-        "/api/settings/github-app/oauth/revoke",
-        { method: "POST" },
-      ),
+      apiFetch<{ message: string }>(ApiRoute.settings.githubAppOauthRevoke(), {
+        method: "POST",
+        correlationIdPrefix: "github-app",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["github-app-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["github-app-packages"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubApp.packages });
     },
   });
 }

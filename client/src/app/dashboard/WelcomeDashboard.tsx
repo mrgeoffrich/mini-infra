@@ -43,6 +43,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { WelcomeLabelsOverlay, type LabelDef } from "./WelcomeArrowOverlay";
+import { queryKeys } from "@mini-infra/types";
 import type { SystemSettingsInfo } from "@mini-infra/types";
 
 const LABELS: LabelDef[] = [
@@ -277,7 +278,7 @@ function DockerSetupStep({ onComplete }: { onComplete: () => void }) {
 
       await Promise.all(promises);
       await queryClient.invalidateQueries({
-        queryKey: ["connectivityStatus"],
+        queryKey: queryKeys.connectivity.status,
       });
 
       toast.success("Docker connected successfully");

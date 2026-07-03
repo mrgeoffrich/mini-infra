@@ -1,18 +1,22 @@
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "../lib/api-client";
 import { AuthStatus } from "../lib/auth-types";
 
 async function fetchAuthStatus(): Promise<AuthStatus> {
   try {
-    const response = await fetch(`/auth/status`, {
-      method: "GET",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    // /auth/status returns the AuthStatus object directly (no {success,data}
+    // envelope) — see server/src/routes/auth.ts. It currently always
+    // responds 200 (even when unauthenticated, with isAuthenticated: false),
+    // but the 401 branch below is kept as a defensive fallback in case that
+    // ever changes, matching the pre-migration behavior.
+    return await apiFetch<AuthStatus>(ApiRoute.auth.status(), {
+      unwrap: false,
+      correlationIdPrefix: "auth",
     });
-
-    if (!response.ok) {
-      if (response.status === 401) {
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      if (error.status === 401) {
         // Unauthorized is expected when not authenticated
         return {
           isAuthenticated: false,
@@ -21,15 +25,12 @@ async function fetchAuthStatus(): Promise<AuthStatus> {
       }
 
       // For other errors, create descriptive error messages
-      const errorText = await response.text().catch(() => "Unknown error");
       throw new Error(
-        `${response.status}: Failed to fetch auth status - ${errorText}`,
+        `${error.status}: Failed to fetch auth status - ${error.message}`,
+        { cause: error },
       );
     }
 
-    const data = await response.json();
-    return data.data || data;
-  } catch (error) {
     // Handle network errors and other fetch errors
     if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new Error(
@@ -44,7 +45,7 @@ async function fetchAuthStatus(): Promise<AuthStatus> {
 
 export function useAuthStatus(): UseQueryResult<AuthStatus, Error> {
   return useQuery({
-    queryKey: ["auth", "status"],
+    queryKey: queryKeys.auth.status,
     queryFn: fetchAuthStatus,
     retry: (failureCount, error) => {
       // Don't retry on 401 (unauthorized) - that's a valid response

@@ -1,70 +1,52 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   PermissionPresetRecord,
   CreatePermissionPresetRequest,
   UpdatePermissionPresetRequest,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchPermissionPresets(): Promise<PermissionPresetRecord[]> {
-  const response = await fetch("/api/permission-presets", {
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch permission presets: ${response.statusText}`);
-  }
-  const data = await response.json();
-  return data.data || [];
+  return (
+    (await apiFetch<PermissionPresetRecord[]>(
+      ApiRoute.permissionPresets.list(),
+      { correlationIdPrefix: "permission-presets" },
+    )) ?? []
+  );
 }
 
 async function createPermissionPreset(
   data: CreatePermissionPresetRequest,
 ): Promise<PermissionPresetRecord> {
-  const response = await fetch("/api/permission-presets", {
+  return apiFetch<PermissionPresetRecord>(ApiRoute.permissionPresets.list(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: data,
+    correlationIdPrefix: "permission-presets",
   });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to create permission preset: ${response.statusText}`);
-  }
-  const result = await response.json();
-  return result.data;
 }
 
 async function updatePermissionPreset({
   id,
   ...data
 }: { id: string } & UpdatePermissionPresetRequest): Promise<PermissionPresetRecord> {
-  const response = await fetch(`/api/permission-presets/${id}`, {
+  return apiFetch<PermissionPresetRecord>(ApiRoute.permissionPresets.get(id), {
     method: "PATCH",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: data,
+    correlationIdPrefix: "permission-presets",
   });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to update permission preset: ${response.statusText}`);
-  }
-  const result = await response.json();
-  return result.data;
 }
 
 async function deletePermissionPreset(id: string): Promise<void> {
-  const response = await fetch(`/api/permission-presets/${id}`, {
+  await apiFetch<void>(ApiRoute.permissionPresets.get(id), {
     method: "DELETE",
-    credentials: "include",
+    correlationIdPrefix: "permission-presets",
   });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.message || `Failed to delete permission preset: ${response.statusText}`);
-  }
 }
 
 export function usePermissionPresets() {
   return useQuery({
-    queryKey: ["permissionPresets"],
+    queryKey: queryKeys.permissionPresets.all,
     queryFn: fetchPermissionPresets,
     retry: 1,
   });
@@ -75,7 +57,9 @@ export function useCreatePermissionPreset() {
   return useMutation({
     mutationFn: createPermissionPreset,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["permissionPresets"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.permissionPresets.all,
+      });
     },
   });
 }
@@ -85,7 +69,9 @@ export function useUpdatePermissionPreset() {
   return useMutation({
     mutationFn: updatePermissionPreset,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["permissionPresets"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.permissionPresets.all,
+      });
     },
   });
 }
@@ -95,7 +81,9 @@ export function useDeletePermissionPreset() {
   return useMutation({
     mutationFn: deletePermissionPreset,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["permissionPresets"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.permissionPresets.all,
+      });
     },
   });
 }

@@ -7,7 +7,7 @@ import express, {
 import { z } from "zod";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { getLogger } from "../../lib/logger-factory";
-import { hasPermission, type UserEventType } from "@mini-infra/types";
+import { hasPermission, type UserEventType, Permission } from "@mini-infra/types";
 import {
   getVaultKVService,
   VaultKVError,
@@ -136,7 +136,7 @@ const writeBodySchema = z.object({
  */
 router.get(
   "/*splat",
-  requirePermission("vault-kv:read") as RequestHandler,
+  requirePermission(Permission.VaultKvRead) as RequestHandler,
   (async (req: Request, res: Response, _next: NextFunction) => {
     const path = parsePath(req, res);
     if (path === null) return;
@@ -162,7 +162,7 @@ router.get(
  */
 router.post(
   "/*splat",
-  requirePermission("vault-kv:write") as RequestHandler,
+  requirePermission(Permission.VaultKvWrite) as RequestHandler,
   (async (req: Request, res: Response, _next: NextFunction) => {
     const path = parsePath(req, res);
     if (path === null) return;
@@ -197,7 +197,7 @@ router.post(
  */
 router.patch(
   "/*splat",
-  requirePermission("vault-kv:write") as RequestHandler,
+  requirePermission(Permission.VaultKvWrite) as RequestHandler,
   (async (req: Request, res: Response, _next: NextFunction) => {
     const path = parsePath(req, res);
     if (path === null) return;
@@ -237,12 +237,12 @@ router.patch(
  */
 router.delete(
   "/*splat",
-  requirePermission("vault-kv:write") as RequestHandler,
+  requirePermission(Permission.VaultKvWrite) as RequestHandler,
   (async (req: Request, res: Response, _next: NextFunction) => {
     const path = parsePath(req, res);
     if (path === null) return;
     const permanent = req.query.permanent === "true" || req.query.permanent === "1";
-    if (permanent && req.apiKey && !hasPermission(req.apiKey.permissions, "vault-kv:destroy")) {
+    if (permanent && req.apiKey && !hasPermission(req.apiKey.permissions, Permission.VaultKvDestroy)) {
       log.warn(
         { keyId: req.apiKey.id, path },
         "API key permission denied for vault-kv:destroy",
@@ -251,7 +251,7 @@ router.delete(
         success: false,
         message: "?permanent=true requires the vault-kv:destroy scope",
         code: "vault_destroy_forbidden",
-        requiredPermissions: ["vault-kv:destroy"],
+        requiredPermissions: [Permission.VaultKvDestroy],
       });
     }
     try {

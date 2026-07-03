@@ -14,6 +14,7 @@ import {
 import { agentConversationService } from "../services/agent-conversation-service";
 import { isAgentSidecarHealthy } from "../services/agent-sidecar";
 import agentSettingsRouter from "./agent-settings";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("agent", "agent");
 const router = express.Router();
@@ -59,7 +60,7 @@ const createSessionSchema = z.object({
 
 router.post(
   "/sessions",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -117,7 +118,7 @@ router.post(
 
 router.get(
   "/sessions/:sessionId/stream",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
@@ -232,7 +233,7 @@ const updateContextSchema = z.object({
 
 router.put(
   "/sessions/:sessionId/context",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response) => {
     const service = getAgentService();
     if (!service) {
@@ -274,7 +275,7 @@ router.put(
 
 router.delete(
   "/sessions/:sessionId",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const service = getAgentService();
@@ -315,7 +316,7 @@ router.delete(
 
 router.get(
   "/conversations",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = getUserId(req);
@@ -356,7 +357,7 @@ const conversationIdParamSchema = z.object({
 
 router.get(
   "/conversations/:id",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const paramParsed = conversationIdParamSchema.safeParse(req.params);
@@ -399,7 +400,7 @@ router.get(
 
 router.delete(
   "/conversations/:id",
-  requirePermission("agent:use"),
+  requirePermission(Permission.AgentUse),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const paramParsed = conversationIdParamSchema.safeParse(req.params);

@@ -7,7 +7,7 @@ import { emitToChannel } from "../lib/socket";
 import { requirePermission } from "../middleware/auth";
 import { getNatsControlPlaneService } from "../services/nats/nats-control-plane-service";
 import { NatsBus } from "../services/nats/nats-bus";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -81,7 +81,7 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
 
 router.get(
   "/status",
-  requirePermission("nats:read"),
+  requirePermission(Permission.NatsRead),
   asyncHandler(async (_req, res) => {
     res.json({ success: true, data: await getNatsControlPlaneService().getStatus() });
   }),
@@ -89,7 +89,7 @@ router.get(
 
 router.post(
   "/apply",
-  requirePermission("nats:admin"),
+  requirePermission(Permission.NatsAdmin),
   asyncHandler(async (_req, res) => {
     const operationId = `nats-apply-${crypto.randomUUID()}`;
     try {
@@ -111,83 +111,83 @@ router.post(
   }),
 );
 
-router.get("/accounts", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/accounts", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listAccounts() });
 }));
 
-router.post("/accounts", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/accounts", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(accountCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createAccount(input, getUserId(req)) });
 }));
 
-router.patch("/accounts/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/accounts/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(accountUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateAccount(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/accounts/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/accounts/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteAccount(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.get("/credentials", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/credentials", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listCredentialProfiles() });
 }));
 
-router.post("/credentials", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/credentials", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(credentialCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createCredentialProfile(input, getUserId(req)) });
 }));
 
-router.patch("/credentials/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/credentials/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(credentialUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateCredentialProfile(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/credentials/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/credentials/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteCredentialProfile(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.post("/credentials/:id/mint", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/credentials/:id/mint", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(mintSchema, req.body ?? {});
   res.json({ success: true, data: await getNatsControlPlaneService().mintCredentialsForProfile(String(req.params.id), input.ttlSeconds) });
 }));
 
-router.get("/streams", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/streams", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listStreams() });
 }));
 
-router.post("/streams", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/streams", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(streamCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createStream(input, getUserId(req)) });
 }));
 
-router.patch("/streams/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/streams/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(streamUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateStream(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/streams/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/streams/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteStream(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.get("/consumers", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/consumers", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listConsumers() });
 }));
 
-router.post("/consumers", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/consumers", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(consumerCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createConsumer(input, getUserId(req)) });
 }));
 
-router.patch("/consumers/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/consumers/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(consumerUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateConsumer(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/consumers/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/consumers/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteConsumer(String(req.params.id));
   res.json({ success: true });
 }));

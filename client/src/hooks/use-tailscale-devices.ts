@@ -1,28 +1,25 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import {
+  ApiRoute,
   Channel,
+  queryKeys,
   ServerEvent,
   type TailscaleDeviceStatus,
   type TailscaleDeviceStatusEvent,
   type TailscaleDevicesResponse,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch } from "@/lib/api-client";
 
-const TAILSCALE_DEVICES_KEY = ["tailscale", "devices"] as const;
 const POLL_INTERVAL_DISCONNECTED = 30_000;
 
 async function fetchTailscaleDevices(): Promise<TailscaleDevicesResponse> {
-  const response = await fetch("/api/tailscale/devices", {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+  // Raw (non-enveloped) endpoint — returns the snapshot body directly.
+  return apiFetch<TailscaleDevicesResponse>(ApiRoute.tailscaleDevices.list(), {
+    correlationIdPrefix: "tailscale-devices",
+    unwrap: false,
   });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch Tailscale devices: ${response.statusText}`,
-    );
-  }
-  return (await response.json()) as TailscaleDevicesResponse;
 }
 
 /**
@@ -44,7 +41,7 @@ export function useTailscaleDevices() {
   const patchDevice = useCallback(
     (incoming: TailscaleDeviceStatus) => {
       queryClient.setQueryData<TailscaleDevicesResponse>(
-        TAILSCALE_DEVICES_KEY,
+        queryKeys.tailscaleDevices.all,
         (prev) => {
           if (!prev) return prev;
           const others = prev.devices.filter((d) => d.id !== incoming.id);
@@ -68,7 +65,7 @@ export function useTailscaleDevices() {
   );
 
   const query = useQuery({
-    queryKey: TAILSCALE_DEVICES_KEY,
+    queryKey: queryKeys.tailscaleDevices.all,
     queryFn: fetchTailscaleDevices,
     refetchInterval: connected ? false : POLL_INTERVAL_DISCONNECTED,
     refetchOnReconnect: true,

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import type { StackTemplateSource, StackTemplateScope, CreateStackTemplateRequest, DraftVersionInput } from '@mini-infra/types';
-import { hasPermission } from '@mini-infra/types';
+import { hasPermission, Permission } from '@mini-infra/types';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
 import { requirePermission } from '../middleware/auth';
@@ -33,7 +33,7 @@ function handleTemplateError(error: unknown, res: Response, fallbackMessage: str
 }
 
 // GET / — List templates
-router.get('/', requirePermission('stacks:read'), async (req, res) => {
+router.get('/', requirePermission(Permission.StacksRead), async (req, res) => {
   try {
     const service = getTemplateService();
     const { source, scope, environmentId, includeArchived, includeLinkedStacks } = req.query;
@@ -53,7 +53,7 @@ router.get('/', requirePermission('stacks:read'), async (req, res) => {
 });
 
 // GET /:templateId — Get template with current version
-router.get('/:templateId', requirePermission('stacks:read'), async (req, res) => {
+router.get('/:templateId', requirePermission(Permission.StacksRead), async (req, res) => {
   try {
     const service = getTemplateService();
     const template = await service.getTemplate(String(req.params.templateId));
@@ -69,7 +69,7 @@ router.get('/:templateId', requirePermission('stacks:read'), async (req, res) =>
 });
 
 // GET /:templateId/versions — List all versions
-router.get('/:templateId/versions', requirePermission('stacks:read'), async (req, res) => {
+router.get('/:templateId/versions', requirePermission(Permission.StacksRead), async (req, res) => {
   try {
     const service = getTemplateService();
 
@@ -87,7 +87,7 @@ router.get('/:templateId/versions', requirePermission('stacks:read'), async (req
 });
 
 // GET /:templateId/versions/:versionId — Get specific version with services + config files
-router.get('/:templateId/versions/:versionId', requirePermission('stacks:read'), async (req, res) => {
+router.get('/:templateId/versions/:versionId', requirePermission(Permission.StacksRead), async (req, res) => {
   try {
     const service = getTemplateService();
     const version = await service.getTemplateVersion(String(req.params.versionId));
@@ -103,19 +103,19 @@ router.get('/:templateId/versions/:versionId', requirePermission('stacks:read'),
 });
 
 // POST / — Create user template (with initial draft)
-router.post('/', requirePermission('stacks:write'), async (req, res) => {
+router.post('/', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     // Same gate as POST /:templateId/draft: a vault section in the body
     // requires the elevated template-vault:write scope on top of stacks:write.
     // Session users always pass.
-    if (draftHasVaultSection(req.body) && !callerHasScope(req, 'template-vault:write')) {
+    if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
       return res.status(403).json({
         success: false,
         message: 'The vault section requires the template-vault:write scope',
         code: 'template_vault_scope_required',
       });
     }
-    if (draftHasNatsSection(req.body) && !callerHasScope(req, 'template-nats:write')) {
+    if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
       return res.status(403).json({
         success: false,
         message: 'The nats section requires the template-nats:write scope',
@@ -142,7 +142,7 @@ router.post('/', requirePermission('stacks:write'), async (req, res) => {
 });
 
 // PATCH /:templateId — Update template metadata
-router.patch('/:templateId', requirePermission('stacks:write'), async (req, res) => {
+router.patch('/:templateId', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     const parsed = updateTemplateMetaSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -198,17 +198,17 @@ function callerHasScope(req: Request, scope: string): boolean {
 }
 
 // POST /:templateId/draft — Create or replace draft version
-router.post('/:templateId/draft', requirePermission('stacks:write'), async (req, res) => {
+router.post('/:templateId/draft', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     // Vault sections require an additional elevated scope on top of stacks:write.
-    if (draftHasVaultSection(req.body) && !callerHasScope(req, 'template-vault:write')) {
+    if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
       return res.status(403).json({
         success: false,
         message: 'The vault section requires the template-vault:write scope',
         code: 'template_vault_scope_required',
       });
     }
-    if (draftHasNatsSection(req.body) && !callerHasScope(req, 'template-nats:write')) {
+    if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
       return res.status(403).json({
         success: false,
         message: 'The nats section requires the template-nats:write scope',
@@ -235,7 +235,7 @@ router.post('/:templateId/draft', requirePermission('stacks:write'), async (req,
 });
 
 // POST /:templateId/publish — Publish draft
-router.post('/:templateId/publish', requirePermission('stacks:write'), async (req, res) => {
+router.post('/:templateId/publish', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     const parsed = publishDraftSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -256,7 +256,7 @@ router.post('/:templateId/publish', requirePermission('stacks:write'), async (re
 });
 
 // DELETE /:templateId/draft — Discard draft
-router.delete('/:templateId/draft', requirePermission('stacks:write'), async (req, res) => {
+router.delete('/:templateId/draft', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     const service = getTemplateService();
     await service.discardDraft(String(req.params.templateId));
@@ -268,7 +268,7 @@ router.delete('/:templateId/draft', requirePermission('stacks:write'), async (re
 });
 
 // DELETE /:templateId — Delete template and all linked stacks
-router.delete('/:templateId', requirePermission('stacks:write'), async (req, res) => {
+router.delete('/:templateId', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     const service = getTemplateService();
     await service.deleteTemplate(String(req.params.templateId));
@@ -287,7 +287,7 @@ router.delete('/:templateId', requirePermission('stacks:write'), async (req, res
 // (or `any`-scoped and the caller intends to instantiate into an env).
 // Host-scoped templates don't need it; the route falls back to host
 // scope when the template scope is `host` and no env is given.
-router.get('/:templateId/prerequisites', requirePermission('stacks:read'), async (req, res) => {
+router.get('/:templateId/prerequisites', requirePermission(Permission.StacksRead), async (req, res) => {
   try {
     const service = getTemplateService();
     const template = await service.getTemplate(String(req.params.templateId));
@@ -349,7 +349,7 @@ router.get('/:templateId/prerequisites', requirePermission('stacks:read'), async
 });
 
 // POST /:templateId/instantiate — Create stack from template
-router.post('/:templateId/instantiate', requirePermission('stacks:write'), async (req, res) => {
+router.post('/:templateId/instantiate', requirePermission(Permission.StacksWrite), async (req, res) => {
   try {
     const parsed = instantiateTemplateSchema.safeParse(req.body);
     if (!parsed.success) {

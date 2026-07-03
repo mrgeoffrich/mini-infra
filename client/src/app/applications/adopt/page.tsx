@@ -68,6 +68,10 @@ const defaultValues: AdoptFormData = {
   containerName: "",
   listeningPort: 3000,
   hostname: "",
+  // Default suggestion for the ADOPTED APPLICATION's own health-check path
+  // (a convention on the user's container, unrelated to Mini Infra's own
+  // /health route) — not a call to our API, so not an ApiRoute candidate.
+  // eslint-disable-next-line no-restricted-syntax
   healthCheckEndpoint: "/api/health",
   linkedContainers: [],
 };

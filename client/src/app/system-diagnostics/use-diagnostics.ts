@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 import type {
   MemoryDiagnostics,
   SmapsTopResponse,
@@ -15,41 +17,43 @@ export function useDiagnostics() {
   const [inspectPeek, setInspectPeek] = useState<PeekResult | null>(null);
   const [peekingStart, setPeekingStart] = useState<string | null>(null);
 
+  // No diagnostics Socket.IO channel exists at all (server-side memory/heap
+  // snapshots aren't pushed) — polling is the only option here, so it's left
+  // as-is for all three queries below.
   const query = useQuery<MemoryDiagnostics>({
-    queryKey: ["diagnostics", "memory"],
-    queryFn: async () => {
-      const res = await fetch("/api/diagnostics/memory");
-      if (!res.ok) throw new Error(`Failed to load memory diagnostics (${res.status})`);
-      return res.json();
-    },
+    queryKey: queryKeys.diagnostics.memory,
+    queryFn: () =>
+      apiFetch<MemoryDiagnostics>(ApiRoute.diagnostics.memory(), {
+        unwrap: false,
+        correlationIdPrefix: "diagnostics-memory",
+      }),
     refetchInterval: 5000,
   });
 
   const smapsQuery = useQuery<SmapsTopResponse>({
-    queryKey: ["diagnostics", "smaps-top"],
-    queryFn: async () => {
-      const res = await fetch("/api/diagnostics/smaps-top?limit=25");
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Failed to load smaps (${res.status})`);
-      }
-      return res.json();
+    queryKey: queryKeys.diagnostics.smapsTop,
+    queryFn: () => {
+      const url = new URL(ApiRoute.diagnostics.smapsTop(), window.location.origin);
+      url.searchParams.set("limit", "25");
+      return apiFetch<SmapsTopResponse>(url.toString(), {
+        unwrap: false,
+        correlationIdPrefix: "diagnostics-smaps-top",
+      });
     },
     enabled: smapsLoaded,
     refetchInterval: smapsLoaded ? 10000 : false,
   });
 
   const regionsQuery = useQuery<SmapsRegionsResponse>({
-    queryKey: ["diagnostics", "smaps-regions", inspectPathname],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/diagnostics/smaps-regions?pathname=${encodeURIComponent(inspectPathname)}&limit=10`,
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Failed to load regions (${res.status})`);
-      }
-      return res.json();
+    queryKey: queryKeys.diagnostics.smapsRegions(inspectPathname),
+    queryFn: () => {
+      const url = new URL(ApiRoute.diagnostics.smapsRegions(), window.location.origin);
+      url.searchParams.set("pathname", inspectPathname);
+      url.searchParams.set("limit", "10");
+      return apiFetch<SmapsRegionsResponse>(url.toString(), {
+        unwrap: false,
+        correlationIdPrefix: "diagnostics-smaps-regions",
+      });
     },
     enabled: false,
   });
@@ -72,21 +76,17 @@ export function useDiagnostics() {
     setPeekingStart(region.start);
     setInspectPeek(null);
     try {
-      const res = await fetch("/api/diagnostics/region-peek", {
+      const data = await apiFetch<PeekResult>(ApiRoute.diagnostics.regionPeek(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        unwrap: false,
+        correlationIdPrefix: "diagnostics-region-peek",
+        body: {
           start: region.start,
           length: Math.min(region.rss, 2 * 1024 * 1024),
           minLen: 8,
           maxStrings: 200,
-        }),
+        },
       });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Peek failed (${res.status})`);
-      }
-      const data: PeekResult = await res.json();
       setInspectPeek(data);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to peek region");

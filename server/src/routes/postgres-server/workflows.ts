@@ -6,6 +6,7 @@ import databaseManagementService from "../../services/postgres-server/database-m
 import userManagementService from "../../services/postgres-server/user-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 import postgresServerService from "../../services/postgres-server/server-manager";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("db", "workflows");
 const router = express.Router();
@@ -32,7 +33,7 @@ const createAppDatabaseSchema = z.object({
  * Quick workflow: Create database + user + grant all permissions
  * Returns connection string for application use
  */
-router.post("/create-app-database", requirePermission('postgres:write'), async (req, res) => {
+router.post("/create-app-database", requirePermission(Permission.PostgresWrite), async (req, res) => {
   let createdDatabase: Awaited<ReturnType<typeof databaseManagementService.createDatabase>> | null = null;
   let createdUser: Awaited<ReturnType<typeof userManagementService.createUser>> | null = null;
   let createdGrant: Awaited<ReturnType<typeof grantManagementService.createGrant>> | null = null;

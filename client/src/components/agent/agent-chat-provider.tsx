@@ -1,6 +1,7 @@
 import { useState, useCallback, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@mini-infra/types";
 import { AgentChatContext } from "@/lib/agent-chat-context";
 import { useAgentStatus } from "@/hooks/use-agent-status";
 import { useAgentSession } from "@/hooks/use-agent-session";
@@ -54,7 +55,7 @@ export function AgentChatProvider({ children }: AgentChatProviderProps) {
   const wrappedSendMessage = useCallback(
     async (message: string) => {
       await sendMessage(message);
-      void queryClient.invalidateQueries({ queryKey: ["agent-conversations"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.agent.conversations() });
     },
     [sendMessage, queryClient],
   );

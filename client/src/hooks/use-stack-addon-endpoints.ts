@@ -1,19 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type { TailscaleAddonEndpointsResponse } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchAddonEndpoints(
   stackId: string,
 ): Promise<TailscaleAddonEndpointsResponse> {
-  const response = await fetch(`/api/stacks/${stackId}/addon-endpoints`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch addon endpoints: ${response.statusText}`,
-    );
-  }
-  return (await response.json()) as TailscaleAddonEndpointsResponse;
+  // Raw response — `{endpoints}` has no `{success, data}` envelope.
+  return apiFetch<TailscaleAddonEndpointsResponse>(
+    ApiRoute.stacks.addonEndpoints(stackId),
+    { unwrap: false, correlationIdPrefix: "stack-addon-endpoints" },
+  );
 }
 
 /**
@@ -31,7 +28,7 @@ export function useStackAddonEndpoints(
   enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: ["stack-addon-endpoints", stackId],
+    queryKey: queryKeys.stacks.addonEndpoints(stackId ?? ""),
     queryFn: () => fetchAddonEndpoints(stackId as string),
     enabled: enabled && !!stackId,
   });

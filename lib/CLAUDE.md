@@ -9,8 +9,11 @@ lib/
 ├── types/
 │   ├── index.ts           # Barrel export — re-exports every domain module
 │   ├── api.ts             # REST request/response shapes
+│   ├── http.ts             # HttpHeader constants + newCorrelationId() (runtime helper)
+│   ├── api-routes.ts       # ApiBase/ApiRoute builders + ALL_API_ROUTES registry (runtime)
+│   ├── query-keys.ts       # queryKeys TanStack Query key factory (runtime)
 │   ├── auth.ts            # Auth, sessions, API keys
-│   ├── permissions.ts     # Permission scopes + presets
+│   ├── permissions.ts     # Permission scopes, presets, and the Permission const map (runtime)
 │   ├── containers.ts      # Container, ContainerStatus
 │   ├── docker.ts          # Networks, volumes
 │   ├── stacks.ts          # Stack, StackDefinition, plan/apply types
@@ -54,7 +57,9 @@ pnpm --filter @mini-infra/types clean   # rm -rf dist
 
 ## Conventions
 
+- **This package is not types-only.** Alongside pure type/interface declarations, it ships dependency-free runtime constants and small helpers that both client and server import to avoid duplicating magic strings: `Channel`/`ServerEvent` (`socket-events.ts`), `ApiBase`/`ApiRoute`/`ALL_API_ROUTES` (`api-routes.ts`), `queryKeys` (`query-keys.ts`), `HttpHeader`/`newCorrelationId()` (`http.ts`), `Permission`/`ALL_PERMISSION_SCOPES` (`permissions.ts`), and Socket.IO reconnection/tuning constants. Treat these as first-class exports, not an accident.
+- **The load-bearing invariant is zero external runtime dependencies** — check `package.json`: no `dependencies` entry, ever. Every runtime helper here must be implementable with plain TypeScript/JS (no `zod`, `lodash`, etc.). This is what makes the package safe to import from both the Vite client bundle and the Node server without pulling in a second copy of some library, or a dependency one side doesn't otherwise need.
 - **Always use `Channel.*` and `ServerEvent.*` constants** from `socket-events.ts` for Socket.IO. Never raw strings.
-- **No runtime dependencies.** This package is types-only — keep it that way.
-- **No business logic.** Pure type/interface declarations and constant enums only.
+- **Always use `Permission.*` constants** from `permissions.ts` for permission scopes (`requirePermission()`, `describeRoute()` meta, etc.). Never raw `"resource:action"` strings.
 - When adding a new domain module, add it to `index.ts` so it's re-exported.
+- When adding a new symbolic-name-to-string-literal map (mirroring `Channel`/`ServerEvent`/`Permission`), back it with a runtime or test-time check that its values equal the authoritative source list (see `assertPermissionCatalogInSync()` in `permissions.ts`) — `as const satisfies Record<string, ...>` alone only checks the *shape*, not that every catalog entry is covered.

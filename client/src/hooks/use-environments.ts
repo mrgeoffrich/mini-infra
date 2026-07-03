@@ -7,16 +7,17 @@ import {
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
   ListEnvironmentsResponse,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `environments-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // Environment API Functions
 // ====================
+//
+// The environments API returns raw resource bodies (no `{success,data}`
+// envelope), so every call here passes `unwrap: false`.
 
 async function fetchEnvironments(
   filters: {
@@ -24,143 +25,74 @@ async function fetchEnvironments(
     page?: number;
     limit?: number;
   } = {},
-  correlationId: string,
 ): Promise<ListEnvironmentsResponse> {
-  const url = new URL(`/api/environments`, window.location.origin);
+  const url = new URL(ApiRoute.environments.list(), window.location.origin);
 
   // Add query parameters
   if (filters.type) url.searchParams.set("type", filters.type);
   if (filters.page) url.searchParams.set("page", filters.page.toString());
   if (filters.limit) url.searchParams.set("limit", filters.limit.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<ListEnvironmentsResponse>(url.toString(), {
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environments: ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
-async function fetchEnvironment(
-  id: string,
-  correlationId: string,
-): Promise<Environment> {
-  const response = await fetch(`/api/environments/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchEnvironment(id: string): Promise<Environment> {
+  return apiFetch<Environment>(ApiRoute.environments.get(id), {
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch environment: ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
 async function createEnvironment(
   request: CreateEnvironmentRequest,
-  correlationId: string,
 ): Promise<Environment> {
-  const response = await fetch(`/api/environments`, {
+  return apiFetch<Environment>(ApiRoute.environments.list(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create environment: ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
 async function updateEnvironment(
   id: string,
   request: UpdateEnvironmentRequest,
-  correlationId: string,
 ): Promise<Environment> {
-  const response = await fetch(`/api/environments/${id}`, {
+  return apiFetch<Environment>(ApiRoute.environments.get(id), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update environment: ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
-async function deleteEnvironment(
-  options: { id: string; deleteNetworks?: boolean },
-  correlationId: string,
-): Promise<void> {
+async function deleteEnvironment(options: {
+  id: string;
+  deleteNetworks?: boolean;
+}): Promise<void> {
   const { id, deleteNetworks = false } = options;
-  const url = new URL(`/api/environments/${id}`, window.location.origin);
+  const url = new URL(ApiRoute.environments.get(id), window.location.origin);
 
   // Add query parameters for deletion options
   if (deleteNetworks) url.searchParams.set("deleteNetworks", "true");
 
-  const response = await fetch(url.toString(), {
+  await apiFetch<void>(url.toString(), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    // Try to parse error response for detailed message
-    let errorMessage = `Failed to delete environment: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorData.error || errorMessage;
-    } catch {
-      // If JSON parsing fails, use the default error message
-    }
-    throw new Error(errorMessage);
-  }
 }
-
-
 
 async function fetchEnvironmentDeleteCheck(
   id: string,
-  correlationId: string,
 ): Promise<EnvironmentDeleteCheck> {
-  const response = await fetch(`/api/environments/${id}/delete-check`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EnvironmentDeleteCheck>(ApiRoute.environments.deleteCheck(id), {
+    correlationIdPrefix: "environments",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to check delete eligibility: ${response.statusText}`);
-  }
-
-  return await response.json();
 }
 
 // ====================
@@ -186,11 +118,9 @@ export function useEnvironments(options: UseEnvironmentsOptions = {}) {
     filters = {},
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["environments", filters],
-    queryFn: () => fetchEnvironments(filters, correlationId),
+    queryKey: queryKeys.environments.list(filters),
+    queryFn: () => fetchEnvironments(filters),
     enabled,
     refetchInterval,
     retry:
@@ -198,10 +128,7 @@ export function useEnvironments(options: UseEnvironmentsOptions = {}) {
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (error instanceof ApiRequestError && error.isAuth) {
               return false;
             }
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -226,11 +153,9 @@ export function useEnvironment(
 ) {
   const { enabled = true, refetchInterval, retry = 3 } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["environment", id],
-    queryFn: () => fetchEnvironment(id, correlationId),
+    queryKey: queryKeys.environments.detail(id),
+    queryFn: () => fetchEnvironment(id),
     enabled: enabled && !!id,
     refetchInterval,
     retry:
@@ -238,10 +163,8 @@ export function useEnvironment(
         ? retry
         : (failureCount: number, error: Error) => {
             if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404") ||
-              error.message.includes("Not found")
+              error instanceof ApiRequestError &&
+              (error.isAuth || error.status === 404)
             ) {
               return false;
             }
@@ -258,20 +181,18 @@ export function useEnvironment(
 // Mutation hooks
 export function useCreateEnvironment() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (request: CreateEnvironmentRequest) =>
-      createEnvironment(request, correlationId),
+      createEnvironment(request),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
     },
   });
 }
 
 export function useUpdateEnvironment() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -280,26 +201,25 @@ export function useUpdateEnvironment() {
     }: {
       id: string;
       request: UpdateEnvironmentRequest;
-    }) => updateEnvironment(id, request, correlationId),
+    }) => updateEnvironment(id, request),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", id] });
-      queryClient.invalidateQueries({ queryKey: ["environmentStatus", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.status(id) });
     },
   });
 }
 
 export function useDeleteEnvironment() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (options: { id: string; deleteNetworks?: boolean }) =>
-      deleteEnvironment(options, correlationId),
+      deleteEnvironment(options),
     onSuccess: (_, options) => {
-      queryClient.invalidateQueries({ queryKey: ["environments"] });
-      queryClient.removeQueries({ queryKey: ["environment", options.id] });
-      queryClient.removeQueries({ queryKey: ["environmentStatus", options.id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
+      queryClient.removeQueries({ queryKey: queryKeys.environments.detail(options.id) });
+      queryClient.removeQueries({ queryKey: queryKeys.environments.status(options.id) });
     },
   });
 }
@@ -309,11 +229,10 @@ export function useEnvironmentDeleteCheck(
   options: { enabled?: boolean } = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["environmentDeleteCheck", id],
-    queryFn: () => fetchEnvironmentDeleteCheck(id, correlationId),
+    queryKey: queryKeys.environments.deleteCheck(id),
+    queryFn: () => fetchEnvironmentDeleteCheck(id),
     enabled: enabled && !!id,
     staleTime: 0, // Always refetch when dialog opens
     gcTime: 60 * 1000,

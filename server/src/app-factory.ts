@@ -8,7 +8,6 @@ import express, {
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
-import expressListEndpoints from "express-list-endpoints";
 import path from "path";
 import { randomUUID } from "crypto";
 import appConfig from "./lib/config-new";
@@ -87,6 +86,12 @@ import natsPrefixAllowlistRoutes from "./routes/nats-prefix-allowlist";
 import egressRoutes from "./routes/egress";
 import egressFwAgentRoutes from "./routes/egress-fw-agent";
 import { listRouteMeta } from "./lib/openapi-registry";
+import {
+  beginRouteMountTracking,
+  enumerateRoutes,
+  type RawRoute,
+} from "./lib/route-enumerator";
+import { ApiBase } from "@mini-infra/types";
 
 type RouteDefinition = {
   id: string;
@@ -102,27 +107,63 @@ export type CreateAppOptions = {
 };
 
 // Path prefixes that have been migrated to describeRoute(). Expand as more routes adopt it.
-// A warning fires in development for any route under these prefixes that lacks registry metadata.
-const MIGRATED_ROUTE_PREFIXES = ["/api/diagnostics"];
+// A dev-time warning (see warnOnRouteMetadataDrift below) fires for any route
+// under these prefixes that lacks registry metadata, and
+// `server/src/__tests__/api-routes-drift.test.ts` promotes the same check
+// into a hard CI assertion (the "coverage ratchet") via
+// `findRouteMetadataDrift()` below, so this list can't silently regress.
+export const MIGRATED_ROUTE_PREFIXES = ["/api/diagnostics", "/api/containers"];
 
-function warnOnRouteMetadataDrift(app: express.Application): void {
-  try {
-    const endpoints = expressListEndpoints(app);
-    const registryKeys = new Set(
-      listRouteMeta().map((m) => `${m.method.toUpperCase()} ${m.path}`),
-    );
-    const missing: string[] = [];
-    for (const endpoint of endpoints) {
-      if (!MIGRATED_ROUTE_PREFIXES.some((p) => endpoint.path.startsWith(p))) {
-        continue;
-      }
-      for (const method of endpoint.methods) {
-        const key = `${method} ${endpoint.path}`;
-        if (!registryKeys.has(key)) {
-          missing.push(key);
-        }
-      }
+/**
+ * Pure comparison: given an already-enumerated live route list (see
+ * `enumerateRoutes()` in `./lib/route-enumerator`) and a set of migrated
+ * prefixes, return the `"METHOD /path"` keys that fall under a migrated
+ * prefix but have no `describeRoute()` metadata registered for them.
+ *
+ * Exported so both the dev-time warning below and the CI ratchet test
+ * (`api-routes-drift.test.ts`) share one implementation instead of two
+ * copies that could drift apart.
+ */
+export function findRouteMetadataDrift(
+  routes: RawRoute[],
+  migratedPrefixes: string[] = MIGRATED_ROUTE_PREFIXES,
+): string[] {
+  const registryKeys = new Set(
+    listRouteMeta().map((m) => `${m.method.toUpperCase()} ${m.path}`),
+  );
+  const missing: string[] = [];
+  for (const route of routes) {
+    if (!migratedPrefixes.some((p) => route.path.startsWith(p))) {
+      continue;
     }
+    const key = `${route.method.toUpperCase()} ${route.path}`;
+    if (!registryKeys.has(key)) {
+      missing.push(key);
+    }
+  }
+  return missing;
+}
+
+/**
+ * Dev-time console warning for describeRoute metadata drift.
+ *
+ * NOTE: this walks `routes` captured via `enumerateRoutes()` while mount-path
+ * tracking (see `./lib/route-enumerator`) is active only around the
+ * top-level `app.use(route.path, router)` loop in `createApp()` below — it
+ * does NOT see mount paths for *nested* `router.use(subPath, subRouter)`
+ * calls made at route-module import time (those run before this function
+ * could ever install the tracking patch; see the enumerator's own doc
+ * comment for why). That's a non-issue for every prefix currently in
+ * `MIGRATED_ROUTE_PREFIXES` (`diagnostics.ts`/`containers.ts` both register
+ * every route directly on their top-level router, no nested sub-mounts) but
+ * would need the full "patch before first import" treatment — like
+ * `api-routes-drift.test.ts` uses — if a prefix with nested sub-mounts is
+ * added later. The CI ratchet test uses that fuller treatment already, so it
+ * stays correct regardless.
+ */
+function warnOnRouteMetadataDrift(routes: RawRoute[]): void {
+  try {
+    const missing = findRouteMetadataDrift(routes);
     if (missing.length > 0) {
       console.warn(
         `⚠ describeRoute drift: ${missing.length} route(s) under migrated prefixes missing OpenAPI metadata:\n  ` +
@@ -136,81 +177,81 @@ function warnOnRouteMetadataDrift(app: express.Application): void {
 
 function getRouteDefinitions(): RouteDefinition[] {
   return [
-    { id: "auth", path: "/auth", name: "authRoutes", getRouter: () => authRoutes },
-    { id: "users", path: "/api/users", name: "usersRoutes", getRouter: () => usersRoutes },
-    { id: "authSettings", path: "/api/auth-settings", name: "authSettingsRoutes", getRouter: () => authSettingsRoutes },
-    { id: "apiKeys", path: "/api/keys", name: "apiKeyRoutes", getRouter: () => apiKeyRoutes },
-    { id: "containers", path: "/api/containers", name: "containerRoutes", getRouter: () => containerRoutes },
-    { id: "docker", path: "/api/docker", name: "dockerRoutes", getRouter: () => dockerRoutes },
-    { id: "selfBackupSettings", path: "/api/settings/self-backup", name: "selfBackupSettingsRoutes", getRouter: () => selfBackupSettingsRoutes },
-    { id: "systemSettings", path: "/api/settings/system", name: "systemSettingsRoutes", getRouter: () => systemSettingsRoutes },
-    { id: "storageGoogleDriveOAuth", path: "/api/storage/google-drive/oauth", name: "storageGoogleDriveOAuthRoutes", getRouter: () => storageGoogleDriveOAuthRoutes },
-    { id: "storageSettings", path: "/api/storage", name: "storageSettingsRoutes", getRouter: () => storageSettingsRoutes },
-    { id: "cloudflareSettings", path: "/api/settings/cloudflare", name: "cloudflareSettingsRoutes", getRouter: () => cloudflareSettingsRoutes },
-    { id: "tailscaleSettings", path: "/api/settings/tailscale", name: "tailscaleSettingsRoutes", getRouter: () => tailscaleSettingsRoutes },
-    { id: "githubSettings", path: "/api/settings/github", name: "githubSettingsRoutes", getRouter: () => githubSettingsRoutes },
-    { id: "githubAppSettings", path: "/api/settings/github-app", name: "githubAppSettingsRoutes", getRouter: () => githubAppSettingsRoutes },
-    { id: "githubAppResources", path: "/api/github-app", name: "githubAppResourcesRoutes", getRouter: () => githubAppResourcesRoutes },
-    { id: "githubBugReport", path: "/api/github/bug-report", name: "githubBugReportRoutes", getRouter: () => githubBugReportRoutes },
-    { id: "settingsConnectivity", path: "/api/settings/connectivity", name: "settingsConnectivityRoutes", getRouter: () => settingsConnectivityRoutes },
-    { id: "settingsValidation", path: "/api/settings/validate", name: "settingsValidationRoutes", getRouter: () => settingsValidationRoutes },
-    { id: "settingsDocker", path: "/api/settings/docker-host", name: "settingsDockerRoutes", getRouter: () => settingsDockerRoutes },
-    { id: "settings", path: "/api/settings", name: "settingsRoutes", getRouter: () => settingsRoutes },
-    { id: "storageConnectivity", path: "/api/connectivity/storage", name: "storageConnectivityRoutes", getRouter: () => storageConnectivityRoutes },
-    { id: "cloudflareConnectivity", path: "/api/connectivity", name: "cloudflareConnectivityRoutes", getRouter: () => cloudflareConnectivityRoutes },
-    { id: "tailscaleConnectivity", path: "/api/connectivity", name: "tailscaleConnectivityRoutes", getRouter: () => tailscaleConnectivityRoutes },
-    { id: "tailscaleDevices", path: "/api/tailscale", name: "tailscaleDevicesRoutes", getRouter: () => tailscaleDevicesRoutes },
-    { id: "postgresDatabases", path: "/api/postgres/databases", name: "postgresDatabasesRoutes", getRouter: () => postgresDatabasesRoutes },
-    { id: "postgresBackupConfigs", path: "/api/postgres/backup-configs", name: "postgresBackupConfigsRoutes", getRouter: () => postgresBackupConfigsRoutes },
-    { id: "postgresBackups", path: "/api/postgres", name: "postgresBackupsRoutes", getRouter: () => postgresBackupsRoutes },
-    { id: "postgresRestore", path: "/api/postgres", name: "postgresRestoreRoutes", getRouter: () => postgresRestoreRoutes },
-    { id: "postgresProgress", path: "/api/postgres/progress", name: "postgresProgressRoutes", getRouter: () => postgresProgressRoutes },
-    { id: "userPreferences", path: "/api/user", name: "userPreferencesRoutes", getRouter: () => userPreferencesRoutes },
-    { id: "haproxyFrontends", path: "/api/haproxy/frontends", name: "haproxyFrontendsRoutes", getRouter: () => haproxyFrontendsRoutes },
-    { id: "manualHaproxyFrontends", path: "/api/haproxy/manual-frontends", name: "manualHaproxyFrontendsRoutes", getRouter: () => manualHaproxyFrontendsRoutes },
-    { id: "haproxyBackends", path: "/api/haproxy/backends", name: "haproxyBackendsRoutes", getRouter: () => haproxyBackendsRoutes },
-    { id: "environments", path: "/api/environments", name: "environmentsRoutes", getRouter: () => environmentsRoutes },
-    { id: "selfBackups", path: "/api/self-backups", name: "selfBackupsRoutes", getRouter: () => selfBackupsRoutes },
-    { id: "registryCredentials", path: "/api/registry-credentials", name: "registryCredentialsRoutes", getRouter: createRegistryCredentialsRouter },
-    { id: "postgresServer", path: "/api/postgres-server/servers", name: "postgresServerRoutes", getRouter: () => postgresServerRoutes },
-    { id: "postgresServerGrants", path: "/api/postgres-server/grants", name: "postgresServerGrantsRoutes", getRouter: () => postgresServerGrantsRoutes },
-    { id: "postgresServerWorkflows", path: "/api/postgres-server/workflows", name: "postgresServerWorkflowsRoutes", getRouter: () => postgresServerWorkflowsRoutes },
-    { id: "tlsSettings", path: "/api/tls", name: "tlsSettingsRoutes", getRouter: () => tlsSettingsRoutes },
-    { id: "tlsCertificates", path: "/api/tls/certificates", name: "tlsCertificatesRoutes", getRouter: () => tlsCertificatesRoutes },
-    { id: "tlsRenewals", path: "/api/tls/renewals", name: "tlsRenewalsRoutes", getRouter: () => tlsRenewalsRoutes },
-    { id: "events", path: "/api/events", name: "eventsRoutes", getRouter: () => eventsRoutes },
-    { id: "monitoring", path: "/api/monitoring", name: "monitoringRoutes", getRouter: () => monitoringRoutes },
-    { id: "permissionPresets", path: "/api/permission-presets", name: "permissionPresetsRoutes", getRouter: () => permissionPresetsRoutes },
-    { id: "egress", path: "/api/egress", name: "egressRoutes", getRouter: () => egressRoutes },
-    { id: "egressFwAgent", path: "/api/egress-fw-agent", name: "egressFwAgentRoutes", getRouter: () => egressFwAgentRoutes },
-    { id: "stacks", path: "/api/stacks", name: "stacksRoutes", getRouter: () => stacksRoutes },
-    { id: "stackTemplates", path: "/api/stack-templates", name: "stackTemplatesRoutes", getRouter: () => stackTemplatesRoutes },
-    { id: "selfUpdate", path: "/api/self-update", name: "selfUpdateRoutes", getRouter: () => selfUpdateRoutes },
-    { id: "agentSidecar", path: "/api/agent-sidecar", name: "agentSidecarRoutes", getRouter: () => agentSidecarRoutes },
-    { id: "dns", path: "/api/dns", name: "dnsRoutes", getRouter: () => dnsRoutes },
-    { id: "images", path: "/api/images", name: "imagesRoutes", getRouter: createImagesRouter },
-    { id: "apiRoutes", path: "/api/routes", name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
-    { id: "openapi", path: "/api/openapi.json", name: "openapiRoutes", getRouter: () => openapiRoutes },
-    { id: "agent", path: "/api/agent", name: "agentRoutes", getRouter: () => agentRoutes },
-    { id: "diagnostics", path: "/api/diagnostics", name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
-    { id: "onboarding", path: "/api/onboarding", name: "onboardingRoutes", getRouter: () => onboardingRoutes },
-    { id: "vaultPolicies", path: "/api/vault/policies", name: "vaultPolicyRoutes", getRouter: () => vaultPolicyRoutes },
-    { id: "vaultAppRoles", path: "/api/vault/approles", name: "vaultAppRoleRoutes", getRouter: () => vaultAppRoleRoutes },
+    { id: "auth", path: ApiBase.auth, name: "authRoutes", getRouter: () => authRoutes },
+    { id: "users", path: ApiBase.users, name: "usersRoutes", getRouter: () => usersRoutes },
+    { id: "authSettings", path: ApiBase.authSettings, name: "authSettingsRoutes", getRouter: () => authSettingsRoutes },
+    { id: "apiKeys", path: ApiBase.apiKeys, name: "apiKeyRoutes", getRouter: () => apiKeyRoutes },
+    { id: "containers", path: ApiBase.containers, name: "containerRoutes", getRouter: () => containerRoutes },
+    { id: "docker", path: ApiBase.docker, name: "dockerRoutes", getRouter: () => dockerRoutes },
+    { id: "selfBackupSettings", path: ApiBase.selfBackupSettings, name: "selfBackupSettingsRoutes", getRouter: () => selfBackupSettingsRoutes },
+    { id: "systemSettings", path: ApiBase.systemSettings, name: "systemSettingsRoutes", getRouter: () => systemSettingsRoutes },
+    { id: "storageGoogleDriveOAuth", path: ApiBase.storageGoogleDriveOAuth, name: "storageGoogleDriveOAuthRoutes", getRouter: () => storageGoogleDriveOAuthRoutes },
+    { id: "storageSettings", path: ApiBase.storageSettings, name: "storageSettingsRoutes", getRouter: () => storageSettingsRoutes },
+    { id: "cloudflareSettings", path: ApiBase.cloudflareSettings, name: "cloudflareSettingsRoutes", getRouter: () => cloudflareSettingsRoutes },
+    { id: "tailscaleSettings", path: ApiBase.tailscaleSettings, name: "tailscaleSettingsRoutes", getRouter: () => tailscaleSettingsRoutes },
+    { id: "githubSettings", path: ApiBase.githubSettings, name: "githubSettingsRoutes", getRouter: () => githubSettingsRoutes },
+    { id: "githubAppSettings", path: ApiBase.githubAppSettings, name: "githubAppSettingsRoutes", getRouter: () => githubAppSettingsRoutes },
+    { id: "githubAppResources", path: ApiBase.githubAppResources, name: "githubAppResourcesRoutes", getRouter: () => githubAppResourcesRoutes },
+    { id: "githubBugReport", path: ApiBase.githubBugReport, name: "githubBugReportRoutes", getRouter: () => githubBugReportRoutes },
+    { id: "settingsConnectivity", path: ApiBase.settingsConnectivity, name: "settingsConnectivityRoutes", getRouter: () => settingsConnectivityRoutes },
+    { id: "settingsValidation", path: ApiBase.settingsValidation, name: "settingsValidationRoutes", getRouter: () => settingsValidationRoutes },
+    { id: "settingsDocker", path: ApiBase.settingsDocker, name: "settingsDockerRoutes", getRouter: () => settingsDockerRoutes },
+    { id: "settings", path: ApiBase.settings, name: "settingsRoutes", getRouter: () => settingsRoutes },
+    { id: "storageConnectivity", path: ApiBase.storageConnectivity, name: "storageConnectivityRoutes", getRouter: () => storageConnectivityRoutes },
+    { id: "cloudflareConnectivity", path: ApiBase.cloudflareConnectivity, name: "cloudflareConnectivityRoutes", getRouter: () => cloudflareConnectivityRoutes },
+    { id: "tailscaleConnectivity", path: ApiBase.tailscaleConnectivity, name: "tailscaleConnectivityRoutes", getRouter: () => tailscaleConnectivityRoutes },
+    { id: "tailscaleDevices", path: ApiBase.tailscaleDevices, name: "tailscaleDevicesRoutes", getRouter: () => tailscaleDevicesRoutes },
+    { id: "postgresDatabases", path: ApiBase.postgresDatabases, name: "postgresDatabasesRoutes", getRouter: () => postgresDatabasesRoutes },
+    { id: "postgresBackupConfigs", path: ApiBase.postgresBackupConfigs, name: "postgresBackupConfigsRoutes", getRouter: () => postgresBackupConfigsRoutes },
+    { id: "postgresBackups", path: ApiBase.postgresBackups, name: "postgresBackupsRoutes", getRouter: () => postgresBackupsRoutes },
+    { id: "postgresRestore", path: ApiBase.postgresRestore, name: "postgresRestoreRoutes", getRouter: () => postgresRestoreRoutes },
+    { id: "postgresProgress", path: ApiBase.postgresProgress, name: "postgresProgressRoutes", getRouter: () => postgresProgressRoutes },
+    { id: "userPreferences", path: ApiBase.userPreferences, name: "userPreferencesRoutes", getRouter: () => userPreferencesRoutes },
+    { id: "haproxyFrontends", path: ApiBase.haproxyFrontends, name: "haproxyFrontendsRoutes", getRouter: () => haproxyFrontendsRoutes },
+    { id: "manualHaproxyFrontends", path: ApiBase.manualHaproxyFrontends, name: "manualHaproxyFrontendsRoutes", getRouter: () => manualHaproxyFrontendsRoutes },
+    { id: "haproxyBackends", path: ApiBase.haproxyBackends, name: "haproxyBackendsRoutes", getRouter: () => haproxyBackendsRoutes },
+    { id: "environments", path: ApiBase.environments, name: "environmentsRoutes", getRouter: () => environmentsRoutes },
+    { id: "selfBackups", path: ApiBase.selfBackups, name: "selfBackupsRoutes", getRouter: () => selfBackupsRoutes },
+    { id: "registryCredentials", path: ApiBase.registryCredentials, name: "registryCredentialsRoutes", getRouter: createRegistryCredentialsRouter },
+    { id: "postgresServer", path: ApiBase.postgresServer, name: "postgresServerRoutes", getRouter: () => postgresServerRoutes },
+    { id: "postgresServerGrants", path: ApiBase.postgresServerGrants, name: "postgresServerGrantsRoutes", getRouter: () => postgresServerGrantsRoutes },
+    { id: "postgresServerWorkflows", path: ApiBase.postgresServerWorkflows, name: "postgresServerWorkflowsRoutes", getRouter: () => postgresServerWorkflowsRoutes },
+    { id: "tlsSettings", path: ApiBase.tlsSettings, name: "tlsSettingsRoutes", getRouter: () => tlsSettingsRoutes },
+    { id: "tlsCertificates", path: ApiBase.tlsCertificates, name: "tlsCertificatesRoutes", getRouter: () => tlsCertificatesRoutes },
+    { id: "tlsRenewals", path: ApiBase.tlsRenewals, name: "tlsRenewalsRoutes", getRouter: () => tlsRenewalsRoutes },
+    { id: "events", path: ApiBase.events, name: "eventsRoutes", getRouter: () => eventsRoutes },
+    { id: "monitoring", path: ApiBase.monitoring, name: "monitoringRoutes", getRouter: () => monitoringRoutes },
+    { id: "permissionPresets", path: ApiBase.permissionPresets, name: "permissionPresetsRoutes", getRouter: () => permissionPresetsRoutes },
+    { id: "egress", path: ApiBase.egress, name: "egressRoutes", getRouter: () => egressRoutes },
+    { id: "egressFwAgent", path: ApiBase.egressFwAgent, name: "egressFwAgentRoutes", getRouter: () => egressFwAgentRoutes },
+    { id: "stacks", path: ApiBase.stacks, name: "stacksRoutes", getRouter: () => stacksRoutes },
+    { id: "stackTemplates", path: ApiBase.stackTemplates, name: "stackTemplatesRoutes", getRouter: () => stackTemplatesRoutes },
+    { id: "selfUpdate", path: ApiBase.selfUpdate, name: "selfUpdateRoutes", getRouter: () => selfUpdateRoutes },
+    { id: "agentSidecar", path: ApiBase.agentSidecar, name: "agentSidecarRoutes", getRouter: () => agentSidecarRoutes },
+    { id: "dns", path: ApiBase.dns, name: "dnsRoutes", getRouter: () => dnsRoutes },
+    { id: "images", path: ApiBase.images, name: "imagesRoutes", getRouter: createImagesRouter },
+    { id: "apiRoutes", path: ApiBase.apiRoutes, name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
+    { id: "openapi", path: ApiBase.openapi, name: "openapiRoutes", getRouter: () => openapiRoutes },
+    { id: "agent", path: ApiBase.agent, name: "agentRoutes", getRouter: () => agentRoutes },
+    { id: "diagnostics", path: ApiBase.diagnostics, name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
+    { id: "onboarding", path: ApiBase.onboarding, name: "onboardingRoutes", getRouter: () => onboardingRoutes },
+    { id: "vaultPolicies", path: ApiBase.vaultPolicies, name: "vaultPolicyRoutes", getRouter: () => vaultPolicyRoutes },
+    { id: "vaultAppRoles", path: ApiBase.vaultAppRoles, name: "vaultAppRoleRoutes", getRouter: () => vaultAppRoleRoutes },
     // KV broker — must be mounted BEFORE the catch-all `/api/vault` router
     // so requests to `/api/vault/kv/...` reach this router instead of the
     // shared status/bootstrap router.
-    { id: "vaultKv", path: "/api/vault/kv", name: "vaultKvRoutes", getRouter: () => vaultKvRoutes },
-    { id: "vault", path: "/api/vault", name: "vaultRoutes", getRouter: () => vaultRoutes },
+    { id: "vaultKv", path: ApiBase.vaultKv, name: "vaultKvRoutes", getRouter: () => vaultKvRoutes },
+    { id: "vault", path: ApiBase.vault, name: "vaultRoutes", getRouter: () => vaultRoutes },
     // Allowlist must be mounted BEFORE the catch-all `/api/nats` router so
     // requests to `/api/nats/prefix-allowlist/...` reach this router instead.
-    { id: "natsPrefixAllowlist", path: "/api/nats/prefix-allowlist", name: "natsPrefixAllowlistRoutes", getRouter: () => natsPrefixAllowlistRoutes },
-    { id: "nats", path: "/api/nats", name: "natsRoutes", getRouter: () => natsRoutes },
+    { id: "natsPrefixAllowlist", path: ApiBase.natsPrefixAllowlist, name: "natsPrefixAllowlistRoutes", getRouter: () => natsPrefixAllowlistRoutes },
+    { id: "nats", path: ApiBase.nats, name: "natsRoutes", getRouter: () => natsRoutes },
     // Dev-only: exchange admin credentials for a full-admin API key. Only
     // registered when ENABLE_DEV_API_KEY_ENDPOINT=true — otherwise getRouter
     // returns undefined and the route is skipped.
     {
       id: "devApiKey",
-      path: "/api/dev",
+      path: ApiBase.devApiKey,
       name: "devApiKeyRoutes",
       getRouter: () =>
         process.env.ENABLE_DEV_API_KEY_ENDPOINT === "true"
@@ -309,6 +350,14 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
     });
   }) as RequestHandler);
 
+  // Mount-path tracking (see ./lib/route-enumerator) only needs to be active
+  // while these top-level `app.use(route.path, router)` calls run — it tags
+  // each pushed stack layer with its literal mount path so
+  // `enumerateRoutes()` can recover full paths afterwards even though
+  // Express 5's compiled matchers no longer expose them. Cheap to leave on
+  // unconditionally; the drift check below is the only consumer, gated
+  // separately.
+  const stopRouteMountTracking = beginRouteMountTracking();
   for (const route of routeDefinitions) {
     if (!includeRouteIds.has(route.id)) {
       continue;
@@ -333,9 +382,10 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
       throw error;
     }
   }
+  stopRouteMountTracking();
 
   if (appConfig.server.nodeEnv === "development" && !options.quiet) {
-    warnOnRouteMetadataDrift(app);
+    warnOnRouteMetadataDrift(enumerateRoutes(app));
   }
 
   if (appConfig.server.nodeEnv === "production") {

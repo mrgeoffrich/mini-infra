@@ -41,7 +41,7 @@ import {
   IconShield,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { SystemSettingsInfo } from "@mini-infra/types";
+import { queryKeys, SystemSettingsInfo } from "@mini-infra/types";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -192,7 +192,7 @@ export default function CloudflareSettingsPage() {
       await Promise.all(promises);
 
       // Step 3: Force refresh connectivity status and show success feedback
-      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
       setValidationState({ isValidating: false, isSuccess: true, error: null });
       toast.success("Cloudflare connection validated and saved successfully");
 

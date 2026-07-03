@@ -7,19 +7,7 @@ import { getLogger } from "../lib/logger-factory";
 const logger = getLogger("backup", "postgres-backups");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { BackupExecutorService } from "../services/backup";
-import {
-  BackupOperationListResponse,
-  BackupOperationStatusResponse,
-  BackupOperationDeleteResponse,
-  ManualBackupResponse,
-  BackupOperationFilter,
-  BackupOperationProgress,
-  BackupOperationType,
-  BackupOperationStatus,
-  BACKUP_OPERATION_TYPES,
-  BACKUP_OPERATION_STATUSES,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { BackupOperationListResponse, BackupOperationStatusResponse, BackupOperationDeleteResponse, ManualBackupResponse, BackupOperationFilter, BackupOperationProgress, BackupOperationType, BackupOperationStatus, BACKUP_OPERATION_TYPES, BACKUP_OPERATION_STATUSES, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -131,7 +119,7 @@ function mapBackupOperationToInfo(operation: Prisma.BackupOperationGetPayload<tr
 // ====================
 
 
-router.get("/backups/:databaseId", requirePermission('postgres:read'), async (req, res) => {
+router.get("/backups/:databaseId", requirePermission(Permission.PostgresRead), async (req, res) => {
   const requestId = res.locals.requestId;
   const userId = res.locals.user.id;
   const databaseId = String(req.params.databaseId);
@@ -222,7 +210,7 @@ router.get("/backups/:databaseId", requirePermission('postgres:read'), async (re
 
 router.post(
   "/backups/:databaseId/manual",
-  requirePermission('postgres:write'),
+  requirePermission(Permission.PostgresWrite),
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -352,7 +340,7 @@ router.post(
 
 router.get(
   "/backups/:backupId/status",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -448,7 +436,7 @@ router.get(
 
 router.delete(
   "/backups/:backupId",
-  requirePermission('postgres:write'),
+  requirePermission(Permission.PostgresWrite),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;
@@ -546,7 +534,7 @@ router.delete(
 
 router.get(
   "/backups/:backupId/progress",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const userId = res.locals.user.id;

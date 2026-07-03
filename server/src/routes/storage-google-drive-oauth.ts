@@ -36,6 +36,7 @@ import {
 } from "../services/storage/providers/google-drive/google-drive-oauth-state";
 import { google } from "googleapis";
 import { StorageService } from "../services/storage/storage-service";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "storage-google-drive-oauth");
 const router = express.Router();
@@ -54,7 +55,7 @@ function buildErrorRedirect(reason: string): string {
 
 router.get(
   "/start",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);

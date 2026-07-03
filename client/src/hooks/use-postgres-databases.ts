@@ -14,12 +14,10 @@ import {
   PostgresDatabaseFilter,
   PostgresDatabaseSortOptions,
   DatabaseHealthStatus,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-db-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // PostgreSQL Database API Functions
@@ -31,9 +29,8 @@ async function fetchPostgresDatabases(
   limit = 20,
   sortBy: keyof PostgresDatabaseInfo = "name",
   sortOrder: "asc" | "desc" = "asc",
-  correlationId: string,
 ): Promise<PostgresDatabaseListResponse> {
-  const url = new URL(`/api/postgres/databases`, window.location.origin);
+  const url = new URL(ApiRoute.postgres.databases(), window.location.origin);
 
   // Add query parameters
   url.searchParams.set("page", page.toString());
@@ -48,229 +45,79 @@ async function fetchPostgresDatabases(
     url.searchParams.set("tags", filters.tags.join(","));
   }
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<PostgresDatabaseListResponse>(url.toString(), {
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch PostgreSQL databases: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresDatabaseListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch PostgreSQL databases");
-  }
-
-  return data;
 }
 
-async function fetchPostgresDatabase(
-  id: string,
-  correlationId: string,
-): Promise<PostgresDatabaseResponse> {
-  const response = await fetch(`/api/postgres/databases/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchPostgresDatabase(id: string): Promise<PostgresDatabaseResponse> {
+  return apiFetch<PostgresDatabaseResponse>(ApiRoute.postgres.database(id), {
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch PostgreSQL database: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresDatabaseResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch PostgreSQL database");
-  }
-
-  return data;
 }
 
 async function createPostgresDatabase(
   request: CreatePostgresDatabaseRequest,
-  correlationId: string,
 ): Promise<PostgresDatabaseResponse> {
-  const response = await fetch(`/api/postgres/databases`, {
+  return apiFetch<PostgresDatabaseResponse>(ApiRoute.postgres.databases(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to create PostgreSQL database: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresDatabaseResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create PostgreSQL database");
-  }
-
-  return data;
 }
 
 async function updatePostgresDatabase(
   id: string,
   request: UpdatePostgresDatabaseRequest,
-  correlationId: string,
 ): Promise<PostgresDatabaseResponse> {
-  const response = await fetch(`/api/postgres/databases/${id}`, {
+  return apiFetch<PostgresDatabaseResponse>(ApiRoute.postgres.database(id), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to update PostgreSQL database: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresDatabaseResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update PostgreSQL database");
-  }
-
-  return data;
 }
 
 async function deletePostgresDatabase(
   id: string,
-  correlationId: string,
 ): Promise<PostgresDatabaseDeleteResponse> {
-  const response = await fetch(`/api/postgres/databases/${id}`, {
+  return apiFetch<PostgresDatabaseDeleteResponse>(ApiRoute.postgres.database(id), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to delete PostgreSQL database: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresDatabaseDeleteResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete PostgreSQL database");
-  }
-
-  return data;
 }
 
 async function testDatabaseConnection(
   request: TestDatabaseConnectionRequest,
-  correlationId: string,
 ): Promise<DatabaseConnectionTestResponse> {
-  const response = await fetch(`/api/postgres/databases/test-connection`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to test database connection: ${response.statusText}`,
-    );
-  }
-
-  const data: DatabaseConnectionTestResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to test database connection");
-  }
-
-  return data;
+  return apiFetch<DatabaseConnectionTestResponse>(
+    ApiRoute.postgres.testConnection(),
+    { method: "POST", body: request, correlationIdPrefix: "postgres-db", unwrap: false },
+  );
 }
 
 async function testExistingDatabaseConnection(
   id: string,
-  correlationId: string,
 ): Promise<DatabaseConnectionTestResponse> {
-  const response = await fetch(`/api/postgres/databases/${id}/test`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to test existing database connection: ${response.statusText}`,
-    );
-  }
-
-  const data: DatabaseConnectionTestResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(
-      data.message || "Failed to test existing database connection",
-    );
-  }
-
-  return data;
+  return apiFetch<DatabaseConnectionTestResponse>(
+    ApiRoute.postgres.databaseTest(id),
+    { method: "POST", correlationIdPrefix: "postgres-db", unwrap: false },
+  );
 }
 
 async function discoverDatabases(
   request: DiscoverDatabasesRequest,
-  correlationId: string,
 ): Promise<DatabaseDiscoveryResponse> {
-  const response = await fetch(`/api/postgres/databases/discover-databases`, {
+  return apiFetch<DatabaseDiscoveryResponse>(ApiRoute.postgres.discoverDatabases(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "postgres-db",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to discover databases: ${response.statusText}`,
-    );
-  }
-
-  const data: DatabaseDiscoveryResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to discover databases");
-  }
-
-  return data;
 }
 
 // ====================
@@ -302,10 +149,8 @@ export function usePostgresDatabases(
     sortOrder = "asc",
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresDatabases", filters, page, limit, sortBy, sortOrder],
+    queryKey: queryKeys.postgresDatabases.list(filters, page, limit, sortBy, sortOrder),
     queryFn: () =>
       fetchPostgresDatabases(
         filters,
@@ -313,7 +158,6 @@ export function usePostgresDatabases(
         limit,
         sortBy,
         sortOrder,
-        correlationId,
       ),
     enabled,
     refetchInterval,
@@ -351,11 +195,9 @@ export function usePostgresDatabase(
 ) {
   const { enabled = true, refetchInterval, retry = 3 } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresDatabase", id],
-    queryFn: () => fetchPostgresDatabase(id, correlationId),
+    queryKey: queryKeys.postgresDatabases.detail(id),
+    queryFn: () => fetchPostgresDatabase(id),
     enabled: enabled && !!id,
     refetchInterval,
     retry:
@@ -390,21 +232,19 @@ export function usePostgresDatabase(
 // Mutation hooks for database operations
 export function useCreatePostgresDatabase() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (request: CreatePostgresDatabaseRequest) =>
-      createPostgresDatabase(request, correlationId),
+      createPostgresDatabase(request),
     onSuccess: () => {
       // Invalidate and refetch databases list
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
     },
   });
 }
 
 export function useUpdatePostgresDatabase() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -413,68 +253,61 @@ export function useUpdatePostgresDatabase() {
     }: {
       id: string;
       request: UpdatePostgresDatabaseRequest;
-    }) => updatePostgresDatabase(id, request, correlationId),
+    }) => updatePostgresDatabase(id, request),
     onSuccess: (_, { id }) => {
       // Invalidate and refetch databases list and specific database
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabase", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.detail(id) });
       // Also invalidate backup configs as database info might affect them
-      queryClient.invalidateQueries({ queryKey: ["postgresBackupConfig", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresBackupConfig.forDatabase(id) });
     },
   });
 }
 
 export function useDeletePostgresDatabase() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deletePostgresDatabase(id, correlationId),
+    mutationFn: (id: string) => deletePostgresDatabase(id),
     onSuccess: (_, id) => {
       // Invalidate and refetch databases list
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
       // Remove specific database from cache
-      queryClient.removeQueries({ queryKey: ["postgresDatabase", id] });
+      queryClient.removeQueries({ queryKey: queryKeys.postgresDatabases.detail(id) });
       // Remove related data
-      queryClient.removeQueries({ queryKey: ["postgresBackupConfig", id] });
-      queryClient.removeQueries({ queryKey: ["postgresBackupOperations", id] });
+      queryClient.removeQueries({ queryKey: queryKeys.postgresBackupConfig.forDatabase(id) });
+      queryClient.removeQueries({ queryKey: queryKeys.postgresBackupOperations.forDatabase(id) });
       queryClient.removeQueries({
-        queryKey: ["postgresRestoreOperations", id],
+        queryKey: queryKeys.postgresRestoreOperations.forDatabase(id),
       });
     },
   });
 }
 
 export function useTestDatabaseConnection() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: (request: TestDatabaseConnectionRequest) =>
-      testDatabaseConnection(request, correlationId),
+      testDatabaseConnection(request),
   });
 }
 
 export function useTestExistingDatabaseConnection() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      testExistingDatabaseConnection(id, correlationId),
+    mutationFn: (id: string) => testExistingDatabaseConnection(id),
     onSuccess: (_, id) => {
       // Invalidate database data to refresh health status
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabase", id] });
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.detail(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
     },
   });
 }
 
 export function useDiscoverDatabases() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: (request: DiscoverDatabasesRequest) =>
-      discoverDatabases(request, correlationId),
+      discoverDatabases(request),
   });
 }
 

@@ -13,12 +13,7 @@ import {
   FW_AGENT_STARTUP_STEPS,
 } from "../services/egress/fw-agent-sidecar";
 import { emitToChannel } from "../lib/socket";
-import {
-  Channel,
-  ServerEvent,
-  type EgressFwAgentStatus,
-  type OperationStep,
-} from "@mini-infra/types";
+import { Channel, ServerEvent, type EgressFwAgentStatus, type OperationStep, Permission } from "@mini-infra/types";
 
 const logger = getLogger("stacks", "egress-fw-agent-routes");
 const router = express.Router();
@@ -36,7 +31,7 @@ const configSchema = z.object({
 
 router.get(
   "/status",
-  requirePermission("egress:read"),
+  requirePermission(Permission.EgressRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const ownContainerId = getOwnContainerId();
@@ -78,7 +73,7 @@ const RESTART_GUARD_KEY = "egress-fw-agent";
 
 router.post(
   "/restart",
-  requirePermission("egress:write"),
+  requirePermission(Permission.EgressWrite),
   async (_req: express.Request, res: express.Response) => {
     try {
       if (restartingFwAgent.has(RESTART_GUARD_KEY)) {
@@ -171,7 +166,7 @@ router.post(
 
 router.post(
   "/start",
-  requirePermission("egress:write"),
+  requirePermission(Permission.EgressWrite),
   async (_req: express.Request, res: express.Response) => {
     try {
       if (restartingFwAgent.has(RESTART_GUARD_KEY)) {
@@ -258,7 +253,7 @@ router.post(
 
 router.get(
   "/config",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const config = await getFwAgentConfig();
@@ -276,7 +271,7 @@ router.get(
 
 router.patch(
   "/config",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: express.Request, res: express.Response) => {
     try {
       const parsed = configSchema.safeParse(req.body);

@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -10,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useHAProxyStatus } from "@/hooks/use-haproxy-remediation";
+import { useSocket, useSocketChannel, useSocketEvent } from "@/hooks/use-socket";
+import { Channel, ServerEvent, queryKeys } from "@mini-infra/types";
 import {
   IconRouter,
   IconRoute,
@@ -17,6 +20,8 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+
+const POLL_INTERVAL_DISCONNECTED = 30000; // 30s fallback when socket not connected
 
 interface HAProxyStatusCardProps {
   environmentId: string;
@@ -29,6 +34,21 @@ export function HAProxyStatusCard({
   onRemediateClick,
   className,
 }: HAProxyStatusCardProps) {
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  // Subscribe to the haproxy channel for push updates on frontend/backend changes
+  useSocketChannel(Channel.HAPROXY, !!environmentId);
+
+  const invalidateStatus = () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.environments.haproxyStatus(environmentId),
+    });
+  };
+
+  useSocketEvent(ServerEvent.HAPROXY_FRONTENDS_LIST, invalidateStatus, !!environmentId);
+  useSocketEvent(ServerEvent.HAPROXY_BACKENDS_LIST, invalidateStatus, !!environmentId);
+
   const {
     data: statusResponse,
     isLoading,
@@ -36,7 +56,12 @@ export function HAProxyStatusCard({
     error,
     refetch,
   } = useHAProxyStatus(environmentId, {
-    refetchInterval: 30000, // Refresh every 30 seconds
+    // No polling when socket is connected (HAProxy channel events invalidate
+    // the cache in real time); fall back to 30s polling when disconnected.
+    // `useHAProxyStatus`'s options type is `number | undefined` (not
+    // `| false`), but `undefined` has the same effect here since the hook
+    // passes it straight through to `useQuery` with no other default.
+    refetchInterval: connected ? undefined : POLL_INTERVAL_DISCONNECTED,
   });
 
   if (isLoading) {

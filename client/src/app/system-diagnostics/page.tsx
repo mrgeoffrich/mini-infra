@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { ApiRoute } from "@mini-infra/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -48,7 +49,11 @@ export default function SystemDiagnosticsPage() {
       "Capturing heap snapshot — this can take several seconds and temporarily pause the server...",
     );
     try {
-      const res = await fetch("/api/diagnostics/heap-snapshot", { method: "POST" });
+      // Raw fetch (not apiFetch) is required here: this streams a binary
+      // .heapsnapshot file and downloadFromResponse() needs the raw Response
+      // (headers + blob), which apiFetch's JSON-only contract can't return.
+      // eslint-disable-next-line no-restricted-syntax
+      const res = await fetch(ApiRoute.diagnostics.heapSnapshot(), { method: "POST" });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Snapshot failed (${res.status})`);
@@ -69,7 +74,11 @@ export default function SystemDiagnosticsPage() {
     setDownloadingReport(true);
     const toastId = toast.loading("Generating diagnostic report...");
     try {
-      const res = await fetch("/api/diagnostics/report");
+      // Raw fetch (not apiFetch) is required here: this downloads a JSON
+      // attachment via downloadFromResponse(), which needs the raw Response
+      // (headers + blob) — apiFetch only ever returns parsed JSON.
+      // eslint-disable-next-line no-restricted-syntax
+      const res = await fetch(ApiRoute.diagnostics.report());
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Report failed (${res.status})`);

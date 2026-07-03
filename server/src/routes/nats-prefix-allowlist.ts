@@ -28,6 +28,7 @@ import {
   NatsPrefixAllowlistError,
   toEntryInfo,
 } from "../services/nats/nats-prefix-allowlist-service";
+import { Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -58,7 +59,7 @@ function handleError(err: unknown, res: import("express").Response, next: import
 
 router.get(
   "/",
-  requirePermission("nats:read"),
+  requirePermission(Permission.NatsRead),
   asyncHandler(async (_req, res) => {
     const entries = await allowlistService.list();
     res.json({ success: true, data: entries.map(toEntryInfo) });
@@ -69,7 +70,7 @@ router.get(
 
 router.get(
   "/:prefix",
-  requirePermission("nats:read"),
+  requirePermission(Permission.NatsRead),
   asyncHandler(async (req, res, next) => {
     const parsed = prefixParamSchema.safeParse(req.params.prefix);
     if (!parsed.success) {
@@ -93,7 +94,7 @@ router.get(
 
 router.post(
   "/",
-  requirePermission("nats:admin"),
+  requirePermission(Permission.NatsAdmin),
   asyncHandler(async (req, res, next) => {
     const parsed = upsertBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -114,7 +115,7 @@ router.post(
 
 router.put(
   "/:prefix",
-  requirePermission("nats:admin"),
+  requirePermission(Permission.NatsAdmin),
   asyncHandler(async (req, res, next) => {
     const paramParsed = prefixParamSchema.safeParse(req.params.prefix);
     if (!paramParsed.success) {
@@ -140,7 +141,7 @@ router.put(
 
 router.delete(
   "/:prefix",
-  requirePermission("nats:admin"),
+  requirePermission(Permission.NatsAdmin),
   asyncHandler(async (req, res, next) => {
     const parsed = prefixParamSchema.safeParse(req.params.prefix);
     if (!parsed.success) {

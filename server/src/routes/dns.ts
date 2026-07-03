@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { requirePermission } from "../middleware/auth";
 import { getLogger } from "../lib/logger-factory";
 import { DnsCacheService } from "../services/dns";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("platform", "dns");
 const router = Router();
@@ -12,7 +13,7 @@ const router = Router();
  */
 router.get(
   "/zones",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dnsCacheService = DnsCacheService.getInstance();
@@ -46,7 +47,7 @@ router.get(
  */
 router.get(
   "/zones/:zoneId/records",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dnsCacheService = DnsCacheService.getInstance();
@@ -86,7 +87,7 @@ router.get(
  */
 router.post(
   "/refresh",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dnsCacheService = DnsCacheService.getInstance();
@@ -121,7 +122,7 @@ router.post(
  */
 router.get(
   "/validate/:hostname",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dnsCacheService = DnsCacheService.getInstance();

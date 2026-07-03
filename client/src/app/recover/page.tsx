@@ -17,6 +17,8 @@ import {
   IconCheck,
   IconArrowLeft,
 } from "@tabler/icons-react";
+import { ApiRoute } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 export function PasswordRecoveryPage() {
   const navigate = useNavigate();
@@ -35,22 +37,21 @@ export function PasswordRecoveryPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/auth/recover/request", {
+      await apiFetch(ApiRoute.auth.recoverRequest(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: { email },
+        correlationIdPrefix: "recover-request",
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        setError(data.error || "Failed to request recovery token");
-        return;
-      }
 
       setTokenRequested(true);
       setPhase("reset");
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (err) {
+      // /auth/recover/* responds with `{ error: "<human message>" }` (no
+      // `.message` field) — the human-readable text lands in
+      // ApiRequestError.code, not `.message`.
+      setError(
+        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -67,22 +68,17 @@ export function PasswordRecoveryPage() {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/auth/recover/reset", {
+      await apiFetch(ApiRoute.auth.recoverReset(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, token, newPassword }),
+        body: { email, token, newPassword },
+        correlationIdPrefix: "recover-reset",
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Password reset failed");
-        return;
-      }
-
       navigate("/login");
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (err) {
+      setError(
+        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
+      );
     } finally {
       setIsSubmitting(false);
     }

@@ -13,13 +13,7 @@ import {
   TailscaleAuthkeyMinter,
   ensureTailscaleDeviceStatusScheduler,
 } from "../services/tailscale";
-import {
-  TAILSCALE_DEFAULT_TAG,
-  TailscaleErrorCode,
-  TailscaleSettingsResponse,
-  TailscaleValidationResponse,
-  buildAclSnippet,
-} from "@mini-infra/types";
+import { TAILSCALE_DEFAULT_TAG, TailscaleErrorCode, TailscaleSettingsResponse, TailscaleValidationResponse, buildAclSnippet, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "tailscale-settings");
 
@@ -66,7 +60,7 @@ const router = express.Router();
 
 router.get(
   "/",
-  requirePermission("settings:read") as RequestHandler,
+  requirePermission(Permission.SettingsRead) as RequestHandler,
   asyncHandler(async (req, res) => {
     const requestId = req.headers["x-request-id"] as string | undefined;
 
@@ -95,7 +89,7 @@ router.get(
 
 router.post(
   "/",
-  requirePermission("settings:write") as RequestHandler,
+  requirePermission(Permission.SettingsWrite) as RequestHandler,
   asyncHandler(async (req, res) => {
     const requestId = req.headers["x-request-id"] as string | undefined;
     const userId = getUserId(req);
@@ -145,7 +139,7 @@ router.post(
 
 router.delete(
   "/",
-  requirePermission("settings:write") as RequestHandler,
+  requirePermission(Permission.SettingsWrite) as RequestHandler,
   asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     await tailscaleService.removeConfiguration(userId);
@@ -170,7 +164,7 @@ router.delete(
 
 router.post(
   "/test",
-  requirePermission("settings:write") as RequestHandler,
+  requirePermission(Permission.SettingsWrite) as RequestHandler,
   asyncHandler(async (req, res) => {
     const requestId = req.headers["x-request-id"] as string | undefined;
     const userId = getUserId(req);
@@ -212,7 +206,7 @@ router.post(
 
 router.get(
   "/acl-snippet",
-  requirePermission("settings:read") as RequestHandler,
+  requirePermission(Permission.SettingsRead) as RequestHandler,
   asyncHandler(async (_req, res) => {
     const extraTags = await tailscaleService.getExtraTags();
     res.json({
@@ -228,7 +222,7 @@ router.get(
 
 router.post(
   "/probe-tag-ownership",
-  requirePermission("settings:write") as RequestHandler,
+  requirePermission(Permission.SettingsWrite) as RequestHandler,
   asyncHandler(async (_req, res) => {
     const startTime = Date.now();
     try {

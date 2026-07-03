@@ -14,8 +14,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useContainers, useContainerFilters } from "@/hooks/useContainers";
 import type { ContainerInfo } from "@mini-infra/types";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useSocket } from "@/hooks/use-socket";
+import { apiFetch } from "@/lib/api-client";
 import { ContainerTable } from "./ContainerTable";
 import { ContainerFilters } from "./ContainerFilters";
 import {
@@ -75,14 +77,12 @@ export function ContainerDashboard() {
 
   // Fetch PostgreSQL containers
   const { data: postgresContainersData } = useQuery({
-    queryKey: ["postgres-containers"],
+    queryKey: queryKeys.containers.postgres,
     queryFn: async () => {
-      const response = await fetch("/api/containers/postgres", {
-        credentials: "include",
+      const data = await apiFetch<ContainerInfo[]>(ApiRoute.containers.postgres(), {
+        correlationIdPrefix: "postgres-containers",
       });
-      if (!response.ok) throw new Error("Failed to fetch PostgreSQL containers");
-      const data = await response.json();
-      return data.data || [];
+      return data || [];
     },
     enabled: isDockerConnected === true,
     refetchInterval: connected ? false : 5000,
@@ -90,14 +90,12 @@ export function ContainerDashboard() {
 
   // Fetch managed container IDs mapping (container ID -> server ID)
   const { data: managedContainerMapData } = useQuery({
-    queryKey: ["managed-container-ids"],
+    queryKey: queryKeys.containers.managedIds,
     queryFn: async () => {
-      const response = await fetch("/api/containers/managed-ids", {
-        credentials: "include",
+      const data = await apiFetch<Record<string, string>>(ApiRoute.containers.managedIds(), {
+        correlationIdPrefix: "managed-container-ids",
       });
-      if (!response.ok) throw new Error("Failed to fetch managed container IDs");
-      const data = await response.json();
-      return data.data || {};
+      return data || {};
     },
     enabled: isDockerConnected === true,
     refetchInterval: connected ? false : 5000,

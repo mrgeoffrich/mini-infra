@@ -9,13 +9,14 @@ import { getLogger } from "../lib/logger-factory";
 const logger = getLogger("http", "settings-docker");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
 /**
  * GET /api/settings/docker-host - Get Docker host IP for connections
  */
-router.get("/", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

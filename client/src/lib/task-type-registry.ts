@@ -7,7 +7,7 @@
  * which erases those generics for polymorphic access in TaskEventListener.
  */
 
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, queryKeys } from "@mini-infra/types";
 import type { SocketChannel, ServerToClientEvents } from "@mini-infra/types";
 import type { OperationStep } from "@/hooks/use-operation-progress";
 import type { TaskType } from "./task-tracker-types";
@@ -154,7 +154,7 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       steps: p.steps,
       errors: p.errors,
     }),
-    invalidateKeys: () => [["certificates"]],
+    invalidateKeys: () => [[...queryKeys.tls.certificates]],
   }),
 
   "connect-container": defineTaskTypeConfig({
@@ -174,9 +174,9 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       errors: p.errors,
     }),
     invalidateKeys: () => [
-      ["haproxy-frontends"],
-      ["haproxy-backends"],
-      ["containers"],
+      [...queryKeys.haproxy.frontends],
+      [...queryKeys.haproxy.backends],
+      [...queryKeys.containers.all],
     ],
   }),
 
@@ -227,13 +227,13 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       ],
     }),
     invalidateKeys: (taskId) => [
-      ["stacks"],
-      ["stack", taskId],
-      ["stackPlan", taskId],
-      ["stackStatus", taskId],
-      ["stackHistory", taskId],
-      ["applications"],
-      ["userStacks"],
+      [...queryKeys.stacks.all],
+      [...queryKeys.stacks.detail(taskId)],
+      [...queryKeys.stacks.plan(taskId)],
+      [...queryKeys.stacks.status(taskId)],
+      [...queryKeys.stacks.history(taskId)],
+      [...queryKeys.applications.all],
+      [...queryKeys.applications.userStacks],
     ],
   }),
 
@@ -274,13 +274,13 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       ],
     }),
     invalidateKeys: (taskId) => [
-      ["stacks"],
-      ["stack", taskId],
-      ["stackPlan", taskId],
-      ["stackStatus", taskId],
-      ["stackHistory", taskId],
-      ["applications"],
-      ["userStacks"],
+      [...queryKeys.stacks.all],
+      [...queryKeys.stacks.detail(taskId)],
+      [...queryKeys.stacks.plan(taskId)],
+      [...queryKeys.stacks.status(taskId)],
+      [...queryKeys.stacks.history(taskId)],
+      [...queryKeys.applications.all],
+      [...queryKeys.applications.userStacks],
     ],
   }),
 
@@ -309,13 +309,13 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       errors: p.error ? [p.error] : [],
     }),
     invalidateKeys: (taskId) => [
-      ["stacks"],
-      ["stack", taskId],
-      ["stackPlan", taskId],
-      ["stackStatus", taskId],
-      ["stackHistory", taskId],
-      ["applications"],
-      ["userStacks"],
+      [...queryKeys.stacks.all],
+      [...queryKeys.stacks.detail(taskId)],
+      [...queryKeys.stacks.plan(taskId)],
+      [...queryKeys.stacks.status(taskId)],
+      [...queryKeys.stacks.history(taskId)],
+      [...queryKeys.applications.all],
+      [...queryKeys.applications.userStacks],
     ],
   }),
 
@@ -340,11 +340,11 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       errors: p.errors ?? [],
     }),
     invalidateKeys: (taskId) => [
-      ["haproxy-status", taskId],
-      ["migration-preview", taskId],
-      ["remediation-preview", taskId],
-      ["haproxy-frontends"],
-      ["stacks"],
+      [...queryKeys.environments.haproxyStatus(taskId)],
+      [...queryKeys.environments.migrationPreview(taskId)],
+      [...queryKeys.environments.remediationPreview(taskId)],
+      [...queryKeys.haproxy.frontends],
+      [...queryKeys.stacks.all],
     ],
   }),
 
@@ -369,8 +369,8 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       errors: p.errors,
     }),
     invalidateKeys: () => [
-      ["agent-sidecar", "status"],
-      ["agent", "status"],
+      [...queryKeys.agentSidecar.status],
+      [...queryKeys.agent.status],
     ],
   }),
 
@@ -394,7 +394,7 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       })),
       errors: p.errors,
     }),
-    invalidateKeys: () => [["egress-fw-agent", "status"]],
+    invalidateKeys: () => [[...queryKeys.egressFwAgent.status]],
   }),
 
   "self-update-launch": defineTaskTypeConfig({
@@ -417,7 +417,7 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       })),
       errors: p.errors,
     }),
-    invalidateKeys: () => [["self-update-status"]],
+    invalidateKeys: () => [[...queryKeys.selfUpdate.status]],
   }),
 
   "vault-bootstrap": defineTaskTypeConfig({
@@ -440,7 +440,7 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       })),
       errors: p.errors,
     }),
-    invalidateKeys: () => [["vault", "status"]],
+    invalidateKeys: () => [[...queryKeys.vault.status]],
   }),
 
   "pool-spawn": defineTaskTypeConfig({
@@ -481,8 +481,8 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       // taskId is `${stackId}:${serviceName}:${instanceId}`
       const [stackId, serviceName] = taskId.split(":");
       return [
-        ["pool-instances", stackId, serviceName],
-        ["stack", stackId],
+        [...queryKeys.poolInstances.forService(stackId, serviceName)],
+        [...queryKeys.stacks.detail(stackId)],
       ];
     },
   }),
@@ -507,6 +507,6 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
       })),
       errors: p.errors,
     }),
-    invalidateKeys: () => [["vault", "status"]],
+    invalidateKeys: () => [[...queryKeys.vault.status]],
   }),
 };

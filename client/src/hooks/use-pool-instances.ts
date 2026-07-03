@@ -1,31 +1,22 @@
 import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { PoolInstanceInfo } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-interface PoolInstanceListResponse {
-  success: boolean;
-  data: PoolInstanceInfo[];
-  message?: string;
-}
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchPoolInstances(
   stackId: string,
   serviceName: string,
 ): Promise<PoolInstanceInfo[]> {
-  const response = await fetch(
-    `/api/stacks/${encodeURIComponent(stackId)}/pools/${encodeURIComponent(serviceName)}/instances`,
-    { credentials: "include" },
+  // Enveloped `{success, data, message}`; already unwrapped by the original
+  // code (`return body.data`), so the default unwrap here is
+  // behavior-preserving — downstream consumers (e.g. PoolServiceRow.tsx)
+  // already treat the resolved query data as the plain array.
+  return apiFetch<PoolInstanceInfo[]>(
+    ApiRoute.stacks.poolInstances(stackId, serviceName),
+    { correlationIdPrefix: "pool-instances" },
   );
-  if (!response.ok) {
-    throw new Error(`Failed to fetch pool instances: ${response.statusText}`);
-  }
-  const body = (await response.json()) as PoolInstanceListResponse;
-  if (!body.success) {
-    throw new Error(body.message || "Failed to fetch pool instances");
-  }
-  return body.data;
 }
 
 /**
@@ -43,7 +34,7 @@ export function usePoolInstances(stackId: string, serviceName: string, enabled =
     (payload: { stackId: string; serviceName: string }) => {
       if (payload.stackId !== stackId || payload.serviceName !== serviceName) return;
       queryClient.invalidateQueries({
-        queryKey: ["pool-instances", stackId, serviceName],
+        queryKey: queryKeys.poolInstances.forService(stackId, serviceName),
       });
     },
     [queryClient, stackId, serviceName],
@@ -56,7 +47,7 @@ export function usePoolInstances(stackId: string, serviceName: string, enabled =
   useSocketEvent(ServerEvent.POOL_INSTANCE_STOPPED, invalidate, enabled);
 
   return useQuery({
-    queryKey: ["pool-instances", stackId, serviceName],
+    queryKey: queryKeys.poolInstances.forService(stackId, serviceName),
     queryFn: () => fetchPoolInstances(stackId, serviceName),
     enabled: enabled && !!stackId && !!serviceName,
     refetchInterval: connected ? false : 5000,
@@ -77,18 +68,14 @@ export function useStopPoolInstance() {
       serviceName: string;
       instanceId: string;
     }) => {
-      const response = await fetch(
-        `/api/stacks/${encodeURIComponent(stackId)}/pools/${encodeURIComponent(serviceName)}/instances/${encodeURIComponent(instanceId)}`,
-        { method: "DELETE", credentials: "include" },
+      return apiFetch(
+        ApiRoute.stacks.poolInstance(stackId, serviceName, instanceId),
+        { method: "DELETE", correlationIdPrefix: "pool-instances" },
       );
-      if (!response.ok) {
-        throw new Error(`Failed to stop pool instance: ${response.statusText}`);
-      }
-      return response.json();
     },
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({
-        queryKey: ["pool-instances", vars.stackId, vars.serviceName],
+        queryKey: queryKeys.poolInstances.forService(vars.stackId, vars.serviceName),
       });
     },
   });

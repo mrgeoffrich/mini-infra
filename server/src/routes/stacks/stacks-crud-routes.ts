@@ -30,6 +30,7 @@ import type {
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
 import { getUserId } from '../../lib/get-user-id';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
+import { Permission } from '@mini-infra/types';
 
 const logger = getLogger("stacks", "stacks-crud-routes");
 const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
@@ -39,7 +40,7 @@ const router = Router();
 // GET / — List stacks
 router.get(
   '/',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const { environmentId, scope, source } = req.query;
     const where: Prisma.StackWhereInput = {};
@@ -98,7 +99,7 @@ router.get(
 // Must come before /:stackId to avoid parameter collision.
 router.get(
   '/eligible-containers',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   requireDockerConnected(),
   asyncHandler(async (req, res) => {
     const environmentId = req.query.environmentId as string | undefined;
@@ -144,7 +145,7 @@ router.get(
 // GET /:stackId — Get stack with services
 router.get(
   '/:stackId',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stack = await prisma.stack.findUnique({
       where: { id: String(req.params.stackId) },
@@ -171,7 +172,7 @@ router.get(
 // POST / — Create stack
 router.post(
   '/',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const parsed = createStackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -271,7 +272,7 @@ router.post(
 // PUT /:stackId — Update stack definition (or supply/rotate input values)
 router.put(
   '/:stackId',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const parsed = updateStackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -427,7 +428,7 @@ router.put(
 // DELETE /:stackId — Delete stack
 router.delete(
   '/:stackId',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });

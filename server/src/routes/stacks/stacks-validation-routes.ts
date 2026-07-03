@@ -9,13 +9,14 @@ import { findEmptyStackParameters } from '../../services/stacks/parameter-valida
 import { checkStackConfigurationRequirements } from '../../services/stacks/stack-config-requirements';
 import type { StackValidationResult, StackValidationWarning, StackNetwork } from '@mini-infra/types';
 import { DEFAULT_STACK_NETWORK_NAME } from '../../services/stacks/utils';
+import { Permission } from '@mini-infra/types';
 
 const router = Router();
 
 // GET /:stackId/plan — Compute reconciliation plan
 router.get(
   '/:stackId/plan',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const exists = await prisma.stack.findUnique({
@@ -49,7 +50,7 @@ router.get(
 // GET /:stackId/validate — Validate stack parameters before apply
 router.get(
   '/:stackId/validate',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stack = await prisma.stack.findUnique({
       where: { id: String(req.params.stackId) },

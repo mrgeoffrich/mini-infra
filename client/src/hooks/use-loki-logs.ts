@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useCallback, useMemo } from "react";
-
-function generateCorrelationId(): string {
-  return `loki-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 // --- Types ---
 
@@ -35,24 +33,13 @@ export interface LogEntry {
 
 // --- API functions ---
 
-async function fetchLabelValues(
-  label: string,
-  correlationId: string,
-): Promise<LokiLabelsResponse> {
-  const response = await fetch(
-    `/api/monitoring/loki/label/${encodeURIComponent(label)}/values`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to fetch label values: ${response.statusText}`);
-  }
-  return response.json();
+async function fetchLabelValues(label: string): Promise<LokiLabelsResponse> {
+  // Raw Loki response shape ({status, data}) proxied straight through — not
+  // Mini Infra's own envelope — so this stays unwrapped.
+  return apiFetch<LokiLabelsResponse>(ApiRoute.monitoring.lokiLabelValues(label), {
+    correlationIdPrefix: "loki",
+    unwrap: false,
+  });
 }
 
 async function fetchQueryRange(
@@ -61,30 +48,29 @@ async function fetchQueryRange(
   end: string,
   limit: number,
   direction: string,
-  correlationId: string,
 ): Promise<LokiQueryRangeResponse> {
-  const params = new URLSearchParams({
-    query,
-    start,
-    end,
-    limit: String(limit),
-    direction,
+  const url = new URL(ApiRoute.monitoring.lokiQueryRange(), window.location.origin);
+  url.searchParams.set("query", query);
+  url.searchParams.set("start", start);
+  url.searchParams.set("end", end);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("direction", direction);
+  // Raw Loki response shape — see `fetchLabelValues` above.
+  return apiFetch<LokiQueryRangeResponse>(url.toString(), {
+    correlationIdPrefix: "loki",
+    unwrap: false,
   });
-  const response = await fetch(
-    `/api/monitoring/loki/query_range?${params}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`Failed to query logs: ${response.statusText}`);
-  }
-  return response.json();
 }
+
+/**
+ * Bare "lokiLogs" prefix for broad invalidation (e.g. a manual refresh
+ * button). `queryKeys.loki` has no root/`all` key (see Phase 4 report) —
+ * `logs()` always appends a second `query` element, so calling it with no
+ * args here would produce `["lokiLogs", undefined]`, which fails TanStack's
+ * partial-key match against the real (populated) query key built by
+ * `useLokiLogs` below.
+ */
+export const LOKI_LOGS_PREFIX_KEY = ["lokiLogs"] as const;
 
 // --- Helpers ---
 
@@ -117,9 +103,8 @@ function flattenStreams(
 export function useLokiServices(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["lokiLabelValues", "container"],
-    queryFn: () =>
-      fetchLabelValues("container", generateCorrelationId()),
+    queryKey: queryKeys.loki.labelValues("container"),
+    queryFn: () => fetchLabelValues("container"),
     enabled,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000,
@@ -160,13 +145,12 @@ export function useLokiLogs(
   }, [query.services, query.search]);
 
   return useQuery({
-    queryKey: [
-      "lokiLogs",
+    queryKey: queryKeys.loki.logs({
       logqlQuery,
-      query.timeRangeSeconds,
-      query.limit,
-      query.direction,
-    ],
+      timeRangeSeconds: query.timeRangeSeconds,
+      limit: query.limit,
+      direction: query.direction,
+    }),
     queryFn: () => {
       const now = Date.now();
       const startNano = ((now - query.timeRangeSeconds * 1000) * 1_000_000).toString();
@@ -177,7 +161,6 @@ export function useLokiLogs(
         endNano,
         query.limit,
         query.direction,
-        generateCorrelationId(),
       );
     },
     enabled: enabled && !!logqlQuery,

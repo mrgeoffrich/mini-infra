@@ -28,6 +28,7 @@ import {
 import { Channel } from "@mini-infra/types";
 import type { StackParameterValue } from "@mini-infra/types";
 import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues, useStackPrerequisites } from "@/hooks/use-stacks";
+import { ApiRequestError } from "@/lib/api-client";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
 import { StackApplyProgress } from "./StackApplyProgress";
@@ -54,7 +55,7 @@ export const StackPlanView = React.memo(function StackPlanView({
   onDestroyCompleted,
 }: StackPlanViewProps) {
   const {
-    data: planResponse,
+    data: plan,
     isLoading,
     error,
     refetch,
@@ -86,8 +87,6 @@ export const StackPlanView = React.memo(function StackPlanView({
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
-
-  const plan = planResponse?.data;
 
   const sortedActions = !plan?.actions
     ? []
@@ -299,12 +298,20 @@ export const StackPlanView = React.memo(function StackPlanView({
 
   // Error state
   if (error) {
-    const isDockerUnavailable = error.message.includes("Docker is unavailable");
-    const errWithMeta = error as Error & {
-      code?: string;
-      missing?: Array<{ resource: string; settings: string[]; settingsUrl: string; reason: string }>;
-    };
-    const isMissingConfig = errWithMeta.code === "MISSING_CONFIGURATION" && Array.isArray(errWithMeta.missing);
+    const isDockerUnavailable =
+      error instanceof ApiRequestError && error.status === 503;
+    const missing =
+      error instanceof ApiRequestError
+        ? (
+            error.body as
+              | { missing?: Array<{ resource: string; settings: string[]; settingsUrl: string; reason: string }> }
+              | undefined
+          )?.missing
+        : undefined;
+    const isMissingConfig =
+      error instanceof ApiRequestError &&
+      error.code === "MISSING_CONFIGURATION" &&
+      Array.isArray(missing);
 
     if (isMissingConfig) {
       return (
@@ -314,7 +321,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           <AlertDescription className="space-y-2">
             <p>This stack has external-resource requirements that aren&apos;t configured yet.</p>
             <ul className="list-disc pl-5 space-y-1">
-              {errWithMeta.missing!.map((m) => (
+              {missing!.map((m) => (
                 <li key={m.resource}>
                   <span className="font-medium">{m.reason}</span>{" "}
                   <span>Configure: {m.settings.join(", ")}.</span>{" "}

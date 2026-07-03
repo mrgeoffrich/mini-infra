@@ -12,6 +12,7 @@ import { UserEventService } from "../../services/user-events/user-event-service"
 import type { UserEventStatus } from "@mini-infra/types";
 import { runApplyInBackground } from "./stacks-apply-route";
 import { stackOperationLock } from "../../services/stacks/operation-lock";
+import { Permission } from "@mini-infra/types";
 
 const log = getLogger("stacks", "stacks-git-deploy-key-route");
 
@@ -162,7 +163,7 @@ function vaultKvErrorStatus(err: VaultKVError): number {
  */
 router.get(
   "/:stackId/services/:serviceName/git-deploy-key",
-  requirePermission("stacks:write"),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -210,7 +211,7 @@ router.get(
  */
 router.put(
   "/:stackId/services/:serviceName/git-deploy-key",
-  requirePermission("stacks:write"),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -290,7 +291,7 @@ router.put(
  */
 router.delete(
   "/:stackId/services/:serviceName/git-deploy-key",
-  requirePermission("stacks:write"),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);

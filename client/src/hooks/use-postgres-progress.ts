@@ -8,99 +8,45 @@ import {
   OperationHistoryItem,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-progress-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Progress Tracking API Functions
 // ====================
 
-async function fetchActiveOperations(correlationId: string): Promise<{
+async function fetchActiveOperations(): Promise<{
   success: boolean;
   data: {
     backupOperations: BackupOperationProgress[];
     restoreOperations: RestoreOperationProgress[];
   };
 }> {
-  const response = await fetch("/api/postgres/progress/active", {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch(ApiRoute.postgres.progressActive(), {
+    correlationIdPrefix: "postgres-progress",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch active operations: ${response.statusText}`,
-    );
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch active operations");
-  }
-
-  return data;
 }
 
 async function fetchBackupProgress(
   operationId: string,
-  correlationId: string,
 ): Promise<{ success: boolean; data: BackupOperationProgress }> {
-  const response = await fetch(`/api/postgres/progress/backup/${operationId}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch(ApiRoute.postgres.progressBackup(operationId), {
+    correlationIdPrefix: "postgres-progress",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backup progress: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backup progress");
-  }
-
-  return data;
 }
 
 async function fetchRestoreProgress(
   operationId: string,
-  correlationId: string,
 ): Promise<{ success: boolean; data: RestoreOperationProgress }> {
-  const response = await fetch(
-    `/api/postgres/progress/restore/${operationId}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch restore progress: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch restore progress");
-  }
-
-  return data;
+  return apiFetch(ApiRoute.postgres.progressRestore(operationId), {
+    correlationIdPrefix: "postgres-progress",
+    unwrap: false,
+  });
 }
 
 interface OperationHistoryFilter {
@@ -116,7 +62,6 @@ interface OperationHistoryFilter {
 
 async function fetchOperationHistory(
   filters: OperationHistoryFilter = {},
-  correlationId: string,
 ): Promise<{
   success: boolean;
   data: OperationHistoryItem[];
@@ -127,7 +72,7 @@ async function fetchOperationHistory(
     hasMore: boolean;
   };
 }> {
-  const url = new URL("/api/postgres/progress/history", window.location.origin);
+  const url = new URL(ApiRoute.postgres.progressHistory(), window.location.origin);
 
   // Add query parameters
   if (filters.databaseId)
@@ -143,27 +88,10 @@ async function fetchOperationHistory(
   if (filters.limit) url.searchParams.set("limit", filters.limit.toString());
   if (filters.offset) url.searchParams.set("offset", filters.offset.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch(url.toString(), {
+    correlationIdPrefix: "postgres-progress",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch operation history: ${response.statusText}`,
-    );
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch operation history");
-  }
-
-  return data;
 }
 
 // ====================
@@ -190,7 +118,6 @@ export function useActiveOperations(options: UseActiveOperationsOptions = {}) {
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the postgres channel for push updates
   useSocketChannel(Channel.POSTGRES, enabled);
@@ -199,7 +126,7 @@ export function useActiveOperations(options: UseActiveOperationsOptions = {}) {
   useSocketEvent(
     ServerEvent.POSTGRES_OPERATION,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["postgresActiveOperations"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.activeOperations });
     },
     enabled,
   );
@@ -208,10 +135,10 @@ export function useActiveOperations(options: UseActiveOperationsOptions = {}) {
   useSocketEvent(
     ServerEvent.POSTGRES_OPERATION_COMPLETED,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["postgresActiveOperations"] });
-      queryClient.invalidateQueries({ queryKey: ["postgresOperationHistory"] });
-      queryClient.invalidateQueries({ queryKey: ["postgresBackupOperations"] });
-      queryClient.invalidateQueries({ queryKey: ["postgresRestoreOperations"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.activeOperations });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.operationHistoryAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresBackupOperations.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresRestoreOperations.all });
     },
     enabled,
   );
@@ -221,8 +148,8 @@ export function useActiveOperations(options: UseActiveOperationsOptions = {}) {
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["postgresActiveOperations"],
-    queryFn: () => fetchActiveOperations(correlationId),
+    queryKey: queryKeys.postgresProgress.activeOperations,
+    queryFn: () => fetchActiveOperations(),
     enabled,
     refetchInterval,
     retry:
@@ -268,7 +195,6 @@ export function useBackupProgress(
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the postgres channel
   useSocketChannel(Channel.POSTGRES, enabled && !!operationId);
@@ -278,7 +204,7 @@ export function useBackupProgress(
     ServerEvent.POSTGRES_OPERATION,
     (data) => {
       if (data.operationId === operationId) {
-        queryClient.invalidateQueries({ queryKey: ["postgresBackupProgress", operationId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.backupProgress(operationId) });
       }
     },
     enabled && !!operationId,
@@ -288,7 +214,7 @@ export function useBackupProgress(
     ServerEvent.POSTGRES_OPERATION_COMPLETED,
     (data) => {
       if (data.operationId === operationId) {
-        queryClient.invalidateQueries({ queryKey: ["postgresBackupProgress", operationId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.backupProgress(operationId) });
       }
     },
     enabled && !!operationId,
@@ -298,8 +224,8 @@ export function useBackupProgress(
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["postgresBackupProgress", operationId],
-    queryFn: () => fetchBackupProgress(operationId, correlationId),
+    queryKey: queryKeys.postgresProgress.backupProgress(operationId),
+    queryFn: () => fetchBackupProgress(operationId),
     enabled: enabled && !!operationId,
     refetchInterval,
     retry:
@@ -349,7 +275,6 @@ export function useRestoreProgress(
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the postgres channel
   useSocketChannel(Channel.POSTGRES, enabled && !!operationId);
@@ -359,7 +284,7 @@ export function useRestoreProgress(
     ServerEvent.POSTGRES_OPERATION,
     (data) => {
       if (data.operationId === operationId) {
-        queryClient.invalidateQueries({ queryKey: ["postgresRestoreProgress", operationId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.restoreProgress(operationId) });
       }
     },
     enabled && !!operationId,
@@ -369,7 +294,7 @@ export function useRestoreProgress(
     ServerEvent.POSTGRES_OPERATION_COMPLETED,
     (data) => {
       if (data.operationId === operationId) {
-        queryClient.invalidateQueries({ queryKey: ["postgresRestoreProgress", operationId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.postgresProgress.restoreProgress(operationId) });
       }
     },
     enabled && !!operationId,
@@ -379,8 +304,8 @@ export function useRestoreProgress(
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["postgresRestoreProgress", operationId],
-    queryFn: () => fetchRestoreProgress(operationId, correlationId),
+    queryKey: queryKeys.postgresProgress.restoreProgress(operationId),
+    queryFn: () => fetchRestoreProgress(operationId),
     enabled: enabled && !!operationId,
     refetchInterval,
     retry:
@@ -428,7 +353,6 @@ export function useOperationHistory(options: UseOperationHistoryOptions = {}) {
   } = options;
 
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // History is already invalidated by useActiveOperations' POSTGRES_OPERATION_COMPLETED handler.
   // Just disable polling when socket is connected.
@@ -436,8 +360,8 @@ export function useOperationHistory(options: UseOperationHistoryOptions = {}) {
     options.refetchInterval ?? (connected ? false : 30000);
 
   return useQuery({
-    queryKey: ["postgresOperationHistory", filters],
-    queryFn: () => fetchOperationHistory(filters, correlationId),
+    queryKey: queryKeys.postgresProgress.operationHistory(filters),
+    queryFn: () => fetchOperationHistory(filters),
     enabled,
     refetchInterval,
     retry:
@@ -535,16 +459,16 @@ export function useActiveOperationsStatus() {
       if (completedOperations.length > 0) {
         // Invalidate operation history to show updated results
         queryClient.invalidateQueries({
-          queryKey: ["postgresOperationHistory"],
+          queryKey: queryKeys.postgresProgress.operationHistoryAll,
         });
 
         // Invalidate backup operations for affected databases
         completedOperations.forEach((op) => {
           queryClient.invalidateQueries({
-            queryKey: ["postgresBackupOperations", op.databaseId],
+            queryKey: queryKeys.postgresBackupOperations.forDatabase(op.databaseId),
           });
           queryClient.invalidateQueries({
-            queryKey: ["postgresRestoreOperations", op.databaseId],
+            queryKey: queryKeys.postgresRestoreOperations.forDatabase(op.databaseId),
           });
         });
       }

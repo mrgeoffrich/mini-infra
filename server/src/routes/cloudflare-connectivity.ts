@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
-import { CONNECTIVITY_STATUS_TYPES } from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "cloudflare-connectivity");
 
@@ -54,7 +54,7 @@ const historyQuerySchema = z.object({
 
 router.get(
   "/cloudflare",
-  requirePermission('settings:read'),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const cacheKey = "cloudflare-connectivity-latest";
@@ -134,7 +134,7 @@ router.get(
 
 router.get(
   "/cloudflare/history",
-  requirePermission('settings:read'),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Validate query parameters

@@ -41,10 +41,13 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
+  ApiRoute,
+  queryKeys,
   TAILSCALE_DEFAULT_TAG,
   buildAclSnippet,
   type TailscaleSettingsResponse,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 const tagRegex = /^tag:[a-z0-9-]+$/;
 
@@ -74,14 +77,10 @@ const initialValidationState: ValidationState = {
 };
 
 async function fetchSettings(): Promise<TailscaleSettingsResponse["data"]> {
-  const res = await fetch("/api/settings/tailscale", {
-    credentials: "include",
-  });
-  if (!res.ok) {
-    throw new Error(`Failed to load Tailscale settings (HTTP ${res.status})`);
-  }
-  const body = (await res.json()) as TailscaleSettingsResponse;
-  return body.data;
+  return apiFetch<TailscaleSettingsResponse["data"]>(
+    ApiRoute.settings.tailscale(),
+    { correlationIdPrefix: "tailscale-settings" },
+  );
 }
 
 async function saveSettings(payload: {
@@ -89,18 +88,14 @@ async function saveSettings(payload: {
   client_secret?: string;
   extra_tags: string[];
 }): Promise<TailscaleSettingsResponse["data"]> {
-  const res = await fetch("/api/settings/tailscale", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Failed to save (HTTP ${res.status})`);
-  }
-  const body = (await res.json()) as TailscaleSettingsResponse;
-  return body.data;
+  return apiFetch<TailscaleSettingsResponse["data"]>(
+    ApiRoute.settings.tailscale(),
+    {
+      method: "POST",
+      body: payload,
+      correlationIdPrefix: "tailscale-settings",
+    },
+  );
 }
 
 interface TestResult {
@@ -110,12 +105,10 @@ interface TestResult {
 }
 
 async function probeTagOwnership(): Promise<TestResult> {
-  const res = await fetch("/api/settings/tailscale/probe-tag-ownership", {
+  return apiFetch<TestResult>(ApiRoute.settings.tailscaleProbeTagOwnership(), {
     method: "POST",
-    credentials: "include",
+    correlationIdPrefix: "tailscale-settings",
   });
-  const body = await res.json();
-  return body.data as TestResult;
 }
 
 function friendlyErrorMessage(errorCode: string | undefined, fallback: string): string {
@@ -158,7 +151,7 @@ export default function TailscaleSettingsPage() {
     isLoading: settingsLoading,
     error: settingsError,
   } = useQuery<TailscaleSettingsResponse["data"]>({
-    queryKey: ["tailscaleSettings"],
+    queryKey: queryKeys.settings.tailscaleSettings,
     queryFn: fetchSettings,
     refetchOnWindowFocus: false,
   });
@@ -204,7 +197,7 @@ export default function TailscaleSettingsPage() {
       });
 
       queryClient.setQueryData<TailscaleSettingsResponse["data"]>(
-        ["tailscaleSettings"],
+        queryKeys.settings.tailscaleSettings,
         saved,
       );
 
@@ -245,7 +238,7 @@ export default function TailscaleSettingsPage() {
         clientSecret: "",
         extraTags: saved.extraTags ?? data.extraTags,
       });
-      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
 
       setTimeout(() => {
         setValidationState((prev) =>

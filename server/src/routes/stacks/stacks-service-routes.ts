@@ -5,13 +5,14 @@ import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { updateStackServiceSchema } from '../../services/stacks/schemas';
 import { serializeStack } from '../../services/stacks/utils';
+import { Permission } from '@mini-infra/types';
 
 const router = Router();
 
 // PUT /:stackId/services/:serviceName — Update single service
 router.put(
   '/:stackId/services/:serviceName',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const parsed = updateStackServiceSchema.safeParse(req.body);
     if (!parsed.success) {

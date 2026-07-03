@@ -13,12 +13,10 @@ import {
   BackupOperationType,
   BackupOperationStatus,
   BackupOperationProgress,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-backup-ops-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // PostgreSQL Backup Operations API Functions
@@ -31,10 +29,9 @@ async function fetchPostgresBackupOperations(
   limit = 20,
   sortBy: keyof BackupOperationInfo = "startedAt",
   sortOrder: "asc" | "desc" = "desc",
-  correlationId: string,
 ): Promise<BackupOperationListResponse> {
   const url = new URL(
-    `/api/postgres/backups/${databaseId}`,
+    ApiRoute.postgres.backupsForDatabase(databaseId),
     window.location.origin,
   );
 
@@ -51,133 +48,48 @@ async function fetchPostgresBackupOperations(
   if (filters.startedBefore)
     url.searchParams.set("startedBefore", filters.startedBefore);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<BackupOperationListResponse>(url.toString(), {
+    correlationIdPrefix: "postgres-backup-ops",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch backup operations: ${response.statusText}`,
-    );
-  }
-
-  const data: BackupOperationListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backup operations");
-  }
-
-  return data;
 }
 
 async function fetchPostgresBackupOperationStatus(
   backupId: string,
-  correlationId: string,
 ): Promise<BackupOperationStatusResponse> {
-  const response = await fetch(`/api/postgres/backups/${backupId}/status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch backup operation status: ${response.statusText}`,
-    );
-  }
-
-  const data: BackupOperationStatusResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backup operation status");
-  }
-
-  return data;
+  return apiFetch<BackupOperationStatusResponse>(
+    ApiRoute.postgres.backupStatus(backupId),
+    { correlationIdPrefix: "postgres-backup-ops", unwrap: false },
+  );
 }
 
 async function createManualBackup(
   databaseId: string,
-  correlationId: string,
 ): Promise<ManualBackupResponse> {
-  const response = await fetch(`/api/postgres/backups/${databaseId}/manual`, {
+  return apiFetch<ManualBackupResponse>(ApiRoute.postgres.manualBackup(databaseId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "postgres-backup-ops",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create manual backup: ${response.statusText}`);
-  }
-
-  const data: ManualBackupResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.data?.message || "Failed to create manual backup");
-  }
-
-  return data;
 }
 
 async function deleteBackupOperation(
   backupId: string,
-  correlationId: string,
 ): Promise<BackupOperationDeleteResponse> {
-  const response = await fetch(`/api/postgres/backups/${backupId}`, {
+  return apiFetch<BackupOperationDeleteResponse>(ApiRoute.postgres.backup(backupId), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "postgres-backup-ops",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to delete backup operation: ${response.statusText}`,
-    );
-  }
-
-  const data: BackupOperationDeleteResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete backup operation");
-  }
-
-  return data;
 }
 
 async function fetchBackupOperationProgress(
   backupId: string,
-  correlationId: string,
 ): Promise<{ success: boolean; data: BackupOperationProgress }> {
-  const response = await fetch(`/api/postgres/backups/${backupId}/progress`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backup progress: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backup progress");
-  }
-
-  return data;
+  return apiFetch<{ success: boolean; data: BackupOperationProgress }>(
+    ApiRoute.postgres.backupProgress(backupId),
+    { correlationIdPrefix: "postgres-backup-ops", unwrap: false },
+  );
 }
 
 // ====================
@@ -210,18 +122,15 @@ export function usePostgresBackupOperations(
     sortOrder = "desc",
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: [
-      "postgresBackupOperations",
+    queryKey: queryKeys.postgresBackupOperations.list(
       databaseId,
       filters,
       page,
       limit,
       sortBy,
       sortOrder,
-    ],
+    ),
     queryFn: () =>
       fetchPostgresBackupOperations(
         databaseId,
@@ -230,7 +139,6 @@ export function usePostgresBackupOperations(
         limit,
         sortBy,
         sortOrder,
-        correlationId,
       ),
     enabled: enabled && !!databaseId,
     refetchInterval,
@@ -272,11 +180,9 @@ export function usePostgresBackupOperationStatus(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresBackupOperationStatus", backupId],
-    queryFn: () => fetchPostgresBackupOperationStatus(backupId, correlationId),
+    queryKey: queryKeys.postgresBackupOperations.status(backupId),
+    queryFn: () => fetchPostgresBackupOperationStatus(backupId),
     enabled: enabled && !!backupId,
     refetchInterval,
     retry:
@@ -324,11 +230,9 @@ export function usePostgresBackupOperationProgress(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresBackupOperationProgress", backupId],
-    queryFn: () => fetchBackupOperationProgress(backupId, correlationId),
+    queryKey: queryKeys.postgresBackupOperations.progress(backupId),
+    queryFn: () => fetchBackupOperationProgress(backupId),
     enabled: enabled && !!backupId,
     refetchInterval,
     retry:
@@ -363,19 +267,17 @@ export function usePostgresBackupOperationProgress(
 // Mutation hooks for backup operations
 export function useCreateManualBackup() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (databaseId: string) =>
-      createManualBackup(databaseId, correlationId),
+    mutationFn: (databaseId: string) => createManualBackup(databaseId),
     onSuccess: (_, databaseId) => {
       // Invalidate and refetch backup operations list
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupOperations", databaseId],
+        queryKey: queryKeys.postgresBackupOperations.forDatabase(databaseId),
       });
       // Also update backup configuration as it might show last backup time
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupConfig", databaseId],
+        queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
       });
     },
   });
@@ -383,22 +285,21 @@ export function useCreateManualBackup() {
 
 export function useDeleteBackupOperation() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({ backupId }: { backupId: string; databaseId: string }) =>
-      deleteBackupOperation(backupId, correlationId),
+      deleteBackupOperation(backupId),
     onSuccess: (_, { databaseId, backupId }) => {
       // Invalidate and refetch backup operations list
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupOperations", databaseId],
+        queryKey: queryKeys.postgresBackupOperations.forDatabase(databaseId),
       });
       // Remove specific operation status from cache
       queryClient.removeQueries({
-        queryKey: ["postgresBackupOperationStatus", backupId],
+        queryKey: queryKeys.postgresBackupOperations.status(backupId),
       });
       queryClient.removeQueries({
-        queryKey: ["postgresBackupOperationProgress", backupId],
+        queryKey: queryKeys.postgresBackupOperations.progress(backupId),
       });
     },
   });

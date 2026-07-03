@@ -11,12 +11,7 @@ const logger = getLogger("http", "settings-connectivity");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  ConnectivityStatus,
-  ConnectivityStatusInfo,
-  ConnectivityStatusListResponse,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { ConnectivityStatus, ConnectivityStatusInfo, ConnectivityStatusListResponse, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -120,7 +115,7 @@ const connectivityQuerySchema = z.object({
 /**
  * GET /api/settings/connectivity - List connectivity status logs with filtering and pagination
  */
-router.get("/", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -262,7 +257,7 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
 /**
  * GET /api/settings/connectivity/summary - Latest status per service (one row each)
  */
-router.get("/summary", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/summary", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   _req: Request,
   res: Response,
   next: NextFunction,

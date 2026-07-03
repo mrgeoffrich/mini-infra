@@ -4,15 +4,16 @@ import express, {
   NextFunction,
   RequestHandler,
 } from "express";
-import { z } from "zod";
 import { Readable } from "stream";
 import DockerService from "../services/docker";
 import { getLogger } from "../lib/logger-factory";
 import prisma from "../lib/prisma";
+import { createRouteDescriber } from "../lib/describe-route";
 
 const logger = getLogger("docker", "containers");
-import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
+import { getAuthenticatedUser } from "../middleware/auth";
 import {
+  ContainerInfo,
   ContainerQueryParams,
   ContainerListResponse,
   ContainerListApiResponse,
@@ -20,61 +21,67 @@ import {
   ContainerLogEvent,
   ContainerAction,
   ContainerActionResponse,
+  ContainerCacheResponse,
+  ContainerCacheFlushResponse,
 } from "@mini-infra/types/containers";
 
-import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId, SORT_ORDERS } from "@mini-infra/types";
+import { ApiBase, ApiRoute, ApiResponse, Channel, DEFAULT_LOG_TAIL_LINES, ServerEvent, isValidContainerId, Permission } from "@mini-infra/types";
 import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
+import {
+  ContainerQuerySchema,
+  ContainerListApiResponseSchema,
+  PostgresContainersResponseSchema,
+  ManagedContainerIdsResponseSchema,
+  ContainerIdParams,
+  ContainerDetailResponseSchema,
+  ContainerEnvResponseSchema,
+  ContainerCacheStatsResponseSchema,
+  ContainerCacheFlushResponseSchema,
+  ContainerLogsQuerySchema,
+  ContainerActionParams,
+  ContainerActionResponseSchema,
+} from "./containers.schemas";
 
 const router = express.Router();
+const describe = createRouteDescriber(router, ApiBase.containers);
 
-// Query parameter validation schema
-const containerQuerySchema = z.object({
-  page: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return 1;
-      const parsed = parseInt(val);
-      if (isNaN(parsed) || parsed < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Page must be a positive integer",
-        });
-        return z.NEVER;
-      }
-      return parsed;
-    }),
-  limit: z
-    .string()
-    .optional()
-    .transform((val, ctx) => {
-      if (!val) return 50;
-      const parsed = parseInt(val);
-      if (isNaN(parsed) || parsed < 1) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "Limit must be a positive integer",
-        });
-        return z.NEVER;
-      }
-      return Math.min(parsed, 50); // Maximum 50 containers per page
-    }),
-  sortBy: z.string().optional().default("name"),
-  sortOrder: z.enum(SORT_ORDERS).optional().default("asc"),
-  status: z.string().optional(),
-  name: z.string().optional(),
-  image: z.string().optional(),
-  deploymentId: z.string().optional(),
-});
+/**
+ * Derive this router's mount-relative path from an `ApiRoute.containers.*`
+ * absolute builder, so the route registrations below and the registry in
+ * `@mini-infra/types` can never drift apart. `ApiRoute.containers.*` returns
+ * paths prefixed with `ApiBase.containers` (this router's mount point in
+ * `app-factory.ts`); stripping that prefix recovers the Express-relative
+ * pattern (e.g. `/:id/env`), falling back to `/` for the router root.
+ */
+function rel(absolute: string): string {
+  return absolute.slice(ApiBase.containers.length) || "/";
+}
 
-
-router.get("/", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.list()),
+  {
+    summary: "List containers",
+    description:
+      "Filterable, sortable, paginated list of Docker containers on the managed host.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects: "none — read-only, paginated list",
+    request: { query: ContainerQuerySchema },
+    response: ContainerListApiResponseSchema,
+    errorResponses: [
+      { status: 400, description: "Invalid query parameters" },
+      { status: 503, description: "Docker service is not connected" },
+      { status: 504, description: "Docker API request timed out" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -90,7 +97,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
 
   try {
     // Validate query parameters
-    const queryValidation = containerQuerySchema.safeParse(req.query);
+    const queryValidation = ContainerQuerySchema.safeParse(req.query);
     if (!queryValidation.success) {
       logger.warn(
         {
@@ -272,15 +279,31 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 
 // Get PostgreSQL containers (detected by image and env vars)
-router.get("/postgres", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.postgres()),
+  {
+    summary: "List PostgreSQL containers",
+    description:
+      "Containers detected as PostgreSQL by image name and environment variables.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects: "none — read-only Docker inspection",
+    response: PostgresContainersResponseSchema,
+    errorResponses: [
+      { status: 503, description: "Docker service is not connected" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -327,10 +350,11 @@ router.get("/postgres", requirePermission('containers:read') as RequestHandler, 
       "PostgreSQL containers returned successfully",
     );
 
-    res.json({
+    const response: ApiResponse<ContainerInfo[]> = {
       success: true,
       data: containers,
-    });
+    };
+    res.json(response);
   } catch (error) {
     logger.error(
       {
@@ -343,14 +367,27 @@ router.get("/postgres", requirePermission('containers:read') as RequestHandler, 
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 // Get managed container IDs (containers linked to PostgreSQL servers)
-router.get("/managed-ids", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.managedIds()),
+  {
+    summary: "Get managed container IDs",
+    description:
+      "Maps container ID to PostgresServer ID for containers linked to a PostgreSQL server owned by the caller.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects: "none — read-only DB query",
+    response: ManagedContainerIdsResponseSchema,
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -395,10 +432,11 @@ router.get("/managed-ids", requirePermission('containers:read') as RequestHandle
       "Managed container IDs returned successfully",
     );
 
-    res.json({
+    const response: ApiResponse<Record<string, string>> = {
       success: true,
       data: managedContainerMap,
-    });
+    };
+    res.json(response);
   } catch (error) {
     logger.error(
       {
@@ -411,13 +449,32 @@ router.get("/managed-ids", requirePermission('containers:read') as RequestHandle
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
-router.get("/:id", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.get(":id")),
+  {
+    summary: "Get container details",
+    description: "Fetches a single container by ID, enriched with environment/self-role metadata.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects: "none — read-only Docker inspection",
+    request: { params: ContainerIdParams },
+    response: ContainerDetailResponseSchema,
+    errorResponses: [
+      { status: 400, description: "Invalid container ID format" },
+      { status: 404, description: "Container not found" },
+      { status: 503, description: "Docker service is not connected" },
+      { status: 504, description: "Docker API request timed out" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -495,7 +552,8 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
       "Container details returned successfully",
     );
 
-    res.json(await serializeContainer(dockerContainer));
+    const response: ContainerInfo = await serializeContainer(dockerContainer);
+    res.json(response);
   } catch (error) {
     logger.error(
       {
@@ -519,14 +577,34 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 // Get container environment variables
-router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.env(":id")),
+  {
+    summary: "Get container environment variables",
+    description: "Fetches the environment variables of a running/stopped container.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects:
+      "none — read-only; may expose secrets stored as container environment variables",
+    request: { params: ContainerIdParams },
+    response: ContainerEnvResponseSchema,
+    errorResponses: [
+      { status: 400, description: "Invalid container ID format" },
+      { status: 404, description: "Container not found" },
+      { status: 503, description: "Docker service is not connected" },
+      { status: 504, description: "Docker API request timed out" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -604,10 +682,11 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
       "Container environment variables returned successfully",
     );
 
-    res.json({
+    const response: ApiResponse<Record<string, string>> = {
       success: true,
       data: envVars,
-    });
+    };
+    res.json(response);
   } catch (error) {
     logger.error(
       {
@@ -631,13 +710,25 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 
-router.get("/stats/cache", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.cacheStats()),
+  {
+    summary: "Get Docker service cache statistics",
+    description: "In-memory cache hit/miss counters for the Docker service's container/network/volume cache.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects: "none — read-only in-memory cache stats",
+    response: ContainerCacheStatsResponseSchema,
+  },
+  (async (
+    req: Request,
+    res: Response,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -653,19 +744,33 @@ router.get("/stats/cache", requirePermission('containers:read') as RequestHandle
   const dockerService = DockerService.getInstance();
   const cacheStats = dockerService.getCacheStats();
 
-  res.json({
+  const response: ContainerCacheResponse = {
     cache: cacheStats,
     dockerConnected: dockerService.isConnected(),
     timestamp: new Date().toISOString(),
     requestId,
-  });
-}) as RequestHandler);
+  };
+  res.json(response);
+  }) as RequestHandler,
+);
 
 
-router.post("/cache/flush", requirePermission('containers:write') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-) => {
+describe(
+  "post",
+  rel(ApiRoute.containers.flushCache()),
+  {
+    summary: "Flush the Docker service cache",
+    description: "Invalidates the in-process cache of container/network/volume lookups.",
+    tags: ["Containers"],
+    permission: Permission.ContainersWrite,
+    sideEffects:
+      "invalidates the in-process Docker object cache; forces the next read to hit the Docker API",
+    response: ContainerCacheFlushResponseSchema,
+  },
+  (async (
+    req: Request,
+    res: Response,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -689,53 +794,44 @@ router.post("/cache/flush", requirePermission('containers:write') as RequestHand
     "Container cache flushed successfully",
   );
 
-  res.json({
+  const response: ContainerCacheFlushResponse = {
     message: "Container cache flushed successfully",
     timestamp: new Date().toISOString(),
     requestId,
-  });
-}) as RequestHandler);
+  };
+  res.json(response);
+  }) as RequestHandler,
+);
 
-
-// Log query parameter validation schema
-const logQuerySchema = z.object({
-  tail: z
-    .string()
-    .optional()
-    .transform((val) => (val ? parseInt(val) : DEFAULT_LOG_TAIL_LINES))
-    .refine((val) => val > 0 && val <= MAX_LOG_TAIL_LINES, {
-      message: `Tail must be between 1 and ${MAX_LOG_TAIL_LINES}`,
-    }),
-  follow: z
-    .string()
-    .optional()
-    .default("true")
-    .transform((val) => val !== "false"),
-  timestamps: z
-    .string()
-    .optional()
-    .default("false")
-    .transform((val) => val === "true"),
-  stdout: z
-    .string()
-    .optional()
-    .default("true")
-    .transform((val) => val !== "false"),
-  stderr: z
-    .string()
-    .optional()
-    .default("true")
-    .transform((val) => val !== "false"),
-  since: z.string().optional(),
-  until: z.string().optional(),
-});
 
 // Container logs streaming endpoint (Server-Sent Events)
-router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "get",
+  rel(ApiRoute.containers.logsStream(":id")),
+  {
+    summary: "Stream container logs (Server-Sent Events)",
+    description:
+      "Opens a long-lived SSE connection and tails the container's stdout/stderr in real time.",
+    tags: ["Containers"],
+    permission: Permission.ContainersRead,
+    sideEffects:
+      "opens a long-lived SSE connection and tails the container's stdout/stderr",
+    request: { params: ContainerIdParams, query: ContainerLogsQuerySchema },
+    response: {
+      contentType: "text/event-stream",
+      description: "Server-Sent Events stream of ContainerLogEvent JSON payloads",
+    },
+    errorResponses: [
+      { status: 400, description: "Invalid container ID or query parameters" },
+      { status: 404, description: "Container not found" },
+      { status: 503, description: "Docker service is not connected" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -763,7 +859,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
     }
 
     // Validate query parameters
-    const queryValidation = logQuerySchema.safeParse(req.query);
+    const queryValidation = ContainerLogsQuerySchema.safeParse(req.query);
     if (!queryValidation.success) {
       logger.warn(
         {
@@ -983,14 +1079,35 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
       res.end();
     }
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 // Container action endpoint (start/stop/restart)
-router.post("/:id/:action", requirePermission('containers:write') as RequestHandler, (async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+describe(
+  "post",
+  rel(ApiRoute.containers.action(":id", ":action" as ContainerAction)),
+  {
+    summary: "Perform a container lifecycle action",
+    description: "Starts, stops, restarts, or removes a container.",
+    tags: ["Containers"],
+    permission: Permission.ContainersWrite,
+    sideEffects:
+      "starts/stops/restarts/removes a real Docker container; removal is destructive and irreversible",
+    request: { params: ContainerActionParams },
+    response: ContainerActionResponseSchema,
+    errorResponses: [
+      { status: 400, description: "Invalid container ID, action, or container not in a valid state" },
+      { status: 404, description: "Container not found" },
+      { status: 409, description: "Container already in the requested state" },
+      { status: 503, description: "Docker service is not connected" },
+      { status: 504, description: "Docker API request timed out" },
+    ],
+  },
+  (async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
   const requestId = req.headers["x-request-id"] as string;
   const user = getAuthenticatedUser(req);
   const userId = user?.id;
@@ -1192,6 +1309,7 @@ router.post("/:id/:action", requirePermission('containers:write') as RequestHand
 
     next(error);
   }
-}) as RequestHandler);
+  }) as RequestHandler,
+);
 
 export default router;

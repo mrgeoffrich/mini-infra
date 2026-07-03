@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ContainerInfo } from "@mini-infra/types";
+import { ContainerInfo, ApiRoute } from "@mini-infra/types";
 import { ContainerStatusBadge } from "./ContainerStatusBadge";
 import { IconArrowsSort, IconDatabasePlus, IconDatabase } from "@tabler/icons-react";
 import {
@@ -28,6 +28,7 @@ import {
 import { ServerModal } from "@/components/postgres-server/server-modal";
 import { AddonBadge } from "@/components/stacks/addon-badge";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -237,14 +238,16 @@ export const ContainerTable = React.memo(function ContainerTable({
 
     try {
       // Fetch environment variables and docker host in parallel
-      const [envResponse, dockerHostResponse] = await Promise.all([
-        fetch(`/api/containers/${container.id}/env`).then(r => r.json()),
-        fetch('/api/settings/docker-host').then(r => r.json()),
+      const [envVars, dockerHostData] = await Promise.all([
+        apiFetch<Record<string, string>>(ApiRoute.containers.env(container.id), {
+          correlationIdPrefix: "container-env",
+        }),
+        apiFetch<{ host: string; source: string }>(ApiRoute.settings.dockerHost(), {
+          correlationIdPrefix: "docker-host",
+        }),
       ]);
 
-      // Extract postgres-related environment variables
-      const envVars = envResponse.success ? envResponse.data : {};
-      const dockerHost = dockerHostResponse.success ? dockerHostResponse.data.host : 'localhost';
+      const dockerHost = dockerHostData.host;
 
       // Find the postgres port (default 5432)
       const postgresPort = container.ports.find(p => p.private === 5432);
