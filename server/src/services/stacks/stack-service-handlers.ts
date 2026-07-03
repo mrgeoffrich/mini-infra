@@ -296,6 +296,10 @@ export class StackServiceHandlers {
           await this.infraManager.joinResourceNetworks(target.Id, serviceDef, infraNetworkMap, log);
         }
 
+        // Attach the adopted container to any user-selected external networks
+        // (e.g. a database it needs to reach). Best-effort, like the create path.
+        await this.joinJoinNetworks(target.Id, action.serviceName, serviceDef, log);
+
         const routingCtx: StackRoutingContext = {
           serviceName: action.serviceName,
           containerId: target.Id,
