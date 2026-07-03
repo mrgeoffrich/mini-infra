@@ -2,13 +2,15 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import type { Logger } from 'pino';
 import type { StackResourceOutput } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
+import { createNetworkManager } from '../networks';
 
 /**
  * Connect the mini-infra container itself to a Docker network by name.
  *
- * Idempotent: Docker returns "already exists" / a 403 when the container is
- * already attached — those are treated as success (returns false = "no change").
- * Returns true only when a fresh attachment was made.
+ * Idempotent via `NetworkManager.connect()` — already-attached (whether
+ * detected by inspection or by Docker's own 403/409 on the connect call) is
+ * treated as success and reported as "no change" (returns false). Returns
+ * true only when a fresh attachment was made.
  */
 export async function connectSelfToNetwork(
   dockerExecutor: DockerExecutorService,
@@ -17,17 +19,14 @@ export async function connectSelfToNetwork(
   log: Logger,
 ): Promise<boolean> {
   try {
-    const docker = dockerExecutor.getDockerClient();
-    await docker.getNetwork(netName).connect({ Container: selfId });
-    return true;
+    const networkManager = createNetworkManager(dockerExecutor);
+    const result = await networkManager.connect(selfId, netName);
+    return result.connected && !result.alreadyConnected;
   } catch (err) {
-    const e = err as { message?: string; statusMessage?: string; statusCode?: number };
-    const msg = e?.message || e?.statusMessage || '';
-    if (msg.includes('already exists') || msg.includes('already in network') || e?.statusCode === 403) {
-      // Already attached — nothing to do.
-      return false;
-    }
-    log.warn({ network: netName, error: msg }, 'Failed to connect self to network');
+    log.warn(
+      { network: netName, error: err instanceof Error ? err.message : String(err) },
+      'Failed to connect self to network',
+    );
     return false;
   }
 }

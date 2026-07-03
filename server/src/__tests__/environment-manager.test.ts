@@ -70,6 +70,10 @@ describe('EnvironmentManager', () => {
   let environmentManager: EnvironmentManager;
   let mockPrisma: Mocked<PrismaClient>;
   let mockDockerExecutor: Mocked<DockerExecutorService>;
+  // Reassignable per-test so individual tests can override the network
+  // inspect behaviour (e.g. to simulate a slow/hanging Docker call) that
+  // NetworkManager (services/networks/) reads via getDockerClient().getNetwork(...).inspect().
+  let mockNetworkInspect: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     // Reset singletons
@@ -115,11 +119,17 @@ describe('EnvironmentManager', () => {
       },
     } as any;
 
+    // NetworkManager (services/networks/) talks to the raw Docker client
+    // obtained via dockerExecutor.getDockerClient() — not the old
+    // dockerExecutor.networkExists()/createNetwork() passthroughs, which
+    // provisionEgressGateway no longer calls.
+    mockNetworkInspect = vi.fn().mockResolvedValue({
+      IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+    });
+
     mockDockerExecutor = {
       initialize: vi.fn().mockResolvedValue(undefined),
-      networkExists: vi.fn().mockResolvedValue(false),
       volumeExists: vi.fn().mockResolvedValue(false),
-      createNetwork: vi.fn().mockResolvedValue(undefined),
       createVolume: vi.fn().mockResolvedValue(undefined),
       getDockerClient: vi.fn().mockReturnValue({
         listContainers: vi.fn().mockResolvedValue([]),
@@ -127,9 +137,7 @@ describe('EnvironmentManager', () => {
         getNetwork: vi.fn().mockReturnValue({
           connect: vi.fn().mockResolvedValue(undefined),
           disconnect: vi.fn().mockResolvedValue(undefined),
-          inspect: vi.fn().mockResolvedValue({
-            IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
-          }),
+          inspect: mockNetworkInspect,
         }),
       }),
     } as any;
@@ -294,11 +302,13 @@ describe('EnvironmentManager', () => {
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
 
-      // Make the egress provisioning step (network create) hang for a long time
-      // — long enough that any sync `await` would time out the test.
-      let resolveCreateNetwork!: () => void;
-      const blockingNetwork = new Promise<void>((resolve) => { resolveCreateNetwork = resolve; });
-      mockDockerExecutor.createNetwork.mockReturnValue(blockingNetwork as any);
+      // Make the egress provisioning step (network inspect, used by
+      // NetworkManager.ensure()/inspect() to read Docker's assigned subnet)
+      // hang for a long time — long enough that any sync `await` would time
+      // out the test.
+      let resolveNetworkInspect!: (value: unknown) => void;
+      const blockingInspect = new Promise((resolve) => { resolveNetworkInspect = resolve; });
+      mockNetworkInspect.mockReturnValue(blockingInspect);
 
       const request = { name: 'test-env', type: 'nonproduction' as const };
 
@@ -315,7 +325,7 @@ describe('EnvironmentManager', () => {
       expect(result.userEventId).toBe('user-event-1');
 
       // Release the blocked provisioning so the background work can settle.
-      resolveCreateNetwork();
+      resolveNetworkInspect({ IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] } });
       await result.provisioning;
     });
 
@@ -336,7 +346,12 @@ describe('EnvironmentManager', () => {
       // Make an egress provisioning step throw — provisionEgressGateway swallows
       // it, but the UserEvent should still finalise (env is usable) with a
       // warning entry in the logs. The HTTP response is unaffected.
-      mockDockerExecutor.networkExists.mockRejectedValueOnce(new Error('docker unavailable'));
+      // `environment.update` (persisting egressGatewayIp) only fires from the
+      // background provisioning path — not from the synchronous
+      // getEnvironmentById() call `createEnvironment()` makes before
+      // returning — so rejecting it here can't bleed into the synchronous
+      // assertions below.
+      mockPrisma.environment.update.mockRejectedValueOnce(new Error('docker unavailable'));
 
       const request = { name: 'test-env', type: 'nonproduction' as const };
 

@@ -20,15 +20,27 @@ import { StackReconciler } from '../stacks/stack-reconciler';
 import { runStackNatsApplyPhase } from '../stacks/stack-nats-apply-orchestrator';
 import { runStackVaultApplyPhase } from '../stacks/stack-vault-apply-orchestrator';
 import DockerService from '../docker';
+import {
+  createNetworkManager,
+  // Aliased — this file's egress provisioning code already uses a local
+  // `egressNetworkName` variable pervasively; the alias keeps every existing
+  // reference intact while still deriving the name from the single shared
+  // formula instead of a 12th inline `${environmentName}-egress` copy.
+  egressNetworkName as deriveEgressNetworkName,
+  type NetworkManager,
+} from '../networks';
 
 export class EnvironmentManager {
   private static instance: EnvironmentManager;
   private readonly logger = getLogger("stacks", "environment-manager");
   private readonly dockerExecutor: DockerExecutorService;
   private readonly userEventService: UserEventService;
+  /** Wraps `this.dockerExecutor` — used by `deleteEnvironment` (initialized there). */
+  private readonly networkManager: NetworkManager;
 
   constructor(private readonly prisma: PrismaClient) {
     this.dockerExecutor = new DockerExecutorService();
+    this.networkManager = createNetworkManager(this.dockerExecutor);
     this.userEventService = new UserEventService(prisma);
   }
 
@@ -494,23 +506,24 @@ export class EnvironmentManager {
         let failedNetworks = 0;
 
         for (const network of environment.networks) {
-          try {
-            await this.dockerExecutor.removeNetwork(network.name);
+          // NetworkManager.remove() never throws — it returns a result with
+          // a `reason` so one bad network can't abort the rest of the loop.
+          const result = await this.networkManager.remove(network.name);
+          if (result.removed) {
             deletedNetworks++;
             this.logger.debug({
               environmentId: id,
               networkName: network.name
             }, 'Docker network deleted successfully');
             await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Network '${network.name}' deleted successfully`);
-          } catch (error) {
+          } else {
             failedNetworks++;
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             this.logger.warn({
-              error,
               environmentId: id,
-              networkName: network.name
+              networkName: network.name,
+              reason: result.reason,
             }, 'Failed to delete Docker network (network may not exist in Docker)');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete network '${network.name}': ${errorMessage}`);
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete network '${network.name}': ${result.reason ?? 'unknown reason'}`);
             // Continue with deletion even if Docker network removal fails
           }
         }
@@ -660,9 +673,10 @@ export class EnvironmentManager {
     try {
       await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Provisioning egress gateway...`);
 
-      const egressNetworkName = `${environmentName}-egress`;
+      const egressNetworkName = deriveEgressNetworkName(environmentName);
       const executor = new DockerExecutorService();
       await executor.initialize();
+      const networkManager = createNetworkManager(executor);
       const allocator = new EgressNetworkAllocator(this.prisma);
 
       // Step 1: Create the egress Docker network if it doesn't exist yet,
@@ -672,25 +686,26 @@ export class EnvironmentManager {
       // a daemon and skips ranges that overlap host routes. Creating it up-front
       // (before the egress-gateway stack apply) lets mini-infra-server join
       // (Step 3b) and lets us pick a non-colliding gateway IP (Step 3c) before
-      // any container races onto the network.
-      const networkAlreadyExists = await executor.networkExists(egressNetworkName);
-      if (!networkAlreadyExists) {
-        try {
-          await executor.createNetwork(egressNetworkName, '', {
-            driver: 'bridge',
-            labels: {
-              'mini-infra.infra-resource': 'true',
-              'mini-infra.resource-purpose': 'egress',
-              'mini-infra.environment': environmentId,
-            },
-          });
-        } catch (netErr) {
-          const msg = netErr instanceof Error ? netErr.message : String(netErr);
-          this.logger.error({ environmentId, err: msg }, 'Failed to create egress network for env');
-          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: egress network create failed: ${msg}`);
-          // Fall through — the network may already exist (race / prior run); the
-          // inspect below is the source of truth and returns if it's truly absent.
-        }
+      // any container races onto the network. `ensure()` is idempotent — no
+      // separate exists-check needed.
+      try {
+        await networkManager.ensure({
+          name: egressNetworkName,
+          owner: { kind: 'environment', id: environmentId },
+          purpose: 'egress',
+          driver: 'bridge',
+          extraLabels: {
+            'mini-infra.infra-resource': 'true',
+            'mini-infra.resource-purpose': 'egress',
+            'mini-infra.environment': environmentId,
+          },
+        });
+      } catch (netErr) {
+        const msg = netErr instanceof Error ? netErr.message : String(netErr);
+        this.logger.error({ environmentId, err: msg }, 'Failed to create egress network for env');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: egress network create failed: ${msg}`);
+        // Fall through — the network may already exist (race / prior run); the
+        // inspect below is the source of truth and returns if it's truly absent.
       }
 
       // Step 2: Read back the subnet + bridge gateway Docker assigned (the same
@@ -701,15 +716,14 @@ export class EnvironmentManager {
       let subnet: string;
       let gateway: string;
       try {
-        const dockerClient = executor.getDockerClient();
-        const inspect = await dockerClient.getNetwork(egressNetworkName).inspect();
-        const ipamCfg = inspect.IPAM?.Config?.[0];
-        if (!ipamCfg?.Subnet) {
+        const inspectResult = await networkManager.inspect(egressNetworkName);
+        const ipamCfg = inspectResult?.ipam;
+        if (!ipamCfg?.subnet) {
           throw new Error(`Egress network ${egressNetworkName} has no IPAM subnet`);
         }
-        subnet = ipamCfg.Subnet;
+        subnet = ipamCfg.subnet;
         const subnetOctets = subnet.split('/')[0].split('.');
-        gateway = ipamCfg.Gateway ?? `${subnetOctets.slice(0, 3).join('.')}.1`;
+        gateway = ipamCfg.gateway ?? `${subnetOctets.slice(0, 3).join('.')}.1`;
         this.logger.info({ environmentId, subnet, gateway, egressNetworkName }, 'Recorded egress network subnet from Docker');
         await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] Egress network ${egressNetworkName} ready (subnet ${subnet})`);
       } catch (inspectErr) {
@@ -756,19 +770,16 @@ export class EnvironmentManager {
       try {
         const { hostname } = await import('node:os');
         const selfContainerId = hostname();
-        const dockerClient = executor.getDockerClient();
-        const network = dockerClient.getNetwork(egressNetworkName);
-        await network.connect({ Container: selfContainerId });
-        this.logger.info({ environmentId, egressNetworkName, selfContainerId }, 'Connected mini-infra-server to env egress network');
-      } catch (connErr) {
-        const msg = connErr instanceof Error ? connErr.message : String(connErr);
-        if (msg.includes('already exists') || msg.includes('already in network') || msg.includes('endpoint with name')) {
-          // Idempotent — already connected from a prior provisioning
+        const result = await networkManager.connect(selfContainerId, egressNetworkName);
+        if (result.alreadyConnected) {
           this.logger.debug({ environmentId, egressNetworkName }, 'mini-infra-server already attached to env egress network');
         } else {
-          this.logger.warn({ environmentId, egressNetworkName, err: msg }, 'Failed to attach mini-infra-server to env egress network — container-map push will be unreachable');
-          await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: mini-infra-server could not join ${egressNetworkName}: ${msg}`);
+          this.logger.info({ environmentId, egressNetworkName, selfContainerId }, 'Connected mini-infra-server to env egress network');
         }
+      } catch (connErr) {
+        const msg = connErr instanceof Error ? connErr.message : String(connErr);
+        this.logger.warn({ environmentId, egressNetworkName, err: msg }, 'Failed to attach mini-infra-server to env egress network — container-map push will be unreachable');
+        await this.userEventService.appendLogs(userEventId, `[${new Date().toISOString()}] WARNING: mini-infra-server could not join ${egressNetworkName}: ${msg}`);
       }
 
       // Step 3c: Pick the egress gateway IP. Done now (after the network exists
@@ -941,7 +952,7 @@ export class EnvironmentManager {
     egressGatewayIp: string,
     userEventId: string,
   ): Promise<void> {
-    const networkName = `${environmentName}-egress`;
+    const networkName = deriveEgressNetworkName(environmentName);
     const containerName = `${environmentName}-egress-gateway-egress-gateway`;
 
     try {
@@ -951,10 +962,12 @@ export class EnvironmentManager {
         return;
       }
 
-      // Use docker-executor to get the raw Docker client
+      // Use docker-executor to get the raw Docker client (container listing —
+      // not part of the Docker network API — stays direct).
       const executor = new DockerExecutorService();
       await executor.initialize();
       const docker = executor.getDockerClient();
+      const networkManager = createNetworkManager(executor);
 
       // Find the egress-gateway container by name
       const containers = await docker.listContainers({ all: true, filters: JSON.stringify({ name: [containerName] }) });
@@ -965,22 +978,19 @@ export class EnvironmentManager {
         return;
       }
 
-      const network = docker.getNetwork(networkName);
-
-      // Disconnect from the network first (clears the auto-assigned IP)
+      // Disconnect from the network first (clears the auto-assigned IP), then
+      // reconnect with the pre-allocated static IP so the gateway is reachable
+      // at the expected address. Both go through NetworkManager — idempotent
+      // by Docker status code, not error-message matching.
       try {
-        await network.disconnect({ Container: containerInfo.Id, Force: true });
+        await networkManager.disconnect(containerInfo.Id, networkName, { force: true });
       } catch (disconnectErr) {
         this.logger.debug({ error: disconnectErr, containerName, networkName }, 'Disconnect before static IP reconnect (may already be disconnected)');
       }
 
-      // Reconnect with the pre-allocated static IP
-      await network.connect({
-        Container: containerInfo.Id,
-        EndpointConfig: {
-          IPAMConfig: { IPv4Address: egressGatewayIp },
-          Aliases: ['egress-gateway'],
-        },
+      await networkManager.connect(containerInfo.Id, networkName, {
+        staticIp: egressGatewayIp,
+        aliases: ['egress-gateway'],
       });
 
       this.logger.info({ containerName, networkName, egressGatewayIp }, 'Egress gateway container assigned static IP');

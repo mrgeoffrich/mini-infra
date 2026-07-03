@@ -4,6 +4,7 @@ import Docker from 'dockerode';
 import { DockerExecutorService } from '../docker-executor';
 import { getStackProjectName } from '../stacks/template-engine';
 import { getLogger } from '../../lib/logger-factory';
+import { createNetworkManager, type NetworkManager } from '../networks';
 import {
   IApplicationService,
   ServiceStatus,
@@ -19,6 +20,7 @@ import {
 
 export class MonitoringService implements IApplicationService {
   private dockerExecutor: DockerExecutorService;
+  private networkManager: NetworkManager;
   private readonly projectName: string;
   private readonly telegrafContainerName: string;
   private readonly prometheusContainerName: string;
@@ -90,6 +92,7 @@ export class MonitoringService implements IApplicationService {
   // URLs resolve to the actual `mini-infra-monitoring-*` containers.
   constructor(projectName: string = getStackProjectName({ name: 'monitoring', environment: null })) {
     this.dockerExecutor = new DockerExecutorService();
+    this.networkManager = createNetworkManager(this.dockerExecutor);
     this.projectName = projectName;
     this.telegrafContainerName = `${this.projectName}-telegraf`;
     this.prometheusContainerName = `${this.projectName}-prometheus`;
@@ -394,8 +397,6 @@ export class MonitoringService implements IApplicationService {
     const networkName = `${this.projectName}_monitoring_network`;
 
     try {
-      const docker = this.dockerExecutor.getDockerClient();
-
       // Resolve our own container ID
       const selfId = this.getSelfContainerId();
       if (!selfId) {
@@ -403,24 +404,21 @@ export class MonitoringService implements IApplicationService {
         return;
       }
 
-      // Check if the monitoring network exists
-      const networks = await docker.listNetworks({ filters: { name: [networkName] } });
-      const match = networks.find(n => n.Name === networkName);
-      if (!match) {
-        this.logger.debug({ networkName }, 'Monitoring network does not exist yet — will retry after stack apply');
+      // Check if the monitoring network exists. `unknown` (Docker
+      // unreachable) is treated the same as `absent` here — retry after the
+      // next stack apply either way, rather than guessing.
+      const existence = await this.networkManager.exists(networkName);
+      if (existence !== 'present') {
+        this.logger.debug({ networkName, existence }, 'Monitoring network not available yet — will retry after stack apply');
         return;
       }
 
-      // Check if we're already connected
-      const network = docker.getNetwork(match.Id);
-      const info = await network.inspect();
-      if (info.Containers && info.Containers[selfId]) {
+      const result = await this.networkManager.connect(selfId, networkName);
+      if (result.alreadyConnected) {
         this.logger.debug('App container already connected to monitoring network');
-        return;
+      } else {
+        this.logger.info({ networkName, containerId: selfId }, 'Connected app container to monitoring network');
       }
-
-      await network.connect({ Container: selfId });
-      this.logger.info({ networkName, containerId: selfId }, 'Connected app container to monitoring network');
     } catch (error) {
       // Non-fatal — the proxy routes will return 503 until the connection is established
       this.logger.warn({ error, networkName }, 'Failed to connect app container to monitoring network');

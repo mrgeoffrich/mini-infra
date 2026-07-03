@@ -3,6 +3,7 @@ import { HAProxyDataPlaneClient, TransactionManager } from "./haproxy-dataplane-
 import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
+import { createNetworkManager, type NetworkManager } from "../networks";
 import {
   EligibleContainer,
   CreateManualFrontendRequest,
@@ -28,10 +29,38 @@ export interface ContainerValidationResult {
 export class ManualFrontendManager {
   private dockerExecutor: DockerExecutorService;
   private frontendManager: HAProxyFrontendManager;
+  private networkManager: NetworkManager;
 
   constructor() {
     this.dockerExecutor = new DockerExecutorService();
     this.frontendManager = new HAProxyFrontendManager();
+    this.networkManager = createNetworkManager(this.dockerExecutor);
+  }
+
+  /**
+   * Resolve the environment's HAProxy dataplane network — the network
+   * HAProxy backends live on — via an `InfraResource` purpose lookup
+   * instead of guessing from a network's name. Replaces the
+   * `name.includes("haproxy") || name.includes("network")` substring
+   * heuristic (network overhaul design doc §1.1, mechanism 7) that silently
+   * mis-detected (or missed) the network whenever some other network on the
+   * host happened to share a name fragment. Mirrors the lookup
+   * `EnvironmentValidationService.getApplicationsNetworkFromResource` already
+   * uses for deployment validation — same network, same purpose (`applications`).
+   */
+  private async getApplicationsNetworkName(environmentId: string, prisma: PrismaClient): Promise<string | null> {
+    const resource = await prisma.infraResource.findUnique({
+      where: {
+        type_purpose_scope_environmentId: {
+          type: "docker-network",
+          purpose: "applications",
+          scope: "environment",
+          environmentId,
+        },
+      },
+      select: { name: true },
+    });
+    return resource?.name ?? null;
   }
 
   /**
@@ -51,21 +80,16 @@ export class ManualFrontendManager {
       // Get environment details
       const environment = await prisma.environment.findUnique({
         where: { id: environmentId },
-        include: {
-          networks: true,
-        },
       });
 
       if (!environment) {
         throw new Error(`Environment not found: ${environmentId}`);
       }
 
-      // Find HAProxy network
-      const haproxyNetwork = environment.networks.find(
-        (net) => net.name.includes("haproxy") || net.name.includes("network")
-      );
+      // Find HAProxy network via purpose lookup (see getApplicationsNetworkName).
+      const haproxyNetworkName = await this.getApplicationsNetworkName(environmentId, prisma);
 
-      if (!haproxyNetwork) {
+      if (!haproxyNetworkName) {
         throw new Error(`No HAProxy network found for environment: ${environmentId}`);
       }
 
@@ -131,7 +155,7 @@ export class ManualFrontendManager {
         containers.map(async (container) => {
           const containerName = container.Names?.[0]?.replace(/^\//, "") || "";
           const networks = Object.keys(container.NetworkSettings?.Networks || {});
-          const isOnHAProxyNetwork = networks.includes(haproxyNetwork.name);
+          const isOnHAProxyNetwork = networks.includes(haproxyNetworkName);
           const alreadyHasFrontend = usedContainerIds.has(container.Id);
           const isHAProxyContainer = containerName.includes("haproxy");
 
@@ -147,7 +171,7 @@ export class ManualFrontendManager {
           } else if (!isOnHAProxyNetwork) {
             canConnect = true;
             needsNetworkJoin = true;
-            reason = `Will be joined to HAProxy network (${haproxyNetwork.name})`;
+            reason = `Will be joined to HAProxy network (${haproxyNetworkName})`;
           } else if (alreadyHasFrontend) {
             canConnect = false;
             reason = "Container already has a manual frontend configured";
@@ -177,7 +201,7 @@ export class ManualFrontendManager {
       logger.info(
         {
           environmentId,
-          haproxyNetwork: haproxyNetwork.name,
+          haproxyNetwork: haproxyNetworkName,
           totalContainers: eligibleContainers.length,
           eligibleCount: eligibleContainers.filter((c) => c.canConnect).length,
         },
@@ -186,7 +210,7 @@ export class ManualFrontendManager {
 
       return {
         containers: eligibleContainers,
-        haproxyNetwork: haproxyNetwork.name,
+        haproxyNetwork: haproxyNetworkName,
       };
     } catch (error) {
       logger.error({ error, environmentId }, "Failed to get eligible containers");
@@ -202,26 +226,19 @@ export class ManualFrontendManager {
     environmentId: string,
     prisma: PrismaClient,
   ): Promise<void> {
+    // NetworkManager reads the Docker client lazily off this.dockerExecutor —
+    // it must be initialized first (mirrors every other method on this class).
     await this.dockerExecutor.initialize();
-    const docker = this.dockerExecutor.getDockerClient();
 
-    const environment = await prisma.environment.findUnique({
-      where: { id: environmentId },
-      include: { networks: true },
-    });
+    const haproxyNetworkName = await this.getApplicationsNetworkName(environmentId, prisma);
 
-    const haproxyNetwork = environment?.networks.find(
-      (net) => net.name.includes("haproxy") || net.name.includes("network"),
-    );
-
-    if (!haproxyNetwork) {
+    if (!haproxyNetworkName) {
       throw new Error(`No HAProxy network found for environment: ${environmentId}`);
     }
 
-    const network = docker.getNetwork(haproxyNetwork.name);
-    await network.connect({ Container: containerId });
+    await this.networkManager.connect(containerId, haproxyNetworkName);
 
-    logger.info({ containerId, network: haproxyNetwork.name }, "Container joined HAProxy network");
+    logger.info({ containerId, network: haproxyNetworkName }, "Container joined HAProxy network");
   }
 
   /**
@@ -348,19 +365,18 @@ export class ManualFrontendManager {
       const containerInfo = await container.inspect();
 
       // Get container IP address on HAProxy network
-      const { containers } = await this.getEligibleContainers(request.environmentId, prisma);
+      const { containers, haproxyNetwork: haproxyNetworkName } = await this.getEligibleContainers(request.environmentId, prisma);
       const targetContainer = containers.find((c) => c.id === request.containerId);
 
       if (!targetContainer) {
         throw new Error("Container not found in eligible list");
       }
 
-      // Get container IP on HAProxy network
-      const haproxyNetworkName = targetContainer.networks.find(net =>
-        net.includes("haproxy") || net.includes("network")
-      );
-
-      if (!haproxyNetworkName) {
+      // Confirm the container is actually attached to the resolved HAProxy
+      // network (rather than re-guessing which of its networks is the
+      // HAProxy one via a substring match — `haproxyNetworkName` above is
+      // already the definitive purpose-resolved name).
+      if (!targetContainer.networks.includes(haproxyNetworkName)) {
         throw new Error("Container is not on HAProxy network");
       }
 

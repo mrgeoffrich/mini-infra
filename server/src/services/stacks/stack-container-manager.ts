@@ -8,6 +8,7 @@ import { getLogger } from '../../lib/logger-factory';
 import { groupByProperty } from './utils';
 import { resolveEgressEnv } from './egress-injection';
 import type { PrismaClient } from '../../generated/prisma/client';
+import { createNetworkManager, type NetworkManager } from '../networks';
 
 export interface CreateContainerOptions {
   projectName: string;
@@ -21,8 +22,15 @@ export interface CreateContainerOptions {
 
 export class StackContainerManager {
   private log = getLogger("stacks", "stack-container-manager").child({ component: 'stack-container-manager' });
+  private networkManager: NetworkManager;
 
-  constructor(private dockerExecutor: DockerExecutorService, private prisma: PrismaClient) {}
+  constructor(
+    private dockerExecutor: DockerExecutorService,
+    private prisma: PrismaClient,
+    networkManager?: NetworkManager,
+  ) {
+    this.networkManager = networkManager ?? createNetworkManager(dockerExecutor);
+  }
 
   async pullImage(image: string, tag: string): Promise<void> {
     this.log.info({ image, tag }, 'Pulling image');
@@ -259,14 +267,11 @@ export class StackContainerManager {
 
   async connectToNetwork(containerId: string, networkName: string, aliases?: string[]): Promise<void> {
     this.log.info({ containerId, networkName, aliases }, 'Connecting container to network');
-    const docker = this.dockerExecutor.getDockerClient();
-    const network = docker.getNetwork(networkName);
-    await network.connect({
-      Container: containerId,
-      ...(aliases && aliases.length > 0
-        ? { EndpointConfig: { Aliases: aliases } }
-        : {}),
-    });
+    await this.networkManager.connect(
+      containerId,
+      networkName,
+      aliases && aliases.length > 0 ? { aliases } : undefined,
+    );
   }
 
   async stopAndRemoveContainer(containerId: string): Promise<void> {

@@ -17,6 +17,13 @@
  */
 import type { Logger } from 'pino';
 import type { PrismaClient } from '../../generated/prisma/client';
+import { getLogger } from '../../lib/logger-factory';
+
+// Module-level logger for `resolveEgressContext`'s failure path — used by
+// both `resolveEgressEnv` (no logger parameter) and `attachEgressNetworkIfNeeded`
+// (which has its own caller-supplied `log: Logger` parameter, kept separate
+// below so this module-level logger never shadows it).
+const moduleLog = getLogger('stacks', 'egress-injection');
 
 interface EgressContext {
   shouldInject: boolean;
@@ -34,7 +41,13 @@ interface EgressContext {
  * - Environment has no egressGatewayIp → gateway not provisioned, skip.
  * - No `egress` InfraResource for the env → gateway provisioning incomplete, skip.
  *
- * Never throws — egress injection failure must not break stack apply.
+ * Never throws — egress injection failure must not break stack apply. A
+ * failure inside the try (a DB/lookup blip, as opposed to a deliberate gate
+ * like "no egressGatewayIp yet") is surfaced as a structured warning rather
+ * than silently swallowed (network overhaul defect F4) — a transient DB
+ * error looks identical to "gateway not provisioned" to the caller, but
+ * operators need to be able to tell the difference from the logs instead of
+ * silently losing egress wiring for a container.
  */
 async function resolveEgressContext(
   prisma: PrismaClient,
@@ -66,7 +79,14 @@ async function resolveEgressContext(
     const subnet = typeof meta?.['subnet'] === 'string' ? (meta['subnet'] as string) : undefined;
 
     return { shouldInject: true, networkName: resource.name, subnet };
-  } catch {
+  } catch (err) {
+    moduleLog.warn(
+      {
+        environmentId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Egress context resolution failed (DB/lookup blip) — egress env injection and network attach skipped for this container',
+    );
     return { shouldInject: false };
   }
 }
@@ -131,13 +151,12 @@ export async function attachEgressNetworkIfNeeded(
     await containerManager.connectToNetwork(containerId, ctx.networkName);
     log.info({ containerId, network: ctx.networkName }, 'Attached container to egress network');
   } catch (err) {
-    const e = err as { message?: string; statusCode?: number };
-    const msg = e?.message || '';
-    if (!msg.includes('already exists') && e?.statusCode !== 403) {
-      log.warn(
-        { containerId, network: ctx.networkName, error: msg },
-        'Failed to attach container to egress network',
-      );
-    }
+    // connectToNetwork delegates to NetworkManager.connect(), which already
+    // treats "already connected" as success (status-code driven, not message
+    // matching) — anything reaching this catch is a genuine failure.
+    log.warn(
+      { containerId, network: ctx.networkName, error: err instanceof Error ? err.message : String(err) },
+      'Failed to attach container to egress network',
+    );
   }
 }

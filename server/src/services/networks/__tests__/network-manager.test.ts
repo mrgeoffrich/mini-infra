@@ -63,6 +63,62 @@ describe('NetworkManager', () => {
     });
   });
 
+  describe('inspect', () => {
+    it('returns Docker-owned facts (ipam, labels, connected containers) when the network exists', async () => {
+      const docker = makeMockDocker({
+        net1: makeNetworkHandle({
+          inspect: vi.fn().mockResolvedValue({
+            Name: 'net1',
+            Id: 'abc123',
+            Driver: 'bridge',
+            Labels: { 'mini-infra.managed': 'true' },
+            IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+            Containers: { c1: {}, c2: {} },
+          }),
+        }),
+      });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspect('net1');
+
+      expect(result).toEqual({
+        name: 'net1',
+        id: 'abc123',
+        driver: 'bridge',
+        labels: { 'mini-infra.managed': 'true' },
+        ipam: { subnet: '172.30.0.0/24', gateway: '172.30.0.1' },
+        connectedContainerIds: ['c1', 'c2'],
+      });
+    });
+
+    it('returns undefined (not an error) when the network does not exist', async () => {
+      const docker = makeMockDocker({ net1: makeNetworkHandle({ inspect: vi.fn().mockRejectedValue(dockerError(404)) }) });
+      const manager = makeManager(docker);
+
+      expect(await manager.inspect('net1')).toBeUndefined();
+    });
+
+    it('rethrows on a non-404 inspect failure (Docker unreachable) rather than treating it as absent', async () => {
+      const docker = makeMockDocker({ net1: makeNetworkHandle({ inspect: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }) });
+      const manager = makeManager(docker);
+
+      await expect(manager.inspect('net1')).rejects.toThrow('ECONNREFUSED');
+    });
+
+    it('omits ipam when the network has no IPAM config', async () => {
+      const docker = makeMockDocker({
+        net1: makeNetworkHandle({
+          inspect: vi.fn().mockResolvedValue({ Name: 'net1', Containers: {} }),
+        }),
+      });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspect('net1');
+      expect(result?.ipam).toBeUndefined();
+      expect(result?.connectedContainerIds).toEqual([]);
+    });
+  });
+
   describe('ensure', () => {
     it('creates the network with the standard mini-infra.* labels when absent', async () => {
       const docker = makeMockDocker();

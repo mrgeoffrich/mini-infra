@@ -73,6 +73,21 @@ export interface RemoveNetworkResult {
   reason?: 'not-found' | 'has-containers' | 'error';
 }
 
+export interface NetworkIpamConfig {
+  subnet?: string;
+  gateway?: string;
+}
+
+export interface NetworkInspectResult {
+  name: string;
+  id?: string;
+  driver?: string;
+  labels: Record<string, string>;
+  ipam?: NetworkIpamConfig;
+  /** Container IDs currently attached, per Docker's live inspect. */
+  connectedContainerIds: string[];
+}
+
 export interface RemoveByOwnerOptions extends RemoveNetworkOptions {
   /**
    * Additional network names to check even if the owner-label query didn't
@@ -222,6 +237,41 @@ export class NetworkManager {
         'Unable to determine network existence — Docker may be unreachable; treating as unknown',
       );
       return 'unknown';
+    }
+  }
+
+  /**
+   * Read Docker-owned facts about a network — IPAM subnet/gateway, labels,
+   * and currently-attached container IDs — without exposing dockerode's own
+   * inspect shape to callers. Returns `undefined` (not an error) when the
+   * network doesn't exist; rethrows on any other inspect failure (Docker
+   * unreachable) so callers can distinguish "absent" from "unknown", the
+   * same contract as {@link exists}.
+   *
+   * Added so callers that need more than existence — e.g. reading the
+   * subnet Docker's IPAM assigned to the egress network at creation time —
+   * never need their own raw `docker.getNetwork(name).inspect()` call.
+   */
+  async inspect(name: string): Promise<NetworkInspectResult | undefined> {
+    try {
+      const info = await this.docker.getNetwork(name).inspect();
+      const ipamCfg = info.IPAM?.Config?.[0];
+      return {
+        name: info.Name ?? name,
+        id: info.Id,
+        driver: info.Driver,
+        labels: info.Labels ?? {},
+        ipam: ipamCfg ? { subnet: ipamCfg.Subnet, gateway: ipamCfg.Gateway } : undefined,
+        connectedContainerIds: Object.keys(info.Containers ?? {}),
+      };
+    } catch (err) {
+      const statusCode = statusCodeOf(err);
+      if (statusCode === 404) return undefined;
+      logger.warn(
+        { name, statusCode, error: err instanceof Error ? err.message : String(err) },
+        'Failed to inspect network — Docker may be unreachable',
+      );
+      throw err;
     }
   }
 
