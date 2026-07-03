@@ -4,6 +4,7 @@ import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import databaseManagementService from "../../services/postgres-server/database-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("db", "databases");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId
@@ -338,7 +339,6 @@ router.get("/:dbId/grants", requirePermission(Permission.PostgresRead), async (r
 
 // Import and mount sub-router for table data
 import tableDataRoutes from './table-data';
-import { Permission } from "@mini-infra/types";
 
 // Mount sub-router for table data operations
 router.use('/:dbId/tables', tableDataRoutes);
