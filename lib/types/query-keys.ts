@@ -69,10 +69,15 @@ export const queryKeys = {
 
   diagnostics: {
     all: ["diagnostics"] as const,
+    memory: ["diagnostics", "memory"] as const,
+    smapsTop: ["diagnostics", "smaps-top"] as const,
+    smapsRegions: (pathname: string) => ["diagnostics", "smaps-regions", pathname] as const,
   },
 
   dns: {
     zones: ["dns-zones"] as const,
+    /** Bare root for the zone-records family — broad-invalidates every `zoneRecords(zoneId)` regardless of which zone, used by `useRefreshDnsCache`. */
+    zoneRecordsAll: ["dns-zone-records"] as const,
     zoneRecords: (zoneId: string) => ["dns-zone-records", zoneId] as const,
     validate: (hostname: string) => ["dns-validate", hostname] as const,
   },
@@ -92,10 +97,16 @@ export const queryKeys = {
   },
 
   egress: {
+    /** Bare root for the policies list — broad-invalidates every `policies(query)` variant regardless of filters (no shared prefix with `policy()`/`rules()` singular keys — mirrors the stacks/environments split noted in the file header). */
+    policiesAll: ["egressPolicies"] as const,
     policies: (query?: unknown) => ["egressPolicies", query] as const,
     policy: (policyId: string) => ["egressPolicy", policyId] as const,
     rules: (policyId: string) => ["egressRules", policyId] as const,
+    /** Bare root for the events list/live-feed — broad-invalidates every `events(query)` variant regardless of filters. */
+    eventsAll: ["egressEvents"] as const,
     events: (query?: unknown) => ["egressEvents", query] as const,
+    /** Per-policy "last 7 days" fetch used only by EgressPromoteWizard — deliberately distinct shape from `events()` (adds a "wizard" marker segment) since it isn't a generic events-list query. */
+    eventsWizard: (policyId: string) => ["egressEvents", "wizard", policyId] as const,
   },
 
   environments: {
@@ -135,12 +146,59 @@ export const queryKeys = {
   },
 
   haproxy: {
+    /**
+     * GET /api/haproxy/frontends — root key for the frontends list. Cross-
+     * referenced by `client/src/lib/task-type-registry.ts` and
+     * `client/src/hooks/use-connect-container.ts` — keep this literal
+     * exactly as-is.
+     */
     frontends: ["haproxy-frontends"] as const,
+    /**
+     * Detail key for a single frontend (GET/DELETE
+     * /api/haproxy/frontends/:name). Different string root than `frontends`
+     * above (singular vs plural — mirrors the stacks/stack split noted in
+     * the file header) — matches every existing call site.
+     */
     frontend: (frontendName: string) => ["haproxy-frontend", frontendName] as const,
+    /** Bare root for the singular frontend-detail family — broad-invalidates every `frontend(name)` key by prefix. */
+    frontendAll: ["haproxy-frontend"] as const,
+    /** Routes for a single shared frontend (GET/POST /api/haproxy/frontends/:name/routes). */
     routes: (frontendName: string) => ["haproxy-routes", frontendName] as const,
+    /**
+     * GET /api/haproxy/backends — root key for the backends list. Cross-
+     * referenced by `client/src/lib/task-type-registry.ts` and
+     * `client/src/hooks/use-connect-container.ts` — keep this literal
+     * exactly as-is.
+     */
     backends: ["haproxy-backends"] as const,
-    backend: (backendName: string) => ["haproxy-backend", backendName] as const,
-    servers: (backendName: string) => ["haproxy-servers", backendName] as const,
+    /** Detail key for a single backend, scoped by environment (GET/PATCH /api/haproxy/backends/:name?environmentId=...). */
+    backend: (backendName: string, environmentId: string) =>
+      ["haproxy-backend", backendName, environmentId] as const,
+    /** Bare root for the singular backend-detail family. */
+    backendAll: ["haproxy-backend"] as const,
+    /** Servers for a single backend, scoped by environment (GET /api/haproxy/backends/:name/servers?environmentId=...). */
+    servers: (backendName: string, environmentId: string) =>
+      ["haproxy-servers", backendName, environmentId] as const,
+    /** Bare root for the backend-servers family. */
+    serversAll: ["haproxy-servers"] as const,
+    /**
+     * Eligible containers for a manual HAProxy frontend (GET
+     * /api/haproxy/manual-frontends/containers). Deliberately NOT
+     * `["eligible-containers", environmentId]` — that exact literal is
+     * already used by `client/src/hooks/use-eligible-containers.ts` for the
+     * unrelated `/api/stacks/eligible-containers` resource; reusing it here
+     * would silently share a cache entry between two different endpoints.
+     */
+    manualFrontendEligibleContainers: (environmentId: string) =>
+      ["haproxy-manual-frontend-eligible-containers", environmentId] as const,
+    /**
+     * TLS certificates available for a manual HAProxy frontend's SSL config
+     * (GET /api/tls/certificates?environmentId=...&status=ACTIVE). Kept
+     * under `haproxy` (rather than the `tls` group) since it's only
+     * consumed by the HAProxy manual-frontend flow; preserves the exact
+     * prior literal.
+     */
+    tlsCertificates: (environmentId: string) => ["tls-certificates", environmentId] as const,
   },
 
   apiKeys: {
@@ -235,6 +293,16 @@ export const queryKeys = {
   postgresBackupOperations: {
     all: ["postgresBackupOperations"] as const,
     forDatabase: (databaseId: string) => ["postgresBackupOperations", databaseId] as const,
+    /** Paginated/filtered list query key — narrower than `forDatabase`, still matched by it as a prefix. */
+    list: (
+      databaseId: string,
+      filters?: unknown,
+      page?: number,
+      limit?: number,
+      sortBy?: unknown,
+      sortOrder?: string,
+    ) =>
+      ["postgresBackupOperations", databaseId, filters, page, limit, sortBy, sortOrder] as const,
     status: (backupId: string) => ["postgresBackupOperationStatus", backupId] as const,
     progress: (backupId: string) => ["postgresBackupOperationProgress", backupId] as const,
   },
@@ -242,12 +310,35 @@ export const queryKeys = {
   postgresRestoreOperations: {
     all: ["postgresRestoreOperations"] as const,
     forDatabase: (databaseId: string) => ["postgresRestoreOperations", databaseId] as const,
+    /** Paginated/filtered list query key — narrower than `forDatabase`, still matched by it as a prefix. */
+    list: (
+      databaseId: string,
+      filters?: unknown,
+      page?: number,
+      limit?: number,
+      sortBy?: unknown,
+      sortOrder?: string,
+    ) =>
+      ["postgresRestoreOperations", databaseId, filters, page, limit, sortBy, sortOrder] as const,
     status: (operationId: string) => ["postgresRestoreOperationStatus", operationId] as const,
     progress: (operationId: string) => ["postgresRestoreOperationProgress", operationId] as const,
+    /** Backup-browser query key for `useAvailableBackups` (browsing backups for a restore). */
+    availableBackups: (
+      containerName: string,
+      databaseId: string,
+      filters?: unknown,
+      page?: number,
+      limit?: number,
+      sortBy?: string,
+      sortOrder?: string,
+    ) =>
+      ["availableBackups", containerName, databaseId, filters, page, limit, sortBy, sortOrder] as const,
   },
 
   postgresProgress: {
     activeOperations: ["postgresActiveOperations"] as const,
+    /** Bare root for the operation-history resource — used for broad invalidation (see file header). */
+    operationHistoryAll: ["postgresOperationHistory"] as const,
     operationHistory: (filters?: unknown) => ["postgresOperationHistory", filters] as const,
     backupProgress: (operationId: string) => ["postgresBackupProgress", operationId] as const,
     restoreProgress: (operationId: string) => ["postgresRestoreProgress", operationId] as const,
@@ -261,6 +352,28 @@ export const queryKeys = {
     health: ["backup-health"] as const,
     config: ["self-backup-config"] as const,
     scheduleInfo: ["schedule-info"] as const,
+    /** Bare root for the backup-history resource — broad-invalidates every `history(...)` variant regardless of filters. */
+    historyAll: ["backup-history"] as const,
+    /**
+     * Pre-existing invalidation target with no matching query anywhere in
+     * the app (the real key is `config` = `["self-backup-config"]` above) —
+     * likely a latent no-op bug in `use-onboarding.ts`'s completion handler,
+     * predating this migration. Preserved as-is rather than silently
+     * repointed. See Phase 4 report.
+     */
+    configLegacy: ["selfBackupConfig"] as const,
+    /** Paginated/filtered backup-history list query key (positional params mirror the server's query-string filters). */
+    history: (
+      status?: string,
+      triggeredBy?: string,
+      startDate?: string,
+      endDate?: string,
+      sortBy?: string,
+      sortOrder?: string,
+      page?: number,
+      limit?: number,
+    ) =>
+      ["backup-history", status, triggeredBy, startDate, endDate, sortBy, sortOrder, page, limit] as const,
   },
 
   selfUpdate: {
@@ -278,10 +391,48 @@ export const queryKeys = {
     cloudflareTunnel: (id: string) => ["cloudflare-tunnel", id] as const,
     cloudflareTunnelConfig: (id: string) => ["cloudflare-tunnel-config", id] as const,
     managedTunnels: ["managed-tunnels"] as const,
+    /** Bare root for the managed-tunnel-detail family — broad-invalidates every `managedTunnel(environmentId)` key by prefix. */
+    managedTunnelAll: ["managed-tunnel"] as const,
     managedTunnel: (environmentId: string) => ["managed-tunnel", environmentId] as const,
     tailscaleSettings: ["tailscaleSettings"] as const,
     tlsSettings: ["settings", "tls"] as const,
+    /**
+     * Pre-existing invalidation target with no matching query anywhere in
+     * the app (the real key is `tlsSettings` = `["settings","tls"]` above) —
+     * likely a latent no-op bug in `use-onboarding.ts`'s completion handler,
+     * predating this migration. Preserved as-is rather than silently
+     * repointed. See Phase 4 report.
+     */
+    tlsSettingsLegacy: ["tlsSettings"] as const,
     storageSettings: ["storage", "settings"] as const,
+  },
+
+  /**
+   * Storage provider settings (`/api/storage/...`). Bare `all` root
+   * prefix-matches every narrower key below (`["storage", ...]`), used
+   * throughout `use-storage-settings.ts` and the provider config components
+   * for broad invalidation after any provider mutation.
+   */
+  storage: {
+    all: ["storage"] as const,
+    switchPrecheck: (targetProvider: string | null) =>
+      ["storage", "switch-precheck", targetProvider] as const,
+    azureConfig: ["storage", "azure", "config"] as const,
+    azureLocations: ["storage", "azure", "locations"] as const,
+    locations: (provider: string) => ["storage", provider, "locations"] as const,
+    /** Bare root for the whole google-drive sub-tree — prefix-matches `googleDriveConfig`/`googleDriveFolders` below. */
+    googleDriveAll: ["storage", "google-drive"] as const,
+    googleDriveConfig: ["storage", "google-drive", "config"] as const,
+    googleDriveFolders: ["storage", "google-drive", "folders"] as const,
+    connectivity: ["storage", "connectivity"] as const,
+    connectivityHistory: (
+      filters?: unknown,
+      page?: number,
+      limit?: number,
+      sortBy?: string,
+      sortOrder?: string,
+    ) =>
+      ["storage", "connectivity", "history", filters, page, limit, sortBy, sortOrder] as const,
   },
 
   stacks: {
@@ -289,7 +440,9 @@ export const queryKeys = {
     all: ["stacks"] as const,
     list: (environmentId?: string, scope?: string) =>
       ["stacks", environmentId, scope] as const,
-    eligibleContainers: ["eligible-containers"] as const,
+    /** Parameterized by `environmentId` to avoid cross-environment cache collisions (GET /api/stacks/eligible-containers?environmentId=...). */
+    eligibleContainers: (environmentId?: string) =>
+      ["eligible-containers", environmentId] as const,
     detail: (stackId: string) => ["stack", stackId] as const,
     plan: (stackId: string) => ["stackPlan", stackId] as const,
     status: (stackId: string) => ["stackStatus", stackId] as const,
@@ -304,11 +457,14 @@ export const queryKeys = {
     list: (params?: unknown) => ["stackTemplates", params] as const,
     detail: (templateId: string) => ["stackTemplate", templateId] as const,
     versions: (templateId: string) => ["stackTemplateVersions", templateId] as const,
-    prerequisites: (templateId: string) => ["templatePrerequisites", templateId] as const,
+    prerequisites: (templateId: string, environmentId?: string | null) =>
+      ["templatePrerequisites", templateId, environmentId ?? null] as const,
   },
 
   applications: {
     all: ["applications"] as const,
+    /** Bare root for the singular application-detail family — broad-invalidates every `detail(id)` key by prefix. */
+    detailAll: ["application"] as const,
     detail: (id: string) => ["application", id] as const,
     userStacks: ["userStacks"] as const,
   },
@@ -321,13 +477,25 @@ export const queryKeys = {
     certificates: ["certificates"] as const,
     certificate: (id: string) => ["certificates", id] as const,
     renewals: (certificateId?: string) => ["renewals", certificateId] as const,
-    settings: ["tls"] as const,
+    // NOTE: TLS *settings* (the ACME/DNS config form) is cached under
+    // `queryKeys.settings.tlsSettings` (`["settings","tls"]`), not here —
+    // that literal predates this migration and is cross-referenced
+    // elsewhere, so don't add a duplicate `tls.settings` key that doesn't
+    // match it.
+    /**
+     * Backing list for `useTlsContainers` (containers eligible for TLS
+     * termination). This hook has zero callers anywhere in the app
+     * (confirmed dead code as of Phase 4) — the cache-key literal was
+     * renamed here from the pre-migration `["tls","containers"]` with no
+     * functional risk, since nothing else reads or invalidates it.
+     */
     containers: ["tls-certificates"] as const,
   },
 
   userPreferences: {
     all: ["userPreferences"] as const,
-    timezones: ["timezones"] as const,
+    preferences: ["userPreferences", "preferences"] as const,
+    timezones: ["userPreferences", "timezones"] as const,
   },
 
   users: {
