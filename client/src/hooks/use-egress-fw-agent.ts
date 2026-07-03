@@ -6,34 +6,28 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   EgressFwAgentStatus,
   EgressFwAgentConfig,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 import { useOperationProgress } from "./use-operation-progress";
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    method: "GET",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-  return response.json();
-}
-
+// No continuous "status changed" push event exists for the egress fw-agent
+// (only EGRESS_FW_AGENT_STARTUP_STARTED/STEP/COMPLETED around an explicit
+// restart/start, already handled by useEgressFwAgentStartupProgress's
+// invalidateKeys below) — unlike Channel.VAULT's VAULT_STATUS_CHANGED,
+// there's no background health watcher pushing fw-agent reachability
+// changes, so periodic polling stays.
 export function useEgressFwAgentStatus(): UseQueryResult<EgressFwAgentStatus, Error> {
   return useQuery({
-    queryKey: ["egress-fw-agent", "status"],
-    queryFn: async () => {
-      const data = await fetchJSON<{ success: boolean } & EgressFwAgentStatus>(
-        "/api/egress-fw-agent/status",
-      );
-      return data;
-    },
+    queryKey: queryKeys.egressFwAgent.status,
+    queryFn: () =>
+      apiFetch<{ success: boolean } & EgressFwAgentStatus>(ApiRoute.egressFwAgent.status(), {
+        unwrap: false,
+        correlationIdPrefix: "egress-fw-agent-status",
+      }),
     staleTime: 30_000,
     refetchInterval: 30_000,
     retry: 1,
@@ -43,13 +37,12 @@ export function useEgressFwAgentStatus(): UseQueryResult<EgressFwAgentStatus, Er
 
 export function useEgressFwAgentConfig(): UseQueryResult<EgressFwAgentConfig, Error> {
   return useQuery({
-    queryKey: ["egress-fw-agent", "config"],
-    queryFn: async () => {
-      const data = await fetchJSON<{ success: boolean; config: EgressFwAgentConfig }>(
-        "/api/egress-fw-agent/config",
-      );
-      return data.config;
-    },
+    queryKey: queryKeys.egressFwAgent.config,
+    queryFn: () =>
+      apiFetch<{ success: boolean; config: EgressFwAgentConfig }>(
+        ApiRoute.egressFwAgent.config(),
+        { unwrap: false, correlationIdPrefix: "egress-fw-agent-config" },
+      ).then((data) => data.config),
     staleTime: 5 * 60 * 1000,
     retry: 1,
     refetchOnWindowFocus: false,
@@ -63,23 +56,19 @@ export function useUpdateEgressFwAgentConfig(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data) => {
-      const response = await fetch("/api/egress-fw-agent/config", {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to update config: ${response.status}`);
-      }
-      const result = await response.json();
-      return result.config;
-    },
+    mutationFn: (data) =>
+      apiFetch<{ success: boolean; config: EgressFwAgentConfig }>(
+        ApiRoute.egressFwAgent.config(),
+        {
+          method: "PATCH",
+          body: data,
+          unwrap: false,
+          correlationIdPrefix: "egress-fw-agent-config-update",
+        },
+      ).then((result) => result.config),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["egress-fw-agent", "config"] });
-      queryClient.invalidateQueries({ queryKey: ["egress-fw-agent", "status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.egressFwAgent.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.egressFwAgent.status });
     },
   });
 }
@@ -90,19 +79,11 @@ export function useRestartEgressFwAgent(): UseMutationResult<
   void
 > {
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/egress-fw-agent/restart", {
+    mutationFn: () =>
+      apiFetch<{ operationId: string }>(ApiRoute.egressFwAgent.restart(), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to restart fw-agent: ${response.status}`);
-      }
-      const result = await response.json();
-      return { operationId: result.data.operationId };
-    },
+        correlationIdPrefix: "egress-fw-agent-restart",
+      }),
     onError: (error: Error) => {
       toast.error(error.message);
     },
@@ -115,19 +96,11 @@ export function useStartEgressFwAgent(): UseMutationResult<
   void
 > {
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/egress-fw-agent/start", {
+    mutationFn: () =>
+      apiFetch<{ operationId: string }>(ApiRoute.egressFwAgent.start(), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to start fw-agent: ${response.status}`);
-      }
-      const result = await response.json();
-      return { operationId: result.data.operationId };
-    },
+        correlationIdPrefix: "egress-fw-agent-start",
+      }),
     onError: (error: Error) => {
       toast.error(error.message);
     },
@@ -146,7 +119,7 @@ export function useEgressFwAgentStartupProgress(operationId: string | null, labe
     getStepNames: (p) => p.stepNames ?? [],
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
-    invalidateKeys: [["egress-fw-agent", "status"]],
+    invalidateKeys: [[...queryKeys.egressFwAgent.status]],
     toasts: {
       success: "Egress fw-agent started successfully",
       error: "Egress fw-agent startup failed",

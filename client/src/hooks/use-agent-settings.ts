@@ -6,7 +6,7 @@ import {
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   AgentSettingsResponse,
   UpdateAgentSettingsRequest,
@@ -14,23 +14,19 @@ import type {
   AgentSidecarStatus,
   AgentSidecarConfig,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 import { useOperationProgress } from "./use-operation-progress";
 
 async function fetchAgentSettings(): Promise<AgentSettingsResponse> {
-  const response = await fetch("/api/agent/settings", {
-    method: "GET",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+  return apiFetch<AgentSettingsResponse>(ApiRoute.agent.settings(), {
+    unwrap: false,
+    correlationIdPrefix: "agent-settings",
   });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch agent settings: ${response.status}`);
-  }
-  return response.json();
 }
 
 export function useAgentSettings(): UseQueryResult<AgentSettingsResponse, Error> {
   return useQuery({
-    queryKey: ["agent", "settings"],
+    queryKey: queryKeys.agent.settings,
     queryFn: fetchAgentSettings,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
@@ -46,22 +42,16 @@ export function useUpdateAgentSettings(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data: UpdateAgentSettingsRequest) => {
-      const response = await fetch("/api/agent/settings", {
+    mutationFn: (data: UpdateAgentSettingsRequest) =>
+      apiFetch<AgentSettingsResponse>(ApiRoute.agent.settings(), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to update settings: ${response.status}`);
-      }
-      return response.json();
-    },
+        body: data,
+        unwrap: false,
+        correlationIdPrefix: "agent-settings-update",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent", "settings"] });
-      queryClient.invalidateQueries({ queryKey: ["agent", "status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.settings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.status });
     },
   });
 }
@@ -72,37 +62,28 @@ export function useValidateAgentApiKey(): UseMutationResult<
   string
 > {
   return useMutation({
-    mutationFn: async (apiKey: string) => {
-      const response = await fetch("/api/agent/settings/validate", {
+    mutationFn: (apiKey: string) =>
+      apiFetch<AgentApiKeyValidationResponse>(ApiRoute.agent.settingsValidate(), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
-      });
-      if (!response.ok) {
-        throw new Error(`Validation request failed: ${response.status}`);
-      }
-      return response.json();
-    },
+        body: { apiKey },
+        unwrap: false,
+        correlationIdPrefix: "agent-settings-validate",
+      }),
   });
 }
 
 export function useDeleteAgentApiKey(): UseMutationResult<void, Error, void> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/agent/settings/api-key", {
+    mutationFn: () =>
+      apiFetch<void>(ApiRoute.agent.settingsApiKey(), {
         method: "DELETE",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to delete API key: ${response.status}`);
-      }
-    },
+        unwrap: false,
+        correlationIdPrefix: "agent-settings-delete-key",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent", "settings"] });
-      queryClient.invalidateQueries({ queryKey: ["agent", "status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.settings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.status });
     },
   });
 }
@@ -111,27 +92,20 @@ export function useDeleteAgentApiKey(): UseMutationResult<void, Error, void> {
 // Sidecar status & config hooks (merged from use-agent-sidecar.ts)
 // ---------------------------------------------------------------------------
 
-async function fetchJSON<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    method: "GET",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
-  }
-  return response.json();
-}
-
 export function useAgentSidecarStatus(): UseQueryResult<AgentSidecarStatus, Error> {
   return useQuery({
-    queryKey: ["agent-sidecar", "status"],
-    queryFn: async () => {
-      const data = await fetchJSON<{ success: boolean } & AgentSidecarStatus>(
-        "/api/agent-sidecar/status",
-      );
-      return data;
-    },
+    queryKey: queryKeys.agentSidecar.status,
+    queryFn: () =>
+      apiFetch<{ success: boolean } & AgentSidecarStatus>(ApiRoute.agentSidecar.status(), {
+        unwrap: false,
+        correlationIdPrefix: "agent-sidecar-status",
+      }),
+    // No continuous "status changed" push event exists for the agent sidecar
+    // (only SIDECAR_STARTUP_STARTED/STEP/COMPLETED around an explicit
+    // restart, already handled by useAgentSidecarStartupProgress's
+    // invalidateKeys below) — unlike Channel.VAULT's VAULT_STATUS_CHANGED,
+    // there's no background health watcher pushing sidecar reachability
+    // changes, so periodic polling stays.
     staleTime: 30_000,
     refetchInterval: 30_000,
     retry: 1,
@@ -141,13 +115,12 @@ export function useAgentSidecarStatus(): UseQueryResult<AgentSidecarStatus, Erro
 
 export function useAgentSidecarConfig(): UseQueryResult<AgentSidecarConfig, Error> {
   return useQuery({
-    queryKey: ["agent-sidecar", "config"],
-    queryFn: async () => {
-      const data = await fetchJSON<{ success: boolean; config: AgentSidecarConfig }>(
-        "/api/agent-sidecar/config",
-      );
-      return data.config;
-    },
+    queryKey: queryKeys.agentSidecar.config,
+    queryFn: () =>
+      apiFetch<{ success: boolean; config: AgentSidecarConfig }>(ApiRoute.agentSidecar.config(), {
+        unwrap: false,
+        correlationIdPrefix: "agent-sidecar-config",
+      }).then((data) => data.config),
     staleTime: 5 * 60 * 1000,
     retry: 1,
     refetchOnWindowFocus: false,
@@ -161,24 +134,17 @@ export function useUpdateAgentSidecarConfig(): UseMutationResult<
 > {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (data) => {
-      const response = await fetch("/api/agent-sidecar/config", {
+    mutationFn: (data) =>
+      apiFetch<{ success: boolean; config: AgentSidecarConfig }>(ApiRoute.agentSidecar.config(), {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to update config: ${response.status}`);
-      }
-      const result = await response.json();
-      return result.config;
-    },
+        body: data,
+        unwrap: false,
+        correlationIdPrefix: "agent-sidecar-config-update",
+      }).then((result) => result.config),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent-sidecar", "config"] });
-      queryClient.invalidateQueries({ queryKey: ["agent-sidecar", "status"] });
-      queryClient.invalidateQueries({ queryKey: ["agent", "status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentSidecar.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agentSidecar.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.status });
     },
   });
 }
@@ -189,19 +155,11 @@ export function useStartAgentSidecar(): UseMutationResult<
   void
 > {
   return useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/agent-sidecar/restart", {
+    mutationFn: () =>
+      apiFetch<{ operationId: string }>(ApiRoute.agentSidecar.restart(), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `Failed to start sidecar: ${response.status}`);
-      }
-      const result = await response.json();
-      return { operationId: result.data.operationId };
-    },
+        correlationIdPrefix: "agent-sidecar-restart",
+      }),
     onError: (error: Error) => {
       toast.error(error.message);
     },
@@ -220,7 +178,7 @@ export function useAgentSidecarStartupProgress(operationId: string | null, label
     getStepNames: (p) => p.stepNames ?? [],
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
-    invalidateKeys: [["agent-sidecar", "status"], ["agent", "status"]],
+    invalidateKeys: [[...queryKeys.agentSidecar.status], [...queryKeys.agent.status]],
     toasts: {
       success: "Agent sidecar started successfully",
       error: "Agent sidecar startup failed",

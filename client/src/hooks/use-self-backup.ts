@@ -11,174 +11,63 @@ import {
   UpdateSelfBackupConfigRequest,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `self-backup-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Self-Backup Configuration API Functions
 // ====================
 
-async function fetchSelfBackupConfig(
-  correlationId: string
-): Promise<SelfBackupConfigResponse> {
-  const response = await fetch(`/api/settings/self-backup`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchSelfBackupConfig(): Promise<SelfBackupConfigResponse> {
+  return apiFetch<SelfBackupConfigResponse>(ApiRoute.settings.selfBackup(), {
+    unwrap: false,
+    correlationIdPrefix: "self-backup-config",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch self-backup configuration: ${response.statusText}`
-    );
-  }
-
-  const data: SelfBackupConfigResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(
-      data.error || "Failed to fetch self-backup configuration"
-    );
-  }
-
-  return data;
 }
 
 async function updateSelfBackupConfig(
   config: UpdateSelfBackupConfigRequest,
-  correlationId: string
 ): Promise<SelfBackupConfigResponse> {
-  const response = await fetch(`/api/settings/self-backup`, {
+  return apiFetch<SelfBackupConfigResponse>(ApiRoute.settings.selfBackup(), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(config),
+    body: config,
+    unwrap: false,
+    correlationIdPrefix: "self-backup-config-update",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to update self-backup configuration: ${response.statusText}`
-    );
-  }
-
-  const data: SelfBackupConfigResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(
-      data.error || "Failed to update self-backup configuration"
-    );
-  }
-
-  return data;
 }
 
-async function enableSelfBackup(
-  correlationId: string
-): Promise<{ success: boolean; message?: string }> {
-  const response = await fetch(`/api/settings/self-backup/enable`, {
+async function enableSelfBackup(): Promise<{ success: boolean; message?: string }> {
+  return apiFetch(ApiRoute.settings.selfBackupEnable(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    unwrap: false,
+    correlationIdPrefix: "self-backup-enable",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to enable self-backup: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to enable self-backup");
-  }
-
-  return data;
 }
 
-async function disableSelfBackup(
-  correlationId: string
-): Promise<{ success: boolean; message?: string }> {
-  const response = await fetch(`/api/settings/self-backup/disable`, {
+async function disableSelfBackup(): Promise<{ success: boolean; message?: string }> {
+  return apiFetch(ApiRoute.settings.selfBackupDisable(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    unwrap: false,
+    correlationIdPrefix: "self-backup-disable",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to disable self-backup: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to disable self-backup");
-  }
-
-  return data;
 }
 
-async function triggerManualBackup(
-  correlationId: string
-): Promise<TriggerBackupResponse> {
-  const response = await fetch(`/api/settings/self-backup/trigger`, {
+async function triggerManualBackup(): Promise<TriggerBackupResponse> {
+  return apiFetch<TriggerBackupResponse>(ApiRoute.settings.selfBackupTrigger(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    unwrap: false,
+    correlationIdPrefix: "self-backup-trigger",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to trigger backup: ${response.statusText}`);
-  }
-
-  const data: TriggerBackupResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to trigger backup");
-  }
-
-  return data;
 }
 
-async function fetchScheduleInfo(
-  correlationId: string
-): Promise<{ success: boolean; scheduleInfo: ScheduleInfo | null }> {
-  const response = await fetch(`/api/settings/self-backup/schedule-info`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchScheduleInfo(): Promise<{ success: boolean; scheduleInfo: ScheduleInfo | null }> {
+  return apiFetch(ApiRoute.settings.selfBackupScheduleInfo(), {
+    unwrap: false,
+    correlationIdPrefix: "self-backup-schedule-info",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch schedule info: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to fetch schedule info");
-  }
-
-  return data;
 }
 
 // ====================
@@ -198,9 +87,8 @@ interface FetchBackupHistoryParams {
 
 async function fetchBackupHistory(
   params: FetchBackupHistoryParams,
-  correlationId: string
 ): Promise<BackupHistoryResponse> {
-  const url = new URL(`/api/self-backups`, window.location.origin);
+  const url = new URL(ApiRoute.selfBackups.list(), window.location.origin);
 
   // Add query parameters
   if (params.status) url.searchParams.set("status", params.status);
@@ -212,49 +100,17 @@ async function fetchBackupHistory(
   if (params.page) url.searchParams.set("page", params.page.toString());
   if (params.limit) url.searchParams.set("limit", params.limit.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<BackupHistoryResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "self-backup-history",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backup history: ${response.statusText}`);
-  }
-
-  const data: BackupHistoryResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to fetch backup history");
-  }
-
-  return data;
 }
 
-async function fetchBackupHealth(
-  correlationId: string
-): Promise<BackupHealthResponse> {
-  const response = await fetch(`/api/self-backups/health`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchBackupHealth(): Promise<BackupHealthResponse> {
+  return apiFetch<BackupHealthResponse>(ApiRoute.selfBackups.health(), {
+    unwrap: false,
+    correlationIdPrefix: "self-backup-health",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backup health: ${response.statusText}`);
-  }
-
-  const data: BackupHealthResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.error || "Failed to fetch backup health");
-  }
-
-  return data;
 }
 
 // ====================
@@ -270,11 +126,10 @@ export function useSelfBackupConfig(
   options: UseSelfBackupConfigOptions = {}
 ) {
   const { enabled = true, refetchInterval } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["self-backup-config"],
-    queryFn: () => fetchSelfBackupConfig(correlationId),
+    queryKey: queryKeys.selfBackup.config,
+    queryFn: () => fetchSelfBackupConfig(),
     enabled,
     refetchInterval,
     staleTime: 30000, // 30 seconds
@@ -284,66 +139,61 @@ export function useSelfBackupConfig(
 
 export function useUpdateSelfBackupConfig() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (config: UpdateSelfBackupConfigRequest) =>
-      updateSelfBackupConfig(config, correlationId),
+      updateSelfBackupConfig(config),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["self-backup-config"] });
-      queryClient.invalidateQueries({ queryKey: ["schedule-info"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.scheduleInfo });
     },
   });
 }
 
 export function useEnableSelfBackup() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: () => enableSelfBackup(correlationId),
+    mutationFn: () => enableSelfBackup(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["self-backup-config"] });
-      queryClient.invalidateQueries({ queryKey: ["schedule-info"] });
-      queryClient.invalidateQueries({ queryKey: ["backup-health"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.scheduleInfo });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.health });
     },
   });
 }
 
 export function useDisableSelfBackup() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: () => disableSelfBackup(correlationId),
+    mutationFn: () => disableSelfBackup(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["self-backup-config"] });
-      queryClient.invalidateQueries({ queryKey: ["schedule-info"] });
-      queryClient.invalidateQueries({ queryKey: ["backup-health"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.scheduleInfo });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.health });
     },
   });
 }
 
 export function useTriggerManualBackup() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: () => triggerManualBackup(correlationId),
+    mutationFn: () => triggerManualBackup(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["backup-history"] });
-      queryClient.invalidateQueries({ queryKey: ["backup-health"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.historyAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.health });
     },
   });
 }
 
 export function useScheduleInfo(options: UseSelfBackupConfigOptions = {}) {
   const { enabled = true, refetchInterval = 60000 } = options; // Refresh every minute
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["schedule-info"],
-    queryFn: () => fetchScheduleInfo(correlationId),
+    queryKey: queryKeys.selfBackup.scheduleInfo,
+    queryFn: () => fetchScheduleInfo(),
     enabled,
     refetchInterval,
     staleTime: 30000,
@@ -382,11 +232,8 @@ export function useBackupHistory(options: UseBackupHistoryOptions = {}) {
     refetchInterval,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: [
-      "backup-history",
+    queryKey: queryKeys.selfBackup.history(
       status,
       triggeredBy,
       startDate,
@@ -395,12 +242,9 @@ export function useBackupHistory(options: UseBackupHistoryOptions = {}) {
       sortOrder,
       page,
       limit,
-    ],
+    ),
     queryFn: () =>
-      fetchBackupHistory(
-        { status, triggeredBy, startDate, endDate, sortBy, sortOrder, page, limit },
-        correlationId
-      ),
+      fetchBackupHistory({ status, triggeredBy, startDate, endDate, sortBy, sortOrder, page, limit }),
     enabled,
     refetchInterval,
     staleTime: 10000, // 10 seconds
@@ -417,7 +261,6 @@ export function useBackupHealth(options: UseBackupHealthOptions = {}) {
   const { enabled = true, refetchInterval: customRefetchInterval } = options;
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // No polling when socket is connected (real-time updates via socket events);
   // fall back to 60s polling when disconnected
@@ -430,14 +273,14 @@ export function useBackupHealth(options: UseBackupHealthOptions = {}) {
   useSocketEvent(
     ServerEvent.BACKUP_HEALTH_STATUS,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["backup-health"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.health });
     },
     enabled,
   );
 
   return useQuery({
-    queryKey: ["backup-health"],
-    queryFn: () => fetchBackupHealth(correlationId),
+    queryKey: queryKeys.selfBackup.health,
+    queryFn: () => fetchBackupHealth(),
     enabled,
     refetchInterval,
     staleTime: 30000, // 30 seconds

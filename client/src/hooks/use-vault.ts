@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   VaultStatus,
   VaultPolicyInfo,
@@ -10,31 +11,15 @@ import type {
   CreateVaultAppRoleRequest,
   UpdateVaultAppRoleRequest,
 } from "@mini-infra/types";
-
-async function apiFetch<T>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
-  const res = await fetch(path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-    ...init,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg =
-      (body as { message?: string }).message ?? `${res.status} ${res.statusText}`;
-    throw new Error(msg);
-  }
-  return (body as { data: T }).data;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ── Status ──────────────────────────────────────────────
 
 export function useVaultStatus() {
   return useQuery<VaultStatus>({
-    queryKey: ["vault", "status"],
-    queryFn: () => apiFetch<VaultStatus>("/api/vault/status"),
+    queryKey: queryKeys.vault.status,
+    queryFn: () =>
+      apiFetch<VaultStatus>(ApiRoute.vault.status(), { correlationIdPrefix: "vault-status" }),
     refetchInterval: (q) => (q.state.data?.reachable ? 10_000 : 5_000),
     refetchOnReconnect: true,
   });
@@ -46,13 +31,14 @@ export function useUnlockPassphrase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (passphrase: string) =>
-      apiFetch<void>("/api/vault/passphrase/unlock", {
+      apiFetch<void>(ApiRoute.vault.passphraseUnlock(), {
         method: "POST",
-        body: JSON.stringify({ passphrase }),
+        body: { passphrase },
+        correlationIdPrefix: "vault-unlock",
       }),
     onSuccess: () => {
       toast.success("Passphrase unlocked");
-      qc.invalidateQueries({ queryKey: ["vault"] });
+      qc.invalidateQueries({ queryKey: queryKeys.vault.all });
     },
     onError: (err: Error) => {
       toast.error(`Unlock failed: ${err.message}`);
@@ -64,10 +50,13 @@ export function useLockPassphrase() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<void>("/api/vault/passphrase/lock", { method: "POST" }),
+      apiFetch<void>(ApiRoute.vault.passphraseLock(), {
+        method: "POST",
+        correlationIdPrefix: "vault-lock",
+      }),
     onSuccess: () => {
       toast.success("Passphrase locked");
-      qc.invalidateQueries({ queryKey: ["vault"] });
+      qc.invalidateQueries({ queryKey: queryKeys.vault.all });
     },
   });
 }
@@ -91,9 +80,10 @@ export function useBootstrapVault() {
       address: string;
       stackId?: string;
     }) =>
-      apiFetch<BootstrapResponse>("/api/vault/bootstrap", {
+      apiFetch<BootstrapResponse>(ApiRoute.vault.bootstrap(), {
         method: "POST",
-        body: JSON.stringify(input),
+        body: input,
+        correlationIdPrefix: "vault-bootstrap",
       }),
   });
 }
@@ -101,8 +91,9 @@ export function useBootstrapVault() {
 export function useTriggerUnseal() {
   return useMutation({
     mutationFn: () =>
-      apiFetch<{ operationId: string }>("/api/vault/unseal", {
+      apiFetch<{ operationId: string }>(ApiRoute.vault.unseal(), {
         method: "POST",
+        correlationIdPrefix: "vault-unseal",
       }),
   });
 }
@@ -111,15 +102,21 @@ export function useTriggerUnseal() {
 
 export function useVaultPolicies() {
   return useQuery<VaultPolicyInfo[]>({
-    queryKey: ["vault", "policies"],
-    queryFn: () => apiFetch<VaultPolicyInfo[]>("/api/vault/policies"),
+    queryKey: queryKeys.vault.policies,
+    queryFn: () =>
+      apiFetch<VaultPolicyInfo[]>(ApiRoute.vault.policies(), {
+        correlationIdPrefix: "vault-policies",
+      }),
   });
 }
 
 export function useVaultPolicy(id: string | undefined) {
   return useQuery<VaultPolicyInfo>({
-    queryKey: ["vault", "policies", id],
-    queryFn: () => apiFetch<VaultPolicyInfo>(`/api/vault/policies/${id}`),
+    queryKey: queryKeys.vault.policy(id ?? ""),
+    queryFn: () =>
+      apiFetch<VaultPolicyInfo>(ApiRoute.vault.policy(id as string), {
+        correlationIdPrefix: "vault-policy",
+      }),
     enabled: !!id,
   });
 }
@@ -128,11 +125,12 @@ export function useCreateVaultPolicy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateVaultPolicyRequest) =>
-      apiFetch<VaultPolicyInfo>("/api/vault/policies", {
+      apiFetch<VaultPolicyInfo>(ApiRoute.vault.policies(), {
         method: "POST",
-        body: JSON.stringify(input),
+        body: input,
+        correlationIdPrefix: "vault-policy-create",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "policies"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.policies }),
   });
 }
 
@@ -140,11 +138,12 @@ export function useUpdateVaultPolicy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; input: UpdateVaultPolicyRequest }) =>
-      apiFetch<VaultPolicyInfo>(`/api/vault/policies/${args.id}`, {
+      apiFetch<VaultPolicyInfo>(ApiRoute.vault.policy(args.id), {
         method: "PUT",
-        body: JSON.stringify(args.input),
+        body: args.input,
+        correlationIdPrefix: "vault-policy-update",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "policies"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.policies }),
   });
 }
 
@@ -152,12 +151,13 @@ export function usePublishVaultPolicy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<VaultPolicyInfo>(`/api/vault/policies/${id}/publish`, {
+      apiFetch<VaultPolicyInfo>(ApiRoute.vault.policyPublish(id), {
         method: "POST",
+        correlationIdPrefix: "vault-policy-publish",
       }),
     onSuccess: () => {
       toast.success("Policy published to Vault");
-      qc.invalidateQueries({ queryKey: ["vault", "policies"] });
+      qc.invalidateQueries({ queryKey: queryKeys.vault.policies });
     },
   });
 }
@@ -166,8 +166,11 @@ export function useDeleteVaultPolicy() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<void>(`/api/vault/policies/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "policies"] }),
+      apiFetch<void>(ApiRoute.vault.policy(id), {
+        method: "DELETE",
+        correlationIdPrefix: "vault-policy-delete",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.policies }),
   });
 }
 
@@ -175,15 +178,21 @@ export function useDeleteVaultPolicy() {
 
 export function useVaultAppRoles() {
   return useQuery<VaultAppRoleInfo[]>({
-    queryKey: ["vault", "approles"],
-    queryFn: () => apiFetch<VaultAppRoleInfo[]>("/api/vault/approles"),
+    queryKey: queryKeys.vault.appRoles,
+    queryFn: () =>
+      apiFetch<VaultAppRoleInfo[]>(ApiRoute.vault.appRoles(), {
+        correlationIdPrefix: "vault-approles",
+      }),
   });
 }
 
 export function useVaultAppRole(id: string | undefined) {
   return useQuery<VaultAppRoleInfo>({
-    queryKey: ["vault", "approles", id],
-    queryFn: () => apiFetch<VaultAppRoleInfo>(`/api/vault/approles/${id}`),
+    queryKey: queryKeys.vault.appRole(id ?? ""),
+    queryFn: () =>
+      apiFetch<VaultAppRoleInfo>(ApiRoute.vault.appRole(id as string), {
+        correlationIdPrefix: "vault-approle",
+      }),
     enabled: !!id,
   });
 }
@@ -192,11 +201,12 @@ export function useCreateVaultAppRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateVaultAppRoleRequest) =>
-      apiFetch<VaultAppRoleInfo>("/api/vault/approles", {
+      apiFetch<VaultAppRoleInfo>(ApiRoute.vault.appRoles(), {
         method: "POST",
-        body: JSON.stringify(input),
+        body: input,
+        correlationIdPrefix: "vault-approle-create",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "approles"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.appRoles }),
   });
 }
 
@@ -204,11 +214,12 @@ export function useUpdateVaultAppRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: { id: string; input: UpdateVaultAppRoleRequest }) =>
-      apiFetch<VaultAppRoleInfo>(`/api/vault/approles/${args.id}`, {
+      apiFetch<VaultAppRoleInfo>(ApiRoute.vault.appRole(args.id), {
         method: "PUT",
-        body: JSON.stringify(args.input),
+        body: args.input,
+        correlationIdPrefix: "vault-approle-update",
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "approles"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.appRoles }),
   });
 }
 
@@ -216,12 +227,13 @@ export function useApplyVaultAppRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<VaultAppRoleInfo>(`/api/vault/approles/${id}/apply`, {
+      apiFetch<VaultAppRoleInfo>(ApiRoute.vault.appRoleApply(id), {
         method: "POST",
+        correlationIdPrefix: "vault-approle-apply",
       }),
     onSuccess: () => {
       toast.success("AppRole applied to Vault");
-      qc.invalidateQueries({ queryKey: ["vault", "approles"] });
+      qc.invalidateQueries({ queryKey: queryKeys.vault.appRoles });
     },
   });
 }
@@ -230,17 +242,21 @@ export function useDeleteVaultAppRole() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) =>
-      apiFetch<void>(`/api/vault/approles/${id}`, { method: "DELETE" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["vault", "approles"] }),
+      apiFetch<void>(ApiRoute.vault.appRole(id), {
+        method: "DELETE",
+        correlationIdPrefix: "vault-approle-delete",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.vault.appRoles }),
   });
 }
 
 export function useOperatorCredentials() {
   return useQuery<{ username: string; password: string }>({
-    queryKey: ["vault", "operator-credentials"],
+    queryKey: queryKeys.vault.operatorCredentials,
     queryFn: () =>
       apiFetch<{ username: string; password: string }>(
-        "/api/vault/operator-credentials",
+        ApiRoute.vault.operatorCredentials(),
+        { correlationIdPrefix: "vault-operator-credentials" },
       ),
     enabled: false,
     retry: false,
@@ -249,10 +265,11 @@ export function useOperatorCredentials() {
 
 export function useAppRoleStacks(id: string | undefined) {
   return useQuery<{ id: string; name: string }[]>({
-    queryKey: ["vault", "approles", id, "stacks"],
+    queryKey: queryKeys.vault.appRoleStacks(id ?? ""),
     queryFn: () =>
       apiFetch<{ id: string; name: string }[]>(
-        `/api/vault/approles/${id}/stacks`,
+        ApiRoute.vault.appRoleStacks(id as string),
+        { correlationIdPrefix: "vault-approle-stacks" },
       ),
     enabled: !!id,
   });

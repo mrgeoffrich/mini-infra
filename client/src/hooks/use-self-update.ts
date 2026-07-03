@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { toast } from "sonner";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { SelfUpdateStatus, SelfUpdateCheckResult } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
+import { apiFetch } from "@/lib/api-client";
 
 export type { SelfUpdateStatus, SelfUpdateCheckResult };
 
@@ -59,12 +60,12 @@ export function useSelfUpdateStatus() {
   const localState = getLocalUpdateState();
 
   const query = useQuery<{ success: boolean; status: SelfUpdateStatus }>({
-    queryKey: ["self-update-status"],
-    queryFn: async () => {
-      const res = await fetch("/api/self-update/status");
-      if (!res.ok) throw new Error("Failed to fetch update status");
-      return res.json();
-    },
+    queryKey: queryKeys.selfUpdate.status,
+    queryFn: () =>
+      apiFetch<{ success: boolean; status: SelfUpdateStatus }>(ApiRoute.selfUpdate.status(), {
+        unwrap: false,
+        correlationIdPrefix: "self-update-status",
+      }),
     refetchInterval: (query) => {
       const state = query.state.data?.status?.state;
       if (!state) return false;
@@ -109,11 +110,12 @@ export function useSelfUpdateStatus() {
  */
 export function useSelfUpdateCheck() {
   return useMutation<SelfUpdateCheckResult>({
-    mutationFn: async () => {
-      const res = await fetch("/api/self-update/check", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to check update availability");
-      return res.json();
-    },
+    mutationFn: () =>
+      apiFetch<SelfUpdateCheckResult>(ApiRoute.selfUpdate.check(), {
+        method: "POST",
+        unwrap: false,
+        correlationIdPrefix: "self-update-check",
+      }),
   });
 }
 
@@ -126,23 +128,18 @@ export function useTriggerUpdate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (params: { targetTag: string }) => {
-      const res = await fetch("/api/self-update/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetTag: params.targetTag }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to trigger update");
-      }
-      return res.json() as Promise<{
+    mutationFn: (params: { targetTag: string }) =>
+      apiFetch<{
         success: boolean;
         updateId: string;
         operationId: string;
         targetTag: string;
-      }>;
-    },
+      }>(ApiRoute.selfUpdate.trigger(), {
+        method: "POST",
+        body: { targetTag: params.targetTag },
+        unwrap: false,
+        correlationIdPrefix: "self-update-trigger",
+      }),
     onSuccess: (data) => {
       setLocalUpdateState({
         updateInProgress: true,
@@ -150,7 +147,7 @@ export function useTriggerUpdate() {
         triggeredAt: new Date().toISOString(),
         updateId: data.updateId,
       });
-      queryClient.invalidateQueries({ queryKey: ["self-update-status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfUpdate.status });
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -174,7 +171,7 @@ export function useSelfUpdateLaunchProgress(operationId: string | null, label?: 
     getStepNames: (p) => p.stepNames ?? [],
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
-    invalidateKeys: [["self-update-status"]],
+    invalidateKeys: [[...queryKeys.selfUpdate.status]],
     toasts: {
       success: "Update sidecar launched — server will restart shortly",
       error: "Failed to launch update sidecar",
