@@ -4,13 +4,14 @@
  * `apiFetch<T>()` is the single shared primitive for making a request: it
  * attaches credentials + the standard headers (Content-Type, correlation
  * ID), enforces a request timeout, throws a typed `ApiRequestError` on any
- * non-2xx response (or on an envelope with `success: false`), and unwraps
- * the `{ success, data }` envelope so callers get back `T` directly.
+ * non-2xx response (or on an envelope with `success: false`), and — by
+ * default — unwraps the `{ success, data }` envelope so callers get back `T`
+ * directly. Pass `{ unwrap: false }` for endpoints that return a raw body
+ * (no envelope), e.g. `/health` or some list endpoints.
  *
- * This is Phase 1 of the frontend/backend contract migration
- * (docs/planning/not-shipped/frontend-backend-contract-plan.md) — only the
- * `useContainers` hook has been migrated onto it so far. Other hooks keep
- * their existing raw-`fetch` skeletons until Phase 4.
+ * Phase 1 introduced this client with only `useContainers` migrated onto it.
+ * Phase 4 (docs/planning/not-shipped/frontend-backend-contract-plan.md)
+ * migrates every remaining hook/component in `client/src` onto it.
  */
 
 import { HttpHeader, newCorrelationId } from "@mini-infra/types";
@@ -36,6 +37,14 @@ export interface ApiFetchOptions {
    * Defaults to "req".
    */
   correlationIdPrefix?: string;
+  /**
+   * Whether to unwrap the server's `{ success, data }` envelope and return
+   * `data` directly. Defaults to `true`. Set to `false` for endpoints that
+   * return a raw (non-enveloped) JSON body — e.g. `/health` — in which case
+   * the parsed body is returned as-is (still throws `ApiRequestError` on any
+   * non-2xx response).
+   */
+  unwrap?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,6 +129,7 @@ export async function apiFetch<T>(
     headers,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     correlationIdPrefix = "req",
+    unwrap = true,
   } = opts;
 
   const requestHeaders: Record<string, string> = {
@@ -169,6 +179,10 @@ export async function apiFetch<T>(
   // No content to parse (e.g. 204 from a DELETE).
   if (response.status === 204) {
     return undefined as T;
+  }
+
+  if (!unwrap) {
+    return (await parseJsonSafe(response)) as T;
   }
 
   const envelope = (await parseJsonSafe(response)) as ApiResponse<T> | undefined;

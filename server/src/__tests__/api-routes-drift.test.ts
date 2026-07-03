@@ -133,4 +133,74 @@ describe("ApiBase / ApiRoute consistency with ALL_API_ROUTES", () => {
       ).toBe(true);
     }
   });
+
+  /**
+   * Whole-registry sweep (Phase 4): every `ApiRoute` builder, in every
+   * group, renders a path whose *shape* (static segments + param-segment
+   * positions) matches some entry in `ALL_API_ROUTES`. Builders are
+   * path-only (the HTTP method is chosen by the caller via `apiFetch`'s
+   * `method` option), so — unlike the containers spot-check above, which
+   * pairs a specific method with each path — this sweep checks the path
+   * shape against the *set* of live paths regardless of method.
+   *
+   * Param segments are compared structurally rather than by literal name:
+   * a builder is called with placeholder arguments (one per declared
+   * parameter, via the function's `.length`/arity), and both the rendered
+   * path and every live path have their `:paramName` segments collapsed to
+   * a single `:param` token before comparing. This means a builder's
+   * parameter *names* don't need to match the Express route's param names
+   * (e.g. `containers.get(id)` vs. the live `:id` — fine either way), while
+   * a typo'd or missing/extra static segment still fails the check.
+   */
+  it("every ApiRoute builder (whole registry) renders a path shape present in ALL_API_ROUTES", () => {
+    const PLACEHOLDER = ":param";
+
+    function normalizeShape(path: string): string {
+      return path
+        .split("/")
+        .map((segment) => (segment.startsWith(":") || segment.startsWith("*") ? PLACEHOLDER : segment))
+        .join("/");
+    }
+
+    const registryShapes = new Set(registryPaths.map(normalizeShape));
+
+    function collectRenderedPaths(
+      node: unknown,
+      trail: string,
+      out: Array<{ label: string; path: string }>,
+    ): void {
+      if (typeof node === "function") {
+        const args = Array.from({ length: node.length }, () => PLACEHOLDER);
+        const result = node(...args);
+        if (typeof result === "string") {
+          out.push({ label: trail, path: result });
+        }
+        return;
+      }
+      if (node && typeof node === "object") {
+        for (const [key, value] of Object.entries(node)) {
+          collectRenderedPaths(value, trail ? `${trail}.${key}` : key, out);
+        }
+      }
+    }
+
+    const rendered: Array<{ label: string; path: string }> = [];
+    collectRenderedPaths(ApiRoute, "ApiRoute", rendered);
+
+    // Sanity check on the harness itself — make sure the walk actually
+    // found a non-trivial number of builders (i.e. it isn't silently a
+    // no-op because `ApiRoute` came back empty or the wrong shape).
+    expect(rendered.length).toBeGreaterThan(100);
+
+    const missing = rendered.filter(
+      ({ path }) => !registryShapes.has(normalizeShape(path)),
+    );
+
+    expect(
+      missing,
+      `The following ApiRoute builders render a path shape with no match in ALL_API_ROUTES:\n${missing
+        .map(({ label, path }) => `  ${label} -> ${path}`)
+        .join("\n")}`,
+    ).toEqual([]);
+  });
 });
