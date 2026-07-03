@@ -65,6 +65,9 @@ export * from "./user-events";
 // API response types
 export * from "./api";
 
+// Shared HTTP client primitives (header names, correlation-ID generator)
+export * from "./http";
+
 // Agent conversation types
 export * from "./agent";
 
