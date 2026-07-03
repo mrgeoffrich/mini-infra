@@ -22,12 +22,24 @@ import {
   ContainerActionResponse,
 } from "@mini-infra/types/containers";
 
-import { Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId, SORT_ORDERS } from "@mini-infra/types";
+import { ApiBase, ApiRoute, Channel, DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ServerEvent, isValidContainerId, SORT_ORDERS } from "@mini-infra/types";
 import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
 
 const router = express.Router();
+
+/**
+ * Derive this router's mount-relative path from an `ApiRoute.containers.*`
+ * absolute builder, so the route registrations below and the registry in
+ * `@mini-infra/types` can never drift apart. `ApiRoute.containers.*` returns
+ * paths prefixed with `ApiBase.containers` (this router's mount point in
+ * `app-factory.ts`); stripping that prefix recovers the Express-relative
+ * pattern (e.g. `/:id/env`), falling back to `/` for the router root.
+ */
+function rel(absolute: string): string {
+  return absolute.slice(ApiBase.containers.length) || "/";
+}
 
 // Query parameter validation schema
 const containerQuerySchema = z.object({
@@ -70,7 +82,7 @@ const containerQuerySchema = z.object({
 });
 
 
-router.get("/", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.list()), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -276,7 +288,7 @@ router.get("/", requirePermission('containers:read') as RequestHandler, (async (
 
 
 // Get PostgreSQL containers (detected by image and env vars)
-router.get("/postgres", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.postgres()), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -346,7 +358,7 @@ router.get("/postgres", requirePermission('containers:read') as RequestHandler, 
 }) as RequestHandler);
 
 // Get managed container IDs (containers linked to PostgreSQL servers)
-router.get("/managed-ids", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.managedIds()), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -413,7 +425,7 @@ router.get("/managed-ids", requirePermission('containers:read') as RequestHandle
   }
 }) as RequestHandler);
 
-router.get("/:id", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.get(":id")), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -522,7 +534,7 @@ router.get("/:id", requirePermission('containers:read') as RequestHandler, (asyn
 }) as RequestHandler);
 
 // Get container environment variables
-router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.env(":id")), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -634,7 +646,7 @@ router.get("/:id/env", requirePermission('containers:read') as RequestHandler, (
 }) as RequestHandler);
 
 
-router.get("/stats/cache", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.cacheStats()), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
 ) => {
@@ -662,7 +674,7 @@ router.get("/stats/cache", requirePermission('containers:read') as RequestHandle
 }) as RequestHandler);
 
 
-router.post("/cache/flush", requirePermission('containers:write') as RequestHandler, (async (
+router.post(rel(ApiRoute.containers.flushCache()), requirePermission('containers:write') as RequestHandler, (async (
   req: Request,
   res: Response,
 ) => {
@@ -731,7 +743,7 @@ const logQuerySchema = z.object({
 });
 
 // Container logs streaming endpoint (Server-Sent Events)
-router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHandler, (async (
+router.get(rel(ApiRoute.containers.logsStream(":id")), requirePermission('containers:read') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -986,7 +998,7 @@ router.get("/:id/logs/stream", requirePermission('containers:read') as RequestHa
 }) as RequestHandler);
 
 // Container action endpoint (start/stop/restart)
-router.post("/:id/:action", requirePermission('containers:write') as RequestHandler, (async (
+router.post(rel(ApiRoute.containers.action(":id", ":action" as ContainerAction)), requirePermission('containers:write') as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

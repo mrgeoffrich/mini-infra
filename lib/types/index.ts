@@ -110,6 +110,9 @@ export * from "./tailscale";
 // Pool-instance addon label keys
 export * from "./pool-addons";
 
+// API route registry (ApiBase/ApiRoute/ALL_API_ROUTES)
+export * from "./api-routes";
+
 // ====================
 // Type Utilities
 // ====================

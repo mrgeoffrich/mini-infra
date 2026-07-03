@@ -7,6 +7,7 @@ import {
   ContainerQueryParams,
   Channel,
   ServerEvent,
+  ApiRoute,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 import { apiFetch, ApiRequestError } from "@/lib/api-client";
@@ -16,7 +17,7 @@ const POLL_INTERVAL_DISCONNECTED = 5000; // 5s when socket is not connected
 async function fetchContainers(
   queryParams: ContainerQueryParams = {},
 ): Promise<ContainerListResponse> {
-  const url = new URL(`/api/containers`, window.location.origin);
+  const url = new URL(ApiRoute.containers.list(), window.location.origin);
 
   // Add query parameters
   if (queryParams.page !== undefined)
