@@ -31,6 +31,8 @@ import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registr
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { Permission } from '@mini-infra/types';
+import { getStackProjectName } from '../../services/stacks/template-engine';
+import { synthesiseDefaultNetworkIfNeeded } from '../../services/stacks/utils';
 
 const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
@@ -93,10 +95,15 @@ async function runDestroyInBackground(
       where: { id: stackId },
       include: { services: true, environment: true },
     });
-    const projectName = fullStack.environment
-      ? `${fullStack.environment.name}-${fullStack.name}`
-      : fullStack.name;
-    const networks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+    // Single source of truth for the project-name prefix (fixes a prior bug
+    // where this route derived it inline without the `mini-infra-` prefix
+    // for host-scoped stacks, so destroy's network lookup silently missed
+    // every network a host-scoped stack owned).
+    const projectName = getStackProjectName(fullStack);
+    const declaredNetworks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+    // Include the synthesised `default` network so multi-service stacks that
+    // never declared `networks[]` don't leak `${projectName}_default`.
+    const networks = synthesiseDefaultNetworkIfNeeded(declaredNetworks, fullStack.services, logger);
     const volumes = (fullStack.volumes as unknown as StackVolume[]) ?? [];
 
     // Step 1: Destroy stack-level resources (DNS, tunnels) before container removal
@@ -162,6 +169,7 @@ async function runDestroyInBackground(
 
     // Step 5: Remove networks and volumes
     const { networksRemoved, volumesRemoved } = await removeStackNetworksAndVolumes(
+      stackId,
       projectName,
       networks,
       volumes,

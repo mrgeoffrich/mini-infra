@@ -14,6 +14,7 @@ import type {
   StackServiceRouting,
   StackVolume,
 } from '@mini-infra/types';
+import { createNetworkManager, stackNetworkName } from '../networks';
 
 const logger = getLogger("stacks", "stack-destroy-helpers");
 
@@ -219,24 +220,41 @@ export async function listStackContainers(stackId: string): Promise<DockerContai
   );
 }
 
+/**
+ * Remove every Docker network and volume a stack owns.
+ *
+ * Networks are reaped by owner label (`mini-infra.owner-kind=stack`,
+ * `mini-infra.owner-id=<stackId>`) via `NetworkManager.removeByOwner` —
+ * not by re-deriving names — with the stack's declared (+ synthesised
+ * default) network names passed as a fallback for networks created before
+ * ownership labels existed. This is what fixes the historical destroy leak:
+ * the old per-network `networkExists`/`removeNetwork` loop relied entirely
+ * on the caller computing `projectName` correctly (it didn't, for
+ * host-scoped stacks — see `stacks-destroy-route.ts`) and never reaped the
+ * synthesised default network at all.
+ *
+ * Volumes have no equivalent labelling yet (out of scope for this phase) and
+ * keep the existing name-derived removal.
+ */
 export async function removeStackNetworksAndVolumes(
+  stackId: string,
   projectName: string,
   networks: StackNetwork[],
   volumes: StackVolume[],
 ): Promise<{ networksRemoved: string[]; volumesRemoved: string[] }> {
   const dockerExecutor = new DockerExecutorService();
   await dockerExecutor.initialize();
+  const networkManager = createNetworkManager(dockerExecutor);
 
-  const networksRemoved: string[] = [];
-  for (const net of networks) {
-    const netName = `${projectName}_${net.name}`;
-    try {
-      if (await dockerExecutor.networkExists(netName)) {
-        await dockerExecutor.removeNetwork(netName);
-        networksRemoved.push(netName);
-      }
-    } catch (err) {
-      logger.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
+  const nameFallbackCandidates = networks.map((net) => stackNetworkName(projectName, net.name));
+  const removeResults = await networkManager.removeByOwner(
+    { kind: 'stack', id: stackId },
+    { nameFallbackCandidates },
+  );
+  const networksRemoved = removeResults.filter((r) => r.removed).map((r) => r.name);
+  for (const result of removeResults) {
+    if (!result.removed && result.reason !== 'not-found') {
+      logger.warn({ network: result.name, reason: result.reason }, 'Failed to remove network, continuing');
     }
   }
 

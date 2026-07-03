@@ -802,6 +802,17 @@ class DockerService {
   }
 
   /**
+   * Invalidate just the cached network list. Called by `NetworkManager`
+   * (`services/networks/`) after any mutation — create/connect/disconnect/
+   * remove — that changes network state or membership via a Docker client
+   * other than this service's own, so `listNetworks()` doesn't keep serving
+   * stale data for the remainder of its 3s TTL.
+   */
+  public invalidateNetworksCache(): void {
+    this.cache.del("networks");
+  }
+
+  /**
    * Register a callback to be invoked when Docker container state changes.
    * Used by the socket emitter to push updates to clients.
    */

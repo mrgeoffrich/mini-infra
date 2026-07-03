@@ -15,7 +15,6 @@ import { removalDeploymentMachine, type RemovalDeploymentContext } from '../hapr
 import { runStateMachineToCompletion } from './state-machine-runner';
 import { prepareServiceContainer } from './utils';
 import { removeConflictingContainer } from './stack-conflict-detector';
-import { attachEgressNetworkIfNeeded } from './egress-injection';
 import type { StackContainerManager } from './stack-container-manager';
 import type { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
@@ -25,6 +24,7 @@ import {
   cleanupAdoptedWebRouting,
   type StackWithReconcilerContext,
 } from './stack-state-machine-context';
+import { attachServiceNetworks, type NetworkManager } from '../networks';
 
 /**
  * Shared context passed to every service handler invocation. Contains
@@ -90,6 +90,7 @@ export class StackServiceHandlers {
     private dockerExecutor: DockerExecutorService,
     private containerManager: StackContainerManager,
     private infraManager: StackInfraResourceManager,
+    private networkManager: NetworkManager,
     private routingManager?: StackRoutingManager
   ) {}
 
@@ -130,16 +131,15 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
-        await attachEgressNetworkIfNeeded(
-          this.prisma,
-          this.containerManager,
-          containerId,
-          stack.environmentId,
-          effectiveServiceDef.containerConfig.egressBypass === true,
+        await attachServiceNetworks(containerId, action.serviceName, effectiveServiceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
           log,
-        );
+        });
 
         await this.containerManager.startContainer(containerId);
 
@@ -185,16 +185,15 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
-        await attachEgressNetworkIfNeeded(
-          this.prisma,
-          this.containerManager,
-          containerId,
-          stack.environmentId,
-          effectiveServiceDef.containerConfig.egressBypass === true,
+        await attachServiceNetworks(containerId, action.serviceName, effectiveServiceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
           log,
-        );
+        });
 
         await this.containerManager.startContainer(containerId);
 
