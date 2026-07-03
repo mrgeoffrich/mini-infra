@@ -4,6 +4,8 @@ import {
   QueryClientProvider,
   useQueryClient,
 } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "./api-client";
 import { toastWithCopy } from "./toast-utils";
 import {
   AuthContextType,
@@ -14,7 +16,6 @@ import {
 } from "./auth-types";
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
-import { userPreferencesKeys } from "../hooks/use-user-preferences";
 
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {
@@ -197,23 +198,11 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
       // Prefetch user preferences when user logs in
       queryClient.prefetchQuery({
-        queryKey: userPreferencesKeys.preferences(),
-        queryFn: async () => {
-          const response = await fetch("/api/user/preferences", {
-            method: "GET",
-            credentials: "include",
-          });
-          if (!response.ok) {
-            throw new Error(
-              `Failed to fetch user preferences: ${response.statusText}`,
-            );
-          }
-          const result = await response.json();
-          if (!result.success) {
-            throw new Error(result.error || "Failed to fetch user preferences");
-          }
-          return result.data;
-        },
+        queryKey: queryKeys.userPreferences.preferences,
+        queryFn: () =>
+          apiFetch(ApiRoute.userPreferences.preferences(), {
+            correlationIdPrefix: "auth",
+          }),
         staleTime: 5 * 60 * 1000,
       });
 
@@ -230,7 +219,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       clearSessionData();
 
       queryClient.removeQueries({
-        queryKey: userPreferencesKeys.all,
+        queryKey: queryKeys.userPreferences.all,
       });
 
       if (wasAuthenticated) {
@@ -252,18 +241,19 @@ function AuthProviderInner({ children }: AuthProviderProps) {
     password: string,
   ): Promise<{ success: boolean; mustResetPwd?: boolean; error?: string }> => {
     try {
-      const response = await fetch("/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.error || "Login failed" };
-      }
+      // /auth/login returns { success, mustResetPwd } on success and
+      // { error: "..." } on failure — neither matches the standard
+      // {success,data} envelope, so this call opts out of apiFetch's
+      // automatic unwrap/throw and reads the raw body itself.
+      const data = await apiFetch<{ success: boolean; mustResetPwd?: boolean }>(
+        ApiRoute.auth.login(),
+        {
+          method: "POST",
+          body: { email, password },
+          unwrap: false,
+          correlationIdPrefix: "auth",
+        },
+      );
 
       // Refetch auth status to update state
       await refetch();
@@ -271,6 +261,10 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
       return { success: true, mustResetPwd: data.mustResetPwd };
     } catch (error) {
+      if (error instanceof ApiRequestError) {
+        const body = error.body as { error?: string } | undefined;
+        return { success: false, error: body?.error || "Login failed" };
+      }
       return {
         success: false,
         error:
@@ -287,56 +281,59 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       redirectPath = window.location.pathname + window.location.search;
     }
 
-    const authUrl = `/auth/google?redirect=${encodeURIComponent(redirectPath)}`;
+    const authUrl = `${ApiRoute.auth.google()}?redirect=${encodeURIComponent(redirectPath)}`;
     window.location.href = authUrl;
   };
 
   const logout = async (options?: LogoutOptions) => {
     try {
-      const response = await fetch(`/auth/logout`, {
+      // /auth/logout returns { message: "..." } on success and
+      // { error: "..." } on failure — not the standard envelope, so this
+      // opts out of apiFetch's automatic unwrap.
+      await apiFetch(ApiRoute.auth.logout(), {
         method: "POST",
-        credentials: "include",
+        unwrap: false,
+        correlationIdPrefix: "auth",
       });
 
-      if (response.ok) {
+      clearSessionData();
+      broadcastAuthEvent("AUTH_LOGOUT");
+      toastWithCopy.success("You have been logged out successfully.");
+      await refetch();
+      const redirectUrl = options?.redirectUrl || "/";
+      if (redirectUrl !== window.location.pathname) {
+        window.location.href = redirectUrl;
+      }
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.isAuth) {
+        // Already logged out (401) — treat as success, not an error.
         clearSessionData();
         broadcastAuthEvent("AUTH_LOGOUT");
-        toastWithCopy.success("You have been logged out successfully.");
         await refetch();
         const redirectUrl = options?.redirectUrl || "/";
         if (redirectUrl !== window.location.pathname) {
           window.location.href = redirectUrl;
         }
-      } else {
-        if (response.status === 401) {
-          clearSessionData();
-          broadcastAuthEvent("AUTH_LOGOUT");
-          await refetch();
-          const redirectUrl = options?.redirectUrl || "/";
-          if (redirectUrl !== window.location.pathname) {
-            window.location.href = redirectUrl;
-          }
-          return;
-        }
-        const errorText = await response.text().catch(() => "Unknown error");
-        const errorMessage = `Logout failed: ${response.status} ${errorText}`;
-        toastWithCopy.error(errorMessage);
-        throw new Error(errorMessage);
+        return;
       }
-    } catch (error) {
+
       console.error("Logout error:", error);
       let errorMessage: string;
-      if (error instanceof Error) {
+      if (error instanceof ApiRequestError) {
+        const body = error.body as { error?: string } | undefined;
+        errorMessage = `Logout failed: ${error.status} ${body?.error ?? error.message}`;
+      } else if (error instanceof Error) {
         errorMessage = `Failed to log out: ${error.message}`;
       } else {
         errorMessage = "Failed to log out due to an unknown error";
       }
 
-      if (
-        !(error instanceof Error && error.message.includes("Logout failed:"))
-      ) {
-        toastWithCopy.error(errorMessage);
-      }
+      // Single toast here (the pre-migration code toasted once inline for
+      // the HTTP-failure path and once more in this catch for anything
+      // else, with a message-substring guard to avoid double-toasting a
+      // re-thrown HTTP failure — now that both paths funnel through this
+      // one catch, a single unconditional toast covers both cases).
+      toastWithCopy.error(errorMessage);
       throw new Error(errorMessage, { cause: error });
     }
   };

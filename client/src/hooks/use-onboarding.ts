@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { useSystemSettings } from "@/hooks/use-settings";
+import { apiFetch } from "@/lib/api-client";
 
 const ONBOARDING_FILTER = {
   category: "system" as const,
@@ -20,20 +22,10 @@ export function useOnboardingStatus() {
 }
 
 async function completeOnboardingRequest(): Promise<void> {
-  const response = await fetch("/api/onboarding/complete", {
+  await apiFetch<void>(ApiRoute.onboarding.complete(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    correlationIdPrefix: "onboarding",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to complete onboarding: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  if (!data.success) {
-    throw new Error(data.error || "Failed to complete onboarding");
-  }
 }
 
 export function useCompleteOnboarding() {
@@ -43,11 +35,20 @@ export function useCompleteOnboarding() {
     mutationFn: completeOnboardingRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["systemSettings", ONBOARDING_FILTER],
+        queryKey: [...queryKeys.settings.systemSettings, ONBOARDING_FILTER],
       });
-      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
-      queryClient.invalidateQueries({ queryKey: ["selfBackupConfig"] });
-      queryClient.invalidateQueries({ queryKey: ["tlsSettings"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.systemSettings,
+      });
+      // These two invalidation targets don't match any live query key
+      // anywhere in the app today — self-backup config is actually cached
+      // under "self-backup-config" (use-self-backup.ts) and TLS settings
+      // under ["settings","tls"] (use-tls-settings.ts). Pre-existing no-op
+      // bugs, preserved via documented "Legacy" registry entries rather than
+      // silently repointed — see queryKeys.selfBackup.configLegacy /
+      // queryKeys.settings.tlsSettingsLegacy in lib/types/query-keys.ts.
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.configLegacy });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettingsLegacy });
     },
   });
 

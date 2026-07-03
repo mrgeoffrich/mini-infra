@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 interface HealthResponse {
   status: string;
@@ -7,12 +9,12 @@ interface HealthResponse {
 
 export function useVersion() {
   const { data } = useQuery<HealthResponse>({
-    queryKey: ["app-version"],
-    queryFn: async () => {
-      const res = await fetch("/health");
-      if (!res.ok) throw new Error("Failed to fetch version");
-      return res.json();
-    },
+    queryKey: queryKeys.appVersion.all,
+    queryFn: () =>
+      apiFetch<HealthResponse>(ApiRoute.health(), {
+        unwrap: false,
+        correlationIdPrefix: "app-version",
+      }),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   });
