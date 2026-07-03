@@ -3,7 +3,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import type { PostgresServerInfo } from "@mini-infra/types";
+import type { ContainerInfo, PostgresServerInfo } from "@mini-infra/types";
 import { POSTGRES_SSL_MODES, ApiRoute, queryKeys } from "@mini-infra/types";
 import { toast } from "sonner";
 import {
@@ -98,10 +98,10 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
   const testConnectionMutation = useTestServerConnection();
 
   // Fetch PostgreSQL containers for linking
-  const { data: postgresContainers } = useQuery<Array<{ id: string; name: string; image: string; imageTag: string }>>({
+  const { data: postgresContainers } = useQuery<ContainerInfo[]>({
     queryKey: queryKeys.containers.postgres,
     queryFn: async () => {
-      const data = await apiFetch<Array<{ id: string; name: string; image: string; imageTag: string }> | undefined>(
+      const data = await apiFetch<ContainerInfo[] | undefined>(
         ApiRoute.containers.postgres(),
         { correlationIdPrefix: "postgres-containers" },
       );

@@ -40,15 +40,12 @@ export function useCompleteOnboarding() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.settings.systemSettings,
       });
-      // These two invalidation targets don't match any live query key
-      // anywhere in the app today — self-backup config is actually cached
-      // under "self-backup-config" (use-self-backup.ts) and TLS settings
-      // under ["settings","tls"] (use-tls-settings.ts). Pre-existing no-op
-      // bugs, preserved via documented "Legacy" registry entries rather than
-      // silently repointed — see queryKeys.selfBackup.configLegacy /
-      // queryKeys.settings.tlsSettingsLegacy in lib/types/query-keys.ts.
-      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.configLegacy });
-      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettingsLegacy });
+      // Refresh the self-backup config (cached under "self-backup-config" in
+      // use-self-backup.ts) and the TLS settings form (cached under
+      // ["settings","tls"] in use-tls-settings.ts) so onboarding-completion
+      // changes show up without waiting for a natural refetch.
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettings });
     },
   });
 
