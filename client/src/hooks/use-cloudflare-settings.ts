@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   CloudflareSettingResponse,
   CreateCloudflareSettingRequest,
@@ -11,6 +12,7 @@ import type {
 } from "@mini-infra/types";
 import { Channel, ServerEvent } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // The /api/connectivity/cloudflare endpoint returns the latest status as a
 // flat object (not the wrapped `{ success, data }` shape used elsewhere).
@@ -24,32 +26,27 @@ export interface CloudflareConnectivityStatus {
   responseTime: number | null;
 }
 
+function isAuthOrForbidden(error: unknown): boolean {
+  return error instanceof ApiRequestError && (error.isAuth || error.status === 403);
+}
+
 // Hook for retrieving current Cloudflare settings
 export function useCloudflareSettings() {
   return useQuery<CloudflareSettingResponse>({
-    queryKey: ["cloudflare-settings"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings/cloudflare", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch Cloudflare settings",
-        }));
-        throw new Error(errorData.message || "Failed to fetch settings");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.settings.cloudflareSettings,
+    queryFn: () =>
+      // Enveloped endpoint, but callers read the full `{ success, data }`
+      // shape (matches `CloudflareSettingResponse`) — preserve that
+      // contract with `unwrap: false`.
+      apiFetch<CloudflareSettingResponse>(ApiRoute.settings.cloudflare(), {
+        correlationIdPrefix: "cloudflare-settings",
+        unwrap: false,
+      }),
     staleTime: 30000, // 30 seconds
     retry: (failureCount, error) => {
       // Don't retry on 401/403 errors
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (message.includes("unauthorized") || message.includes("forbidden")) {
-          return false;
-        }
+      if (isAuthOrForbidden(error)) {
+        return false;
       }
       return failureCount < 3;
     },
@@ -65,30 +62,18 @@ export function useUpdateCloudflareSettings() {
     Error,
     CreateCloudflareSettingRequest
   >({
-    mutationFn: async (payload) => {
-      const response = await fetch("/api/settings/cloudflare", {
+    mutationFn: (payload) =>
+      apiFetch<CloudflareSettingResponse>(ApiRoute.settings.cloudflare(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to update Cloudflare settings",
-        }));
-        throw new Error(errorData.message || "Failed to update settings");
-      }
-
-      return response.json();
-    },
+        body: payload,
+        correlationIdPrefix: "cloudflare-settings",
+        unwrap: false,
+      }),
     onSuccess: () => {
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-connectivity"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareSettings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.cloudflare });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
     },
   });
 }
@@ -98,26 +83,17 @@ export function useDeleteCloudflareSettings() {
   const queryClient = useQueryClient();
 
   return useMutation<{ success: boolean; message?: string }, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/cloudflare", {
+    mutationFn: () =>
+      apiFetch<{ success: boolean; message?: string }>(ApiRoute.settings.cloudflare(), {
         method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to delete Cloudflare settings",
-        }));
-        throw new Error(errorData.message || "Failed to delete settings");
-      }
-
-      return response.json();
-    },
+        correlationIdPrefix: "cloudflare-settings",
+        unwrap: false,
+      }),
     onSuccess: () => {
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-connectivity"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareSettings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.cloudflare });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
     },
   });
 }
@@ -132,26 +108,18 @@ export function useCloudflareConnectivity() {
   useSocketEvent(
     ServerEvent.CONNECTIVITY_ALL,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-connectivity"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.cloudflare });
     },
   );
 
   return useQuery<CloudflareConnectivityStatus>({
-    queryKey: ["cloudflare-connectivity"],
-    queryFn: async () => {
-      const response = await fetch("/api/connectivity/cloudflare", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch connectivity status",
-        }));
-        throw new Error(errorData.message || "Failed to fetch status");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.connectivity.cloudflare,
+    queryFn: () =>
+      // Raw (non-enveloped) endpoint — the flat status object is the body itself.
+      apiFetch<CloudflareConnectivityStatus>(ApiRoute.connectivity.cloudflare(), {
+        correlationIdPrefix: "cloudflare-connectivity",
+        unwrap: false,
+      }),
     staleTime: 60000, // 1 minute
     refetchInterval: connected ? false : 300000,
     refetchOnReconnect: true,
@@ -168,40 +136,27 @@ export function useCloudfareTunnels() {
   useSocketEvent(
     ServerEvent.CONNECTIVITY_ALL,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
     },
   );
 
   return useQuery<CloudflareTunnelListResponse>({
-    queryKey: ["cloudflare-tunnels"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings/cloudflare/tunnels", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch Cloudflare tunnels",
-        }));
-        throw new Error(errorData.message || "Failed to fetch tunnels");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.settings.cloudflareTunnels,
+    queryFn: () =>
+      apiFetch<CloudflareTunnelListResponse>(ApiRoute.settings.cloudflareTunnels(), {
+        correlationIdPrefix: "cloudflare-tunnels",
+        unwrap: false,
+      }),
     staleTime: 60000, // 1 minute - matches backend cache TTL
     refetchInterval: connected ? false : 120000,
     refetchOnReconnect: true,
     retry: (failureCount, error) => {
       // Don't retry on 401/403/404 errors
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not configured")
-        ) {
-          return false;
-        }
+      if (isAuthOrForbidden(error)) {
+        return false;
+      }
+      if (error instanceof Error && error.message.toLowerCase().includes("not configured")) {
+        return false;
       }
       return failureCount < 2;
     },
@@ -211,43 +166,22 @@ export function useCloudfareTunnels() {
 // Hook for retrieving tunnel configuration
 export function useCloudfareTunnelConfig(tunnelId: string | undefined) {
   return useQuery<CloudflareTunnelConfigResponse>({
-    queryKey: ["cloudflare-tunnel-config", tunnelId],
-    queryFn: async () => {
+    queryKey: queryKeys.settings.cloudflareTunnelConfig(tunnelId ?? ""),
+    queryFn: () => {
       if (!tunnelId) {
         throw new Error("Tunnel ID is required");
       }
-
-      const response = await fetch(
-        `/api/settings/cloudflare/tunnels/${tunnelId}/config`,
-        {
-          credentials: "include",
-        },
+      return apiFetch<CloudflareTunnelConfigResponse>(
+        ApiRoute.settings.cloudflareTunnelConfig(tunnelId),
+        { correlationIdPrefix: "cloudflare-tunnels", unwrap: false },
       );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch tunnel configuration",
-        }));
-        throw new Error(
-          errorData.message || "Failed to fetch tunnel configuration",
-        );
-      }
-
-      return response.json();
     },
     enabled: !!tunnelId,
     staleTime: 60000, // 1 minute - matches backend cache TTL
     retry: (failureCount, error) => {
       // Don't retry on 401/403/404 errors
-      if (error instanceof Error) {
-        const message = error.message.toLowerCase();
-        if (
-          message.includes("unauthorized") ||
-          message.includes("forbidden") ||
-          message.includes("not found")
-        ) {
-          return false;
-        }
+      if (isAuthOrForbidden(error) || (error instanceof ApiRequestError && error.status === 404)) {
+        return false;
       }
       return failureCount < 2;
     },
@@ -261,7 +195,7 @@ export function useRefreshCloudfareTunnels() {
   return useMutation<void, Error>({
     mutationFn: async () => {
       // Just invalidate the cache to force a refetch
-      await queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
     },
   });
 }
@@ -275,42 +209,24 @@ export function useAddTunnelHostname() {
     Error,
     { tunnelId: string } & CloudflareAddHostnameRequest
   >({
-    mutationFn: async ({ tunnelId, hostname, service, path }) => {
-      const response = await fetch(
-        `/api/settings/cloudflare/tunnels/${tunnelId}/hostnames`,
+    mutationFn: ({ tunnelId, hostname, service, path }) =>
+      apiFetch<CloudflareHostnameResponse>(
+        ApiRoute.settings.cloudflareTunnelHostnames(tunnelId),
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            hostname,
-            service,
-            path,
-          }),
+          body: { hostname, service, path },
+          correlationIdPrefix: "cloudflare-tunnels",
+          unwrap: false,
         },
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to add hostname to tunnel",
-        }));
-        throw new Error(
-          errorData.details || errorData.message || "Failed to add hostname",
-        );
-      }
-
-      return response.json();
-    },
+      ),
     onSuccess: (data) => {
       // Invalidate tunnel-related queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
       queryClient.invalidateQueries({
-        queryKey: ["cloudflare-tunnel", data.data.tunnelId],
+        queryKey: queryKeys.settings.cloudflareTunnel(data.data.tunnelId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["cloudflare-tunnel-config", data.data.tunnelId],
+        queryKey: queryKeys.settings.cloudflareTunnelConfig(data.data.tunnelId),
       });
     },
     onError: (error) => {
@@ -328,42 +244,29 @@ export function useRemoveTunnelHostname() {
     Error,
     { tunnelId: string; hostname: string; path?: string }
   >({
-    mutationFn: async ({ tunnelId, hostname, path }) => {
+    mutationFn: ({ tunnelId, hostname, path }) => {
       // URL encode hostname to handle special characters
-      const encodedHostname = encodeURIComponent(hostname);
-      const params = new URLSearchParams();
-      if (path) {
-        params.set("path", path);
-      }
-      const queryString = params.toString() ? `?${params.toString()}` : "";
-
-      const response = await fetch(
-        `/api/settings/cloudflare/tunnels/${tunnelId}/hostnames/${encodedHostname}${queryString}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        },
+      const url = new URL(
+        ApiRoute.settings.cloudflareTunnelHostname(tunnelId, encodeURIComponent(hostname)),
+        window.location.origin,
       );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to remove hostname from tunnel",
-        }));
-        throw new Error(
-          errorData.details || errorData.message || "Failed to remove hostname",
-        );
+      if (path) {
+        url.searchParams.set("path", path);
       }
-
-      return response.json();
+      return apiFetch<CloudflareHostnameResponse>(url.pathname + url.search, {
+        method: "DELETE",
+        correlationIdPrefix: "cloudflare-tunnels",
+        unwrap: false,
+      });
     },
     onSuccess: (data) => {
       // Invalidate tunnel-related queries to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
       queryClient.invalidateQueries({
-        queryKey: ["cloudflare-tunnel", data.data.tunnelId],
+        queryKey: queryKeys.settings.cloudflareTunnel(data.data.tunnelId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["cloudflare-tunnel-config", data.data.tunnelId],
+        queryKey: queryKeys.settings.cloudflareTunnelConfig(data.data.tunnelId),
       });
     },
     onError: (error) => {
@@ -379,19 +282,12 @@ export function useRemoveTunnelHostname() {
 // Hook for listing all managed tunnels across environments
 export function useManagedTunnels() {
   return useQuery<ManagedTunnelListResponse>({
-    queryKey: ["managed-tunnels"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings/cloudflare/managed-tunnels", {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch managed tunnels",
-        }));
-        throw new Error(errorData.message || "Failed to fetch managed tunnels");
-      }
-      return response.json();
-    },
+    queryKey: queryKeys.settings.managedTunnels,
+    queryFn: () =>
+      apiFetch<ManagedTunnelListResponse>(ApiRoute.settings.cloudflareManagedTunnels(), {
+        correlationIdPrefix: "managed-tunnels",
+        unwrap: false,
+      }),
     staleTime: 30000,
   });
 }
@@ -399,20 +295,13 @@ export function useManagedTunnels() {
 // Hook for getting managed tunnel for a specific environment
 export function useManagedTunnel(environmentId: string | undefined) {
   return useQuery<ManagedTunnelResponse>({
-    queryKey: ["managed-tunnel", environmentId],
-    queryFn: async () => {
+    queryKey: queryKeys.settings.managedTunnel(environmentId ?? ""),
+    queryFn: () => {
       if (!environmentId) throw new Error("Environment ID is required");
-      const response = await fetch(
-        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
-        { credentials: "include" },
+      return apiFetch<ManagedTunnelResponse>(
+        ApiRoute.settings.cloudflareManagedTunnel(environmentId),
+        { correlationIdPrefix: "managed-tunnels", unwrap: false },
       );
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch managed tunnel",
-        }));
-        throw new Error(errorData.message || "Failed to fetch managed tunnel");
-      }
-      return response.json();
     },
     enabled: !!environmentId,
     staleTime: 30000,
@@ -428,31 +317,21 @@ export function useCreateManagedTunnel() {
     Error,
     { environmentId: string; name: string }
   >({
-    mutationFn: async ({ environmentId, name }) => {
-      const response = await fetch(
-        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
+    mutationFn: ({ environmentId, name }) =>
+      apiFetch<ManagedTunnelResponse>(
+        ApiRoute.settings.cloudflareManagedTunnel(environmentId),
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ name }),
+          body: { name },
+          correlationIdPrefix: "managed-tunnels",
+          unwrap: false,
         },
-      );
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          error: "Failed to create managed tunnel",
-        }));
-        throw new Error(
-          errorData.error || errorData.message || "Failed to create managed tunnel",
-        );
-      }
-      return response.json();
-    },
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["managed-tunnels"] });
-      queryClient.invalidateQueries({ queryKey: ["managed-tunnel"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedTunnels });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedTunnelAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
   });
 }
@@ -462,29 +341,20 @@ export function useDeleteManagedTunnel() {
   const queryClient = useQueryClient();
 
   return useMutation<{ success: boolean; message?: string }, Error, string>({
-    mutationFn: async (environmentId: string) => {
-      const response = await fetch(
-        `/api/settings/cloudflare/managed-tunnels/${environmentId}`,
+    mutationFn: (environmentId: string) =>
+      apiFetch<{ success: boolean; message?: string }>(
+        ApiRoute.settings.cloudflareManagedTunnel(environmentId),
         {
           method: "DELETE",
-          credentials: "include",
+          correlationIdPrefix: "managed-tunnels",
+          unwrap: false,
         },
-      );
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          error: "Failed to delete managed tunnel",
-        }));
-        throw new Error(
-          errorData.error || errorData.message || "Failed to delete managed tunnel",
-        );
-      }
-      return response.json();
-    },
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["managed-tunnels"] });
-      queryClient.invalidateQueries({ queryKey: ["managed-tunnel"] });
-      queryClient.invalidateQueries({ queryKey: ["cloudflare-tunnels"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedTunnels });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.managedTunnelAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.cloudflareTunnels });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
   });
 }

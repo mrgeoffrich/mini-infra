@@ -1,12 +1,9 @@
 import { useMutation } from "@tanstack/react-query";
+import { ApiRoute } from "@mini-infra/types";
 import type { TestDockerRegistryRequest, TestDockerRegistryResponse } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 export type { TestDockerRegistryRequest, TestDockerRegistryResponse };
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `system-settings-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
 
 // ====================
 // System Settings API Functions
@@ -14,32 +11,18 @@ function generateCorrelationId(): string {
 
 async function testDockerRegistryConnection(
   request: TestDockerRegistryRequest,
-  correlationId: string,
 ): Promise<TestDockerRegistryResponse> {
-  const response = await fetch("/api/settings/system/test-docker-registry", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Request-ID": correlationId,
+  // Raw (non-enveloped) endpoint — `{ success, message, details }` is the
+  // body itself, not wrapped in `{ success, data }`.
+  return apiFetch<TestDockerRegistryResponse>(
+    ApiRoute.settings.systemTestDockerRegistry(),
+    {
+      method: "POST",
+      body: request,
+      correlationIdPrefix: "system-settings",
+      unwrap: false,
     },
-    credentials: "include",
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    // Try to parse error response
-    let errorData: TestDockerRegistryResponse;
-    try {
-      errorData = await response.json();
-    } catch {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    // If we have structured error data, throw it
-    throw new Error(errorData.message);
-  }
-
-  return response.json();
+  );
 }
 
 // ====================
@@ -49,7 +32,7 @@ async function testDockerRegistryConnection(
 export function useTestDockerRegistry() {
   return useMutation({
     mutationFn: (request: TestDockerRegistryRequest) =>
-      testDockerRegistryConnection(request, generateCorrelationId()),
+      testDockerRegistryConnection(request),
     onError: (error) => {
       console.error("Docker registry test failed:", error);
     },

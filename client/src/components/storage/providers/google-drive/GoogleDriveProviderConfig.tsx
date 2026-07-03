@@ -35,6 +35,7 @@ import {
   IconUnlink,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { queryKeys } from "@mini-infra/types";
 import {
   useDisconnectGoogleDrive,
   useGoogleDriveProviderConfig,
@@ -106,8 +107,8 @@ export const GoogleDriveProviderConfig = React.memo(
       if (!status) return;
       if (status === "connected") {
         toast.success("Google Drive connected");
-        queryClient.invalidateQueries({ queryKey: ["storage"] });
-        queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
       } else if (status === "error") {
         const reason = searchParams.get("reason") ?? "unknown";
         const message =

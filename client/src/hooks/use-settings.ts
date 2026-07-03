@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback } from "react";
 import {
+  ApiRoute,
+  queryKeys,
   SystemSettingsInfo,
   SettingsListResponse,
   SettingResponse,
@@ -20,10 +22,10 @@ import {
   ServerEvent,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `settings-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+function isAuthError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.isAuth;
 }
 
 // ====================
@@ -34,9 +36,8 @@ async function fetchSystemSettings(
   filters: SettingsFilter = {},
   page = 1,
   limit = 50,
-  correlationId: string,
 ): Promise<SettingsListResponse> {
-  const url = new URL(`/api/settings`, window.location.origin);
+  const url = new URL(ApiRoute.settings.list(), window.location.origin);
 
   // Add query parameters
   url.searchParams.set("page", page.toString());
@@ -48,19 +49,13 @@ async function fetchSystemSettings(
   if (filters.validationStatus)
     url.searchParams.set("validationStatus", filters.validationStatus);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  // Enveloped endpoint, but callers read the full `{ success, data }` shape
+  // (matches `SettingsListResponse`, which also carries `pagination` as a
+  // sibling of `data`) — preserve that contract with `unwrap: false`.
+  const data = await apiFetch<SettingsListResponse>(url.pathname + url.search, {
+    correlationIdPrefix: "settings",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch system settings: ${response.statusText}`);
-  }
-
-  const data: SettingsListResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch system settings");
@@ -69,23 +64,11 @@ async function fetchSystemSettings(
   return data;
 }
 
-async function fetchSystemSetting(
-  id: string,
-  correlationId: string,
-): Promise<SettingResponse> {
-  const response = await fetch(`/api/settings/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchSystemSetting(id: string): Promise<SettingResponse> {
+  const data = await apiFetch<SettingResponse>(ApiRoute.settings.get(id), {
+    correlationIdPrefix: "settings",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch system setting: ${response.statusText}`);
-  }
-
-  const data: SettingResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch system setting");
@@ -96,24 +79,13 @@ async function fetchSystemSetting(
 
 async function createSystemSetting(
   setting: CreateSettingRequest,
-  correlationId: string,
 ): Promise<SettingResponse> {
-  const response = await fetch(`/api/settings`, {
+  const data = await apiFetch<SettingResponse>(ApiRoute.settings.list(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(setting),
+    body: setting,
+    correlationIdPrefix: "settings",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.message || `Failed to create system setting: ${response.statusText}`);
-  }
-
-  const data: SettingResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to create system setting");
@@ -125,24 +97,13 @@ async function createSystemSetting(
 async function updateSystemSetting(
   id: string,
   setting: UpdateSettingRequest,
-  correlationId: string,
 ): Promise<SettingResponse> {
-  const response = await fetch(`/api/settings/${id}`, {
+  const data = await apiFetch<SettingResponse>(ApiRoute.settings.get(id), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(setting),
+    body: setting,
+    correlationIdPrefix: "settings",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.message || `Failed to update system setting: ${response.statusText}`);
-  }
-
-  const data: SettingResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update system setting");
@@ -151,24 +112,12 @@ async function updateSystemSetting(
   return data;
 }
 
-async function deleteSystemSetting(
-  id: string,
-  correlationId: string,
-): Promise<SettingsDeleteResponse> {
-  const response = await fetch(`/api/settings/${id}`, {
+async function deleteSystemSetting(id: string): Promise<SettingsDeleteResponse> {
+  const data = await apiFetch<SettingsDeleteResponse>(ApiRoute.settings.get(id), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "settings",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete system setting: ${response.statusText}`);
-  }
-
-  const data: SettingsDeleteResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to delete system setting");
@@ -200,11 +149,9 @@ export function useSystemSettings(options: UseSystemSettingsOptions = {}) {
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["systemSettings", filters, page, limit],
-    queryFn: () => fetchSystemSettings(filters, page, limit, correlationId),
+    queryKey: [...queryKeys.settings.systemSettings, filters, page, limit],
+    queryFn: () => fetchSystemSettings(filters, page, limit),
     enabled,
     refetchInterval,
     retry:
@@ -212,10 +159,7 @@ export function useSystemSettings(options: UseSystemSettingsOptions = {}) {
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -239,21 +183,17 @@ export function useSystemSetting(
   options: UseSystemSettingOptions = {},
 ) {
   const { enabled = true, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["systemSetting", id],
-    queryFn: () => fetchSystemSetting(id, correlationId),
+    queryKey: queryKeys.settings.systemSetting(id),
+    queryFn: () => fetchSystemSetting(id),
     enabled: enabled && !!id,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -268,21 +208,19 @@ export function useSystemSetting(
 // Mutation hooks for CRUD operations
 export function useCreateSystemSetting() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (setting: CreateSettingRequest) =>
-      createSystemSetting(setting, correlationId),
+      createSystemSetting(setting),
     onSuccess: () => {
       // Invalidate and refetch system settings
-      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.systemSettings });
     },
   });
 }
 
 export function useUpdateSystemSetting() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -291,13 +229,13 @@ export function useUpdateSystemSetting() {
     }: {
       id: string;
       setting: UpdateSettingRequest;
-    }) => updateSystemSetting(id, setting, correlationId),
+    }) => updateSystemSetting(id, setting),
     onSuccess: (_, variables) => {
       // Invalidate and refetch system settings
-      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.systemSettings });
       // Update the specific setting in cache
       queryClient.invalidateQueries({
-        queryKey: ["systemSetting", variables.id],
+        queryKey: queryKeys.settings.systemSetting(variables.id),
       });
     },
   });
@@ -305,15 +243,14 @@ export function useUpdateSystemSetting() {
 
 export function useDeleteSystemSetting() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteSystemSetting(id, correlationId),
+    mutationFn: (id: string) => deleteSystemSetting(id),
     onSuccess: (_, id) => {
       // Invalidate and refetch system settings
-      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.systemSettings });
       // Remove the specific setting from cache
-      queryClient.removeQueries({ queryKey: ["systemSetting", id] });
+      queryClient.removeQueries({ queryKey: queryKeys.settings.systemSetting(id) });
     },
   });
 }
@@ -376,23 +313,16 @@ export function useSettingsFilters(
 async function validateService(
   service: SettingsCategory,
   settings?: Record<string, string>,
-  correlationId?: string,
 ): Promise<ValidateServiceResponse> {
-  const response = await fetch(`/api/settings/validate/${service}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(correlationId && { "X-Correlation-ID": correlationId }),
+  const data = await apiFetch<ValidateServiceResponse>(
+    ApiRoute.settings.validate(service),
+    {
+      method: "POST",
+      body: { settings },
+      correlationIdPrefix: "settings",
+      unwrap: false,
     },
-    body: JSON.stringify({ settings }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to validate ${service}: ${response.statusText}`);
-  }
-
-  const data: ValidateServiceResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || `Failed to validate ${service}`);
@@ -416,21 +346,17 @@ export function useSettingsValidation(
   options: UseSettingsValidationOptions = {},
 ) {
   const { enabled = true, retry = 1 } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["settingsValidation", service, settings],
-    queryFn: () => validateService(service, settings, correlationId),
+    queryKey: [...queryKeys.settings.validation, service, settings],
+    queryFn: () => validateService(service, settings),
     enabled: enabled && !!service,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Limited retries for validation as it might be expensive
@@ -445,8 +371,6 @@ export function useSettingsValidation(
 }
 
 export function useValidateService() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: ({
       service,
@@ -454,7 +378,7 @@ export function useValidateService() {
     }: {
       service: SettingsCategory;
       settings?: Record<string, string>;
-    }) => validateService(service, settings, correlationId),
+    }) => validateService(service, settings),
   });
 }
 
@@ -466,9 +390,8 @@ async function fetchConnectivityStatus(
   filters: ConnectivityStatusFilter = {},
   page = 1,
   limit = 50,
-  correlationId: string,
 ): Promise<ConnectivityStatusListResponse> {
-  const url = new URL(`/api/settings/connectivity`, window.location.origin);
+  const url = new URL(ApiRoute.settings.connectivity(), window.location.origin);
 
   // Add query parameters
   url.searchParams.set("page", page.toString());
@@ -482,21 +405,13 @@ async function fetchConnectivityStatus(
   if (filters.endDate)
     url.searchParams.set("endDate", filters.endDate.toISOString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch connectivity status: ${response.statusText}`,
-    );
-  }
-
-  const data: ConnectivityStatusListResponse = await response.json();
+  // Enveloped endpoint, but callers read the full `{ success, data }` shape
+  // (matches `ConnectivityStatusListResponse`, which also carries pagination
+  // fields as siblings of `data`) — preserve that contract with `unwrap: false`.
+  const data = await apiFetch<ConnectivityStatusListResponse>(
+    url.pathname + url.search,
+    { correlationIdPrefix: "settings", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch connectivity status");
@@ -532,7 +447,6 @@ export function useConnectivityStatus(
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // No polling when socket is connected (real-time updates via socket events);
   // fall back to 30s polling when disconnected
@@ -545,14 +459,14 @@ export function useConnectivityStatus(
   useSocketEvent(
     ServerEvent.CONNECTIVITY_ALL,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
     enabled,
   );
 
   return useQuery({
-    queryKey: ["connectivityStatus", filters, page, limit],
-    queryFn: () => fetchConnectivityStatus(filters, page, limit, correlationId),
+    queryKey: [...queryKeys.connectivity.status, filters, page, limit],
+    queryFn: () => fetchConnectivityStatus(filters, page, limit),
     enabled,
     refetchInterval,
     retry:
@@ -560,10 +474,7 @@ export function useConnectivityStatus(
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors

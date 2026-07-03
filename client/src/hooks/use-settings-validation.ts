@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
+  ApiRoute,
+  queryKeys,
   ConnectivityStatusInfo,
   ConnectivityStatusListResponse,
   ConnectivityStatusFilter,
@@ -10,10 +12,10 @@ import {
   ValidateServiceResponse,
   ValidationResult,
 } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `validation-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+function isAuthError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.isAuth;
 }
 
 // ====================
@@ -24,9 +26,8 @@ async function fetchConnectivityStatus(
   filters: ConnectivityStatusFilter = {},
   page = 1,
   limit = 50,
-  correlationId: string,
 ): Promise<ConnectivityStatusListResponse> {
-  const url = new URL(`/api/settings/connectivity`, window.location.origin);
+  const url = new URL(ApiRoute.settings.connectivity(), window.location.origin);
 
   // Add query parameters
   url.searchParams.set("page", page.toString());
@@ -40,21 +41,13 @@ async function fetchConnectivityStatus(
   if (filters.endDate)
     url.searchParams.set("endDate", filters.endDate.toISOString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch connectivity status: ${response.statusText}`,
-    );
-  }
-
-  const data: ConnectivityStatusListResponse = await response.json();
+  // Enveloped endpoint, but callers read the full `{ success, data }` shape
+  // (matches `ConnectivityStatusListResponse`, which also carries pagination
+  // fields as siblings of `data`) — preserve that contract with `unwrap: false`.
+  const data = await apiFetch<ConnectivityStatusListResponse>(
+    url.pathname + url.search,
+    { correlationIdPrefix: "validation", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch connectivity status");
@@ -66,23 +59,16 @@ async function fetchConnectivityStatus(
 async function validateService(
   service: SettingsCategory,
   settings?: Record<string, string>,
-  correlationId?: string,
 ): Promise<ValidateServiceResponse> {
-  const response = await fetch(`/api/settings/validate/${service}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(correlationId && { "X-Correlation-ID": correlationId }),
+  const data = await apiFetch<ValidateServiceResponse>(
+    ApiRoute.settings.validate(service),
+    {
+      method: "POST",
+      body: { settings },
+      correlationIdPrefix: "validation",
+      unwrap: false,
     },
-    body: JSON.stringify({ settings }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to validate ${service}: ${response.statusText}`);
-  }
-
-  const data: ValidateServiceResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || `Failed to validate ${service}`);
@@ -116,11 +102,9 @@ export function useConnectivityStatus(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["connectivityStatus", filters, page, limit],
-    queryFn: () => fetchConnectivityStatus(filters, page, limit, correlationId),
+    queryKey: [...queryKeys.connectivity.status, filters, page, limit],
+    queryFn: () => fetchConnectivityStatus(filters, page, limit),
     enabled,
     refetchInterval,
     retry:
@@ -128,10 +112,7 @@ export function useConnectivityStatus(
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -164,7 +145,6 @@ export function useSettingsValidator(
 
   const [debouncedSettings, setDebouncedSettings] = useState(settings);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const correlationId = generateCorrelationId();
 
   // Debounce settings changes
   useEffect(() => {
@@ -184,18 +164,15 @@ export function useSettingsValidator(
   }, [settings, debounceDelay]);
 
   return useQuery({
-    queryKey: ["settingsValidator", service, debouncedSettings],
-    queryFn: () => validateService(service, debouncedSettings, correlationId),
+    queryKey: [...queryKeys.settings.validator(service), debouncedSettings],
+    queryFn: () => validateService(service, debouncedSettings),
     enabled: enabled && !!service && !!debouncedSettings,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Limited retries for validation as it might be expensive
@@ -220,7 +197,6 @@ export interface UseValidateServiceOptions {
 
 export function useValidateService(options: UseValidateServiceOptions = {}) {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -229,13 +205,13 @@ export function useValidateService(options: UseValidateServiceOptions = {}) {
     }: {
       service: SettingsCategory;
       settings?: Record<string, string>;
-    }) => validateService(service, settings, correlationId),
+    }) => validateService(service, settings),
     onSuccess: (data, variables) => {
       // Invalidate connectivity status to get fresh data
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
       // Update validator cache with fresh result
       queryClient.setQueryData(
-        ["settingsValidator", variables.service, variables.settings],
+        [...queryKeys.settings.validator(variables.service), variables.settings],
         data,
       );
       // Call success callback if provided
@@ -320,7 +296,7 @@ export function useOptimisticValidation() {
       };
 
       queryClient.setQueryData(
-        ["settingsValidator", service, settings],
+        [...queryKeys.settings.validator(service), settings],
         optimisticResult,
       );
     },
