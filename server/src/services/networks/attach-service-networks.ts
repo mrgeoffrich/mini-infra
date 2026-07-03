@@ -15,6 +15,39 @@ export interface AttachServiceNetworksContext {
   infraNetworkMap: Map<string, string>;
   environmentId: string | null | undefined;
   log: Logger;
+  /**
+   * Infra-resource purposes to join in addition to whatever
+   * `serviceDef.containerConfig.joinResourceNetworks` declares.
+   *
+   * Exists for callers that derive an extra network requirement at
+   * spawn/attach time rather than reading it off the authored template —
+   * e.g. the pool spawner joins a freshly-spawned worker to the `vault`
+   * network whenever Vault credential resolution actually produced env vars
+   * for that instance (regardless of whether the template declared
+   * `joinResourceNetworks: ['vault']`), and to `nats` when NATS credential
+   * resolution did. Before this field existed that behaviour was an
+   * implicit side effect buried inside the pool spawner's own connect loop;
+   * it must now be listed here so the attachment is an explicit, documented
+   * input to the shared pipeline instead. `infraNetworkMap` must already
+   * contain an entry for every purpose named here (and in the service
+   * definition) — this function only attaches, it doesn't resolve purposes
+   * to network names.
+   */
+  extraResourcePurposes?: string[];
+  /**
+   * Literal Docker network names to join in addition to whatever
+   * `serviceDef.containerConfig.joinNetworks` declares.
+   *
+   * Exists for callers whose extra network requirement is a concrete name
+   * resolved from context rather than a template-declared purpose — e.g. the
+   * AdoptedWeb attach path, which must join the environment's HAProxy
+   * dataplane network regardless of whether the adopted service's
+   * `joinNetworks` list happens to include it. Like
+   * {@link AttachServiceNetworksContext.extraResourcePurposes}, this keeps
+   * the requirement visible at the call site instead of a bespoke
+   * pre-connect check.
+   */
+  extraJoinNetworks?: string[];
 }
 
 /**
@@ -40,11 +73,11 @@ export interface AttachServiceNetworksContext {
  * `egressBypass: true` (so `egress-gateway:3128` resolves regardless of
  * which container currently holds that role).
  *
- * Scope: used by the static-service (`Stateful`) create/recreate paths only
- * in this phase. Pools, the pool addon sidecar, and AdoptedWeb reimplement
- * this sequence today and are ported onto this same helper in a later
- * phase — see the module-level extension notes in `network-manager.ts`'s
- * design doc reference.
+ * Scope: used by the static-service (`Stateful`/`StatelessWeb`) create/
+ * recreate paths, the pool worker spawner, the pool addon sidecar spawner,
+ * and the AdoptedWeb attach path (overhaul Phases 1–2) — the four
+ * previously-separate copy-pasted attach pipelines now all resolve to this
+ * one function.
  */
 export async function attachServiceNetworks(
   containerId: string,
@@ -52,7 +85,10 @@ export async function attachServiceNetworks(
   serviceDef: StackServiceDefinition,
   ctx: AttachServiceNetworksContext,
 ): Promise<void> {
-  for (const netName of serviceDef.containerConfig.joinNetworks ?? []) {
+  const joinNetworks = [
+    ...new Set([...(serviceDef.containerConfig.joinNetworks ?? []), ...(ctx.extraJoinNetworks ?? [])]),
+  ];
+  for (const netName of joinNetworks) {
     if (!netName) continue;
     try {
       await ctx.networkManager.connect(containerId, netName);
@@ -69,7 +105,21 @@ export async function attachServiceNetworks(
     }
   }
 
-  await ctx.infraManager.joinResourceNetworks(containerId, serviceDef, ctx.infraNetworkMap, ctx.log);
+  const extraResourcePurposes = ctx.extraResourcePurposes ?? [];
+  const effectiveServiceDef: StackServiceDefinition =
+    extraResourcePurposes.length === 0
+      ? serviceDef
+      : {
+          ...serviceDef,
+          containerConfig: {
+            ...serviceDef.containerConfig,
+            joinResourceNetworks: [
+              ...new Set([...(serviceDef.containerConfig.joinResourceNetworks ?? []), ...extraResourcePurposes]),
+            ],
+          },
+        };
+
+  await ctx.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, ctx.infraNetworkMap, ctx.log);
 
   await attachEgressNetworkIfNeeded(
     ctx.prisma,

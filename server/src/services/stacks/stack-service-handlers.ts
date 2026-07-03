@@ -284,20 +284,24 @@ export class StackServiceHandlers {
 
         const { haproxyCtx, haproxyClient } = await getInitializedHAProxyClient(this.routingManager!, stack.environmentId!);
 
-        const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
-        const containerNetworks = Object.keys(target.NetworkSettings?.Networks || {});
-        if (!containerNetworks.includes(haproxyNetworkName)) {
-          log.info({ containerName: adopted.containerName, network: haproxyNetworkName }, 'Joining adopted container to HAProxy network');
-          await this.containerManager.connectToNetwork(target.Id, haproxyNetworkName);
-        }
-
-        if (serviceDef.containerConfig.joinResourceNetworks?.length) {
-          await this.infraManager.joinResourceNetworks(target.Id, serviceDef, infraNetworkMap, log);
-        }
-
-        // Attach the adopted container to any user-selected external networks
-        // (e.g. a database it needs to reach). Best-effort, like the create path.
-        await this.joinJoinNetworks(target.Id, action.serviceName, serviceDef, log);
+        // Attach every network this AdoptedWeb target needs — the mandatory
+        // HAProxy dataplane network, declared external `joinNetworks` (e.g. a
+        // database it needs to reach), `joinResourceNetworks`, and the
+        // per-env egress network — through the same shared pipeline the
+        // static-service create/recreate paths use. Replaces a bespoke
+        // "already attached?" pre-check plus its own connect/
+        // joinResourceNetworks/joinNetworks loops; `NetworkManager.connect`
+        // is idempotent by inspection so the pre-check is redundant.
+        await attachServiceNetworks(target.Id, action.serviceName, serviceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
+          log,
+          extraJoinNetworks: [haproxyCtx.haproxyNetworkName],
+        });
 
         const routingCtx: StackRoutingContext = {
           serviceName: action.serviceName,
@@ -580,27 +584,6 @@ export class StackServiceHandlers {
     };
   }
 
-  /**
-   * Join a container to `containerConfig.joinNetworks` (external networks like HAProxy).
-   * "Already exists" errors are non-fatal.
-   */
-  private async joinJoinNetworks(
-    containerId: string,
-    serviceName: string,
-    serviceDef: StackServiceDefinition,
-    log: Logger
-  ): Promise<void> {
-    if (!serviceDef.containerConfig.joinNetworks?.length) return;
-    for (const netName of serviceDef.containerConfig.joinNetworks) {
-      if (!netName) continue;
-      try {
-        await this.containerManager.connectToNetwork(containerId, netName);
-        log.info({ service: serviceName, network: netName }, 'Joined external network');
-      } catch (err: unknown) {
-        log.warn({ service: serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
-      }
-    }
-  }
 }
 
 /**

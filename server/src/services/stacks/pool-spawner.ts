@@ -19,9 +19,13 @@ import {
   resolveServiceConfigs,
   synthesiseDefaultNetworkIfNeeded,
 } from './utils';
-import { resolveEgressEnv, attachEgressNetworkIfNeeded } from './egress-injection';
+import { resolveEgressEnv } from './egress-injection';
 import { TailscaleService } from '../tailscale/tailscale-service';
 import { spawnPoolAddonSidecars } from './pool-addon-sidecar';
+import { getStackProjectName } from './template-engine';
+import { StackContainerManager } from './stack-container-manager';
+import { StackInfraResourceManager } from './stack-infra-resource-manager';
+import { attachServiceNetworks, createNetworkManager } from '../networks';
 
 const log = getLogger('stacks', 'pool-spawner');
 
@@ -58,7 +62,10 @@ export function buildPoolContainerName(
   serviceName: string,
   instanceId: string,
 ): string {
-  const projectName = environmentName ? `${environmentName}-${stackName}` : `mini-infra-${stackName}`;
+  const projectName = getStackProjectName({
+    name: stackName,
+    environment: environmentName ? { name: environmentName } : null,
+  });
   const raw = `${projectName}-pool-${serviceName}-${instanceId}`;
   // Docker allows [a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}; sanitise aggressively to
   // [a-z0-9-] for operator readability.
@@ -177,9 +184,7 @@ export async function spawnPoolInstance(
     return { success: false, error: 'JobPool service missing jobPoolConfig' };
   }
 
-  const projectName = stack.environment
-    ? `${stack.environment.name}-${stack.name}`
-    : `mini-infra-${stack.name}`;
+  const projectName = getStackProjectName(stack);
   const containerName = buildPoolContainerName(
     stack.name,
     stack.environment?.name ?? null,
@@ -384,109 +389,55 @@ export async function spawnPoolInstance(
     };
   }
 
-  // Attach join networks (external networks referenced by name).
-  if (containerConfig.joinNetworks?.length) {
-    const docker = dockerExecutor.getDockerClient();
-    for (const netName of containerConfig.joinNetworks) {
-      if (!netName) continue;
-      try {
-        await docker.getNetwork(netName).connect({ Container: containerId });
-      } catch (err) {
-        log.warn({ containerId, network: netName, err: err instanceof Error ? err.message : String(err) }, 'Failed to attach join network');
-      }
-    }
-  }
+  // Attach every remaining network the worker needs — declared external
+  // `joinNetworks`, infra-resource `joinResourceNetworks` purposes, and the
+  // per-env egress network — through the same shared pipeline the
+  // static-service create/recreate paths use (`attachServiceNetworks`).
+  // This replaces three separately-reimplemented raw-connect loops that used
+  // to live here (network overhaul design doc, mechanism 8).
+  const networkManager = createNetworkManager(dockerExecutor);
+  const containerManager = new StackContainerManager(dockerExecutor, prisma);
+  const infraManager = new StackInfraResourceManager(dockerExecutor, prisma, containerManager);
 
-  // Attach infra resource networks declared by the service template's
-  // `joinResourceNetworks` (e.g. `['vault']`). Mirrors the static service
-  // path in StackInfraResourceManager.joinResourceNetworks — without this,
-  // pool workers that need to read shared secrets from Vault directly (or
-  // talk to any other resource-network sibling) crash on DNS resolution.
-  //
-  // We also implicitly require the vault network when an AppRole binding is
-  // in play, even if the template didn't list it — this preserves the prior
+  // Pool workers that resolved Vault/NATS credentials above need direct
+  // access to those resource networks even when the template didn't declare
+  // `joinResourceNetworks` for them — this preserves the prior
   // belt-and-suspenders behaviour for AppRole-bound pool services whose
-  // dynamicEnv was working only because pool-spawner attached vault for them.
-  const declaredPurposes = new Set(containerConfig.joinResourceNetworks ?? []);
+  // dynamicEnv was working only because pool-spawner attached vault for
+  // them, but now as an explicit, documented input to the shared helper
+  // (`AttachServiceNetworksContext.extraResourcePurposes`) instead of a
+  // side effect buried in a connect loop.
+  const implicitResourcePurposes: string[] = [];
   if (binding.appRoleId && Object.keys(vaultEnv).length > 0) {
-    declaredPurposes.add('vault');
+    implicitResourcePurposes.push('vault');
   }
   if (Object.keys(natsEnv).length > 0) {
-    declaredPurposes.add('nats');
+    implicitResourcePurposes.push('nats');
   }
-  if (declaredPurposes.size > 0) {
-    const docker = dockerExecutor.getDockerClient();
-    for (const purpose of declaredPurposes) {
-      const resource = await prisma.infraResource.findFirst({
-        where: {
-          type: 'docker-network',
-          purpose,
-          ...(stack.environmentId
-            ? { environmentId: stack.environmentId, scope: 'environment' }
-            : { scope: 'host', environmentId: null }),
-        },
-      });
-      if (!resource) {
-        // Fall back to host scope when the env-scoped resource is missing —
-        // matches StackInfraResourceManager.resolveInputs.
-        const hostResource = stack.environmentId
-          ? await prisma.infraResource.findFirst({
-              where: {
-                type: 'docker-network',
-                purpose,
-                scope: 'host',
-                environmentId: null,
-              },
-            })
-          : null;
-        if (!hostResource) {
-          log.warn(
-            { containerId, stackId: ctx.stackId, purpose },
-            'Infra resource network not found; skipping attach (pool worker may fail to reach this resource)',
-          );
-          continue;
-        }
-        try {
-          await docker.getNetwork(hostResource.name).connect({ Container: containerId });
-          log.info({ containerId, network: hostResource.name, purpose }, 'Attached infra resource network');
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (!/already exists/i.test(msg)) {
-            log.warn({ containerId, network: hostResource.name, purpose, err: msg }, 'Failed to attach infra resource network');
-          }
-        }
-        continue;
-      }
-      try {
-        await docker.getNetwork(resource.name).connect({ Container: containerId });
-        log.info({ containerId, network: resource.name, purpose }, 'Attached infra resource network');
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/already exists/i.test(msg)) {
-          log.warn({ containerId, network: resource.name, purpose, err: msg }, 'Failed to attach infra resource network');
-        }
-      }
-    }
-  }
+  const allResourcePurposes = [
+    ...new Set([...(containerConfig.joinResourceNetworks ?? []), ...implicitResourcePurposes]),
+  ];
 
-  // Auto-attach to the per-env egress network so the proxy env injected
-  // above (HTTP_PROXY=http://egress-gateway:3128) can resolve the DNS alias.
-  // Same gates as resolveEgressEnv: non-bypass + env has gateway provisioned.
-  {
-    const egressDocker = dockerExecutor.getDockerClient();
-    await attachEgressNetworkIfNeeded(
-      prisma,
-      {
-        connectToNetwork: async (id, name) => {
-          await egressDocker.getNetwork(name).connect({ Container: id });
-        },
-      },
-      containerId,
-      stack.environmentId,
-      containerConfig.egressBypass === true,
-      log,
-    );
-  }
+  // Resolve every needed purpose to a Docker network name — same env-scoped
+  // -> host-scoped fallback `StackInfraResourceManager.resolveInputs` already
+  // implements for the static service path, so a missing resource logs the
+  // same warning rather than a bespoke one.
+  const infraNetworkMap = await infraManager.resolveInputs(
+    stack.environmentId,
+    allResourcePurposes.map((purpose) => ({ type: 'docker-network' as const, purpose, optional: false })),
+    log,
+  );
+
+  await attachServiceNetworks(containerId, ctx.serviceName, resolvedDef, {
+    networkManager,
+    containerManager,
+    infraManager,
+    prisma,
+    infraNetworkMap,
+    environmentId: stack.environmentId,
+    log,
+    extraResourcePurposes: implicitResourcePurposes,
+  });
 
   // All required networks are attached — start the container now so its
   // bootstrap code sees them on first instruction.
