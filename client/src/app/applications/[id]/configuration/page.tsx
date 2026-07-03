@@ -332,7 +332,21 @@ export default function ApplicationConfigurationTab() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Service Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // Routing (HAProxy zero-downtime blue-green) only applies to
+                        // StatelessWeb — mirrors ServiceTypeStep's reset in the create
+                        // wizard so a leftover "enabled" flag can't smuggle a routing
+                        // config onto a Stateful service.
+                        form.setValue(
+                          "enableRouting",
+                          value === "StatelessWeb",
+                          { shouldValidate: true },
+                        );
+                      }}
+                      value={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />

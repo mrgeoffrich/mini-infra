@@ -163,7 +163,7 @@ async function updateTemplateMetadata(
   correlationId: string,
 ): Promise<void> {
   const response = await fetch(`/api/stack-templates/${templateId}`, {
-    method: "PUT",
+    method: "PATCH",
     credentials: "include",
     headers: {
       "Content-Type": "application/json",

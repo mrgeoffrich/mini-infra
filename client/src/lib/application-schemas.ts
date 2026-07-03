@@ -31,14 +31,26 @@ export const healthCheckSchema = z.object({
   startPeriod: z.number().int().min(0),
 });
 
-// Field-level routing validation is intentionally lenient on `hostname`: a
-// non-routed service (e.g. Stateful) keeps a leftover `routing` object with an
-// empty hostname, and it must not fail validation. The "hostname is required
-// when routing is enabled" rule is enforced by `requireRoutingHostnameWhenEnabled`
-// on the final create/edit schemas, so the error only fires (and only surfaces)
-// when the routing step is actually in play.
+// Matches the full-hostname format enforced elsewhere for HAProxy routes
+// (see client/src/components/haproxy/add-route-dialog.tsx).
+const HOSTNAME_REGEX = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+// Field-level routing validation is intentionally lenient on `hostname` only
+// with respect to emptiness: a non-routed service (e.g. Stateful) keeps a
+// leftover `routing` object with an empty hostname, and that must not fail
+// validation. The "hostname is required when routing is enabled" rule is
+// enforced by `requireRoutingHostnameWhenEnabled` on the final create/edit
+// schemas, so that error only fires (and only surfaces) when the routing step
+// is actually in play. A non-empty hostname must still be a valid DNS name —
+// this is what a real Cloudflare DNS record / ACME certificate gets issued
+// for, so garbage input here fails silently much further downstream instead.
 export const routingSchema = z.object({
-  hostname: z.string(),
+  hostname: z
+    .string()
+    .refine(
+      (value) => value.length === 0 || HOSTNAME_REGEX.test(value),
+      "Must be a valid hostname (e.g. app.example.com)",
+    ),
   listeningPort: z.number().int().min(1).max(65535),
   enableSsl: z.boolean().optional(),
   enableTunnel: z.boolean().optional(),
