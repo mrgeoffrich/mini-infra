@@ -238,7 +238,7 @@ export function useQuickSetupPostgresBackup() {
   return useMutation({
     mutationFn: (request: QuickBackupSetupRequest) =>
       quickSetupPostgresBackup(request),
-    onSuccess: (response) => {
+    onSuccess: (response, request) => {
       const databaseId = response.data.databaseId;
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({
@@ -246,12 +246,14 @@ export function useQuickSetupPostgresBackup() {
       });
       // Also invalidate databases list as it might show backup configuration status
       queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
-      // Invalidate managed databases list for the server
-      // NOTE: pre-existing invalidation target with no matching query anywhere
-      // in the app (likely a latent no-op bug predating this migration) —
-      // preserved as-is rather than silently repointed.
+      // Refetch the managed-databases list for this server and the single
+      // managed-database detail so the newly-configured backup shows up (both
+      // surfaces render backup-configuration status).
       queryClient.invalidateQueries({
-        queryKey: queryKeys.postgresDatabases.managedDatabasesLegacy,
+        queryKey: queryKeys.postgresServer.databasesForServer(request.serverId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.postgresServer.database(databaseId),
       });
     },
   });

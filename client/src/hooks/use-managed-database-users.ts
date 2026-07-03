@@ -71,15 +71,14 @@ async function changeUserPassword(
   userId: string,
   request: ChangeUserPasswordRequest,
 ): Promise<ManagedDatabaseUserResponse> {
-  // NOTE: pre-existing behavior — this sends PUT, but the server route for
-  // this endpoint (server/src/routes/postgres-server/users.ts) is registered
-  // as `router.post("/:userId/password", ...)`. This mismatch predates this
-  // migration (not introduced or fixed here); see the Phase 4 migration
-  // report for detail.
+  // The server route (server/src/routes/postgres-server/users.ts) is
+  // registered as `router.post("/:userId/password", ...)` and the registry
+  // documents `ApiRoute.postgresServer.userPassword` as POST — so this must
+  // use POST, not PUT (a PUT hit no registered route and 404'd).
   return apiFetch<ManagedDatabaseUserResponse>(
     ApiRoute.postgresServer.userPassword(serverId, userId),
     {
-      method: "PUT",
+      method: "POST",
       body: request,
       correlationIdPrefix: "managed-database-user",
       unwrap: false,
