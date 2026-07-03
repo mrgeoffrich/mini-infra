@@ -2,76 +2,56 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import {
   DockerNetwork,
   DockerNetworkListResponse,
-  DockerNetworkApiResponse,
   DockerNetworkDeleteResponse,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { toast } from "sonner";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `networks-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+/** Best-effort extraction of a `.message` string off an unknown error body. */
+function extractBodyMessage(body: unknown): string | undefined {
+  if (typeof body === "object" && body !== null && "message" in body) {
+    const message = (body as { message?: unknown }).message;
+    return typeof message === "string" && message.length > 0 ? message : undefined;
+  }
+  return undefined;
 }
 
-async function fetchNetworks(
-  correlationId: string
-): Promise<DockerNetworkListResponse> {
-  const url = new URL(`/api/docker/networks`, window.location.origin);
-
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Docker service is not available");
-      } catch {
-        throw new Error(
-          "Docker service is not available. Please try again later."
-        );
-      }
+async function fetchNetworks(): Promise<DockerNetworkListResponse> {
+  try {
+    return await apiFetch<DockerNetworkListResponse>(ApiRoute.docker.networks(), {
+      correlationIdPrefix: "networks",
+    });
+  } catch (err) {
+    // Docker-service-unavailable gets a friendlier fallback message than the
+    // generic apiFetch one, since it surfaces directly in the networks list UI.
+    // Re-thrown as an ApiRequestError (not a plain Error) so the `retry`
+    // callback below can still branch on `.status`.
+    if (err instanceof ApiRequestError && err.status === 503) {
+      throw new ApiRequestError(
+        err.status,
+        err.code,
+        extractBodyMessage(err.body) ??
+          "Docker service is not available. Please try again later.",
+        err.body,
+      );
     }
-
-    throw new Error(`Failed to fetch networks: ${response.statusText}`);
+    throw err;
   }
-
-  const data: DockerNetworkApiResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch networks");
-  }
-
-  return data.data;
 }
 
 async function deleteNetwork(networkId: string): Promise<DockerNetworkDeleteResponse> {
-  const correlationId = `delete-network-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-  const response = await fetch(`/api/docker/networks/${networkId}`, {
+  return apiFetch<DockerNetworkDeleteResponse>(ApiRoute.docker.network(networkId), {
     method: "DELETE",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    credentials: "include",
+    correlationIdPrefix: "delete-network",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to delete network");
-  }
-
-  return response.json();
 }
 
 export interface UseNetworksOptions {
@@ -88,7 +68,6 @@ export function useNetworks(options: UseNetworksOptions = {}) {
 
   const queryClient = useQueryClient();
   const { connected } = useSocket();
-  const correlationId = generateCorrelationId();
 
   // Subscribe to the networks channel for push updates
   useSocketChannel(Channel.NETWORKS, enabled);
@@ -97,7 +76,7 @@ export function useNetworks(options: UseNetworksOptions = {}) {
   useSocketEvent(
     ServerEvent.NETWORKS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["docker-networks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
     },
     enabled,
   );
@@ -107,26 +86,22 @@ export function useNetworks(options: UseNetworksOptions = {}) {
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["docker-networks"],
-    queryFn: () => fetchNetworks(correlationId),
+    queryKey: queryKeys.docker.networks,
+    queryFn: fetchNetworks,
     enabled,
     refetchInterval,
     placeholderData: keepPreviousData,
     retry: (failureCount: number, error: Error) => {
-      // Don't retry on authentication errors
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
-      ) {
-        return false;
-      }
+      if (error instanceof ApiRequestError) {
+        // Don't retry on authentication errors
+        if (error.isAuth) {
+          return false;
+        }
 
-      // Don't retry immediately on Docker service unavailable
-      if (
-        error.message.includes("Docker service is not available") ||
-        error.message.includes("Service Unavailable")
-      ) {
-        return false;
+        // Don't retry immediately on Docker service unavailable
+        if (error.status === 503) {
+          return false;
+        }
       }
 
       // Retry up to the specified number of times for other errors
@@ -153,7 +128,7 @@ export function useDeleteNetwork(options: UseDeleteNetworkOptions = {}) {
     mutationFn: (networkId: string) => deleteNetwork(networkId),
     onSuccess: (data, networkId) => {
       // Invalidate networks query to refresh the list
-      queryClient.invalidateQueries({ queryKey: ["docker-networks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
 
       // Show success toast
       toast.success("Network deleted successfully", {
