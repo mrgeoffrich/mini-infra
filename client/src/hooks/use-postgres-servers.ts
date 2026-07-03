@@ -9,213 +9,112 @@ import {
   UpdatePostgresServerRequest,
   TestServerConnectionRequest,
   ServerConnectionTestResponse,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-server-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // PostgreSQL Server API Functions
 // ====================
 
-async function fetchPostgresServers(
-  correlationId: string,
-): Promise<PostgresServerListResponse> {
-  const response = await fetch(`/api/postgres-server/servers`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchPostgresServers(): Promise<PostgresServerListResponse> {
+  return apiFetch<PostgresServerListResponse>(ApiRoute.postgresServer.servers(), {
+    correlationIdPrefix: "postgres-server",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch PostgreSQL servers: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresServerListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch PostgreSQL servers");
-  }
-
-  return data;
 }
 
-async function fetchPostgresServer(
-  id: string,
-  correlationId: string,
-): Promise<PostgresServerResponse> {
-  const response = await fetch(`/api/postgres-server/servers/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchPostgresServer(id: string): Promise<PostgresServerResponse> {
+  return apiFetch<PostgresServerResponse>(ApiRoute.postgresServer.server(id), {
+    correlationIdPrefix: "postgres-server",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch PostgreSQL server: ${response.statusText}`,
-    );
-  }
-
-  const data: PostgresServerResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch PostgreSQL server");
-  }
-
-  return data;
 }
 
 async function createPostgresServer(
   server: CreatePostgresServerRequest,
-  correlationId: string,
 ): Promise<PostgresServerCreateResponse> {
-  const response = await fetch(`/api/postgres-server/servers`, {
+  return apiFetch<PostgresServerCreateResponse>(ApiRoute.postgresServer.servers(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(server),
+    body: server,
+    correlationIdPrefix: "postgres-server",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create PostgreSQL server");
-  }
-
-  const data: PostgresServerCreateResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create PostgreSQL server");
-  }
-
-  return data;
 }
 
 async function updatePostgresServer(
   id: string,
   updates: UpdatePostgresServerRequest,
-  correlationId: string,
 ): Promise<PostgresServerResponse> {
-  const response = await fetch(`/api/postgres-server/servers/${id}`, {
+  return apiFetch<PostgresServerResponse>(ApiRoute.postgresServer.server(id), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(updates),
+    body: updates,
+    correlationIdPrefix: "postgres-server",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update PostgreSQL server");
-  }
-
-  const data: PostgresServerResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update PostgreSQL server");
-  }
-
-  return data;
 }
 
 async function deletePostgresServer(
   id: string,
-  correlationId: string,
 ): Promise<PostgresServerDeleteResponse> {
-  const response = await fetch(`/api/postgres-server/servers/${id}`, {
+  return apiFetch<PostgresServerDeleteResponse>(ApiRoute.postgresServer.server(id), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "postgres-server",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to delete PostgreSQL server");
-  }
-
-  const data: PostgresServerDeleteResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete PostgreSQL server");
-  }
-
-  return data;
 }
 
 async function syncPostgresServer(
   id: string,
-  correlationId: string,
 ): Promise<PostgresServerSyncResponse> {
-  const response = await fetch(`/api/postgres-server/servers/${id}/sync`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  const data: PostgresServerSyncResponse = await response.json();
-
-  if (!response.ok || !data.success) {
-    throw new Error(data.message || "Failed to sync server");
-  }
-
-  return data;
+  return apiFetch<PostgresServerSyncResponse>(
+    ApiRoute.postgresServer.serverSync(id),
+    { method: "POST", correlationIdPrefix: "postgres-server", unwrap: false },
+  );
 }
 
+/**
+ * Test connection can return `success: false` without throwing (both as a
+ * 200 response and — preserved here — when the request itself fails at the
+ * HTTP level, e.g. validation or auth errors), so callers always get a
+ * `ServerConnectionTestResponse` result object rather than a thrown error.
+ */
 async function testServerConnection(
   request: TestServerConnectionRequest,
-  correlationId: string,
 ): Promise<ServerConnectionTestResponse> {
-  const response = await fetch(`/api/postgres-server/servers/test-connection`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  const data: ServerConnectionTestResponse = await response.json();
-
-  // Test connection can return success: false without throwing
-  return data;
+  try {
+    return await apiFetch<ServerConnectionTestResponse>(
+      ApiRoute.postgresServer.testConnection(),
+      {
+        method: "POST",
+        body: request,
+        correlationIdPrefix: "postgres-server",
+        unwrap: false,
+      },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return { success: false, message: error.message, error: error.code };
+    }
+    throw error;
+  }
 }
 
 async function testExistingServerConnection(
   id: string,
-  correlationId: string,
 ): Promise<ServerConnectionTestResponse> {
-  const response = await fetch(`/api/postgres-server/servers/${id}/test`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  const data: ServerConnectionTestResponse = await response.json();
-
-  // Test connection can return success: false without throwing
-  return data;
+  try {
+    return await apiFetch<ServerConnectionTestResponse>(
+      ApiRoute.postgresServer.serverTest(id),
+      { method: "POST", correlationIdPrefix: "postgres-server", unwrap: false },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      return { success: false, message: error.message, error: error.code };
+    }
+    throw error;
+  }
 }
 
 // ====================
@@ -227,8 +126,8 @@ async function testExistingServerConnection(
  */
 export function usePostgresServers() {
   return useQuery({
-    queryKey: ["postgres-servers"],
-    queryFn: () => fetchPostgresServers(generateCorrelationId()),
+    queryKey: queryKeys.postgresServer.all,
+    queryFn: () => fetchPostgresServers(),
     staleTime: 30000, // Consider data fresh for 30 seconds
   });
 }
@@ -238,8 +137,8 @@ export function usePostgresServers() {
  */
 export function usePostgresServer(id: string | undefined) {
   return useQuery({
-    queryKey: ["postgres-servers", id],
-    queryFn: () => fetchPostgresServer(id!, generateCorrelationId()),
+    queryKey: queryKeys.postgresServer.detail(id ?? ""),
+    queryFn: () => fetchPostgresServer(id!),
     enabled: !!id,
     staleTime: 30000,
   });
@@ -253,10 +152,10 @@ export function useCreatePostgresServer() {
 
   return useMutation({
     mutationFn: (server: CreatePostgresServerRequest) =>
-      createPostgresServer(server, generateCorrelationId()),
+      createPostgresServer(server),
     onSuccess: () => {
       // Invalidate servers list to refetch
-      queryClient.invalidateQueries({ queryKey: ["postgres-servers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresServer.all });
     },
   });
 }
@@ -274,12 +173,12 @@ export function useUpdatePostgresServer() {
     }: {
       id: string;
       updates: UpdatePostgresServerRequest;
-    }) => updatePostgresServer(id, updates, generateCorrelationId()),
+    }) => updatePostgresServer(id, updates),
     onSuccess: (data) => {
       // Invalidate both the list and the individual server
-      queryClient.invalidateQueries({ queryKey: ["postgres-servers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresServer.all });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", data.data.id],
+        queryKey: queryKeys.postgresServer.detail(data.data.id),
       });
     },
   });
@@ -292,11 +191,10 @@ export function useDeletePostgresServer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) =>
-      deletePostgresServer(id, generateCorrelationId()),
+    mutationFn: (id: string) => deletePostgresServer(id),
     onSuccess: () => {
       // Invalidate servers list to refetch
-      queryClient.invalidateQueries({ queryKey: ["postgres-servers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresServer.all });
     },
   });
 }
@@ -308,14 +206,14 @@ export function useSyncPostgresServer() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => syncPostgresServer(id, generateCorrelationId()),
+    mutationFn: (id: string) => syncPostgresServer(id),
     onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["postgres-servers", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresServer.detail(id) });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", id, "databases"],
+        queryKey: queryKeys.postgresServer.databasesForServer(id),
       });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", id, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(id),
       });
     },
   });
@@ -327,7 +225,7 @@ export function useSyncPostgresServer() {
 export function useTestServerConnection() {
   return useMutation({
     mutationFn: (request: TestServerConnectionRequest) =>
-      testServerConnection(request, generateCorrelationId()),
+      testServerConnection(request),
   });
 }
 
@@ -337,6 +235,6 @@ export function useTestServerConnection() {
 export function useTestExistingServerConnection() {
   return useMutation({
     mutationFn: (id: string) =>
-      testExistingServerConnection(id, generateCorrelationId()),
+      testExistingServerConnection(id),
   });
 }

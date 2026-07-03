@@ -4,11 +4,8 @@ import type {
   TableDataResponse,
   TableDataRequest,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `table-data-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Table Data API Functions
@@ -17,30 +14,11 @@ function generateCorrelationId(): string {
 async function fetchTables(
   serverId: string,
   databaseId: string,
-  correlationId: string
 ): Promise<DatabaseTableListResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/databases/${databaseId}/tables`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    }
+  return apiFetch<DatabaseTableListResponse>(
+    ApiRoute.postgresServer.databaseTables(serverId, databaseId),
+    { correlationIdPrefix: "table-data", unwrap: false },
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch tables: ${response.statusText}`);
-  }
-
-  const data: DatabaseTableListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch tables");
-  }
-
-  return data;
 }
 
 async function fetchTableData(
@@ -48,7 +26,6 @@ async function fetchTableData(
   databaseId: string,
   tableName: string,
   params: TableDataRequest,
-  correlationId: string
 ): Promise<TableDataResponse> {
   // Build query string
   const queryParams = new URLSearchParams();
@@ -58,28 +35,13 @@ async function fetchTableData(
   if (params.sortDirection) queryParams.append("sortDirection", params.sortDirection);
   if (params.filters) queryParams.append("filters", JSON.stringify(params.filters));
 
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/databases/${databaseId}/tables/${encodeURIComponent(tableName)}/data?${queryParams}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    }
+  // ApiRoute.postgresServer.databaseTableData() doesn't encode its tableName
+  // segment, so encode it here (as the pre-migration code did) before it
+  // becomes part of the path.
+  return apiFetch<TableDataResponse>(
+    `${ApiRoute.postgresServer.databaseTableData(serverId, databaseId, encodeURIComponent(tableName))}?${queryParams}`,
+    { correlationIdPrefix: "table-data", unwrap: false },
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch table data: ${response.statusText}`);
-  }
-
-  const data: TableDataResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch table data");
-  }
-
-  return data;
 }
 
 // ====================
@@ -94,8 +56,8 @@ export function useDatabaseTables(
   databaseId: string | undefined
 ) {
   return useQuery({
-    queryKey: ["postgres-servers", serverId, "databases", databaseId, "tables"],
-    queryFn: () => fetchTables(serverId!, databaseId!, generateCorrelationId()),
+    queryKey: queryKeys.postgresServer.tablesForDatabase(serverId ?? "", databaseId ?? ""),
+    queryFn: () => fetchTables(serverId!, databaseId!),
     enabled: !!serverId && !!databaseId,
     staleTime: 60000, // Consider data fresh for 60 seconds
   });
@@ -111,18 +73,14 @@ export function useTableData(
   params: TableDataRequest
 ) {
   return useQuery({
-    queryKey: [
-      "postgres-servers",
-      serverId,
-      "databases",
-      databaseId,
-      "tables",
-      tableName,
-      "data",
+    queryKey: queryKeys.postgresServer.tableData(
+      serverId ?? "",
+      databaseId ?? "",
+      tableName ?? "",
       params,
-    ],
+    ),
     queryFn: () =>
-      fetchTableData(serverId!, databaseId!, tableName!, params, generateCorrelationId()),
+      fetchTableData(serverId!, databaseId!, tableName!, params),
     enabled: !!serverId && !!databaseId && !!tableName,
     staleTime: 30000, // Consider data fresh for 30 seconds
     placeholderData: (previousData) => previousData, // Keep previous page data while fetching new page
