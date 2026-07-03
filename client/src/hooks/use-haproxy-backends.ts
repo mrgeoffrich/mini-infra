@@ -7,36 +7,31 @@ import {
   UpdateServerRequest,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `haproxy-backend-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
 
 // ====================
 // API Functions
 // ====================
+//
+// These endpoints are enveloped (`{success, data, message?}`), but every
+// existing consumer of these hooks (many outside this migration batch) reads
+// the *whole* envelope off the query result (e.g. `backendsResponse?.data`,
+// `backendResponse?.data`). To avoid rippling type/shape changes into files
+// outside this batch's scope, these functions keep returning the full
+// envelope via `{ unwrap: false }` rather than letting `apiFetch` auto-
+// unwrap to the inner `data` payload.
 
-async function fetchAllBackends(
-  correlationId: string,
-): Promise<HAProxyBackendListResponse> {
-  const response = await fetch(`/api/haproxy/backends`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchAllBackends(): Promise<HAProxyBackendListResponse> {
+  const data = await apiFetch<HAProxyBackendListResponse>(ApiRoute.haproxy.backends(), {
+    correlationIdPrefix: "haproxy-backends",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backends: ${response.statusText}`);
-  }
-
-  const data: HAProxyBackendListResponse = await response.json();
 
   if (!data.success) {
     throw new Error("Failed to fetch backends");
@@ -48,24 +43,14 @@ async function fetchAllBackends(
 async function fetchBackendByName(
   backendName: string,
   environmentId: string,
-  correlationId: string,
 ): Promise<HAProxyBackendResponse> {
-  const response = await fetch(
-    `/api/haproxy/backends/${encodeURIComponent(backendName)}?environmentId=${encodeURIComponent(environmentId)}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
+  const url = new URL(ApiRoute.haproxy.backend(backendName), window.location.origin);
+  url.searchParams.set("environmentId", environmentId);
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch backend: ${response.statusText}`);
-  }
-
-  const data: HAProxyBackendResponse = await response.json();
+  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+    correlationIdPrefix: "haproxy-backend",
+    unwrap: false,
+  });
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch backend");
@@ -77,24 +62,14 @@ async function fetchBackendByName(
 async function fetchBackendServers(
   backendName: string,
   environmentId: string,
-  correlationId: string,
 ): Promise<HAProxyServerListResponse> {
-  const response = await fetch(
-    `/api/haproxy/backends/${encodeURIComponent(backendName)}/servers?environmentId=${encodeURIComponent(environmentId)}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
+  const url = new URL(ApiRoute.haproxy.backendServers(backendName), window.location.origin);
+  url.searchParams.set("environmentId", environmentId);
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch servers: ${response.statusText}`);
-  }
-
-  const data: HAProxyServerListResponse = await response.json();
+  const data = await apiFetch<HAProxyServerListResponse>(url.toString(), {
+    correlationIdPrefix: "haproxy-servers",
+    unwrap: false,
+  });
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch servers");
@@ -107,27 +82,16 @@ async function updateBackend(
   backendName: string,
   environmentId: string,
   request: UpdateBackendRequest,
-  correlationId: string,
 ): Promise<HAProxyBackendResponse> {
-  const response = await fetch(
-    `/api/haproxy/backends/${encodeURIComponent(backendName)}?environmentId=${encodeURIComponent(environmentId)}`,
-    {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
-    },
-  );
+  const url = new URL(ApiRoute.haproxy.backend(backendName), window.location.origin);
+  url.searchParams.set("environmentId", environmentId);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to update backend: ${response.statusText}`);
-  }
-
-  const data: HAProxyBackendResponse = await response.json();
+  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+    method: "PATCH",
+    body: request,
+    correlationIdPrefix: "haproxy-backend-update",
+    unwrap: false,
+  });
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update backend");
@@ -141,27 +105,19 @@ async function updateServer(
   serverName: string,
   environmentId: string,
   request: UpdateServerRequest,
-  correlationId: string,
 ): Promise<HAProxyBackendResponse> {
-  const response = await fetch(
-    `/api/haproxy/backends/${encodeURIComponent(backendName)}/servers/${encodeURIComponent(serverName)}?environmentId=${encodeURIComponent(environmentId)}`,
-    {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
-    },
+  const url = new URL(
+    ApiRoute.haproxy.backendServer(backendName, serverName),
+    window.location.origin,
   );
+  url.searchParams.set("environmentId", environmentId);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to update server: ${response.statusText}`);
-  }
-
-  const data = await response.json();
+  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+    method: "PATCH",
+    body: request,
+    correlationIdPrefix: "haproxy-server-update",
+    unwrap: false,
+  });
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update server");
@@ -184,7 +140,6 @@ export interface UseHAProxyBackendsOptions {
  */
 export function useAllBackends(options: UseHAProxyBackendsOptions = {}) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
   const queryClient = useQueryClient();
   const { connected } = useSocket();
 
@@ -196,23 +151,20 @@ export function useAllBackends(options: UseHAProxyBackendsOptions = {}) {
   useSocketEvent(
     ServerEvent.HAPROXY_BACKENDS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["haproxy-backends"] });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-backend"] });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-servers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.backends });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.backendAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.serversAll });
     },
     enabled,
   );
 
   return useQuery({
-    queryKey: ["haproxy-backends"],
-    queryFn: () => fetchAllBackends(correlationId),
+    queryKey: queryKeys.haproxy.backends,
+    queryFn: () => fetchAllBackends(),
     enabled,
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
-      ) {
+      if (error instanceof ApiRequestError && error.isAuth) {
         return false;
       }
       return failureCount < 3;
@@ -233,24 +185,18 @@ export function useBackendByName(
   options: UseHAProxyBackendsOptions = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
   const { connected } = useSocket();
 
   const refetchInterval =
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["haproxy-backend", backendName, environmentId],
-    queryFn: () => fetchBackendByName(backendName!, environmentId!, correlationId),
+    queryKey: queryKeys.haproxy.backend(backendName!, environmentId!),
+    queryFn: () => fetchBackendByName(backendName!, environmentId!),
     enabled: enabled && !!backendName && !!environmentId,
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized") ||
-        error.message.includes("404") ||
-        error.message.includes("Not found")
-      ) {
+      if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
         return false;
       }
       return failureCount < 3;
@@ -271,24 +217,18 @@ export function useBackendServers(
   options: UseHAProxyBackendsOptions = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
   const { connected } = useSocket();
 
   const refetchInterval =
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["haproxy-servers", backendName, environmentId],
-    queryFn: () => fetchBackendServers(backendName!, environmentId!, correlationId),
+    queryKey: queryKeys.haproxy.servers(backendName!, environmentId!),
+    queryFn: () => fetchBackendServers(backendName!, environmentId!),
     enabled: enabled && !!backendName && !!environmentId,
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized") ||
-        error.message.includes("404") ||
-        error.message.includes("Not found")
-      ) {
+      if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
         return false;
       }
       return failureCount < 3;
@@ -305,7 +245,6 @@ export function useBackendServers(
  */
 export function useUpdateBackend() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -316,12 +255,12 @@ export function useUpdateBackend() {
       backendName: string;
       environmentId: string;
       request: UpdateBackendRequest;
-    }) => updateBackend(backendName, environmentId, request, correlationId),
+    }) => updateBackend(backendName, environmentId, request),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ["haproxy-backend", variables.backendName, variables.environmentId],
+        queryKey: queryKeys.haproxy.backend(variables.backendName, variables.environmentId),
       });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-backends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.backends });
     },
   });
 }
@@ -331,7 +270,6 @@ export function useUpdateBackend() {
  */
 export function useUpdateServer() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -344,15 +282,15 @@ export function useUpdateServer() {
       serverName: string;
       environmentId: string;
       request: UpdateServerRequest;
-    }) => updateServer(backendName, serverName, environmentId, request, correlationId),
+    }) => updateServer(backendName, serverName, environmentId, request),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
-        queryKey: ["haproxy-servers", variables.backendName, variables.environmentId],
+        queryKey: queryKeys.haproxy.servers(variables.backendName, variables.environmentId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["haproxy-backend", variables.backendName, variables.environmentId],
+        queryKey: queryKeys.haproxy.backend(variables.backendName, variables.environmentId),
       });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-backends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.backends });
     },
   });
 }

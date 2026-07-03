@@ -10,36 +10,30 @@ import {
   MigrationResult,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 import { toast } from "sonner";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `haproxy-remediation-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // API Functions
 // ====================
+//
+// These endpoints are enveloped (`{success, data, message?}`), but every
+// existing consumer of these hooks (many outside this migration batch) reads
+// the *whole* envelope off the query result (e.g. `statusResponse?.data`,
+// `previewResponse?.data`). To avoid rippling type/shape changes into files
+// outside this batch's scope, these functions keep returning the full
+// envelope via `{ unwrap: false }` rather than letting `apiFetch` auto-
+// unwrap to the inner `data` payload.
 
-async function fetchHAProxyStatus(
-  environmentId: string,
-  correlationId: string,
-): Promise<HAProxyStatusResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/haproxy-status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch HAProxy status: ${response.statusText}`);
-  }
-
-  const data: HAProxyStatusResponse = await response.json();
+async function fetchHAProxyStatus(environmentId: string): Promise<HAProxyStatusResponse> {
+  const data = await apiFetch<HAProxyStatusResponse>(
+    ApiRoute.environments.haproxyStatus(environmentId),
+    { correlationIdPrefix: "haproxy-remediation", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error("Failed to fetch HAProxy status");
@@ -50,21 +44,11 @@ async function fetchHAProxyStatus(
 
 async function fetchRemediationPreview(
   environmentId: string,
-  correlationId: string,
 ): Promise<RemediationPreviewResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/remediation-preview`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch remediation preview: ${response.statusText}`);
-  }
-
-  const data: RemediationPreviewResponse = await response.json();
+  const data = await apiFetch<RemediationPreviewResponse>(
+    ApiRoute.environments.remediationPreview(environmentId),
+    { correlationIdPrefix: "haproxy-remediation", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error("Failed to fetch remediation preview");
@@ -73,25 +57,11 @@ async function fetchRemediationPreview(
   return data;
 }
 
-async function remediateHAProxy(
-  environmentId: string,
-  correlationId: string,
-): Promise<RemediateHAProxyResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/remediate-haproxy`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to remediate HAProxy: ${response.statusText}`);
-  }
-
-  const data: RemediateHAProxyResponse = await response.json();
+async function remediateHAProxy(environmentId: string): Promise<RemediateHAProxyResponse> {
+  const data = await apiFetch<RemediateHAProxyResponse>(
+    ApiRoute.environments.remediateHaproxy(environmentId),
+    { method: "POST", correlationIdPrefix: "haproxy-remediation", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to remediate HAProxy");
@@ -117,20 +87,15 @@ export function useHAProxyStatus(
   options: UseHAProxyRemediationOptions = {},
 ) {
   const { enabled = true, refetchInterval } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["haproxy-status", environmentId],
-    queryFn: () => fetchHAProxyStatus(environmentId!, correlationId),
+    queryKey: queryKeys.environments.haproxyStatus(environmentId!),
+    queryFn: () => fetchHAProxyStatus(environmentId!),
     enabled: enabled && !!environmentId,
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on 404 or auth errors
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized") ||
-        error.message.includes("404")
-      ) {
+      if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
         return false;
       }
       return failureCount < 3;
@@ -148,21 +113,19 @@ export function useRemediationPreview(
   options: UseHAProxyRemediationOptions = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["remediation-preview", environmentId],
-    queryFn: () => fetchRemediationPreview(environmentId!, correlationId),
+    queryKey: queryKeys.environments.remediationPreview(environmentId!),
+    queryFn: () => fetchRemediationPreview(environmentId!),
     enabled: enabled && !!environmentId,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on certain errors
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized") ||
-        error.message.includes("404") ||
-        error.message.includes("503") ||
-        error.message.includes("unavailable")
-      ) {
+      if (error instanceof ApiRequestError) {
+        if (error.isAuth || error.status === 404 || error.status === 503) {
+          return false;
+        }
+      }
+      if (error.message.includes("unavailable")) {
         return false;
       }
       return failureCount < 2;
@@ -177,16 +140,15 @@ export function useRemediationPreview(
  */
 export function useRemediateHAProxy() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (environmentId: string) => remediateHAProxy(environmentId, correlationId),
+    mutationFn: (environmentId: string) => remediateHAProxy(environmentId),
     onSuccess: (_, environmentId) => {
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["haproxy-status", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["remediation-preview", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.haproxyStatus(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.remediationPreview(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.detail(environmentId) });
     },
   });
 }
@@ -195,23 +157,11 @@ export function useRemediateHAProxy() {
 // Migration Hooks
 // ====================
 
-async function fetchMigrationPreview(
-  environmentId: string,
-  correlationId: string,
-): Promise<MigrationPreviewResponse> {
-  const response = await fetch(`/api/environments/${environmentId}/migration-preview`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch migration preview: ${response.statusText}`);
-  }
-
-  const data: MigrationPreviewResponse = await response.json();
+async function fetchMigrationPreview(environmentId: string): Promise<MigrationPreviewResponse> {
+  const data = await apiFetch<MigrationPreviewResponse>(
+    ApiRoute.environments.migrationPreview(environmentId),
+    { correlationIdPrefix: "haproxy-migration", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error("Failed to fetch migration preview");
@@ -222,23 +172,11 @@ async function fetchMigrationPreview(
 
 async function migrateHAProxy(
   environmentId: string,
-  correlationId: string,
 ): Promise<{ success: boolean; data: { started: boolean; environmentId: string } }> {
-  const response = await fetch(`/api/environments/${environmentId}/migrate-haproxy`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to start HAProxy migration: ${response.statusText}`);
-  }
-
-  return response.json();
+  return apiFetch<{ success: boolean; data: { started: boolean; environmentId: string } }>(
+    ApiRoute.environments.migrateHaproxy(environmentId),
+    { method: "POST", correlationIdPrefix: "haproxy-migration", unwrap: false },
+  );
 }
 
 /**
@@ -249,11 +187,10 @@ export function useMigrationPreview(
   options: UseHAProxyRemediationOptions = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["migration-preview", environmentId],
-    queryFn: () => fetchMigrationPreview(environmentId!, correlationId),
+    queryKey: queryKeys.environments.migrationPreview(environmentId!),
+    queryFn: () => fetchMigrationPreview(environmentId!),
     enabled: enabled && !!environmentId,
     retry: 1,
     staleTime: 10000,
@@ -265,10 +202,8 @@ export function useMigrationPreview(
  * Hook to trigger HAProxy migration (fire-and-forget, progress via Socket.IO)
  */
 export function useMigrateHAProxy() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
-    mutationFn: (environmentId: string) => migrateHAProxy(environmentId, correlationId),
+    mutationFn: (environmentId: string) => migrateHAProxy(environmentId),
     onError: (error: Error) => {
       toast.error(`Failed to start migration: ${error.message}`);
     },
@@ -345,12 +280,12 @@ export function useMigrationProgress(environmentId: string) {
         finalResult: data,
       }));
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["haproxy-status", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["migration-preview", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["remediation-preview", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
-      queryClient.invalidateQueries({ queryKey: ["environment", environmentId] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.haproxyStatus(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.migrationPreview(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.remediationPreview(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
+      queryClient.invalidateQueries({ queryKey: queryKeys.environments.detail(environmentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
 
       if (data.success) {
         toast.success("HAProxy migration completed successfully");
