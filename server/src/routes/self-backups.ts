@@ -14,6 +14,7 @@ import type {
   SelfBackupInfo,
   StorageProviderId,
 } from "@mini-infra/types";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("backup", "self-backups");
 const router = express.Router();
@@ -21,7 +22,7 @@ const router = express.Router();
 /**
  * GET / - List backup history (paginated, filterable)
  */
-router.get("/", requirePermission('backups:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const {
       status,
@@ -123,7 +124,7 @@ router.get("/", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /health - Get backup health status
  */
-router.get("/health", requirePermission('backups:read'), async (req, res) => {
+router.get("/health", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const health = await calculateBackupHealth();
 
@@ -150,7 +151,7 @@ router.get("/health", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /:id - Get specific backup details
  */
-router.get("/:id", requirePermission('backups:read'), async (req, res) => {
+router.get("/:id", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -207,7 +208,7 @@ router.get("/:id", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /:id/download - Generate SAS URL and redirect to download
  */
-router.get("/:id/download", requirePermission('backups:read'), async (req, res) => {
+router.get("/:id/download", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -377,7 +378,7 @@ router.get("/:id/download", requirePermission('backups:read'), async (req, res) 
 /**
  * DELETE /:id - Delete backup record (not blob itself)
  */
-router.delete("/:id", requirePermission('backups:write'), async (req, res) => {
+router.delete("/:id", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
 

@@ -6,6 +6,7 @@ import prisma from "../lib/prisma";
 import {
   RegistryCredentialService,
 } from "../services/registry-credential";
+import { Permission } from "@mini-infra/types";
 
 type RegistryCredentialsRouterOptions = {
   logger?: ReturnType<typeof getLogger>;
@@ -49,7 +50,7 @@ export default function createRegistryCredentialsRouter(
   const router = express.Router();
 
   // GET /api/registry-credentials
-  router.get("/", requirePermission("registry:read"), async (req, res) => {
+  router.get("/", requirePermission(Permission.RegistryRead), async (req, res) => {
     try {
       const includeInactive = req.query.includeInactive === "true";
       const credentials =
@@ -69,7 +70,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.get("/:id", requirePermission("registry:read"), async (req, res) => {
+  router.get("/:id", requirePermission(Permission.RegistryRead), async (req, res) => {
     try {
       const credential = await registryCredentialService.getCredential(
         String(req.params.id),
@@ -93,7 +94,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.post("/", requirePermission("registry:write"), async (req, res) => {
+  router.post("/", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       const validatedData = createSchema.parse(req.body);
       const userId = getCurrentUserId(req);
@@ -133,7 +134,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.put("/:id", requirePermission("registry:write"), async (req, res) => {
+  router.put("/:id", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       const validatedData = updateSchema.parse(req.body);
       const userId = getCurrentUserId(req);
@@ -174,7 +175,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.delete("/:id", requirePermission("registry:write"), async (req, res) => {
+  router.delete("/:id", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       await registryCredentialService.deleteCredential(String(req.params.id));
 
@@ -192,7 +193,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.post("/:id/set-default", requirePermission("registry:write"), async (req, res) => {
+  router.post("/:id/set-default", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       await registryCredentialService.setDefaultCredential(String(req.params.id));
 
@@ -213,7 +214,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.post("/:id/test", requirePermission("registry:write"), async (req, res) => {
+  router.post("/:id/test", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       const testImage = req.body?.testImage;
 
@@ -236,7 +237,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.post("/test-connection", requirePermission("registry:write"), async (req, res) => {
+  router.post("/test-connection", requirePermission(Permission.RegistryWrite), async (req, res) => {
     try {
       const validatedData = testConnectionSchema.parse(req.body);
 

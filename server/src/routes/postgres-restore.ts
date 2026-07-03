@@ -14,19 +14,7 @@ import {
   ProviderNoLongerConfiguredError,
   StorageService,
 } from "../services/storage/storage-service";
-import {
-  RestoreOperationStatusResponse,
-  CreateRestoreOperationResponse,
-  BackupBrowserResponse,
-  RestoreOperationFilter,
-  BackupBrowserFilter,
-  BackupBrowserSortOptions,
-  BackupBrowserItem,
-  RestoreOperationProgress,
-  RestoreOperationStatus,
-  BACKUP_OPERATION_STATUSES,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { RestoreOperationStatusResponse, CreateRestoreOperationResponse, BackupBrowserResponse, RestoreOperationFilter, BackupBrowserFilter, BackupBrowserSortOptions, BackupBrowserItem, RestoreOperationProgress, RestoreOperationStatus, BACKUP_OPERATION_STATUSES, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -423,7 +411,7 @@ async function listAvailableBackupsInContainer(
 
 router.post(
   "/restore/:databaseId",
-  requirePermission('postgres:write'),
+  requirePermission(Permission.PostgresWrite),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -774,7 +762,7 @@ router.post(
 
 router.get(
   "/restore/:operationId/status",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -866,7 +854,7 @@ router.get(
 
 router.get(
   "/restore/backups/:containerName",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -946,7 +934,7 @@ router.get(
 
 router.get(
   "/restore/:databaseId/operations",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -1055,7 +1043,7 @@ router.get(
 
 router.get(
   "/restore/:operationId/progress",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);

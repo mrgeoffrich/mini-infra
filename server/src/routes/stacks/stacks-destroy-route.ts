@@ -30,6 +30,7 @@ import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registr
 import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
+import { Permission } from '@mini-infra/types';
 
 const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
@@ -38,7 +39,7 @@ const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, DB record
 router.post(
   '/:stackId/destroy',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });

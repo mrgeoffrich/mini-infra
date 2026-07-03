@@ -11,9 +11,7 @@ const logger = getLogger("http", "settings-validation");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
-import {
-  SettingsCategory,
-} from "@mini-infra/types";
+import { SettingsCategory, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -64,7 +62,7 @@ const validateServiceSchema = z.object({
 /**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
-router.post("/:service", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/:service", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

@@ -12,10 +12,10 @@ const logger = getLogger("auth", "permission-middleware");
  * Session-based users (web UI) always have full access.
  * API key users are checked against their stored permissions.
  *
- * Usage:
- *   router.get('/configs', requirePermission('deployments:read'), handler);
- *   router.post('/configs', requirePermission('deployments:write'), handler);
- *   router.get('/something', requirePermission(['containers:read', 'deployments:read']), handler);
+ * Usage (Phase 10: pass `Permission.*` constants, not raw scope strings):
+ *   router.get('/configs', requirePermission(Permission.StacksRead), handler);
+ *   router.post('/configs', requirePermission(Permission.StacksWrite), handler);
+ *   router.get('/something', requirePermission([Permission.ContainersRead, Permission.StacksRead]), handler);
  */
 export function requirePermission(
   scope: PermissionScope | PermissionScope[],

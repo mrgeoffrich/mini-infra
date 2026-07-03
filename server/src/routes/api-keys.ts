@@ -11,10 +11,7 @@ import {
 import { getLogger } from "../lib/logger-factory";
 import { getCurrentUserId } from "../middleware/auth";
 import { requirePermission } from "../middleware/auth";
-import {
-  PERMISSION_GROUPS,
-  ALL_PERMISSION_SCOPES,
-} from "@mini-infra/types";
+import { PERMISSION_GROUPS, ALL_PERMISSION_SCOPES, Permission } from "@mini-infra/types";
 import { getAllPresets } from "../services/permission-preset-service";
 
 const logger = getLogger("auth", "api-keys");
@@ -51,7 +48,7 @@ const createApiKeySchema = z.object({
 // GET /api/keys/permissions - return available permissions and presets
 router.get(
   "/permissions",
-  requirePermission("api-keys:read") as RequestHandler,
+  requirePermission(Permission.ApiKeysRead) as RequestHandler,
   (async (_req: Request, res: Response) => {
     try {
       const presets = await getAllPresets();
@@ -71,7 +68,7 @@ router.get(
 
 router.get(
   "/",
-  requirePermission("api-keys:read") as RequestHandler,
+  requirePermission(Permission.ApiKeysRead) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const requestId = req.headers["x-request-id"] as string;
@@ -98,7 +95,7 @@ router.get(
 
 router.post(
   "/",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const requestId = req.headers["x-request-id"] as string;
@@ -149,7 +146,7 @@ router.post(
 
 router.patch(
   "/:keyId/revoke",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const keyId = String(req.params.keyId);
@@ -187,7 +184,7 @@ router.patch(
 
 router.post(
   "/:keyId/rotate",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const keyId = String(req.params.keyId);
@@ -227,7 +224,7 @@ router.post(
 
 router.delete(
   "/:keyId",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const keyId = String(req.params.keyId);
@@ -268,7 +265,7 @@ router.delete(
 
 router.get(
   "/stats",
-  requirePermission("api-keys:read") as RequestHandler,
+  requirePermission(Permission.ApiKeysRead) as RequestHandler,
   (async (req: Request, res: Response) => {
     const userId = getCurrentUserId(req)!;
     const requestId = req.headers["x-request-id"] as string;

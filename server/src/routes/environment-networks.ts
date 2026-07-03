@@ -4,6 +4,7 @@ import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
+import { Permission } from '@mini-infra/types';
 
 const router = Router({ mergeParams: true });
 const logger = getLogger("stacks", "environment-networks");
@@ -24,7 +25,7 @@ const updateNetworkSchema = z.object({
 });
 
 
-router.get('/', requirePermission('environments:read'), async (req, res) => {
+router.get('/', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -48,7 +49,7 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
 });
 
 
-router.post('/', requirePermission('environments:write'), async (req, res) => {
+router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
     const validatedData = createNetworkSchema.parse(req.body);
@@ -107,7 +108,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
 });
 
 
-router.put('/:networkId', requirePermission('environments:write'), async (req, res) => {
+router.put('/:networkId', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id); const networkId = String(req.params.networkId);
     const validatedData = updateNetworkSchema.parse(req.body);
@@ -169,7 +170,7 @@ router.put('/:networkId', requirePermission('environments:write'), async (req, r
 });
 
 
-router.delete('/:networkId', requirePermission('environments:write'), async (req, res) => {
+router.delete('/:networkId', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id); const networkId = String(req.params.networkId);
 

@@ -6,6 +6,7 @@ const logger = getLogger("backup", "postgres-progress");
 import { ProgressTrackerService } from "../services/progress-tracker";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import { Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -40,7 +41,7 @@ const GetHistoryQuerySchema = z.object({
  */
 router.get(
   "/backup/:operationId",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -142,7 +143,7 @@ router.get(
  */
 router.get(
   "/restore/:operationId",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -244,7 +245,7 @@ router.get(
  */
 router.get(
   "/active",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -309,7 +310,7 @@ router.get(
  */
 router.get(
   "/history",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
@@ -434,7 +435,7 @@ router.get(
  */
 router.post(
   "/cleanup",
-  requirePermission('postgres:write'),
+  requirePermission(Permission.PostgresWrite),
   async (req: Request, res: Response) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);

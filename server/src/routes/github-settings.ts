@@ -10,10 +10,7 @@ import { getLogger } from "../lib/logger-factory";
 const logger = getLogger("integrations", "github-settings");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubService } from "../services/github-service";
-import {
-  GitHubSettingResponse,
-  GitHubValidationResponse,
-} from "@mini-infra/types";
+import { GitHubSettingResponse, GitHubValidationResponse, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -80,7 +77,7 @@ const validateGitHubConnectionSchema = z.object({
 /**
  * GET /api/settings/github - Get current GitHub configuration
  */
-router.get("/", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -137,7 +134,7 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
 /**
  * POST /api/settings/github - Create or update GitHub configuration
  */
-router.post("/", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -250,7 +247,7 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 /**
  * PATCH /api/settings/github - Partially update GitHub configuration
  */
-router.patch("/", requirePermission('settings:write') as RequestHandler, (async (
+router.patch("/", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -351,7 +348,7 @@ router.patch("/", requirePermission('settings:write') as RequestHandler, (async 
 /**
  * DELETE /api/settings/github - Remove GitHub configuration
  */
-router.delete("/", requirePermission('settings:write') as RequestHandler, (async (
+router.delete("/", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -408,7 +405,7 @@ router.delete("/", requirePermission('settings:write') as RequestHandler, (async
 /**
  * POST /api/settings/github/test - Test GitHub API connectivity
  */
-router.post("/test", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/test", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

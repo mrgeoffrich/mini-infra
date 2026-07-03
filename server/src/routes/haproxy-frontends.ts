@@ -4,12 +4,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  HAProxyFrontendInfo,
-  HAProxyFrontendListResponse,
-  HAProxyFrontendResponse,
-  ForceDeleteFrontendResponse,
-} from "@mini-infra/types";
+import { HAProxyFrontendInfo, HAProxyFrontendListResponse, HAProxyFrontendResponse, ForceDeleteFrontendResponse, Permission } from "@mini-infra/types";
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
 import { haproxyCertificateDeployer } from "../services/haproxy/haproxy-certificate-deployer";
 import DockerService from "../services/docker";
@@ -76,7 +71,7 @@ function serializeFrontend(
  */
 router.get(
   "/",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { status, hostname } = req.query;
@@ -148,7 +143,7 @@ const createSharedFrontendSchema = z.object({
  */
 router.post(
   "/shared",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const validationResult = createSharedFrontendSchema.safeParse(req.body);
@@ -289,7 +284,7 @@ const configureSSLSchema = z.object({
  */
 router.post(
   "/:frontendName/ssl",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -427,7 +422,7 @@ router.post(
  */
 router.get(
   "/:frontendName",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -553,7 +548,7 @@ const createRouteSchema = z.object({
  */
 router.get(
   "/:frontendName/routes",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -624,7 +619,7 @@ router.get(
  */
 router.post(
   "/:frontendName/routes",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -736,7 +731,7 @@ const patchRouteSchema = z.object({
  */
 router.patch(
   "/:frontendName/routes/:routeId",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
@@ -891,7 +886,7 @@ router.patch(
  */
 router.delete(
   "/:frontendName/routes/:routeId",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
@@ -993,7 +988,7 @@ router.delete(
  */
 router.delete(
   "/:frontendName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);

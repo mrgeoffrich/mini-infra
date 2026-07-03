@@ -25,7 +25,7 @@ import {
   ContainerCacheFlushResponse,
 } from "@mini-infra/types/containers";
 
-import { ApiBase, ApiRoute, ApiResponse, Channel, DEFAULT_LOG_TAIL_LINES, ServerEvent, isValidContainerId } from "@mini-infra/types";
+import { ApiBase, ApiRoute, ApiResponse, Channel, DEFAULT_LOG_TAIL_LINES, ServerEvent, isValidContainerId, Permission } from "@mini-infra/types";
 import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
@@ -67,7 +67,7 @@ describe(
     description:
       "Filterable, sortable, paginated list of Docker containers on the managed host.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects: "none — read-only, paginated list",
     request: { query: ContainerQuerySchema },
     response: ContainerListApiResponseSchema,
@@ -292,7 +292,7 @@ describe(
     description:
       "Containers detected as PostgreSQL by image name and environment variables.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects: "none — read-only Docker inspection",
     response: PostgresContainersResponseSchema,
     errorResponses: [
@@ -379,7 +379,7 @@ describe(
     description:
       "Maps container ID to PostgresServer ID for containers linked to a PostgreSQL server owned by the caller.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects: "none — read-only DB query",
     response: ManagedContainerIdsResponseSchema,
   },
@@ -459,7 +459,7 @@ describe(
     summary: "Get container details",
     description: "Fetches a single container by ID, enriched with environment/self-role metadata.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects: "none — read-only Docker inspection",
     request: { params: ContainerIdParams },
     response: ContainerDetailResponseSchema,
@@ -588,7 +588,7 @@ describe(
     summary: "Get container environment variables",
     description: "Fetches the environment variables of a running/stopped container.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects:
       "none — read-only; may expose secrets stored as container environment variables",
     request: { params: ContainerIdParams },
@@ -721,7 +721,7 @@ describe(
     summary: "Get Docker service cache statistics",
     description: "In-memory cache hit/miss counters for the Docker service's container/network/volume cache.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects: "none — read-only in-memory cache stats",
     response: ContainerCacheStatsResponseSchema,
   },
@@ -762,7 +762,7 @@ describe(
     summary: "Flush the Docker service cache",
     description: "Invalidates the in-process cache of container/network/volume lookups.",
     tags: ["Containers"],
-    permission: "containers:write",
+    permission: Permission.ContainersWrite,
     sideEffects:
       "invalidates the in-process Docker object cache; forces the next read to hit the Docker API",
     response: ContainerCacheFlushResponseSchema,
@@ -813,7 +813,7 @@ describe(
     description:
       "Opens a long-lived SSE connection and tails the container's stdout/stderr in real time.",
     tags: ["Containers"],
-    permission: "containers:read",
+    permission: Permission.ContainersRead,
     sideEffects:
       "opens a long-lived SSE connection and tails the container's stdout/stderr",
     request: { params: ContainerIdParams, query: ContainerLogsQuerySchema },
@@ -1090,7 +1090,7 @@ describe(
     summary: "Perform a container lifecycle action",
     description: "Starts, stops, restarts, or removes a container.",
     tags: ["Containers"],
-    permission: "containers:write",
+    permission: Permission.ContainersWrite,
     sideEffects:
       "starts/stops/restarts/removes a real Docker container; removal is destructive and irreversible",
     request: { params: ContainerActionParams },

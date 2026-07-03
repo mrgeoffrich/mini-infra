@@ -7,11 +7,7 @@ import prisma from "../../lib/prisma";
 import { CloudflareService } from "../../services/cloudflare";
 import { StackTemplateService } from "../../services/stacks/stack-template-service";
 import { tunnelCache } from "../../services/cloudflare/tunnel-cache";
-import {
-  ManagedTunnelListResponse,
-  ManagedTunnelResponse,
-  ManagedTunnelWithStack,
-} from "@mini-infra/types";
+import { ManagedTunnelListResponse, ManagedTunnelResponse, ManagedTunnelWithStack, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "managed-tunnels-routes");
 
@@ -37,7 +33,7 @@ export function createManagedTunnelsRouter(
 
   router.get(
     "/",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     asyncHandler(async (_req, res) => {
       const tunnelsMap = await cloudflareConfigService.getAllManagedTunnels();
 
@@ -68,7 +64,7 @@ export function createManagedTunnelsRouter(
 
   router.get(
     "/:environmentId",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     asyncHandler(async (req, res) => {
       const environmentId = String(req.params.environmentId);
       const info =
@@ -99,7 +95,7 @@ export function createManagedTunnelsRouter(
 
   router.post(
     "/:environmentId",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
       const environmentId = String(req.params.environmentId);
       const userId = getUserId(req);
@@ -210,7 +206,7 @@ export function createManagedTunnelsRouter(
 
   router.delete(
     "/:environmentId",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
       const environmentId = String(req.params.environmentId);
       const userId = getUserId(req);

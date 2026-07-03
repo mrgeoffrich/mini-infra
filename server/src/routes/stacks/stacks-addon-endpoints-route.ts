@@ -4,14 +4,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission } from "../../middleware/auth";
 import { TailscaleDeviceStatusScheduler } from "../../services/tailscale";
 import { getLogger } from "../../lib/logger-factory";
-import {
-  buildPoolHostnamePrefix,
-  sanitizeTailscaleHostname,
-  type StackDefinition,
-  type StackServiceDefinition,
-  type TailscaleAddonEndpoint,
-  type TailscaleAddonEndpointsResponse,
-} from "@mini-infra/types";
+import { buildPoolHostnamePrefix, sanitizeTailscaleHostname, type StackDefinition, type StackServiceDefinition, type TailscaleAddonEndpoint, type TailscaleAddonEndpointsResponse, Permission } from "@mini-infra/types";
 import { CLAUDE_SHELL_HOSTNAME_DISCRIMINATOR } from "../../services/stack-addons/claude-shell/manifest";
 
 const logger = getLogger("integrations", "stacks-addon-endpoints-route");
@@ -236,7 +229,7 @@ export function deriveEndpoints(
  */
 router.get(
   "/:stackId/addon-endpoints",
-  requirePermission("stacks:read"),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
 

@@ -4,7 +4,7 @@ import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import postgresServerService from "../../services/postgres-server/server-manager";
 import serverHealthScheduler from "../../services/postgres-server/health-scheduler";
-import { POSTGRES_SSL_MODES } from "@mini-infra/types";
+import { POSTGRES_SSL_MODES, Permission } from "@mini-infra/types";
 
 const logger = getLogger("db", "servers");
 const router = express.Router();
@@ -55,7 +55,7 @@ const testConnectionSchema = z.object({
  * GET /api/postgres-server/servers
  * List all servers for the authenticated user
  */
-router.get("/", requirePermission('postgres:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const servers = await postgresServerService.listServers(userId);
@@ -85,7 +85,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
  * POST /api/postgres-server/servers
  * Create a new server connection
  */
-router.post("/", requirePermission('postgres:write'), async (req, res) => {
+router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const validatedData = createServerSchema.parse(req.body);
@@ -140,7 +140,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
  * GET /api/postgres-server/servers/:id
  * Get server details
  */
-router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:id", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
@@ -176,7 +176,7 @@ router.get("/:id", requirePermission('postgres:read'), async (req, res) => {
  * PUT /api/postgres-server/servers/:id
  * Update server
  */
-router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
+router.put("/:id", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
@@ -221,7 +221,7 @@ router.put("/:id", requirePermission('postgres:write'), async (req, res) => {
  * DELETE /api/postgres-server/servers/:id
  * Delete server
  */
-router.delete("/:id", requirePermission('postgres:write'), async (req, res) => {
+router.delete("/:id", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
@@ -253,7 +253,7 @@ router.delete("/:id", requirePermission('postgres:write'), async (req, res) => {
  * POST /api/postgres-server/servers/:id/sync
  * Sync databases and users for an existing server from the live PostgreSQL instance
  */
-router.post("/:id/sync", requirePermission('postgres:write'), async (req, res) => {
+router.post("/:id/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
@@ -286,7 +286,7 @@ router.post("/:id/sync", requirePermission('postgres:write'), async (req, res) =
  * POST /api/postgres-server/servers/test-connection
  * Test connection to a PostgreSQL server (without creating a server record)
  */
-router.post("/test-connection", requirePermission('postgres:write'), async (req, res) => {
+router.post("/test-connection", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const validatedData = testConnectionSchema.parse(req.body);
 
@@ -327,7 +327,7 @@ router.post("/test-connection", requirePermission('postgres:write'), async (req,
  * POST /api/postgres-server/servers/:id/test
  * Test connection for an existing server
  */
-router.post("/:id/test", requirePermission('postgres:write'), async (req, res) => {
+router.post("/:id/test", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
@@ -368,7 +368,7 @@ router.post("/:id/test", requirePermission('postgres:write'), async (req, res) =
  * GET /api/postgres-server/servers/:id/info
  * Get server information (version, uptime, database count, etc.)
  */
-router.get("/:id/info", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:id/info", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.id);

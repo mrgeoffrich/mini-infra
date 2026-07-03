@@ -11,24 +11,7 @@ const logger = getLogger("db", "postgres-databases");
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { PostgresDatabaseManager } from "../services/postgres";
-import {
-  CreatePostgresDatabaseRequest,
-  UpdatePostgresDatabaseRequest,
-  TestDatabaseConnectionRequest,
-  DiscoverDatabasesRequest,
-  PostgresDatabaseResponse,
-  PostgresDatabaseListResponse,
-  PostgresDatabaseDeleteResponse,
-  DatabaseConnectionTestResponse,
-  DatabaseDiscoveryResponse,
-  PostgresDatabaseInfo,
-  PostgresDatabaseFilter,
-  PostgresDatabaseSortOptions,
-  DatabaseHealthStatus,
-  DATABASE_HEALTH_STATUSES,
-  POSTGRES_SSL_MODES,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { CreatePostgresDatabaseRequest, UpdatePostgresDatabaseRequest, TestDatabaseConnectionRequest, DiscoverDatabasesRequest, PostgresDatabaseResponse, PostgresDatabaseListResponse, PostgresDatabaseDeleteResponse, DatabaseConnectionTestResponse, DatabaseDiscoveryResponse, PostgresDatabaseInfo, PostgresDatabaseFilter, PostgresDatabaseSortOptions, DatabaseHealthStatus, DATABASE_HEALTH_STATUSES, POSTGRES_SSL_MODES, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -160,7 +143,7 @@ const discoverDatabasesSchema = z.object({
 /**
  * GET /api/postgres/databases - List database configurations with filtering and pagination
  */
-router.get("/", requirePermission('postgres:read') as RequestHandler, (async (
+router.get("/", requirePermission(Permission.PostgresRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -270,7 +253,7 @@ router.get("/", requirePermission('postgres:read') as RequestHandler, (async (
 /**
  * GET /api/postgres/databases/:id - Get specific database configuration
  */
-router.get("/:id", requirePermission('postgres:read') as RequestHandler, (async (
+router.get("/:id", requirePermission(Permission.PostgresRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -351,7 +334,7 @@ router.get("/:id", requirePermission('postgres:read') as RequestHandler, (async 
 /**
  * POST /api/postgres/databases - Create new database configuration
  */
-router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -466,7 +449,7 @@ router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
 /**
  * PUT /api/postgres/databases/:id - Update database configuration
  */
-router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async (
+router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -606,7 +589,7 @@ router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async
 /**
  * DELETE /api/postgres/databases/:id - Delete database configuration
  */
-router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (async (
+router.delete("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -709,7 +692,7 @@ router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (as
 /**
  * POST /api/postgres/databases/:id/test - Test database connection
  */
-router.post("/:id/test", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/:id/test", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -814,7 +797,7 @@ router.post("/:id/test", requirePermission('postgres:write') as RequestHandler, 
 /**
  * POST /api/postgres/test-connection - Test connection with provided credentials (without saving)
  */
-router.post("/test-connection", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/test-connection", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -919,7 +902,7 @@ router.post("/test-connection", requirePermission('postgres:write') as RequestHa
 /**
  * POST /api/postgres/discover-databases - Discover databases on a PostgreSQL server
  */
-router.post("/discover-databases", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/discover-databases", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

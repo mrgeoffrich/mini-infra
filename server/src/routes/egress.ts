@@ -11,6 +11,7 @@ import {
   emitEgressPolicyUpdated,
   emitEgressRuleMutation,
 } from '../services/egress/egress-socket-emitter';
+import { Permission } from '@mini-infra/types';
 
 const logger = getLogger('stacks', 'egress-routes');
 
@@ -198,7 +199,7 @@ function buildPaginationMeta(total: number, page: number, limit: number) {
 // Response: { policies, total, page, limit, totalPages, hasNextPage, hasPreviousPage }
 router.get(
   '/policies',
-  requirePermission('egress:read'),
+  requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
     const { environmentId, stackId, archived } = req.query;
 
@@ -244,7 +245,7 @@ router.get(
 // Response: { ...EgressPolicySummary, rules: EgressRuleSummary[] }
 router.get(
   '/policies/:policyId',
-  requirePermission('egress:read'),
+  requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
     const policy = await prisma.egressPolicy.findUnique({
       where: { id: String(req.params.policyId) },
@@ -267,7 +268,7 @@ router.get(
 // Response: EgressPolicySummary
 router.patch(
   '/policies/:policyId',
-  requirePermission('egress:write'),
+  requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
     const parsed = patchPolicySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -320,7 +321,7 @@ router.patch(
 // Response: { rules: EgressRuleSummary[] }
 router.get(
   '/policies/:policyId/rules',
-  requirePermission('egress:read'),
+  requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
     const policy = await prisma.egressPolicy.findUnique({
       where: { id: String(req.params.policyId) },
@@ -344,7 +345,7 @@ router.get(
 // Response (201): EgressRuleSummary
 router.post(
   '/policies/:policyId/rules',
-  requirePermission('egress:write'),
+  requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
     const parsed = createRuleSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -416,7 +417,7 @@ router.post(
 // Response: EgressRuleSummary
 router.patch(
   '/rules/:ruleId',
-  requirePermission('egress:write'),
+  requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
     const parsed = patchRuleSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -484,7 +485,7 @@ router.patch(
 // Response: 204 No Content
 router.delete(
   '/rules/:ruleId',
-  requirePermission('egress:write'),
+  requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
     const ruleWithPolicy = await prisma.egressRule.findUnique({
       where: { id: String(req.params.ruleId) },
@@ -550,7 +551,7 @@ const eventQuerySchema = z.object({
 // Response: { events, total, page, limit, totalPages, hasNextPage, hasPreviousPage }
 router.get(
   '/policies/:policyId/events',
-  requirePermission('egress:read'),
+  requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
     const policy = await prisma.egressPolicy.findUnique({
       where: { id: String(req.params.policyId) },
@@ -612,7 +613,7 @@ router.get(
 // Response: { events, total, page, limit, totalPages, hasNextPage, hasPreviousPage }
 router.get(
   '/events',
-  requirePermission('egress:read'),
+  requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
     const parsed = eventQuerySchema.safeParse(req.query);
     if (!parsed.success) {

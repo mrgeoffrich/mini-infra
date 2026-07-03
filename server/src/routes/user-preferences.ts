@@ -8,7 +8,7 @@ import type {
   JWTUser,
   UserPreferenceInfo,
 } from "@mini-infra/types";
-import { SORT_ORDERS } from "@mini-infra/types";
+import { SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const logger = getLogger("http", "user-preferences");
 const router = Router();
@@ -38,7 +38,7 @@ function serializeUserPreferenceInfo(preference: Prisma.UserPreferenceGetPayload
   };
 }
 
-router.get("/preferences", requirePermission('user:read'), async (req: Request, res: Response) => {
+router.get("/preferences", requirePermission(Permission.UserRead), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;
@@ -70,7 +70,7 @@ router.get("/preferences", requirePermission('user:read'), async (req: Request, 
 });
 
 
-router.put("/preferences", requirePermission('user:write'), async (req: Request, res: Response) => {
+router.put("/preferences", requirePermission(Permission.UserWrite), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;
@@ -129,7 +129,7 @@ router.put("/preferences", requirePermission('user:write'), async (req: Request,
 });
 
 
-router.get("/timezones", requirePermission('user:read'), async (req: Request, res: Response) => {
+router.get("/timezones", requirePermission(Permission.UserRead), async (req: Request, res: Response) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;

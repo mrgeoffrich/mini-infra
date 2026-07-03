@@ -18,12 +18,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  CONNECTIVITY_STATUS_TYPES,
-  ConnectivityStatusListResponse,
-  ConnectivityStatusResponse,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "storage-connectivity");
 const router = express.Router();
@@ -41,7 +36,7 @@ const historyQuerySchema = z.object({
   sortOrder: z.enum(SORT_ORDERS).default("desc"),
 });
 
-router.get("/", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -101,7 +96,7 @@ router.get("/", requirePermission("storage:read") as RequestHandler, (async (
   }
 }) as RequestHandler);
 
-router.get("/history", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/history", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

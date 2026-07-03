@@ -3,19 +3,7 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import {
-  DockerNetworkListResponse,
-  DockerNetworkApiResponse,
-  DockerNetworkDeleteResponse,
-  DockerVolumeListResponse,
-  DockerVolumeApiResponse,
-  DockerVolumeDeleteResponse,
-  VolumeInspectionResponse,
-  VolumeInspectionStartResponse,
-  FetchFileContentsRequest,
-  FetchFileContentsResponse,
-  VolumeFileContentResponse,
-} from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, Permission } from "@mini-infra/types";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
@@ -26,7 +14,7 @@ const router = express.Router();
  */
 router.get(
   "/info",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
@@ -73,7 +61,7 @@ router.get(
  */
 router.get(
   "/networks",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
@@ -114,7 +102,7 @@ router.get(
  */
 router.delete(
   "/networks/:id",
-  requirePermission('docker:write'),
+  requirePermission(Permission.DockerWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const id = String(req.params.id);
@@ -167,7 +155,7 @@ router.delete(
  */
 router.get(
   "/volumes",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
@@ -208,7 +196,7 @@ router.get(
  */
 router.delete(
   "/volumes/:name",
-  requirePermission('docker:write'),
+  requirePermission(Permission.DockerWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
@@ -262,7 +250,7 @@ router.delete(
  */
 router.post(
   "/volumes/:name/inspect",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
@@ -326,7 +314,7 @@ router.post(
  */
 router.get(
   "/volumes/:name/inspect",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
@@ -386,7 +374,7 @@ router.get(
  */
 router.post(
   "/volumes/:name/files/fetch",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
@@ -460,7 +448,7 @@ router.post(
  */
 router.get(
   "/volumes/:name/files",
-  requirePermission('docker:read'),
+  requirePermission(Permission.DockerRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);

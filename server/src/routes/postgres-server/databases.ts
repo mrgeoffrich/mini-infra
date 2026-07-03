@@ -35,7 +35,7 @@ const changeDatabaseOwnerSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/databases
  * List all databases on the server
  */
-router.get("/", requirePermission('postgres:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -73,7 +73,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
  * POST /api/postgres-server/servers/:serverId/databases
  * Create a new database on the server
  */
-router.post("/", requirePermission('postgres:write'), async (req, res) => {
+router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -120,7 +120,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/databases/:dbId
  * Get database details
  */
-router.get("/:dbId", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:dbId", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -166,7 +166,7 @@ router.get("/:dbId", requirePermission('postgres:read'), async (req, res) => {
  * DELETE /api/postgres-server/servers/:serverId/databases/:dbId
  * Drop a database from the server
  */
-router.delete("/:dbId", requirePermission('postgres:write'), async (req, res) => {
+router.delete("/:dbId", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -206,7 +206,7 @@ router.delete("/:dbId", requirePermission('postgres:write'), async (req, res) =>
  * PUT /api/postgres-server/servers/:serverId/databases/:dbId/owner
  * Change the owner of a database
  */
-router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res) => {
+router.put("/:dbId/owner", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -267,7 +267,7 @@ router.put("/:dbId/owner", requirePermission('postgres:write'), async (req, res)
  * POST /api/postgres-server/servers/:serverId/databases/sync
  * Sync databases from the server
  */
-router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
+router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -300,7 +300,7 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/grants
  * List grants for a specific database
  */
-router.get("/:dbId/grants", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:dbId/grants", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -338,6 +338,7 @@ router.get("/:dbId/grants", requirePermission('postgres:read'), async (req, res)
 
 // Import and mount sub-router for table data
 import tableDataRoutes from './table-data';
+import { Permission } from "@mini-infra/types";
 
 // Mount sub-router for table data operations
 router.use('/:dbId/tables', tableDataRoutes);

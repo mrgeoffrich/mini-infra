@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
-import { MonitoringStatusResponse } from '@mini-infra/types';
+import { MonitoringStatusResponse, Permission } from '@mini-infra/types';
 import { DockerExecutorService } from '../services/docker-executor';
 import { StackReconciler } from '../services/stacks/stack-reconciler';
 import { serializeStack, mapContainerStatus, isDockerConnectionError } from '../services/stacks/utils';
@@ -30,7 +30,7 @@ async function getMonitoringStack() {
 }
 
 // GET /api/monitoring/status - Get monitoring stack status
-router.get('/status', requirePermission('monitoring:read'), async (_req, res) => {
+router.get('/status', requirePermission(Permission.MonitoringRead), async (_req, res) => {
   try {
     const stack = await getMonitoringStack();
 
@@ -79,7 +79,7 @@ router.get('/status', requirePermission('monitoring:read'), async (_req, res) =>
 });
 
 // POST /api/monitoring/stop - Stop monitoring stack
-router.post('/stop', requirePermission('monitoring:write'), async (req, res) => {
+router.post('/stop', requirePermission(Permission.MonitoringWrite), async (req, res) => {
   try {
     const stack = await getMonitoringStack();
     if (!stack) {
@@ -99,7 +99,7 @@ router.post('/stop', requirePermission('monitoring:write'), async (req, res) => 
 });
 
 // GET /api/monitoring/query - Proxy instant query to Prometheus
-router.get('/query', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/query', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const { query, time } = req.query;
 
@@ -124,7 +124,7 @@ router.get('/query', requirePermission('monitoring:read'), async (req, res) => {
 });
 
 // GET /api/monitoring/query_range - Proxy range query to Prometheus
-router.get('/query_range', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/query_range', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const { query, start, end, step } = req.query;
 
@@ -156,7 +156,7 @@ router.get('/query_range', requirePermission('monitoring:read'), async (req, res
 });
 
 // GET /api/monitoring/targets - Proxy targets query to Prometheus
-router.get('/targets', requirePermission('monitoring:read'), async (_req, res) => {
+router.get('/targets', requirePermission(Permission.MonitoringRead), async (_req, res) => {
   try {
     const response = await fetch(`${PROMETHEUS_URL}/api/v1/targets`);
     const data = await response.json();
@@ -176,7 +176,7 @@ router.get('/targets', requirePermission('monitoring:read'), async (_req, res) =
 // ============================================================
 
 // GET /api/monitoring/loki/labels - List all label names
-router.get('/loki/labels', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/loki/labels', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const params = new URLSearchParams();
     const { start, end } = req.query;
@@ -196,7 +196,7 @@ router.get('/loki/labels', requirePermission('monitoring:read'), async (req, res
 });
 
 // GET /api/monitoring/loki/label/:name/values - List values for a label
-router.get('/loki/label/:name/values', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/loki/label/:name/values', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const params = new URLSearchParams();
     const { start, end } = req.query;
@@ -216,7 +216,7 @@ router.get('/loki/label/:name/values', requirePermission('monitoring:read'), asy
 });
 
 // GET /api/monitoring/loki/query_range - Query logs over a time range
-router.get('/loki/query_range', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/loki/query_range', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const { query, start, end, limit, direction } = req.query;
 
@@ -243,7 +243,7 @@ router.get('/loki/query_range', requirePermission('monitoring:read'), async (req
 });
 
 // GET /api/monitoring/loki/query - Query logs at a single point in time
-router.get('/loki/query', requirePermission('monitoring:read'), async (req, res) => {
+router.get('/loki/query', requirePermission(Permission.MonitoringRead), async (req, res) => {
   try {
     const { query, time, limit, direction } = req.query;
 
