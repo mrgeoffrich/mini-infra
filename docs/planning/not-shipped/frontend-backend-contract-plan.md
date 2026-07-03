@@ -307,13 +307,13 @@ Verify in prod: n/a — internal only (RBAC decisions identical).
 
 Manual checklist — check a box when that phase's PR merges. `[blocks-by: …]` encodes the dependency graph; numeric order is a valid sequential execution.
 
-- [ ] Phase 1: Typed API client primitive
-- [ ] Phase 2: Shared route registry + drift-check  [blocks-by: 1]
-- [ ] Phase 3: Shared query-key factory  [blocks-by: 1]
-- [ ] Phase 4: Migrate the client onto the contract  [blocks-by: 1, 2, 3]
-- [ ] Phase 5: Global HTTP resilience  [blocks-by: 1]
-- [ ] Phase 6: Socket resilience & reconnection UI  [blocks-by: 1]
-- [ ] Phase 7: Connectivity-indicator correctness  [blocks-by: 4]
-- [ ] Phase 8: Cold-start readiness gate  [blocks-by: 1]
-- [ ] Phase 9: Typed response contracts (rolling)  [blocks-by: 2]
-- [ ] Phase 10: Server permission constants + doc refresh  [blocks-by: 1]
+- [x] Phase 1: Typed API client primitive
+- [x] Phase 2: Shared route registry + drift-check  [blocks-by: 1]
+- [x] Phase 3: Shared query-key factory  [blocks-by: 1]
+- [x] Phase 4: Migrate the client onto the contract  [blocks-by: 1, 2, 3]
+- [x] Phase 5: Global HTTP resilience  [blocks-by: 1]
+- [x] Phase 6: Socket resilience & reconnection UI  [blocks-by: 1]
+- [x] Phase 7: Connectivity-indicator correctness  [blocks-by: 4]
+- [x] Phase 8: Cold-start readiness gate  [blocks-by: 1]
+- [x] Phase 9: Typed response contracts (rolling)  [blocks-by: 2]
+- [x] Phase 10: Server permission constants + doc refresh  [blocks-by: 1]
