@@ -3,6 +3,7 @@ import {
   DockerNetwork,
   DockerNetworkListResponse,
   DockerNetworkDeleteResponse,
+  NetworkAttachmentResponse,
   ManagedNetworkListResponse,
   ManagedNetworkView,
   DockerNetworkGcResponse,
@@ -175,6 +176,102 @@ export function useDeleteNetwork(options: UseDeleteNetworkOptions = {}) {
       if (onError) {
         onError(networkId, error);
       }
+    },
+  });
+}
+
+export interface ContainerNetworkMutationInput {
+  networkId: string;
+  containerId: string;
+  /** disconnect only — force-detach even from a running container. */
+  force?: boolean;
+}
+
+async function connectContainerNetwork(
+  input: ContainerNetworkMutationInput,
+): Promise<NetworkAttachmentResponse> {
+  return apiFetch<NetworkAttachmentResponse>(
+    ApiRoute.docker.networkConnect(input.networkId),
+    {
+      method: "POST",
+      body: { containerId: input.containerId },
+      correlationIdPrefix: "connect-container-network",
+      unwrap: false,
+    },
+  );
+}
+
+async function disconnectContainerNetwork(
+  input: ContainerNetworkMutationInput,
+): Promise<NetworkAttachmentResponse> {
+  return apiFetch<NetworkAttachmentResponse>(
+    ApiRoute.docker.networkDisconnect(input.networkId),
+    {
+      method: "POST",
+      body: { containerId: input.containerId, force: input.force },
+      correlationIdPrefix: "disconnect-container-network",
+      unwrap: false,
+    },
+  );
+}
+
+export interface UseContainerNetworkOptions {
+  onSuccess?: (result: NetworkAttachmentResponse) => void;
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Attach a container to a Docker network — the imperative equivalent of
+ * `docker network connect`. On success invalidates both the raw and managed
+ * network lists so the container detail's Networks card (which derives its rows
+ * from the raw list) refreshes immediately, independent of the socket push.
+ */
+export function useConnectContainerNetwork(options: UseContainerNetworkOptions = {}) {
+  const { onSuccess, onError } = options;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: ContainerNetworkMutationInput) => connectContainerNetwork(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      toast.success(
+        result.alreadyConnected
+          ? "Container is already connected to this network"
+          : "Connected container to network",
+      );
+      onSuccess?.(result);
+    },
+    onError: (error: Error) => {
+      toast.error("Failed to connect container to network", {
+        description: error.message,
+      });
+      onError?.(error);
+    },
+  });
+}
+
+/**
+ * Detach a container from a Docker network — the imperative equivalent of
+ * `docker network disconnect`. Same cache-invalidation as connect above.
+ */
+export function useDisconnectContainerNetwork(options: UseContainerNetworkOptions = {}) {
+  const { onSuccess, onError } = options;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: ContainerNetworkMutationInput) => disconnectContainerNetwork(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      toast.success("Disconnected container from network");
+      onSuccess?.(result);
+    },
+    onError: (error: Error) => {
+      toast.error("Failed to disconnect container from network", {
+        description: error.message,
+      });
+      onError?.(error);
     },
   });
 }

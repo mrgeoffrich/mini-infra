@@ -4,7 +4,7 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, NetworkAttachmentResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
 import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll, listManagedNetworks } from "../services/networks";
@@ -35,6 +35,11 @@ const managedNetworkListQuerySchema = z.object({
   scope: z.enum(["host", "environment", "stack"]).optional(),
   environmentId: z.string().optional(),
   stackId: z.string().optional(),
+});
+
+const containerNetworkMutationSchema = z.object({
+  containerId: z.string().min(1),
+  force: z.boolean().optional(),
 });
 
 /**
@@ -225,6 +230,124 @@ router.delete(
       }
 
       logger.error({ error, networkId: req.params.id }, "Failed to remove Docker network");
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/docker/networks/:id/connect
+ * Attach a container to a Docker network — the imperative equivalent of
+ * `docker network connect <network> <container>`. Idempotent: re-attaching an
+ * already-attached container succeeds as a no-op (`alreadyConnected: true`).
+ *
+ * Gated by `docker:write` (an ordinary network mutation, mirroring the
+ * single-network DELETE above) rather than the `docker:admin` the declarative
+ * managed-network endpoints use — this is a direct, user-driven attach, not
+ * managed-network administration.
+ */
+router.post(
+  "/networks/:id/connect",
+  requirePermission(Permission.DockerWrite),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const networkId = String(req.params.id);
+      const parsed = containerNetworkMutationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request body",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const { containerId } = parsed.data;
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+      const result = await networkManager.connect(containerId, networkId);
+
+      const response: NetworkAttachmentResponse = {
+        success: true,
+        message: result.alreadyConnected
+          ? "Container is already connected to this network"
+          : "Container connected to network successfully",
+        networkId,
+        containerId,
+        alreadyConnected: result.alreadyConnected,
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error(
+        { error, networkId: req.params.id },
+        "Failed to connect container to network",
+      );
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/docker/networks/:id/disconnect
+ * Detach a container from a Docker network — the imperative equivalent of
+ * `docker network disconnect <network> <container>`. Idempotent: disconnecting
+ * an already-detached container (or a network that's already gone) is a no-op
+ * success. Pass `{ force: true }` to force-disconnect. `docker:write`, like
+ * connect above.
+ */
+router.post(
+  "/networks/:id/disconnect",
+  requirePermission(Permission.DockerWrite),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const networkId = String(req.params.id);
+      const parsed = containerNetworkMutationSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request body",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const { containerId, force } = parsed.data;
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+      await networkManager.disconnect(containerId, networkId, { force });
+
+      const response: NetworkAttachmentResponse = {
+        success: true,
+        message: "Container disconnected from network successfully",
+        networkId,
+        containerId,
+      };
+
+      res.json(response);
+    } catch (error) {
+      logger.error(
+        { error, networkId: req.params.id },
+        "Failed to disconnect container from network",
+      );
       next(error);
     }
   }
