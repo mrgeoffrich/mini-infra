@@ -290,3 +290,55 @@ export async function removeStackInfraResources(stackId: string): Promise<number
   }
   return result.count;
 }
+
+/**
+ * Delete every `ManagedNetwork` row this stack owns (`scope: 'stack'`) plus
+ * any `NetworkMembership` rows the stack's own services hold on networks
+ * they merely *joined* (environment/host-scoped shared networks) — those
+ * membership rows don't cascade from the stack's own `ManagedNetwork`
+ * deletion above, since they point at a network owned by something else.
+ *
+ * Must run before `prisma.stack.delete()` (Step 7 in the destroy route):
+ * `NetworkMembership.stackServiceId` is a plain string column, not an FK to
+ * `StackService` (see the module doc on `membership-store.ts`), so once the
+ * cascade removes this stack's `StackService` rows there is no way left to
+ * resolve which membership rows belonged to it.
+ *
+ * Fixes a PR #479 review HIGH: `ManagedNetwork.name` is globally `@unique`
+ * with no id component, so leaving the row behind let a *new* stack created
+ * later under the same env+name silently reuse the DEAD stack's orphaned
+ * row — `upsertManagedNetworkByIdentity`/`findOrCreateManagedNetworkByName`
+ * in `membership-store.ts` both resolve by name — handing the new stack a
+ * row still stamped with the old `stackId`, which broke `enforceMemberships`,
+ * owner labels, and the "owned vs joined" UI for the new stack.
+ */
+export async function removeStackManagedNetworks(
+  stackId: string,
+): Promise<{ networksDeleted: number; membershipsDeleted: number }> {
+  const services = await prisma.stackService.findMany({ where: { stackId }, select: { id: true } });
+  const serviceIds = services.map((s) => s.id);
+
+  // Cascades this stack's own ManagedNetwork rows' memberships via the FK.
+  const networkResult = await prisma.managedNetwork.deleteMany({ where: { scope: 'stack', stackId } });
+
+  // Memberships this stack's services hold on networks it merely joined
+  // (e.g. an environment-scoped `applications` network) — not covered by
+  // the cascade above because those ManagedNetwork rows belong to a
+  // different owner and are not being deleted here.
+  let membershipsDeleted = 0;
+  if (serviceIds.length > 0) {
+    const membershipResult = await prisma.networkMembership.deleteMany({
+      where: { stackServiceId: { in: serviceIds } },
+    });
+    membershipsDeleted = membershipResult.count;
+  }
+
+  if (networkResult.count > 0 || membershipsDeleted > 0) {
+    logger.info(
+      { stackId, networksDeleted: networkResult.count, membershipsDeleted },
+      'Removed ManagedNetwork/NetworkMembership record(s) for destroyed stack',
+    );
+  }
+
+  return { networksDeleted: networkResult.count, membershipsDeleted };
+}

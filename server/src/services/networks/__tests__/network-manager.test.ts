@@ -504,8 +504,15 @@ describe('NetworkManager', () => {
       expect(results.filter((r) => r.removed)).toHaveLength(2);
     });
 
-    it('falls back to name candidates for networks the label query missed (pre-label networks), skipping ones already handled', async () => {
-      const labelled = makeNetworkHandle({ inspect: vi.fn().mockResolvedValue({ Containers: {} }) });
+    it('falls back to name candidates for networks the label query missed (pre-label, genuinely unlabelled legacy networks), skipping ones already handled', async () => {
+      const labelled = makeNetworkHandle({
+        inspect: vi.fn().mockResolvedValue({
+          Containers: {},
+          Labels: { 'mini-infra.managed': 'true', 'mini-infra.owner-kind': 'stack', 'mini-infra.owner-id': 'stack-1' },
+        }),
+      });
+      // No `Labels` at all — a genuine pre-label legacy network, the
+      // fallback's intended target.
       const unlabelled = makeNetworkHandle({ inspect: vi.fn().mockResolvedValue({ Containers: {} }) });
       const docker = makeMockDocker({ 'proj_labelled': labelled, 'proj_legacy': unlabelled });
       docker.listNetworks.mockResolvedValue([{ Name: 'proj_labelled' }]);
@@ -520,6 +527,66 @@ describe('NetworkManager', () => {
       expect(labelled.remove).toHaveBeenCalledTimes(1);
       expect(unlabelled.remove).toHaveBeenCalledTimes(1);
       expect(results).toHaveLength(2);
+    });
+
+    it('removes a name-fallback candidate labelled mini-infra.managed=true for the SAME owner', async () => {
+      const sameOwner = makeNetworkHandle({
+        inspect: vi.fn().mockResolvedValue({
+          Containers: {},
+          Labels: { 'mini-infra.managed': 'true', 'mini-infra.owner-kind': 'stack', 'mini-infra.owner-id': 'stack-1' },
+        }),
+      });
+      const docker = makeMockDocker({ proj_same: sameOwner });
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      const results = await manager.removeByOwner(
+        { kind: 'stack', id: 'stack-1' },
+        { nameFallbackCandidates: ['proj_same'] },
+      );
+
+      expect(sameOwner.remove).toHaveBeenCalledTimes(1);
+      expect(results).toEqual([{ name: 'proj_same', removed: true }]);
+    });
+
+    it('does NOT remove a name-fallback candidate labelled mini-infra.managed=true for a DIFFERENT owner (label-guard fix — was previously removed on name match alone)', async () => {
+      const differentOwner = makeNetworkHandle({
+        inspect: vi.fn().mockResolvedValue({
+          Containers: {},
+          Labels: { 'mini-infra.managed': 'true', 'mini-infra.owner-kind': 'stack', 'mini-infra.owner-id': 'stack-OTHER' },
+        }),
+      });
+      const docker = makeMockDocker({ proj_foreign: differentOwner });
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      const results = await manager.removeByOwner(
+        { kind: 'stack', id: 'stack-1' },
+        { nameFallbackCandidates: ['proj_foreign'] },
+      );
+
+      expect(differentOwner.remove).not.toHaveBeenCalled();
+      expect(results).toHaveLength(0);
+    });
+
+    it('does NOT remove a name-fallback candidate labelled for a different owner-kind (e.g. environment-owned network colliding with a stack-owned lookup)', async () => {
+      const differentKind = makeNetworkHandle({
+        inspect: vi.fn().mockResolvedValue({
+          Containers: {},
+          Labels: { 'mini-infra.managed': 'true', 'mini-infra.owner-kind': 'environment', 'mini-infra.owner-id': 'stack-1' },
+        }),
+      });
+      const docker = makeMockDocker({ proj_env: differentKind });
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      const results = await manager.removeByOwner(
+        { kind: 'stack', id: 'stack-1' },
+        { nameFallbackCandidates: ['proj_env'] },
+      );
+
+      expect(differentKind.remove).not.toHaveBeenCalled();
+      expect(results).toHaveLength(0);
     });
 
     it('skips a fallback candidate that does not exist, and one whose existence is unknown (Docker outage)', async () => {

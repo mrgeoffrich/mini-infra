@@ -157,6 +157,25 @@ function ownerLabels(owner: NetworkOwner, purpose?: string): Record<string, stri
   return labels;
 }
 
+/**
+ * Guard for the `removeByOwner` name-fallback path (see
+ * {@link NetworkManager.removeByOwner}): a fallback candidate is only safe
+ * to remove if it's a genuine pre-label legacy network (no
+ * `mini-infra.managed` label at all — the fallback's intended target) or if
+ * its owner labels match the `owner` this call is removing on behalf of. A
+ * network labelled `mini-infra.managed=true` for a DIFFERENT owner — or a
+ * foreign, unrelated network on a shared Docker host that happens to share
+ * a derived name — must never be removed just because the name matches
+ * (PR #479 review HIGH: this previously used a bare `exists()` check with no
+ * label inspection at all).
+ */
+function isFallbackRemovalSafe(labels: Record<string, string>, owner: NetworkOwner): boolean {
+  if (!('mini-infra.managed' in labels)) return true; // genuine legacy/unlabelled network
+  if (labels['mini-infra.owner-kind'] !== owner.kind) return false;
+  if (owner.kind === 'host') return true; // host-scoped networks never stamp an owner-id
+  return labels['mini-infra.owner-id'] === owner.id;
+}
+
 function normalizeOptions(options?: Record<string, unknown>): Record<string, string> | undefined {
   if (!options) return undefined;
   const entries = Object.entries(options).map(([key, value]) => [key, String(value)] as const);
@@ -580,7 +599,11 @@ export class NetworkManager {
    * this fallback is permanent, not a transition shim). Candidates already
    * removed via the label query are skipped; candidates that don't exist are
    * silently skipped (not an error); candidates whose existence is
-   * `unknown` (Docker outage) are left alone rather than guessed at.
+   * `unknown` (Docker outage) are left alone rather than guessed at. Each
+   * candidate is inspected (not just existence-checked) so a network
+   * labelled `mini-infra.managed=true` for a *different* owner — or an
+   * unrelated foreign network — is never removed just because its derived
+   * name collides; see {@link isFallbackRemovalSafe}.
    */
   async removeByOwner(owner: NetworkOwner, opts?: RemoveByOwnerOptions): Promise<RemoveNetworkResult[]> {
     const labelFilters = [
@@ -608,12 +631,26 @@ export class NetworkManager {
     for (const name of opts?.nameFallbackCandidates ?? []) {
       if (handledNames.has(name)) continue;
       handledNames.add(name);
-      const existence = await this.exists(name);
-      if (existence === 'present') {
-        results.push(await this.remove(name, opts));
+
+      let info: NetworkInspectResult | undefined;
+      try {
+        info = await this.inspect(name);
+      } catch {
+        // 'unknown' (Docker outage) — skip rather than guess, same tri-state
+        // contract as exists()/ensure().
+        continue;
       }
-      // 'absent' — nothing to do. 'unknown' — Docker outage; skip rather
-      // than report a misleading not-found.
+      if (!info) continue; // 'absent' — nothing to do.
+
+      if (!isFallbackRemovalSafe(info.labels, owner)) {
+        logger.warn(
+          { name, owner, labels: info.labels },
+          'Skipping name-fallback candidate: labelled for a different mini-infra owner',
+        );
+        continue;
+      }
+
+      results.push(await this.remove(name, opts));
     }
 
     return results;

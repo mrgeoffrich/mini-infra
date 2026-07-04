@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { removeStackNetworksAndVolumes, removeStackInfraResources } from '../stack-destroy-helpers';
+import {
+  removeStackNetworksAndVolumes,
+  removeStackInfraResources,
+  removeStackManagedNetworks,
+} from '../stack-destroy-helpers';
 
 // Stub DockerExecutorService so we don't try to hit a real daemon — only
 // getDockerClient() matters here, NetworkManager does the rest.
@@ -12,6 +16,9 @@ const {
   mockVolumeExists,
   mockRemoveVolume,
   mockInfraResourceDeleteMany,
+  mockManagedNetworkDeleteMany,
+  mockNetworkMembershipDeleteMany,
+  mockStackServiceFindMany,
 } = vi.hoisted(() => {
   const _mockGetNetwork = vi.fn();
   const _mockListNetworks = vi.fn();
@@ -29,6 +36,9 @@ const {
     mockVolumeExists: vi.fn().mockResolvedValue(false),
     mockRemoveVolume: vi.fn().mockResolvedValue(undefined),
     mockInfraResourceDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    mockManagedNetworkDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    mockNetworkMembershipDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    mockStackServiceFindMany: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -41,13 +51,22 @@ vi.mock('../../docker-executor', () => ({
   },
 }));
 
-// removeStackInfraResources uses the default-exported prisma singleton
-// directly (matching the rest of this file's helpers) — stub just the one
-// delegate it touches.
+// removeStackInfraResources/removeStackManagedNetworks use the
+// default-exported prisma singleton directly (matching the rest of this
+// file's helpers) — stub just the delegates each one touches.
 vi.mock('../../../lib/prisma', () => ({
   default: {
     infraResource: {
       deleteMany: mockInfraResourceDeleteMany,
+    },
+    managedNetwork: {
+      deleteMany: mockManagedNetworkDeleteMany,
+    },
+    networkMembership: {
+      deleteMany: mockNetworkMembershipDeleteMany,
+    },
+    stackService: {
+      findMany: mockStackServiceFindMany,
     },
   },
 }));
@@ -204,5 +223,56 @@ describe('removeStackInfraResources', () => {
     const count = await removeStackInfraResources('stack-with-nothing');
 
     expect(count).toBe(0);
+  });
+});
+
+describe('removeStackManagedNetworks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockStackServiceFindMany.mockResolvedValue([]);
+    mockManagedNetworkDeleteMany.mockResolvedValue({ count: 0 });
+    mockNetworkMembershipDeleteMany.mockResolvedValue({ count: 0 });
+  });
+
+  it("deletes every ManagedNetwork row this stack owns (scope: 'stack') — fixes the PR #479 review HIGH where an orphaned row got silently reused by name on stack recreate", async () => {
+    mockManagedNetworkDeleteMany.mockResolvedValue({ count: 2 });
+
+    const { networksDeleted } = await removeStackManagedNetworks('stack-1');
+
+    expect(mockManagedNetworkDeleteMany).toHaveBeenCalledWith({
+      where: { scope: 'stack', stackId: 'stack-1' },
+    });
+    expect(networksDeleted).toBe(2);
+  });
+
+  it("also deletes NetworkMembership rows the stack's own services hold on networks they merely joined (shared env/host networks that don't cascade from the stack's own ManagedNetwork rows)", async () => {
+    mockStackServiceFindMany.mockResolvedValue([{ id: 'svc-1' }, { id: 'svc-2' }]);
+    mockNetworkMembershipDeleteMany.mockResolvedValue({ count: 3 });
+
+    const { membershipsDeleted } = await removeStackManagedNetworks('stack-1');
+
+    expect(mockStackServiceFindMany).toHaveBeenCalledWith({
+      where: { stackId: 'stack-1' },
+      select: { id: true },
+    });
+    expect(mockNetworkMembershipDeleteMany).toHaveBeenCalledWith({
+      where: { stackServiceId: { in: ['svc-1', 'svc-2'] } },
+    });
+    expect(membershipsDeleted).toBe(3);
+  });
+
+  it('skips the NetworkMembership cleanup query entirely when the stack has no services (avoids an unnecessary/unsafe empty-`in` query)', async () => {
+    mockStackServiceFindMany.mockResolvedValue([]);
+
+    const { membershipsDeleted } = await removeStackManagedNetworks('stack-with-no-services');
+
+    expect(mockNetworkMembershipDeleteMany).not.toHaveBeenCalled();
+    expect(membershipsDeleted).toBe(0);
+  });
+
+  it('returns zero counts without error when the stack owns nothing', async () => {
+    const result = await removeStackManagedNetworks('stack-with-nothing');
+
+    expect(result).toEqual({ networksDeleted: 0, membershipsDeleted: 0 });
   });
 });

@@ -96,6 +96,9 @@ describe('EnvironmentManager', () => {
         update: vi.fn().mockResolvedValue({}),
         deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
+      managedNetwork: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
       stack: {
         findMany: vi.fn().mockResolvedValue([]),
         findFirst: vi.fn().mockResolvedValue(null),
@@ -758,6 +761,39 @@ describe('EnvironmentManager', () => {
       // Force-disconnect (Force: true) then remove — not a refuse-and-leak.
       expect(disconnectSpy).toHaveBeenCalledWith({ Container: 'mini-infra-server', Force: true });
       expect(removeSpy).toHaveBeenCalled();
+    });
+
+    it("should delete the environment's own ManagedNetwork rows (scope: environment) even when deleteNetworks is false and it owns no InfraResource rows (fixes PR #479 review HIGH — orphaned rows get silently reused by name on recreate)", async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      const result = await environmentManager.deleteEnvironment('env-1');
+
+      expect(result).toBe(true);
+      expect(mockPrisma.managedNetwork.deleteMany).toHaveBeenCalledWith({
+        where: { scope: 'environment', environmentId: 'env-1' },
+      });
+    });
+
+    it('should delete the ManagedNetwork rows before the environment row, so a same-name stack/network created afterwards never resolves the dead row by name', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      const callOrder: string[] = [];
+      (mockPrisma.managedNetwork.deleteMany as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push('managedNetwork.deleteMany');
+        return { count: 1 };
+      });
+      (mockPrisma.environment.delete as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push('environment.delete');
+        return mockEnvironment;
+      });
+
+      await environmentManager.deleteEnvironment('env-1');
+
+      expect(callOrder).toEqual(['managedNetwork.deleteMany', 'environment.delete']);
     });
 
     it('should continue deleting the environment even when a network removal genuinely fails', async () => {

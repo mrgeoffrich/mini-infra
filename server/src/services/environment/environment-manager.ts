@@ -575,6 +575,26 @@ export class EnvironmentManager {
         await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Removed ${ownedResources.length} InfraResource record(s)`);
       }
 
+      // Explicitly delete the ManagedNetwork rows this environment owns
+      // (Phase 5 desired-state model) and their memberships (cascade via the
+      // `NetworkMembership.networkId` FK). Fixes a PR #479 review HIGH:
+      // `ManagedNetwork.name` is globally `@unique` with no id component, so
+      // leaving this row behind would let a later environment/stack
+      // provisioned under the same env+purpose silently reuse the DEAD
+      // environment's orphaned row by name (see
+      // `removeStackManagedNetworks` in `stack-destroy-helpers.ts` for the
+      // matching stack-destroy fix and the full defect writeup). Run
+      // unconditionally (not gated on `deleteNetworks`/`ownedResources`,
+      // which only track the legacy `InfraResource` table) — this is DB
+      // bookkeeping cleanup independent of whether the live Docker networks
+      // are also being removed.
+      const removedNetworkRows = await this.prisma.managedNetwork.deleteMany({
+        where: { scope: 'environment', environmentId: id },
+      });
+      if (removedNetworkRows.count > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Removed ${removedNetworkRows.count} ManagedNetwork record(s)`);
+      }
+
       // Clean up undeployed/removed stacks that reference this environment
       const orphanedStacks = await this.prisma.stack.findMany({
         where: { environmentId: id, status: { in: ['removed', 'undeployed'] } },
