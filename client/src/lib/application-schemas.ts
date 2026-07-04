@@ -83,22 +83,6 @@ export const routingSchema = z.object({
   enableTunnel: z.boolean().optional(),
 });
 
-/**
- * A link from this application's container to another container it needs to
- * reach over the Docker network (e.g. a database). The durable, round-tripped
- * unit is the `networkName` (folded into `containerConfig.joinNetworks`). The
- * `containerName` is a best-effort label captured when the user picks a
- * container — it powers the read-only host hint but can't be recovered from
- * `joinNetworks` alone, so it's optional (re-derived from live network
- * membership when an application is re-opened for editing).
- */
-export const linkedContainerSchema = z.object({
-  containerName: z.string().optional(),
-  networkName: z.string().min(1, "Network is required"),
-});
-
-export type LinkedContainer = z.infer<typeof linkedContainerSchema>;
-
 export const serviceNameSchema = z
   .string()
   .min(1, "Service name is required")
@@ -114,7 +98,6 @@ export const applicationConfigBaseSchema = z.object({
   ports: z.array(portMappingSchema),
   envVars: z.array(envVarSchema),
   volumeMounts: z.array(volumeMountSchema),
-  linkedContainers: z.array(linkedContainerSchema),
   enableHealthCheck: z.boolean(),
   healthCheck: healthCheckSchema.optional(),
   restartPolicy: z.enum(RESTART_POLICIES),
@@ -185,7 +168,6 @@ export const createApplicationDefaults: CreateApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
-  linkedContainers: [],
   enableRouting: true,
   routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
@@ -227,7 +209,6 @@ export const editApplicationDefaults: EditApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
-  linkedContainers: [],
   enableRouting: false,
   routing: undefined,
   restartPolicy: "unless-stopped",

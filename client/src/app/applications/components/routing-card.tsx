@@ -125,16 +125,23 @@ export function RoutingCard({
   // reactive body so the set-state-in-effect rule doesn't flag them.
   const initFromZones = useCallback(() => {
     if (zonesLoading || initialised) return;
+    // Wait for zones to actually load before latching. Tab switches fully
+    // unmount/remount this card (React Router <Outlet>), so on return the
+    // effect can fire while zonesLoading is already false but zones is
+    // momentarily empty (cached-but-refetching, cold-cache resolving). If we
+    // latched here we'd never set the zone and the dropdown would come back
+    // blank — the exact bug this guards against.
+    if (zones.length === 0) return;
     setInitialised(true);
 
     const existing = form.getValues("routing.hostname") ?? "";
-    if (existing && zones.length > 0) {
+    if (existing) {
       const { subdomain: sub, zone } = decomposeHostname(existing, zones);
       setSubdomain(sub);
       // Only assign a zone when we found a real match; otherwise leave zone
       // empty so buildHostname returns the full hostname unchanged.
       if (zone) setZoneName(zone);
-    } else if (!existing && zones.length > 0) {
+    } else {
       // New entry: seed with first available zone
       setZoneName(zones[0].name);
     }

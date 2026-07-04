@@ -175,6 +175,8 @@ export default function ApplicationOverviewTab() {
         <ConnectedNetworksCard
           stackId={primaryStack?.id}
           services={primaryStack?.services}
+          templateId={template.id}
+          template={template}
         />
       )}
 
