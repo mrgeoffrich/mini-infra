@@ -4,6 +4,15 @@ console.log("[STARTUP] Starting Mini Infra server...");
 // level instead of the in-code fallback.
 import { loadLoggingConfig } from "./lib/logging-config";
 loadLoggingConfig();
+// Harden outbound connections (Happy Eyeballs attempt-timeout + IPv4-first)
+// BEFORE any service module (which may make outbound fetches) is imported.
+// Node's 250ms default abandons healthy cross-region connects (e.g. to
+// api.tailscale.com), making `fetch` fail where curl succeeds. See net-runtime.
+import { configureOutboundNetworking } from "./lib/net-runtime";
+const outboundNet = configureOutboundNetworking();
+console.log(
+  `[STARTUP] Outbound networking: dnsResultOrder=${outboundNet.dnsResultOrder} autoSelectFamily=${outboundNet.autoSelectFamily} attemptTimeoutMs=${outboundNet.autoSelectFamilyAttemptTimeoutMs}`,
+);
 console.log("[STARTUP] Importing app module...");
 import { createServer } from "http";
 import v8 from "v8";
