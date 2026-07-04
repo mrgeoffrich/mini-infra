@@ -27,7 +27,6 @@ import { ServiceTypeStep } from "./components/service-type-step";
 import { ImageStep } from "./components/image-step";
 import { ConfigurationStep } from "./components/configuration-step";
 import { RoutingStep } from "./components/routing-step";
-import { ConnectToContainersField } from "../components/connect-to-containers-field";
 
 export default function NewApplicationPage() {
   const navigate = useNavigate();
@@ -190,11 +189,6 @@ export default function NewApplicationPage() {
         ? [{ type: "docker-network", purpose: "applications" }]
         : undefined;
 
-    // Networks the app must join to reach linked containers (e.g. a database).
-    const joinNetworks = Array.from(
-      new Set(data.linkedContainers.map((l) => l.networkName)),
-    );
-
     try {
       await createApplication.mutateAsync({
         name: templateName,
@@ -215,7 +209,6 @@ export default function NewApplicationPage() {
               env: Object.keys(env).length > 0 ? env : undefined,
               ports: ports.length > 0 ? ports : undefined,
               mounts: mounts.length > 0 ? mounts : undefined,
-              joinNetworks: joinNetworks.length > 0 ? joinNetworks : undefined,
               restartPolicy: data.restartPolicy,
               healthcheck,
             },
@@ -279,19 +272,6 @@ export default function NewApplicationPage() {
             )}
 
             {canShowConfig && <ConfigurationStep />}
-
-            {canShowConfig && (
-              <FormField
-                control={form.control}
-                name="linkedContainers"
-                render={({ field }) => (
-                  <ConnectToContainersField
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            )}
 
             {canShowRouting && (
               <RoutingStep

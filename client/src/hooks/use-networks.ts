@@ -22,6 +22,23 @@ import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
+/**
+ * Networks an application can meaningfully join to reach another container by
+ * name. Excludes:
+ *  - the default `bridge` network (containers can't resolve each other by name)
+ *  - `host` / `none` pseudo-networks (no shared bridge to join)
+ *  - `null`/`host`-driver networks the daemon can't use for name DNS
+ * Everything else is a user-defined bridge/overlay where Docker DNS lets the
+ * app reach peers by container name. Used by the application detail's
+ * Connected Networks picker.
+ */
+export function isUsableLinkNetwork(net: DockerNetwork): boolean {
+  if (net.driver === "host" || net.driver === "null") return false;
+  if (net.name === "host" || net.name === "none") return false;
+  if (net.name === "bridge" && net.driver === "bridge") return false;
+  return true;
+}
+
 /** Best-effort extraction of a `.message` string off an unknown error body. */
 function extractBodyMessage(body: unknown): string | undefined {
   if (typeof body === "object" && body !== null && "message" in body) {

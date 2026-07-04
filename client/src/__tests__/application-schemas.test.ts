@@ -58,26 +58,3 @@ describe("createApplicationFormSchema — routing gating", () => {
     expect(result.success).toBe(true);
   });
 });
-
-describe("createApplicationFormSchema — linkedContainers", () => {
-  it("accepts a link with a network name (containerName optional)", () => {
-    const result = createApplicationFormSchema.safeParse(
-      baseStateful({
-        linkedContainers: [
-          { containerName: "some-postgres", networkName: "local-database" },
-          { networkName: "local-database-2" },
-        ],
-      }),
-    );
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects a link with an empty network name", () => {
-    const result = createApplicationFormSchema.safeParse(
-      baseStateful({
-        linkedContainers: [{ containerName: "some-postgres", networkName: "" }],
-      }),
-    );
-    expect(result.success).toBe(false);
-  });
-});
