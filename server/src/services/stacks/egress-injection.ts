@@ -18,6 +18,13 @@
 import type { Logger } from 'pino';
 import type { PrismaClient } from '../../generated/prisma/client';
 import { getLogger } from '../../lib/logger-factory';
+import {
+  findOrCreateManagedNetworkByName,
+  resolveMembershipTarget,
+  safeMembershipWrite,
+  upsertNetworkMembership,
+  type StackServiceMembershipInput,
+} from '../networks/membership-store';
 
 // Module-level logger for `resolveEgressContext`'s failure path — used by
 // both `resolveEgressEnv` (no logger parameter) and `attachEgressNetworkIfNeeded`
@@ -49,7 +56,7 @@ interface EgressContext {
  * operators need to be able to tell the difference from the logs instead of
  * silently losing egress wiring for a container.
  */
-async function resolveEgressContext(
+export async function resolveEgressContext(
   prisma: PrismaClient,
   environmentId: string | null | undefined,
   egressBypass: boolean,
@@ -159,4 +166,36 @@ export async function attachEgressNetworkIfNeeded(
       'Failed to attach container to egress network',
     );
   }
+}
+
+/**
+ * Network overhaul Phase 6 — record `source: 'egress'` `NetworkMembership`
+ * rows for every service that would receive (or already has) the per-
+ * environment egress auto-attach. Reuses {@link resolveEgressContext} — the
+ * exact same gate `attachEgressNetworkIfNeeded` itself uses — so the two can
+ * never drift apart on which services are/aren't bypassed. Bypass services
+ * get no row, mirroring `attachEgressNetworkIfNeeded`'s own no-op for them.
+ *
+ * Called once per stack apply/update, alongside the membership compiler.
+ * Write-only and best-effort: never throws.
+ */
+export async function recordEgressNetworkMemberships(
+  prisma: PrismaClient,
+  environmentId: string | null | undefined,
+  services: StackServiceMembershipInput[],
+  log: Logger,
+): Promise<void> {
+  await safeMembershipWrite(log, { environmentId }, async () => {
+    for (const svc of services) {
+      const egressBypass = svc.containerConfig?.egressBypass === true;
+      const ctx = await resolveEgressContext(prisma, environmentId, egressBypass);
+      if (!ctx.shouldInject || !ctx.networkName) continue;
+
+      const target = resolveMembershipTarget(svc);
+      const row = await findOrCreateManagedNetworkByName(prisma, ctx.networkName, {
+        scope: 'environment', environmentId: environmentId ?? null, stackId: null, purpose: 'egress',
+      });
+      await upsertNetworkMembership(prisma, { ...target, networkId: row.id, source: 'egress' });
+    }
+  });
 }

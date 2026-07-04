@@ -5,6 +5,8 @@ import { DockerExecutorService } from '../docker-executor';
 import { getStackProjectName } from '../stacks/template-engine';
 import { getLogger } from '../../lib/logger-factory';
 import { createNetworkManager, type NetworkManager } from '../networks';
+import { findOrCreateManagedNetworkByName, safeMembershipWrite, upsertNetworkMembership } from '../networks/membership-store';
+import prisma from '../../lib/prisma';
 import {
   IApplicationService,
   ServiceStatus,
@@ -419,6 +421,19 @@ export class MonitoringService implements IApplicationService {
       } else {
         this.logger.info({ networkName, containerId: selfId }, 'Connected app container to monitoring network');
       }
+
+      // Network overhaul Phase 6 — record a `containerName: 'self'`,
+      // `source: 'system'` membership row. The `monitoring` stack's own
+      // apply (via the membership compiler) will already have created the
+      // `ManagedNetwork` row for this stack-owned network in the common
+      // case; the host-scope fallback identity here is only exercised if
+      // this runs before that stack has ever been applied.
+      await safeMembershipWrite(this.logger, { networkName }, async () => {
+        const row = await findOrCreateManagedNetworkByName(prisma, networkName, {
+          scope: 'host', environmentId: null, stackId: null, purpose: networkName,
+        });
+        await upsertNetworkMembership(prisma, { containerName: 'self', networkId: row.id, source: 'system' });
+      });
     } catch (error) {
       // Non-fatal — the proxy routes will return 503 until the connection is established
       this.logger.warn({ error, networkName }, 'Failed to connect app container to monitoring network');

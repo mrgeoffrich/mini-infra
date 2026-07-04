@@ -61,6 +61,7 @@ export class ManualFrontendSetupService {
         try {
           await this.manualFrontendManager.connectContainerToNetwork(
             request.containerId,
+            request.containerName,
             request.environmentId,
             this.prisma,
           );

@@ -45,7 +45,14 @@ import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { CloudflareTunnelTokenInjector } from '../cloudflare/cloudflare-tunnel-token-injector';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
-import { createNetworkManager, stackNetworkName, type NetworkManager } from '../networks';
+import {
+  createNetworkManager,
+  stackNetworkName,
+  compileStackNetworkMemberships,
+  buildMembershipServiceInputs,
+  type NetworkManager,
+} from '../networks';
+import { recordEgressNetworkMemberships } from './egress-injection';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
@@ -152,7 +159,7 @@ export class StackReconciler {
       include: {
         services: { orderBy: { order: 'asc' } },
         environment: true,
-        template: { select: { name: true } },
+        template: { select: { name: true, source: true, createdById: true } },
       },
     });
 
@@ -201,6 +208,30 @@ export class StackReconciler {
       const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
 
       await this.ensureStackNetworks(networks, projectName, stackId, stack.name, log);
+
+      // 5b-ii. Network overhaul Phase 6 — compile this apply's desired
+      // network membership into ManagedNetwork/NetworkMembership rows,
+      // write-only (nothing reads these yet; see services/networks/
+      // membership-compiler.ts). Purely additive bookkeeping alongside the
+      // ensure/attach calls above and below — never mutates actual
+      // connectivity, never throws.
+      const membershipServices = buildMembershipServiceInputs(stack.services, resolvedDefinitions);
+      await compileStackNetworkMemberships({
+        prisma: this.prisma,
+        stack: {
+          id: stackId,
+          environmentId: stack.environmentId,
+          templateSource: stack.template?.source ?? null,
+          templateCreatedById: stack.template?.createdById ?? null,
+        },
+        projectName,
+        networks,
+        outputNetworkMap,
+        inputNetworkMap,
+        services: membershipServices,
+        log,
+      });
+      await recordEgressNetworkMemberships(this.prisma, stack.environmentId, membershipServices, log);
 
       for (const vol of volumes) {
         const volName = `${projectName}_${vol.name}`;
@@ -505,7 +536,11 @@ export class StackReconciler {
 
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } }, environment: true },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        environment: true,
+        template: { select: { source: true, createdById: true } },
+      },
     });
 
     try {
@@ -544,6 +579,29 @@ export class StackReconciler {
       // but a stack that flipped from 1 service to 2+ services since last
       // apply needs the synthesised default network to be created here.
       await this.ensureStackNetworks(updateNetworks, projectName, stackId, stack.name, log);
+
+      // Network overhaul Phase 6 — same write-only membership bookkeeping as
+      // `applyInner` (see the comment there); `update` re-resolves the
+      // current definition every time, so this keeps desired-state rows
+      // fresh for stacks that only ever go through `update` (image-tag
+      // bumps) rather than a full `apply`.
+      const updateMembershipServices = buildMembershipServiceInputs(stack.services, resolvedDefinitions);
+      await compileStackNetworkMemberships({
+        prisma: this.prisma,
+        stack: {
+          id: stackId,
+          environmentId: stack.environmentId,
+          templateSource: stack.template?.source ?? null,
+          templateCreatedById: stack.template?.createdById ?? null,
+        },
+        projectName,
+        networks: updateNetworks,
+        outputNetworkMap,
+        inputNetworkMap,
+        services: updateMembershipServices,
+        log,
+      });
+      await recordEgressNetworkMemberships(this.prisma, stack.environmentId, updateMembershipServices, log);
 
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;

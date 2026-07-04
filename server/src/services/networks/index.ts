@@ -6,6 +6,9 @@ export * from './network-manager';
 export * from './network-names';
 export * from './attach-service-networks';
 export * from './network-gc';
+export * from './membership-store';
+export * from './membership-compiler';
+export * from './membership-backfill';
 
 /**
  * Construct a NetworkManager wired to invalidate `DockerService`'s cached

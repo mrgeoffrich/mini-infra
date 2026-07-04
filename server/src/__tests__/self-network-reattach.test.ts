@@ -14,6 +14,24 @@ function makeExecutor(connectImpl?: () => Promise<void>) {
   return { executor, getNetwork, connect };
 }
 
+/** Minimal `managedNetwork`/`networkMembership` mock so `connectSelfToNetwork`'s
+ * Phase 6 membership-row write is a harmless no-op-then-create in tests that
+ * don't care about it. */
+function makeMembershipPrisma() {
+  return {
+    managedNetwork: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({ id: 'managed-net-1' }),
+    },
+    networkMembership: {
+      findFirst: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+      update: vi.fn().mockResolvedValue({}),
+    },
+  };
+}
+
 const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } as any;
 
 describe('reattachSelfToManagedNetworks', () => {
@@ -35,6 +53,7 @@ describe('reattachSelfToManagedNetworks', () => {
           { name: 'orphan-egress', purpose: 'egress', stack: null },
         ]),
       },
+      ...makeMembershipPrisma(),
     } as any;
 
     await reattachSelfToManagedNetworks(executor, prisma, log);
@@ -60,21 +79,32 @@ describe('reattachSelfToManagedNetworks', () => {
 describe('connectSelfToNetwork', () => {
   it('returns true on a fresh attach', async () => {
     const { executor } = makeExecutor();
-    expect(await connectSelfToNetwork(executor, 'self-id', 'net', log)).toBe(true);
+    const prisma = makeMembershipPrisma() as any;
+    expect(await connectSelfToNetwork(executor, prisma, 'self-id', 'net', log)).toBe(true);
+    // Records a source:'system', containerName:'self' membership row.
+    expect(prisma.networkMembership.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ containerName: 'self', source: 'system' }),
+      }),
+    );
   });
 
   it('treats an already-connected 403 as a no-op (false) without throwing', async () => {
     const { executor } = makeExecutor(() =>
       Promise.reject(Object.assign(new Error('endpoint already exists'), { statusCode: 403 })),
     );
-    expect(await connectSelfToNetwork(executor, 'self-id', 'net', log)).toBe(false);
+    const prisma = makeMembershipPrisma() as any;
+    expect(await connectSelfToNetwork(executor, prisma, 'self-id', 'net', log)).toBe(false);
+    // Still records the membership row — already-attached is still "attached".
+    expect(prisma.networkMembership.create).toHaveBeenCalled();
   });
 
   it('warns and returns false on a genuine failure', async () => {
     const warn = vi.fn();
     const localLog = { info: vi.fn(), warn, debug: vi.fn() } as any;
     const { executor } = makeExecutor(() => Promise.reject(new Error('boom')));
-    expect(await connectSelfToNetwork(executor, 'self-id', 'net', localLog)).toBe(false);
+    const prisma = makeMembershipPrisma() as any;
+    expect(await connectSelfToNetwork(executor, prisma, 'self-id', 'net', localLog)).toBe(false);
     expect(warn).toHaveBeenCalled();
   });
 });

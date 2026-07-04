@@ -68,6 +68,7 @@ import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
 import { reattachSelfToManagedNetworks } from "./services/stacks/self-network-reattach";
+import { backfillNetworkMemberships } from "./services/networks";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
@@ -185,6 +186,21 @@ const initializeServices = async () => {
       }
     };
     await reattachInfraNetworks();
+
+    // Network overhaul Phase 6 — one-shot backfill of ManagedNetwork/
+    // NetworkMembership rows from InfraResource + current stack definitions,
+    // for infrastructure that predates the Phase 6 producers. Idempotent and
+    // safe to re-run on every boot (find-or-create throughout — see
+    // services/networks/membership-backfill.ts); best-effort, never blocks
+    // boot. Also re-triggerable on demand via
+    // `POST /api/docker/networks/backfill-memberships`.
+    try {
+      const exec = new DockerExecutorService();
+      await exec.initialize();
+      await backfillNetworkMemberships(exec, prisma, logger);
+    } catch (err) {
+      logger.warn({ err }, "Network membership backfill failed (non-fatal)");
+    }
 
     // Re-provision sidecars after Docker reconnects. On a fresh-boot worktree
     // the DB has no docker host yet, so initialize() lands in degraded mode

@@ -89,6 +89,26 @@ export interface DockerNetworkGcResponse {
 }
 
 // ====================
+// Network Membership Backfill Types (network overhaul Phase 6)
+// ====================
+
+/** Summary counters from a `backfillNetworkMemberships()` run — see `services/networks/membership-backfill.ts`. */
+export interface NetworkMembershipBackfillSummary {
+  infraResourcesScanned: number;
+  stacksScanned: number;
+  servicesScanned: number;
+  danglingSkipped: number;
+  managedNetworksTotal: number;
+  networkMembershipsTotal: number;
+}
+
+export interface NetworkMembershipBackfillResponse {
+  success: boolean;
+  data: NetworkMembershipBackfillSummary;
+  message?: string;
+}
+
+// ====================
 // Docker Volume Types
 // ====================
 

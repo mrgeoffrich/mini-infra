@@ -4,10 +4,10 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, Permission } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
-import { createNetworkManager, runNetworkGc } from "../services/networks";
+import { createNetworkManager, runNetworkGc, backfillNetworkMemberships } from "../services/networks";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
@@ -211,6 +211,44 @@ router.post(
       res.json(response);
     } catch (error) {
       logger.error({ error }, "Network GC run failed");
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/docker/networks/backfill-memberships
+ * Network overhaul Phase 6 — on-demand re-run of the ManagedNetwork/
+ * NetworkMembership backfill (also runs once at boot; see server.ts). Purely
+ * additive (find-or-create throughout) — safe to call repeatedly, and never
+ * removes or mutates existing rows. Admin-only, mirroring the GC endpoint's
+ * `docker:admin` gate above.
+ */
+router.post(
+  "/networks/backfill-memberships",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+
+      const summary = await backfillNetworkMemberships(executor, prisma, logger);
+
+      logger.info({ ...summary }, "Network membership backfill run via admin endpoint");
+
+      const response: NetworkMembershipBackfillResponse = { success: true, data: summary };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Network membership backfill run failed");
       next(error);
     }
   }

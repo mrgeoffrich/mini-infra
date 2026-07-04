@@ -4,6 +4,7 @@ import { HAProxyFrontendManager } from "./haproxy-frontend-manager";
 import { PrismaClient } from "../../generated/prisma/client";
 import { DockerExecutorService } from "../docker-executor";
 import { createNetworkManager, type NetworkManager } from "../networks";
+import { findOrCreateManagedNetworkByName, safeMembershipWrite, upsertNetworkMembership } from "../networks/membership-store";
 import {
   EligibleContainer,
   CreateManualFrontendRequest,
@@ -220,9 +221,17 @@ export class ManualFrontendManager {
 
   /**
    * Connect a container to the HAProxy network for the given environment.
+   *
+   * Network overhaul Phase 6: also records a `source: 'haproxy'`
+   * `NetworkMembership` row for the container (keyed by `containerName`,
+   * since this is an arbitrary externally-adopted container, not a
+   * mini-infra-managed `StackService`) — the manual-frontend flow is the
+   * one remaining call site of the "HAProxy manual-frontend join" mechanism
+   * from the network overhaul audit (design doc §1.1, mechanism 7).
    */
   async connectContainerToNetwork(
     containerId: string,
+    containerName: string,
     environmentId: string,
     prisma: PrismaClient,
   ): Promise<void> {
@@ -239,6 +248,13 @@ export class ManualFrontendManager {
     await this.networkManager.connect(containerId, haproxyNetworkName);
 
     logger.info({ containerId, network: haproxyNetworkName }, "Container joined HAProxy network");
+
+    await safeMembershipWrite(logger, { containerId, containerName, network: haproxyNetworkName }, async () => {
+      const row = await findOrCreateManagedNetworkByName(prisma, haproxyNetworkName, {
+        scope: "environment", environmentId, stackId: null, purpose: "applications",
+      });
+      await upsertNetworkMembership(prisma, { containerName, networkId: row.id, source: "haproxy" });
+    });
   }
 
   /**

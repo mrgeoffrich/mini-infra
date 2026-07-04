@@ -219,7 +219,7 @@ export class StackInfraResourceManager {
       const netName = outputNetworkMap.get(output.purpose);
       if (!netName) continue;
 
-      if (await connectSelfToNetwork(this.dockerExecutor, selfId, netName, log)) {
+      if (await connectSelfToNetwork(this.dockerExecutor, this.prisma, selfId, netName, log)) {
         log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
       }
     }
