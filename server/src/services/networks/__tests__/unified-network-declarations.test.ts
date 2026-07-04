@@ -169,6 +169,26 @@ describe('translateUnifiedNetworkDeclarations', () => {
     ).toThrow(UnifiedNetworkDeclarationError);
   });
 
+  it('throws when a unified STACK-scope declaration collides with an existing resourceOutputs purpose', () => {
+    expect(() =>
+      translateUnifiedNetworkDeclarations({
+        networks: [{ purpose: 'foo' }], // scope omitted -> stack
+        resourceOutputs: [{ type: 'docker-network', purpose: 'foo' }],
+        services: [],
+      }),
+    ).toThrow(UnifiedNetworkDeclarationError);
+  });
+
+  it('throws when a unified STACK-scope declaration collides with an existing resourceInputs purpose', () => {
+    expect(() =>
+      translateUnifiedNetworkDeclarations({
+        networks: [{ purpose: 'foo', scope: 'stack' }],
+        resourceInputs: [{ type: 'docker-network', purpose: 'foo' }],
+        services: [],
+      }),
+    ).toThrow(UnifiedNetworkDeclarationError);
+  });
+
   it('tolerates two legacy networks[] entries sharing the same name (pre-existing, unchanged tolerance)', () => {
     const result = translateUnifiedNetworkDeclarations({
       networks: [{ name: 'dup' }, { name: 'dup' }],

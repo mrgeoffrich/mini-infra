@@ -11,14 +11,33 @@ function makeFakeNetworkManager(overrides: Partial<NetworkManager> = {}): Networ
   } as unknown as NetworkManager;
 }
 
-/** Minimal fake PrismaClient — runNetworkGc only calls stack.findMany/environment.findMany. */
-function makeFakePrisma(opts: { stackIds?: string[]; environmentIds?: string[] } = {}) {
+/**
+ * Minimal fake PrismaClient — runNetworkGc calls stack.findMany/environment.findMany
+ * (owner resolution) plus networkMembership.findMany/deleteMany + stackService.findMany
+ * (orphaned-membership prune). Memberships/liveServiceIds default empty → prune is a no-op.
+ */
+function makeFakePrisma(
+  opts: {
+    stackIds?: string[];
+    environmentIds?: string[];
+    memberships?: Array<{ id: string; stackServiceId: string | null }>;
+    liveServiceIds?: string[];
+  } = {},
+) {
   return {
     stack: {
       findMany: vi.fn().mockResolvedValue((opts.stackIds ?? []).map((id) => ({ id }))),
     },
     environment: {
       findMany: vi.fn().mockResolvedValue((opts.environmentIds ?? []).map((id) => ({ id }))),
+    },
+    networkMembership: {
+      // mirrors the `where: { stackServiceId: { not: null } }` filter
+      findMany: vi.fn().mockResolvedValue((opts.memberships ?? []).filter((m) => m.stackServiceId != null)),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    stackService: {
+      findMany: vi.fn().mockResolvedValue((opts.liveServiceIds ?? []).map((id) => ({ id }))),
     },
   } as unknown as Parameters<typeof runNetworkGc>[1];
 }
@@ -173,6 +192,58 @@ describe('runNetworkGc', () => {
     expect(report).toMatchObject({ scannedCount: 0, orphans: [], removedCount: 0 });
     expect(prisma.stack.findMany).not.toHaveBeenCalled();
     expect(prisma.environment.findMany).not.toHaveBeenCalled();
+  });
+
+  describe('orphaned NetworkMembership pruning', () => {
+    it('deletes membership rows whose stackServiceId no longer resolves to a live StackService (dryRun:false)', async () => {
+      const networkManager = makeFakeNetworkManager();
+      const prisma = makeFakePrisma({
+        memberships: [
+          { id: 'm-dead', stackServiceId: 'svc-gone' },
+          { id: 'm-live', stackServiceId: 'svc-live' },
+        ],
+        liveServiceIds: ['svc-live'],
+      });
+
+      await runNetworkGc(networkManager, prisma, { dryRun: false });
+
+      // only the row pointing at the removed service is deleted
+      expect(prisma.networkMembership.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['m-dead'] } } });
+    });
+
+    it('counts but does not delete orphaned memberships in dry-run mode (default)', async () => {
+      const networkManager = makeFakeNetworkManager();
+      const prisma = makeFakePrisma({
+        memberships: [{ id: 'm-dead', stackServiceId: 'svc-gone' }],
+        liveServiceIds: [],
+      });
+
+      await runNetworkGc(networkManager, prisma); // dryRun defaults true
+
+      expect(prisma.networkMembership.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('leaves memberships whose service still exists untouched', async () => {
+      const networkManager = makeFakeNetworkManager();
+      const prisma = makeFakePrisma({
+        memberships: [{ id: 'm-live', stackServiceId: 'svc-live' }],
+        liveServiceIds: ['svc-live'],
+      });
+
+      await runNetworkGc(networkManager, prisma, { dryRun: false });
+
+      expect(prisma.networkMembership.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('does not query StackService when there are no service-keyed memberships', async () => {
+      const networkManager = makeFakeNetworkManager();
+      const prisma = makeFakePrisma({ memberships: [] });
+
+      await runNetworkGc(networkManager, prisma, { dryRun: false });
+
+      expect(prisma.stackService.findMany).not.toHaveBeenCalled();
+      expect(prisma.networkMembership.deleteMany).not.toHaveBeenCalled();
+    });
   });
 });
 

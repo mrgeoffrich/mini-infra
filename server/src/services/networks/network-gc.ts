@@ -37,6 +37,45 @@ export interface NetworkGcOptions {
  * containers is reported but never removed regardless of `dryRun` — GC
  * never force-disconnects.
  */
+/**
+ * Prune `NetworkMembership` rows whose `stackServiceId` no longer resolves to
+ * a live `StackService` (PR #479 review low). These accumulate when a service
+ * is removed from a still-live stack (`stackServiceId` is a plain column with
+ * no FK cascade, so re-applying a stack without a service orphans its rows).
+ * Dangling `stackServiceId` unambiguously means the service is gone, so the
+ * row can never resolve to a live container again — it's pure dead data.
+ * Dry-run counts without deleting, matching the network-removal behaviour.
+ * Returns the number of orphaned rows found.
+ */
+async function pruneOrphanedMemberships(prisma: PrismaClient, dryRun: boolean): Promise<number> {
+  const withService = await prisma.networkMembership.findMany({
+    where: { stackServiceId: { not: null } },
+    select: { id: true, stackServiceId: true },
+  });
+  if (withService.length === 0) return 0;
+
+  const serviceIds = Array.from(new Set(withService.map((m) => m.stackServiceId as string)));
+  const liveServices = await prisma.stackService.findMany({
+    where: { id: { in: serviceIds } },
+    select: { id: true },
+  });
+  const liveServiceIds = new Set(liveServices.map((s) => s.id));
+
+  const orphanIds = withService.filter((m) => !liveServiceIds.has(m.stackServiceId as string)).map((m) => m.id);
+  if (orphanIds.length === 0) return 0;
+
+  if (!dryRun) {
+    await prisma.networkMembership.deleteMany({ where: { id: { in: orphanIds } } });
+  }
+  logger.info(
+    { count: orphanIds.length, dryRun },
+    dryRun
+      ? 'GC found orphaned NetworkMembership rows (dry-run — pass dryRun:false to prune)'
+      : 'GC pruned orphaned NetworkMembership rows',
+  );
+  return orphanIds.length;
+}
+
 export async function runNetworkGc(
   networkManager: NetworkManager,
   prisma: PrismaClient,
@@ -122,6 +161,8 @@ export async function runNetworkGc(
 
   const removedCount = orphans.filter((o) => o.removed).length;
 
+  const prunedMembershipCount = await pruneOrphanedMemberships(prisma, dryRun);
+
   logger.info(
     {
       dryRun,
@@ -129,6 +170,7 @@ export async function runNetworkGc(
       orphanCount: orphans.length,
       eligibleCount: orphans.filter((o) => o.eligibleForRemoval).length,
       removedCount,
+      prunedMembershipCount,
     },
     'Network GC sweep complete',
   );

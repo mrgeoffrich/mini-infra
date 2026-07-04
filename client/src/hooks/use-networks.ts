@@ -7,9 +7,7 @@ import {
   ManagedNetworkView,
   DockerNetworkGcResponse,
   DockerNetworkGcReport,
-  NetworkReconcileResponse,
   NetworkConvergeResponse,
-  NetworkReconcileReport,
   NetworkConvergeResult,
   SetNetworkEnforceMembershipsResponse,
   ManagedNetworkSummary,
@@ -290,18 +288,6 @@ export type NetworkReconcileScopeInput =
   | { scope: "environment"; environmentId: string }
   | { scope: "stack"; stackId: string };
 
-async function fetchNetworkReconcileReport(input: NetworkReconcileScopeInput): Promise<NetworkReconcileReport> {
-  const url = new URL(ApiRoute.docker.networksReconcile(), window.location.origin);
-  url.searchParams.set("scope", input.scope);
-  if (input.scope === "environment") url.searchParams.set("environmentId", input.environmentId);
-  if (input.scope === "stack") url.searchParams.set("stackId", input.stackId);
-  const response = await apiFetch<NetworkReconcileResponse>(url.toString(), {
-    correlationIdPrefix: "network-reconcile-report",
-    unwrap: false,
-  });
-  return response.data;
-}
-
 async function runNetworkConverge(input: NetworkReconcileScopeInput): Promise<NetworkConvergeResult> {
   const response = await apiFetch<NetworkConvergeResponse>(ApiRoute.docker.networksReconcile(), {
     method: "POST",
@@ -310,17 +296,6 @@ async function runNetworkConverge(input: NetworkReconcileScopeInput): Promise<Ne
     unwrap: false,
   });
   return response.data;
-}
-
-/** Report-only diff (Phase 7) — exposed for callers that want the raw drift-item list; the managed-network list already surfaces a `driftStatus`/`driftItemCount` summary per network for the common case. */
-export function useNetworkReconcileReport(input: NetworkReconcileScopeInput, enabled = true) {
-  const id = input.scope === "environment" ? input.environmentId : input.scope === "stack" ? input.stackId : undefined;
-  return useQuery({
-    queryKey: queryKeys.docker.networkReconcile(input.scope, id),
-    queryFn: () => fetchNetworkReconcileReport(input),
-    enabled,
-    staleTime: 2000,
-  });
 }
 
 /** Manual reconcile trigger (Phase 8 convergence) — connects missing memberships (and disconnects stale ones only where a network's `enforceMemberships` is already true). */

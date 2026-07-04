@@ -151,6 +151,16 @@ export function translateUnifiedNetworkDeclarations<Svc extends UnifiedNetworkTr
   // purpose/name -> 'stack' (already auto-joined, no-op) | 'resource' (joinResourceNetworks)
   const purposeClass = new Map<string, 'stack' | 'resource'>();
 
+  // Pre-existing (legacy) docker-network resource purposes, used to reject an
+  // ambiguous collision with a unified declaration of the same purpose — for
+  // BOTH scopes, not just environment/host (a stack-scoped unified entry and a
+  // resourceOutputs[] entry sharing a purpose string are two distinct networks
+  // a per-service `networks[]` reference could not unambiguously resolve).
+  const preExistingResourcePurposes = new Set<string>([
+    ...(input.resourceOutputs ?? []).map((o) => o.purpose),
+    ...(input.resourceInputs ?? []).map((i) => i.purpose),
+  ]);
+
   for (const entry of declaredNetworks) {
     if (isUnifiedStackNetworkDeclaration(entry)) {
       const prior = declaredBy.get(entry.purpose);
@@ -168,6 +178,18 @@ export function translateUnifiedNetworkDeclarations<Svc extends UnifiedNetworkTr
 
       const scope = entry.scope ?? 'stack';
       if (scope === 'stack') {
+        // A stack-scoped unified network and a resource network sharing one
+        // purpose string are two distinct networks in different classes, so a
+        // per-service `networks: [purpose]` reference can't unambiguously
+        // resolve — and `purposeClass` would otherwise be silently overwritten
+        // to 'resource' below (PR #479 review low). Reject it. (The env/host
+        // scope case already becomes a resourceOutput and is caught by the
+        // resourceOutputs-collision check further down.)
+        if (preExistingResourcePurposes.has(entry.purpose)) {
+          throw new UnifiedNetworkDeclarationError(
+            `networks[]: stack-scoped unified purpose "${entry.purpose}" collides with an existing resourceOutputs[]/resourceInputs[] entry of the same purpose.`,
+          );
+        }
         legacyNetworks.push({ name: entry.purpose });
         purposeClass.set(entry.purpose, 'stack');
       } else {

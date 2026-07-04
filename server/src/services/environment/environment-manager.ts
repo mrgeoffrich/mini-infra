@@ -260,7 +260,7 @@ export class EnvironmentManager {
     environmentName: string,
     egressGatewayIp: string | null,
   ): Promise<EgressNetworkInfo> {
-    const name = `${environmentName}-egress`;
+    const name = deriveEgressNetworkName(environmentName);
 
     const resource = await this.prisma.infraResource.findFirst({
       where: { type: 'docker-network', purpose: 'egress', scope: 'environment', environmentId },
