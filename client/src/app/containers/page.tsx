@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ContainerDashboard } from "./ContainerDashboard";
-import { NetworksList } from "./NetworksList";
+import { NetworksTabContent } from "./NetworksTabContent";
 import { VolumesList } from "./VolumesList";
 import { IconServer, IconNetwork, IconDatabase, IconBrandDocker } from "@tabler/icons-react";
 
@@ -70,7 +70,7 @@ export function ContainersPage() {
           </TabsContent>
 
           <TabsContent value="networks">
-            <NetworksList />
+            <NetworksTabContent />
           </TabsContent>
 
           <TabsContent value="volumes">

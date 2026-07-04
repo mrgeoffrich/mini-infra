@@ -14,6 +14,7 @@ import type {
   StackServiceRouting,
   StackVolume,
 } from '@mini-infra/types';
+import { createNetworkManager, stackNetworkName } from '../networks';
 
 const logger = getLogger("stacks", "stack-destroy-helpers");
 
@@ -219,24 +220,41 @@ export async function listStackContainers(stackId: string): Promise<DockerContai
   );
 }
 
+/**
+ * Remove every Docker network and volume a stack owns.
+ *
+ * Networks are reaped by owner label (`mini-infra.owner-kind=stack`,
+ * `mini-infra.owner-id=<stackId>`) via `NetworkManager.removeByOwner` —
+ * not by re-deriving names — with the stack's declared (+ synthesised
+ * default) network names passed as a fallback for networks created before
+ * ownership labels existed. This is what fixes the historical destroy leak:
+ * the old per-network `networkExists`/`removeNetwork` loop relied entirely
+ * on the caller computing `projectName` correctly (it didn't, for
+ * host-scoped stacks — see `stacks-destroy-route.ts`) and never reaped the
+ * synthesised default network at all.
+ *
+ * Volumes have no equivalent labelling yet (out of scope for this phase) and
+ * keep the existing name-derived removal.
+ */
 export async function removeStackNetworksAndVolumes(
+  stackId: string,
   projectName: string,
   networks: StackNetwork[],
   volumes: StackVolume[],
 ): Promise<{ networksRemoved: string[]; volumesRemoved: string[] }> {
   const dockerExecutor = new DockerExecutorService();
   await dockerExecutor.initialize();
+  const networkManager = createNetworkManager(dockerExecutor);
 
-  const networksRemoved: string[] = [];
-  for (const net of networks) {
-    const netName = `${projectName}_${net.name}`;
-    try {
-      if (await dockerExecutor.networkExists(netName)) {
-        await dockerExecutor.removeNetwork(netName);
-        networksRemoved.push(netName);
-      }
-    } catch (err) {
-      logger.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
+  const nameFallbackCandidates = networks.map((net) => stackNetworkName(projectName, net.name));
+  const removeResults = await networkManager.removeByOwner(
+    { kind: 'stack', id: stackId },
+    { nameFallbackCandidates },
+  );
+  const networksRemoved = removeResults.filter((r) => r.removed).map((r) => r.name);
+  for (const result of removeResults) {
+    if (!result.removed && result.reason !== 'not-found') {
+      logger.warn({ network: result.name, reason: result.reason }, 'Failed to remove network, continuing');
     }
   }
 
@@ -254,4 +272,73 @@ export async function removeStackNetworksAndVolumes(
   }
 
   return { networksRemoved, volumesRemoved };
+}
+
+/**
+ * Explicitly delete every `InfraResource` row this stack owns.
+ *
+ * Before the network overhaul (Phase 4), nothing ever deleted an
+ * `InfraResource` row — the FK is `stackId onDelete: SetNull`, so a
+ * destroyed stack left the row behind with `stackId` nulled out forever
+ * (defect L4). Call this before `prisma.stack.delete()` so the FK-null
+ * cascade never gets the chance to orphan the row in the first place.
+ */
+export async function removeStackInfraResources(stackId: string): Promise<number> {
+  const result = await prisma.infraResource.deleteMany({ where: { stackId } });
+  if (result.count > 0) {
+    logger.info({ stackId, count: result.count }, 'Removed InfraResource record(s) for destroyed stack');
+  }
+  return result.count;
+}
+
+/**
+ * Delete every `ManagedNetwork` row this stack owns (`scope: 'stack'`) plus
+ * any `NetworkMembership` rows the stack's own services hold on networks
+ * they merely *joined* (environment/host-scoped shared networks) — those
+ * membership rows don't cascade from the stack's own `ManagedNetwork`
+ * deletion above, since they point at a network owned by something else.
+ *
+ * Must run before `prisma.stack.delete()` (Step 7 in the destroy route):
+ * `NetworkMembership.stackServiceId` is a plain string column, not an FK to
+ * `StackService` (see the module doc on `membership-store.ts`), so once the
+ * cascade removes this stack's `StackService` rows there is no way left to
+ * resolve which membership rows belonged to it.
+ *
+ * Fixes a PR #479 review HIGH: `ManagedNetwork.name` is globally `@unique`
+ * with no id component, so leaving the row behind let a *new* stack created
+ * later under the same env+name silently reuse the DEAD stack's orphaned
+ * row — `upsertManagedNetworkByIdentity`/`findOrCreateManagedNetworkByName`
+ * in `membership-store.ts` both resolve by name — handing the new stack a
+ * row still stamped with the old `stackId`, which broke `enforceMemberships`,
+ * owner labels, and the "owned vs joined" UI for the new stack.
+ */
+export async function removeStackManagedNetworks(
+  stackId: string,
+): Promise<{ networksDeleted: number; membershipsDeleted: number }> {
+  const services = await prisma.stackService.findMany({ where: { stackId }, select: { id: true } });
+  const serviceIds = services.map((s) => s.id);
+
+  // Cascades this stack's own ManagedNetwork rows' memberships via the FK.
+  const networkResult = await prisma.managedNetwork.deleteMany({ where: { scope: 'stack', stackId } });
+
+  // Memberships this stack's services hold on networks it merely joined
+  // (e.g. an environment-scoped `applications` network) — not covered by
+  // the cascade above because those ManagedNetwork rows belong to a
+  // different owner and are not being deleted here.
+  let membershipsDeleted = 0;
+  if (serviceIds.length > 0) {
+    const membershipResult = await prisma.networkMembership.deleteMany({
+      where: { stackServiceId: { in: serviceIds } },
+    });
+    membershipsDeleted = membershipResult.count;
+  }
+
+  if (networkResult.count > 0 || membershipsDeleted > 0) {
+    logger.info(
+      { stackId, networksDeleted: networkResult.count, membershipsDeleted },
+      'Removed ManagedNetwork/NetworkMembership record(s) for destroyed stack',
+    );
+  }
+
+  return { networksDeleted: networkResult.count, membershipsDeleted };
 }

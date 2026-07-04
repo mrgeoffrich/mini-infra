@@ -208,14 +208,23 @@ const mockGetContainer = vi.fn().mockReturnValue({
 });
 
 const mockNetworkConnect = vi.fn().mockResolvedValue(undefined);
+// NetworkManager (services/networks/) inspects a network before creating it
+// (tri-state existence check) — default to "present" so the stack-owned
+// network apply loop treats it as already existing and skips creation.
+const mockNetworkInspect = vi.fn().mockResolvedValue({
+  Name: 'existing-network',
+  Driver: 'bridge',
+  Labels: {},
+  Options: {},
+  Containers: {},
+});
 const mockGetNetwork = vi.fn().mockReturnValue({
   connect: mockNetworkConnect,
+  inspect: mockNetworkInspect,
 });
 
 const mockPullImageWithAutoAuth = vi.fn().mockResolvedValue(undefined);
-const mockNetworkExists = vi.fn().mockResolvedValue(true);
 const mockVolumeExists = vi.fn().mockResolvedValue(true);
-const mockCreateNetwork = vi.fn().mockResolvedValue(undefined);
 const mockCreateVolume = vi.fn().mockResolvedValue(undefined);
 const mockGetContainerStatus = vi.fn().mockResolvedValue({ status: 'running', running: true });
 
@@ -266,9 +275,7 @@ const mockDockerExecutor = {
   pullImageWithAutoAuth: mockPullImageWithAutoAuth,
   createLongRunningContainer: mockCreateLongRunningContainer,
   getContainerStatus: mockGetContainerStatus,
-  networkExists: mockNetworkExists,
   volumeExists: mockVolumeExists,
-  createNetwork: mockCreateNetwork,
   createVolume: mockCreateVolume,
 } as any;
 

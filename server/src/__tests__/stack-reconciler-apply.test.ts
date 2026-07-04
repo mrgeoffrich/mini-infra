@@ -164,10 +164,22 @@ const mockGetContainer = vi.fn().mockReturnValue({
 });
 
 const mockPullImageWithAutoAuth = vi.fn().mockResolvedValue(undefined);
-const mockNetworkExists = vi.fn().mockResolvedValue(true);
 const mockVolumeExists = vi.fn().mockResolvedValue(true);
-const mockCreateNetwork = vi.fn().mockResolvedValue(undefined);
 const mockCreateVolume = vi.fn().mockResolvedValue(undefined);
+
+// NetworkManager (services/networks/) talks to the raw Docker client
+// obtained via dockerExecutor.getDockerClient() — not the old
+// dockerExecutor.networkExists()/createNetwork() passthroughs, which the
+// stack-owned-network apply loop no longer calls.
+const mockNetworkInspect = vi.fn().mockResolvedValue({
+  Name: 'existing-network',
+  Driver: 'bridge',
+  Labels: {},
+  Options: {},
+  Containers: {},
+});
+const mockGetNetwork = vi.fn().mockReturnValue({ inspect: mockNetworkInspect });
+const mockDockerCreateNetwork = vi.fn().mockResolvedValue({ id: 'net-id' });
 const mockGetContainerStatus = vi.fn().mockResolvedValue({ status: 'running', running: true });
 
 const mockLongRunningContainer = {
@@ -210,13 +222,13 @@ const mockDockerExecutor = {
     listContainers: mockListContainers,
     createContainer: mockCreateContainer,
     getContainer: mockGetContainer,
+    getNetwork: mockGetNetwork,
+    createNetwork: mockDockerCreateNetwork,
   }),
   pullImageWithAutoAuth: mockPullImageWithAutoAuth,
   createLongRunningContainer: mockCreateLongRunningContainer,
   getContainerStatus: mockGetContainerStatus,
-  networkExists: mockNetworkExists,
   volumeExists: mockVolumeExists,
-  createNetwork: mockCreateNetwork,
   createVolume: mockCreateVolume,
 } as any;
 
@@ -624,15 +636,24 @@ describe('StackReconciler.apply', () => {
     }]);
     mockFindUniqueOrThrow.mockResolvedValue(stack);
     mockListContainers.mockResolvedValue([]);
-    mockNetworkExists.mockResolvedValue(false);
+    mockNetworkInspect.mockRejectedValueOnce(Object.assign(new Error('no such network'), { statusCode: 404 }));
     mockVolumeExists.mockResolvedValue(false);
 
     await reconciler.apply('stack-1');
 
-    expect(mockCreateNetwork).toHaveBeenCalledWith(
-      'prod-monitoring_monitoring_network',
-      'prod-monitoring',
-      expect.objectContaining({ labels: expect.any(Object) })
+    expect(mockDockerCreateNetwork).toHaveBeenCalledWith(
+      expect.objectContaining({
+        Name: 'prod-monitoring_monitoring_network',
+        Driver: 'bridge',
+        Labels: expect.objectContaining({
+          'mini-infra.managed': 'true',
+          'mini-infra.owner-kind': 'stack',
+          'mini-infra.owner-id': 'stack-1',
+          'mini-infra.purpose': '_stack',
+          'mini-infra.stack': 'monitoring',
+          'mini-infra.stack-id': 'stack-1',
+        }),
+      }),
     );
     expect(mockCreateVolume).toHaveBeenCalledWith(
       'prod-monitoring_loki_data',

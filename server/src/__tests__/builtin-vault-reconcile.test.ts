@@ -2,7 +2,7 @@
  * Unit tests for hello-vault template.json and system template invariants.
  *
  * These are pure-unit tests (no DB). DB-backed tests for runBuiltinVaultReconcile
- * and runSystemStackMigrations live in builtin-vault-reconcile.integration.test.ts.
+ * live in builtin-vault-reconcile.integration.test.ts.
  *
  * Covers:
  *   - hello-vault template parses correctly and has the expected vault section

@@ -2,6 +2,8 @@
 // Stack Types
 // ====================
 
+import type { NetworkDriftItem } from './docker';
+
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
 export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
@@ -333,6 +335,41 @@ export interface StackNetwork {
   options?: Record<string, any>;
 }
 
+/**
+ * Phase 10 — unified network declaration. One shape for declaring a
+ * stack-owned or shared/resource-scoped network, instead of choosing
+ * between stack-level `networks[]` (stack scope) and
+ * `resourceOutputs[]`/`resourceInputs[]` (environment/host scope for the
+ * `docker-network` resource type).
+ *
+ * Accepted anywhere a `StackNetwork` is accepted in an authoring payload
+ * (the `networks[]` field on stack/template create + draft requests) —
+ * see `StackNetworkEntry`. Distinguished from `StackNetwork` at runtime by
+ * the presence of `purpose` (vs `name`); see
+ * `isUnifiedStackNetworkDeclaration()` in
+ * `server/src/services/networks/unified-network-declarations.ts`.
+ *
+ * Translated to the legacy shapes as early as possible (template/stack
+ * creation time) — every stored/resolved definition
+ * (`StackTemplateVersion`, `Stack`, `StackDefinition`) only ever contains
+ * the legacy shapes. See `translateUnifiedNetworkDeclarations()` in the
+ * same module for the full mixing/precedence rule.
+ */
+export interface UnifiedStackNetworkDeclaration {
+  purpose: string;
+  /**
+   * Defaults to `'stack'`. `'environment'` and `'host'` both translate to a
+   * `resourceOutputs[]` entry — the network's real resulting scope is still
+   * governed by whether the *owning* stack itself is environment- or
+   * host-scoped (unchanged existing `resourceOutputs` behavior), not by
+   * this field's literal value.
+   */
+  scope?: 'stack' | 'environment' | 'host';
+}
+
+/** Either shape may appear in an authored `networks[]` array. */
+export type StackNetworkEntry = StackNetwork | UnifiedStackNetworkDeclaration;
+
 export interface StackResourceOutput {
   type: string;
   purpose: string;
@@ -584,6 +621,21 @@ export interface StackServiceDefinition {
    * authored services. See `SyntheticServiceInfo` above.
    */
   synthetic?: SyntheticServiceInfo;
+  /**
+   * Phase 10 — unified per-service network join list. Symbolic purpose
+   * references, resolved against the stack-level `networks[]` declarations
+   * (legacy `StackNetwork.name` or unified `UnifiedStackNetworkDeclaration.purpose`,
+   * plus `resourceOutputs[]`/`resourceInputs[]` purposes) at translate time.
+   * Replaces choosing between `containerConfig.joinNetworks` and
+   * `containerConfig.joinResourceNetworks` for purposes declared via
+   * `networks[]`. Authoring-time-only sugar: always translated away (merged
+   * into `containerConfig.joinResourceNetworks`, or dropped as a no-op for
+   * stack-scope purposes) before persistence — never populated on a
+   * resolved/applied service definition. See
+   * `translateUnifiedNetworkDeclarations()` in
+   * `server/src/services/networks/unified-network-declarations.ts`.
+   */
+  networks?: string[];
 }
 
 export interface StackDefinition {
@@ -674,7 +726,7 @@ export interface CreateStackInput {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];
@@ -750,6 +802,16 @@ export interface StackPlan {
   planTime: string;
   actions: ServiceAction[];
   resourceActions: ResourceAction[];
+  /**
+   * Network overhaul Phase 7 — drift between this stack's desired-state
+   * `ManagedNetwork`/`NetworkMembership` rows and live Docker network state
+   * (missing networks, unattached services, stale attachments, spec
+   * mismatches). Always present (empty when networks are in sync), mirroring
+   * `resourceActions`. Computed by `NetworkReconciler` — see
+   * `services/networks/network-reconciler.ts`. Folds into `hasChanges`
+   * exactly like `actions`/`resourceActions` do.
+   */
+  networkActions: NetworkDriftItem[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
   warnings?: PlanWarning[];
@@ -898,7 +960,7 @@ export interface CreateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];
@@ -913,7 +975,7 @@ export interface UpdateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks?: StackNetwork[];
+  networks?: StackNetworkEntry[];
   volumes?: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];

@@ -6,6 +6,7 @@ import type {
   StackParameterDefinition,
   StackParameterValue,
   StackNetwork,
+  StackNetworkEntry,
   StackVolume,
   StackContainerConfig,
   StackInitCommand,
@@ -448,7 +449,7 @@ export interface CreateStackTemplateRequest {
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
   configFiles?: StackTemplateConfigFileInput[];
@@ -488,7 +489,7 @@ export interface DraftVersionInput {
   networkTypeDefaults?: Record<string, Record<string, StackParameterValue>>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   services: StackServiceDefinition[];
   configFiles?: StackTemplateConfigFileInput[];

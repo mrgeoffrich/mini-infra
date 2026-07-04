@@ -15,13 +15,12 @@ import {
   ApplyOptions,
   ApplyResult,
   UpdateOptions,
-  DestroyResult,
   ServiceApplyResult,
   ResourceResult,
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
 import { StackContainerManager } from './stack-container-manager';
-import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
+import { StackRoutingManager } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { getStackProjectName } from './template-engine';
 import { getLogger } from '../../lib/logger-factory';
@@ -44,16 +43,24 @@ import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { CloudflareTunnelTokenInjector } from '../cloudflare/cloudflare-tunnel-token-injector';
-import { revokeStackNatsSigningKeys } from './stack-nats-revocation';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
-import { EgressPolicyLifecycleService } from '../egress/egress-policy-lifecycle';
+import {
+  createNetworkManager,
+  stackNetworkName,
+  compileStackNetworkMemberships,
+  buildMembershipServiceInputs,
+  convergeStack,
+  type NetworkManager,
+} from '../networks';
+import { recordEgressNetworkMemberships } from './egress-injection';
 
 export class StackReconciler {
   private containerManager: StackContainerManager;
   private infraManager: StackInfraResourceManager;
   private planComputer: StackPlanComputer;
   private serviceHandlers: StackServiceHandlers;
+  private networkManager: NetworkManager;
 
   constructor(
     private dockerExecutor: DockerExecutorService,
@@ -61,12 +68,43 @@ export class StackReconciler {
     private routingManager?: StackRoutingManager,
     private resourceReconciler?: StackResourceReconciler
   ) {
+    this.networkManager = createNetworkManager(dockerExecutor);
     this.containerManager = new StackContainerManager(dockerExecutor, prisma);
     this.infraManager = new StackInfraResourceManager(dockerExecutor, prisma, this.containerManager);
     this.planComputer = new StackPlanComputer(prisma, dockerExecutor, resourceReconciler);
     this.serviceHandlers = new StackServiceHandlers(
-      prisma, dockerExecutor, this.containerManager, this.infraManager, routingManager
+      prisma, dockerExecutor, this.containerManager, this.infraManager, this.networkManager, routingManager
     );
+  }
+
+  /**
+   * Ensure every stack-owned network exists (mechanism 1: the stack's
+   * `networks[]`, plus the synthesised `default` network for multi-service
+   * stacks that declare none). Shared by `applyInner` and `updateInner` so
+   * this logic exists in exactly one place instead of two copy-pasted loops.
+   */
+  private async ensureStackNetworks(
+    networks: StackNetwork[],
+    projectName: string,
+    stackId: string,
+    stackName: string,
+    log: Logger,
+  ): Promise<void> {
+    const extraLabels = { 'mini-infra.stack': stackName, 'mini-infra.stack-id': stackId };
+    for (const net of networks) {
+      const netName = stackNetworkName(projectName, net.name);
+      const result = await this.networkManager.ensure({
+        name: netName,
+        owner: { kind: 'stack', id: stackId },
+        purpose: '_stack',
+        driver: net.driver,
+        options: net.options,
+        extraLabels,
+      });
+      if (result.created) {
+        log.info({ network: netName }, 'Creating network');
+      }
+    }
   }
 
   async plan(stackId: string): Promise<StackPlan> {
@@ -122,7 +160,7 @@ export class StackReconciler {
       include: {
         services: { orderBy: { order: 'asc' } },
         environment: true,
-        template: { select: { name: true } },
+        template: { select: { name: true, source: true, createdById: true } },
       },
     });
 
@@ -170,17 +208,31 @@ export class StackReconciler {
       const volumes = stack.volumes as unknown as StackVolume[];
       const stackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
 
-      for (const net of networks) {
-        const netName = `${projectName}_${net.name}`;
-        const exists = await this.dockerExecutor.networkExists(netName);
-        if (!exists) {
-          log.info({ network: netName }, 'Creating network');
-          await this.dockerExecutor.createNetwork(netName, projectName, {
-            driver: net.driver,
-            labels: stackLabels,
-          });
-        }
-      }
+      await this.ensureStackNetworks(networks, projectName, stackId, stack.name, log);
+
+      // 5b-ii. Network overhaul Phase 6 — compile this apply's desired
+      // network membership into ManagedNetwork/NetworkMembership rows,
+      // write-only (nothing reads these yet; see services/networks/
+      // membership-compiler.ts). Purely additive bookkeeping alongside the
+      // ensure/attach calls above and below — never mutates actual
+      // connectivity, never throws.
+      const membershipServices = buildMembershipServiceInputs(stack.services, resolvedDefinitions);
+      await compileStackNetworkMemberships({
+        prisma: this.prisma,
+        stack: {
+          id: stackId,
+          environmentId: stack.environmentId,
+          templateSource: stack.template?.source ?? null,
+          templateCreatedById: stack.template?.createdById ?? null,
+        },
+        projectName,
+        networks,
+        outputNetworkMap,
+        inputNetworkMap,
+        services: membershipServices,
+        log,
+      });
+      await recordEgressNetworkMemberships(this.prisma, stack.environmentId, membershipServices, log);
 
       for (const vol of volumes) {
         const volName = `${projectName}_${vol.name}`;
@@ -253,7 +305,7 @@ export class StackReconciler {
       });
 
       // Resolve network names
-      const networkNames = networks.map((n) => `${projectName}_${n.name}`);
+      const networkNames = networks.map((n) => stackNetworkName(projectName, n.name));
 
       // 7. Execute actions
       const serviceResults: ServiceApplyResult[] = [];
@@ -343,7 +395,22 @@ export class StackReconciler {
       }
 
       // 7b. Connect mini-infra container to resource output networks with joinSelf: true
-      await this.infraManager.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
+      await this.infraManager.joinSelfToOutputNetworks(stack.environmentId, resourceOutputs, outputNetworkMap, log);
+
+      // 7b-ii. Network overhaul Phase 8 — scoped convergence for this stack,
+      // now that every action above has finished (containers already
+      // created/recreated/removed, so there is nothing left to race). This
+      // is the "stack apply (scoped)" convergence trigger: it acts on the
+      // membership rows `compileStackNetworkMemberships` just wrote/updated
+      // above, catching anything the imperative attach pipeline in the
+      // action loop above didn't cover (e.g. a service the plan marked
+      // no-op this apply but whose desired membership still drifted since
+      // its last apply). Best-effort — never blocks or fails the apply.
+      try {
+        await convergeStack(stackId, { prisma: this.prisma, networkManager: this.networkManager, dockerExecutor: this.dockerExecutor, log });
+      } catch (err) {
+        log.warn({ stackId, error: err instanceof Error ? err.message : String(err) }, 'Post-apply network convergence failed (non-fatal)');
+      }
 
       // 7c. Run post-install actions declared by the template (failures are non-fatal)
       await runPostInstallActions(stack.template?.name, {
@@ -485,7 +552,11 @@ export class StackReconciler {
 
     const stack = await this.prisma.stack.findUniqueOrThrow({
       where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } }, environment: true },
+      include: {
+        services: { orderBy: { order: 'asc' } },
+        environment: true,
+        template: { select: { source: true, createdById: true } },
+      },
     });
 
     try {
@@ -517,24 +588,36 @@ export class StackReconciler {
         stack.services,
         log,
       );
-      const networkNames = updateNetworks.map((n) => `${projectName}_${n.name}`);
+      const networkNames = updateNetworks.map((n) => stackNetworkName(projectName, n.name));
 
       // Ensure stack-owned networks exist. Update is normally called after at
       // least one apply, so the original networks should already be present —
       // but a stack that flipped from 1 service to 2+ services since last
       // apply needs the synthesised default network to be created here.
-      const updateStackLabels = { 'mini-infra.stack': stack.name, 'mini-infra.stack-id': stackId };
-      for (const net of updateNetworks) {
-        const netName = `${projectName}_${net.name}`;
-        const exists = await this.dockerExecutor.networkExists(netName);
-        if (!exists) {
-          log.info({ network: netName }, 'Creating network');
-          await this.dockerExecutor.createNetwork(netName, projectName, {
-            driver: net.driver,
-            labels: updateStackLabels,
-          });
-        }
-      }
+      await this.ensureStackNetworks(updateNetworks, projectName, stackId, stack.name, log);
+
+      // Network overhaul Phase 6 — same write-only membership bookkeeping as
+      // `applyInner` (see the comment there); `update` re-resolves the
+      // current definition every time, so this keeps desired-state rows
+      // fresh for stacks that only ever go through `update` (image-tag
+      // bumps) rather than a full `apply`.
+      const updateMembershipServices = buildMembershipServiceInputs(stack.services, resolvedDefinitions);
+      await compileStackNetworkMemberships({
+        prisma: this.prisma,
+        stack: {
+          id: stackId,
+          environmentId: stack.environmentId,
+          templateSource: stack.template?.source ?? null,
+          templateCreatedById: stack.template?.createdById ?? null,
+        },
+        projectName,
+        networks: updateNetworks,
+        outputNetworkMap,
+        inputNetworkMap,
+        services: updateMembershipServices,
+        log,
+      });
+      await recordEgressNetworkMemberships(this.prisma, stack.environmentId, updateMembershipServices, log);
 
       const serviceResults: ServiceApplyResult[] = [];
       let completedCount = 0;
@@ -1000,166 +1083,6 @@ export class StackReconciler {
 
     log.info({ stopped }, 'Stack stopped');
     return { success: true, stoppedContainers: stopped };
-  }
-
-  /**
-   * Destroy a stack: stop and remove all containers, networks, and volumes,
-   * then delete the stack from the database.
-   */
-  async destroyStack(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
-    return withOperation(`stack-destroy-${stackId}`, () =>
-      this.destroyStackInner(stackId, _options),
-    );
-  }
-
-  private async destroyStackInner(stackId: string, _options?: { triggeredBy?: string }): Promise<DestroyResult> {
-    const startTime = Date.now();
-    const log = getLogger("stacks", "stack-reconciler").child({ operation: 'stack-destroy', stackId });
-
-    const stack = await this.prisma.stack.findUniqueOrThrow({
-      where: { id: stackId },
-      include: { services: true, environment: true },
-    });
-
-    const projectName = getStackProjectName(stack);
-    // Include any synthesised default network so destroy reaps it as well.
-    const networks = synthesiseDefaultNetworkIfNeeded(
-      (stack.networks as unknown as StackNetwork[]) ?? [],
-      stack.services,
-      log,
-    );
-    const volumes = (stack.volumes as unknown as StackVolume[]) ?? [];
-
-    log.info({ stackName: stack.name, projectName }, 'Destroying stack');
-
-    // 0. Destroy stack-level resources (TLS certificates, DNS records, tunnels)
-    if (this.resourceReconciler) {
-      try {
-        await this.resourceReconciler.destroyAllResources(stackId);
-      } catch (err: unknown) {
-        log.warn({ error: (err instanceof Error ? err.message : String(err)) }, 'Resource destruction failed (non-fatal), continuing with container removal');
-      }
-    }
-
-    // 0b. Clean up routing for AdoptedWeb services (container is NOT removed)
-    const adoptedServices = stack.services.filter((s) => s.serviceType === 'AdoptedWeb');
-    if (adoptedServices.length > 0 && this.routingManager && stack.environmentId) {
-      for (const svc of adoptedServices) {
-        const routing = svc.routing as unknown as StackServiceDefinition['routing'];
-        const adopted = svc.adoptedContainer as unknown as StackServiceDefinition['adoptedContainer'];
-        if (!routing || !adopted) continue;
-
-        try {
-          const haproxyCtx = await this.routingManager.getHAProxyContext(stack.environmentId);
-          const haproxyClient = new (await import('../haproxy')).HAProxyDataPlaneClient();
-          await haproxyClient.initialize(haproxyCtx.haproxyContainerId);
-
-          const routingCtx: StackRoutingContext = {
-            serviceName: svc.serviceName,
-            containerId: '',
-            containerName: adopted.containerName,
-            routing,
-            environmentId: stack.environmentId,
-            stackId,
-            stackName: stack.name,
-          };
-
-          // Drain and remove servers
-          const backendName = `stk-${stack.name}-${svc.serviceName}`;
-          const backendRecord = await this.prisma.hAProxyBackend.findFirst({
-            where: { name: backendName, environmentId: stack.environmentId },
-            include: { servers: true },
-          });
-          if (backendRecord) {
-            for (const server of backendRecord.servers) {
-              try {
-                await this.routingManager.drainAndRemoveServer(backendName, server.name, haproxyClient);
-              } catch { /* best effort */ }
-            }
-          }
-
-          await this.routingManager.removeRoute(routingCtx, haproxyClient);
-          log.info({ service: svc.serviceName }, 'Removed AdoptedWeb routing');
-        } catch (err: unknown) {
-          log.warn({ service: svc.serviceName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to remove AdoptedWeb routing');
-        }
-      }
-    }
-
-    // 1. Stop and remove all containers (AdoptedWeb containers are excluded — they don't have stack labels)
-    const docker = this.dockerExecutor.getDockerClient();
-    const containers = await docker.listContainers({
-      all: true,
-      filters: { label: [`mini-infra.stack-id=${stackId}`] },
-    });
-
-    let containersRemoved = 0;
-    for (const containerInfo of containers) {
-      try {
-        await this.containerManager.stopAndRemoveContainer(containerInfo.Id);
-        containersRemoved++;
-      } catch (err: unknown) {
-        log.warn({ containerId: containerInfo.Id, error: err }, 'Failed to remove container, continuing');
-      }
-    }
-
-    // 2. Remove networks
-    const networksRemoved: string[] = [];
-    for (const net of networks) {
-      const netName = `${projectName}_${net.name}`;
-      try {
-        if (await this.dockerExecutor.networkExists(netName)) {
-          await this.dockerExecutor.removeNetwork(netName);
-          networksRemoved.push(netName);
-        }
-      } catch (err: unknown) {
-        log.warn({ network: netName, error: err }, 'Failed to remove network, continuing');
-      }
-    }
-
-    // 3. Remove volumes
-    const volumesRemoved: string[] = [];
-    for (const vol of volumes) {
-      const volName = `${projectName}_${vol.name}`;
-      try {
-        if (await this.dockerExecutor.volumeExists(volName)) {
-          await this.dockerExecutor.removeVolume(volName);
-          volumesRemoved.push(volName);
-        }
-      } catch (err: unknown) {
-        log.warn({ volume: volName, error: err }, 'Failed to remove volume, continuing');
-      }
-    }
-
-    // 4. Archive egress policy before deleting the stack row so we can record
-    //    the reason while the stack is still resolvable.
-    const egressPolicyLifecycle = new EgressPolicyLifecycleService(this.prisma);
-    await egressPolicyLifecycle.archiveForStack(stackId, _options?.triggeredBy ?? null);
-
-    // 4.5. Phase 4: revoke any scoped signing keys this stack owns before
-    //      the cascade drops the rows. See `stack-nats-revocation.ts`.
-    //      NOTE: this `destroyStack` method is currently dead code — the
-    //      production destroy flow runs through `stacks-destroy-route.ts`
-    //      which calls `revokeStackNatsSigningKeys` directly. The hook
-    //      stays here for parity in case a future caller revives this
-    //      path.
-    await revokeStackNatsSigningKeys(this.prisma, stackId, log);
-
-    // 5. Delete the stack record (cascades to deployments, services, resources)
-    const duration = Date.now() - startTime;
-    await this.prisma.stack.delete({
-      where: { id: stackId },
-    });
-
-    log.info({ containersRemoved, networksRemoved, volumesRemoved, duration }, 'Stack destroyed');
-    return {
-      success: true,
-      stackId,
-      containersRemoved,
-      networksRemoved,
-      volumesRemoved,
-      duration,
-    };
   }
 
 }
