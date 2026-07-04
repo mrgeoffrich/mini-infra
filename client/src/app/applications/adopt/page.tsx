@@ -43,7 +43,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { linkedContainerSchema } from "@/lib/application-schemas";
+import {
+  linkedContainerSchema,
+  applicationsNetworkDeclaration,
+} from "@/lib/application-schemas";
 import { ConnectToContainersField } from "../components/connect-to-containers-field";
 
 // ---- Zod Schema ----
@@ -163,6 +166,12 @@ export default function AdoptContainerPage() {
         : {}),
     };
 
+    // AdoptedWeb targets route through HAProxy, so they must join the
+    // environment's `applications` network (declared here + enforced by the
+    // server invariant at apply time).
+    const { resourceInputs, joinResourceNetworks } =
+      applicationsNetworkDeclaration("AdoptedWeb");
+
     // Networks the adopted container should join to reach linked containers
     // (e.g. a database). Applied to the existing container at deploy time.
     const joinNetworks = Array.from(
@@ -177,9 +186,7 @@ export default function AdoptContainerPage() {
         scope: "environment",
         environmentId: data.environmentId,
         deployImmediately: true,
-        resourceInputs: [
-          { type: "docker-network", purpose: "applications" },
-        ],
+        resourceInputs,
         networks: [],
         volumes: [],
         services: [
@@ -188,8 +195,10 @@ export default function AdoptContainerPage() {
             serviceType: "AdoptedWeb" as StackServiceType,
             dockerImage: "adopted",
             dockerTag: "n/a",
-            containerConfig:
-              joinNetworks.length > 0 ? { joinNetworks } : {},
+            containerConfig: {
+              ...(joinNetworks.length > 0 ? { joinNetworks } : {}),
+              joinResourceNetworks,
+            },
             dependsOn: [],
             order: 0,
             routing,

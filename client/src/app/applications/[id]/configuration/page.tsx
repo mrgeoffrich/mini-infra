@@ -32,6 +32,7 @@ import type { StackServiceType } from "@mini-infra/types";
 import {
   editApplicationFormSchema,
   editApplicationDefaults,
+  applicationsNetworkDeclaration,
   type EditApplicationFormData,
 } from "@/lib/application-schemas";
 import { ConfigurationCard } from "../../components/configuration-card";
@@ -225,6 +226,14 @@ export default function ApplicationConfigurationTab() {
       ]),
     );
 
+    // HAProxy-routed services (StatelessWeb) must re-declare membership of the
+    // environment's `applications` network on every save — otherwise editing an
+    // app would drop the resource input the create flow set. The server also
+    // enforces this at apply time; declaring it keeps the draft self-describing.
+    const { resourceInputs, joinResourceNetworks } = applicationsNetworkDeclaration(
+      formData.serviceType as StackServiceType,
+    );
+
     try {
       await updateApplication.mutateAsync({
         templateId,
@@ -234,6 +243,7 @@ export default function ApplicationConfigurationTab() {
         },
         draft: {
           networks,
+          resourceInputs,
           volumes,
           services: [
             {
@@ -246,6 +256,7 @@ export default function ApplicationConfigurationTab() {
                 ports: ports.length > 0 ? ports : undefined,
                 mounts: mounts.length > 0 ? mounts : undefined,
                 joinNetworks,
+                joinResourceNetworks,
                 restartPolicy: formData.restartPolicy,
                 healthcheck,
               },

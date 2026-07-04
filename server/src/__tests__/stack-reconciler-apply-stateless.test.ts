@@ -248,6 +248,23 @@ const mockPrisma = {
   infraResource: {
     // Default: no egress InfraResource. Auto-attach to egress network is a no-op.
     findFirst: vi.fn().mockResolvedValue(null),
+    // The apply-time applications-membership invariant declares the
+    // `applications` resource input for StatelessWeb stacks; resolveInputs
+    // resolves it here to a concrete network name.
+    findUnique: vi.fn().mockImplementation((args: any) => {
+      const purpose = args?.where?.type_purpose_scope_environmentId?.purpose;
+      if (purpose === 'applications') {
+        return Promise.resolve({
+          id: 'ir-applications',
+          type: 'docker-network',
+          purpose: 'applications',
+          scope: 'environment',
+          environmentId: 'env-1',
+          name: 'prod-applications',
+        });
+      }
+      return Promise.resolve(null);
+    }),
   },
   stackDeployment: {
     create: mockStackDeploymentCreate,

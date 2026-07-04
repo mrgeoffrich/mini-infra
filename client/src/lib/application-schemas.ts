@@ -3,7 +3,34 @@ import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
   NETWORK_PROTOCOLS,
+  APPLICATIONS_NETWORK_PURPOSE,
+  isHaproxyRoutedServiceType,
+  type StackResourceInput,
+  type StackServiceType,
 } from "@mini-infra/types";
+
+/**
+ * Network declarations that put an application's container onto the
+ * environment's HAProxy `applications` network. HAProxy-routed service types
+ * (StatelessWeb / AdoptedWeb) must join it for traffic to flow — returned as
+ * both the stack-level resource input (so the purpose resolves to
+ * `<environment>-applications` at apply time) and the service-level
+ * `joinResourceNetworks` membership. Non-routed types get `undefined` for
+ * both. The server enforces the same invariant at apply time; declaring it
+ * here keeps the stored definition self-describing across new/edit/adopt.
+ */
+export function applicationsNetworkDeclaration(serviceType: StackServiceType): {
+  resourceInputs: StackResourceInput[] | undefined;
+  joinResourceNetworks: string[] | undefined;
+} {
+  if (!isHaproxyRoutedServiceType(serviceType)) {
+    return { resourceInputs: undefined, joinResourceNetworks: undefined };
+  }
+  return {
+    resourceInputs: [{ type: "docker-network", purpose: APPLICATIONS_NETWORK_PURPOSE }],
+    joinResourceNetworks: [APPLICATIONS_NETWORK_PURPOSE],
+  };
+}
 
 // ---- Shared sub-schemas for application forms ----
 
