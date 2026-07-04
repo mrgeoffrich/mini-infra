@@ -139,7 +139,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         domain: "docker",
         action: "write",
         label: "Docker Administration",
-        description: "Run the managed-network garbage-collection sweep (list and remove orphaned networks)",
+        description: "Manage Docker networks: view managed networks and their memberships, run reconcile/converge, garbage-collect orphaned networks, backfill membership records, and toggle membership enforcement",
       },
     ],
   },

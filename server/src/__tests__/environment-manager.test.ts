@@ -681,6 +681,19 @@ describe('EnvironmentManager', () => {
       expect(result).toBe(false);
     });
 
+    it("should only query docker-network-typed InfraResource rows as network-removal candidates (fixes PR #479 review M4 — InfraResource.type is 'extensible' per its schema doc)", async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(mockPrisma.infraResource.findMany).toHaveBeenCalledWith({
+        where: { environmentId: 'env-1', type: 'docker-network' },
+        select: { id: true, name: true },
+      });
+    });
+
     it('should not touch Docker or InfraResource rows when the environment owns no InfraResource records', async () => {
       mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);

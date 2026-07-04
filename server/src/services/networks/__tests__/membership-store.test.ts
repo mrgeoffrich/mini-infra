@@ -309,6 +309,145 @@ describe('upsertNetworkMembership', () => {
   });
 });
 
+describe('concurrent upserts (PR #479 review M3 — TOCTOU fix)', () => {
+  /**
+   * A stand-in for the `networkMembership` delegate that behaves like real
+   * Prisma under SQLite's NULL-distinct compound-unique semantics: `create`
+   * always inserts a fresh row (no unique-constraint rejection), and
+   * `findFirst` scans current rows with a real, `await`-yielding read —
+   * `setImmediate` forces every concurrent caller's `findFirst` to interleave
+   * before any of them reaches `create`, which is exactly the window the
+   * fix must close.
+   */
+  function makeRacyMembershipPrisma() {
+    const rows: Array<{ id: string; networkId: string; stackServiceId: string | null; containerName: string | null }> = [];
+    let nextId = 1;
+    return {
+      networkMembership: {
+        findFirst: vi.fn(
+          ({ where }: { where: { networkId: string; stackServiceId: string | null; containerName: string | null } }) =>
+            new Promise((resolve) => {
+              setImmediate(() => {
+                resolve(
+                  rows.find(
+                    (r) => r.networkId === where.networkId
+                      && r.stackServiceId === where.stackServiceId
+                      && r.containerName === where.containerName,
+                  ) ?? null,
+                );
+              });
+            }),
+        ),
+        create: vi.fn(
+          ({ data }: { data: { networkId: string; stackServiceId: string | null; containerName: string | null } }) =>
+            new Promise((resolve) => {
+              setImmediate(() => {
+                const row = { id: `membership-${nextId++}`, networkId: data.networkId, stackServiceId: data.stackServiceId ?? null, containerName: data.containerName ?? null };
+                rows.push(row);
+                resolve(row);
+              });
+            }),
+        ),
+        update: vi.fn(async () => ({})),
+      },
+      _rows: rows,
+    } as any;
+  }
+
+  it('fires N concurrent upserts for the same (networkId, target) and creates exactly one row', async () => {
+    const prisma = makeRacyMembershipPrisma();
+    const CONCURRENCY = 10;
+
+    const results = await Promise.all(
+      Array.from({ length: CONCURRENCY }, () =>
+        upsertNetworkMembership(prisma, { networkId: 'net-1', stackServiceId: 'svc-1', source: 'template' }),
+      ),
+    );
+
+    expect(prisma._rows).toHaveLength(1);
+    expect(prisma._rows[0]).toMatchObject({ networkId: 'net-1', stackServiceId: 'svc-1', containerName: null });
+    // Exactly one caller should have observed `created: true`; the rest find
+    // the row the first caller created.
+    expect(results.filter((r) => r.created === true)).toHaveLength(1);
+    expect(results.filter((r) => r.created === false)).toHaveLength(CONCURRENCY - 1);
+  });
+
+  it('does not serialize upserts for different (networkId, target) keys against each other', async () => {
+    const prisma = makeRacyMembershipPrisma();
+
+    await Promise.all([
+      upsertNetworkMembership(prisma, { networkId: 'net-1', stackServiceId: 'svc-a', source: 'template' }),
+      upsertNetworkMembership(prisma, { networkId: 'net-1', stackServiceId: 'svc-b', source: 'template' }),
+      upsertNetworkMembership(prisma, { networkId: 'net-2', stackServiceId: 'svc-a', source: 'template' }),
+    ]);
+
+    expect(prisma._rows).toHaveLength(3);
+  });
+
+  function makeRacyManagedNetworkPrisma() {
+    const rows: Array<{ id: string; scope: string; environmentId: string | null; stackId: string | null; purpose: string; name: string }> = [];
+    let nextId = 1;
+    return {
+      managedNetwork: {
+        findFirst: vi.fn(
+          ({ where }: { where: { scope: string; environmentId: string | null; stackId: string | null; purpose: string } }) =>
+            new Promise((resolve) => {
+              setImmediate(() => {
+                resolve(
+                  rows.find(
+                    (r) => r.scope === where.scope && r.environmentId === where.environmentId
+                      && r.stackId === where.stackId && r.purpose === where.purpose,
+                  ) ?? null,
+                );
+              });
+            }),
+        ),
+        findUnique: vi.fn(
+          ({ where }: { where: { name: string } }) =>
+            new Promise((resolve) => {
+              setImmediate(() => resolve(rows.find((r) => r.name === where.name) ?? null));
+            }),
+        ),
+        create: vi.fn(
+          ({ data }: { data: { scope: string; environmentId?: string | null; stackId?: string | null; purpose: string; name: string } }) =>
+            new Promise((resolve) => {
+              setImmediate(() => {
+                const row = { id: `net-${nextId++}`, scope: data.scope, environmentId: data.environmentId ?? null, stackId: data.stackId ?? null, purpose: data.purpose, name: data.name };
+                rows.push(row);
+                resolve(row);
+              });
+            }),
+        ),
+      },
+      _rows: rows,
+    } as any;
+  }
+
+  it('fires N concurrent upsertManagedNetworkByIdentity calls for the same identity+name and creates exactly one row', async () => {
+    const prisma = makeRacyManagedNetworkPrisma();
+    const CONCURRENCY = 10;
+    const identity = { scope: 'stack' as const, environmentId: 'env-1', stackId: 'stack-1', purpose: 'default' };
+
+    await Promise.all(
+      Array.from({ length: CONCURRENCY }, () => upsertManagedNetworkByIdentity(prisma, identity, 'env-1_stack-1_default')),
+    );
+
+    expect(prisma._rows).toHaveLength(1);
+  });
+
+  it('serializes upsertManagedNetworkByIdentity against findOrCreateManagedNetworkByName for the same name', async () => {
+    const prisma = makeRacyManagedNetworkPrisma();
+    const name = 'shared-net';
+
+    await Promise.all([
+      upsertManagedNetworkByIdentity(prisma, { scope: 'stack', environmentId: 'env-1', stackId: 'stack-1', purpose: 'default' }, name),
+      findOrCreateManagedNetworkByName(prisma, name, { scope: 'host', environmentId: null, stackId: null, purpose: name }),
+    ]);
+
+    expect(prisma._rows).toHaveLength(1);
+  });
+});
+
 describe('resolveMembershipTarget', () => {
   it('resolves to stackServiceId for a managed service type', () => {
     expect(resolveMembershipTarget({ id: 'svc-1', serviceType: 'Stateful' })).toEqual({

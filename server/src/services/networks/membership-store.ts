@@ -22,10 +22,45 @@
  *   Postgres does. Every helper here uses an explicit `findFirst` +
  *   `create`/`update` instead (mirrors the same pattern already used for
  *   `InfraResource` in `stack-infra-resource-manager.ts`).
+ *
+ * ## Concurrency: `findFirst`-then-`create` is not itself race-free
+ *
+ * The `name`-unique constraint on `ManagedNetwork` (and, for
+ * `NetworkMembership`, the NULL-distinct compound index above) can't be
+ * relied on to reject a concurrent duplicate — for `NetworkMembership` in
+ * particular, two rows sharing the same `(networkId, stackServiceId,
+ * containerName: null)` never collide at the DB level under SQLite, so a
+ * naive concurrent `create` genuinely produces a duplicate row rather than
+ * throwing. A bare `prisma.$transaction()` would not close this either:
+ * SQLite's default isolation still lets two concurrent transactions each
+ * run `findFirst` and observe "no row yet" before either reaches `create`.
+ * The fix used here is process-level serialization — an in-process
+ * {@link KeyedMutex} (`../../lib/keyed-mutex.ts`) wraps every find-then-write
+ * below, keyed on the same identity the row is looked up by, so two
+ * concurrent calls for the *same* network/membership always run their
+ * find-then-write one at a time (calls for different keys still run fully
+ * in parallel). This only protects a single server process — fine here,
+ * since Mini Infra runs as one process against one Docker host.
  */
 import type { Logger } from 'pino';
 import type { PrismaClient, Prisma } from '../../generated/prisma/client';
 import type { AdoptedContainerRef, StackContainerConfig } from '@mini-infra/types';
+import { KeyedMutex } from '../../lib/keyed-mutex';
+
+/**
+ * Serializes the find-then-write section of {@link upsertManagedNetworkByIdentity}
+ * and {@link findOrCreateManagedNetworkByName}, keyed on the `ManagedNetwork`
+ * row's `name` (its one DB-enforced-unique identity) — see the module doc
+ * above.
+ */
+const managedNetworkMutex = new KeyedMutex();
+
+/**
+ * Serializes the find-then-write section of {@link upsertNetworkMembership},
+ * keyed on `(networkId, stackServiceId, containerName)` — the row's intended
+ * (but, per the module doc above, not DB-enforced under SQLite) identity.
+ */
+const membershipMutex = new KeyedMutex();
 
 /** Provenance values a `NetworkMembership` row can carry (Phase 5 schema). */
 export type NetworkMembershipSource = 'template' | 'user' | 'egress' | 'haproxy' | 'system';
@@ -72,26 +107,33 @@ export async function upsertManagedNetworkByIdentity(
   const environmentId = identity.environmentId ?? null;
   const stackId = identity.stackId ?? null;
 
-  const existing = await prisma.managedNetwork.findFirst({
-    where: { scope: identity.scope, environmentId, stackId, purpose: identity.purpose },
-    select: { id: true },
-  });
-  if (existing) return existing;
+  // `name` is the row's true, DB-enforced-unique identity — the same key
+  // `findOrCreateManagedNetworkByName` locks on below — so two calls racing
+  // to create the exact same network (whether both guessing by identity, or
+  // one guessing by identity and one by name) are serialized against each
+  // other, not just against other calls to this same function.
+  return managedNetworkMutex.runExclusive(`name:${name}`, async () => {
+    const existing = await prisma.managedNetwork.findFirst({
+      where: { scope: identity.scope, environmentId, stackId, purpose: identity.purpose },
+      select: { id: true },
+    });
+    if (existing) return existing;
 
-  const byName = await prisma.managedNetwork.findUnique({ where: { name }, select: { id: true } });
-  if (byName) return byName;
+    const byName = await prisma.managedNetwork.findUnique({ where: { name }, select: { id: true } });
+    if (byName) return byName;
 
-  return prisma.managedNetwork.create({
-    data: {
-      scope: identity.scope,
-      environmentId,
-      stackId,
-      purpose: identity.purpose,
-      name,
-      ...(extra?.driver ? { driver: extra.driver } : {}),
-      ...(extra?.options ? { options: extra.options as Prisma.InputJsonValue } : {}),
-    },
-    select: { id: true },
+    return prisma.managedNetwork.create({
+      data: {
+        scope: identity.scope,
+        environmentId,
+        stackId,
+        purpose: identity.purpose,
+        name,
+        ...(extra?.driver ? { driver: extra.driver } : {}),
+        ...(extra?.options ? { options: extra.options as Prisma.InputJsonValue } : {}),
+      },
+      select: { id: true },
+    });
   });
 }
 
@@ -112,18 +154,25 @@ export async function findOrCreateManagedNetworkByName(
   name: string,
   fallbackIdentity: NetworkIdentity,
 ): Promise<ManagedNetworkRef> {
-  const existing = await prisma.managedNetwork.findUnique({ where: { name }, select: { id: true } });
-  if (existing) return existing;
+  // Same lock, same key namespace as `upsertManagedNetworkByIdentity` above
+  // — both functions ultimately find-or-create the same `ManagedNetwork`
+  // table by `name`, so they must serialize against EACH OTHER, not just
+  // against same-function calls, or two producers racing on the identical
+  // consumer/owner pair for one network could still both `create`.
+  return managedNetworkMutex.runExclusive(`name:${name}`, async () => {
+    const existing = await prisma.managedNetwork.findUnique({ where: { name }, select: { id: true } });
+    if (existing) return existing;
 
-  return prisma.managedNetwork.create({
-    data: {
-      scope: fallbackIdentity.scope,
-      environmentId: fallbackIdentity.environmentId ?? null,
-      stackId: fallbackIdentity.stackId ?? null,
-      purpose: fallbackIdentity.purpose,
-      name,
-    },
-    select: { id: true },
+    return prisma.managedNetwork.create({
+      data: {
+        scope: fallbackIdentity.scope,
+        environmentId: fallbackIdentity.environmentId ?? null,
+        stackId: fallbackIdentity.stackId ?? null,
+        purpose: fallbackIdentity.purpose,
+        name,
+      },
+      select: { id: true },
+    });
   });
 }
 
@@ -162,33 +211,42 @@ export async function upsertNetworkMembership(
     throw new Error('upsertNetworkMembership requires exactly one of stackServiceId/containerName, not both');
   }
 
-  const existing = await prisma.networkMembership.findFirst({
-    where: { networkId: input.networkId, stackServiceId, containerName },
-    select: { id: true },
-  });
+  // Keyed on the row's intended identity — the exact tuple the compound
+  // unique index is meant to enforce, but (per the module doc above) can't
+  // under SQLite once one of these two columns is NULL. Serializing here is
+  // what actually prevents the duplicate, not the DB constraint.
+  return membershipMutex.runExclusive(
+    `${input.networkId}:${stackServiceId ?? ''}:${containerName ?? ''}`,
+    async () => {
+      const existing = await prisma.networkMembership.findFirst({
+        where: { networkId: input.networkId, stackServiceId, containerName },
+        select: { id: true },
+      });
 
-  if (existing) {
-    const data: Prisma.NetworkMembershipUpdateInput = {};
-    if (input.aliases !== undefined) data.aliases = input.aliases as unknown as Prisma.InputJsonValue;
-    if (input.staticIp !== undefined) data.staticIp = input.staticIp;
-    if (Object.keys(data).length > 0) {
-      await prisma.networkMembership.update({ where: { id: existing.id }, data });
-    }
-    return { created: false };
-  }
+      if (existing) {
+        const data: Prisma.NetworkMembershipUpdateInput = {};
+        if (input.aliases !== undefined) data.aliases = input.aliases as unknown as Prisma.InputJsonValue;
+        if (input.staticIp !== undefined) data.staticIp = input.staticIp;
+        if (Object.keys(data).length > 0) {
+          await prisma.networkMembership.update({ where: { id: existing.id }, data });
+        }
+        return { created: false };
+      }
 
-  await prisma.networkMembership.create({
-    data: {
-      networkId: input.networkId,
-      stackServiceId,
-      containerName,
-      aliases: input.aliases ? (input.aliases as unknown as Prisma.InputJsonValue) : undefined,
-      staticIp: input.staticIp,
-      source: input.source,
-      createdBy: input.createdBy ?? null,
+      await prisma.networkMembership.create({
+        data: {
+          networkId: input.networkId,
+          stackServiceId,
+          containerName,
+          aliases: input.aliases ? (input.aliases as unknown as Prisma.InputJsonValue) : undefined,
+          staticIp: input.staticIp,
+          source: input.source,
+          createdBy: input.createdBy ?? null,
+        },
+      });
+      return { created: true };
     },
-  });
-  return { created: true };
+  );
 }
 
 /** A service's shape as needed to resolve a membership target and compile its declared network requirements. */

@@ -468,8 +468,14 @@ export class EnvironmentManager {
       // row also doubles as the name-derived fallback for networks created
       // before this module started stamping `mini-infra.*` ownership labels
       // (labels are immutable after creation — see plan §4).
+      //
+      // `type: 'docker-network'` (fixes PR #479 review M4): `InfraResource.type`
+      // is documented as "docker-network initially, extensible" — without
+      // this filter, `ownedResources` (and therefore `nameFallbackCandidates`
+      // below) would silently start including any future non-network
+      // resource type by name, making it a candidate for network removal.
       const ownedResources = await this.prisma.infraResource.findMany({
-        where: { environmentId: id },
+        where: { environmentId: id, type: 'docker-network' },
         select: { id: true, name: true },
       });
 

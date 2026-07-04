@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconNetwork, IconChevronRight } from "@tabler/icons-react";
-import type { ManagedNetworkView } from "@mini-infra/types";
+import type { ManagedNetworkView, StackServiceInfo } from "@mini-infra/types";
 import { useManagedNetworks } from "@/hooks/use-networks";
 import { ManagedNetworkDetailSheet } from "@/components/networks/managed-network-detail-sheet";
 import {
@@ -19,6 +19,17 @@ import { membershipTargetLabel } from "@/components/networks/managed-network-hel
 
 interface ConnectedNetworksCardProps {
   stackId: string | undefined;
+  /**
+   * This application's own stack services — needed to identify which
+   * membership row on a SHARED network (one this app merely joins, not
+   * owns — egress, applications, resource networks, ...) is actually this
+   * app's own, versus some OTHER stack's/service's row that happens to
+   * share the network. Only `id`/`adoptedContainer` are read. Optional:
+   * omitting it just means an AdoptedWeb app's own row on a shared network
+   * can't be identified (see `findOwnMembership` below), same as before
+   * this prop existed.
+   */
+  services?: Pick<StackServiceInfo, "id" | "adoptedContainer">[];
 }
 
 /**
@@ -33,7 +44,7 @@ interface ConnectedNetworksCardProps {
  * stack network at minimum — but mirrors `ConnectCard`'s "no data, no card"
  * convention for an undeployed app).
  */
-export function ConnectedNetworksCard({ stackId }: ConnectedNetworksCardProps) {
+export function ConnectedNetworksCard({ stackId, services }: ConnectedNetworksCardProps) {
   const { data, isLoading, error } = useManagedNetworks(
     { stackId },
     { enabled: !!stackId },
@@ -70,17 +81,38 @@ export function ConnectedNetworksCard({ stackId }: ConnectedNetworksCardProps) {
 
   if (error || networks.length === 0) return null;
 
+  // An AdoptedWeb service's own membership row is keyed by `containerName`
+  // (its externally-managed container was never created with mini-infra's
+  // service labels, so the server can't resolve a `stackServiceId`/`stackId`
+  // for it — see `resolveMembershipTarget` in
+  // `server/src/services/networks/membership-store.ts`). Collecting this
+  // app's own adopted container names here is what lets `findOwnMembership`
+  // below recognize such a row as this app's own on a SHARED network,
+  // rather than mis-picking an unrelated stack's row (PR #479 review M2).
+  const ownContainerNames = new Set(
+    (services ?? [])
+      .map((s) => s.adoptedContainer?.containerName)
+      .filter((name): name is string => Boolean(name)),
+  );
+
   // This app's own membership on each network — not just any membership,
   // since a shared network (egress, applications, ...) also carries other
   // stacks'/services' rows. `useManagedNetworks({ stackId })` already
   // resolved "does this stack own or join this network" server-side
   // (`resolveStackScopedNetworks`); a stack-owned network is private by
   // construction (every row on it is this stack's own), while a shared one
-  // is filtered here by the membership's own resolved `stackId`.
+  // is matched here by the membership's own resolved `stackId` (managed
+  // services) or, for an adopted container, by its `containerName` (never
+  // `stackId` — see `ownContainerNames` above). If neither matches, this
+  // app's own row genuinely isn't identifiable from the data given —
+  // `undefined` renders the network with no source/creator badge rather
+  // than borrowing an unrelated membership's provenance.
   const findOwnMembership = (network: ManagedNetworkView) =>
-    (network.scope === "stack"
+    network.scope === "stack"
       ? network.memberships[0]
-      : network.memberships.find((m) => m.stackId === stackId)) ?? network.memberships[0];
+      : network.memberships.find(
+          (m) => m.stackId === stackId || (m.containerName != null && ownContainerNames.has(m.containerName)),
+        );
 
   return (
     <Card data-tour="connected-networks-card">

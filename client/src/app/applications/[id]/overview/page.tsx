@@ -171,7 +171,12 @@ export default function ApplicationOverviewTab() {
         />
       )}
 
-      {hasStacks && <ConnectedNetworksCard stackId={primaryStack?.id} />}
+      {hasStacks && (
+        <ConnectedNetworksCard
+          stackId={primaryStack?.id}
+          services={primaryStack?.services}
+        />
+      )}
 
       {!hasStacks && (
         <Card>
