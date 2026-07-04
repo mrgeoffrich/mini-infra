@@ -2,6 +2,8 @@
 // Stack Types
 // ====================
 
+import type { NetworkDriftItem } from './docker';
+
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
 export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
@@ -750,6 +752,16 @@ export interface StackPlan {
   planTime: string;
   actions: ServiceAction[];
   resourceActions: ResourceAction[];
+  /**
+   * Network overhaul Phase 7 — drift between this stack's desired-state
+   * `ManagedNetwork`/`NetworkMembership` rows and live Docker network state
+   * (missing networks, unattached services, stale attachments, spec
+   * mismatches). Always present (empty when networks are in sync), mirroring
+   * `resourceActions`. Computed by `NetworkReconciler` — see
+   * `services/networks/network-reconciler.ts`. Folds into `hasChanges`
+   * exactly like `actions`/`resourceActions` do.
+   */
+  networkActions: NetworkDriftItem[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
   warnings?: PlanWarning[];

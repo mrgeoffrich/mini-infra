@@ -222,6 +222,10 @@ export const ApiRoute = {
     network: (id: string): string => `${ApiBase.docker}/networks/${id}`,
     /** POST /api/docker/networks/gc */
     networksGc: (): string => `${ApiBase.docker}/networks/gc`,
+    /** POST /api/docker/networks/backfill-memberships */
+    networksBackfillMemberships: (): string => `${ApiBase.docker}/networks/backfill-memberships`,
+    /** GET /api/docker/networks/reconcile */
+    networksReconcile: (): string => `${ApiBase.docker}/networks/reconcile`,
     /** GET /api/docker/volumes */
     volumes: (): string => `${ApiBase.docker}/volumes`,
     /** DELETE /api/docker/volumes/:name */

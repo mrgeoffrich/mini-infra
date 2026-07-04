@@ -109,6 +109,113 @@ export interface NetworkMembershipBackfillResponse {
 }
 
 // ====================
+// Network Reconciler Types (network overhaul Phase 7 — dry-run diff)
+// ====================
+
+/**
+ * Diff between an existing Docker network's driver/labels/options and the
+ * desired spec computed from its `ManagedNetwork` row. Shared between
+ * `NetworkManager` (which only *logs* a mismatch — see `ensure()`) and the
+ * Phase 7 `NetworkReconciler` (which *reports* it as a `spec-mismatch` drift
+ * item) so both consumers agree on exactly one mismatch shape.
+ */
+export interface NetworkSpecMismatch {
+  driver?: { expected: string; actual: string };
+  labels?: {
+    expected: Record<string, string>;
+    actual: Record<string, string>;
+    missing: string[];
+    changed: string[];
+  };
+  options?: { expected: Record<string, string>; actual: Record<string, string> };
+}
+
+export type NetworkDriftItemType = 'network-missing' | 'membership-missing' | 'membership-stale' | 'spec-mismatch';
+
+/** Which desired-state row a `membership-missing`/`membership-stale` item concerns. */
+export interface NetworkDriftTarget {
+  /** Set when resolved via a `NetworkMembership.stackServiceId` row. */
+  stackServiceId?: string;
+  /** The service's own name, resolved for display — the row itself only stores the id. */
+  serviceName?: string;
+  /** Set when resolved via a `NetworkMembership.containerName` row (adopted/external container, or the `'self'` sentinel). */
+  containerName?: string;
+}
+
+export interface NetworkDriftContainerRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * One unit of network drift, as produced by the Phase 7 `NetworkReconciler`
+ * and consumed by the stack plan computer (`StackPlan.networkActions`) and,
+ * later, by Phase 8 (enforcement) and Phase 9 (the networks visibility UI).
+ * Never implies a mutation was made — Phase 7 is report-only.
+ */
+export interface NetworkDriftItem {
+  type: NetworkDriftItemType;
+  /** Docker network name. */
+  networkName: string;
+  purpose: string;
+  scope: 'host' | 'environment' | 'stack';
+  /** `ManagedNetwork.id` this item concerns. */
+  managedNetworkId: string;
+  /** Set for `membership-missing`/`membership-stale`. */
+  target?: NetworkDriftTarget;
+  /**
+   * For `membership-missing`: the live container(s) that should be attached
+   * but aren't. For `membership-stale`: the one unexpectedly-attached
+   * container. Always contains real Docker container ids/names — never a
+   * container that only exists as a desired-state row.
+   */
+  containers?: NetworkDriftContainerRef[];
+  /** Set for `spec-mismatch`. */
+  mismatch?: NetworkSpecMismatch;
+  message: string;
+}
+
+/**
+ * A live container attached to a `mini-infra.managed=true` network with no
+ * matching desired-state row — but one the reconciler is NOT confident
+ * enough to call `membership-stale` (see `NetworkReconciler`'s conservative
+ * rule doc comment). Purely informational: never counted in
+ * `NetworkReconcileReport.items`, never folds into `StackPlan.hasChanges`,
+ * and must never be treated as an input to a future Phase 8 disconnect.
+ */
+export interface NetworkUnmanagedAttachmentNote {
+  networkName: string;
+  containerId: string;
+  containerName: string;
+  reason: string;
+}
+
+export type NetworkReconcileScopeKind = 'stack' | 'environment' | 'all';
+
+export interface NetworkReconcileScope {
+  kind: NetworkReconcileScopeKind;
+  /** Set when `kind === 'stack'`. */
+  stackId?: string;
+  /** Set when `kind === 'environment'`. */
+  environmentId?: string;
+}
+
+export interface NetworkReconcileReport {
+  scope: NetworkReconcileScope;
+  ranAt: string; // ISO string for JSON serialization
+  networksChecked: number;
+  membershipsChecked: number;
+  items: NetworkDriftItem[];
+  notes: NetworkUnmanagedAttachmentNote[];
+}
+
+export interface NetworkReconcileResponse {
+  success: boolean;
+  data: NetworkReconcileReport;
+  message?: string;
+}
+
+// ====================
 // Docker Volume Types
 // ====================
 

@@ -4,16 +4,26 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, Permission } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
-import { createNetworkManager, runNetworkGc, backfillNetworkMemberships } from "../services/networks";
+import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll } from "../services/networks";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
 
 const networkGcRequestSchema = z.object({
   dryRun: z.boolean().optional(),
+});
+
+const networkReconcileQuerySchema = z.object({
+  scope: z.enum(["stack", "environment", "all"]).default("all"),
+  stackId: z.string().optional(),
+  environmentId: z.string().optional(),
+}).refine((v) => v.scope !== "stack" || Boolean(v.stackId), {
+  message: "stackId is required when scope=stack",
+}).refine((v) => v.scope !== "environment" || Boolean(v.environmentId), {
+  message: "environmentId is required when scope=environment",
 });
 
 /**
@@ -249,6 +259,75 @@ router.post(
       res.json(response);
     } catch (error) {
       logger.error({ error }, "Network membership backfill run failed");
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/docker/networks/reconcile
+ * Network overhaul Phase 7 — dry-run diff between desired-state
+ * `ManagedNetwork`/`NetworkMembership` rows and live Docker state. Report-only:
+ * never connects/disconnects/creates/removes anything (that's Phase 8). This
+ * is the same drift computation the stack plan endpoint
+ * (`GET /:stackId/plan`) folds into `StackPlan.networkActions` for a single
+ * stack — exposed here standalone so an operator (or the Phase 9 UI) can
+ * check environment/host-scoped networks too, which no stack's plan covers.
+ * Admin-gated like the GC/backfill endpoints above, even though it's
+ * read-only, for consistency with this subsystem's other diagnostic/admin
+ * surface.
+ */
+router.get(
+  "/networks/reconcile",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = networkReconcileQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid query parameters",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+      const deps = { prisma, networkManager, dockerExecutor: executor, log: logger };
+
+      const { scope, stackId, environmentId } = parsed.data;
+      const report =
+        scope === "stack"
+          ? await reconcileStack(stackId!, deps)
+          : scope === "environment"
+            ? await reconcileEnvironment(environmentId!, deps)
+            : await reconcileAll(deps);
+
+      logger.info(
+        {
+          scope,
+          networksChecked: report.networksChecked,
+          membershipsChecked: report.membershipsChecked,
+          itemCount: report.items.length,
+          noteCount: report.notes.length,
+        },
+        "Network reconcile run via admin endpoint",
+      );
+
+      const response: NetworkReconcileResponse = { success: true, data: report };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Network reconcile run failed");
       next(error);
     }
   }

@@ -119,6 +119,81 @@ describe('NetworkManager', () => {
     });
   });
 
+  describe('inspectForReconcile', () => {
+    it('returns "absent" on a 404, with no other fields set', async () => {
+      const docker = makeMockDocker({ net1: makeNetworkHandle({ inspect: vi.fn().mockRejectedValue(dockerError(404)) }) });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspectForReconcile('net1', { owner: { kind: 'stack', id: 'stack-1' } });
+
+      expect(result).toEqual({ existence: 'absent' });
+    });
+
+    it('returns "unknown" (never "absent") on a non-404 error — a daemon outage must not be treated as missing', async () => {
+      const docker = makeMockDocker({ net1: makeNetworkHandle({ inspect: vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) }) });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspectForReconcile('net1', { owner: { kind: 'stack', id: 'stack-1' } });
+
+      expect(result).toEqual({ existence: 'unknown' });
+    });
+
+    it('reports connected containers with their names (no extra per-container lookup needed) and no mismatch when the spec matches', async () => {
+      const docker = makeMockDocker({
+        net1: makeNetworkHandle({
+          inspect: vi.fn().mockResolvedValue({
+            Name: 'net1',
+            Id: 'net-id-1',
+            Driver: 'bridge',
+            Labels: { 'mini-infra.managed': 'true', 'mini-infra.owner-kind': 'stack', 'mini-infra.owner-id': 'stack-1', 'mini-infra.purpose': '_stack' },
+            Options: {},
+            IPAM: { Config: [{ Subnet: '172.30.0.0/24' }] },
+            Containers: { c1: { Name: 'app-1' }, c2: { Name: 'app-2' } },
+          }),
+        }),
+      });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspectForReconcile('net1', { owner: { kind: 'stack', id: 'stack-1' }, purpose: '_stack' });
+
+      expect(result).toEqual({
+        existence: 'present',
+        dockerId: 'net-id-1',
+        subnet: '172.30.0.0/24',
+        connectedContainers: [{ id: 'c1', name: 'app-1' }, { id: 'c2', name: 'app-2' }],
+        mismatch: undefined,
+      });
+    });
+
+    it('falls back to the container id as the name when Docker omits it', async () => {
+      const docker = makeMockDocker({
+        net1: makeNetworkHandle({
+          inspect: vi.fn().mockResolvedValue({ Name: 'net1', Containers: { c1: {} } }),
+        }),
+      });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspectForReconcile('net1', { owner: { kind: 'host' } });
+
+      expect(result.connectedContainers).toEqual([{ id: 'c1', name: 'c1' }]);
+    });
+
+    it('reports a mismatch (using the same detection ensure() uses) without ever calling createNetwork/connect/remove', async () => {
+      const docker = makeMockDocker({
+        net1: makeNetworkHandle({
+          inspect: vi.fn().mockResolvedValue({ Name: 'net1', Driver: 'host', Labels: {}, Options: {}, Containers: {} }),
+        }),
+      });
+      const manager = makeManager(docker);
+
+      const result = await manager.inspectForReconcile('net1', { owner: { kind: 'stack', id: 'stack-1' }, driver: 'bridge' });
+
+      expect(result.existence).toBe('present');
+      expect(result.mismatch?.driver).toEqual({ expected: 'bridge', actual: 'host' });
+      expect(docker.createNetwork).not.toHaveBeenCalled();
+    });
+  });
+
   describe('ensure', () => {
     it('creates the network with the standard mini-infra.* labels when absent', async () => {
       const docker = makeMockDocker();

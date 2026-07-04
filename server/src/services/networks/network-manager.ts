@@ -1,4 +1,5 @@
 import type Docker from 'dockerode';
+import type { NetworkSpecMismatch } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
 import type { DockerExecutorService } from '../docker-executor';
 
@@ -29,17 +30,6 @@ export interface EnsureNetworkSpec {
   options?: Record<string, unknown>;
   /** Additional labels to stamp alongside the standard `mini-infra.*` ownership labels — e.g. the legacy `mini-infra.stack` / `mini-infra.stack-id` labels stack-owned networks have carried since before this module existed. */
   extraLabels?: Record<string, string>;
-}
-
-export interface NetworkSpecMismatch {
-  driver?: { expected: string; actual: string };
-  labels?: {
-    expected: Record<string, string>;
-    actual: Record<string, string>;
-    missing: string[];
-    changed: string[];
-  };
-  options?: { expected: Record<string, string>; actual: Record<string, string> };
 }
 
 export interface EnsureNetworkResult {
@@ -86,6 +76,32 @@ export interface NetworkInspectResult {
   ipam?: NetworkIpamConfig;
   /** Container IDs currently attached, per Docker's live inspect. */
   connectedContainerIds: string[];
+}
+
+/** The desired spec a `ManagedNetwork` row represents, for {@link NetworkManager.inspectForReconcile}. */
+export interface ReconcileNetworkSpec {
+  owner: NetworkOwner;
+  purpose?: string;
+  driver?: string;
+  options?: Record<string, unknown> | null;
+}
+
+/** `{id, name}` for a container Docker currently reports as attached to a network — the network-inspect payload carries the name for free, so callers never need a per-container lookup just to display one. */
+export interface ReconcileConnectedContainer {
+  id: string;
+  name: string;
+}
+
+export interface NetworkReconcileInspectResult {
+  existence: NetworkExistence;
+  /** Docker network id — set only when `existence === 'present'`. */
+  dockerId?: string;
+  /** Live IPAM subnet Docker assigned — set only when `existence === 'present'`. */
+  subnet?: string;
+  /** Every container Docker currently reports as attached — set only when `existence === 'present'`. */
+  connectedContainers?: ReconcileConnectedContainer[];
+  /** Set when the network exists but its driver/labels/options don't match `spec`. Never triggers a mutation — read-only, mirrors (but never calls) {@link NetworkManager.ensure}'s own mismatch detection. */
+  mismatch?: NetworkSpecMismatch;
 }
 
 export interface RemoveByOwnerOptions extends RemoveNetworkOptions {
@@ -296,6 +312,54 @@ export class NetworkManager {
       );
       throw err;
     }
+  }
+
+  /**
+   * Read-only counterpart to {@link ensure} for the Phase 7 `NetworkReconciler`
+   * (`network-reconciler.ts`): reports tri-state existence, connected
+   * containers (with names, so callers never need a per-container lookup
+   * just to display one), and a spec mismatch — using the exact same
+   * {@link detectMismatch} logic `ensure()` uses internally — but **never
+   * creates, recreates, or otherwise mutates anything**. Phase 7 is
+   * report-only by design; this method is what makes that possible without
+   * duplicating `ensure()`'s mismatch-detection logic.
+   *
+   * `existence: 'unknown'` (Docker unreachable) omits every other field —
+   * callers must not report drift they couldn't actually confirm (the same
+   * F3 tri-state contract as {@link exists}/{@link inspect}).
+   */
+  async inspectForReconcile(name: string, spec: ReconcileNetworkSpec): Promise<NetworkReconcileInspectResult> {
+    let inspectInfo: Docker.NetworkInspectInfo;
+    try {
+      inspectInfo = await this.docker.getNetwork(name).inspect();
+    } catch (err) {
+      const statusCode = statusCodeOf(err);
+      if (statusCode === 404) return { existence: 'absent' };
+      logger.warn(
+        { name, statusCode, error: err instanceof Error ? err.message : String(err) },
+        'Unable to inspect network for reconciliation — Docker may be unreachable; treating as unknown',
+      );
+      return { existence: 'unknown' };
+    }
+
+    const driver = spec.driver ?? 'bridge';
+    const labels = ownerLabels(spec.owner, spec.purpose);
+    const options = normalizeOptions(spec.options ?? undefined);
+    const mismatch = detectMismatch(inspectInfo, { driver, labels, options });
+
+    const ipamCfg = inspectInfo.IPAM?.Config?.[0];
+    const containersDict = inspectInfo.Containers ?? {};
+    const connectedContainers: ReconcileConnectedContainer[] = Object.entries(containersDict).map(
+      ([id, info]) => ({ id, name: (info as { Name?: string } | undefined)?.Name ?? id }),
+    );
+
+    return {
+      existence: 'present',
+      dockerId: inspectInfo.Id,
+      subnet: ipamCfg?.Subnet,
+      connectedContainers,
+      mismatch,
+    };
   }
 
   /**
