@@ -282,16 +282,17 @@ export class StackServiceHandlers {
           };
         }
 
-        const { haproxyCtx, haproxyClient } = await getInitializedHAProxyClient(this.routingManager!, stack.environmentId!);
+        const { haproxyClient } = await getInitializedHAProxyClient(this.routingManager!, stack.environmentId!);
 
-        // Attach every network this AdoptedWeb target needs — the mandatory
-        // HAProxy dataplane network, declared external `joinNetworks` (e.g. a
-        // database it needs to reach), `joinResourceNetworks`, and the
+        // Attach every network this AdoptedWeb target needs — declared external
+        // `joinNetworks` (e.g. a database it needs to reach), the
+        // `joinResourceNetworks` (which include the `applications` network the
+        // apply-time invariant guarantees for HAProxy-routed services), and the
         // per-env egress network — through the same shared pipeline the
-        // static-service create/recreate paths use. Replaces a bespoke
-        // "already attached?" pre-check plus its own connect/
-        // joinResourceNetworks/joinNetworks loops; `NetworkManager.connect`
-        // is idempotent by inspection so the pre-check is redundant.
+        // static-service create/recreate paths use. The HAProxy `applications`
+        // network is no longer passed as an imperative `extraJoinNetworks`; it
+        // arrives declaratively via `joinResourceNetworks` like any other
+        // network. `NetworkManager.connect` is idempotent by inspection.
         await attachServiceNetworks(target.Id, action.serviceName, serviceDef, {
           networkManager: this.networkManager,
           containerManager: this.containerManager,
@@ -300,7 +301,6 @@ export class StackServiceHandlers {
           infraNetworkMap,
           environmentId: stack.environmentId,
           log,
-          extraJoinNetworks: [haproxyCtx.haproxyNetworkName],
         });
 
         const routingCtx: StackRoutingContext = {

@@ -51,6 +51,7 @@ import {
   compileStackNetworkMemberships,
   buildMembershipServiceInputs,
   convergeStack,
+  ensureApplicationsMembership,
   type NetworkManager,
 } from '../networks';
 import { recordEgressNetworkMemberships } from './egress-injection';
@@ -176,7 +177,7 @@ export class StackReconciler {
 
       // Build maps for service definitions, hashes, and resolved configs
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(
+      const { resolvedConfigsMap, resolvedDefinitions: resolvedServiceDefinitions, serviceHashes } = await resolveServiceConfigs(
         stack.services,
         templateContext,
         {
@@ -191,9 +192,18 @@ export class StackReconciler {
         },
       );
 
+      // Apply-time invariant (network overhaul): HAProxy-routed services must
+      // declare membership of the environment's `applications` network. Inject
+      // it here — before resolveInputs and the handler dispatch below — so the
+      // deploy path attaches networks purely from the declared membership
+      // rather than force-attaching the HAProxy network imperatively.
+      const { resourceInputs, resolvedDefinitions } = ensureApplicationsMembership(stack.environmentId, {
+        resourceInputs: (stack.resourceInputs as unknown as StackResourceInput[]) ?? [],
+        resolvedDefinitions: resolvedServiceDefinitions,
+      });
+
       // 5a-i. Reconcile infra resource outputs (creates Docker networks + InfraResource records)
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
-      const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
       const outputNetworkMap = await this.infraManager.reconcileOutputs(stack, resourceOutputs, log);
 
       // 5a-ii. Resolve infra resource inputs from other stacks
@@ -431,7 +441,10 @@ export class StackReconciler {
         data: {
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedDefinitions),
+          // Snapshot the *authored* (pre-invariant) definitions: the injected
+          // `applications` join is derived at apply time and must not enter the
+          // definition hash, or drift detection would perpetually recreate.
+          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
           // Track the AppRole binding that was in effect on this apply so the
           // credential injector can detect binding changes on future re-applies.
           ...(allSucceeded
@@ -567,11 +580,17 @@ export class StackReconciler {
       );
       const templateContext = buildStackTemplateContext(stack, params);
       const serviceMap = new Map(stack.services.map((s) => [s.serviceName, s]));
-      const { resolvedConfigsMap, resolvedDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
+      const { resolvedConfigsMap, resolvedDefinitions: resolvedServiceDefinitions, serviceHashes } = await resolveServiceConfigs(stack.services, templateContext);
+
+      // Apply-time invariant — see the create path above. Ensures HAProxy-routed
+      // services declare the environment's `applications` network membership.
+      const { resourceInputs, resolvedDefinitions } = ensureApplicationsMembership(stack.environmentId, {
+        resourceInputs: (stack.resourceInputs as unknown as StackResourceInput[]) ?? [],
+        resolvedDefinitions: resolvedServiceDefinitions,
+      });
 
       // Reconcile infra resource outputs and inputs
       const resourceOutputs = (stack.resourceOutputs as unknown as StackResourceOutput[]) ?? [];
-      const resourceInputs = (stack.resourceInputs as unknown as StackResourceInput[]) ?? [];
       const outputNetworkMap = await this.infraManager.reconcileOutputs(stack, resourceOutputs, log);
       const inputNetworkMap = await this.infraManager.resolveInputs(stack.environmentId, resourceInputs, log);
       const infraNetworkMap = new Map([...outputNetworkMap, ...inputNetworkMap]);
@@ -684,7 +703,10 @@ export class StackReconciler {
           status: resultStatus,
           lastAppliedVersion: stack.version,
           lastAppliedAt: new Date(),
-          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedDefinitions),
+          // Snapshot the *authored* (pre-invariant) definitions: the injected
+          // `applications` join is derived at apply time and must not enter the
+          // definition hash, or drift detection would perpetually recreate.
+          lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
           ...(allSucceeded
             ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null, lastFailureReason: null }
             // Same surfacing as in `apply` above — see that branch for context.

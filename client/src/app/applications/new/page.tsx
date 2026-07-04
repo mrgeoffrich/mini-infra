@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   createApplicationFormSchema,
   createApplicationDefaults,
+  applicationsNetworkDeclaration,
   type CreateApplicationFormData,
 } from "@/lib/application-schemas";
 
@@ -185,10 +186,12 @@ export default function NewApplicationPage() {
           }
         : undefined;
 
-    const resourceInputs =
-      data.serviceType === "StatelessWeb"
-        ? [{ type: "docker-network", purpose: "applications" }]
-        : undefined;
+    // HAProxy-routed services (StatelessWeb) must join the environment's
+    // `applications` network so HAProxy can reach the backend. Declared as a
+    // stack resource input + a service-level joinResourceNetworks membership.
+    const { resourceInputs, joinResourceNetworks } = applicationsNetworkDeclaration(
+      data.serviceType as StackServiceType,
+    );
 
     // Networks the app must join to reach linked containers (e.g. a database).
     const joinNetworks = Array.from(
@@ -216,6 +219,7 @@ export default function NewApplicationPage() {
               ports: ports.length > 0 ? ports : undefined,
               mounts: mounts.length > 0 ? mounts : undefined,
               joinNetworks: joinNetworks.length > 0 ? joinNetworks : undefined,
+              joinResourceNetworks,
               restartPolicy: data.restartPolicy,
               healthcheck,
             },

@@ -91,8 +91,14 @@ export async function buildStateMachineContext(
     }
   }
 
-  // Build networks list including environment networks, stack networks, and joinNetworks
-  const containerNetworks: string[] = [haproxyCtx.haproxyNetworkName];
+  // Build the container's network set purely from the stack's declared
+  // membership: infra-resource networks (which include the `applications`
+  // network — the apply-time invariant guarantees a HAProxy-routed service
+  // declares it as a resource input), stack-owned networks, external
+  // joinNetworks, and the per-env egress network. HAProxy's network is no
+  // longer force-seeded here; it arrives via the declared `applications`
+  // resource input like any other network.
+  const containerNetworks: string[] = [];
   for (const dockerName of infraNetworkMap.values()) {
     if (!containerNetworks.includes(dockerName)) {
       containerNetworks.push(dockerName);

@@ -14,6 +14,7 @@ export * from './network-converger';
 export * from './network-convergence-scheduler';
 export * from './managed-network-listing';
 export * from './unified-network-declarations';
+export * from './applications-membership';
 
 /**
  * Construct a NetworkManager wired to invalidate `DockerService`'s cached

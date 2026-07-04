@@ -10,6 +10,29 @@ export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'P
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
 
+/**
+ * Docker network `purpose` for an environment's HAProxy "applications"
+ * network — the network every HAProxy-routed backend must join so HAProxy can
+ * reach it. Resolves per environment to `<environment>-applications` (see
+ * `resourceNetworkName()` server-side). Declared here so the client authoring
+ * flows and the server-side apply-time invariant agree on the one literal
+ * instead of re-typing `'applications'` in a dozen places.
+ */
+export const APPLICATIONS_NETWORK_PURPOSE = 'applications';
+
+/**
+ * Service types that sit behind HAProxy and therefore must be members of the
+ * environment's `applications` network for traffic to flow. Used by both the
+ * client app-authoring flows (to declare the membership) and the server
+ * reconciler invariant (to guarantee it regardless of authoring surface).
+ */
+export const HAPROXY_ROUTED_SERVICE_TYPES = ['StatelessWeb', 'AdoptedWeb'] as const satisfies readonly StackServiceType[];
+
+/** True when a service type routes through HAProxy (see {@link HAPROXY_ROUTED_SERVICE_TYPES}). */
+export function isHaproxyRoutedServiceType(serviceType: StackServiceType): boolean {
+  return (HAPROXY_ROUTED_SERVICE_TYPES as readonly StackServiceType[]).includes(serviceType);
+}
+
 // Stack parameter types
 
 export const STACK_PARAMETER_TYPES = ['string', 'number', 'boolean'] as const;
