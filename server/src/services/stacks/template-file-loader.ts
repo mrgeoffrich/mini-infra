@@ -7,6 +7,7 @@ import {
   stackInitCommandSchema,
   stackServiceRoutingSchema,
   stackNetworkSchema,
+  stackNetworkEntrySchema,
   stackVolumeSchema,
   stackResourceOutputSchema,
   stackResourceInputSchema,
@@ -14,6 +15,10 @@ import {
   refineAddonsBlock,
   refinePoolAndJobPoolConstraints,
 } from "./schemas";
+import {
+  translateUnifiedNetworkDeclarations,
+  UnifiedNetworkDeclarationError,
+} from "../networks";
 import { productionAddonRegistry } from "../stack-addons/registry";
 import {
   templateInputDeclSchema,
@@ -120,7 +125,7 @@ export const templateFileSchema = z.object({
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
   networkTypeDefaults: z.record(z.string(), z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]))).optional(),
-  networks: z.array(stackNetworkSchema),
+  networks: z.array(stackNetworkEntrySchema),
   volumes: z.array(stackVolumeSchema),
   services: z.array(templateServiceSchema),
   configFiles: z.array(templateConfigFileSchema).optional(),
@@ -400,6 +405,28 @@ export function loadTemplateFromObject(
 
   const data = parsed.data;
 
+  // Phase 10 — translate any unified `networks[]`/per-service `networks[]`
+  // declarations into the legacy shapes (stack-owned `networks[]`,
+  // `resourceOutputs[]`, `containerConfig.joinResourceNetworks`) before this
+  // template's definition is built. Everything below — and every downstream
+  // consumer of `LoadedTemplate.definition` — only ever sees the legacy
+  // shapes. See unified-network-declarations.ts for the translation rules.
+  let translated;
+  try {
+    translated = translateUnifiedNetworkDeclarations({
+      networks: data.networks,
+      resourceOutputs: data.resourceOutputs,
+      resourceInputs: data.resourceInputs,
+      services: data.services,
+    });
+  } catch (err) {
+    if (err instanceof UnifiedNetworkDeclarationError) {
+      throw new TemplateFileError(`Template validation failed: ${err.message}`);
+    }
+    throw err;
+  }
+  const translatedServices = translated.services ?? data.services;
+
   // Resolve config file content
   const resolvedConfigFiles: StackTemplateConfigFileInput[] = [];
   for (const cf of data.configFiles ?? []) {
@@ -450,7 +477,7 @@ export function loadTemplateFromObject(
     configsByService.set(cf.serviceName, list);
   }
 
-  const services = data.services.map((svc) => {
+  const services = translatedServices.map((svc) => {
     const svcConfigs = configsByService.get(svc.serviceName) ?? [];
     return {
       serviceName: svc.serviceName,
@@ -495,10 +522,10 @@ export function loadTemplateFromObject(
       name: data.name,
       description: data.description,
       parameters: data.parameters,
-      resourceOutputs: data.resourceOutputs,
-      resourceInputs: data.resourceInputs,
+      resourceOutputs: translated.resourceOutputs,
+      resourceInputs: translated.resourceInputs,
       networkTypeDefaults: data.networkTypeDefaults,
-      networks: data.networks,
+      networks: translated.networks ?? [],
       volumes: data.volumes,
       services,
     },

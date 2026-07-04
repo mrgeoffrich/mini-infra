@@ -79,6 +79,8 @@ Runtime meaning:
 - Host-scoped outputs become `mini-infra-{purpose}`.
 - Non-`docker-network` outputs are currently ignored at runtime with a warning.
 
+A `docker-network` output can alternatively be declared as a stack-level `networks[]` entry with `scope: environment`/`scope: host` — see [Unified `networks[]` declaration](#unified-networks-declaration-phase-10-optional) below. Both spellings produce the same result; this field keeps working unchanged either way.
+
 ## `resourceInputs[]`
 
 | Field | Required | Meaning | Constraints |
@@ -176,6 +178,44 @@ Runtime meaning:
 
 - Stack-owned Docker networks are created as `${projectName}_${name}`.
 
+## Unified `networks[]` declaration (Phase 10, optional)
+
+Each `networks[]` entry may also use an alternative shape — `{purpose, scope?}` — instead of the legacy `{name, driver?, options?}` shape shown above. Either shape may appear in the same `networks[]` array. A service then joins these purposes with its own `networks: string[]` field (see `services[]` above) instead of `containerConfig.joinNetworks`/`joinResourceNetworks`.
+
+| Field | Required | Meaning | Constraints |
+| --- | --- | --- | --- |
+| `purpose` | Yes | Logical network name. | Non-empty, `a-z`, `A-Z`, `0-9`, `_`, `-` only. |
+| `scope` | No | Where the network lives. | `stack` (default), `environment`, or `host`. |
+
+This is purely an alternative **authoring** surface, not a new runtime concept: it is translated into the exact legacy shapes at template/stack-save time (`server/src/services/networks/unified-network-declarations.ts`), so every stored/resolved stack definition — including everywhere else in this document — only ever contains the legacy shapes below. The legacy fields (`networks[]` with `name`, `resourceOutputs[]`/`resourceInputs[]`, `containerConfig.joinNetworks`/`joinResourceNetworks`) keep working unchanged and are supported indefinitely; the unified shape is optional sugar on top, not a replacement.
+
+Translation rules:
+
+- `scope: stack` (or omitted) → an ordinary stack-owned network, equivalent to a legacy `networks[]` entry (`{name: purpose}`). Every non-host-mode service already joins every stack-owned network automatically (unchanged behavior) — referencing a stack-scope purpose from a service's `networks[]` list is a no-op.
+- `scope: environment` / `scope: host` → equivalent to a `resourceOutputs[]` entry (`{type: 'docker-network', purpose}`). The network's real resulting scope is still governed by whether the *owning* stack itself is environment- or host-scoped, exactly as `resourceOutputs[]` behaves today — `scope` here documents authoring intent, it does not override that.
+
+There is no unified equivalent of `joinNetworks` (joining an arbitrary external Docker network by literal name, not tied to any declared purpose) — use the legacy `containerConfig.joinNetworks` field for that case.
+
+**Mixing rule.** Legacy and unified entries may coexist in the same `networks[]` array, and a unified declaration may sit alongside legacy `resourceOutputs[]`/`resourceInputs[]` — these merge. Two *legacy* entries may still share a `name` (unchanged pre-existing tolerance). A collision between a *unified* declaration and any other declaration of the same name/purpose — a legacy `networks[]` entry, another unified entry, or an existing `resourceOutputs[]` entry — is rejected at template/stack-save time as ambiguous; pick one spelling per network. A service's `networks[]` list may reference a purpose regardless of which style declared it (legacy or unified, `networks[]` or `resourceOutputs`/`resourceInputs`), but requires the *same* request to also include the stack-level `networks[]` array (matters only for partial `PUT /api/stacks/:id` updates that touch `services` without resending `networks`).
+
+Example — equivalent to the `resourceOutputs[]` example above (a stack-owned `default` network plus an environment-scoped `applications` network, with one service joining both):
+
+```yaml
+networks:
+  - purpose: default            # scope defaults to stack
+  - purpose: applications
+    scope: environment           # equivalent to a resourceOutputs[] entry
+services:
+  - serviceName: api
+    serviceType: Stateful
+    dockerImage: my-app
+    dockerTag: latest
+    containerConfig: {}
+    networks: [default, applications]   # replaces joinNetworks/joinResourceNetworks
+    dependsOn: []
+    order: 0
+```
+
 ## `volumes[]`
 
 | Field | Required | Meaning | Constraints |
@@ -230,6 +270,7 @@ Runtime meaning:
 | `routing` | No | HTTP routing configuration. | Required when `serviceType` is `StatelessWeb` or `AdoptedWeb`. |
 | `adoptedContainer` | No | Existing external container to route to. | Required when `serviceType` is `AdoptedWeb`. |
 | `addons` | No | Named capability declarations expanded into synthetic sidecars at apply time. | Map of registered `<addon-id>` to addon-specific config. See `services[].addons` below. |
+| `networks` | No | **Phase 10, optional.** Unified network join list — purposes declared in the stack-level `networks[]` (see [Unified `networks[]` declaration](#unified-networks-declaration-phase-10-optional) below). | Array of non-empty strings. Authoring-time-only: translated into `containerConfig.joinResourceNetworks` (or dropped as a no-op for stack-scope purposes) before the definition is stored — never appears in a resolved/applied service definition. Replaces choosing between `containerConfig.joinNetworks`/`joinResourceNetworks` for purposes declared via `networks[]`. |
 
 Runtime meaning of `serviceType`:
 
@@ -266,6 +307,7 @@ Runtime meaning of egress fields:
 
 - `requiredEgress` entries must match either a plain FQDN (e.g. `api.example.com`) or a wildcard suffix (e.g. `*.example.com`). Each entry is auto-promoted to an `EgressRule` with `source='template'`, scoped to the declaring service. Rules only take effect in environments where `egressFirewallEnabled` is on; otherwise the entries are stored but inert.
 - `egressBypass: true` tells Mini Infra to leave the container's `HostConfig.Dns` alone instead of pointing it at the per-environment egress gateway. Reserve this for sidecar/infra containers that must reach upstream DNS directly (e.g. the egress gateway itself). Most services should leave it unset.
+- `joinResourceNetworks` purposes can alternatively be declared once via the service's own `networks[]` field (see [Unified `networks[]` declaration](#unified-networks-declaration-phase-10-optional)) instead of split across a stack-level `resourceOutputs[]`/`resourceInputs[]` entry and a per-service `joinResourceNetworks` entry — both spellings produce the same `joinResourceNetworks` value on the resolved definition.
 
 ## `services[].containerConfig.ports[]`
 

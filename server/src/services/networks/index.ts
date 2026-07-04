@@ -13,6 +13,7 @@ export * from './network-reconciler';
 export * from './network-converger';
 export * from './network-convergence-scheduler';
 export * from './managed-network-listing';
+export * from './unified-network-declarations';
 
 /**
  * Construct a NetworkManager wired to invalidate `DockerService`'s cached
