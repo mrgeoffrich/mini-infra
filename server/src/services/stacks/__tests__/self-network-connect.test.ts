@@ -58,4 +58,28 @@ describe('connectSelfToNetwork', () => {
     expect(await connectSelfToNetwork(executor, prisma, 'self-id', 'net', localLog)).toBe(false);
     expect(warn).toHaveBeenCalled();
   });
+
+  it('defaults the ManagedNetwork fallback identity to host scope when no fallbackIdentity is passed', async () => {
+    const { executor } = makeExecutor();
+    const prisma = makeMembershipPrisma() as any;
+    await connectSelfToNetwork(executor, prisma, 'self-id', 'net', log);
+    expect(prisma.managedNetwork.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scope: 'host', environmentId: null, stackId: null, purpose: 'net' }),
+      }),
+    );
+  });
+
+  it('uses the caller-supplied fallbackIdentity instead of guessing host scope (network overhaul Phase 9 fix)', async () => {
+    const { executor } = makeExecutor();
+    const prisma = makeMembershipPrisma() as any;
+    await connectSelfToNetwork(executor, prisma, 'self-id', 'local-egress', log, {
+      scope: 'environment', environmentId: 'env-1', stackId: null, purpose: 'egress',
+    });
+    expect(prisma.managedNetwork.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ scope: 'environment', environmentId: 'env-1', stackId: null, purpose: 'egress' }),
+      }),
+    );
+  });
 });

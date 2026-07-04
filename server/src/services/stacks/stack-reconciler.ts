@@ -395,7 +395,7 @@ export class StackReconciler {
       }
 
       // 7b. Connect mini-infra container to resource output networks with joinSelf: true
-      await this.infraManager.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
+      await this.infraManager.joinSelfToOutputNetworks(stack.environmentId, resourceOutputs, outputNetworkMap, log);
 
       // 7b-ii. Network overhaul Phase 8 — scoped convergence for this stack,
       // now that every action above has finished (containers already

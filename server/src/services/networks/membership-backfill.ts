@@ -124,6 +124,42 @@ export async function backfillNetworkMemberships(
       continue;
     }
     const scope: 'environment' | 'host' = r.environmentId ? 'environment' : 'host';
+
+    // Self-heal an identity mismatch on an already-existing-by-name row
+    // (network overhaul Phase 9 finding): `InfraResource` rows are only ever
+    // written by the actual owning producer (`reconcileOutputs`/
+    // `EnvironmentManager` provisioning), so `(scope, environmentId,
+    // purpose)` derived from one here is authoritative ground truth for this
+    // network — unlike `upsertManagedNetworkByIdentity`'s general "never
+    // rewrite once set" rule (which protects producers, like the stack-owned
+    // network compiler, that have no independent authority to check
+    // against). This repairs rows a different producer's best-effort by-name
+    // fallback created first with a wrong guess — e.g. a self-join
+    // (`connectSelfToNetwork`'s old hardcoded `scope: 'host'` default) racing
+    // ahead of this exact InfraResource-backed identity for an
+    // environment-scoped network like `${env}-egress`.
+    const existingByName = await prisma.managedNetwork.findUnique({ where: { name: r.name } });
+    if (
+      existingByName &&
+      (existingByName.scope !== scope ||
+        existingByName.environmentId !== (r.environmentId ?? null) ||
+        existingByName.purpose !== r.purpose)
+    ) {
+      log.info(
+        {
+          name: r.name,
+          from: { scope: existingByName.scope, environmentId: existingByName.environmentId, purpose: existingByName.purpose },
+          to: { scope, environmentId: r.environmentId, purpose: r.purpose },
+        },
+        'Backfill: correcting ManagedNetwork identity to match authoritative InfraResource row',
+      );
+      await prisma.managedNetwork.update({
+        where: { id: existingByName.id },
+        data: { scope, environmentId: r.environmentId ?? null, purpose: r.purpose },
+      });
+      continue;
+    }
+
     await upsertManagedNetworkByIdentity(
       prisma,
       { scope, environmentId: r.environmentId, stackId: null, purpose: r.purpose },

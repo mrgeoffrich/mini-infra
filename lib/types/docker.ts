@@ -295,6 +295,118 @@ export interface SetNetworkEnforceMembershipsResponse {
 }
 
 // ====================
+// Managed Network Listing Types (network overhaul Phase 9 — visibility UI)
+// ====================
+
+/** Provenance values a `NetworkMembership` row can carry (Phase 5 schema; see `server/src/services/networks/membership-store.ts`). */
+export type NetworkMembershipSource = 'template' | 'user' | 'egress' | 'haproxy' | 'system';
+
+/**
+ * Whether a desired-state membership is actually satisfied right now:
+ * - `connected`: every live container resolved for this target is attached.
+ * - `missing`: the target resolves to at least one live container, but at
+ *   least one of them isn't attached (mirrors the Phase 7 reconciler's
+ *   `membership-missing` drift item).
+ * - `not-deployed`: the target (a `StackService`) has no live container at
+ *   all yet — not drift, just "nothing to attach to yet".
+ */
+export type ManagedNetworkMembershipStatus = 'connected' | 'missing' | 'not-deployed';
+
+export interface ManagedNetworkContainerRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * One desired-state `NetworkMembership` row, resolved for display: who it
+ * targets, why (`source`/creator), and whether it's actually attached right
+ * now. This is the "why is this container on this network" answer the Phase
+ * 9 UI surfaces.
+ */
+export interface ManagedNetworkMembershipView {
+  id: string;
+  /** Set when the target is a managed `StackService` — resolved to live container(s) by label at read time. */
+  stackServiceId?: string;
+  /** The owning stack's id, resolved from `stackServiceId` — lets a caller filter "this application's own membership" out of a shared network's full membership list without a name-matching heuristic. */
+  stackId?: string;
+  /** The service's own name, resolved for display — the row itself only stores the id. */
+  serviceName?: string;
+  /** The owning stack's name, resolved for display. */
+  stackName?: string;
+  /** Set when the target is an adopted/external container, or the `'self'` sentinel for the mini-infra server itself. */
+  containerName?: string;
+  source: NetworkMembershipSource;
+  /** userId, set only when `source === 'user'`. */
+  createdBy?: string;
+  /** Resolved display name/email for `createdBy`, when resolvable. */
+  createdByName?: string;
+  aliases?: string[];
+  staticIp?: string;
+  status: ManagedNetworkMembershipStatus;
+  /** Live container(s) currently satisfying this membership. Empty when `status !== 'connected'`. */
+  connectedContainers: ManagedNetworkContainerRef[];
+}
+
+/**
+ * A live container attached to a managed network with no matching
+ * desired-state row — surfaced for visibility. Same spirit as the Phase 7
+ * reconciler's unmanaged-attachment notes, but without that module's
+ * stale-eligibility restrictions (this is a read-only listing, not a drift
+ * alarm, so it's safe to show every unattributed attachment rather than only
+ * the ones the reconciler is confident enough to flag).
+ */
+export type ManagedNetworkUnattributedContainer = ManagedNetworkContainerRef;
+
+/**
+ * One `ManagedNetwork` row plus its resolved owner, live Docker state, and
+ * full desired-vs-actual membership table. The Phase 9 networks tab,
+ * environment detail networks panel, and application detail connected-networks
+ * list all read from this.
+ */
+export interface ManagedNetworkView {
+  id: string;
+  name: string;
+  scope: 'host' | 'environment' | 'stack';
+  environmentId?: string;
+  /** Resolved environment name, when `environmentId` is set. */
+  environmentName?: string;
+  stackId?: string;
+  /** Resolved stack name, when `stackId` is set. */
+  stackName?: string;
+  purpose: string;
+  driver: string;
+  /** `ManagedNetwork.status` — the DB-cached status column (see Phase 5 schema; not the same as the live `existence` check below). */
+  dbStatus: string;
+  /** Live tri-state existence, from an `inspectForReconcile()` call made for this listing. */
+  existence: 'present' | 'absent' | 'unknown';
+  dockerId?: string;
+  subnet?: string;
+  enforceMemberships: boolean;
+  /**
+   * Whether the Phase 7 reconciler currently reports any drift item for this
+   * network — reused from `reconcileStack`/`reconcileEnvironment`/
+   * `reconcileAll`, never re-derived here, so this view can never disagree
+   * with the stack plan's own network-drift reporting.
+   */
+  driftStatus: 'synced' | 'drifted';
+  driftItemCount: number;
+  memberships: ManagedNetworkMembershipView[];
+  unattributedContainers: ManagedNetworkUnattributedContainer[];
+}
+
+export interface ManagedNetworkListQuery {
+  scope?: 'host' | 'environment' | 'stack';
+  environmentId?: string;
+  stackId?: string;
+}
+
+export interface ManagedNetworkListResponse {
+  success: boolean;
+  data: ManagedNetworkView[];
+  message?: string;
+}
+
+// ====================
 // Docker Volume Types
 // ====================
 

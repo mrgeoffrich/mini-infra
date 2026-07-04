@@ -4,10 +4,10 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
-import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll } from "../services/networks";
+import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll, listManagedNetworks } from "../services/networks";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
@@ -29,6 +29,12 @@ const networkReconcileQuerySchema = z.object({
 const setEnforceMembershipsSchema = z.object({
   name: z.string().min(1),
   enforceMemberships: z.boolean(),
+});
+
+const managedNetworkListQuerySchema = z.object({
+  scope: z.enum(["host", "environment", "stack"]).optional(),
+  environmentId: z.string().optional(),
+  stackId: z.string().optional(),
 });
 
 /**
@@ -113,6 +119,58 @@ router.get(
       res.json(apiResponse);
     } catch (error) {
       logger.error({ error }, "Failed to list Docker networks");
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/docker/networks/managed
+ * Network overhaul Phase 9 — every `ManagedNetwork` row (optionally
+ * filtered by `scope`/`environmentId`/`stackId`) with its resolved owner,
+ * live Docker existence/subnet, drift status (reused from the Phase 7
+ * reconciler), and a full desired-vs-actual membership table — each
+ * membership's `source`/`createdBy` and whether it's actually attached
+ * right now. This is the read side of the networks tab's managed-network
+ * view, the environment detail networks panel, and the application detail
+ * connected-networks list. Admin-gated like the rest of this subsystem's
+ * diagnostic/admin surface (GC/backfill/reconcile above), even though it's
+ * read-only, for consistency.
+ */
+router.get(
+  "/networks/managed",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = managedNetworkListQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid query parameters",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+      const deps = { prisma, networkManager, dockerExecutor: executor, log: logger };
+
+      const data = await listManagedNetworks(deps, parsed.data);
+
+      const response: ManagedNetworkListResponse = { success: true, data };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Failed to list managed networks");
       next(error);
     }
   }

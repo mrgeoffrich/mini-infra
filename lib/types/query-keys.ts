@@ -88,6 +88,11 @@ export const queryKeys = {
     volumeInspection: (volumeName: string) => ["volume-inspection", volumeName] as const,
     volumeFileContent: (volumeName: string, filePath?: string) =>
       ["volume-file-content", volumeName, filePath] as const,
+    /** Network overhaul Phase 9 — bare root broad-invalidates every `managedNetworks(filter)` variant regardless of scope/owner filter. */
+    managedNetworksAll: ["managed-networks"] as const,
+    managedNetworks: (filter?: { scope?: string; environmentId?: string; stackId?: string }) =>
+      ["managed-networks", filter ?? {}] as const,
+    networkReconcile: (scope: string, id?: string) => ["network-reconcile", scope, id] as const,
   },
 
   egressFwAgent: {

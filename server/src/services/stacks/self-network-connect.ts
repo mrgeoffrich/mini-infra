@@ -2,7 +2,12 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import type { Logger } from 'pino';
 import type { DockerExecutorService } from '../docker-executor';
 import { createNetworkManager } from '../networks';
-import { findOrCreateManagedNetworkByName, safeMembershipWrite, upsertNetworkMembership } from '../networks/membership-store';
+import {
+  findOrCreateManagedNetworkByName,
+  safeMembershipWrite,
+  upsertNetworkMembership,
+  type NetworkIdentity,
+} from '../networks/membership-store';
 
 /**
  * Connect the mini-infra container itself to a Docker network by name.
@@ -20,7 +25,23 @@ import { findOrCreateManagedNetworkByName, safeMembershipWrite, upsertNetworkMem
  * row lookup is by network name (`findOrCreateManagedNetworkByName`) since
  * this helper only ever receives a resolved name, never a purpose — the
  * target network almost always already has a `ManagedNetwork` row from
- * whichever stack's own `reconcileOutputs` declared it.
+ * whichever stack's own `reconcileOutputs`/`compileStackNetworkMemberships`
+ * declared it, in which case `fallbackIdentity` below is never consulted.
+ *
+ * `fallbackIdentity` is only used the very first time (if ever) this
+ * function's own by-name lookup runs ahead of that true producer — e.g. if
+ * this ran on a network no other producer has recorded yet. It defaults to
+ * `{ scope: 'host', ... }`, which is correct for the mini-infra server's
+ * other self-joins (vault/nats/dataplane/database are genuinely host-scoped
+ * singletons), but callers whose target network can be scoped differently —
+ * `joinSelfToOutputNetworks` below, whose `resourceOutputs` can be
+ * environment-scoped (e.g. the per-environment egress network) — must pass
+ * the correct identity explicitly. A hardcoded `'host'` guess here was
+ * exactly how a `local-egress` `ManagedNetwork` row ended up permanently
+ * mis-scoped `'host'` in dev (network overhaul Phase 9 finding): this
+ * function raced ahead of `compileStackNetworkMemberships`'s own (correct)
+ * identity write, and `findOrCreateManagedNetworkByName`'s by-name fallback
+ * means whichever producer creates the row first wins its identity forever.
  *
  * Network overhaul Phase 8: this is now the ONLY place the mini-infra
  * server connects itself to a network at apply time (called from
@@ -43,15 +64,18 @@ export async function connectSelfToNetwork(
   selfId: string,
   netName: string,
   log: Logger,
+  fallbackIdentity?: NetworkIdentity,
 ): Promise<boolean> {
   try {
     const networkManager = createNetworkManager(dockerExecutor);
     const result = await networkManager.connect(selfId, netName);
 
     await safeMembershipWrite(log, { network: netName }, async () => {
-      const row = await findOrCreateManagedNetworkByName(prisma, netName, {
-        scope: 'host', environmentId: null, stackId: null, purpose: netName,
-      });
+      const row = await findOrCreateManagedNetworkByName(
+        prisma,
+        netName,
+        fallbackIdentity ?? { scope: 'host', environmentId: null, stackId: null, purpose: netName },
+      );
       await upsertNetworkMembership(prisma, { containerName: 'self', networkId: row.id, source: 'system' });
     });
 

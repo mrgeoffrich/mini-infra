@@ -220,12 +220,16 @@ export const ApiRoute = {
     networks: (): string => `${ApiBase.docker}/networks`,
     /** DELETE /api/docker/networks/:id */
     network: (id: string): string => `${ApiBase.docker}/networks/${id}`,
+    /** GET /api/docker/networks/managed */
+    networksManaged: (): string => `${ApiBase.docker}/networks/managed`,
     /** POST /api/docker/networks/gc */
     networksGc: (): string => `${ApiBase.docker}/networks/gc`,
     /** POST /api/docker/networks/backfill-memberships */
     networksBackfillMemberships: (): string => `${ApiBase.docker}/networks/backfill-memberships`,
-    /** GET /api/docker/networks/reconcile */
+    /** GET /api/docker/networks/reconcile (report-only diff) / POST (converge) — same path, method distinguishes the two */
     networksReconcile: (): string => `${ApiBase.docker}/networks/reconcile`,
+    /** PATCH /api/docker/networks/managed/enforce-memberships */
+    networksEnforceMemberships: (): string => `${ApiBase.docker}/networks/managed/enforce-memberships`,
     /** GET /api/docker/volumes */
     volumes: (): string => `${ApiBase.docker}/volumes`,
     /** DELETE /api/docker/volumes/:name */

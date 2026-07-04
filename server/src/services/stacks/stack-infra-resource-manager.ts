@@ -200,8 +200,23 @@ export class StackInfraResourceManager {
   /**
    * Connect the mini-infra container itself to resource output networks
    * that declare joinSelf: true.
+   *
+   * `environmentId` is the OWNING stack's own `environmentId` (the same
+   * value `reconcileOutputs` above used to derive each output's scope) —
+   * passed through to `connectSelfToNetwork`'s `fallbackIdentity` so its
+   * membership-row bookkeeping never has to guess a network's scope. Before
+   * this was threaded through, every `joinSelf` target defaulted to a
+   * hardcoded `scope: 'host'` guess; harmless for genuinely host-scoped
+   * outputs (vault/nats/dataplane/database) but wrong for an
+   * environment-scoped one (e.g. the egress-gateway stack's own `egress`
+   * resourceOutput) — exactly how a `local-egress` `ManagedNetwork` row
+   * ended up permanently mis-scoped `'host'` in dev (network overhaul Phase
+   * 9 finding: this self-join raced ahead of `compileStackNetworkMemberships`'s
+   * own correct write, and identity is set once, at creation, never
+   * rewritten by a later by-name lookup).
    */
   async joinSelfToOutputNetworks(
+    environmentId: string | null,
     resourceOutputs: StackResourceOutput[],
     outputNetworkMap: Map<string, string>,
     log: Logger
@@ -213,13 +228,18 @@ export class StackInfraResourceManager {
       return;
     }
 
+    const scope: 'environment' | 'host' = environmentId ? 'environment' : 'host';
+
     for (const output of resourceOutputs) {
       if (!output.joinSelf || output.type !== 'docker-network') continue;
 
       const netName = outputNetworkMap.get(output.purpose);
       if (!netName) continue;
 
-      if (await connectSelfToNetwork(this.dockerExecutor, this.prisma, selfId, netName, log)) {
+      const joined = await connectSelfToNetwork(this.dockerExecutor, this.prisma, selfId, netName, log, {
+        scope, environmentId, stackId: null, purpose: output.purpose,
+      });
+      if (joined) {
         log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
       }
     }

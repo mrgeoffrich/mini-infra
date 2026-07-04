@@ -39,6 +39,7 @@ import {
 import type { StackDeploymentRecord } from "@mini-infra/types";
 import { StatusStrip } from "../_components/status-strip";
 import { ConnectCard } from "../_components/connect-card";
+import { ConnectedNetworksCard } from "../_components/connected-networks-card";
 import type { ApplicationDetailContext } from "../layout";
 
 function formatDateTime(value: string | null): string {
@@ -169,6 +170,8 @@ export default function ApplicationOverviewTab() {
           envName={environment?.name}
         />
       )}
+
+      {hasStacks && <ConnectedNetworksCard stackId={primaryStack?.id} />}
 
       {!hasStacks && (
         <Card>

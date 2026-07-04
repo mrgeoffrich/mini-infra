@@ -107,13 +107,14 @@ export interface NetworkMembershipRow {
   containerName: string | null;
 }
 
-interface ContainerSummary {
+/** Exported so `managed-network-listing.ts` (Phase 9) can share the exact same container-resolution primitives this module's diff loop uses — never a second implementation of "resolve a membership target to live containers". */
+export interface ContainerSummary {
   id: string;
   name: string;
   labels: Record<string, string>;
 }
 
-function toContainerSummary(raw: Docker.ContainerInfo): ContainerSummary {
+export function toContainerSummary(raw: Docker.ContainerInfo): ContainerSummary {
   return {
     id: raw.Id,
     name: raw.Names?.[0]?.replace(/^\//, '') ?? raw.Id,
@@ -141,7 +142,7 @@ function isSynthetic(labels: Record<string, string>): boolean {
  * `id` field on a drift item's `containers[]` is left as whatever length was
  * resolved (Docker's connect/disconnect API accepts either).
  */
-function shortId(id: string): string {
+export function shortId(id: string): string {
   return id.length > 12 ? id.slice(0, 12) : id;
 }
 
@@ -199,12 +200,12 @@ function driftRelevantMismatch(mismatch: NetworkSpecMismatch | undefined): Netwo
 }
 
 /** Per-run cache so repeated lookups for the same stack-service/container name don't re-hit Docker. */
-interface ContainerCache {
+export interface ContainerCache {
   byStackService: Map<string, ContainerSummary[]>; // key: `${stackId}:${serviceName}`
   byName: Map<string, ContainerSummary[]>;
 }
 
-function newContainerCache(): ContainerCache {
+export function newContainerCache(): ContainerCache {
   return { byStackService: new Map(), byName: new Map() };
 }
 
@@ -254,8 +255,20 @@ async function resolveByName(docker: Docker, cache: ContainerCache, containerNam
   return summaries;
 }
 
-/** Resolves a `{stackServiceId?, containerName?}` membership target to live container(s) — the "match by label at reconcile time" step the design doc calls for (§3.1). Blue-green pairs and every pool worker for a Pool/JobPool service resolve here naturally: they all carry the same `mini-infra.stack-id`/`mini-infra.service` labels, so a `stackServiceId` row matches however many live containers currently carry them. */
-async function resolveTargetContainers(
+/**
+ * Resolves a `{stackServiceId?, containerName?}` membership target to live
+ * container(s) — the "match by label at reconcile time" step the design doc
+ * calls for (§3.1). Blue-green pairs and every pool worker for a Pool/JobPool
+ * service resolve here naturally: they all carry the same
+ * `mini-infra.stack-id`/`mini-infra.service` labels, so a `stackServiceId`
+ * row matches however many live containers currently carry them.
+ *
+ * Exported so `managed-network-listing.ts` (Phase 9) resolves "is this
+ * membership actually attached right now" using the exact same primitive
+ * this module's own diff loop uses — the two views can never disagree about
+ * which live container(s) satisfy a given membership.
+ */
+export async function resolveTargetContainers(
   target: { stackServiceId?: string | null; containerName?: string | null },
   docker: Docker,
   cache: ContainerCache,
@@ -437,17 +450,30 @@ async function diffNetworks(
 }
 
 /**
- * Reconcile one stack's network desired state against live Docker state.
- * This is the entry point the stack plan computer calls (see
- * `stack-plan-computer.ts`) — it is scoped to exactly the networks this
- * stack owns or has declared a membership on, so drift items only ever
- * describe this stack's own state (see module doc for the cross-stack
- * leakage this deliberately avoids on shared networks).
+ * A stack's own owned networks (`scope: 'stack'`) plus every network its
+ * services/adopted containers have a declared membership on (egress,
+ * applications, resource inputs, ...) — the exact "networks this stack owns
+ * or has declared a membership on" set the module doc's stale-check rule 1
+ * refers to. Exported so `managed-network-listing.ts` (Phase 9) can list
+ * "this app's connected networks" using the identical owned-or-joined
+ * resolution `reconcileStack` diffs against — never a second, possibly
+ * divergent, definition of what counts as "this stack's networks".
  */
-export async function reconcileStack(stackId: string, deps: NetworkReconcilerDeps): Promise<NetworkReconcileReport> {
-  const { prisma, dockerExecutor } = deps;
-  const ranAt = new Date().toISOString();
+export interface StackScopedNetworks {
+  serviceIds: string[];
+  adoptedContainerNames: string[];
+  ownedNetworks: ManagedNetworkRow[];
+  ownedNetworkIds: Set<string>;
+  joinedNetworks: ManagedNetworkRow[];
+  /** `[...ownedNetworks, ...joinedNetworks]` — every network in scope for this stack. */
+  networksToCheck: ManagedNetworkRow[];
+  /** `NetworkMembership` rows targeting one of this stack's own `StackService` ids. */
+  ownServiceMemberships: NetworkMembershipRow[];
+  /** `NetworkMembership` rows targeting one of this stack's AdoptedWeb container names. */
+  ownContainerMemberships: NetworkMembershipRow[];
+}
 
+export async function resolveStackScopedNetworks(stackId: string, prisma: PrismaClient): Promise<StackScopedNetworks> {
   const stack = await prisma.stack.findUniqueOrThrow({
     where: { id: stackId },
     select: {
@@ -481,7 +507,33 @@ export async function reconcileStack(stackId: string, deps: NetworkReconcilerDep
     ? await prisma.managedNetwork.findMany({ where: { id: { in: [...joinedNetworkIds] } } })
     : [];
 
-  const networksToCheck = [...ownedNetworks, ...joinedNetworks];
+  return {
+    serviceIds,
+    adoptedContainerNames,
+    ownedNetworks,
+    ownedNetworkIds,
+    joinedNetworks,
+    networksToCheck: [...ownedNetworks, ...joinedNetworks],
+    ownServiceMemberships,
+    ownContainerMemberships,
+  };
+}
+
+/**
+ * Reconcile one stack's network desired state against live Docker state.
+ * This is the entry point the stack plan computer calls (see
+ * `stack-plan-computer.ts`) — it is scoped to exactly the networks this
+ * stack owns or has declared a membership on, so drift items only ever
+ * describe this stack's own state (see module doc for the cross-stack
+ * leakage this deliberately avoids on shared networks).
+ */
+export async function reconcileStack(stackId: string, deps: NetworkReconcilerDeps): Promise<NetworkReconcileReport> {
+  const { prisma, dockerExecutor } = deps;
+  const ranAt = new Date().toISOString();
+
+  const { ownedNetworkIds, networksToCheck, ownServiceMemberships, ownContainerMemberships } =
+    await resolveStackScopedNetworks(stackId, prisma);
+
   if (networksToCheck.length === 0) {
     return { scope: { kind: 'stack', stackId }, ranAt, networksChecked: 0, membershipsChecked: 0, items: [], notes: [] };
   }
