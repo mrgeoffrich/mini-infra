@@ -4,7 +4,6 @@ import {
   Environment,
   EnvironmentType,
   EnvironmentNetworkType,
-  EnvironmentNetwork,
   EgressNetworkInfo,
   EgressNetworkStatus,
   CreateEnvironmentRequest,
@@ -215,7 +214,6 @@ export class EnvironmentManager {
       const environment = await this.prisma.environment.findUnique({
         where: { id },
         include: {
-          networks: true,
           _count: {
               select: {
                 stacks: { where: { template: { source: 'user' } } },
@@ -307,7 +305,6 @@ export class EnvironmentManager {
       const environment = await this.prisma.environment.findUnique({
         where: { name },
         include: {
-          networks: true,
           _count: {
               select: {
                 stacks: { where: { template: { source: 'user' } } },
@@ -345,7 +342,6 @@ export class EnvironmentManager {
         this.prisma.environment.findMany({
           where,
           include: {
-            networks: true,
             _count: {
               select: {
                 stacks: { where: { template: { source: 'user' } } },
@@ -393,7 +389,6 @@ export class EnvironmentManager {
           egressFirewallEnabled: request.egressFirewallEnabled,
         },
         include: {
-          networks: true,
           _count: {
               select: {
                 stacks: { where: { template: { source: 'user' } } },
@@ -464,6 +459,20 @@ export class EnvironmentManager {
         return false;
       }
 
+      // Read every InfraResource row this environment owns BEFORE anything
+      // is deleted. This replaces the old lookup through the legacy
+      // (never-populated for modern environments) `EnvironmentNetwork`
+      // table — that table is empty for anything created since Docker
+      // resource tracking moved to `InfraResource`, so `deleteNetworks`
+      // silently deleted nothing (defect L3). The recorded `name` on each
+      // row also doubles as the name-derived fallback for networks created
+      // before this module started stamping `mini-infra.*` ownership labels
+      // (labels are immutable after creation — see plan §4).
+      const ownedResources = await this.prisma.infraResource.findMany({
+        where: { environmentId: id },
+        select: { id: true, name: true },
+      });
+
       // Create user event for tracking
       userEvent = await this.userEventService.createEvent({
         eventType: 'environment_delete',
@@ -480,55 +489,90 @@ export class EnvironmentManager {
           environmentName: environment.name,
           environmentType: environment.type,
           deleteNetworks,
-          networkCount: environment.networks.length,
+          networkCount: ownedResources.length,
         }
       });
 
       this.logger.info({
         environmentId: id,
         deleteNetworks,
-        networkCount: environment.networks.length,
+        networkCount: ownedResources.length,
         userEventId: userEvent.id
       }, 'Starting environment deletion');
 
       // Initialize Docker executor for network operations
       await this.dockerExecutor.initialize();
 
-      // Delete Docker networks if requested
-      if (deleteNetworks && environment.networks.length > 0) {
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${environment.networks.length} Docker network(s)...`);
+      // Delete Docker networks if requested. Label-driven (fixes L3): query
+      // Docker for every network carrying `mini-infra.owner-kind=environment`
+      // + `mini-infra.owner-id=<id>` (egress, applications, tunnel, vault,
+      // nats, …) instead of re-deriving names or trusting the legacy table.
+      // The recorded InfraResource names cover networks created before this
+      // module stamped ownership labels.
+      //
+      // `forceDisconnect` is essential here (not for stack destroy): an env's
+      // egress network always has the mini-infra server self-attached (the
+      // container-map-pusher path in provisionEgressGateway), and its system
+      // stacks (egress-gateway, HAProxy) may still be running. Because the
+      // whole environment — and everything scoped to it — is being torn down,
+      // the safe default of refusing networks with attached containers would
+      // otherwise leave every env network behind (the original L3 leak). Force
+      // detaches whatever remains, then removes.
+      if (deleteNetworks && ownedResources.length > 0) {
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleting ${ownedResources.length} Docker network(s)...`);
         this.logger.info({
           environmentId: id,
-          networks: environment.networks.map(n => n.name)
+          networks: ownedResources.map(r => r.name)
         }, 'Deleting Docker networks');
+
+        const removeResults = await this.networkManager.removeByOwner(
+          { kind: 'environment', id },
+          { forceDisconnect: true, nameFallbackCandidates: ownedResources.map((r) => r.name) },
+        );
 
         let deletedNetworks = 0;
         let failedNetworks = 0;
 
-        for (const network of environment.networks) {
-          // NetworkManager.remove() never throws — it returns a result with
-          // a `reason` so one bad network can't abort the rest of the loop.
-          const result = await this.networkManager.remove(network.name);
+        for (const result of removeResults) {
           if (result.removed) {
             deletedNetworks++;
             this.logger.debug({
               environmentId: id,
-              networkName: network.name
+              networkName: result.name
             }, 'Docker network deleted successfully');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Network '${network.name}' deleted successfully`);
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Network '${result.name}' deleted successfully`);
+          } else if (result.reason === 'not-found') {
+            // Already gone — not worth alarming the user about.
+            this.logger.debug({
+              environmentId: id,
+              networkName: result.name
+            }, 'Docker network already absent');
           } else {
             failedNetworks++;
             this.logger.warn({
               environmentId: id,
-              networkName: network.name,
+              networkName: result.name,
               reason: result.reason,
-            }, 'Failed to delete Docker network (network may not exist in Docker)');
-            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete network '${network.name}': ${result.reason ?? 'unknown reason'}`);
+            }, 'Failed to delete Docker network');
+            await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] WARNING: Failed to delete network '${result.name}': ${result.reason ?? 'unknown reason'}`);
             // Continue with deletion even if Docker network removal fails
           }
         }
 
-        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${environment.networks.length} network(s) (${failedNetworks} failed)`);
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Deleted ${deletedNetworks}/${removeResults.length} network(s) (${failedNetworks} failed)`);
+      }
+
+      // Explicitly delete the InfraResource rows this environment owns
+      // (fixes L4 — this table never had a deletion path anywhere before
+      // Phase 4). The DB's `onDelete: Cascade` on `InfraResource.environment`
+      // would remove these rows anyway once `environment.delete()` runs
+      // below, but doing it explicitly here keeps the two deletion paths
+      // (stack destroy and environment delete) symmetric and makes the
+      // cleanup an intentional, logged step rather than an implicit
+      // DB-cascade side effect.
+      if (ownedResources.length > 0) {
+        await this.prisma.infraResource.deleteMany({ where: { environmentId: id } });
+        await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Removed ${ownedResources.length} InfraResource record(s)`);
       }
 
       // Clean up undeployed/removed stacks that reference this environment
@@ -1004,7 +1048,6 @@ export class EnvironmentManager {
 
   private mapPrismaToEnvironment(prismaEnv: Prisma.EnvironmentGetPayload<{
     include: {
-      networks: true;
       _count: { select: { stacks: true } };
       stacks: { select: { id: true } };
     };
@@ -1015,16 +1058,6 @@ export class EnvironmentManager {
       description: prismaEnv.description ?? undefined,
       type: prismaEnv.type as EnvironmentType,
       networkType: prismaEnv.networkType as EnvironmentNetworkType,
-      networks: prismaEnv.networks.map((n): EnvironmentNetwork => ({
-        id: n.id,
-        environmentId: n.environmentId,
-        name: n.name,
-        purpose: n.purpose as EnvironmentNetwork['purpose'],
-        driver: n.driver,
-        options: (n.options ?? undefined) as EnvironmentNetwork['options'],
-        dockerId: n.dockerId ?? undefined,
-        createdAt: n.createdAt
-      })),
       stackCount: prismaEnv._count?.stacks ?? 0,
       systemStackCount: prismaEnv.stacks?.length ?? 0,
       tunnelId: prismaEnv.tunnelId ?? undefined,

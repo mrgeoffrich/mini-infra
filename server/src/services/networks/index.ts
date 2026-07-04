@@ -5,6 +5,7 @@ import { NetworkManager, type NetworkManagerDeps } from './network-manager';
 export * from './network-manager';
 export * from './network-names';
 export * from './attach-service-networks';
+export * from './network-gc';
 
 /**
  * Construct a NetworkManager wired to invalidate `DockerService`'s cached

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { removeStackNetworksAndVolumes } from '../stack-destroy-helpers';
+import { removeStackNetworksAndVolumes, removeStackInfraResources } from '../stack-destroy-helpers';
 
 // Stub DockerExecutorService so we don't try to hit a real daemon — only
 // getDockerClient() matters here, NetworkManager does the rest.
@@ -11,6 +11,7 @@ const {
   mockInitialize,
   mockVolumeExists,
   mockRemoveVolume,
+  mockInfraResourceDeleteMany,
 } = vi.hoisted(() => {
   const _mockGetNetwork = vi.fn();
   const _mockListNetworks = vi.fn();
@@ -27,6 +28,7 @@ const {
     mockInitialize: vi.fn().mockResolvedValue(undefined),
     mockVolumeExists: vi.fn().mockResolvedValue(false),
     mockRemoveVolume: vi.fn().mockResolvedValue(undefined),
+    mockInfraResourceDeleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   };
 });
 
@@ -36,6 +38,17 @@ vi.mock('../../docker-executor', () => ({
     getDockerClient = () => mockDockerClient;
     volumeExists = mockVolumeExists;
     removeVolume = mockRemoveVolume;
+  },
+}));
+
+// removeStackInfraResources uses the default-exported prisma singleton
+// directly (matching the rest of this file's helpers) — stub just the one
+// delegate it touches.
+vi.mock('../../../lib/prisma', () => ({
+  default: {
+    infraResource: {
+      deleteMany: mockInfraResourceDeleteMany,
+    },
   },
 }));
 
@@ -168,5 +181,28 @@ describe('removeStackNetworksAndVolumes', () => {
 
     expect(mockRemoveVolume).toHaveBeenCalledWith('prod-webapp_data');
     expect(volumesRemoved).toEqual(['prod-webapp_data']);
+  });
+});
+
+describe('removeStackInfraResources', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('deletes every InfraResource row owned by the stack (fixes L4 — stackId is onDelete: SetNull, so nothing else ever removed these rows)', async () => {
+    mockInfraResourceDeleteMany.mockResolvedValue({ count: 2 });
+
+    const count = await removeStackInfraResources('stack-1');
+
+    expect(mockInfraResourceDeleteMany).toHaveBeenCalledWith({ where: { stackId: 'stack-1' } });
+    expect(count).toBe(2);
+  });
+
+  it('returns 0 without error when the stack owns no InfraResource rows', async () => {
+    mockInfraResourceDeleteMany.mockResolvedValue({ count: 0 });
+
+    const count = await removeStackInfraResources('stack-with-nothing');
+
+    expect(count).toBe(0);
   });
 });

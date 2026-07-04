@@ -479,4 +479,101 @@ describe('NetworkManager', () => {
       expect(results).toEqual([{ name: 'proj_default', removed: true }]);
     });
   });
+
+  describe('listManaged', () => {
+    it('queries Docker for mini-infra.managed=true networks with no extra filters by default', async () => {
+      const docker = makeMockDocker();
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      await manager.listManaged();
+
+      expect(docker.listNetworks).toHaveBeenCalledWith({
+        filters: { label: ['mini-infra.managed=true'] },
+      });
+    });
+
+    it('narrows by owner kind + id and by purpose when a filter is given', async () => {
+      const docker = makeMockDocker();
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      await manager.listManaged({ owner: { kind: 'environment', id: 'env-1' }, purpose: 'egress' });
+
+      expect(docker.listNetworks).toHaveBeenCalledWith({
+        filters: {
+          label: [
+            'mini-infra.managed=true',
+            'mini-infra.owner-kind=environment',
+            'mini-infra.owner-id=env-1',
+            'mini-infra.purpose=egress',
+          ],
+        },
+      });
+    });
+
+    it('omits the owner-id label for a host-scoped owner filter (host networks carry no owner id)', async () => {
+      const docker = makeMockDocker();
+      docker.listNetworks.mockResolvedValue([]);
+      const manager = makeManager(docker);
+
+      await manager.listManaged({ owner: { kind: 'host' } });
+
+      expect(docker.listNetworks).toHaveBeenCalledWith({
+        filters: { label: ['mini-infra.managed=true', 'mini-infra.owner-kind=host'] },
+      });
+    });
+
+    it('maps each Docker network summary into a ManagedNetworkInfo, defaulting purpose to "_stack" and ownerKind to "host" when unlabelled', async () => {
+      const docker = makeMockDocker();
+      docker.listNetworks.mockResolvedValue([
+        {
+          Name: 'stk-proj_default',
+          Id: 'net-id-1',
+          Driver: 'bridge',
+          Labels: {
+            'mini-infra.managed': 'true',
+            'mini-infra.owner-kind': 'stack',
+            'mini-infra.owner-id': 'stack-1',
+            'mini-infra.purpose': '_stack',
+          },
+        },
+        {
+          Name: 'mini-infra-dataplane',
+          Id: 'net-id-2',
+          Driver: 'bridge',
+          Labels: { 'mini-infra.managed': 'true' },
+        },
+      ]);
+      const manager = makeManager(docker);
+
+      const result = await manager.listManaged();
+
+      expect(result).toEqual([
+        {
+          name: 'stk-proj_default',
+          id: 'net-id-1',
+          driver: 'bridge',
+          ownerKind: 'stack',
+          ownerId: 'stack-1',
+          purpose: '_stack',
+          labels: {
+            'mini-infra.managed': 'true',
+            'mini-infra.owner-kind': 'stack',
+            'mini-infra.owner-id': 'stack-1',
+            'mini-infra.purpose': '_stack',
+          },
+        },
+        {
+          name: 'mini-infra-dataplane',
+          id: 'net-id-2',
+          driver: 'bridge',
+          ownerKind: 'host',
+          ownerId: undefined,
+          purpose: '_stack',
+          labels: { 'mini-infra.managed': 'true' },
+        },
+      ]);
+    });
+  });
 });

@@ -287,13 +287,6 @@ export function EnvironmentDetailPage() {
                   </div>
                 )}
 
-                {environment.networks.length > 0 && (
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Docker Networks</span>
-                    <span className="font-medium">{environment.networks.length}</span>
-                  </div>
-                )}
-
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Created</span>
                   <span className="font-medium" title={formatDateTime(environment.createdAt)}>

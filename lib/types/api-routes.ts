@@ -220,6 +220,8 @@ export const ApiRoute = {
     networks: (): string => `${ApiBase.docker}/networks`,
     /** DELETE /api/docker/networks/:id */
     network: (id: string): string => `${ApiBase.docker}/networks/${id}`,
+    /** POST /api/docker/networks/gc */
+    networksGc: (): string => `${ApiBase.docker}/networks/gc`,
     /** GET /api/docker/volumes */
     volumes: (): string => `${ApiBase.docker}/volumes`,
     /** DELETE /api/docker/volumes/:name */

@@ -51,6 +51,44 @@ export interface DockerNetworkDeleteResponse {
 }
 
 // ====================
+// Docker Network GC Types (network overhaul Phase 4 — label-driven GC)
+// ====================
+
+export type DockerNetworkGcOwnerKind = 'stack' | 'environment' | 'host';
+
+/** A `mini-infra.managed=true` network whose owner (stack/environment) no longer exists in the DB. */
+export interface DockerNetworkGcOrphan {
+  name: string;
+  ownerKind: DockerNetworkGcOwnerKind;
+  ownerId?: string;
+  purpose: string;
+  connectedContainerCount: number;
+  /** Owner gone AND zero attached containers — the two conditions GC requires before it will ever remove a network. */
+  eligibleForRemoval: boolean;
+  /** Only set when a real (non-dry-run) removal was attempted this run. */
+  removed?: boolean;
+}
+
+export interface DockerNetworkGcReport {
+  dryRun: boolean;
+  scannedCount: number;
+  orphans: DockerNetworkGcOrphan[];
+  removedCount: number;
+  ranAt: string; // ISO string for JSON serialization
+}
+
+export interface DockerNetworkGcRequest {
+  /** Defaults to true (report-only, no Docker mutation) when omitted. */
+  dryRun?: boolean;
+}
+
+export interface DockerNetworkGcResponse {
+  success: boolean;
+  data: DockerNetworkGcReport;
+  message?: string;
+}
+
+// ====================
 // Docker Volume Types
 // ====================
 

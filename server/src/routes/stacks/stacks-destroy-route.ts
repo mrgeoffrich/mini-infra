@@ -24,6 +24,7 @@ import {
   removeAdoptedServiceRouting,
   removeStackContainers,
   removeStackNetworksAndVolumes,
+  removeStackInfraResources,
 } from '../../services/stacks/stack-destroy-helpers';
 import { revokeStackNatsSigningKeys } from '../../services/stacks/stack-nats-revocation';
 import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
@@ -202,6 +203,11 @@ async function runDestroyInBackground(
         'JobPool trigger registry teardown failed during destroy (non-fatal)',
       );
     }
+
+    // Step 6.7: explicitly delete this stack's InfraResource rows (fixes L4 —
+    // `stackId` is `onDelete: SetNull`, so without this the row would survive
+    // the stack delete below with a dangling null FK forever).
+    await removeStackInfraResources(stackId);
 
     // Step 7: Delete stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;

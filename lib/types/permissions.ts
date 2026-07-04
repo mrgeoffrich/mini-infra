@@ -134,6 +134,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Docker Resources",
         description: "Remove networks and volumes",
       },
+      {
+        scope: "docker:admin",
+        domain: "docker",
+        action: "write",
+        label: "Docker Administration",
+        description: "Run the managed-network garbage-collection sweep (list and remove orphaned networks)",
+      },
     ],
   },
   {
@@ -645,6 +652,7 @@ export const Permission = {
   ContainersWrite: "containers:write",
   DockerRead: "docker:read",
   DockerWrite: "docker:write",
+  DockerAdmin: "docker:admin",
   EnvironmentsRead: "environments:read",
   EnvironmentsWrite: "environments:write",
   EgressRead: "egress:read",

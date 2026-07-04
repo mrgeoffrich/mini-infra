@@ -273,3 +273,20 @@ export async function removeStackNetworksAndVolumes(
 
   return { networksRemoved, volumesRemoved };
 }
+
+/**
+ * Explicitly delete every `InfraResource` row this stack owns.
+ *
+ * Before the network overhaul (Phase 4), nothing ever deleted an
+ * `InfraResource` row — the FK is `stackId onDelete: SetNull`, so a
+ * destroyed stack left the row behind with `stackId` nulled out forever
+ * (defect L4). Call this before `prisma.stack.delete()` so the FK-null
+ * cascade never gets the chance to orphan the row in the first place.
+ */
+export async function removeStackInfraResources(stackId: string): Promise<number> {
+  const result = await prisma.infraResource.deleteMany({ where: { stackId } });
+  if (result.count > 0) {
+    logger.info({ stackId, count: result.count }, 'Removed InfraResource record(s) for destroyed stack');
+  }
+  return result.count;
+}

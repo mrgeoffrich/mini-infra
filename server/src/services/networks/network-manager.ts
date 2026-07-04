@@ -98,6 +98,29 @@ export interface RemoveByOwnerOptions extends RemoveNetworkOptions {
   nameFallbackCandidates?: string[];
 }
 
+export interface ListManagedFilter {
+  owner?: NetworkOwner;
+  purpose?: string;
+}
+
+/**
+ * Summary of a `mini-infra.managed=true` network as reported by Docker's
+ * label-filtered list endpoint — cheap (one `listNetworks` call), unlike
+ * {@link NetworkInspectResult} which requires one `inspect` per network.
+ * Used by GC (`network-gc.ts`) to enumerate candidates before doing the more
+ * expensive per-network inspect only for the ones that need it.
+ */
+export interface ManagedNetworkInfo {
+  name: string;
+  id?: string;
+  driver?: string;
+  ownerKind: NetworkOwner['kind'];
+  /** Absent for `host`-scoped networks (no owner id is ever labelled for those). */
+  ownerId?: string;
+  purpose: string;
+  labels: Record<string, string>;
+}
+
 function statusCodeOf(err: unknown): number | undefined {
   if (typeof err === 'object' && err !== null && 'statusCode' in err) {
     const code = (err as { statusCode?: unknown }).statusCode;
@@ -530,5 +553,46 @@ export class NetworkManager {
     }
 
     return results;
+  }
+
+  /**
+   * Enumerate every `mini-infra.managed=true` network, optionally narrowed
+   * by owner or purpose. This is the read side of the label-driven model
+   * (§2.2 of the design doc): GC (`network-gc.ts`) uses it, unfiltered, to
+   * find every candidate before resolving each one's owner against the DB —
+   * it never enumerates or touches a network that isn't carrying this
+   * label, so unlabelled/foreign networks on a shared Docker host are
+   * invisible to it by construction, not by convention.
+   *
+   * One `listNetworks` call regardless of how many networks match — cheap
+   * relative to {@link inspect}, which is one Docker API call per network
+   * and is only worth paying for candidates GC has already narrowed down.
+   */
+  async listManaged(filter?: ListManagedFilter): Promise<ManagedNetworkInfo[]> {
+    const labelFilters = ['mini-infra.managed=true'];
+    if (filter?.owner) {
+      labelFilters.push(`mini-infra.owner-kind=${filter.owner.kind}`);
+      if (filter.owner.id) {
+        labelFilters.push(`mini-infra.owner-id=${filter.owner.id}`);
+      }
+    }
+    if (filter?.purpose) {
+      labelFilters.push(`mini-infra.purpose=${filter.purpose}`);
+    }
+
+    const networks = await this.docker.listNetworks({ filters: { label: labelFilters } });
+    return networks.map((net): ManagedNetworkInfo => {
+      const labels = net.Labels ?? {};
+      const ownerKind = (labels['mini-infra.owner-kind'] as NetworkOwner['kind'] | undefined) ?? 'host';
+      return {
+        name: net.Name,
+        id: net.Id,
+        driver: net.Driver,
+        ownerKind,
+        ownerId: labels['mini-infra.owner-id'],
+        purpose: labels['mini-infra.purpose'] ?? '_stack',
+        labels,
+      };
+    });
   }
 }

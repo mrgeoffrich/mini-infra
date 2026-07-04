@@ -50,6 +50,7 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
+import { NetworkGcScheduler, createNetworkManager } from "./services/networks";
 import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
 import { JobPoolCronRegistry } from "./services/stacks/job-pool-cron-registry";
 import { JobPoolNatsRegistry } from "./services/stacks/job-pool-nats-registry";
@@ -105,6 +106,7 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // which both startup and the settings route call to keep it aligned with the
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
+let networkGcScheduler: NetworkGcScheduler | null = null;
 let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
 let jobPoolCronRegistry: JobPoolCronRegistry | null = null;
 let jobPoolNatsRegistry: JobPoolNatsRegistry | null = null;
@@ -312,6 +314,22 @@ const initializeServices = async () => {
     poolInstanceReaper = new PoolInstanceReaper(prisma);
     poolInstanceReaper.start();
     console.log("[STARTUP] ✓ Pool instance reaper initialized");
+
+    // Initialize network GC scheduler (network overhaul Phase 4): a 15-minute
+    // dry-run-only sweep for orphaned `mini-infra.managed=true` networks —
+    // see NetworkGcScheduler for why it never mutates Docker on its own
+    // schedule (POST /api/docker/networks/gc with dryRun:false is the only
+    // way to actually remove anything).
+    console.log("[STARTUP] Initializing network GC scheduler...");
+    networkGcScheduler = new NetworkGcScheduler(prisma, {
+      createNetworkManager: async () => {
+        const executor = new DockerExecutorService();
+        await executor.initialize();
+        return createNetworkManager(executor);
+      },
+    });
+    networkGcScheduler.start();
+    console.log("[STARTUP] ✓ Network GC scheduler initialized");
 
     // Initialize JobPool exit watcher (Phase 2 of job-pool-service-type):
     // subscribes to Docker `die` events to finalise JobPool runs, publish
@@ -897,6 +915,12 @@ startServer()
       if (poolInstanceReaper) {
         poolInstanceReaper.stop();
         logger.info("Pool instance reaper stopped");
+      }
+
+      // Stop network GC scheduler
+      if (networkGcScheduler) {
+        networkGcScheduler.stop();
+        logger.info("Network GC scheduler stopped");
       }
 
       // Stop JobPool trigger registries before tearing down the bus —

@@ -1,12 +1,20 @@
 import express, { Request, Response, NextFunction } from "express";
+import { z } from "zod";
 import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, Permission } from "@mini-infra/types";
+import prisma from "../lib/prisma";
+import { DockerExecutorService } from "../services/docker-executor";
+import { createNetworkManager, runNetworkGc } from "../services/networks";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
+
+const networkGcRequestSchema = z.object({
+  dryRun: z.boolean().optional(),
+});
 
 /**
  * GET /api/docker/info
@@ -144,6 +152,65 @@ router.delete(
       }
 
       logger.error({ error, networkId: req.params.id }, "Failed to remove Docker network");
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/docker/networks/gc
+ * Network overhaul Phase 4 — label-driven GC sweep. Dry-run by default;
+ * pass `{ dryRun: false }` to actually remove orphaned managed networks.
+ * Admin-only: this can delete Docker resources outside the usual
+ * stack/environment lifecycle, so it requires `docker:admin` (a step above
+ * the `docker:write` that gates the single-network DELETE above), mirroring
+ * the `vault:admin`/`nats:admin` precedent for "administration" actions
+ * distinct from ordinary reads/writes.
+ */
+router.post(
+  "/networks/gc",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = networkGcRequestSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request body",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+
+      const dryRun = parsed.data.dryRun ?? true;
+      const report = await runNetworkGc(networkManager, prisma, { dryRun });
+
+      logger.info(
+        {
+          dryRun,
+          scannedCount: report.scannedCount,
+          orphanCount: report.orphans.length,
+          removedCount: report.removedCount,
+        },
+        "Network GC run via admin endpoint",
+      );
+
+      const response: DockerNetworkGcResponse = { success: true, data: report };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Network GC run failed");
       next(error);
     }
   }
