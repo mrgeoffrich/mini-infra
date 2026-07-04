@@ -1529,6 +1529,54 @@ model InfraResource {
   @@map("infra_resources")
 }
 
+// ManagedNetwork / NetworkMembership - Desired-state model for Docker network
+// ownership and container attachment (network overhaul Phase 5). No readers
+// or writers yet — these tables exist empty so later phases (6+) can read
+// and write desired state without coupling DDL to feature rollout. See
+// docs/designs/docker-network-management-redesign.md §3.1 and
+// docs/planning/not-shipped/docker-network-overhaul-plan.md §5/§6 Phase 5.
+model ManagedNetwork {
+  id            String   @id @default(cuid())
+  scope         String   // 'host' | 'environment' | 'stack'
+  environmentId String?
+  stackId       String?
+  purpose       String   // 'applications', 'egress', 'default', user-defined…
+  name          String   @unique // derived once at creation, then immutable
+  driver        String   @default("bridge")
+  options       Json?
+  dockerId      String?  // recorded from inspect, never prescribed
+  subnet        String?  // recorded, never prescribed
+  status        String   @default("pending") // pending|present|missing|error
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  memberships   NetworkMembership[]
+
+  @@unique([scope, environmentId, stackId, purpose])
+  @@index([environmentId])
+  @@index([stackId])
+  @@map("managed_networks")
+}
+
+model NetworkMembership {
+  id             String         @id @default(cuid())
+  networkId      String
+  network        ManagedNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  stackServiceId String?        // managed service — resolved to live container(s) by label at reconcile time
+  containerName  String?        // adopted/external container, or the 'self' sentinel for the server
+  aliases        Json?          // string[]
+  staticIp       String?        // egress gateway only
+  source         String         // 'template' | 'user' | 'egress' | 'haproxy' | 'system'
+  createdBy      String?        // userId when source = 'user'
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([networkId, stackServiceId, containerName])
+  @@index([networkId])
+  @@map("network_memberships")
+}
+
 // StackTemplate - Reusable blueprint for stack definitions
 model StackTemplate {
   id               String               @id @default(cuid())
