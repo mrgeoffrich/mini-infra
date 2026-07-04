@@ -50,7 +50,13 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
-import { NetworkGcScheduler, createNetworkManager } from "./services/networks";
+import {
+  NetworkGcScheduler,
+  NetworkConvergenceScheduler,
+  createNetworkManager,
+  convergeAll,
+  backfillNetworkMemberships,
+} from "./services/networks";
 import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
 import { JobPoolCronRegistry } from "./services/stacks/job-pool-cron-registry";
 import { JobPoolNatsRegistry } from "./services/stacks/job-pool-nats-registry";
@@ -67,8 +73,6 @@ import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
-import { reattachSelfToManagedNetworks } from "./services/stacks/self-network-reattach";
-import { backfillNetworkMemberships } from "./services/networks";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
@@ -108,6 +112,7 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
 let networkGcScheduler: NetworkGcScheduler | null = null;
+let networkConvergenceScheduler: NetworkConvergenceScheduler | null = null;
 let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
 let jobPoolCronRegistry: JobPoolCronRegistry | null = null;
 let jobPoolNatsRegistry: JobPoolNatsRegistry | null = null;
@@ -167,40 +172,62 @@ const initializeServices = async () => {
     await dockerService.initialize();
     console.log("[STARTUP] ✓ Docker service initialized");
 
-    // Re-attach the server container to its managed infra networks (vault, nats,
-    // dataplane, database, and each env's egress network — every `joinSelf`
-    // infra-resource network). These are joined at stack-apply time, but a
-    // container recreate (e.g. `docker compose up -d`) wipes them and the
-    // already-synced host stacks don't re-apply on boot, so the server would
-    // otherwise be unable to reach Vault/NATS/managed DBs. Best-effort — never
-    // blocks boot. Runs inline now (Docker connected at boot on a configured
-    // host) and again from the onConnect callback below (covers the degraded
-    // worktree case where Docker connects only after the seeder posts the host).
-    const reattachInfraNetworks = async () => {
-      try {
-        const exec = new DockerExecutorService();
-        await exec.initialize();
-        await reattachSelfToManagedNetworks(exec, prisma, logger);
-      } catch (err) {
-        logger.warn({ err }, "Re-attaching to managed infra networks failed (non-fatal)");
-      }
-    };
-    await reattachInfraNetworks();
-
     // Network overhaul Phase 6 — one-shot backfill of ManagedNetwork/
     // NetworkMembership rows from InfraResource + current stack definitions,
     // for infrastructure that predates the Phase 6 producers. Idempotent and
     // safe to re-run on every boot (find-or-create throughout — see
     // services/networks/membership-backfill.ts); best-effort, never blocks
     // boot. Also re-triggerable on demand via
-    // `POST /api/docker/networks/backfill-memberships`.
-    try {
-      const exec = new DockerExecutorService();
-      await exec.initialize();
-      await backfillNetworkMemberships(exec, prisma, logger);
-    } catch (err) {
-      logger.warn({ err }, "Network membership backfill failed (non-fatal)");
-    }
+    // `POST /api/docker/networks/backfill-memberships`. Runs BEFORE the boot
+    // convergence below so a first-boot-after-upgrade sees a maximally
+    // complete set of desired-state rows to converge against.
+    const runBackfill = async () => {
+      try {
+        const exec = new DockerExecutorService();
+        await exec.initialize();
+        await backfillNetworkMemberships(exec, prisma, logger);
+      } catch (err) {
+        logger.warn({ err }, "Network membership backfill failed (non-fatal)");
+      }
+    };
+    await runBackfill();
+
+    // Network overhaul Phase 8 — general boot convergence. Replaces the old
+    // self-network-reattach.ts boot workaround (which only ever re-derived
+    // the mini-infra server's OWN attachments from `InfraResource` +
+    // `joinSelf`): `convergeAll()` diffs and connects EVERY managed
+    // network's missing memberships across every stack, environment, and
+    // host scope — the server's own `containerName: 'self'` rows on
+    // vault/nats/dataplane/database/egress are just one case of the general
+    // "reality drifted from desired state" problem this now handles. A
+    // container recreate (e.g. `docker compose up -d`) wipes attachments
+    // and the already-synced host stacks don't re-apply on boot, so this
+    // is what restores them. Connect-only — never disconnects anything
+    // (enforceMemberships defaults to false on every network) — so this is
+    // safe to run unconditionally on every boot. Best-effort, never blocks
+    // boot. Runs inline now (Docker connected at boot on a configured host)
+    // and again from the onConnect callback below (covers the degraded
+    // worktree case where Docker connects only after the seeder posts the
+    // host — reuses the same onConnect hook the old workaround relied on).
+    const runBootConvergence = async () => {
+      try {
+        const exec = new DockerExecutorService();
+        await exec.initialize();
+        const networkManager = createNetworkManager(exec);
+        const result = await convergeAll({ prisma, networkManager, dockerExecutor: exec, log: logger });
+        logger.info(
+          {
+            networksCreated: result.networksCreated,
+            membershipsConnected: result.membershipsConnected,
+            membershipsDisconnected: result.membershipsDisconnected,
+          },
+          "Boot network convergence complete — restored attachment count logged above",
+        );
+      } catch (err) {
+        logger.warn({ err }, "Boot network convergence failed (non-fatal)");
+      }
+    };
+    await runBootConvergence();
 
     // Re-provision sidecars after Docker reconnects. On a fresh-boot worktree
     // the DB has no docker host yet, so initialize() lands in degraded mode
@@ -210,9 +237,13 @@ const initializeServices = async () => {
     // Both ensureXxx are idempotent — safe if they already succeeded inline.
     dockerService.onConnect(async () => {
       logger.info("Docker connected, re-provisioning sidecars");
-      // Re-attach to managed infra networks first so Vault/NATS are reachable
-      // for the fw-agent bootstrap (and everything else) below.
-      await reattachInfraNetworks();
+      // Re-run the backfill + boot convergence first so Vault/NATS are
+      // reachable for the fw-agent bootstrap (and everything else) below —
+      // the inline calls above may have run in a degraded state (Docker not
+      // yet connected at that point on a fresh-boot worktree), so both are
+      // safe/idempotent to repeat here now that Docker is actually up.
+      await runBackfill();
+      await runBootConvergence();
       try {
         // ALT-27: fw-agent is now a host-scope stack. The bootstrap is
         // idempotent — if the stack is already applied this is a couple
@@ -346,6 +377,29 @@ const initializeServices = async () => {
     });
     networkGcScheduler.start();
     console.log("[STARTUP] ✓ Network GC scheduler initialized");
+
+    // Initialize network convergence scheduler (network overhaul Phase 8):
+    // a periodic full sweep (connect-only unless a network's
+    // enforceMemberships is true) plus debounced, scoped convergence
+    // triggered by Docker `network` events and container `start` events —
+    // see NetworkConvergenceScheduler for the debounce/scoping rationale.
+    // Unlike the GC scheduler above, this one DOES mutate Docker on its own
+    // schedule: connecting a missing membership is always safe (purely
+    // additive), so there is no dry-run gate for that half of its job.
+    console.log("[STARTUP] Initializing network convergence scheduler...");
+    const buildNetworkConvergenceExecutor = async () => {
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      return executor;
+    };
+    networkConvergenceScheduler = new NetworkConvergenceScheduler(prisma, {
+      createNetworkManager: async () => createNetworkManager(await buildNetworkConvergenceExecutor()),
+      createDockerExecutor: buildNetworkConvergenceExecutor,
+    });
+    networkConvergenceScheduler.start();
+    dockerService.onContainerEvent((event) => networkConvergenceScheduler?.handleContainerEvent(event));
+    dockerService.onNetworkEvent((event) => networkConvergenceScheduler?.handleNetworkEvent(event));
+    console.log("[STARTUP] ✓ Network convergence scheduler initialized");
 
     // Initialize JobPool exit watcher (Phase 2 of job-pool-service-type):
     // subscribes to Docker `die` events to finalise JobPool runs, publish
@@ -937,6 +991,12 @@ startServer()
       if (networkGcScheduler) {
         networkGcScheduler.stop();
         logger.info("Network GC scheduler stopped");
+      }
+
+      // Stop network convergence scheduler
+      if (networkConvergenceScheduler) {
+        networkConvergenceScheduler.stop();
+        logger.info("Network convergence scheduler stopped");
       }
 
       // Stop JobPool trigger registries before tearing down the bus —

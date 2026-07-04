@@ -7,7 +7,7 @@ import type {
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import type { StackContainerManager } from './stack-container-manager';
-import { connectSelfToNetwork } from './self-network-reattach';
+import { connectSelfToNetwork } from './self-network-connect';
 import { createNetworkManager, resourceNetworkName, type NetworkManager } from '../networks';
 
 /**

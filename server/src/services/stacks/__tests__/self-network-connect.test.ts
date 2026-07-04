@@ -1,11 +1,4 @@
-import {
-  reattachSelfToManagedNetworks,
-  connectSelfToNetwork,
-} from '../services/stacks/self-network-reattach';
-
-vi.mock('../services/self-update', () => ({
-  getOwnContainerId: vi.fn(() => 'self-id'),
-}));
+import { connectSelfToNetwork } from '../self-network-connect';
 
 function makeExecutor(connectImpl?: () => Promise<void>) {
   const connect = vi.fn(connectImpl ?? (() => Promise.resolve()));
@@ -33,48 +26,6 @@ function makeMembershipPrisma() {
 }
 
 const log = { info: vi.fn(), warn: vi.fn(), debug: vi.fn() } as any;
-
-describe('reattachSelfToManagedNetworks', () => {
-  it('re-attaches only to docker-network resources whose stack declares joinSelf', async () => {
-    const { executor, getNetwork, connect } = makeExecutor();
-    const prisma = {
-      infraResource: {
-        findMany: vi.fn().mockResolvedValue([
-          {
-            name: 'mini-infra-vault',
-            purpose: 'vault',
-            stack: { resourceOutputs: [{ type: 'docker-network', purpose: 'vault', joinSelf: true }] },
-          },
-          {
-            name: 'mini-infra-database',
-            purpose: 'database',
-            stack: { resourceOutputs: [{ type: 'docker-network', purpose: 'database', joinSelf: false }] },
-          },
-          { name: 'orphan-egress', purpose: 'egress', stack: null },
-        ]),
-      },
-      ...makeMembershipPrisma(),
-    } as any;
-
-    await reattachSelfToManagedNetworks(executor, prisma, log);
-
-    expect(getNetwork).toHaveBeenCalledTimes(1);
-    expect(getNetwork).toHaveBeenCalledWith('mini-infra-vault');
-    expect(connect).toHaveBeenCalledWith({ Container: 'self-id' });
-  });
-
-  it('skips entirely when not running in Docker', async () => {
-    const { getOwnContainerId } = await import('../services/self-update');
-    (getOwnContainerId as any).mockReturnValueOnce(null);
-    const { executor, getNetwork } = makeExecutor();
-    const prisma = { infraResource: { findMany: vi.fn() } } as any;
-
-    await reattachSelfToManagedNetworks(executor, prisma, log);
-
-    expect(prisma.infraResource.findMany).not.toHaveBeenCalled();
-    expect(getNetwork).not.toHaveBeenCalled();
-  });
-});
 
 describe('connectSelfToNetwork', () => {
   it('returns true on a fresh attach', async () => {

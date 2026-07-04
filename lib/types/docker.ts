@@ -190,7 +190,14 @@ export interface NetworkUnmanagedAttachmentNote {
   reason: string;
 }
 
-export type NetworkReconcileScopeKind = 'stack' | 'environment' | 'all';
+/**
+ * `'container'` is a Phase 8 (`network-converger.ts`) addition — `reconcileStack`/
+ * `reconcileEnvironment`/`reconcileAll` (Phase 7) never produce it; only
+ * `convergeContainer()`'s `NetworkConvergeResult.scope` does, for the
+ * single-container convergence primitive triggered by a Docker container
+ * `start` event.
+ */
+export type NetworkReconcileScopeKind = 'stack' | 'environment' | 'all' | 'container';
 
 export interface NetworkReconcileScope {
   kind: NetworkReconcileScopeKind;
@@ -198,6 +205,8 @@ export interface NetworkReconcileScope {
   stackId?: string;
   /** Set when `kind === 'environment'`. */
   environmentId?: string;
+  /** Set when `kind === 'container'`. */
+  containerId?: string;
 }
 
 export interface NetworkReconcileReport {
@@ -212,6 +221,76 @@ export interface NetworkReconcileReport {
 export interface NetworkReconcileResponse {
   success: boolean;
   data: NetworkReconcileReport;
+  message?: string;
+}
+
+// ====================
+// Network Convergence Types (network overhaul Phase 8 — enforcement + boot convergence)
+// ====================
+
+/**
+ * Result of an actual convergence pass (as opposed to `NetworkReconcileReport`,
+ * which is report-only). Produced by `convergeStack`/`convergeEnvironment`/
+ * `convergeAll` in `server/src/services/networks/network-converger.ts` after
+ * acting on a fresh `NetworkReconcileReport`'s drift items:
+ *
+ * - `network-missing` → `NetworkManager.ensure()` (create-if-missing, labels only).
+ * - `membership-missing` → `NetworkManager.connect()` for each missing container.
+ *   Always performed — this is the "connect-only by default" behavior.
+ * - `membership-stale` → `NetworkManager.disconnect()`, but ONLY when the
+ *   owning `ManagedNetwork.enforceMemberships` is `true`; otherwise counted in
+ *   `skippedDisconnects` and left alone.
+ * - `spec-mismatch` → never acted on (matches `NetworkManager.ensure()`'s own
+ *   "never recreate" policy — unchanged from Phase 1/7).
+ */
+export interface NetworkConvergeResult {
+  scope: NetworkReconcileScope;
+  ranAt: string; // ISO string for JSON serialization
+  /** `network-missing` items where `NetworkManager.ensure()` was invoked. */
+  networksEnsured: number;
+  /** Subset of `networksEnsured` where `ensure()` reported `created: true`. */
+  networksCreated: number;
+  /** Successful `connect()` calls for `membership-missing` containers. */
+  membershipsConnected: number;
+  /** Successful `disconnect()` calls for `membership-stale` containers (only ever non-zero when `enforceMemberships` is true on that network). */
+  membershipsDisconnected: number;
+  /** `membership-stale` items found but left alone because the network's `enforceMemberships` is false — the default-safe outcome. */
+  skippedDisconnects: number;
+  /** `membership-stale` containers whose disconnect was deferred because the container was created too recently (grace window) — a race-with-creation guard, not a permanent skip; the next sweep re-evaluates them. */
+  skippedRecentContainers: number;
+  /** Count of individual per-item action failures — logged and swallowed, never thrown (mirrors the rest of this subsystem's non-fatal error handling). */
+  errors: number;
+}
+
+export interface NetworkConvergeResponse {
+  success: boolean;
+  data: NetworkConvergeResult;
+  message?: string;
+}
+
+/**
+ * Per-network `enforceMemberships` gate, set by Docker network `name` (the
+ * identifier operators already see via `GET /api/docker/networks` and
+ * `docker network ls` — no separate "list managed networks" surface exists
+ * yet; that's the Phase 9 networks tab). Phase 8 ships the API only; Phase 9
+ * adds the UI toggle that calls it.
+ */
+export interface SetNetworkEnforceMembershipsRequest {
+  name: string;
+  enforceMemberships: boolean;
+}
+
+export interface ManagedNetworkSummary {
+  id: string;
+  name: string;
+  scope: string;
+  purpose: string;
+  enforceMemberships: boolean;
+}
+
+export interface SetNetworkEnforceMembershipsResponse {
+  success: boolean;
+  data: ManagedNetworkSummary;
   message?: string;
 }
 

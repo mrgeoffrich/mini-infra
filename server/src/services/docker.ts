@@ -8,6 +8,21 @@ import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 import type { DockerContainerEvent } from "../lib/docker-event-pattern-detector";
+
+/**
+ * A `Type: "network"` Docker event — connect/disconnect/create/destroy.
+ * Network overhaul Phase 8: consumed by `NetworkConvergenceScheduler`
+ * (`services/networks/network-convergence-scheduler.ts`) to trigger scoped,
+ * debounced re-convergence (e.g. `docker network disconnect` on a
+ * managed-service container's network should self-heal without waiting for
+ * the periodic sweep).
+ */
+export interface DockerNetworkEvent {
+  action: string;
+  networkId: string;
+  /** Docker network name, when present on the event's actor attributes. */
+  networkName?: string;
+}
 // Imported directly from network-manager.ts (not the `./networks` barrel) —
 // the barrel's `createNetworkManager()` helper imports this module for its
 // cache-invalidation hook, so importing the barrel here would create a
@@ -23,6 +38,7 @@ class DockerService {
   private dockerConfigService: DockerConfigService;
   private containerChangeCallbacks: Array<() => void> = [];
   private containerEventCallbacks: Array<(event: DockerContainerEvent) => void> = [];
+  private networkEventCallbacks: Array<(event: DockerNetworkEvent) => void> = [];
   private connectCallbacks: Array<() => void | Promise<void>> = [];
   /**
    * The single owner of Docker network mutation (create/connect/disconnect/
@@ -425,6 +441,19 @@ class DockerService {
                   "Network event received, invalidating network cache",
                 );
                 this.cache.del("networks");
+
+                const networkEvent: DockerNetworkEvent = {
+                  action: event.Action,
+                  networkId: event.id || event.Actor?.ID || "",
+                  networkName: event.Actor?.Attributes?.name,
+                };
+                for (const cb of this.networkEventCallbacks) {
+                  try {
+                    cb(networkEvent);
+                  } catch (err) {
+                    getLogger("docker", "docker").error({ error: err }, "Network event callback failed");
+                  }
+                }
               } else if (event.Type === "volume") {
                 getLogger("docker", "docker").debug(
                   {
@@ -849,6 +878,15 @@ class DockerService {
    */
   public onContainerEvent(callback: (event: DockerContainerEvent) => void): void {
     this.containerEventCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback to receive typed network events (connect, disconnect,
+   * create, destroy). Used by `NetworkConvergenceScheduler` (network overhaul
+   * Phase 8) to trigger scoped, debounced re-convergence.
+   */
+  public onNetworkEvent(callback: (event: DockerNetworkEvent) => void): void {
+    this.networkEventCallbacks.push(callback);
   }
 
   /**

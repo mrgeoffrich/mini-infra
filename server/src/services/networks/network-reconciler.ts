@@ -125,13 +125,34 @@ function isSynthetic(labels: Record<string, string>): boolean {
   return labels[SYNTHETIC_LABEL] === 'true';
 }
 
-function ownerFromManagedNetwork(net: ManagedNetworkRow): NetworkOwner {
+/**
+ * Docker's own APIs are inconsistent about container ID length: `listContainers()`
+ * and network-inspect's `Containers` dict always key by the FULL 64-char ID,
+ * but `getOwnContainerId()` (`services/self-update.ts`) resolves the `self`
+ * sentinel from `HOSTNAME`, which Docker sets to the SHORT 12-char ID unless
+ * a compose file overrides it. Comparing a short self-id against a full
+ * connected-container id with `===`/`Set.has()` never matches — found live in
+ * dev verifying Phase 8 (the boot converge reported the server's own
+ * vault/nats/dataplane/database/egress attachments as perpetually
+ * "membership-missing" and reconnected them as a harmless no-op on every
+ * single sweep, forever, even seconds after confirming they were already
+ * attached). Every container-id comparison in this module normalizes through
+ * this helper first so short/full ids compare equal; the *reported*
+ * `id` field on a drift item's `containers[]` is left as whatever length was
+ * resolved (Docker's connect/disconnect API accepts either).
+ */
+function shortId(id: string): string {
+  return id.length > 12 ? id.slice(0, 12) : id;
+}
+
+/** Exported so `network-converger.ts` (Phase 8) can reuse the exact same owner derivation when calling `NetworkManager.ensure()` for a `network-missing` item — one place decides what a `ManagedNetwork` row's Docker owner labels should be. */
+export function ownerFromManagedNetwork(net: ManagedNetworkRow): NetworkOwner {
   if (net.scope === 'stack') return { kind: 'stack', id: net.stackId ?? undefined };
   if (net.scope === 'environment') return { kind: 'environment', id: net.environmentId ?? undefined };
   return { kind: 'host' };
 }
 
-function asOptionsRecord(json: unknown): Record<string, unknown> | null {
+export function asOptionsRecord(json: unknown): Record<string, unknown> | null {
   if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
   return json as Record<string, unknown>;
 }
@@ -151,7 +172,7 @@ function asOptionsRecord(json: unknown): Record<string, unknown> | null {
  * network name — a false positive found live in dev while verifying this
  * phase, not a real drift signal.
  */
-function desiredLabelPurpose(net: ManagedNetworkRow): string | undefined {
+export function desiredLabelPurpose(net: ManagedNetworkRow): string | undefined {
   return net.scope === 'stack' ? undefined : net.purpose;
 }
 
@@ -347,7 +368,7 @@ async function diffNetworks(
     }
 
     const connected = inspectResult.connectedContainers ?? [];
-    const connectedIds = new Set(connected.map((c) => c.id));
+    const connectedIds = new Set(connected.map((c) => shortId(c.id)));
     const expectedIds = new Set<string>();
 
     const memberships = membershipsByNetworkId.get(net.id) ?? [];
@@ -362,8 +383,8 @@ async function diffNetworks(
       );
       if (resolved.length === 0) continue; // service not deployed yet — the existing container-level plan already covers that gap.
 
-      for (const c of resolved) expectedIds.add(c.id);
-      const missing = resolved.filter((c) => !connectedIds.has(c.id));
+      for (const c of resolved) expectedIds.add(shortId(c.id));
+      const missing = resolved.filter((c) => !connectedIds.has(shortId(c.id)));
       if (missing.length > 0) {
         items.push({
           type: 'membership-missing',
@@ -384,7 +405,7 @@ async function diffNetworks(
     // low-confidence note instead, never a drift item.
     const staleEligible = options.staleEligibleNetworkIds.has(net.id);
     for (const c of connected) {
-      if (expectedIds.has(c.id)) continue;
+      if (expectedIds.has(shortId(c.id))) continue;
 
       const known = options.primaryStackContainersById?.get(c.id);
       if (known && isSynthetic(known.labels)) continue; // Gap 1 — addon/pool-addon sidecars: never flagged, not even a note.
@@ -523,18 +544,30 @@ export async function reconcileStack(stackId: string, deps: NetworkReconcilerDep
 }
 
 /**
- * Reconcile every `ManagedNetwork` owned by one environment. Never
- * stale-checks (environment-scoped networks are always excluded by rule 1 —
- * see module doc); unexplained attachments are reported as notes only.
+ * Shared by `reconcileEnvironment` and `reconcileAll`'s host-scope branch:
+ * fetch every `NetworkMembership` row for a flat set of `ManagedNetwork`
+ * rows (regardless of scope), resolve any `stackServiceId` references, and
+ * diff. Never stale-eligible (rule 1 — environment/host-scoped networks are
+ * shared by many different stacks/producers, so an unexplained attachment
+ * can never be safely attributed to "this reconcile's own state").
+ *
+ * Phase 8 fix: this used to be inlined into `reconcileEnvironment` only,
+ * with `reconcileAll`'s host-scope branch passing an *empty* membership map
+ * (see the removed doc comment, which claimed host-scope networks have "no
+ * membership set to diff" — wrong: a `containerName: 'self'` row can target
+ * a host-scope network exactly as easily as an environment-scoped one, e.g.
+ * the mini-infra server's own join to the host-scoped vault/nats/dataplane
+ * networks). Without this fix, `convergeAll`'s boot-time full sweep
+ * (`network-converger.ts`) would never see — and therefore never repair —
+ * a lost self-attachment to any host-scoped network, defeating the whole
+ * point of replacing `self-network-reattach.ts` with a general converge.
  */
-export async function reconcileEnvironment(environmentId: string, deps: NetworkReconcilerDeps): Promise<NetworkReconcileReport> {
+async function reconcileNetworkSet(
+  networks: ManagedNetworkRow[],
+  deps: NetworkReconcilerDeps,
+): Promise<{ items: NetworkDriftItem[]; notes: NetworkUnmanagedAttachmentNote[]; membershipsChecked: number }> {
   const { prisma } = deps;
-  const ranAt = new Date().toISOString();
-
-  const networks = await prisma.managedNetwork.findMany({ where: { scope: 'environment', environmentId } });
-  if (networks.length === 0) {
-    return { scope: { kind: 'environment', environmentId }, ranAt, networksChecked: 0, membershipsChecked: 0, items: [], notes: [] };
-  }
+  if (networks.length === 0) return { items: [], notes: [], membershipsChecked: 0 };
 
   const networkIds = networks.map((n) => n.id);
   const memberships = await prisma.networkMembership.findMany({ where: { networkId: { in: networkIds } } });
@@ -554,25 +587,41 @@ export async function reconcileEnvironment(environmentId: string, deps: NetworkR
     : [];
   const serviceById = new Map(resolvedServices.map((s) => [s.id, { stackId: s.stackId, serviceName: s.serviceName }]));
 
-  const { items, notes, membershipsChecked } = await diffNetworks(
-    networks,
-    membershipsByNetworkId,
-    serviceById,
-    deps,
-    { staleEligibleNetworkIds: new Set() }, // environment scope: never stale-eligible (rule 1).
-  );
+  return diffNetworks(networks, membershipsByNetworkId, serviceById, deps, { staleEligibleNetworkIds: new Set() });
+}
+
+/**
+ * Reconcile every `ManagedNetwork` owned by one environment. Never
+ * stale-checks (environment-scoped networks are always excluded by rule 1 —
+ * see module doc); unexplained attachments are reported as notes only.
+ */
+export async function reconcileEnvironment(environmentId: string, deps: NetworkReconcilerDeps): Promise<NetworkReconcileReport> {
+  const { prisma } = deps;
+  const ranAt = new Date().toISOString();
+
+  const networks = await prisma.managedNetwork.findMany({ where: { scope: 'environment', environmentId } });
+  if (networks.length === 0) {
+    return { scope: { kind: 'environment', environmentId }, ranAt, networksChecked: 0, membershipsChecked: 0, items: [], notes: [] };
+  }
+
+  const { items, notes, membershipsChecked } = await reconcileNetworkSet(networks, deps);
 
   return { scope: { kind: 'environment', environmentId }, ranAt, networksChecked: networks.length, membershipsChecked, items, notes };
 }
 
 /**
  * Reconcile every non-removed stack plus every environment — the `scope:
- * 'all'` admin sweep. Runs `reconcileStack` per stack (each call is
- * independently scoped and stale-checked per rule 1) and one
- * `reconcileEnvironment` pass per environment, merging the results. Host-scope
- * `ManagedNetwork` rows (vault/nats/dataplane-at-host-scope, etc.) are checked
- * for existence/mismatch only — no stack or environment owns them, so there is
- * no membership set to diff and no stale-eligible owner either.
+ * 'all'` admin sweep (and the Phase 8 boot/periodic convergence entry
+ * point). Runs `reconcileStack` per stack (each call is independently
+ * scoped and stale-checked per rule 1) and one `reconcileEnvironment` pass
+ * per environment, merging the results. Host-scope `ManagedNetwork` rows
+ * (vault/nats/dataplane-at-host-scope, etc.) are diffed the same way as
+ * environment-scoped ones via `reconcileNetworkSet` — existence/mismatch
+ * *and* membership (e.g. the server's own `containerName: 'self'` joins) —
+ * but, like environment scope, are never stale-eligible: many different
+ * stacks/producers can legitimately attach to a shared host-scoped network,
+ * so an unaccounted-for attachment there is never safe to attribute to any
+ * single reconcile pass.
  */
 export async function reconcileAll(deps: NetworkReconcilerDeps): Promise<NetworkReconcileReport> {
   const { prisma } = deps;
@@ -606,16 +655,11 @@ export async function reconcileAll(deps: NetworkReconcilerDeps): Promise<Network
   }
 
   if (hostNetworks.length > 0) {
-    const { items: hostItems, notes: hostNotes } = await diffNetworks(
-      hostNetworks,
-      new Map(),
-      new Map(),
-      deps,
-      { staleEligibleNetworkIds: new Set() },
-    );
+    const { items: hostItems, notes: hostNotes, membershipsChecked: hostMembershipsChecked } = await reconcileNetworkSet(hostNetworks, deps);
     items.push(...hostItems);
     notes.push(...hostNotes);
     networksChecked += hostNetworks.length;
+    membershipsChecked += hostMembershipsChecked;
   }
 
   return { scope: { kind: 'all' }, ranAt, networksChecked, membershipsChecked, items, notes };

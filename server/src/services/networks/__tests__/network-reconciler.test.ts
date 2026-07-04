@@ -372,6 +372,26 @@ describe('reconcileStack', () => {
     ]);
   });
 
+  it('matches the "self" sentinel against a full 64-char connected-container id even though getOwnContainerId() only resolves the short 12-char HOSTNAME form (regression: Docker network-inspect always keys by full id, so a naive === comparison never matched and reported self as perpetually missing)', async () => {
+    selfContainerId = '4ab5f6326372'; // short id, as HOSTNAME provides it
+    const prisma = makeMockPrisma({
+      stacks: [{ id: 'stack-1', services: [] }],
+      managedNetworks: [net()],
+      networkMemberships: [membership({ networkId: 'net-1', containerName: 'self' })],
+    });
+    const networkManager = makeNetworkManager(() => ({
+      existence: 'present',
+      // Docker's own network inspect payload — always the full id.
+      connectedContainers: [{ id: '4ab5f6326372b9bb4352b5266307cbe48926d72dd6a39023a5adf591fe2226bc', name: 'self' }],
+    }));
+    const dockerExecutor = makeDockerExecutor(() => []);
+
+    const report = await reconcileStack('stack-1', { prisma, networkManager, dockerExecutor, log });
+
+    expect(report.items).toEqual([]);
+    selfContainerId = 'self-container-id';
+  });
+
   it('skips the "self" check entirely when getOwnContainerId() cannot resolve (not running as a container)', async () => {
     selfContainerId = null;
     const prisma = makeMockPrisma({
@@ -565,5 +585,47 @@ describe('reconcileAll', () => {
     expect(report.scope).toEqual({ kind: 'all' });
     expect(report.networksChecked).toBe(3);
     expect(report.items).toEqual([expect.objectContaining({ type: 'network-missing', networkName: 'mini-infra-vault' })]);
+  });
+
+  it('checks membership on host-scoped networks too — e.g. a lost self-join to vault — not just existence/mismatch (Phase 8 fix: the boot-time convergeAll sweep depends on this to restore server-to-vault/nats/dataplane attachments)', async () => {
+    selfContainerId = 'self-container-id';
+    const prisma = makeMockPrisma({
+      stacks: [],
+      environments: [],
+      managedNetworks: [
+        net({ id: 'net-host-vault', scope: 'host', stackId: null, environmentId: null, purpose: 'vault', name: 'mini-infra-vault' }),
+      ],
+      networkMemberships: [membership({ networkId: 'net-host-vault', containerName: 'self' })],
+    });
+    const networkManager = makeNetworkManager(() => ({ existence: 'present', connectedContainers: [] }));
+    const dockerExecutor = makeDockerExecutor(() => []);
+
+    const report = await reconcileAll({ prisma, networkManager, dockerExecutor, log });
+
+    expect(report.membershipsChecked).toBe(1);
+    expect(report.items).toEqual([
+      expect.objectContaining({ type: 'membership-missing', networkName: 'mini-infra-vault', containers: [{ id: 'self-container-id', name: 'self' }] }),
+    ]);
+  });
+
+  it('never stale-checks a host-scoped network even when an unexplained container is attached (rule 1 — shared network)', async () => {
+    const prisma = makeMockPrisma({
+      stacks: [],
+      environments: [],
+      managedNetworks: [
+        net({ id: 'net-host-vault', scope: 'host', stackId: null, environmentId: null, purpose: 'vault', name: 'mini-infra-vault' }),
+      ],
+      networkMemberships: [],
+    });
+    const networkManager = makeNetworkManager(() => ({
+      existence: 'present',
+      connectedContainers: [{ id: 'mystery-1', name: 'mystery-container' }],
+    }));
+    const dockerExecutor = makeDockerExecutor(() => []);
+
+    const report = await reconcileAll({ prisma, networkManager, dockerExecutor, log });
+
+    expect(report.items.filter((i) => i.type === 'membership-stale')).toEqual([]);
+    expect(report.notes).toEqual([expect.objectContaining({ containerId: 'mystery-1' })]);
   });
 });

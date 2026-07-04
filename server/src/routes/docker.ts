@@ -4,10 +4,10 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, Permission } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
-import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll } from "../services/networks";
+import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll } from "../services/networks";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
@@ -24,6 +24,11 @@ const networkReconcileQuerySchema = z.object({
   message: "stackId is required when scope=stack",
 }).refine((v) => v.scope !== "environment" || Boolean(v.environmentId), {
   message: "environmentId is required when scope=environment",
+});
+
+const setEnforceMembershipsSchema = z.object({
+  name: z.string().min(1),
+  enforceMemberships: z.boolean(),
 });
 
 /**
@@ -328,6 +333,134 @@ router.get(
       res.json(response);
     } catch (error) {
       logger.error({ error }, "Network reconcile run failed");
+      next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/docker/networks/reconcile
+ * Network overhaul Phase 8 — manual convergence trigger. Sibling of the
+ * Phase 7 `GET /api/docker/networks/reconcile` (report-only diff): this one
+ * actually acts on the diff — `ensure()`s missing networks and `connect()`s
+ * missing memberships (always), and `disconnect()`s stale endpoints ONLY on
+ * networks whose `enforceMemberships` is true (default false everywhere,
+ * so by default this endpoint behaves as a connect-only "re-attach
+ * everything this scope declares" action). This is the operator-facing
+ * escape hatch for "I know something drifted, fix it now" instead of
+ * waiting for the next periodic sweep or a matching Docker event.
+ * Admin-gated like the read-only GET above.
+ */
+router.post(
+  "/networks/reconcile",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = networkReconcileQuerySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request body",
+          details: parsed.error.issues,
+        });
+      }
+
+      const dockerService = DockerService.getInstance();
+      if (!dockerService.isConnected()) {
+        logger.warn("Docker service not connected");
+        return res.status(503).json({
+          success: false,
+          message: "Docker service not connected",
+        });
+      }
+
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      const networkManager = createNetworkManager(executor);
+      const deps = { prisma, networkManager, dockerExecutor: executor, log: logger };
+
+      const { scope, stackId, environmentId } = parsed.data;
+      const result =
+        scope === "stack"
+          ? await convergeStack(stackId!, deps)
+          : scope === "environment"
+            ? await convergeEnvironment(environmentId!, deps)
+            : await convergeAll(deps);
+
+      logger.info(
+        {
+          scope,
+          networksEnsured: result.networksEnsured,
+          networksCreated: result.networksCreated,
+          membershipsConnected: result.membershipsConnected,
+          membershipsDisconnected: result.membershipsDisconnected,
+          skippedDisconnects: result.skippedDisconnects,
+          skippedRecentContainers: result.skippedRecentContainers,
+          errors: result.errors,
+        },
+        "Network convergence run via admin endpoint",
+      );
+
+      const response: NetworkConvergeResponse = { success: true, data: result };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Network convergence run failed");
+      next(error);
+    }
+  }
+);
+
+/**
+ * PATCH /api/docker/networks/managed/enforce-memberships
+ * Network overhaul Phase 8 — sets the per-network `enforceMemberships` gate
+ * that decides whether the reconciler's conservative `membership-stale`
+ * findings are ever acted on (disconnected) for THAT network. Defaults to
+ * false for every network and stays false until an operator explicitly
+ * opts a specific network in here — this is that opt-in surface. Keyed by
+ * Docker network `name` (already visible via `GET /api/docker/networks` /
+ * `docker network ls`) rather than the internal `ManagedNetwork.id`, since
+ * no "list managed networks" surface exists yet (that's the Phase 9
+ * networks tab; this endpoint is the API Phase 9's toggle will call).
+ * Admin-gated like the rest of this subsystem's mutating endpoints.
+ */
+router.patch(
+  "/networks/managed/enforce-memberships",
+  requirePermission(Permission.DockerAdmin),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const parsed = setEnforceMembershipsSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid request body",
+          details: parsed.error.issues,
+        });
+      }
+
+      const { name, enforceMemberships } = parsed.data;
+      const existing = await prisma.managedNetwork.findUnique({ where: { name } });
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: `No managed network found with name "${name}"`,
+        });
+      }
+
+      const updated = await prisma.managedNetwork.update({
+        where: { name },
+        data: { enforceMemberships },
+        select: { id: true, name: true, scope: true, purpose: true, enforceMemberships: true },
+      });
+
+      logger.info(
+        { name, enforceMemberships, managedNetworkId: updated.id },
+        "Network enforceMemberships flag updated via admin endpoint",
+      );
+
+      const response: SetNetworkEnforceMembershipsResponse = { success: true, data: updated };
+      res.json(response);
+    } catch (error) {
+      logger.error({ error }, "Failed to update network enforceMemberships flag");
       next(error);
     }
   }

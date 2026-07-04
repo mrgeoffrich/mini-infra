@@ -10,6 +10,8 @@ export * from './membership-store';
 export * from './membership-compiler';
 export * from './membership-backfill';
 export * from './network-reconciler';
+export * from './network-converger';
+export * from './network-convergence-scheduler';
 
 /**
  * Construct a NetworkManager wired to invalidate `DockerService`'s cached

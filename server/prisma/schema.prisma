@@ -1547,6 +1547,13 @@ model ManagedNetwork {
   dockerId      String?  // recorded from inspect, never prescribed
   subnet        String?  // recorded, never prescribed
   status        String   @default("pending") // pending|present|missing|error
+  // Network overhaul Phase 8 — per-network gate for stale-endpoint disconnects.
+  // Defaults to false (connect-only convergence) on every network; an operator
+  // must explicitly opt a specific network in via the API before the
+  // reconciler will ever disconnect a "membership-stale" endpoint on it. See
+  // docs/designs/docker-network-management-redesign.md §3.5 and
+  // docs/planning/not-shipped/docker-network-overhaul-plan.md §6 Phase 8.
+  enforceMemberships Boolean @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -50,6 +50,7 @@ import {
   stackNetworkName,
   compileStackNetworkMemberships,
   buildMembershipServiceInputs,
+  convergeStack,
   type NetworkManager,
 } from '../networks';
 import { recordEgressNetworkMemberships } from './egress-injection';
@@ -395,6 +396,21 @@ export class StackReconciler {
 
       // 7b. Connect mini-infra container to resource output networks with joinSelf: true
       await this.infraManager.joinSelfToOutputNetworks(resourceOutputs, outputNetworkMap, log);
+
+      // 7b-ii. Network overhaul Phase 8 — scoped convergence for this stack,
+      // now that every action above has finished (containers already
+      // created/recreated/removed, so there is nothing left to race). This
+      // is the "stack apply (scoped)" convergence trigger: it acts on the
+      // membership rows `compileStackNetworkMemberships` just wrote/updated
+      // above, catching anything the imperative attach pipeline in the
+      // action loop above didn't cover (e.g. a service the plan marked
+      // no-op this apply but whose desired membership still drifted since
+      // its last apply). Best-effort — never blocks or fails the apply.
+      try {
+        await convergeStack(stackId, { prisma: this.prisma, networkManager: this.networkManager, dockerExecutor: this.dockerExecutor, log });
+      } catch (err) {
+        log.warn({ stackId, error: err instanceof Error ? err.message : String(err) }, 'Post-apply network convergence failed (non-fatal)');
+      }
 
       // 7c. Run post-install actions declared by the template (failures are non-fatal)
       await runPostInstallActions(stack.template?.name, {
