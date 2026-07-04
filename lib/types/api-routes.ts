@@ -220,6 +220,10 @@ export const ApiRoute = {
     networks: (): string => `${ApiBase.docker}/networks`,
     /** DELETE /api/docker/networks/:id */
     network: (id: string): string => `${ApiBase.docker}/networks/${id}`,
+    /** POST /api/docker/networks/:id/connect — attach a container to a network */
+    networkConnect: (id: string): string => `${ApiBase.docker}/networks/${id}/connect`,
+    /** POST /api/docker/networks/:id/disconnect — detach a container from a network */
+    networkDisconnect: (id: string): string => `${ApiBase.docker}/networks/${id}/disconnect`,
     /** GET /api/docker/networks/managed */
     networksManaged: (): string => `${ApiBase.docker}/networks/managed`,
     /** POST /api/docker/networks/gc */

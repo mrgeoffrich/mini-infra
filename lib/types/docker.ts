@@ -50,6 +50,20 @@ export interface DockerNetworkDeleteResponse {
   networkId: string;
 }
 
+/**
+ * Response for the imperative container↔network attach/detach routes
+ * (`POST /api/docker/networks/:id/connect` and `.../disconnect`) — the
+ * equivalent of `docker network connect/disconnect`. Shared by both.
+ */
+export interface NetworkAttachmentResponse {
+  success: boolean;
+  message: string;
+  networkId: string;
+  containerId: string;
+  /** connect only: true when the container was already attached (idempotent no-op). */
+  alreadyConnected?: boolean;
+}
+
 // ====================
 // Docker Network GC Types (network overhaul Phase 4 — label-driven GC)
 // ====================

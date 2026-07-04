@@ -54,6 +54,8 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "GET", path: "/api/docker/info" },
   { method: "GET", path: "/api/docker/networks" },
   { method: "DELETE", path: "/api/docker/networks/:id" },
+  { method: "POST", path: "/api/docker/networks/:id/connect" },
+  { method: "POST", path: "/api/docker/networks/:id/disconnect" },
   { method: "POST", path: "/api/docker/networks/backfill-memberships" },
   { method: "POST", path: "/api/docker/networks/gc" },
   { method: "GET", path: "/api/docker/networks/managed" },
