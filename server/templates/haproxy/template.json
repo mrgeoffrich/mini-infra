@@ -1,7 +1,7 @@
 {
   "name": "haproxy",
   "displayName": "HAProxy Load Balancer",
-  "builtinVersion": 10,
+  "builtinVersion": 11,
   "scope": "environment",
   "category": "infrastructure",
   "description": "HAProxy load balancer with DataPlane API",
@@ -47,6 +47,7 @@
           "HAPROXY_MWORKER": "1",
           "DATAPLANEAPI_USERLIST_FILE": "/usr/local/etc/haproxy/haproxy.cfg"
         },
+        "egressBypass": true,
         "ports": [
           { "containerPort": 80, "hostPort": "{{params.http-port}}", "protocol": "tcp", "exposeOnHost": "{{params.expose-on-host}}" },
           { "containerPort": 443, "hostPort": "{{params.https-port}}", "protocol": "tcp", "exposeOnHost": "{{params.expose-on-host}}" },
