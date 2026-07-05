@@ -790,8 +790,10 @@ export class ContainerLifecycleManager {
       const originalHostPath = hostPath;
 
       // If environmentName is provided and hostPath doesn't look like an absolute path
-      // (doesn't start with / or a Windows drive letter), prefix it with the environment name
-      if (environmentName && !hostPath.startsWith('/') && !hostPath.match(/^[a-zA-Z]:/)) {
+      // (doesn't start with / or a Windows drive letter), prefix it with the environment name.
+      // `preResolved` volumes already carry their final Docker volume name (e.g. a stack-owned
+      // `${projectName}_<name>` volume resolved upstream), so they must NOT be re-prefixed.
+      if (!volume.preResolved && environmentName && !hostPath.startsWith('/') && !hostPath.match(/^[a-zA-Z]:/)) {
         hostPath = `${environmentName}-${hostPath}`;
 
         getLogger("docker", "container-lifecycle-manager").debug(

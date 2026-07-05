@@ -41,6 +41,7 @@ import type {
   NetworkMembershipBackfillSummary,
   StackContainerConfig,
   StackNetwork,
+  StackResourceOutput,
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { NetworkManager } from './network-manager';
@@ -108,6 +109,32 @@ export async function backfillNetworkMemberships(
   // membership of their own (that's compiled per-stack below), just the
   // ManagedNetwork row itself.
   const resources = await prisma.infraResource.findMany({ where: { type: 'docker-network' } });
+
+  // Detect which of those resource networks the mini-infra server itself is
+  // meant to join (`joinSelf: true` on the producing stack's resource output —
+  // dataplane/database/vault/nats). `connectSelfToNetwork` only records the
+  // `containerName: 'self'` membership for these at *apply* time, so a stack
+  // that stayed `synced` across the network-overhaul deploy never got one; boot
+  // convergence (`convergeAll`) then has no self-row to reconnect after the app
+  // container is recreated, stranding mini-infra off the dataplane network (and
+  // failing every HAProxy-routed deploy with "HAProxy environment context not
+  // available"). Seed the row here from the producing stack's declared outputs
+  // so the self-heal works for already-applied infra without a re-apply.
+  const producingStacks = await prisma.stack.findMany({
+    where: { removedAt: null },
+    select: { id: true, resourceOutputs: true },
+  });
+  const resourceOutputsByStackId = new Map<string, StackResourceOutput[]>(
+    producingStacks.map((s) => [s.id, (s.resourceOutputs as unknown as StackResourceOutput[]) ?? []]),
+  );
+  const isJoinSelfResource = (res: { stackId: string | null; purpose: string }): boolean => {
+    if (!res.stackId) return false;
+    const outputs = resourceOutputsByStackId.get(res.stackId) ?? [];
+    return outputs.some(
+      (o) => o.type === 'docker-network' && o.purpose === res.purpose && o.joinSelf === true,
+    );
+  };
+
   for (const r of resources) {
     summary.infraResourcesScanned++;
     const existence = await networkManager.exists(r.name);
@@ -139,6 +166,7 @@ export async function backfillNetworkMemberships(
     // ahead of this exact InfraResource-backed identity for an
     // environment-scoped network like `${env}-egress`.
     const existingByName = await prisma.managedNetwork.findUnique({ where: { name: r.name } });
+    let managedNetworkId: string;
     if (
       existingByName &&
       (existingByName.scope !== scope ||
@@ -153,18 +181,31 @@ export async function backfillNetworkMemberships(
         },
         'Backfill: correcting ManagedNetwork identity to match authoritative InfraResource row',
       );
-      await prisma.managedNetwork.update({
+      const corrected = await prisma.managedNetwork.update({
         where: { id: existingByName.id },
         data: { scope, environmentId: r.environmentId ?? null, purpose: r.purpose },
       });
-      continue;
+      managedNetworkId = corrected.id;
+    } else {
+      const row = await upsertManagedNetworkByIdentity(
+        prisma,
+        { scope, environmentId: r.environmentId, stackId: null, purpose: r.purpose },
+        r.name,
+      );
+      managedNetworkId = row.id;
     }
 
-    await upsertManagedNetworkByIdentity(
-      prisma,
-      { scope, environmentId: r.environmentId, stackId: null, purpose: r.purpose },
-      r.name,
-    );
+    // Seed the mini-infra server's own `self` membership for joinSelf resource
+    // networks (see the note above the loop). Idempotent — identical to the row
+    // `connectSelfToNetwork` writes at apply time, so re-runs here and a later
+    // re-apply both no-op rather than duplicating.
+    if (isJoinSelfResource(r)) {
+      await upsertNetworkMembership(prisma, {
+        containerName: 'self',
+        networkId: managedNetworkId,
+        source: 'system',
+      });
+    }
   }
 
   // 2. Stack-owned networks + per-service memberships, from every
