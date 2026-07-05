@@ -92,6 +92,16 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 		nats.ReconnectWait(2 * time.Second),
 		nats.PingInterval(20 * time.Second),
 		nats.MaxPingsOutstanding(2),
+		// Keep retrying through auth failures. By default nats.go aborts the
+		// reconnect loop and permanently closes the connection after the server
+		// returns the *same* auth error twice in a row — which turns a transient
+		// Vault/NATS restart (NATS boots before Vault is unsealed, so it rejects
+		// our creds until its accounts load) into a permanent zombie: the proxy
+		// keeps running but never receives another container-map/rules push, so
+		// its ACL/container map go stale and every request is denied. The
+		// sidecars are unattended and must self-heal once NATS comes good, so we
+		// opt out of the abort and let MaxReconnects(-1) keep trying.
+		nats.IgnoreAuthErrorAbort(),
 		// Surface every transition through the structured logger — without
 		// these the agent silently flap-loops on a transient NATS bounce.
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
