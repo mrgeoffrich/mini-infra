@@ -45,6 +45,11 @@ interface EgressContext {
  * Gates (in order):
  * - egressBypass === true → no injection (egress-gateway itself, fw-agent, etc.)
  * - No environmentId → host-level stack, no injection.
+ * - egressFirewallEnabled === false → firewall opt-out (the default). Keeps L7
+ *   proxy env + network attach consistent with the L3/L4 fw-agent, which also
+ *   no-ops when the flag is off (see env-firewall-manager). The egress-gateway
+ *   is provisioned unconditionally at env creation, so gating on egressGatewayIp
+ *   alone kept injecting even after the operator switched the firewall off.
  * - Environment has no egressGatewayIp → gateway not provisioned, skip.
  * - No `egress` InfraResource for the env → gateway provisioning incomplete, skip.
  *
@@ -67,9 +72,15 @@ export async function resolveEgressContext(
   try {
     const env = await prisma.environment.findUnique({
       where: { id: environmentId },
-      select: { egressGatewayIp: true },
+      select: { egressGatewayIp: true, egressFirewallEnabled: true },
     });
-    if (!env?.egressGatewayIp) return { shouldInject: false };
+    // Egress firewall is opt-in per environment (egressFirewallEnabled defaults
+    // to false). Honour it here so disabling the firewall actually stops L7
+    // injection — the L3/L4 fw-agent already no-ops when off, but the gateway is
+    // provisioned unconditionally at env creation, so gating on egressGatewayIp
+    // alone left the proxy env pointed at a gateway the operator switched off.
+    if (!env?.egressFirewallEnabled) return { shouldInject: false };
+    if (!env.egressGatewayIp) return { shouldInject: false };
 
     const resource = await prisma.infraResource.findFirst({
       where: {
