@@ -133,4 +133,92 @@ describe('backfillNetworkMemberships — InfraResource identity self-heal', () =
       }),
     );
   });
+
+  it('seeds the mini-infra `self` membership for a joinSelf resource network the producing stack declares', async () => {
+    // Regression: a dataplane-network stack that stayed `synced` across the
+    // network-overhaul deploy never had `connectSelfToNetwork` write the
+    // `containerName: 'self'` row (that only happens at apply time), so boot
+    // convergence had nothing to reconnect after the app container was
+    // recreated — stranding mini-infra off the dataplane network. The backfill
+    // must seed that self-membership from the producing stack's joinSelf output.
+    const dataplaneResource = {
+      id: 'ir-dp', type: 'docker-network', purpose: 'dataplane', scope: 'host',
+      environmentId: null, name: 'mini-infra-dataplane', stackId: 'stack-dp',
+    };
+    const managedNetworkCreate = vi.fn().mockResolvedValue({ id: 'mn-dp' });
+    const networkMembershipCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      infraResource: { findMany: vi.fn().mockResolvedValue([dataplaneResource]) },
+      managedNetwork: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: managedNetworkCreate,
+        update: vi.fn(),
+        count: vi.fn().mockResolvedValue(1),
+      },
+      // First findMany (section 1, `select: {id, resourceOutputs}`) sees the
+      // producing dataplane stack; the second (section 2, per-stack membership)
+      // gets `[]` so that pass is a no-op for this focused test.
+      stack: {
+        findMany: vi.fn()
+          .mockResolvedValueOnce([
+            { id: 'stack-dp', resourceOutputs: [{ type: 'docker-network', purpose: 'dataplane', joinSelf: true }] },
+          ])
+          .mockResolvedValue([]),
+      },
+      networkMembership: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: networkMembershipCreate,
+        count: vi.fn().mockResolvedValue(0),
+      },
+    } as unknown as PrismaClient;
+
+    const dockerExecutor = makeDockerExecutor(new Set(['mini-infra-dataplane']));
+
+    await backfillNetworkMemberships(dockerExecutor, prisma, log);
+
+    expect(networkMembershipCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ containerName: 'self', networkId: 'mn-dp', source: 'system' }),
+      }),
+    );
+  });
+
+  it('does not seed a self membership for a resource network with no joinSelf output', async () => {
+    // A per-environment `applications` network is HAProxy's/apps' network, not
+    // one the mini-infra server joins — no joinSelf output, so no self row.
+    const appsResource = {
+      id: 'ir-app', type: 'docker-network', purpose: 'applications', scope: 'environment',
+      environmentId: 'env-1', name: 'internet-applications', stackId: 'stack-hap',
+    };
+    const networkMembershipCreate = vi.fn().mockResolvedValue({});
+    const prisma = {
+      infraResource: { findMany: vi.fn().mockResolvedValue([appsResource]) },
+      managedNetwork: {
+        findUnique: vi.fn().mockResolvedValue(null),
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'mn-app' }),
+        update: vi.fn(),
+        count: vi.fn().mockResolvedValue(1),
+      },
+      stack: {
+        findMany: vi.fn()
+          .mockResolvedValueOnce([
+            { id: 'stack-hap', resourceOutputs: [{ type: 'docker-network', purpose: 'applications', joinSelf: false }] },
+          ])
+          .mockResolvedValue([]),
+      },
+      networkMembership: {
+        findFirst: vi.fn().mockResolvedValue(null),
+        create: networkMembershipCreate,
+        count: vi.fn().mockResolvedValue(0),
+      },
+    } as unknown as PrismaClient;
+
+    const dockerExecutor = makeDockerExecutor(new Set(['internet-applications']));
+
+    await backfillNetworkMemberships(dockerExecutor, prisma, log);
+
+    expect(networkMembershipCreate).not.toHaveBeenCalled();
+  });
 });

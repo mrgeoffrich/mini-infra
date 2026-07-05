@@ -16,6 +16,13 @@ export interface DeploymentVolume {
   hostPath: string;
   containerPath: string;
   mode?: 'rw' | 'ro';
+  /**
+   * When true, `hostPath` is already the final Docker volume name (e.g. a
+   * stack-owned `${projectName}_<name>` volume resolved upstream) and must NOT
+   * have the deploy path's environment-name prefix applied again. See
+   * `container-lifecycle-manager.buildVolumeBindings`.
+   */
+  preResolved?: boolean;
 }
 
 // Environment variable configuration

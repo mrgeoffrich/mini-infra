@@ -10,6 +10,8 @@ import type { HAProxyDataPlaneClient } from '../haproxy';
 import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
 import type { StackRoutingManager, StackRoutingContext } from './stack-routing-manager';
 import { resolveEgressEnv } from './egress-injection';
+import { resolveHealthCheckTimeoutMs } from '../haproxy/health-check-timeout';
+import { mountsToDeploymentVolumes } from './stack-mounts';
 
 export interface StackWithReconcilerContext {
   id: string;
@@ -145,8 +147,21 @@ export async function buildStateMachineContext(
       ? Math.round(Number(serviceDef.containerConfig.healthcheck.interval) / 1_000_000)
       : 2000,
     healthCheckRetries: Number(serviceDef.containerConfig.healthcheck?.retries ?? 2),
+    // Blue-green health-check timeout (ms): how long the deploy waits for the
+    // green server to report UP before rolling back. Sourced from the service's
+    // declared `healthcheck.startPeriod` (ms) so slow-booting images can extend
+    // past the historical 90s default. See health-check-timeout.ts.
+    healthCheckTimeoutMs: resolveHealthCheckTimeoutMs(
+      serviceDef.containerConfig.healthcheck?.startPeriod != null
+        ? Number(serviceDef.containerConfig.healthcheck.startPeriod)
+        : undefined,
+    ),
     containerPorts: serviceDef.containerConfig.ports ?? [],
-    containerVolumes: [],
+    // Declared mounts → DeploymentVolume[] so StatelessWeb/AdoptedWeb services
+    // actually get their volumes (previously hardcoded empty, silently dropping
+    // them). Sources are pre-resolved to the real `${projectName}_<name>` volume
+    // so the deploy path doesn't re-prefix them. See stack-mounts.ts.
+    containerVolumes: mountsToDeploymentVolumes(serviceDef.containerConfig.mounts, projectName),
     containerEnvironment: envRecord,
     containerLabels: {
       'mini-infra.stack': stack.name,
