@@ -7,6 +7,7 @@ import {
 import { getLogger } from '../../lib/logger-factory';
 import { groupByProperty } from './utils';
 import { resolveEgressEnv } from './egress-injection';
+import { resolveStackMountSource } from './stack-mounts';
 import type { PrismaClient } from '../../generated/prisma/client';
 import { createNetworkManager, type NetworkManager } from '../networks';
 
@@ -168,10 +169,12 @@ export class StackContainerManager {
         ? internalOnlyPorts.map((p) => `${p.containerPort}/${p.protocol}`)
         : undefined;
 
-    // Convert mounts to Docker format, prefixing volume sources with projectName
+    // Convert mounts to Docker format, resolving volume sources to their real
+    // `${projectName}_<name>` volume (shared with the blue-green deploy path via
+    // stack-mounts.ts so the two never drift).
     const mounts = config.mounts?.map((m) => ({
       Target: m.target,
-      Source: m.type === 'volume' && !m.source.includes('/') ? `${options.projectName}_${m.source}` : m.source,
+      Source: resolveStackMountSource(m, options.projectName),
       Type: m.type,
       ReadOnly: m.readOnly,
     }));

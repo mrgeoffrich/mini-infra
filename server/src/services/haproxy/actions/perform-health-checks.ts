@@ -1,6 +1,7 @@
 import type { ActionContext, HealthCheckEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import { DEFAULT_HEALTH_CHECK_TIMEOUT_MS } from '../health-check-timeout';
 
 const logger = getLogger("deploy", "perform-health-checks");
 
@@ -47,7 +48,10 @@ export class PerformHealthChecks {
             const backendName = context.applicationName;
             const serverName = `${context.applicationName}-${context.containerId.slice(0, 8)}`;
 
-            const timeoutMs = 90000; // 90 seconds as defined in state machine
+            // Sourced from the service's healthcheck.startPeriod (via context),
+            // mirroring the state machine's `healthCheckTimeout` delay so the
+            // action's own poll loop and the machine's `after` bound agree.
+            const timeoutMs = context.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
             const pollIntervalMs = 2000; // Poll every 2 seconds
             const startTime = Date.now();
 
