@@ -137,7 +137,7 @@ export interface ConnectivityStatus {
 export interface ConnectivityStatusInfo {
   id: string;
   service: string;
-  status: string;
+  status: ConnectivityStatusType;
   responseTimeMs: number | null;
   errorMessage: string | null;
   errorCode: string | null;
@@ -153,8 +153,27 @@ export interface ConnectivityStatusInfo {
 
 export type ConnectivityService = "cloudflare" | "docker" | "storage" | "system" | "deployments" | "tls" | "github" | "github-app" | "vault" | "nats" | "tailscale";
 
-export const CONNECTIVITY_STATUS_TYPES = ["connected", "failed", "timeout", "unreachable"] as const;
+export const CONNECTIVITY_STATUS_TYPES = ["connected", "failed", "timeout", "unreachable", "error"] as const;
 export type ConnectivityStatusType = typeof CONNECTIVITY_STATUS_TYPES[number];
+
+/**
+ * Normalise an arbitrary status string into a known {@link ConnectivityStatusType}.
+ *
+ * The DB column is a free string, so legacy rows (or a future producer) can hold
+ * a value outside the current vocabulary. Rendering code indexes a per-status
+ * config map by this value, so an unknown status must degrade to a safe member
+ * rather than yield `undefined` and crash the page. Unknown values map to
+ * `"error"` — an unrecognised status is, from the UI's perspective, an error
+ * condition. Use this at every boundary where a raw string becomes a typed
+ * `ConnectivityStatusType` instead of an unchecked `as` cast.
+ */
+export function toConnectivityStatus(
+  raw: string | null | undefined,
+): ConnectivityStatusType {
+  return (CONNECTIVITY_STATUS_TYPES as readonly string[]).includes(raw ?? "")
+    ? (raw as ConnectivityStatusType)
+    : "error";
+}
 
 // ====================
 // Connectivity API Response Types
