@@ -107,10 +107,12 @@ function EnvFirewallToggle({
               Disable egress firewall for {environmentName}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The kernel-level enforcement layer will be torn down. Egress
-              events will stop being logged for this environment until you
-              re-enable it. This change is best-effort if the firewall agent is
-              offline.
+              The kernel-level enforcement layer will be torn down and egress
+              events will stop being logged for this environment. New and
+              redeployed containers will also no longer be routed through the
+              egress proxy; already-running containers keep their current proxy
+              settings until their stack is next applied. This change is
+              best-effort if the firewall agent is offline.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -72,12 +72,16 @@ describe('StackContainerManager — egress env injection', () => {
   });
 
   function buildManager(
-    envResult: { egressGatewayIp: string | null } | null,
+    envResult: { egressGatewayIp: string | null; egressFirewallEnabled?: boolean } | null,
     egressResource: { name: string; metadata: unknown } | null = null,
   ) {
     mockPrisma = {
       environment: {
-        findUnique: vi.fn().mockResolvedValue(envResult),
+        // Default the firewall ON so the injection happy-path fixtures keep
+        // exercising injection; egress-injection now gates on this flag.
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(envResult === null ? null : { egressFirewallEnabled: true, ...envResult }),
       },
       infraResource: {
         findFirst: vi.fn().mockResolvedValue(egressResource),
@@ -209,10 +213,14 @@ describe('StackContainerManager — egress bypass label', () => {
     });
   });
 
-  function buildManager(envResult: { egressGatewayIp: string | null } | null) {
+  function buildManager(envResult: { egressGatewayIp: string | null; egressFirewallEnabled?: boolean } | null) {
     mockPrisma = {
       environment: {
-        findUnique: vi.fn().mockResolvedValue(envResult),
+        // Default the firewall ON so the injection happy-path fixtures keep
+        // exercising injection; egress-injection now gates on this flag.
+        findUnique: vi
+          .fn()
+          .mockResolvedValue(envResult === null ? null : { egressFirewallEnabled: true, ...envResult }),
       },
       infraResource: {
         findFirst: vi.fn().mockResolvedValue(null),

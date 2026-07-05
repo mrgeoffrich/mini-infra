@@ -104,6 +104,9 @@ async function seedRepresentativeStack(): Promise<Fixture> {
       type: 'nonproduction',
       networkType: 'local',
       egressGatewayIp: '10.44.0.2',
+      // Egress injection now gates on this flag; enable it so the egress
+      // network membership reconcile fires for this fixture.
+      egressFirewallEnabled: true,
     },
   });
 
