@@ -18,7 +18,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission } from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission, toConnectivityStatus } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "storage-connectivity");
 const router = express.Router();
@@ -67,7 +67,7 @@ router.get("/", requirePermission(Permission.StorageRead) as RequestHandler, (as
       data: {
         id: latestStatus.id,
         service: latestStatus.service,
-        status: latestStatus.status,
+        status: toConnectivityStatus(latestStatus.status),
         responseTimeMs:
           latestStatus.responseTimeMs != null
             ? Number(latestStatus.responseTimeMs)
@@ -144,7 +144,7 @@ router.get("/history", requirePermission(Permission.StorageRead) as RequestHandl
       data: records.map((r) => ({
         id: r.id,
         service: r.service,
-        status: r.status,
+        status: toConnectivityStatus(r.status),
         responseTimeMs:
           r.responseTimeMs != null ? Number(r.responseTimeMs) : null,
         errorMessage: r.errorMessage,

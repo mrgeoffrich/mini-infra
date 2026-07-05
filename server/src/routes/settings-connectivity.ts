@@ -11,7 +11,7 @@ const logger = getLogger("http", "settings-connectivity");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { ConnectivityStatus, ConnectivityStatusInfo, ConnectivityStatusListResponse, SORT_ORDERS, Permission } from "@mini-infra/types";
+import { ConnectivityStatus, ConnectivityStatusInfo, ConnectivityStatusListResponse, SORT_ORDERS, Permission, toConnectivityStatus } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -21,6 +21,7 @@ function serializeConnectivityStatus(
 ): ConnectivityStatusInfo {
   return {
     ...status,
+    status: toConnectivityStatus(status.status),
     responseTimeMs: status.responseTimeMs
       ? Number(status.responseTimeMs)
       : null,
