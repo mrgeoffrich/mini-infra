@@ -25,6 +25,7 @@ const SETTINGS_CATEGORY = "egress-fw-agent";
 const configSchema = z.object({
   image: z.string().min(1).max(500).optional(),
   autoStart: z.boolean().optional(),
+  autoRemediation: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -298,6 +299,8 @@ router.patch(
         settingEntries.push({ key: "image", value: updates.image });
       if (updates.autoStart !== undefined)
         settingEntries.push({ key: "auto_start", value: String(updates.autoStart) });
+      if (updates.autoRemediation !== undefined)
+        settingEntries.push({ key: "auto_remediation", value: String(updates.autoRemediation) });
 
       for (const { key, value } of settingEntries) {
         await prisma.systemSettings.upsert({

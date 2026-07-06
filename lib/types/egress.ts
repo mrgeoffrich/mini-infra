@@ -249,5 +249,12 @@ export interface EgressFwAgentConfig {
   image: string | null;
   /** Whether the agent is started automatically at server boot. */
   autoStart: boolean;
+  /**
+   * Whether the self-heal supervisor (Phase 4) may auto-recreate an egress
+   * NATS-client stack that is stuck `auth-failing` (re-minting its creds).
+   * Defaults ON — auto-heal is the goal — and is disabled by setting the
+   * `egress-fw-agent.auto_remediation` SystemSettings value to `"false"`.
+   */
+  autoRemediation: boolean;
 }
 

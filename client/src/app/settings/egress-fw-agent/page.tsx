@@ -88,9 +88,11 @@ export default function EgressFwAgentSettingsPage() {
   // server state into local state via useEffect.
   const [imageEdit, setImageEdit] = useState<string | null>(null);
   const [autoStartEdit, setAutoStartEdit] = useState<boolean | null>(null);
+  const [autoRemediationEdit, setAutoRemediationEdit] = useState<boolean | null>(null);
 
   const imageInput = imageEdit ?? config?.image ?? "";
   const autoStart = autoStartEdit ?? config?.autoStart ?? true;
+  const autoRemediation = autoRemediationEdit ?? config?.autoRemediation ?? true;
 
   if (statusLoading || configLoading) {
     return (
@@ -128,17 +130,21 @@ export default function EgressFwAgentSettingsPage() {
 
   const imageChanged = imageEdit !== null && imageEdit.trim() !== (config?.image ?? "");
   const autoStartChanged = autoStartEdit !== null && autoStartEdit !== (config?.autoStart ?? true);
-  const dirty = imageChanged || autoStartChanged;
+  const autoRemediationChanged =
+    autoRemediationEdit !== null && autoRemediationEdit !== (config?.autoRemediation ?? true);
+  const dirty = imageChanged || autoStartChanged || autoRemediationChanged;
 
   const handleSave = () => {
     if (!dirty) return;
-    const updates: { image?: string; autoStart?: boolean } = {};
+    const updates: { image?: string; autoStart?: boolean; autoRemediation?: boolean } = {};
     if (imageChanged) updates.image = imageInput.trim();
     if (autoStartChanged) updates.autoStart = autoStart;
+    if (autoRemediationChanged) updates.autoRemediation = autoRemediation;
     updateConfig(updates, {
       onSuccess: () => {
         setImageEdit(null);
         setAutoStartEdit(null);
+        setAutoRemediationEdit(null);
         toast.success("Egress fw-agent settings saved");
       },
       onError: (err) => toast.error(err.message),
@@ -247,6 +253,23 @@ export default function EgressFwAgentSettingsPage() {
                 id="fw-agent-autostart"
                 checked={autoStart}
                 onCheckedChange={setAutoStartEdit}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="fw-agent-autoremediation">Auto-heal auth failures</Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, Mini Infra automatically force-recreates an egress agent
+                  (this fw-agent or a gateway) that&apos;s stuck failing NATS authentication,
+                  re-minting its credentials. Recreate actions are recorded in the events log
+                  and rate-limited with a per-stack cap. Disable to require manual recovery.
+                </p>
+              </div>
+              <Switch
+                id="fw-agent-autoremediation"
+                checked={autoRemediation}
+                onCheckedChange={setAutoRemediationEdit}
               />
             </div>
 

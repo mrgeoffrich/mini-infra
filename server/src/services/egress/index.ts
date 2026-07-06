@@ -58,6 +58,13 @@ export {
 // ALT-27: stack-based bootstrap replaces the legacy host-singleton
 // `ensureFwAgent`/`removeFwAgent`/`stopHealthChecks` exports.
 export { bootstrapFwAgentStack } from './fw-agent-stack-bootstrap';
+// Phase 4: self-heal supervisor — auto-recreates auth-failing egress stacks.
+export {
+  startEgressSelfHealSupervisor,
+  stopEgressSelfHealSupervisor,
+  EgressSelfHealSupervisor,
+  DEFAULT_SELF_HEAL_CONFIG,
+} from './egress-self-heal-supervisor';
 
 export type ShutdownFn = () => void;
 

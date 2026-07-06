@@ -97,6 +97,8 @@ import {
   type ShutdownFn as EgressShutdownFn,
   startFwAgentHealthWatcher,
   stopFwAgentHealthWatcher,
+  startEgressSelfHealSupervisor,
+  stopEgressSelfHealSupervisor,
 } from "./services/egress";
 
 // Global scheduler instances
@@ -614,6 +616,13 @@ const initializeServices = async () => {
       // avoids a slow-NATS cold boot leaving the watcher permanently
       // unstarted (review finding H1).
       startFwAgentHealthWatcher();
+      // Phase 4: start the self-heal supervisor right after the health watcher
+      // — it consumes the watcher's cached auth-failing signal and force-
+      // recreates an egress stack stuck auth-failing (re-minting its creds).
+      // It's feature-flagged (default ON), tolerates a disconnected bus (its
+      // probe is best-effort), and its first tick is deferred a full interval
+      // so the watcher has time to populate a connection state.
+      startEgressSelfHealSupervisor(prisma);
       // Probe whether the bus is up *now* so the operator gets a
       // confidence-building startup banner. The 3s budget is short on
       // purpose — Vault unlock + creds fetch typically takes longer than
@@ -1036,6 +1045,14 @@ startServer()
         stopFwAgentHealthWatcher();
       } catch (err) {
         logger.warn({ err }, "fw-agent health watcher stop failed (non-fatal)");
+      }
+
+      // Stop the self-heal supervisor alongside the health watcher so its
+      // tick can't fire a recreate mid-shutdown.
+      try {
+        stopEgressSelfHealSupervisor();
+      } catch (err) {
+        logger.warn({ err }, "egress self-heal supervisor stop failed (non-fatal)");
       }
 
       // Drain the system NATS bus before stopping containers — otherwise

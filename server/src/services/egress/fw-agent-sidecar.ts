@@ -270,11 +270,15 @@ async function getSettings(): Promise<Map<string, string>> {
 export async function getFwAgentConfig(): Promise<{
   image: string | null;
   autoStart: boolean;
+  autoRemediation: boolean;
 }> {
   const settings = await getSettings();
   return {
     image: settings.get("image") || process.env.EGRESS_FW_AGENT_IMAGE_TAG || null,
     autoStart: settings.get("auto_start") !== "false",
+    // Default ON (Phase 4): auto-remediation only disengages when the operator
+    // explicitly sets the setting to "false". Mirrors the `auto_start` pattern.
+    autoRemediation: settings.get("auto_remediation") !== "false",
   };
 }
 
