@@ -13,11 +13,30 @@ scheduler + in-memory queue are gone.
 
 Per-pool concurrency cap is 2 (`jobPoolConfig.maxConcurrent`). Before
 Phase 4 this was a process-wide cap; now each applied pg-az-backup pool
-has its own slot. If multiple env-scoped pg-az-backup stacks are applied
-they each get their own 2-slot cap — running two scheduled backups for
-the same database via two different env stacks would result in duplicate
-runs. **For Phase 4 we recommend a single applied pg-az-backup stack**
-(documented constraint, not enforced by code).
+has its own slot.
+
+**Routing is environment-scoped.** `PostgresDatabase.environmentId` (nullable
+FK to `Environment`) determines which applied pg-az-backup stack owns a
+database's backups: `materialiseTriggersForStack` only picks up
+`BackupConfiguration` rows whose database's `environmentId` matches the
+stack's own, and the manual "Run now" / restore routes look up the stack
+the same way. One applied pg-az-backup stack per environment is correctly
+isolated — two stacks in *different* environments no longer double-fire the
+same backup. Applying a second pg-az-backup stack *within the same
+environment* is still unguarded (undefined which one wins); avoid it.
+
+A `PostgresDatabase` with no environment set (`environmentId: null`) is
+**never backed up** — an environment-scoped stack always has a non-null
+`environmentId`, so a null-environment database can never match one. The
+create/edit UI requires picking an environment for exactly this reason;
+legacy rows from before this field existed need to be assigned one before
+their backups will run. Reassigning a database's `environmentId` after its
+`BackupConfiguration` already has materialised triggers does not
+immediately move those triggers — the affected stacks re-materialise on
+their own next `BackupConfiguration` create/update/delete (see
+`refreshAllPgBackupTriggers` call sites in `backup-configuration-manager.ts`)
+or the next server boot, not automatically on the database's environment
+change.
 
 In-container NATS progress publishing: `nats-progress.sh` writes
 `mini-infra.backup.progress.<runId>` directly using the injected

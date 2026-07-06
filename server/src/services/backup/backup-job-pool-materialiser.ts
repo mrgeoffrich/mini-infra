@@ -8,11 +8,12 @@
  * registry. This module is the bridge:
  *
  *   1. `materialiseTriggersForStack(stackId)` — given a pg-az-backup stack id,
- *      read every `BackupConfiguration` row whose database lives in this
- *      stack's environment (or, for the host-scoped fallback case, every
- *      enabled row), and write the derived triggers + maxConcurrent onto the
- *      stack's `pg-az-backup` JobPool service row. Then refresh the
- *      JobPoolCron/Nats registries so the change takes effect immediately.
+ *      read every `BackupConfiguration` row whose database's `environmentId`
+ *      matches this stack's own `environmentId`, and write the derived
+ *      triggers + maxConcurrent onto the stack's `pg-az-backup` JobPool
+ *      service row. Then refresh the JobPoolCron/Nats registries so the
+ *      change takes effect immediately. A database with no environment set
+ *      is never picked up — see pg-az-backup/CLAUDE.md.
  *
  *   2. `refreshAllPgBackupTriggers()` — boot-time backfill that walks every
  *      applied `pg-az-backup` stack and re-materialises its triggers. Picks
@@ -120,24 +121,21 @@ export async function materialiseTriggersForStack(
       serviceName: PG_AZ_BACKUP_SERVICE_NAME,
       serviceType: "JobPool",
     },
+    include: { stack: { select: { environmentId: true } } },
   });
   if (!service) {
     log.debug({ stackId }, "materialiseTriggersForStack: no pg-az-backup JobPool service on this stack");
     return { triggerCount: 0 };
   }
 
-  // `PostgresDatabase` rows are not currently environment-scoped (no
-  // `environmentId` column on the model — see prisma schema). For Phase 4
-  // the JobPool template is environment-scoped because it inherits the
-  // per-env egress network + proxy injection, but the source-of-truth
-  // BackupConfiguration table is host-flat. We expose every enabled
-  // BackupConfiguration row as a cron trigger on every applied pg-az-backup
-  // stack and document the single-instance-per-host constraint in
-  // pg-az-backup/CLAUDE.md — applying a second env-scoped pg-az-backup
-  // stack would cause duplicate runs. A future ticket can add an
-  // `environmentId` to `PostgresDatabase` and filter here; for now the
-  // shape matches the legacy single-runner behavior.
+  // Only pick up BackupConfiguration rows whose database is scoped to this
+  // stack's environment — each environment's pg-az-backup stack owns exactly
+  // its own environment's databases, so two applied stacks never double-fire
+  // the same backup. A `PostgresDatabase` with no environment set can never
+  // match here (env-scoped stacks always have a non-null `environmentId` —
+  // see pg-az-backup/CLAUDE.md).
   const configs = await prisma.backupConfiguration.findMany({
+    where: { database: { environmentId: service.stack.environmentId } },
     select: { databaseId: true, schedule: true, timezone: true, isEnabled: true },
   });
 
