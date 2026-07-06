@@ -99,6 +99,8 @@ import {
   stopFwAgentHealthWatcher,
   startEgressSelfHealSupervisor,
   stopEgressSelfHealSupervisor,
+  registerEgressCredRefreshHook,
+  unregisterEgressCredRefreshHook,
 } from "./services/egress";
 
 // Global scheduler instances
@@ -623,6 +625,13 @@ const initializeServices = async () => {
       // probe is best-effort), and its first tick is deferred a full interval
       // so the watcher has time to populate a connection state.
       startEgressSelfHealSupervisor(prisma);
+      // Phase 6: register the live cred-refresh hook on the NATS control plane.
+      // On a NATS identity rotation it re-mints + rewrites each running egress
+      // agent's creds file in place (no recreate); the agent recovers on its
+      // next reconnect. Fully guarded — a push failure defers to the Phase 4
+      // supervisor's recreate. Feature-flagged (egress-fw-agent.live_cred_refresh,
+      // default ON).
+      registerEgressCredRefreshHook(prisma);
       // Probe whether the bus is up *now* so the operator gets a
       // confidence-building startup banner. The 3s budget is short on
       // purpose — Vault unlock + creds fetch typically takes longer than
@@ -1053,6 +1062,14 @@ startServer()
         stopEgressSelfHealSupervisor();
       } catch (err) {
         logger.warn({ err }, "egress self-heal supervisor stop failed (non-fatal)");
+      }
+
+      // Phase 6: clear the live cred-refresh hook so no post-apply push can
+      // fire mid-shutdown.
+      try {
+        unregisterEgressCredRefreshHook();
+      } catch (err) {
+        logger.warn({ err }, "egress live cred refresh hook unregister failed (non-fatal)");
       }
 
       // Drain the system NATS bus before stopping containers — otherwise

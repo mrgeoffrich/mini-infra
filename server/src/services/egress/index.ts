@@ -65,6 +65,12 @@ export {
   EgressSelfHealSupervisor,
   DEFAULT_SELF_HEAL_CONFIG,
 } from './egress-self-heal-supervisor';
+// Phase 6: live cred refresh — rewrites a rotated agent's creds file in place
+// (no recreate) on a NATS identity rotation, via a control-plane post-apply hook.
+export {
+  registerEgressCredRefreshHook,
+  unregisterEgressCredRefreshHook,
+} from './egress-cred-refresh';
 
 export type ShutdownFn = () => void;
 

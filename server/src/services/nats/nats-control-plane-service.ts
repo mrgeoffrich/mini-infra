@@ -123,6 +123,57 @@ export interface NatsApplyConfigResult {
   unpropagatedAccountPublicKeys: string[];
 }
 
+/**
+ * Post-`applyConfig` notification (egress NATS cred-resilience plan, Phase 6).
+ *
+ * `applyConfig` is the single chokepoint every NATS rotation path routes
+ * through (server boot, Vault bootstrap, the health watcher's auto-unseal,
+ * manual `POST /api/nats/apply`, stack apply, signer revocation). Phase 6
+ * hangs a hook here so that, when an apply *actually rotates* the operator /
+ * account identity, the server can re-mint and rewrite each running egress
+ * agent's `<stackId>.creds` file **in place** — the agent's Phase-5 reload-on-
+ * reconnect then picks up the fresh cred with no container recreate.
+ *
+ * `rotated` is the load-bearing field: it is `true` only when the identity
+ * fingerprint (operator public key + the set of account public keys) changed
+ * across this apply *and* an identity was already recorded before it (so a
+ * genuine first-boot generation is never treated as a rotation). Routine
+ * applies that don't touch identity therefore never churn agent creds.
+ */
+export interface NatsIdentityRotationInfo {
+  /** True when this apply changed the recorded operator/account identity. */
+  rotated: boolean;
+  /** True when this apply generated fresh identity (genuine first boot). */
+  generatedSeeds: boolean;
+  /** The operator public key in effect after this apply. */
+  operatorPublic: string;
+  /** The system account public key after this apply (null if none). */
+  systemAccountPublic: string | null;
+}
+
+export type NatsPostApplyHook = (info: NatsIdentityRotationInfo) => Promise<void> | void;
+
+// Process-global post-apply hook. Registered once at server boot by the egress
+// module (`registerEgressCredRefreshHook`) and cleared on shutdown / in tests.
+// Kept module-scoped (not per-instance) because `applyConfig` fans in from many
+// call sites but there is only ever one live NATS identity per process.
+let postApplyHook: NatsPostApplyHook | null = null;
+
+/**
+ * Register (or clear, with `null`) the post-`applyConfig` hook. Idempotent —
+ * a later call replaces the previous hook. The control plane stays ignorant of
+ * what the hook does (egress cred refresh) so this module keeps zero egress /
+ * Docker imports.
+ */
+export function setNatsPostApplyHook(hook: NatsPostApplyHook | null): void {
+  postApplyHook = hook;
+}
+
+/** Stable identity fingerprint — operator public key + sorted account publics. */
+function identityFingerprint(operatorPublic: string | null, accountPublics: string[]): string {
+  return [operatorPublic ?? "", ...[...accountPublics].sort()].join("|");
+}
+
 type CredentialWithAccount = Prisma.NatsCredentialProfileGetPayload<{
   include: { account: true };
 }>;
@@ -425,6 +476,18 @@ export class NatsControlPlaneService {
     // through here, so this one call site protects them all.
     await this.assertRecordedIdentitiesHaveSeeds();
 
+    // Phase 6 rotation detection: snapshot the identity fingerprint BEFORE any
+    // seed is generated or account public key is overwritten below. Compared
+    // against the post-apply fingerprint at the end to decide whether this
+    // apply actually rotated identity (and so must live-refresh running egress
+    // agent creds) vs. a routine reconcile that left identity untouched.
+    const prevState = await this.db.natsState.findUnique({ where: { kind: "primary" } });
+    const prevOperatorPublic = prevState?.operatorPublic ?? null;
+    const prevAccountPublics = (await this.db.natsAccount.findMany({ select: { publicKey: true } }))
+      .map((a) => a.publicKey)
+      .filter((k): k is string => !!k);
+    const prevFingerprint = identityFingerprint(prevOperatorPublic, prevAccountPublics);
+
     const kv = getVaultKVService();
 
     let operatorSeed = await this.tryReadField(NATS_OPERATOR_KV_PATH, FIELD_OPERATOR_SEED);
@@ -588,12 +651,51 @@ export class NatsControlPlaneService {
       { accountCount: accounts.length, unpropagated: unpropagatedAccountPublicKeys.length },
       "NATS config rendered to Vault KV",
     );
+
+    // Phase 6: fire the post-apply hook. `rotated` is true only when an
+    // identity was already recorded before this apply AND its fingerprint
+    // changed — a genuine first boot (no prior operator) is never a rotation.
+    // The hook is best-effort and fully guarded (see `invokePostApplyHook`),
+    // so a live-refresh failure never breaks the apply path (Phase 4's
+    // recreate-based self-heal is the backstop).
+    const newFingerprint = identityFingerprint(
+      operatorMaterial.publicKey,
+      renderedAccounts.map((a) => a.publicKey),
+    );
+    const rotated = prevOperatorPublic !== null && prevFingerprint !== newFingerprint;
+    await this.invokePostApplyHook({
+      rotated,
+      generatedSeeds,
+      operatorPublic: operatorMaterial.publicKey,
+      systemAccountPublic,
+    });
+
     return {
       generatedSeeds,
       operatorPublic: operatorMaterial.publicKey,
       systemAccountPublic,
       unpropagatedAccountPublicKeys,
     };
+  }
+
+  /**
+   * Invoke the registered post-apply hook (Phase 6), swallowing any error. The
+   * hook drives the egress live cred refresh; a failure there must never fail
+   * `applyConfig` — the running identity is already fully applied by the time
+   * this fires, and Phase 4's self-heal supervisor recreates any agent the
+   * live-refresh couldn't reach.
+   */
+  private async invokePostApplyHook(info: NatsIdentityRotationInfo): Promise<void> {
+    const hook = postApplyHook;
+    if (!hook) return;
+    try {
+      await hook(info);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), rotated: info.rotated },
+        "NATS post-apply hook failed (non-fatal; deferring to self-heal)",
+      );
+    }
   }
 
   /**

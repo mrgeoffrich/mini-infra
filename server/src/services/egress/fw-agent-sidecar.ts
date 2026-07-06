@@ -271,6 +271,7 @@ export async function getFwAgentConfig(): Promise<{
   image: string | null;
   autoStart: boolean;
   autoRemediation: boolean;
+  liveCredRefresh: boolean;
 }> {
   const settings = await getSettings();
   return {
@@ -279,6 +280,12 @@ export async function getFwAgentConfig(): Promise<{
     // Default ON (Phase 4): auto-remediation only disengages when the operator
     // explicitly sets the setting to "false". Mirrors the `auto_start` pattern.
     autoRemediation: settings.get("auto_remediation") !== "false",
+    // Default ON (Phase 6): live cred refresh pushes a re-minted `.creds` file
+    // into each running egress agent's volume on a NATS identity rotation, so
+    // the agent recovers on its next reconnect with no container recreate. When
+    // set to "false" the server takes no live-push action and recovery falls
+    // back to Phase 4's recreate-based self-heal. Mirrors the flags above.
+    liveCredRefresh: settings.get("live_cred_refresh") !== "false",
   };
 }
 
