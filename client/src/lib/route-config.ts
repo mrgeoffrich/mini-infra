@@ -38,7 +38,9 @@ export interface RouteMetadata {
     | "networking"
     | "monitoring"
     | "connectivity"
-    | "administration"; // Navigation section for grouping
+    | "authentication"
+    | "local-services"
+    | "system"; // Navigation section for grouping
   description?: string;
   helpDoc?: string; // Path to contextual help doc (e.g. "containers/viewing-containers")
 }
@@ -220,7 +222,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconKey,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "authentication",
     description: "API key management",
     helpDoc: "settings/api-keys",
     children: {
@@ -369,6 +371,18 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
+  "/settings-tls": {
+    path: "/settings-tls",
+    title: "TLS Settings",
+    breadcrumbLabel: "TLS Settings",
+    icon: IconCertificate,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "networking",
+    description: "TLS certificate configuration",
+    helpDoc: "settings/tls-settings",
+  },
+
   "/egress": {
     path: "/egress",
     title: "Egress",
@@ -463,7 +477,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconSettings,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "system",
     description: "System configuration and settings",
     helpDoc: "settings/system-settings",
   },
@@ -475,33 +489,9 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconKey,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "authentication",
     description: "Docker registry authentication",
     helpDoc: "settings/system-settings",
-  },
-
-  "/settings-self-backup": {
-    path: "/settings-self-backup",
-    title: "Self-Backup Settings",
-    breadcrumbLabel: "Self-Backup Settings",
-    icon: IconDatabase,
-    showInNav: true,
-    navGroup: "main",
-    navSection: "administration",
-    description: "Application backup configuration",
-    helpDoc: "postgres-backups/configuring-backups",
-  },
-
-  "/settings-tls": {
-    path: "/settings-tls",
-    title: "TLS Settings",
-    breadcrumbLabel: "TLS Settings",
-    icon: IconCertificate,
-    showInNav: true,
-    navGroup: "main",
-    navSection: "administration",
-    description: "TLS certificate configuration",
-    helpDoc: "settings/tls-settings",
   },
 
   "/settings-ai-assistant": {
@@ -511,7 +501,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconRobot,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "local-services",
     description: "AI assistant API key, model, and capabilities",
     helpDoc: "settings/ai-assistant",
   },
@@ -523,7 +513,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconShieldLock,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "local-services",
     description: "Blocks outbound traffic that breaks your egress rules",
     helpDoc: "settings/egress-fw-agent",
   },
@@ -535,7 +525,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconActivity,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "system",
     description: "Server process memory and heap diagnostics",
     helpDoc: "settings/system-diagnostics",
   },
@@ -547,9 +537,21 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconDownload,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "system",
     description: "Update Mini Infra via sidecar container",
     helpDoc: "settings/self-update",
+  },
+
+  "/settings-self-backup": {
+    path: "/settings-self-backup",
+    title: "Self-Backup Settings",
+    breadcrumbLabel: "Self-Backup Settings",
+    icon: IconDatabase,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "system",
+    description: "Application backup configuration",
+    helpDoc: "postgres-backups/configuring-backups",
   },
 
   "/settings-users": {
@@ -559,7 +561,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconUsers,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "authentication",
     description: "User account management",
     helpDoc: "settings/user-management",
   },
@@ -571,7 +573,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconLock,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "authentication",
     description: "Authentication method configuration",
     helpDoc: "settings/authentication",
   },
@@ -603,7 +605,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconShieldLock,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "local-services",
     description: "Managed OpenBao secrets vault — bootstrap, policies, AppRoles",
     helpDoc: "vault/vault-overview",
     children: {
@@ -648,7 +650,7 @@ export const routeConfig: Record<string, RouteConfig> = {
     icon: IconCloud,
     showInNav: true,
     navGroup: "main",
-    navSection: "administration",
+    navSection: "local-services",
     description: "Managed NATS accounts, credentials, streams, and consumers",
     children: {
       accounts: {
@@ -769,7 +771,7 @@ export type NavPanel = "operations" | "admin";
 
 const panelSections: Record<NavPanel, string[]> = {
   operations: ["applications", "databases", "monitoring"],
-  admin: ["connectivity", "networking", "administration"],
+  admin: ["connectivity", "networking", "authentication", "local-services", "system"],
 };
 
 // Get navigation items grouped by section
@@ -780,10 +782,12 @@ export function getNavigationSections(): NavSection[] {
   const sectionDefinitions: Array<{ id: string; label: string }> = [
     { id: "applications", label: "Applications" },
     { id: "databases", label: "Databases" },
-    { id: "networking", label: "Networking" },
     { id: "monitoring", label: "Monitoring" },
     { id: "connectivity", label: "Connected Services" },
-    { id: "administration", label: "Administration" },
+    { id: "networking", label: "Networking" },
+    { id: "authentication", label: "Authentication" },
+    { id: "local-services", label: "Local Services" },
+    { id: "system", label: "System" },
   ];
 
   // Initialize sections
