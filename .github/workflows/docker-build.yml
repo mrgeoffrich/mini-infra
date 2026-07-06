@@ -297,12 +297,15 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
   build-main:
+    # Only gate on the jobs whose tag OUTPUTS are consumed as build-args below
+    # (sidecar, agent-sidecar, pg-backup). The claude-shell / egress-gateway /
+    # egress-fw-agent images are referenced by their env-derived repo URLs, not
+    # by job outputs, so gating on them only serialised the build for no data
+    # dependency. Those jobs still run in parallel on the same commit and their
+    # images are pulled by end-users at apply-time, long after CI completes.
     needs:
       - build-sidecar
       - build-agent-sidecar
-      - build-claude-shell
-      - build-egress-gateway
-      - build-egress-fw-agent
       - build-pg-backup
     runs-on: ubuntu-latest
     permissions:

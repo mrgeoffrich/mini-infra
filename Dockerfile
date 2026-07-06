@@ -113,9 +113,22 @@ WORKDIR /app
 # Create directories with proper ownership
 RUN mkdir -p /app/data /app/server/logs /app/agent && chown -R node:node /app
 
-# --- Dependency + built-code layer ---
+# --- Dependency + built-code layers (split for cache/push/pull efficiency) ---
 # `pnpm deploy` produced a self-contained tree with node_modules + package.json
-# + built artefacts (for the server workspace). Drop it at /app/server.
+# + built artefacts (for the server workspace). Split the copy into two layers:
+#
+#   1. node_modules — the prod dependency closure (~1GB / ~215MB compressed).
+#      Stable across the common case (editing server/src or client/), so this
+#      layer's digest stays constant and is skipped on re-push (CI) and re-pull
+#      (self-update) whenever deps are unchanged.
+#   2. the rest of the tree (dist, package.json, prisma, entrypoint — a few MB).
+#      This overlay re-copies node_modules paths too, but they are byte-identical
+#      to layer 1 (same source, mode, owner, mtime), so BuildKit dedupes them and
+#      this layer carries only the changed app code.
+#
+# Previously both were fused into one 215MB layer that rebusted on every code
+# change — forcing a full re-push and, worse, a full re-pull on every self-update.
+COPY --chown=node:node --from=deployer /prod/server/node_modules ./server/node_modules
 COPY --chown=node:node --from=deployer /prod/server ./server
 
 # Copy built lib artifacts (consumed as a workspace dep, already linked
