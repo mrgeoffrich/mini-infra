@@ -105,6 +105,7 @@ describe("PostgreSQL Databases API Routes", () => {
       database: "prod_db",
       username: "prod_user",
       sslMode: "require",
+      environmentId: "env-1",
       tags: ["production"],
       createdAt: "2023-01-01T10:00:00.000Z",
       updatedAt: "2023-01-01T11:00:00.000Z",
@@ -121,6 +122,7 @@ describe("PostgreSQL Databases API Routes", () => {
       database: "dev_db",
       username: "dev_user",
       sslMode: "prefer",
+      environmentId: null,
       tags: ["development"],
       createdAt: "2023-01-02T10:00:00.000Z",
       updatedAt: "2023-01-02T11:00:00.000Z",
@@ -325,6 +327,7 @@ describe("PostgreSQL Databases API Routes", () => {
       username: "newuser",
       password: "newpass",
       sslMode: "prefer",
+      environmentId: "env-1",
       tags: ["test"],
     };
 
@@ -337,6 +340,7 @@ describe("PostgreSQL Databases API Routes", () => {
       database: "newdb",
       username: "newuser",
       sslMode: "prefer",
+      environmentId: "env-1",
       tags: ["test"],
       createdAt: "2023-01-01T10:00:00.000Z",
       updatedAt: "2023-01-01T10:00:00.000Z",
@@ -407,6 +411,52 @@ describe("PostgreSQL Databases API Routes", () => {
         message: "Invalid request data",
       });
     });
+
+    it("should reject a request with no environmentId", async () => {
+      const { environmentId, ...requestWithoutEnvironment } = validCreateRequest;
+
+      const response = await request(app)
+        .post("/api/postgres/databases")
+        .send(requestWithoutEnvironment)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        error: "Bad Request",
+        message: "Invalid request data",
+      });
+      expect(mockPostgresDatabaseManager.createDatabase).not.toHaveBeenCalled();
+    });
+
+    it("should pass environmentId through to the manager", async () => {
+      mockPostgresDatabaseManager.createDatabase.mockResolvedValue(
+        mockCreatedDatabase,
+      );
+
+      await request(app)
+        .post("/api/postgres/databases")
+        .send(validCreateRequest)
+        .expect(201);
+
+      expect(mockPostgresDatabaseManager.createDatabase).toHaveBeenCalledWith(
+        expect.objectContaining({ environmentId: "env-1" }),
+      );
+    });
+
+    it("should map an unknown environment to 400", async () => {
+      mockPostgresDatabaseManager.createDatabase.mockRejectedValue(
+        new Error("Environment 'env-1' not found"),
+      );
+
+      const response = await request(app)
+        .post("/api/postgres/databases")
+        .send(validCreateRequest)
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        error: "Bad Request",
+        message: "Environment 'env-1' not found",
+      });
+    });
   });
 
   describe("PUT /api/postgres/databases/:id", () => {
@@ -425,6 +475,7 @@ describe("PostgreSQL Databases API Routes", () => {
       database: "prod_db",
       username: "prod_user",
       sslMode: "require",
+      environmentId: "env-1",
       tags: ["production"],
       createdAt: "2023-01-01T10:00:00.000Z",
       updatedAt: "2023-01-01T13:00:00.000Z",
@@ -485,6 +536,39 @@ describe("PostgreSQL Databases API Routes", () => {
 
       expect(response.body).toMatchObject({
         error: "Not Found",
+      });
+    });
+
+    it("should pass an explicit null environmentId through to clear it", async () => {
+      mockPostgresDatabaseManager.updateDatabase.mockResolvedValue({
+        ...mockUpdatedDatabase,
+        environmentId: null,
+      });
+
+      await request(app)
+        .put("/api/postgres/databases/db-1")
+        .send({ environmentId: null })
+        .expect(200);
+
+      expect(mockPostgresDatabaseManager.updateDatabase).toHaveBeenCalledWith(
+        "db-1",
+        expect.objectContaining({ environmentId: null }),
+      );
+    });
+
+    it("should map an unknown environment to 400, not 404", async () => {
+      mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
+        new Error("Environment 'bad-env' not found"),
+      );
+
+      const response = await request(app)
+        .put("/api/postgres/databases/db-1")
+        .send({ environmentId: "bad-env" })
+        .expect(400);
+
+      expect(response.body).toMatchObject({
+        error: "Bad Request",
+        message: "Environment 'bad-env' not found",
       });
     });
   });

@@ -28,6 +28,7 @@ export const postgresDbSchema = z.object({
     .min(1, "Password is required")
     .max(255, "Password must be less than 255 characters"),
   sslMode: z.enum(POSTGRES_SSL_MODES),
+  environmentId: z.string().min(1, "Environment is required"),
   tags: z.array(z.string()),
 });
 

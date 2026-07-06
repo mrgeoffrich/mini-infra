@@ -575,15 +575,17 @@ router.post(
         });
       }
 
-      // Locate the applied restore-executor JobPool stack. For Phase 5 the
-      // constraint is "at most one applied restore-executor stack" (same
-      // shape as pg-az-backup) — grab the first one. Failure here means an
-      // operator hasn't deployed the template yet; surface as 503 so the
-      // UI can hint the right next step.
+      // Locate the applied restore-executor JobPool stack whose environment
+      // matches this database's own — mirrors the pg-az-backup routing fix
+      // (see backup-executor.ts's findPgBackupStackForDatabase). Failure
+      // here means an operator hasn't deployed the template for this
+      // environment yet; surface as 503 so the UI can hint the right next
+      // step.
       const restoreService = await prisma.stackService.findFirst({
         where: {
           serviceName: RESTORE_EXECUTOR_SERVICE_NAME,
           serviceType: "JobPool",
+          stack: { environmentId: database.environmentId },
         },
         select: { stackId: true },
       });
