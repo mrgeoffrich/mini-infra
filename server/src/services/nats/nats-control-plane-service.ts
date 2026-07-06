@@ -23,6 +23,7 @@ import {
   NatsIdentityMissing,
   NatsIdentityMismatch,
 } from "./nats-identity-errors";
+import { getIdentitySeedBackupStatus } from "./nats-identity-seed-backup";
 import { UserEventService } from "../user-events/user-event-service";
 import type {
   CreateNatsAccountRequest,
@@ -84,10 +85,14 @@ export const NATS_SIGNER_KV_PATH_PREFIX = "shared/nats-signers";
 export const NATS_SERVER_BUS_CREDS_KV_PATH = "shared/nats-server-bus-creds";
 export const FIELD_SERVER_BUS_CREDS = "creds";
 
-const FIELD_OPERATOR_SEED = "operator_seed";
+// Exported so the identity-seed backup/restore module (nats-identity-seed-backup.ts)
+// reads/writes the operator + account seeds at the exact same Vault KV fields
+// this service uses — one source of truth, so a restore lands on the canonical
+// path the guard and applyConfig expect.
+export const FIELD_OPERATOR_SEED = "operator_seed";
 const FIELD_OPERATOR_JWT = "operator_jwt";
 const FIELD_OPERATOR_PUBLIC = "operator_public";
-const FIELD_ACCOUNT_SEED = "account_seed";
+export const FIELD_ACCOUNT_SEED = "account_seed";
 const FIELD_ACCOUNT_JWT = "account_jwt";
 const FIELD_ACCOUNT_PUBLIC = "account_public";
 const FIELD_CONFIG = "conf";
@@ -145,12 +150,13 @@ export class NatsControlPlaneService {
   }
 
   async getStatus(): Promise<NatsStatus> {
-    const [state, accounts, credentialProfiles, streams, consumers] = await Promise.all([
+    const [state, accounts, credentialProfiles, streams, consumers, seedBackup] = await Promise.all([
       this.db.natsState.findUnique({ where: { kind: "primary" } }),
       this.db.natsAccount.count(),
       this.db.natsCredentialProfile.count(),
       this.db.natsStream.count(),
       this.db.natsConsumer.count(),
+      getIdentitySeedBackupStatus(this.db),
     ]);
 
     let reachable = false;
@@ -181,6 +187,8 @@ export class NatsControlPlaneService {
       credentialProfiles,
       streams,
       consumers,
+      lastIdentitySeedBackupAt: seedBackup.lastIdentitySeedBackupAt,
+      lastIdentitySeedBackupCount: seedBackup.lastIdentitySeedBackupCount,
       ...(errorMessage ? { errorMessage } : {}),
     };
   }
