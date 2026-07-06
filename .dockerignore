@@ -1,10 +1,12 @@
 # .dockerignore - Exclude files from Docker build context
 
-# Claude Code local state — parallel-dev git worktrees under .claude/worktrees/
-# each hold a full source checkout. node_modules/dist below are filtered, but
-# the source itself would otherwise ship ~100MB / thousands of files to
-# BuildKit on every local rebuild. None of this is needed by any build stage.
-.claude
+# Claude Code parallel-dev git worktrees — each holds a full source checkout.
+# node_modules/dist below are filtered, but the source itself would otherwise
+# ship ~100MB / thousands of files to BuildKit on every local rebuild. Not
+# needed by any build stage. NB: only worktrees/ is excluded — the rest of
+# .claude/ (skills, commands) is baked into the agent-sidecar image via
+# `COPY .claude/` in agent-sidecar/Dockerfile, so it MUST stay in context.
+.claude/worktrees
 
 # Local dev/prod environment descriptors — these contain live URLs, API keys,
 # and admin credentials (see CLAUDE.md). No build stage copies them, but they
