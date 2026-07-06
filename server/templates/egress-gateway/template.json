@@ -1,7 +1,7 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 12,
+  "builtinVersion": 13,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control. Talks to the Mini Infra server over NATS (subjects under mini-infra.egress.gw.>). Requires a synced NATS host stack (which transitively requires Vault to be bootstrapped).",
@@ -43,7 +43,8 @@
         "kvBuckets": [
           "egress-gw-health"
         ],
-        "inboxAuto": "both"
+        "inboxAuto": "both",
+        "ttlSeconds": 0
       }
     ]
   },
