@@ -18,7 +18,15 @@ import {
   useMonitoringStatus,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
-import { formatCpu, formatBytes, formatBytesPerSec } from "@/lib/format-metrics";
+import {
+  useDebouncedFalse,
+  INFRA_BLIP_GRACE_MS,
+} from "@/hooks/use-debounced-false";
+import {
+  formatCpu,
+  formatBytes,
+  formatBytesPerSec,
+} from "@/lib/format-metrics";
 import { MetricsChart } from "./MetricsChart";
 
 type TimeRange = "15m" | "1h" | "6h" | "24h";
@@ -40,12 +48,14 @@ const TIME_RANGE_STEP: Record<TimeRange, string> = {
 export function MonitoringPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const {
-    data: status,
-    error: statusError,
-  } = useMonitoringStatus();
+  const { data: status, error: statusError } = useMonitoringStatus();
 
-  const isRunning = status?.running === true;
+  // Debounced so a brief infra blip (e.g. the prometheus container restarting)
+  // doesn't collapse the whole chart grid and shift page scroll.
+  const isRunning = useDebouncedFalse(
+    status?.running === true,
+    INFRA_BLIP_GRACE_MS,
+  );
 
   const rangeSeconds = TIME_RANGE_SECONDS[timeRange];
   const step = TIME_RANGE_STEP[timeRange];
@@ -55,28 +65,28 @@ export function MonitoringPage() {
     'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
     rangeSeconds,
     step,
-    { enabled: isRunning }
+    { enabled: isRunning },
   );
 
   const { data: memoryRangeData } = usePrometheusRangeQuery(
     'docker_container_mem_usage{container_name!=""}',
     rangeSeconds,
     step,
-    { enabled: isRunning }
+    { enabled: isRunning },
   );
 
   const { data: networkRxRangeData } = usePrometheusRangeQuery(
     'rate(docker_container_net_rx_bytes{container_name!=""}[5m])',
     rangeSeconds,
     step,
-    { enabled: isRunning }
+    { enabled: isRunning },
   );
 
   const { data: networkTxRangeData } = usePrometheusRangeQuery(
     'rate(docker_container_net_tx_bytes{container_name!=""}[5m])',
     rangeSeconds,
     step,
-    { enabled: isRunning }
+    { enabled: isRunning },
   );
 
   if (statusError) {
@@ -104,7 +114,8 @@ export function MonitoringPage() {
       <div className="px-4 lg:px-6">
         {!isRunning && (
           <p className="text-sm text-muted-foreground">
-            Monitoring is not currently running. Deploy the monitoring stack from the Host page to view container metrics.
+            Monitoring is not currently running. Deploy the monitoring stack
+            from the Host page to view container metrics.
           </p>
         )}
 
