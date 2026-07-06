@@ -46,8 +46,10 @@ export class ContainerExecutor {
 
       getLogger("docker", "container-executor").info({ containerId }, "Container created successfully");
 
-      // Set up output capture
-      const outputCapture = await this.attachToContainer(container);
+      // Set up output capture. When stdin data is provided we attach a hijacked
+      // bidirectional stream so we can write to the container's stdin.
+      const hasStdin = options.stdin !== undefined;
+      const outputCapture = await this.attachToContainer(container, hasStdin);
 
       // Capture stdout and stderr
       outputCapture.stdout?.on("data", (data: Buffer) => {
@@ -88,6 +90,15 @@ export class ContainerExecutor {
       // Start container
       await container.start();
       getLogger("docker", "container-executor").info({ containerId }, "Container started");
+
+      // Feed stdin (if any) as raw bytes, then close it so the in-container
+      // process sees EOF. The payload is written directly to the hijacked
+      // socket and is never placed in the container env — this keeps secrets
+      // out of `docker inspect`. We deliberately don't log the payload.
+      if (hasStdin) {
+        outputCapture.stream.write(options.stdin!);
+        outputCapture.stream.end();
+      }
 
       // Wait for container completion with timeout
       const result = await this.waitForContainer(
@@ -220,6 +231,14 @@ export class ContainerExecutor {
         HostConfig: {},
       };
 
+      // When stdin data is provided, open stdin so we can pipe the payload in
+      // (and close it once — StdinOnce — so the process gets a clean EOF).
+      if (options.stdin !== undefined) {
+        containerOptions.OpenStdin = true;
+        containerOptions.StdinOnce = true;
+        containerOptions.AttachStdin = true;
+      }
+
       // Add custom command if provided
       if (options.cmd) {
         containerOptions.Cmd = options.cmd;
@@ -249,17 +268,27 @@ export class ContainerExecutor {
   }
 
   /**
-   * Attach to container for output streaming
+   * Attach to container for output streaming (and optionally stdin).
+   *
+   * When `attachStdin` is true the attach is hijacked (bidirectional), so the
+   * returned `stream` can be written to in order to feed the container's stdin.
+   * Output is demultiplexed the same way regardless.
    */
-  private async attachToContainer(container: Container): Promise<{
+  private async attachToContainer(
+    container: Container,
+    attachStdin = false,
+  ): Promise<{
     stdout?: Readable;
     stderr?: Readable;
+    stream: NodeJS.ReadWriteStream;
   }> {
     try {
       const stream = await container.attach({
         stream: true,
+        stdin: attachStdin,
         stdout: true,
         stderr: true,
+        hijack: attachStdin,
       });
 
       // Demultiplex Docker stream using buffered parser to handle
@@ -284,7 +313,7 @@ export class ContainerExecutor {
         stderr.push(null);
       });
 
-      return { stdout, stderr };
+      return { stdout, stderr, stream };
     } catch (error) {
       getLogger("docker", "container-executor").error(
         {

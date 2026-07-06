@@ -26,6 +26,7 @@ const configSchema = z.object({
   image: z.string().min(1).max(500).optional(),
   autoStart: z.boolean().optional(),
   autoRemediation: z.boolean().optional(),
+  liveCredRefresh: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -301,6 +302,8 @@ router.patch(
         settingEntries.push({ key: "auto_start", value: String(updates.autoStart) });
       if (updates.autoRemediation !== undefined)
         settingEntries.push({ key: "auto_remediation", value: String(updates.autoRemediation) });
+      if (updates.liveCredRefresh !== undefined)
+        settingEntries.push({ key: "live_cred_refresh", value: String(updates.liveCredRefresh) });
 
       for (const { key, value } of settingEntries) {
         await prisma.systemSettings.upsert({

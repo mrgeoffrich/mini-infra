@@ -516,15 +516,6 @@ func extractArmored(body, label string) (string, error) {
 // Tiny string helpers — avoiding `strings` keeps this file's deps minimal
 // and exposes the parsing semantics on one screen.
 
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
-
 func splitLines(s string) []string {
 	var out []string
 	start := 0

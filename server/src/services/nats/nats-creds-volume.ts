@@ -95,17 +95,28 @@ export async function writeNatsCredsFiles(
     });
   }
 
-  // Pass each blob base64-encoded via env so the shell never has to quote the
-  // multi-line armored `.creds` body, then decode it into the mounted volume.
-  const env: Record<string, string> = {};
-  const writeCommands: string[] = [];
-  opts.files.forEach((file, i) => {
-    const contentVar = `CREDS_B64_${i}`;
-    const nameVar = `CREDS_NAME_${i}`;
-    env[contentVar] = Buffer.from(file.contents, 'utf-8').toString('base64');
-    env[nameVar] = file.fileName;
-    writeCommands.push(`printf %s "$${contentVar}" | base64 -d > "/creds/$${nameVar}"`);
-  });
+  // Deliver the secret via the writer's **stdin**, never its env: a base64
+  // blob placed in an env var is visible via `docker inspect` (Config.Env) for
+  // the container's brief life, which the plan forbids ("never the secret in
+  // env"). We frame the payload as alternating lines — `<fileName>\n<base64>\n`
+  // per file — so N ≥ 1 files stream cleanly. The file name is not a secret;
+  // only the base64 body is, and it only ever travels over stdin. base64 is
+  // encoded without line wrapping (single line per blob) so the in-container
+  // `read -r` consumes exactly one line per field.
+  const stdin =
+    opts.files
+      .map((file) => `${file.fileName}\n${Buffer.from(file.contents, 'utf-8').toString('base64')}`)
+      .join('\n') + '\n';
+
+  // Read <name>/<base64> pairs from stdin until EOF, decoding each into the
+  // mounted volume. `set -e` propagates a base64 failure to the exit code.
+  const writerScript = [
+    'set -e',
+    'while IFS= read -r name; do',
+    '  IFS= read -r blob || exit 1',
+    '  printf %s "$blob" | base64 -d > "/creds/$name"',
+    'done',
+  ].join('\n');
 
   // Ensure the writer image is present (authenticated pull) before running the
   // one-shot — executeContainer only create/start/waits, it does not pull.
@@ -113,10 +124,11 @@ export async function writeNatsCredsFiles(
 
   const result = await dockerExecutor.executeContainer({
     image: WRITER_IMAGE,
-    env,
+    env: {},
+    stdin,
     removeContainer: true,
     binds: [`${volumeName}:/creds`],
-    cmd: ['sh', '-c', `set -e; ${writeCommands.join('; ')}`],
+    cmd: ['sh', '-c', writerScript],
     labels: { 'mini-infra.nats-creds-writer': 'true' },
   });
 

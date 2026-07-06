@@ -106,7 +106,7 @@ describe('writeNatsCredsFiles — one-shot volume writer', () => {
     return { executor: executor as unknown as DockerExecutorService, spies: executor };
   }
 
-  it('writes the creds blob into the per-stack volume via a base64-decoding one-shot', async () => {
+  it('writes the creds blob into the per-stack volume via a stdin-fed base64 one-shot', async () => {
     const { executor, spies } = fakeExecutor(0);
 
     await writeNatsCredsFiles(executor, {
@@ -124,13 +124,47 @@ describe('writeNatsCredsFiles — one-shot volume writer', () => {
     const call = spies.executeContainer.mock.calls[0][0];
     // Volume mounted writable at /creds.
     expect(call.binds).toEqual([`${volumeName}:/creds`]);
-    // Content passed base64-encoded (no shell-quoting of the multi-line blob),
-    // decoded back into the file inside the container.
-    const b64 = call.env.CREDS_B64_0 as string;
+
+    // Security: the secret must NEVER appear in the writer container's env
+    // (visible via `docker inspect` Config.Env). Env is empty; the secret is
+    // fed over stdin only.
+    expect(call.env).toEqual({});
+    const b64 = Buffer.from(FAKE_CREDS_BLOB, 'utf-8').toString('base64');
+    const envDump = JSON.stringify(call.env);
+    expect(envDump).not.toContain(b64);
+    expect(envDump).not.toContain('NKEY SEED');
+
+    // The secret is delivered via stdin: alternating <fileName>\n<base64>\n.
+    const stdin = call.stdin as string;
+    expect(stdin).toBe(`stack-xyz.creds\n${b64}\n`);
+    // Sanity: the decoded stdin blob round-trips to the original creds.
     expect(Buffer.from(b64, 'base64').toString('utf-8')).toBe(FAKE_CREDS_BLOB);
-    expect(call.env.CREDS_NAME_0).toBe('stack-xyz.creds');
-    expect(call.cmd.join(' ')).toContain('base64 -d');
-    expect(call.cmd.join(' ')).toContain('/creds/$CREDS_NAME_0');
+
+    // The in-container script decodes stdin pairs into files under /creds.
+    const script = call.cmd.join(' ');
+    expect(script).toContain('base64 -d');
+    expect(script).toContain('/creds/$name');
+    expect(script).toContain('read -r name');
+  });
+
+  it('frames multiple files over stdin (name/base64 pairs) with no secret in env', async () => {
+    const { executor, spies } = fakeExecutor(0);
+    const secondBlob = FAKE_CREDS_BLOB.replace('SUAFAKESEED', 'SUASECONDSEED');
+
+    await writeNatsCredsFiles(executor, {
+      projectName: 'p',
+      files: [
+        { fileName: 'stack-a.creds', contents: FAKE_CREDS_BLOB },
+        { fileName: 'stack-b.creds', contents: secondBlob },
+      ],
+    });
+
+    const call = spies.executeContainer.mock.calls[0][0];
+    expect(call.env).toEqual({});
+
+    const b64a = Buffer.from(FAKE_CREDS_BLOB, 'utf-8').toString('base64');
+    const b64b = Buffer.from(secondBlob, 'utf-8').toString('base64');
+    expect(call.stdin as string).toBe(`stack-a.creds\n${b64a}\nstack-b.creds\n${b64b}\n`);
   });
 
   it('is a no-op when there are no files', async () => {

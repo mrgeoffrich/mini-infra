@@ -95,6 +95,22 @@ func main() {
 			if legacyAdmin {
 				logger.WithError(err).Warn("gateway: NATS connect failed; legacy admin mode is on, continuing on stdout decisions")
 			} else {
+				// KNOWN LIMITATION (initial-connect self-heal blind spot): we
+				// Fatal here on a failed *initial* NATS connect, and the
+				// out-of-band /healthz server further down only starts once `bus`
+				// is non-nil. So a gateway whose very first connect is
+				// auth-rejected crash-loops without ever serving /healthz — which
+				// means the P4 self-heal supervisor (it triggers on a scraped
+				// `auth-failed` from that same /healthz) can't see it and won't
+				// re-mint its creds. This is mitigated in practice by P6's
+				// default-ON live cred refresh rewriting the creds file within
+				// seconds, and by a crash-looping container being visibly
+				// unhealthy anyway. A future fix could start the health server
+				// *before* the initial connect and use nats.go's
+				// RetryOnFailedConnect instead of Fataling, so an initial
+				// auth-reject surfaces as `auth-failed` on /healthz rather than a
+				// crash-loop. Intentionally left as a follow-up — do not change
+				// the Fatal/retry behaviour here as part of this pass.
 				logger.WithError(err).Fatal("gateway: NATS connect failed and legacy admin mode is off — refusing to boot")
 			}
 		} else {

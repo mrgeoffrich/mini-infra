@@ -256,5 +256,14 @@ export interface EgressFwAgentConfig {
    * `egress-fw-agent.auto_remediation` SystemSettings value to `"false"`.
    */
   autoRemediation: boolean;
+  /**
+   * Whether live cred refresh (Phase 6) pushes a re-minted `.creds` file into
+   * each running egress agent's volume on a NATS identity rotation, so the agent
+   * recovers on its next reconnect with no container recreate. Defaults ON — and
+   * is disabled by setting the `egress-fw-agent.live_cred_refresh` SystemSettings
+   * value to `"false"`, in which case recovery falls back to Phase 4's
+   * recreate-based self-heal.
+   */
+  liveCredRefresh: boolean;
 }
 
