@@ -1,53 +1,37 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Channel, ServerEvent, MonitoringStatusResponse, PrometheusQueryResult } from "@mini-infra/types";
+import {
+  Channel,
+  ServerEvent,
+  MonitoringStatusResponse,
+  PrometheusQueryResult,
+  ApiRoute,
+  queryKeys,
+} from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 export type { MonitoringStatusResponse };
 
-function generateCorrelationId(): string {
-  return `monitoring-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
 // Fetch monitoring status (stack-based)
-async function fetchMonitoringStatus(
-  correlationId: string
-): Promise<MonitoringStatusResponse> {
-  const response = await fetch(`/api/monitoring/status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchMonitoringStatus(): Promise<MonitoringStatusResponse> {
+  // Raw body — no `{success,data}` envelope at all (see server route) — so
+  // this stays unwrapped.
+  return apiFetch<MonitoringStatusResponse>(ApiRoute.monitoring.status(), {
+    correlationIdPrefix: "monitoring",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch monitoring status: ${response.statusText}`
-    );
-  }
-
-  return response.json();
 }
 
 // Fetch Prometheus instant query
-async function fetchPrometheusQuery(
-  query: string,
-  correlationId: string
-): Promise<PrometheusQueryResult> {
-  const params = new URLSearchParams({ query });
-  const response = await fetch(`/api/monitoring/query?${params}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchPrometheusQuery(query: string): Promise<PrometheusQueryResult> {
+  const url = new URL(ApiRoute.monitoring.query(), window.location.origin);
+  url.searchParams.set("query", query);
+  // Raw Prometheus response shape ({status, data}) proxied straight through —
+  // not Mini Infra's own envelope — so this stays unwrapped.
+  return apiFetch<PrometheusQueryResult>(url.toString(), {
+    correlationIdPrefix: "monitoring",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to query Prometheus: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 // Fetch Prometheus range query
@@ -56,89 +40,51 @@ async function fetchPrometheusRangeQuery(
   start: string,
   end: string,
   step: string,
-  correlationId: string
 ): Promise<PrometheusQueryResult> {
-  const params = new URLSearchParams({ query, start, end, step });
-  const response = await fetch(`/api/monitoring/query_range?${params}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  const url = new URL(ApiRoute.monitoring.queryRange(), window.location.origin);
+  url.searchParams.set("query", query);
+  url.searchParams.set("start", start);
+  url.searchParams.set("end", end);
+  url.searchParams.set("step", step);
+  // Raw Prometheus response shape — see `fetchPrometheusQuery` above.
+  return apiFetch<PrometheusQueryResult>(url.toString(), {
+    correlationIdPrefix: "monitoring",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to query Prometheus range: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 // Apply stack (deploy/update)
-async function applyMonitoringStack(
-  stackId: string,
-  correlationId: string
-): Promise<Record<string, unknown>> {
-  const response = await fetch(`/api/stacks/${stackId}/apply`, {
+async function applyMonitoringStack(stackId: string): Promise<Record<string, unknown>> {
+  return apiFetch<Record<string, unknown>>(ApiRoute.stacks.apply(stackId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify({}),
+    body: {},
+    correlationIdPrefix: "monitoring",
   });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || `Failed to apply monitoring stack`);
-  }
-
-  return response.json();
 }
 
 // Stop monitoring stack
-async function stopMonitoringStack(
-  correlationId: string
-): Promise<{ message: string }> {
-  const response = await fetch(`/api/monitoring/stop`, {
+async function stopMonitoringStack(): Promise<{ message: string }> {
+  // Flat response shape ({ message, ...result } — no envelope), so this
+  // stays raw rather than unwrapped.
+  return apiFetch<{ message: string }>(ApiRoute.monitoring.stop(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "monitoring",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to stop monitoring stack`);
-  }
-
-  return response.json();
 }
 
 // Fetch stack plan
-async function fetchMonitoringPlan(
-  stackId: string,
-  correlationId: string
-): Promise<Record<string, unknown>> {
-  const response = await fetch(`/api/stacks/${stackId}/plan`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      throw new Error("Docker is unavailable");
+async function fetchMonitoringPlan(stackId: string): Promise<Record<string, unknown>> {
+  try {
+    return await apiFetch<Record<string, unknown>>(ApiRoute.stacks.plan(stackId), {
+      correlationIdPrefix: "monitoring",
+    });
+  } catch (err) {
+    if (err instanceof ApiRequestError && err.status === 503) {
+      throw new ApiRequestError(err.status, err.code, "Docker is unavailable", err.body);
     }
-    throw new Error(`Failed to fetch plan: ${response.statusText}`);
+    throw err;
   }
-
-  return response.json();
 }
 
 // Hooks
@@ -159,8 +105,8 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
   useSocketEvent(
     ServerEvent.STACK_APPLY_COMPLETED,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
-      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.plan });
     },
     enabled,
   );
@@ -168,8 +114,8 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
   useSocketEvent(
     ServerEvent.STACK_DESTROY_COMPLETED,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
-      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.plan });
     },
     enabled,
   );
@@ -178,7 +124,7 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
   useSocketEvent(
     ServerEvent.CONTAINERS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.status });
     },
     enabled,
   );
@@ -187,23 +133,33 @@ export function useMonitoringStatus(options: { refetchInterval?: number; enabled
   const refetchInterval = options.refetchInterval ?? (connected ? false : 15000);
 
   return useQuery({
-    queryKey: ["monitoringStatus"],
-    queryFn: () => fetchMonitoringStatus(generateCorrelationId()),
+    queryKey: queryKeys.monitoring.status,
+    queryFn: fetchMonitoringStatus,
     enabled,
     refetchInterval,
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
     retry: (failureCount, error) => {
-      if ((error instanceof Error ? error.message : String(error)).includes("401")) return false;
+      if (error instanceof ApiRequestError && error.isAuth) return false;
       return failureCount < 2;
     },
   });
 }
 
+/**
+ * Query key for a single stack's monitoring plan. No parameterized builder
+ * for this in the registry yet (see Phase 4 report) — derived from the bare
+ * root here so it still prefix-matches `queryKeys.monitoring.plan` for broad
+ * invalidation.
+ */
+function monitoringPlanKey(stackId: string | undefined) {
+  return [...queryKeys.monitoring.plan, stackId] as const;
+}
+
 export function useMonitoringPlan(stackId: string | undefined, enabled = true) {
   return useQuery({
-    queryKey: ["monitoringPlan", stackId],
-    queryFn: () => fetchMonitoringPlan(stackId!, generateCorrelationId()),
+    queryKey: monitoringPlanKey(stackId),
+    queryFn: () => fetchMonitoringPlan(stackId!),
     enabled: !!stackId && enabled,
     staleTime: 0,
     gcTime: 2 * 60 * 1000,
@@ -214,11 +170,10 @@ export function useApplyMonitoring() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (stackId: string) =>
-      applyMonitoringStack(stackId, generateCorrelationId()),
+    mutationFn: (stackId: string) => applyMonitoringStack(stackId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
-      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.plan });
     },
   });
 }
@@ -227,10 +182,10 @@ export function useStopMonitoring() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => stopMonitoringStack(generateCorrelationId()),
+    mutationFn: () => stopMonitoringStack(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["monitoringStatus"] });
-      queryClient.invalidateQueries({ queryKey: ["monitoringPlan"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.monitoring.plan });
     },
   });
 }
@@ -245,14 +200,24 @@ export function usePrometheusQuery(
   const refetchInterval = options.refetchInterval ?? 15000;
 
   return useQuery({
-    queryKey: ["prometheusQuery", query],
-    queryFn: () => fetchPrometheusQuery(query, generateCorrelationId()),
+    queryKey: queryKeys.monitoring.prometheusQuery(query),
+    queryFn: () => fetchPrometheusQuery(query),
     enabled: enabled && !!query,
     refetchInterval,
     staleTime: 10000,
     gcTime: 2 * 60 * 1000,
     retry: 1,
   });
+}
+
+/**
+ * Query key for a Prometheus range query. The registry's
+ * `prometheusRangeQuery(query)` builder doesn't cover `rangeSeconds`/`step`
+ * (see Phase 4 report) — derived here so it still prefix-matches
+ * `queryKeys.monitoring.prometheusRangeQuery(query)`.
+ */
+function prometheusRangeQueryKey(query: string, rangeSeconds: number, step: string) {
+  return [...queryKeys.monitoring.prometheusRangeQuery(query), rangeSeconds, step] as const;
 }
 
 export function usePrometheusRangeQuery(
@@ -266,12 +231,12 @@ export function usePrometheusRangeQuery(
   const refetchInterval = options.refetchInterval ?? 30000;
 
   return useQuery({
-    queryKey: ["prometheusRangeQuery", query, rangeSeconds, step],
+    queryKey: prometheusRangeQueryKey(query, rangeSeconds, step),
     queryFn: () => {
       const now = Math.floor(Date.now() / 1000);
       const start = (now - rangeSeconds).toString();
       const end = now.toString();
-      return fetchPrometheusRangeQuery(query, start, end, step, generateCorrelationId());
+      return fetchPrometheusRangeQuery(query, start, end, step);
     },
     enabled: enabled && !!query,
     refetchInterval,

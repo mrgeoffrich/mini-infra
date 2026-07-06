@@ -15,6 +15,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { type ContainerMapEntry } from './egress-gateway-client';
 import { pushContainerMapViaNats } from './egress-gateway-transport';
+import { scrapeGatewayConnState } from './agent-health-scraper';
 import { getLogger } from '../../lib/logger-factory';
 import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
@@ -199,7 +200,8 @@ export class EgressContainerMapPusher {
         'Container map pushed to gateway via NATS',
       );
 
-      // Emit gateway health — success
+      // Emit gateway health — success. The gateway just acknowledged this push
+      // over NATS, so its connection is demonstrably up.
       emitEgressGatewayHealth({
         environmentId: env.id,
         gatewayIp: env.egressGatewayIp,
@@ -214,6 +216,7 @@ export class EgressContainerMapPusher {
           lastSuccessAt: new Date().toISOString(),
           lastFailureAt: null,
         },
+        natsConnState: 'connected',
       });
     };
 
@@ -236,7 +239,10 @@ export class EgressContainerMapPusher {
         // Roll back the version bump so the next push increments from a sane baseline
         state.version -= 1;
 
-        // Emit gateway health — failure
+        // Emit gateway health — failure. Best-effort out-of-band scrape of the
+        // gateway's /healthz explains a push timeout: `auth-failed` distinguishes
+        // "creds rejected" (can't subscribe) from a plain outage.
+        const natsConnState = await scrapeGatewayConnState(env.id);
         emitEgressGatewayHealth({
           environmentId: env.id,
           gatewayIp: env.egressGatewayIp,
@@ -251,6 +257,7 @@ export class EgressContainerMapPusher {
             lastFailureAt: new Date().toISOString(),
           },
           errorMessage: errMsg,
+          natsConnState,
         });
       }
     }

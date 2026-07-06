@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 8,
+  "builtinVersion": 9,
   "scope": "environment",
   "networkType": "internet",
   "category": "infrastructure",
@@ -26,7 +26,7 @@
         "dynamicEnv": {
           "TUNNEL_TOKEN": { "kind": "cloudflare-tunnel-token" }
         },
-        "requiredEgress": ["*.cloudflare.com", "*.argotunnel.com"],
+        "egressBypass": true,
         "joinResourceNetworks": ["tunnel"],
         "restartPolicy": "unless-stopped",
         "healthcheck": {

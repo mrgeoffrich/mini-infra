@@ -90,9 +90,11 @@ describe("listEgressPolicies", () => {
 
   it("throws on non-OK response", async () => {
     mockFetchError(500, "Internal Server Error");
-    await expect(listEgressPolicies()).rejects.toThrow(
-      "Failed to fetch egress policies: Internal Server Error",
-    );
+    // Post-Phase-4: egress.ts is folded onto the shared `apiFetch`, which
+    // throws `ApiRequestError` with the message extracted straight from the
+    // response body's `.message` field (no per-resource prefix wrapping —
+    // that hand-rolled skeleton was deleted in favor of the shared client).
+    await expect(listEgressPolicies()).rejects.toThrow("Internal Server Error");
   });
 });
 
@@ -130,9 +132,7 @@ describe("getEgressPolicy", () => {
 
   it("throws on 404", async () => {
     mockFetchError(404, "Not Found");
-    await expect(getEgressPolicy("bad-id")).rejects.toThrow(
-      "Failed to fetch egress policy: Not Found",
-    );
+    await expect(getEgressPolicy("bad-id")).rejects.toThrow("Not Found");
   });
 });
 
@@ -169,9 +169,7 @@ describe("listEgressRules", () => {
 
   it("throws on non-OK response", async () => {
     mockFetchError(403, "Forbidden");
-    await expect(listEgressRules("policy-1")).rejects.toThrow(
-      "Failed to fetch egress rules: Forbidden",
-    );
+    await expect(listEgressRules("policy-1")).rejects.toThrow("Forbidden");
   });
 });
 

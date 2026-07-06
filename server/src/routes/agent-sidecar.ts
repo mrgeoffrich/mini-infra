@@ -15,7 +15,7 @@ import {
   SIDECAR_STARTUP_STEPS,
 } from "../services/agent-sidecar";
 import { emitToChannel } from "../lib/socket";
-import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
+import { Channel, ServerEvent, type OperationStep, Permission } from "@mini-infra/types";
 
 const logger = getLogger("agent", "agent-sidecar");
 const router = express.Router();
@@ -35,7 +35,7 @@ const configSchema = z.object({
 
 router.get(
   "/status",
-  requirePermission("agent:read"),
+  requirePermission(Permission.AgentRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const containerId = getOwnContainerId();
@@ -102,7 +102,7 @@ const RESTART_GUARD_KEY = "agent-sidecar";
 
 router.post(
   "/restart",
-  requirePermission("agent:write"),
+  requirePermission(Permission.AgentWrite),
   async (_req: express.Request, res: express.Response) => {
     try {
       if (restartingAgentSidecar.has(RESTART_GUARD_KEY)) {
@@ -190,7 +190,7 @@ router.post(
 
 router.get(
   "/config",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const config = await getAgentSidecarConfig();
@@ -208,7 +208,7 @@ router.get(
 
 router.put(
   "/config",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: express.Request, res: express.Response) => {
     try {
       const parsed = configSchema.safeParse(req.body);

@@ -1,11 +1,8 @@
 # Planning document format
 
-This directory holds **phased planning documents** that feed two skills:
+This directory holds **phased planning documents**. The `brainstorm-to-plan` skill produces them from a brainstorming session, and whoever implements a phase (human or Claude, via `setup-worktree`) reads the doc as the scoping contract for that phase.
 
-- **`plan-to-mk`** reads a plan and creates an `mk` feature plus one issue per phase, copying the per-phase Goal / Deliverables / Done when verbatim into each ticket.
-- **`/implement-issue`** picks up the resulting issues phase by phase and routes by the `design` tag — design tickets go to `design-task`, everything else to `code-task` — running each end-to-end (worktree, code, tests, smoke, PR, `mk` state transitions).
-
-The format below is **mechanically required** — `plan-to-mk` stops and reports if a doc doesn't match. It's also the convention humans rely on when reading these docs, so write for both audiences.
+The format below is the convention these docs follow — consistent enough that a reader can jump into any plan and immediately find the Goal, Deliverables, and Done-when for a given phase. `brainstorm-to-plan` enforces a rubric on top of this shape (see its `SKILL.md`); this doc just describes the resulting structure.
 
 Reference, fully populated example: [shipped/internal-nats-messaging-plan.md](shipped/internal-nats-messaging-plan.md).
 
@@ -15,25 +12,22 @@ Reference, fully populated example: [shipped/internal-nats-messaging-plan.md](sh
 
 | Stage | Path |
 |---|---|
-| Drafting / awaiting `mk` seed | `docs/planning/not-shipped/<slug>.md` |
-| `mk`-seeded, work in flight or complete | same path; the §8 list now has real `MINI-NN` IDs |
+| Drafting / in flight | `docs/planning/not-shipped/<slug>.md` |
 | Project shipped | move to `docs/planning/shipped/<slug>.md` |
 
-Slug is kebab-case, ends in `-plan` for full project plans (e.g. `job-pool-service-type-plan.md`). Single-phase write-ups can drop the `-plan` suffix (e.g. `addons-egress-followups.md`) but won't be processed by `plan-to-mk`.
+Slug is kebab-case, ends in `-plan` for full project plans (e.g. `job-pool-service-type-plan.md`). Single-phase write-ups can drop the `-plan` suffix (e.g. `addons-egress-followups.md`).
 
 ---
 
 ## Required structure
 
-A processable plan has these sections in order. Section *numbers* in existing docs vary; what matters is that each required block is present and parseable.
+A well-formed plan has these sections in order. Section *numbers* in existing docs vary; what matters is that each required block is present and readable.
 
 ### H1 — project title
 
 ```markdown
 # <Feature title> — <subtitle or framing>
 ```
-
-The H1 (stripped of trailing punctuation) becomes the `mk` **feature title**. Don't change it after seeding — the feature lookup is by slug derived from the title.
 
 ### §1 Background
 
@@ -45,7 +39,7 @@ The H1 (stripped of trailing punctuation) becomes the `mk` **feature title**. Do
 <optional further paragraphs>
 ```
 
-The **first paragraph of §1** is copied verbatim into the `mk` feature description. Make it self-contained — no "see above" references — and fit the gist of the project in 3-6 sentences.
+The **first paragraph of §1** should be self-contained — no "see above" references — and fit the gist of the project in 3-6 sentences. It's the first thing anyone opens the doc for.
 
 ### §2 Goals
 
@@ -67,7 +61,7 @@ The **first paragraph of §1** is copied verbatim into the `mk` feature descript
 - ...
 ```
 
-The single most important section for preventing scope creep. Anything you've considered and decided not to do belongs here, with a one-line *why*. Without the rationale, future readers (and the executor) will re-litigate the decision. If you find yourself writing more than ~6 non-goals, the project is probably too broad — consider splitting.
+The single most important section for preventing scope creep. Anything you've considered and decided not to do belongs here, with a one-line *why*. Without the rationale, future readers will re-litigate the decision. If you find yourself writing more than ~6 non-goals, the project is probably too broad — consider splitting.
 
 ### Phased rollout section (typically §6)
 
@@ -109,11 +103,11 @@ Seven required parts per phase:
 
 | Part | Shape | Notes |
 |---|---|---|
-| **Goal** | one-sentence headline | Becomes the issue's Goal section. State the *outcome*, not the steps. |
+| **Goal** | one-sentence headline | State the *outcome*, not the steps. |
 | **Deliverables** | bullet list | Concrete artifacts the phase ships. May nest. May include inline links to files/PRs. **Not** a file-by-file change plan — see "What not to write" below. |
-| **Reversibility** | one of `safe` / `feature-flagged` / `forward-only` / `destructive`, plus one-line rationale | What happens if this phase ships and breaks. `safe` = revert the PR cleanly. `feature-flagged` = flip a flag, no rollback PR needed. `forward-only` = a forward-fix is required (data migration, contract change, irreversible state). `destructive` = data loss or external state change that cannot be undone. The executor uses this to decide whether to gate the rollout, add a flag, or require ops sign-off before merging. |
-| **UI changes** | bullet list, or the literal word `none` | Every user-visible change this phase ships. Write in user terms ("operators see a new column on the certificates page"), not implementation terms ("add `<CertStatusBadge>` to the cert table"). For each item, tag `[design needed]` if it needs a designer to mock first, or `[no design]` if it can ship as-is (copy tweaks, new technical fields with obvious layouts). Saying `none` is fine — but say it; don't omit the line. **Why this exists:** UI changes are extracted from plans before implementation so the designer can be looped in early. A missing line is indistinguishable from "no UI changes" and leads to mid-PR surprises and rework. Grep `[design needed]` across `docs/planning/` for an instant designer-todo list. |
-| **Schema changes** | bullet list, or the literal word `none` | Every DB schema change this phase ships — new tables, new columns (with type + nullability), new indexes, removed/renamed columns. End the list with the Prisma migration command the executor will run (`pnpm --filter mini-infra-server exec prisma migrate dev --name <slug>`) so the migration name lands in the plan rather than being invented at execution time. Write the *what*, not the *why for every column* — the why belongs in Goal / Deliverables. Saying `none` is fine — but say it; don't omit the line. **Why this exists:** schema migrations are forward-only in production and high-blast-radius — surfacing them at plan time makes the phase ordering obvious (schema lands ahead of API + UI), gives reviewers a single place to spot risky DDL, and lets `code-task` know up front which phases will touch `prisma/schema.prisma`. **Plan-level cue:** when a plan has multiple phases all listing schema changes, that's often a signal the schema work should be pulled into its own Phase 1 — see the "Schema migration sharing a phase with feature work" anti-pattern in `brainstorm-to-plan`. |
+| **Reversibility** | one of `safe` / `feature-flagged` / `forward-only` / `destructive`, plus one-line rationale | What happens if this phase ships and breaks. `safe` = revert the PR cleanly. `feature-flagged` = flip a flag, no rollback PR needed. `forward-only` = a forward-fix is required (data migration, contract change, irreversible state). `destructive` = data loss or external state change that cannot be undone. Whoever implements the phase uses this to decide whether to gate the rollout, add a flag, or require ops sign-off before merging. |
+| **UI changes** | bullet list, or the literal word `none` | Every user-visible change this phase ships. Write in user terms ("operators see a new column on the certificates page"), not implementation terms ("add `<CertStatusBadge>` to the cert table"). For each item, tag `[design needed]` if it needs a designer to mock first, or `[no design]` if it can ship as-is (copy tweaks, new technical fields with obvious layouts). Saying `none` is fine — but say it; don't omit the line. **Why this exists:** UI changes are extracted from plans before implementation so a designer can be looped in early. A missing line is indistinguishable from "no UI changes" and leads to mid-PR surprises and rework. Grep `[design needed]` across `docs/planning/` for an instant designer-todo list. |
+| **Schema changes** | bullet list, or the literal word `none` | Every DB schema change this phase ships — new tables, new columns (with type + nullability), new indexes, removed/renamed columns. End the list with the Prisma migration command that will be run (`pnpm --filter mini-infra-server exec prisma migrate dev --name <slug>`) so the migration name lands in the plan rather than being invented at execution time. Write the *what*, not the *why for every column* — the why belongs in Goal / Deliverables. Saying `none` is fine — but say it; don't omit the line. **Why this exists:** schema migrations are forward-only in production and high-blast-radius — surfacing them at plan time makes the phase ordering obvious (schema lands ahead of API + UI) and gives reviewers a single place to spot risky DDL. **Plan-level cue:** when a plan has multiple phases all listing schema changes, that's often a signal the schema work should be pulled into its own Phase 1 — see the "Schema migration sharing a phase with feature work" anti-pattern in `brainstorm-to-plan`. |
 | **Done when** | one sentence | The acceptance criterion. Should be testable in CI or the dev env. |
 | **Verify in prod** | one bullet, or `n/a — internal only` | The production signal that confirms the *outcome* (Goal), not just the *deliverables*. A counter that should appear, an error rate that should drop, a dashboard panel to watch, a graph that should change shape, an alert to wire up. Different from Done-when: Done-when is "the code does the right thing in CI"; Verify-in-prod is "we can tell the goal materialised after rollout." Use `n/a — internal only` for refactors and other phases with no user-visible production signal — but write it explicitly so reviewers know you considered it. |
 
@@ -123,43 +117,30 @@ Optional per-phase subsections (used when they help):
 - **Migration shape** — when a phase replaces an existing transport/component, a short numbered list of the swap steps.
 - **Deferred to follow-ups** — bullets of work deliberately punted, with one-line rationale each. Prevents scope creep during execution.
 
-Heading convention: `### Phase N — <title>` with an em-dash (`—`), not a hyphen. The em-dash is what `plan-to-mk` parses out.
+Heading convention: `### Phase N — <title>` with an em-dash (`—`), not a hyphen — the project's convention for these docs.
 
-### §8 mk tracking (placeholder list)
+### Phase tracking (placeholder list)
 
 ```markdown
-## 8. mk tracking
+## 8. Phase tracking
 
-<one-line pointer to where these issues will live>
-
-- MINI-_TBD_ — Phase 1: <title>
-- MINI-_TBD_ — Phase 2: <title>  [blocks-by: 1]
-- MINI-_TBD_ — Phase 3: <title>  [blocks-by: 1, 2]
+- [ ] Phase 1: <title>
+- [ ] Phase 2: <title>  [blocks-by: 1]
+- [ ] Phase 3: <title>  [blocks-by: 1, 2]
 ```
 
 Required:
 
 - One line per phase, in order, count must equal the number of `### Phase N` headings.
-- Placeholder is exactly `MINI-_TBD_` (with underscores). `plan-to-mk` rewrites these to real `MINI-NN` IDs after seeding.
 - Phase title after the colon should match the heading title (minus the em-dash).
-- **`[blocks-by: N, M]` brackets** encode the dependency graph (see "Phase ordering" below). Omit the brackets entirely on every line to fall back to strict-sequential default. Brackets are preserved through seeding so the graph stays readable from the doc.
-
-After seeding, this section is rewritten in place to:
-
-```markdown
-Tracked under the `<feature-slug>` feature in mk.
-
-- MINI-NN — Phase 1: <title>
-- MINI-NN — Phase 2: <title>  [blocks-by: 1]
-```
-
-`[blocks-by: …]` brackets are preserved verbatim through seeding so the dependency graph remains readable in the doc without opening `mk`. Don't pre-write the seeded shape — leave the placeholders, let `plan-to-mk` write them.
+- **`[blocks-by: N, M]` brackets** encode the dependency graph (see "Phase ordering" below). Omit the brackets entirely on every line to fall back to strict-sequential default.
+- Check a box off (`- [x]`) once that phase's PR has merged, so the doc reflects progress at a glance.
 
 ---
 
 ## Optional structural sections
 
-These don't affect `mk` seeding but are common and worth knowing.
+These are common and worth knowing.
 
 | Section | Purpose |
 |---|---|
@@ -171,20 +152,20 @@ These don't affect `mk` seeding but are common and worth knowing.
 
 ## Phase ordering
 
-`plan-to-mk` builds `mk` `blocks-by` relationships from the §8 list. Two ways to express ordering, in order of preference:
+The Phase tracking list's brackets encode the dependency graph for whoever implements the phases. Two ways to express ordering, in order of preference:
 
-**Preferred — explicit `[blocks-by: N, M]` brackets in §8.** Mechanical, unambiguous, survives copy-paste and review:
+**Preferred — explicit `[blocks-by: N, M]` brackets.** Mechanical, unambiguous, survives copy-paste and review:
 
 ```markdown
-- MINI-_TBD_ — Phase 1: foundation
-- MINI-_TBD_ — Phase 2: migration A   [blocks-by: 1]
-- MINI-_TBD_ — Phase 3: migration B   [blocks-by: 1]
-- MINI-_TBD_ — Phase 4: cleanup       [blocks-by: 2, 3]
+- [ ] Phase 1: foundation
+- [ ] Phase 2: migration A   [blocks-by: 1]
+- [ ] Phase 3: migration B   [blocks-by: 1]
+- [ ] Phase 4: cleanup       [blocks-by: 2, 3]
 ```
 
 Phases 2 and 3 fan out from Phase 1 in parallel; Phase 4 waits for both. Omit the brackets entirely on every line to fall back to **strict sequential** (each phase blocks-by the previous).
 
-**Fallback — prose hints.** Still parsed for back-compat with older plans:
+**Fallback — prose hints.** Still fine for back-compat with older plans:
 
 - "Phases land in order" → strictly sequential.
 - "Phase 1 blocks all later phases" → fan-out from Phase 1.
@@ -201,19 +182,18 @@ Mark optional phases in the **heading** itself:
 ### Phase 6 — App-level metrics (optional, deferred)
 ```
 
-The keywords `optional` or `deferred` (case-insensitive) put the issue into `mk` `backlog` instead of `todo`. They still get `blocks-by` edges from previous phases — backlog just means "not active yet."
+The keywords `optional` or `deferred` (case-insensitive) flag the phase as not on the critical path — note it as such in the Phase tracking list too. They still get `blocks-by` edges from previous phases — optional just means "not blocking the main line."
 
 ---
 
 ## What not to write
 
-Plan docs are **scoping** documents, not implementation plans. The executor (`code-task`) does its own implementation planning against the current code state at execution time.
+Plan docs are **scoping** documents, not implementation plans. Whoever implements a phase does their own implementation planning against the current code state at execution time.
 
 - ❌ **File-by-file change lists.** "Edit `server/src/foo.ts:42` to add field X" is execution detail. Just say "Add field X on the foo service" in Deliverables.
 - ❌ **Pre-baked code patches.** Concrete TypeScript snippets are fine when they're *defining a contract* (a new type, a subject namespace, a config schema). They're not fine as "here's how to write the implementation."
 - ❌ **"Read X, then Y, then Z" task lists.** That's the executor's job.
-- ❌ **Status updates in-place.** Don't edit the plan to say "Phase 2 done." That state lives in `mk` / git, not in the plan doc.
-- ❌ **Stale TBD scaffolding after seeding.** Once `plan-to-mk` rewrites §8, the doc is the seeded contract — don't reintroduce `MINI-_TBD_` placeholders by hand.
+- ❌ **Status updates in prose.** Check off the Phase tracking box instead of editing the plan to say "Phase 2 done."
 
 What's good to write:
 
@@ -227,15 +207,14 @@ What's good to write:
 
 ## Workflow
 
-1. Author the plan in `docs/planning/not-shipped/<slug>.md` with `MINI-_TBD_` placeholders in §8.
-2. **If any phase has `[design needed]` UI changes**, brief the designer with those phases extracted before seeding to `mk`. Either delay seeding the design-blocked phases until designs land, or seed them as `(deferred)` so they go into `mk` `backlog` rather than `todo`. Grep across all in-flight plans for outstanding designer work with `grep -r "\[design needed\]" docs/planning/`.
-3. Run `plan-to-mk` (or ask Claude to). It creates the `mk` feature, files one issue per phase, sets `blocks-by` edges, and rewrites §8 with the real IDs. The plan-doc edit is staged but not committed — review the diff before committing.
-4. Use `/implement-issue` to pick up phases one at a time (it routes to `code-task` or `design-task` by the `design` tag). Each phase ships as its own PR with `Closes MINI-NN`.
-5. When the project is fully shipped, move the plan to `docs/planning/shipped/`.
+1. Author the plan in `docs/planning/not-shipped/<slug>.md` (typically via `brainstorm-to-plan`).
+2. **If any phase has `[design needed]` UI changes**, loop in a designer for those phases before or during implementation. Grep across all in-flight plans for outstanding design work with `grep -r "\[design needed\]" docs/planning/`.
+3. Implement phases one at a time: `setup-worktree`, write the code, open a PR, `/review` until clean, merge, `finish-worktree`. Check off the phase in the Phase tracking list.
+4. When the project is fully shipped, move the plan to `docs/planning/shipped/`.
 
 ---
 
-## Quick checklist before running `plan-to-mk`
+## Quick checklist before implementing a plan
 
 - [ ] H1 present, single-line, no trailing punctuation.
 - [ ] §1 Background first paragraph reads standalone in 3-6 sentences.
@@ -244,7 +223,7 @@ What's good to write:
 - [ ] Every phase has all six required parts: Goal, Deliverables, Reversibility, UI changes, Done when, Verify in prod.
 - [ ] UI changes is either a bullet list (each item tagged `[design needed]` or `[no design]`) or the literal word `none`. Don't omit the line.
 - [ ] Verify in prod is a production signal or the literal `n/a — internal only`.
-- [ ] §8 has exactly one `MINI-_TBD_ — Phase N: <title>[ [blocks-by: …]]` line per phase.
+- [ ] Phase tracking has exactly one `- [ ] Phase N: <title>[ [blocks-by: …]]` line per phase.
 - [ ] Optional/deferred phases say so in the heading.
 - [ ] Phase ordering uses `[blocks-by: …]` brackets, prose hints, or strict-sequential default — pick one, don't mix.
 - [ ] No pre-baked implementation steps in Deliverables.

@@ -118,6 +118,16 @@ The combination of TanStack Query and Socket.IO is the data layer. There is no R
 The reference is [src/hooks/useContainers.ts](src/hooks/useContainers.ts). Every resource hook should follow the same shape:
 
 ```ts
+// Transport: apiFetch<T>() (src/lib/api-client.ts) is the one shared HTTP
+// primitive — credentials, standard headers, correlation ID, timeout,
+// {success,data} envelope unwrap, and a typed ApiRequestError all live here
+// so hooks don't hand-roll fetch + error handling.
+async function fetchContainers(queryParams: ContainerQueryParams = {}): Promise<ContainerListResponse> {
+  const url = new URL(`/api/containers`, window.location.origin);
+  // ...append queryParams as search params...
+  return apiFetch<ContainerListResponse>(url.toString(), { correlationIdPrefix: "containers" });
+}
+
 export function useContainers(options: UseContainersOptions = {}) {
   const { connected } = useSocket();
 
@@ -138,23 +148,24 @@ export function useContainers(options: UseContainersOptions = {}) {
   // 4. The query itself.
   return useQuery({
     queryKey: ["containers", queryParams],
-    queryFn: () => fetchContainers(queryParams, correlationId),
+    queryFn: () => fetchContainers(queryParams),
     refetchInterval,
     refetchOnReconnect: true,    // recover events missed during disconnect
     refetchOnWindowFocus: true,
     staleTime: 2000,
     gcTime: 5 * 60 * 1000,
-    retry: /* don't retry 401s or "Docker unavailable"; backoff on others */,
+    retry: /* don't retry ApiRequestError.isAuth or status===503; backoff on others */,
   });
 }
 ```
 
-The four invariants that every hook must respect:
+The five invariants that every hook must respect:
 
 1. **No polling when the socket is connected.** Set `refetchInterval: false` when `connected` is true.
 2. **Always set `refetchOnReconnect: true`.** It backfills any events missed while the socket was down.
 3. **Use `Channel.*` and `ServerEvent.*` constants** from `@mini-infra/types`. Never raw strings.
 4. **Use `useSocketChannel()`** rather than emitting `subscribe` manually. The hook ref-counts subscribers, so two components on the same channel don't unsubscribe each other on unmount.
+5. **Fetch through `apiFetch<T>()`** ([src/lib/api-client.ts](src/lib/api-client.ts)), not a raw `fetch()` call. It attaches `credentials: "include"`, the `Content-Type`/`X-Correlation-ID` headers (names + ID format from [`HttpHeader`/`newCorrelationId`](../lib/types/http.ts)), a request timeout, and unwraps the `ApiResponse<T>` envelope — throwing a typed `ApiRequestError` (with `.status`, `.code`, `.isAuth`, `.isServer`) on any failure instead of a generic `Error`. This is a Phase-1 migration (see `docs/planning/not-shipped/frontend-backend-contract-plan.md`); as of this writing only `useContainers` has been switched over, other hooks still use their own raw-`fetch` skeleton until they're migrated.
 
 ### The socket primitives
 

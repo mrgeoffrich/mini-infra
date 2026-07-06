@@ -17,7 +17,7 @@ import {
   UNSEAL_STEP_NAMES,
 } from "../../services/vault/vault-admin-service";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission } from "@mini-infra/types";
 import type {
   VaultStatus,
   VaultBootstrapResult,
@@ -32,7 +32,7 @@ const router = express.Router();
 
 router.get(
   "/status",
-  requirePermission("vault:read") as RequestHandler,
+  requirePermission(Permission.VaultRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const services = getVaultServices();
@@ -53,7 +53,7 @@ const passphraseSchema = z.object({
 
 router.post(
   "/passphrase/unlock",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (req: Request, res: Response, _next: NextFunction) => {
     try {
       const parsed = passphraseSchema.safeParse(req.body);
@@ -93,7 +93,7 @@ router.post(
 
 router.post(
   "/passphrase/lock",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (_req: Request, res: Response) => {
     const services = getVaultServices();
     services.passphrase.lock();
@@ -115,7 +115,7 @@ router.post(
 // passphrase being unlocked so it can't bypass operator-presence requirements.
 router.post(
   "/admin/reauthenticate",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (_req: Request, res: Response) => {
     const services = getVaultServices();
     if (!services.passphrase.isUnlocked()) {
@@ -145,7 +145,7 @@ const bootstrapSchema = z.object({
 
 router.post(
   "/bootstrap",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (req: Request, res: Response) => {
     const parsed = bootstrapSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -237,7 +237,7 @@ router.post(
 
 router.post(
   "/unseal",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (req: Request, res: Response) => {
     const services = getVaultServices();
     if (!services.passphrase.isUnlocked()) {
@@ -303,7 +303,7 @@ router.post(
 
 router.get(
   "/operator-credentials",
-  requirePermission("vault:admin") as RequestHandler,
+  requirePermission(Permission.VaultAdmin) as RequestHandler,
   (async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const services = getVaultServices();

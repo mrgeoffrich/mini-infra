@@ -7,39 +7,35 @@ import {
   ManualFrontendResponse,
   DeleteManualFrontendResponse,
   TlsCertificate,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `manual-haproxy-frontend-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // Manual HAProxy Frontend API Functions
 // ====================
+//
+// The eligible-containers / create / update / delete endpoints are enveloped
+// (`{success, data, message?}`), but the existing hook consumers (including
+// several files outside this migration batch) read the *whole* envelope off
+// the mutation/query result (e.g. `data.message`, `data.data.containers`).
+// To avoid rippling type/shape changes into files outside this batch's
+// scope, those functions keep returning the full envelope via
+// `{ unwrap: false }`. `fetchTLSCertificates` already unwrapped to the inner
+// `TlsCertificate[]` in the pre-migration code, so it uses `apiFetch`'s
+// default unwrap behavior.
 
 async function fetchEligibleContainers(
   environmentId: string,
-  correlationId: string,
 ): Promise<EligibleContainersResponse> {
-  const response = await fetch(
-    `/api/haproxy/manual-frontends/containers?environmentId=${environmentId}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
+  const url = new URL(ApiRoute.haproxy.manualFrontendContainers(), window.location.origin);
+  url.searchParams.set("environmentId", environmentId);
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch eligible containers: ${response.statusText}`,
-    );
-  }
-
-  const data: EligibleContainersResponse = await response.json();
+  const data = await apiFetch<EligibleContainersResponse>(url.toString(), {
+    correlationIdPrefix: "manual-haproxy-frontend",
+    unwrap: false,
+  });
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch eligible containers");
@@ -50,24 +46,13 @@ async function fetchEligibleContainers(
 
 async function createManualFrontend(
   request: CreateManualFrontendRequest,
-  correlationId: string,
 ): Promise<ManualFrontendResponse> {
-  const response = await fetch(`/api/haproxy/manual-frontends`, {
+  const data = await apiFetch<ManualFrontendResponse>(ApiRoute.haproxy.manualFrontends(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "manual-haproxy-frontend",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create manual frontend");
-  }
-
-  const data: ManualFrontendResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to create manual frontend");
@@ -79,27 +64,16 @@ async function createManualFrontend(
 async function updateManualFrontend(
   frontendName: string,
   request: UpdateManualFrontendRequest,
-  correlationId: string,
 ): Promise<ManualFrontendResponse> {
-  const response = await fetch(
-    `/api/haproxy/manual-frontends/${frontendName}`,
+  const data = await apiFetch<ManualFrontendResponse>(
+    ApiRoute.haproxy.manualFrontend(frontendName),
     {
       method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
+      body: request,
+      correlationIdPrefix: "manual-haproxy-frontend",
+      unwrap: false,
     },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update manual frontend");
-  }
-
-  const data: ManualFrontendResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update manual frontend");
@@ -110,55 +84,24 @@ async function updateManualFrontend(
 
 async function deleteManualFrontend(
   frontendName: string,
-  correlationId: string,
 ): Promise<DeleteManualFrontendResponse> {
-  const response = await fetch(`/api/haproxy/manual-frontends/${frontendName}`, {
+  return apiFetch<DeleteManualFrontendResponse>(ApiRoute.haproxy.manualFrontend(frontendName), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "manual-haproxy-frontend",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      errorData.message || `Failed to delete manual frontend: ${response.statusText}`,
-    );
-  }
-
-  return await response.json();
 }
 
-async function fetchTLSCertificates(
-  environmentId: string,
-  correlationId: string,
-): Promise<TlsCertificate[]> {
-  const response = await fetch(
-    `/api/tls/certificates?environmentId=${environmentId}&status=ACTIVE`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
+async function fetchTLSCertificates(environmentId: string): Promise<TlsCertificate[]> {
+  const url = new URL(ApiRoute.tls.certificates(), window.location.origin);
+  url.searchParams.set("environmentId", environmentId);
+  url.searchParams.set("status", "ACTIVE");
 
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch TLS certificates: ${response.statusText}`,
-    );
-  }
+  const data = await apiFetch<TlsCertificate[]>(url.toString(), {
+    correlationIdPrefix: "manual-haproxy-frontend",
+  });
 
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch TLS certificates");
-  }
-
-  return data.data || [];
+  return data || [];
 }
 
 // ====================
@@ -179,22 +122,17 @@ export function useEligibleContainers(
   options: UseManualFrontendOptions = {},
 ) {
   const { enabled = true, refetchInterval, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["eligible-containers", environmentId],
-    queryFn: () => fetchEligibleContainers(environmentId!, correlationId),
+    queryKey: queryKeys.haproxy.manualFrontendEligibleContainers(environmentId!),
+    queryFn: () => fetchEligibleContainers(environmentId!),
     enabled: enabled && !!environmentId,
     refetchInterval,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized") ||
-              error.message.includes("404")
-            ) {
+            if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
               return false;
             }
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -212,14 +150,12 @@ export function useEligibleContainers(
  */
 export function useCreateManualFrontend() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (request: CreateManualFrontendRequest) =>
-      createManualFrontend(request, correlationId),
+    mutationFn: (request: CreateManualFrontendRequest) => createManualFrontend(request),
     onSuccess: (data) => {
       // Invalidate all frontends list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
       toast.success("Frontend created", {
         description: data.message || "Manual frontend created successfully",
       });
@@ -237,7 +173,6 @@ export function useCreateManualFrontend() {
  */
 export function useUpdateManualFrontend() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -246,14 +181,14 @@ export function useUpdateManualFrontend() {
     }: {
       frontendName: string;
       request: UpdateManualFrontendRequest;
-    }) => updateManualFrontend(frontendName, request, correlationId),
+    }) => updateManualFrontend(frontendName, request),
     onSuccess: (data, { frontendName }) => {
       // Invalidate frontend details
       queryClient.invalidateQueries({
-        queryKey: ["haproxy-frontend", frontendName],
+        queryKey: queryKeys.haproxy.frontend(frontendName),
       });
       // Invalidate all frontends list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
       toast.success("Frontend updated", {
         description: data.message || "Manual frontend updated successfully",
       });
@@ -272,14 +207,12 @@ export function useUpdateManualFrontend() {
  */
 export function useDeleteManualFrontend() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (frontendName: string) =>
-      deleteManualFrontend(frontendName, correlationId),
+    mutationFn: (frontendName: string) => deleteManualFrontend(frontendName),
     onSuccess: (_, frontendName) => {
       // Invalidate frontends list to refresh the data
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
 
       // Show success toast
       toast.success("Frontend deleted", {
@@ -303,20 +236,16 @@ export function useTLSCertificates(
   options: UseManualFrontendOptions = {},
 ) {
   const { enabled = true, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["tls-certificates", environmentId],
-    queryFn: () => fetchTLSCertificates(environmentId!, correlationId),
+    queryKey: queryKeys.haproxy.tlsCertificates(environmentId!),
+    queryFn: () => fetchTLSCertificates(environmentId!),
     enabled: enabled && !!environmentId,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (error instanceof ApiRequestError && error.isAuth) {
               return false;
             }
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -344,7 +273,7 @@ interface ValidateHostnameCache {
 
 export function useValidateHostname(hostname: string, environmentId: string) {
   const { data: frontendsData } = useQuery<ValidateHostnameCache>({
-    queryKey: ["haproxy-frontends"],
+    queryKey: queryKeys.haproxy.frontends,
   });
 
   if (!hostname || !frontendsData?.data?.frontends) {

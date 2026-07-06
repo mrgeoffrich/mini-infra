@@ -6,31 +6,39 @@ import {
   CreateBackupConfigurationRequest,
   UpdateBackupConfigurationRequest,
   QuickBackupSetupRequest,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-backup-config-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // PostgreSQL Backup Configuration API Functions
 // ====================
 
+/** Extracts a Zod-validation-details message from an ApiRequestError body, if present. */
+function validationErrorMessage(error: ApiRequestError): string | undefined {
+  const body = error.body as
+    | { details?: Array<{ path?: (string | number)[]; message: string }> }
+    | undefined;
+  if (body?.details && Array.isArray(body.details)) {
+    const validationErrors = body.details
+      .map((detail) => `${detail.path?.join(".")}: ${detail.message}`)
+      .join(", ");
+    return `Validation failed: ${validationErrors}`;
+  }
+  return undefined;
+}
+
 async function fetchPostgresBackupConfig(
   databaseId: string,
-  correlationId: string,
 ): Promise<BackupConfigurationResponse> {
-  const response = await fetch(`/api/postgres/backup-configs/${databaseId}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 404) {
+  try {
+    return await apiFetch<BackupConfigurationResponse>(
+      ApiRoute.postgres.backupConfigForDatabase(databaseId),
+      { correlationIdPrefix: "postgres-backup-config", unwrap: false },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) {
       // No backup config found - return a null data response
       return {
         success: true,
@@ -39,188 +47,81 @@ async function fetchPostgresBackupConfig(
         timestamp: new Date().toISOString(),
       };
     }
-    throw new Error(
-      `Failed to fetch backup configuration: ${response.statusText}`,
-    );
+    throw error;
   }
-
-  const data: BackupConfigurationResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backup configuration");
-  }
-
-  return data;
 }
 
 async function createPostgresBackupConfig(
   request: CreateBackupConfigurationRequest,
-  correlationId: string,
 ): Promise<BackupConfigurationResponse> {
-  const response = await fetch(`/api/postgres/backup-configs`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to create backup configuration: ${response.statusText}`;
-
-    try {
-      const errorData = await response.json();
-      if (errorData.message) {
-        errorMessage = errorData.message;
-      } else if (errorData.details && Array.isArray(errorData.details)) {
-        // Handle Zod validation errors
-        const validationErrors = errorData.details
-          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
-          .join(", ");
-        errorMessage = `Validation failed: ${validationErrors}`;
-      }
-    } catch {
-      // If JSON parsing fails, keep the original error message
+  try {
+    return await apiFetch<BackupConfigurationResponse>(
+      ApiRoute.postgres.backupConfigs(),
+      {
+        method: "POST",
+        body: request,
+        correlationIdPrefix: "postgres-backup-config",
+        unwrap: false,
+      },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
     }
-
-    throw new Error(errorMessage);
+    throw error;
   }
-
-  const data: BackupConfigurationResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create backup configuration");
-  }
-
-  return data;
 }
 
 async function updatePostgresBackupConfig(
   id: string,
   request: UpdateBackupConfigurationRequest,
-  correlationId: string,
 ): Promise<BackupConfigurationResponse> {
-  const response = await fetch(`/api/postgres/backup-configs/${id}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update backup configuration: ${response.statusText}`;
-
-    try {
-      const errorData = await response.json();
-      if (errorData.message) {
-        errorMessage = errorData.message;
-      } else if (errorData.details && Array.isArray(errorData.details)) {
-        // Handle Zod validation errors
-        const validationErrors = errorData.details
-          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
-          .join(", ");
-        errorMessage = `Validation failed: ${validationErrors}`;
-      }
-    } catch {
-      // If JSON parsing fails, keep the original error message
+  try {
+    return await apiFetch<BackupConfigurationResponse>(
+      ApiRoute.postgres.backupConfig(id),
+      {
+        method: "PUT",
+        body: request,
+        correlationIdPrefix: "postgres-backup-config",
+        unwrap: false,
+      },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
     }
-
-    throw new Error(errorMessage);
+    throw error;
   }
-
-  const data: BackupConfigurationResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update backup configuration");
-  }
-
-  return data;
 }
 
 async function deletePostgresBackupConfig(
   id: string,
-  correlationId: string,
 ): Promise<BackupConfigurationDeleteResponse> {
-  const response = await fetch(`/api/postgres/backup-configs/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to delete backup configuration: ${response.statusText}`;
-
-    try {
-      const errorData = await response.json();
-      if (errorData.message) {
-        errorMessage = errorData.message;
-      }
-    } catch {
-      // If JSON parsing fails, keep the original error message
-    }
-
-    throw new Error(errorMessage);
-  }
-
-  const data: BackupConfigurationDeleteResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete backup configuration");
-  }
-
-  return data;
+  return apiFetch<BackupConfigurationDeleteResponse>(
+    ApiRoute.postgres.backupConfig(id),
+    { method: "DELETE", correlationIdPrefix: "postgres-backup-config", unwrap: false },
+  );
 }
 
 async function quickSetupPostgresBackup(
   request: QuickBackupSetupRequest,
-  correlationId: string,
 ): Promise<BackupConfigurationResponse> {
-  const response = await fetch(`/api/postgres/backup-configs/quick-setup`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to quick setup backup: ${response.statusText}`;
-
-    try {
-      const errorData = await response.json();
-      if (errorData.message) {
-        errorMessage = errorData.message;
-      } else if (errorData.details && Array.isArray(errorData.details)) {
-        // Handle Zod validation errors
-        const validationErrors = errorData.details
-          .map((detail: { path?: (string | number)[]; message: string }) => `${detail.path?.join(".")}: ${detail.message}`)
-          .join(", ");
-        errorMessage = `Validation failed: ${validationErrors}`;
-      }
-    } catch {
-      // If JSON parsing fails, keep the original error message
+  try {
+    return await apiFetch<BackupConfigurationResponse>(
+      ApiRoute.postgres.backupConfigsQuickSetup(),
+      {
+        method: "POST",
+        body: request,
+        correlationIdPrefix: "postgres-backup-config",
+        unwrap: false,
+      },
+    );
+  } catch (error) {
+    if (error instanceof ApiRequestError) {
+      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
     }
-
-    throw new Error(errorMessage);
+    throw error;
   }
-
-  const data: BackupConfigurationResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to quick setup backup");
-  }
-
-  return data;
 }
 
 // ====================
@@ -239,30 +140,24 @@ export function usePostgresBackupConfig(
 ) {
   const { enabled = true, refetchInterval, retry = 3 } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresBackupConfig", databaseId],
-    queryFn: () => fetchPostgresBackupConfig(databaseId, correlationId),
+    queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
+    queryFn: () => fetchPostgresBackupConfig(databaseId),
     enabled: enabled && !!databaseId,
     refetchInterval,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            // Don't retry on authentication errors
-            if (
-              (error instanceof Error ? error.message : String(error)).includes("401") ||
-              (error instanceof Error ? error.message : String(error)).includes("Unauthorized")
-            ) {
-              return false;
-            }
-            // Don't retry on not found errors (404 is handled in the fetch function)
-            if (
-              (error instanceof Error ? error.message : String(error)).includes("404") ||
-              (error instanceof Error ? error.message : String(error)).includes("Not found")
-            ) {
-              return false;
+            if (error instanceof ApiRequestError) {
+              // Don't retry on authentication errors
+              if (error.isAuth) {
+                return false;
+              }
+              // Don't retry on not found errors (404 is handled in the fetch function)
+              if (error.status === 404) {
+                return false;
+              }
             }
             // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;
@@ -278,25 +173,23 @@ export function usePostgresBackupConfig(
 // Mutation hooks for backup configuration operations
 export function useCreatePostgresBackupConfig() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (request: CreateBackupConfigurationRequest) =>
-      createPostgresBackupConfig(request, correlationId),
+      createPostgresBackupConfig(request),
     onSuccess: (_, { databaseId }) => {
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupConfig", databaseId],
+        queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
       });
       // Also invalidate databases list as it might show backup configuration status
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
     },
   });
 }
 
 export function useUpdatePostgresBackupConfig() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -305,36 +198,35 @@ export function useUpdatePostgresBackupConfig() {
     }: {
       id: string;
       request: UpdateBackupConfigurationRequest;
-    }) => updatePostgresBackupConfig(id, request, correlationId),
+    }) => updatePostgresBackupConfig(id, request),
     onSuccess: (response) => {
       const databaseId = response.data.databaseId;
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupConfig", databaseId],
+        queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
       });
       // Also invalidate databases list as it might show backup configuration status
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
     },
   });
 }
 
 export function useDeletePostgresBackupConfig() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({ id }: { id: string; databaseId: string }) =>
-      deletePostgresBackupConfig(id, correlationId),
+      deletePostgresBackupConfig(id),
     onSuccess: (_, { databaseId }) => {
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupConfig", databaseId],
+        queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
       });
       // Also invalidate databases list as it might show backup configuration status
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
       // Remove any scheduled backup operations that might be cached
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupOperations", databaseId],
+        queryKey: queryKeys.postgresBackupOperations.forDatabase(databaseId),
       });
     },
   });
@@ -342,21 +234,27 @@ export function useDeletePostgresBackupConfig() {
 
 export function useQuickSetupPostgresBackup() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (request: QuickBackupSetupRequest) =>
-      quickSetupPostgresBackup(request, correlationId),
-    onSuccess: (response) => {
+      quickSetupPostgresBackup(request),
+    onSuccess: (response, request) => {
       const databaseId = response.data.databaseId;
       // Invalidate and refetch backup configuration for this database
       queryClient.invalidateQueries({
-        queryKey: ["postgresBackupConfig", databaseId],
+        queryKey: queryKeys.postgresBackupConfig.forDatabase(databaseId),
       });
       // Also invalidate databases list as it might show backup configuration status
-      queryClient.invalidateQueries({ queryKey: ["postgresDatabases"] });
-      // Invalidate managed databases list for the server
-      queryClient.invalidateQueries({ queryKey: ["managedDatabases"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.postgresDatabases.all });
+      // Refetch the managed-databases list for this server and the single
+      // managed-database detail so the newly-configured backup shows up (both
+      // surfaces render backup-configuration status).
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.postgresServer.databasesForServer(request.serverId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.postgresServer.database(databaseId),
+      });
     },
   });
 }

@@ -7,9 +7,10 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { CreateCertificateRequest, StartCertIssuanceResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // API Function
@@ -18,19 +19,14 @@ import { useOperationProgress } from "./use-operation-progress";
 async function startCertIssuance(
   request: CreateCertificateRequest,
 ): Promise<StartCertIssuanceResponse> {
-  const response = await fetch("/api/tls/certificates", {
+  // Enveloped, but the caller (issue-certificate-dialog.tsx) reads
+  // result.data.operationId — return the raw envelope rather than unwrapping.
+  return apiFetch<StartCertIssuanceResponse>(ApiRoute.tls.certificates(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: request,
+    unwrap: false,
+    correlationIdPrefix: "cert-issuance",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to start certificate issuance");
-  }
-
-  return response.json();
 }
 
 // ====================
@@ -58,7 +54,10 @@ export function useCertIssuanceProgress(operationId: string | null, label?: stri
     getStepNames: (p) => p.stepNames ?? [],
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
-    invalidateKeys: [["certificates"]],
+    // Spread into a mutable tuple — invalidateKeys is unknown[][], and
+    // queryKeys.tls.certificates is a readonly `as const` tuple. Same idiom
+    // already used in task-type-registry.ts's "cert-issuance" entry.
+    invalidateKeys: [[...queryKeys.tls.certificates]],
     toasts: {
       success: "Certificate issued successfully",
       error: "Certificate issuance failed",

@@ -10,12 +10,7 @@ import {
 } from "../../services/cloudflare";
 import { tunnelCache } from "../../services/cloudflare/tunnel-cache";
 import { requireCloudflareCredentials } from "./require-credentials";
-import {
-  CloudflareTunnelListResponse,
-  CloudflareTunnelDetailsResponse,
-  CloudflareTunnelConfigResponse,
-  CloudflareTunnelInfo,
-} from "@mini-infra/types";
+import { CloudflareTunnelListResponse, CloudflareTunnelDetailsResponse, CloudflareTunnelConfigResponse, CloudflareTunnelInfo, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "tunnels-routes");
 
@@ -103,7 +98,7 @@ export function createCloudflareTunnelsRouter(
 
   router.get(
     "/",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     requireCreds,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
@@ -144,7 +139,7 @@ export function createCloudflareTunnelsRouter(
 
   router.get(
     "/:id",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     requireCreds,
     asyncHandler(async (req, res) => {
       const tunnelId = String(req.params.id);
@@ -196,7 +191,7 @@ export function createCloudflareTunnelsRouter(
 
   router.get(
     "/:id/config",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     requireCreds,
     asyncHandler(async (req, res) => {
       const tunnelId = String(req.params.id);
@@ -233,7 +228,7 @@ export function createCloudflareTunnelsRouter(
 
   router.post(
     "/:id/hostnames",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     requireCreds,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
@@ -316,7 +311,7 @@ export function createCloudflareTunnelsRouter(
 
   router.delete(
     "/:id/hostnames/:hostname",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     requireCreds,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;

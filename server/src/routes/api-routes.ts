@@ -2,6 +2,7 @@ import express, { Request, Response, RequestHandler } from "express";
 import expressListEndpoints from "express-list-endpoints";
 import { requirePermission } from "../middleware/auth";
 import { getRouteMeta } from "../lib/openapi-registry";
+import { Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ const router = express.Router();
  */
 router.get(
   "/",
-  requirePermission("agent:use") as RequestHandler,
+  requirePermission(Permission.AgentUse) as RequestHandler,
   (req: Request, res: Response) => {
     const app = req.app;
     const endpoints = expressListEndpoints(app);

@@ -4,6 +4,7 @@ import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import userManagementService from "../../services/postgres-server/user-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("db", "users");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId
@@ -40,7 +41,7 @@ const changePasswordSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/users
  * List all users on the server
  */
-router.get("/", requirePermission('postgres:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -79,7 +80,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
  * POST /api/postgres-server/servers/:serverId/users
  * Create a new user on the server
  */
-router.post("/", requirePermission('postgres:write'), async (req, res) => {
+router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -124,7 +125,7 @@ router.post("/", requirePermission('postgres:write'), async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/users/:userId
  * Get user details
  */
-router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:userId", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -168,7 +169,7 @@ router.get("/:userId", requirePermission('postgres:read'), async (req, res) => {
  * PUT /api/postgres-server/servers/:serverId/users/:userId
  * Update user attributes
  */
-router.put("/:userId", requirePermission('postgres:write'), async (req, res) => {
+router.put("/:userId", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -221,7 +222,7 @@ router.put("/:userId", requirePermission('postgres:write'), async (req, res) => 
  * DELETE /api/postgres-server/servers/:serverId/users/:userId
  * Drop a user from the server
  */
-router.delete("/:userId", requirePermission('postgres:write'), async (req, res) => {
+router.delete("/:userId", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -261,7 +262,7 @@ router.delete("/:userId", requirePermission('postgres:write'), async (req, res) 
  * POST /api/postgres-server/servers/:serverId/users/:userId/password
  * Change user password
  */
-router.post("/:userId/password", requirePermission('postgres:write'), async (req, res) => {
+router.post("/:userId/password", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -310,7 +311,7 @@ router.post("/:userId/password", requirePermission('postgres:write'), async (req
  * POST /api/postgres-server/servers/:serverId/users/sync
  * Sync users from the server
  */
-router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
+router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -343,7 +344,7 @@ router.post("/sync", requirePermission('postgres:write'), async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/users/:userId/grants
  * List grants for a specific user
  */
-router.get("/:userId/grants", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:userId/grants", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);

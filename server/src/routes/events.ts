@@ -7,17 +7,7 @@ import {
 } from '../middleware/auth';
 import { UserEventService } from '../services/user-events';
 import prisma from '../lib/prisma';
-import {
-  CreateUserEventRequest,
-  UpdateUserEventRequest,
-  UserEventListResponse,
-  UserEventResponse,
-  DeleteUserEventResponse,
-  UserEventFilter,
-  UserEventSortOptions,
-  UserEventStatisticsResponse,
-  USER_EVENT_STATUSES,
-} from '@mini-infra/types';
+import { CreateUserEventRequest, UpdateUserEventRequest, UserEventListResponse, UserEventResponse, DeleteUserEventResponse, UserEventFilter, UserEventSortOptions, UserEventStatisticsResponse, USER_EVENT_STATUSES, Permission } from '@mini-infra/types';
 
 const logger = getLogger("platform", "events");
 const router = express.Router();
@@ -139,7 +129,7 @@ function buildFilterFromQuery(query: Record<string, unknown>): UserEventFilter {
  */
 router.get(
   '/',
-  requirePermission('events:read'),
+  requirePermission(Permission.EventsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       // Parse query parameters
@@ -210,7 +200,7 @@ router.get(
  */
 router.get(
   '/statistics',
-  requirePermission('events:read'),
+  requirePermission(Permission.EventsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const statistics = await userEventService.getStatistics();
@@ -237,7 +227,7 @@ router.get(
  */
 router.get(
   '/:id',
-  requirePermission('events:read'),
+  requirePermission(Permission.EventsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const event = await userEventService.getEventById(String(req.params.id));
@@ -274,7 +264,7 @@ router.get(
  */
 router.post(
   '/',
-  requirePermission('events:write'),
+  requirePermission(Permission.EventsWrite),
   validate(createEventSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -311,7 +301,7 @@ router.post(
  */
 router.patch(
   '/:id',
-  requirePermission('events:write'),
+  requirePermission(Permission.EventsWrite),
   validate(updateEventSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -344,7 +334,7 @@ router.patch(
  */
 router.post(
   '/:id/logs',
-  requirePermission('events:write'),
+  requirePermission(Permission.EventsWrite),
   validate(appendLogsSchema),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -377,7 +367,7 @@ router.post(
  */
 router.delete(
   '/:id',
-  requirePermission('events:write'),
+  requirePermission(Permission.EventsWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       await userEventService.deleteEvent(String(req.params.id));

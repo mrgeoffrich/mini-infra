@@ -58,6 +58,19 @@ export {
 // ALT-27: stack-based bootstrap replaces the legacy host-singleton
 // `ensureFwAgent`/`removeFwAgent`/`stopHealthChecks` exports.
 export { bootstrapFwAgentStack } from './fw-agent-stack-bootstrap';
+// Phase 4: self-heal supervisor — auto-recreates auth-failing egress stacks.
+export {
+  startEgressSelfHealSupervisor,
+  stopEgressSelfHealSupervisor,
+  EgressSelfHealSupervisor,
+  DEFAULT_SELF_HEAL_CONFIG,
+} from './egress-self-heal-supervisor';
+// Phase 6: live cred refresh — rewrites a rotated agent's creds file in place
+// (no recreate) on a NATS identity rotation, via a control-plane post-apply hook.
+export {
+  registerEgressCredRefreshHook,
+  unregisterEgressCredRefreshHook,
+} from './egress-cred-refresh';
 
 export type ShutdownFn = () => void;
 

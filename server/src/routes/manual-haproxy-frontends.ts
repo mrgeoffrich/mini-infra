@@ -22,16 +22,7 @@ import { CloudflareService } from "../services/cloudflare";
 import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
-import {
-  EligibleContainersResponse,
-  CreateManualFrontendRequest,
-  UpdateManualFrontendRequest,
-  ManualFrontendResponse,
-  DeleteManualFrontendResponse,
-  HAProxyFrontendInfo,
-  Channel,
-  ServerEvent,
-} from "@mini-infra/types";
+import { EligibleContainersResponse, CreateManualFrontendRequest, UpdateManualFrontendRequest, ManualFrontendResponse, DeleteManualFrontendResponse, HAProxyFrontendInfo, Channel, ServerEvent, Permission } from "@mini-infra/types";
 
 const logger = getLogger("haproxy", "manual-haproxy-frontends");
 const router = express.Router();
@@ -191,7 +182,7 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
  */
 router.get(
   "/containers",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { environmentId } = req.query;
@@ -239,7 +230,7 @@ router.get(
  */
 router.post(
   "/",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     let guardedEnvironmentId: string | null = null;
     try {
@@ -354,7 +345,7 @@ router.post(
  */
 router.get(
   "/:frontendName",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -404,7 +395,7 @@ router.get(
  */
 router.put(
   "/:frontendName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);
@@ -494,7 +485,7 @@ router.put(
  */
 router.delete(
   "/:frontendName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const frontendName = String(req.params.frontendName);

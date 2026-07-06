@@ -1,121 +1,67 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   TlsCertificate,
   TlsCertificateRenewal,
   CreateCertificateRequest,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchCertificates(): Promise<TlsCertificate[]> {
-  const response = await fetch("/api/tls/certificates", {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch certificates: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.data || [];
+  return (
+    (await apiFetch<TlsCertificate[]>(ApiRoute.tls.certificates(), {
+      correlationIdPrefix: "certificates",
+    })) ?? []
+  );
 }
 
 async function fetchCertificate(id: string): Promise<TlsCertificate> {
-  const response = await fetch(`/api/tls/certificates/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+  return apiFetch<TlsCertificate>(ApiRoute.tls.certificate(id), {
+    correlationIdPrefix: "certificates",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch certificate: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.data;
 }
 
 async function createCertificate(
   request: CreateCertificateRequest
 ): Promise<TlsCertificate> {
-  const response = await fetch("/api/tls/certificates", {
+  return apiFetch<TlsCertificate>(ApiRoute.tls.certificates(), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "certificates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || errorData.error || "Failed to create certificate");
-  }
-
-  const data = await response.json();
-  return data.data;
 }
 
 async function renewCertificate(id: string): Promise<TlsCertificate> {
-  const response = await fetch(`/api/tls/certificates/${id}/renew`, {
+  return apiFetch<TlsCertificate>(ApiRoute.tls.certificateRenew(id), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    correlationIdPrefix: "certificates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || errorData.error || "Failed to renew certificate");
-  }
-
-  const data = await response.json();
-  return data.data;
 }
 
 async function revokeCertificate(id: string): Promise<void> {
-  const response = await fetch(`/api/tls/certificates/${id}`, {
+  await apiFetch<void>(ApiRoute.tls.certificate(id), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    correlationIdPrefix: "certificates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || errorData.error || "Failed to revoke certificate");
-  }
 }
 
 async function fetchRenewalHistory(
   certificateId: string
 ): Promise<TlsCertificateRenewal[]> {
-  const response = await fetch(
-    `/api/tls/renewals?certificateId=${certificateId}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    }
+  const url = new URL(ApiRoute.tls.renewals(), window.location.origin);
+  url.searchParams.set("certificateId", certificateId);
+
+  return (
+    (await apiFetch<TlsCertificateRenewal[]>(url.toString(), {
+      correlationIdPrefix: "renewals",
+    })) ?? []
   );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch renewal history: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.data || [];
 }
 
 export function useCertificates() {
   return useQuery({
-    queryKey: ["certificates"],
+    queryKey: queryKeys.tls.certificates,
     queryFn: fetchCertificates,
     staleTime: 30000, // 30 seconds
   });
@@ -123,7 +69,7 @@ export function useCertificates() {
 
 export function useCertificate(id: string) {
   return useQuery({
-    queryKey: ["certificates", id],
+    queryKey: queryKeys.tls.certificate(id),
     queryFn: () => fetchCertificate(id),
     enabled: !!id,
   });
@@ -135,7 +81,7 @@ export function useCreateCertificate() {
   return useMutation({
     mutationFn: createCertificate,
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["certificates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificates });
       toast.success(`Certificate issued for ${data.primaryDomain}`);
     },
     onError: (error: Error) => {
@@ -150,9 +96,9 @@ export function useRenewCertificate(id: string) {
   return useMutation({
     mutationFn: () => renewCertificate(id),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["certificates"] });
-      queryClient.invalidateQueries({ queryKey: ["certificates", id] });
-      queryClient.invalidateQueries({ queryKey: ["renewals", id] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificates });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificate(id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tls.renewals(id) });
       toast.success(`Certificate renewal initiated for ${data.primaryDomain}`);
     },
     onError: (error: Error) => {
@@ -167,7 +113,7 @@ export function useRevokeCertificate(id: string) {
   return useMutation({
     mutationFn: () => revokeCertificate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["certificates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificates });
       toast.success("Certificate revoked successfully");
     },
     onError: (error: Error) => {
@@ -178,7 +124,7 @@ export function useRevokeCertificate(id: string) {
 
 export function useRenewalHistory(certificateId: string) {
   return useQuery({
-    queryKey: ["renewals", certificateId],
+    queryKey: queryKeys.tls.renewals(certificateId),
     queryFn: () => fetchRenewalHistory(certificateId),
     enabled: !!certificateId,
   });

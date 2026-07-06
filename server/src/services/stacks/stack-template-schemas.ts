@@ -3,7 +3,7 @@ import { ENVIRONMENT_NETWORK_TYPES } from "@mini-infra/types";
 import {
   stackParameterDefinitionSchema,
   parameterValuesSchema,
-  stackNetworkSchema,
+  stackNetworkEntrySchema,
   stackVolumeSchema,
   stackServiceDefinitionSchema,
   stackResourceOutputSchema,
@@ -320,7 +320,7 @@ export const createTemplateSchema = z.object({
   networkTypeDefaults: networkTypeDefaultsSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
-  networks: z.array(stackNetworkSchema),
+  networks: z.array(stackNetworkEntrySchema),
   volumes: z.array(stackVolumeSchema),
   // Drafts may be empty — the "at least one service" constraint is enforced
   // at publish time, so users can create a template and fill it in gradually.
@@ -392,7 +392,7 @@ export const draftVersionSchema = z.object({
   networkTypeDefaults: networkTypeDefaultsSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
-  networks: z.array(stackNetworkSchema),
+  networks: z.array(stackNetworkEntrySchema),
   volumes: z.array(stackVolumeSchema),
   // See createTemplateSchema: the "at least one service" rule is a publish
   // check, not a draft check.

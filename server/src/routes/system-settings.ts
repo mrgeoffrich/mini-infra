@@ -18,6 +18,7 @@ import type {
   DockerRegistryTestOptions,
   DockerRegistryTestResult,
 } from "../services/docker-executor";
+import { Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -29,7 +30,7 @@ const testDockerRegistrySchema = z.object({
   registryPassword: z.string().optional(),
 });
 
-router.post("/test-docker-registry", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/test-docker-registry", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request<Record<string, string>, TestDockerRegistryResponse, TestDockerRegistryRequest>,
   res: Response<TestDockerRegistryResponse>,
   _next: NextFunction,

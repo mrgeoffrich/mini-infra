@@ -1,0 +1,289 @@
+/**
+ * Phase 2 of the frontend/backend contract migration
+ * (docs/planning/not-shipped/frontend-backend-contract-plan.md): asserts the
+ * live Express route set exactly equals the generated `ALL_API_ROUTES`
+ * registry in `@mini-infra/types`, and that the ergonomic `ApiBase`/
+ * `ApiRoute` layers can't silently drift from that flat list either.
+ *
+ * If this test fails after you added, removed, or renamed a route, run
+ * `pnpm gen:api-routes` to regenerate `lib/types/api-routes.generated.ts`,
+ * then `pnpm build:lib`, then re-run this test.
+ *
+ * IMPORTANT: this file must NOT statically import `../app-factory` (or any
+ * route file). Route files call `router.use(prefix, subRouter)` at
+ * module-evaluation time (e.g. `routes/agent.ts` mounts its settings
+ * sub-router as soon as it's first imported), which happens as soon as
+ * `app-factory.ts` is imported — before `createApp()` even runs. The mount
+ * mount-path tracking patch installed by `beginRouteMountTracking()` must be
+ * in place *before* that first import, so `createApp` is loaded via a
+ * dynamic `import()` inside `beforeAll`, after tracking begins. See
+ * `server/src/lib/route-enumerator.ts` for the full rationale (including why
+ * this doesn't just use `express-list-endpoints`, which silently drops mount
+ * prefixes on Express 5).
+ */
+import { describe, it, expect, beforeAll } from "vitest";
+import { ALL_API_ROUTES, ApiBase, ApiRoute } from "@mini-infra/types";
+import type { ContainerAction } from "@mini-infra/types/containers";
+import {
+  beginRouteMountTracking,
+  enumerateRoutes,
+  type RawRoute,
+} from "../lib/route-enumerator";
+
+describe("API route registry drift-check", () => {
+  let liveRoutes: RawRoute[];
+  let migratedRoutePrefixes: string[];
+  let findRouteMetadataDrift: (
+    routes: RawRoute[],
+    migratedPrefixes?: string[],
+  ) => string[];
+
+  beforeAll(async () => {
+    const stopTracking = beginRouteMountTracking();
+    const appFactory = await import("../app-factory");
+    const app = appFactory.createApp({ quiet: true });
+    liveRoutes = enumerateRoutes(app);
+    stopTracking();
+
+    migratedRoutePrefixes = appFactory.MIGRATED_ROUTE_PREFIXES;
+    findRouteMetadataDrift = appFactory.findRouteMetadataDrift;
+  });
+
+  it("boots with a non-trivial route set (sanity check on the harness itself)", () => {
+    expect(liveRoutes.length).toBeGreaterThan(100);
+  });
+
+  it("matches ALL_API_ROUTES exactly — no route added, removed, or renamed without regenerating", () => {
+    const live = liveRoutes.map((r) => `${r.method} ${r.path}`).sort();
+    const registry = ALL_API_ROUTES.map((r) => `${r.method} ${r.path}`).sort();
+
+    const onlyLive = live.filter((r) => !registry.includes(r));
+    const onlyRegistry = registry.filter((r) => !live.includes(r));
+
+    if (onlyLive.length > 0 || onlyRegistry.length > 0) {
+      const parts: string[] = [
+        "ALL_API_ROUTES (lib/types/api-routes.generated.ts) has drifted from the live Express route set.",
+        "Fix: run `pnpm gen:api-routes`, then `pnpm build:lib`, and commit the regenerated file.",
+      ];
+      if (onlyLive.length > 0) {
+        parts.push(
+          `\nLive but missing from ALL_API_ROUTES:\n  ${onlyLive.join("\n  ")}`,
+        );
+      }
+      if (onlyRegistry.length > 0) {
+        parts.push(
+          `\nIn ALL_API_ROUTES but no longer live (stale):\n  ${onlyRegistry.join("\n  ")}`,
+        );
+      }
+      throw new Error(parts.join("\n"));
+    }
+
+    expect(live).toEqual(registry);
+  });
+
+  it("does not mount the dev-only /api/dev endpoint under the pinned deterministic env", () => {
+    // The drift-check (and the generator, scripts/gen-api-routes.mjs) pin
+    // ENABLE_DEV_API_KEY_ENDPOINT unset — see server/src/__tests__/setup-unit.ts
+    // for the rest of the pinned env (NODE_ENV=test, in-memory DATABASE_URL).
+    const devRoutes = liveRoutes.filter((r) =>
+      r.path.startsWith(ApiBase.devApiKey),
+    );
+    expect(devRoutes).toEqual([]);
+  });
+});
+
+/**
+ * Phase 9 of the frontend/backend contract migration: promotes the
+ * dev-only `console.warn` in `app-factory.ts` (`warnOnRouteMetadataDrift`)
+ * into a hard CI gate. `MIGRATED_ROUTE_PREFIXES` is a growing allowlist of
+ * path prefixes ("/api/diagnostics", "/api/containers", ...) whose every
+ * live route MUST carry `describeRoute()` metadata (registered via
+ * `rememberRouteMeta()` — see `lib/openapi-registry.ts`). This is the
+ * "coverage ratchet": once a prefix is added here, no route under it can
+ * ever be added, renamed, or left un-migrated without this test failing —
+ * coverage can only grow, never silently regress.
+ *
+ * Reuses `liveRoutes` from the `beforeAll` above (same
+ * `beginRouteMountTracking()` + dynamic-import dance — see the module
+ * doc-comment at the top of this file for why that's required), so this
+ * doesn't need its own app boot.
+ */
+describe("describeRoute() metadata coverage ratchet (Phase 9)", () => {
+  let liveRoutes: RawRoute[];
+  let migratedRoutePrefixes: string[];
+  let findRouteMetadataDrift: (
+    routes: RawRoute[],
+    migratedPrefixes?: string[],
+  ) => string[];
+
+  beforeAll(async () => {
+    const stopTracking = beginRouteMountTracking();
+    const appFactory = await import("../app-factory");
+    const app = appFactory.createApp({ quiet: true });
+    liveRoutes = enumerateRoutes(app);
+    stopTracking();
+
+    migratedRoutePrefixes = appFactory.MIGRATED_ROUTE_PREFIXES;
+    findRouteMetadataDrift = appFactory.findRouteMetadataDrift;
+  });
+
+  it("has a non-empty MIGRATED_ROUTE_PREFIXES allowlist (sanity check on the harness itself)", () => {
+    expect(migratedRoutePrefixes.length).toBeGreaterThan(0);
+  });
+
+  it("covers /api/diagnostics and /api/containers", () => {
+    expect(migratedRoutePrefixes).toEqual(
+      expect.arrayContaining(["/api/diagnostics", "/api/containers"]),
+    );
+  });
+
+  it("fails when any route under a migrated prefix lacks describeRoute() metadata", () => {
+    const missing = findRouteMetadataDrift(liveRoutes, migratedRoutePrefixes);
+
+    if (missing.length > 0) {
+      throw new Error(
+        `${missing.length} route(s) under a migrated MIGRATED_ROUTE_PREFIXES ` +
+          `prefix are missing describeRoute() metadata (see ` +
+          `server/src/lib/describe-route.ts and the route's module for the ` +
+          `pattern to follow):\n  ${missing.join("\n  ")}`,
+      );
+    }
+
+    expect(missing).toEqual([]);
+  });
+
+  it("every live /api/containers route specifically has metadata (Phase 9 reference migration)", () => {
+    const containersRoutes = liveRoutes.filter((r) =>
+      r.path.startsWith(ApiBase.containers),
+    );
+    // Sanity check on the harness itself — make sure the filter actually
+    // found the containers router's routes.
+    expect(containersRoutes.length).toBeGreaterThanOrEqual(9);
+
+    const missing = findRouteMetadataDrift(containersRoutes, [
+      ApiBase.containers,
+    ]);
+    expect(missing).toEqual([]);
+  });
+});
+
+describe("ApiBase / ApiRoute consistency with ALL_API_ROUTES", () => {
+  const registryKeys = new Set(
+    ALL_API_ROUTES.map((r) => `${r.method} ${r.path}`),
+  );
+  const registryPaths = ALL_API_ROUTES.map((r) => r.path);
+
+  it("every ApiBase value has at least one matching route in ALL_API_ROUTES", () => {
+    for (const [id, base] of Object.entries(ApiBase)) {
+      // devApiKey is intentionally excluded from ALL_API_ROUTES under the
+      // pinned generator/drift-check env (see the dedicated test above) —
+      // it's still a real mount in production when the env var is set.
+      if (id === "devApiKey") continue;
+
+      const hasMatch = registryPaths.some(
+        (path) => path === base || path.startsWith(`${base}/`),
+      );
+      expect(
+        hasMatch,
+        `ApiBase.${id} (${base}) has no matching entry in ALL_API_ROUTES`,
+      ).toBe(true);
+    }
+  });
+
+  it("every ApiRoute.containers.* builder renders a path present in ALL_API_ROUTES", () => {
+    // Placeholder segments render the ":param" form so the output matches
+    // ALL_API_ROUTES' normalized shape exactly.
+    const rendered: Array<{ method: string; path: string }> = [
+      { method: "GET", path: ApiRoute.containers.list() },
+      { method: "GET", path: ApiRoute.containers.postgres() },
+      { method: "GET", path: ApiRoute.containers.managedIds() },
+      { method: "GET", path: ApiRoute.containers.get(":id") },
+      { method: "GET", path: ApiRoute.containers.env(":id") },
+      { method: "GET", path: ApiRoute.containers.cacheStats() },
+      { method: "POST", path: ApiRoute.containers.flushCache() },
+      { method: "GET", path: ApiRoute.containers.logsStream(":id") },
+      {
+        method: "POST",
+        path: ApiRoute.containers.action(":id", ":action" as ContainerAction),
+      },
+    ];
+
+    for (const { method, path } of rendered) {
+      const key = `${method} ${path}`;
+      expect(
+        registryKeys.has(key),
+        `${key} (from an ApiRoute.containers builder) is missing from ALL_API_ROUTES`,
+      ).toBe(true);
+    }
+  });
+
+  /**
+   * Whole-registry sweep (Phase 4): every `ApiRoute` builder, in every
+   * group, renders a path whose *shape* (static segments + param-segment
+   * positions) matches some entry in `ALL_API_ROUTES`. Builders are
+   * path-only (the HTTP method is chosen by the caller via `apiFetch`'s
+   * `method` option), so — unlike the containers spot-check above, which
+   * pairs a specific method with each path — this sweep checks the path
+   * shape against the *set* of live paths regardless of method.
+   *
+   * Param segments are compared structurally rather than by literal name:
+   * a builder is called with placeholder arguments (one per declared
+   * parameter, via the function's `.length`/arity), and both the rendered
+   * path and every live path have their `:paramName` segments collapsed to
+   * a single `:param` token before comparing. This means a builder's
+   * parameter *names* don't need to match the Express route's param names
+   * (e.g. `containers.get(id)` vs. the live `:id` — fine either way), while
+   * a typo'd or missing/extra static segment still fails the check.
+   */
+  it("every ApiRoute builder (whole registry) renders a path shape present in ALL_API_ROUTES", () => {
+    const PLACEHOLDER = ":param";
+
+    function normalizeShape(path: string): string {
+      return path
+        .split("/")
+        .map((segment) => (segment.startsWith(":") || segment.startsWith("*") ? PLACEHOLDER : segment))
+        .join("/");
+    }
+
+    const registryShapes = new Set(registryPaths.map(normalizeShape));
+
+    function collectRenderedPaths(
+      node: unknown,
+      trail: string,
+      out: Array<{ label: string; path: string }>,
+    ): void {
+      if (typeof node === "function") {
+        const args = Array.from({ length: node.length }, () => PLACEHOLDER);
+        const result = node(...args);
+        if (typeof result === "string") {
+          out.push({ label: trail, path: result });
+        }
+        return;
+      }
+      if (node && typeof node === "object") {
+        for (const [key, value] of Object.entries(node)) {
+          collectRenderedPaths(value, trail ? `${trail}.${key}` : key, out);
+        }
+      }
+    }
+
+    const rendered: Array<{ label: string; path: string }> = [];
+    collectRenderedPaths(ApiRoute, "ApiRoute", rendered);
+
+    // Sanity check on the harness itself — make sure the walk actually
+    // found a non-trivial number of builders (i.e. it isn't silently a
+    // no-op because `ApiRoute` came back empty or the wrong shape).
+    expect(rendered.length).toBeGreaterThan(100);
+
+    const missing = rendered.filter(
+      ({ path }) => !registryShapes.has(normalizeShape(path)),
+    );
+
+    expect(
+      missing,
+      `The following ApiRoute builders render a path shape with no match in ALL_API_ROUTES:\n${missing
+        .map(({ label, path }) => `  ${label} -> ${path}`)
+        .join("\n")}`,
+    ).toEqual([]);
+  });
+});

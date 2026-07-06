@@ -1,9 +1,8 @@
 import { ReactNode, useEffect } from "react";
-import {
-  QueryClient,
-  QueryClientProvider,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "./api-client";
+import { createQueryClient, resetAuthRedirectLatch } from "./query-client";
 import { toastWithCopy } from "./toast-utils";
 import {
   AuthContextType,
@@ -14,7 +13,6 @@ import {
 } from "./auth-types";
 import { AuthContext } from "./auth-context-definition";
 import { useAuthStatus } from "../hooks/use-auth-status";
-import { userPreferencesKeys } from "../hooks/use-user-preferences";
 
 // Cross-tab communication helper
 function broadcastAuthEvent(type: string, data?: unknown): void {
@@ -69,15 +67,29 @@ function clearSessionData(): void {
 
 // Helper function to parse authentication errors
 function parseAuthError(error: unknown): AuthError {
-  if (error instanceof Error) {
-    if (error.message.includes("401")) {
+  // `fetchAuthStatus` (use-auth-status.ts) wraps a non-401 `ApiRequestError`
+  // in a plain `Error` (to preserve `UseQueryResult<AuthStatus, Error>`'s
+  // typing) but keeps the original typed error as `cause`. Now that every
+  // request throws a typed error, prefer classifying by `.status`/`.isAuth`/
+  // `.isServer` over string-matching `error.message` — the old
+  // `message.includes("401")` style could false-match unrelated text (e.g.
+  // an error mentioning a port or ID that happens to contain "401").
+  const typedError =
+    error instanceof ApiRequestError
+      ? error
+      : error instanceof Error && error.cause instanceof ApiRequestError
+        ? error.cause
+        : undefined;
+
+  if (typedError) {
+    if (typedError.isAuth) {
       return {
         message: "Your session has expired. Please log in again.",
         code: "UNAUTHORIZED",
         statusCode: 401,
       };
     }
-    if (error.message.includes("403")) {
+    if (typedError.status === 403) {
       return {
         message:
           "Access denied. You don't have permission to access this resource.",
@@ -85,24 +97,27 @@ function parseAuthError(error: unknown): AuthError {
         statusCode: 403,
       };
     }
-    if (error.message.includes("429")) {
+    if (typedError.status === 429) {
       return {
         message: "Too many requests. Please wait a moment and try again.",
         code: "RATE_LIMITED",
         statusCode: 429,
       };
     }
-    if (
-      error.message.includes("500") ||
-      error.message.includes("502") ||
-      error.message.includes("503")
-    ) {
+    if (typedError.isServer) {
       return {
         message: "Server error. Please try again later.",
         code: "SERVER_ERROR",
         statusCode: 500,
       };
     }
+    return {
+      message: typedError.message,
+      code: "UNKNOWN_ERROR",
+    };
+  }
+
+  if (error instanceof Error) {
     if (
       error.message.includes("Failed to fetch") ||
       error.message.includes("NetworkError")
@@ -125,17 +140,7 @@ function parseAuthError(error: unknown): AuthError {
   };
 }
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
-      staleTime: 1 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
-    },
-  },
-});
+const queryClient = createQueryClient();
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -187,6 +192,10 @@ function AuthProviderInner({ children }: AuthProviderProps) {
   // Handle session persistence and cross-tab sync on authentication state changes
   useEffect(() => {
     if (authStatus?.isAuthenticated && authStatus.user) {
+      // A future 401 (e.g. from the NEXT session expiring) should be able to
+      // trigger the global redirect handler again — see `query-client.ts`.
+      resetAuthRedirectLatch();
+
       const sessionData = getSessionData();
       const wasAlreadyAuthenticated = sessionData.lastLoginTime;
 
@@ -197,23 +206,11 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
       // Prefetch user preferences when user logs in
       queryClient.prefetchQuery({
-        queryKey: userPreferencesKeys.preferences(),
-        queryFn: async () => {
-          const response = await fetch("/api/user/preferences", {
-            method: "GET",
-            credentials: "include",
-          });
-          if (!response.ok) {
-            throw new Error(
-              `Failed to fetch user preferences: ${response.statusText}`,
-            );
-          }
-          const result = await response.json();
-          if (!result.success) {
-            throw new Error(result.error || "Failed to fetch user preferences");
-          }
-          return result.data;
-        },
+        queryKey: queryKeys.userPreferences.preferences,
+        queryFn: () =>
+          apiFetch(ApiRoute.userPreferences.preferences(), {
+            correlationIdPrefix: "auth",
+          }),
         staleTime: 5 * 60 * 1000,
       });
 
@@ -230,7 +227,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       clearSessionData();
 
       queryClient.removeQueries({
-        queryKey: userPreferencesKeys.all,
+        queryKey: queryKeys.userPreferences.all,
       });
 
       if (wasAuthenticated) {
@@ -252,18 +249,19 @@ function AuthProviderInner({ children }: AuthProviderProps) {
     password: string,
   ): Promise<{ success: boolean; mustResetPwd?: boolean; error?: string }> => {
     try {
-      const response = await fetch("/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.error || "Login failed" };
-      }
+      // /auth/login returns { success, mustResetPwd } on success and
+      // { error: "..." } on failure — neither matches the standard
+      // {success,data} envelope, so this call opts out of apiFetch's
+      // automatic unwrap/throw and reads the raw body itself.
+      const data = await apiFetch<{ success: boolean; mustResetPwd?: boolean }>(
+        ApiRoute.auth.login(),
+        {
+          method: "POST",
+          body: { email, password },
+          unwrap: false,
+          correlationIdPrefix: "auth",
+        },
+      );
 
       // Refetch auth status to update state
       await refetch();
@@ -271,6 +269,10 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
       return { success: true, mustResetPwd: data.mustResetPwd };
     } catch (error) {
+      if (error instanceof ApiRequestError) {
+        const body = error.body as { error?: string } | undefined;
+        return { success: false, error: body?.error || "Login failed" };
+      }
       return {
         success: false,
         error:
@@ -287,56 +289,59 @@ function AuthProviderInner({ children }: AuthProviderProps) {
       redirectPath = window.location.pathname + window.location.search;
     }
 
-    const authUrl = `/auth/google?redirect=${encodeURIComponent(redirectPath)}`;
+    const authUrl = `${ApiRoute.auth.google()}?redirect=${encodeURIComponent(redirectPath)}`;
     window.location.href = authUrl;
   };
 
   const logout = async (options?: LogoutOptions) => {
     try {
-      const response = await fetch(`/auth/logout`, {
+      // /auth/logout returns { message: "..." } on success and
+      // { error: "..." } on failure — not the standard envelope, so this
+      // opts out of apiFetch's automatic unwrap.
+      await apiFetch(ApiRoute.auth.logout(), {
         method: "POST",
-        credentials: "include",
+        unwrap: false,
+        correlationIdPrefix: "auth",
       });
 
-      if (response.ok) {
+      clearSessionData();
+      broadcastAuthEvent("AUTH_LOGOUT");
+      toastWithCopy.success("You have been logged out successfully.");
+      await refetch();
+      const redirectUrl = options?.redirectUrl || "/";
+      if (redirectUrl !== window.location.pathname) {
+        window.location.href = redirectUrl;
+      }
+    } catch (error) {
+      if (error instanceof ApiRequestError && error.isAuth) {
+        // Already logged out (401) — treat as success, not an error.
         clearSessionData();
         broadcastAuthEvent("AUTH_LOGOUT");
-        toastWithCopy.success("You have been logged out successfully.");
         await refetch();
         const redirectUrl = options?.redirectUrl || "/";
         if (redirectUrl !== window.location.pathname) {
           window.location.href = redirectUrl;
         }
-      } else {
-        if (response.status === 401) {
-          clearSessionData();
-          broadcastAuthEvent("AUTH_LOGOUT");
-          await refetch();
-          const redirectUrl = options?.redirectUrl || "/";
-          if (redirectUrl !== window.location.pathname) {
-            window.location.href = redirectUrl;
-          }
-          return;
-        }
-        const errorText = await response.text().catch(() => "Unknown error");
-        const errorMessage = `Logout failed: ${response.status} ${errorText}`;
-        toastWithCopy.error(errorMessage);
-        throw new Error(errorMessage);
+        return;
       }
-    } catch (error) {
+
       console.error("Logout error:", error);
       let errorMessage: string;
-      if (error instanceof Error) {
+      if (error instanceof ApiRequestError) {
+        const body = error.body as { error?: string } | undefined;
+        errorMessage = `Logout failed: ${error.status} ${body?.error ?? error.message}`;
+      } else if (error instanceof Error) {
         errorMessage = `Failed to log out: ${error.message}`;
       } else {
         errorMessage = "Failed to log out due to an unknown error";
       }
 
-      if (
-        !(error instanceof Error && error.message.includes("Logout failed:"))
-      ) {
-        toastWithCopy.error(errorMessage);
-      }
+      // Single toast here (the pre-migration code toasted once inline for
+      // the HTTP-failure path and once more in this catch for anything
+      // else, with a message-substring guard to avoid double-toasting a
+      // re-thrown HTTP failure — now that both paths funnel through this
+      // one catch, a single unconditional toast covers both cases).
+      toastWithCopy.error(errorMessage);
       throw new Error(errorMessage, { cause: error });
     }
   };

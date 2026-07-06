@@ -1,37 +1,37 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type { AgentConversationSummary, AgentConversationDetail } from "@mini-infra/types";
-
-const CONVERSATIONS_QUERY_KEY = ["agent-conversations"];
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchConversations(limit = 50): Promise<AgentConversationSummary[]> {
-  const res = await fetch(`/api/agent/conversations?limit=${limit}`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch conversations");
-  const data = (await res.json()) as { conversations: AgentConversationSummary[] };
+  const url = new URL(ApiRoute.agent.conversations(), window.location.origin);
+  url.searchParams.set("limit", String(limit));
+  const data = await apiFetch<{ conversations: AgentConversationSummary[] }>(
+    url.toString(),
+    { unwrap: false, correlationIdPrefix: "agent-conversations" },
+  );
   return data.conversations;
 }
 
 export async function fetchConversationDetail(id: string): Promise<AgentConversationDetail> {
-  const res = await fetch(`/api/agent/conversations/${id}`, {
-    credentials: "include",
-  });
-  if (!res.ok) throw new Error("Failed to fetch conversation");
-  const data = (await res.json()) as { conversation: AgentConversationDetail };
+  const data = await apiFetch<{ conversation: AgentConversationDetail }>(
+    ApiRoute.agent.conversation(id),
+    { unwrap: false, correlationIdPrefix: "agent-conversation" },
+  );
   return data.conversation;
 }
 
 async function deleteConversation(id: string): Promise<void> {
-  const res = await fetch(`/api/agent/conversations/${id}`, {
+  await apiFetch<{ ok: boolean }>(ApiRoute.agent.conversation(id), {
     method: "DELETE",
-    credentials: "include",
+    unwrap: false,
+    correlationIdPrefix: "agent-conversation-delete",
   });
-  if (!res.ok) throw new Error("Failed to delete conversation");
 }
 
 export function useAgentConversations(enabled: boolean) {
   return useQuery({
-    queryKey: CONVERSATIONS_QUERY_KEY,
+    queryKey: queryKeys.agent.conversations(),
     queryFn: () => fetchConversations(),
     enabled,
     staleTime: 30_000,
@@ -43,12 +43,12 @@ export function useDeleteAgentConversation() {
   return useMutation({
     mutationFn: deleteConversation,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.agent.conversations() });
     },
   });
 }
 
 export function useInvalidateAgentConversations() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: CONVERSATIONS_QUERY_KEY });
+  return () => queryClient.invalidateQueries({ queryKey: queryKeys.agent.conversations() });
 }

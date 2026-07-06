@@ -82,11 +82,19 @@ export function computeDefinitionHash(
   let canonical: unknown;
 
   if (service.serviceType === 'AdoptedWeb') {
-    // AdoptedWeb services don't manage the container — hash only the adoption ref and routing
+    // AdoptedWeb services don't manage the container itself — but we do attach
+    // it to networks at apply time, so hash the adoption ref, routing, and the
+    // network-join fields. Including joinNetworks/joinResourceNetworks means
+    // adding or removing a linked-container connection triggers a recreate that
+    // re-runs the attach. Both sides of the drift comparison are re-hashed live
+    // (see stack-plan-computer), so widening this canonical is safe for
+    // existing adopted services whose join fields are simply absent.
     canonical = {
       serviceType: 'AdoptedWeb',
       adoptedContainer: service.adoptedContainer ?? null,
       routing: service.routing ?? null,
+      joinNetworks: service.containerConfig?.joinNetworks ?? null,
+      joinResourceNetworks: service.containerConfig?.joinResourceNetworks ?? null,
     };
   } else {
     const configFiles = resolvedConfigFiles ?? service.configFiles ?? [];

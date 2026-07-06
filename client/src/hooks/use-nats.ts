@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   CreateNatsAccountRequest,
   CreateNatsConsumerRequest,
@@ -12,24 +13,19 @@ import type {
   NatsStatus,
   NatsStreamInfo,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-    ...init,
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((body as { message?: string }).message ?? `${res.status} ${res.statusText}`);
-  }
-  return (body as { data: T }).data;
-}
-
+// NATS_APPLIED (Channel.NATS) only fires around an explicit /api/nats/apply
+// operation — it isn't a continuous "reachability changed" push like
+// Channel.VAULT's VAULT_STATUS_CHANGED (which is backed by a dedicated health
+// watcher). useApplyNats already invalidates on its own success, so there's
+// no genuine matching status-changed event for the periodic status poller
+// below; it keeps polling.
 export function useNatsStatus() {
   return useQuery<NatsStatus>({
-    queryKey: ["nats", "status"],
-    queryFn: () => apiFetch<NatsStatus>("/api/nats/status"),
+    queryKey: queryKeys.nats.status,
+    queryFn: () =>
+      apiFetch<NatsStatus>(ApiRoute.nats.status(), { correlationIdPrefix: "nats-status" }),
     refetchInterval: 10_000,
     refetchOnReconnect: true,
   });
@@ -37,39 +33,49 @@ export function useNatsStatus() {
 
 export function useNatsAccounts() {
   return useQuery<NatsAccountInfo[]>({
-    queryKey: ["nats", "accounts"],
-    queryFn: () => apiFetch<NatsAccountInfo[]>("/api/nats/accounts"),
+    queryKey: queryKeys.nats.accounts,
+    queryFn: () =>
+      apiFetch<NatsAccountInfo[]>(ApiRoute.nats.accounts(), { correlationIdPrefix: "nats-accounts" }),
   });
 }
 
 export function useNatsCredentials() {
   return useQuery<NatsCredentialProfileInfo[]>({
-    queryKey: ["nats", "credentials"],
-    queryFn: () => apiFetch<NatsCredentialProfileInfo[]>("/api/nats/credentials"),
+    queryKey: queryKeys.nats.credentials,
+    queryFn: () =>
+      apiFetch<NatsCredentialProfileInfo[]>(ApiRoute.nats.credentials(), {
+        correlationIdPrefix: "nats-credentials",
+      }),
   });
 }
 
 export function useNatsStreams() {
   return useQuery<NatsStreamInfo[]>({
-    queryKey: ["nats", "streams"],
-    queryFn: () => apiFetch<NatsStreamInfo[]>("/api/nats/streams"),
+    queryKey: queryKeys.nats.streams,
+    queryFn: () =>
+      apiFetch<NatsStreamInfo[]>(ApiRoute.nats.streams(), { correlationIdPrefix: "nats-streams" }),
   });
 }
 
 export function useNatsConsumers() {
   return useQuery<NatsConsumerInfo[]>({
-    queryKey: ["nats", "consumers"],
-    queryFn: () => apiFetch<NatsConsumerInfo[]>("/api/nats/consumers"),
+    queryKey: queryKeys.nats.consumers,
+    queryFn: () =>
+      apiFetch<NatsConsumerInfo[]>(ApiRoute.nats.consumers(), { correlationIdPrefix: "nats-consumers" }),
   });
 }
 
 export function useApplyNats() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch<{ operationId: string }>("/api/nats/apply", { method: "POST" }),
+    mutationFn: () =>
+      apiFetch<{ operationId: string }>(ApiRoute.nats.apply(), {
+        method: "POST",
+        correlationIdPrefix: "nats-apply",
+      }),
     onSuccess: () => {
       toast.success("NATS configuration applied");
-      qc.invalidateQueries({ queryKey: ["nats"] });
+      qc.invalidateQueries({ queryKey: queryKeys.nats.all });
     },
     onError: (err: Error) => toast.error(`NATS apply failed: ${err.message}`),
   });
@@ -78,37 +84,62 @@ export function useApplyNats() {
 export function useCreateNatsAccount() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNatsAccountRequest) => apiFetch<NatsAccountInfo>("/api/nats/accounts", { method: "POST", body: JSON.stringify(input) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nats"] }),
+    mutationFn: (input: CreateNatsAccountRequest) =>
+      apiFetch<NatsAccountInfo>(ApiRoute.nats.accounts(), {
+        method: "POST",
+        body: input,
+        correlationIdPrefix: "nats-account-create",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.nats.all }),
   });
 }
 
 export function useCreateNatsCredential() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNatsCredentialProfileRequest) => apiFetch<NatsCredentialProfileInfo>("/api/nats/credentials", { method: "POST", body: JSON.stringify(input) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nats"] }),
+    mutationFn: (input: CreateNatsCredentialProfileRequest) =>
+      apiFetch<NatsCredentialProfileInfo>(ApiRoute.nats.credentials(), {
+        method: "POST",
+        body: input,
+        correlationIdPrefix: "nats-credential-create",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.nats.all }),
   });
 }
 
 export function useMintNatsCredential() {
   return useMutation({
-    mutationFn: (id: string) => apiFetch<MintNatsCredentialResponse>(`/api/nats/credentials/${id}/mint`, { method: "POST", body: JSON.stringify({}) }),
+    mutationFn: (id: string) =>
+      apiFetch<MintNatsCredentialResponse>(ApiRoute.nats.credentialMint(id), {
+        method: "POST",
+        body: {},
+        correlationIdPrefix: "nats-credential-mint",
+      }),
   });
 }
 
 export function useCreateNatsStream() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNatsStreamRequest) => apiFetch<NatsStreamInfo>("/api/nats/streams", { method: "POST", body: JSON.stringify(input) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nats"] }),
+    mutationFn: (input: CreateNatsStreamRequest) =>
+      apiFetch<NatsStreamInfo>(ApiRoute.nats.streams(), {
+        method: "POST",
+        body: input,
+        correlationIdPrefix: "nats-stream-create",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.nats.all }),
   });
 }
 
 export function useCreateNatsConsumer() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNatsConsumerRequest) => apiFetch<NatsConsumerInfo>("/api/nats/consumers", { method: "POST", body: JSON.stringify(input) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["nats"] }),
+    mutationFn: (input: CreateNatsConsumerRequest) =>
+      apiFetch<NatsConsumerInfo>(ApiRoute.nats.consumers(), {
+        method: "POST",
+        body: input,
+        correlationIdPrefix: "nats-consumer-create",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.nats.all }),
   });
 }

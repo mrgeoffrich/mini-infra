@@ -1,48 +1,38 @@
 ---
 name: help-skills
-description: Explains the standard Mini Infra workflow and which skill to reach for at each step — brainstorm → plan → execute → review → ship — plus the worktree and diagnostic helpers that wrap around it. Use this skill whenever the user asks "what's the workflow", "which skill do I use for X", "how do I work on a feature/task", "what skills do I have", "remind me of the flow", "help me with skills", "what's next", "where am I in the process", or any equivalent ask for a workflow refresher or a pointer to the right skill. Also use it when the user is mid-flow and seems unsure which skill comes next (e.g. they just finished a review and ask "now what?"). Do **not** trigger for questions about Claude Code itself (slash commands, hooks, MCP) — those go to claude-code-guide — and do **not** trigger when the user has already named the specific skill they want to run.
+description: Explains the standard Mini Infra workflow and which skill to reach for at each step — brainstorm → plan → code → review → ship — plus the worktree and diagnostic helpers that wrap around it. Use this skill whenever the user asks "what's the workflow", "which skill do I use for X", "how do I work on a feature/task", "what skills do I have", "remind me of the flow", "help me with skills", "what's next", "where am I in the process", or any equivalent ask for a workflow refresher or a pointer to the right skill. Also use it when the user is mid-flow and seems unsure which skill comes next (e.g. they just finished a review and ask "now what?"). Do **not** trigger for questions about Claude Code itself (slash commands, hooks, MCP) — those go to claude-code-guide — and do **not** trigger when the user has already named the specific skill they want to run.
 ---
 
 # Help — Skills Workflow
 
 This skill is a **map**, not an executor. It tells the user (or you) which skill to reach for at each step of the standard Mini Infra workflow. When in doubt, print the relevant section verbatim — the user is asking for a reminder, not a re-derivation.
 
-The workflow has two entry points (planned features vs. one-off maintenance) that converge on the same execute → review → ship loop, with worktree and diagnostic helpers wrapping around it.
+Work isn't tracked in an external ticket system — the plan doc (if there is one) and the PR are the record. The workflow has two entry points (planned features vs. one-off work) that converge on the same worktree → code → review → ship loop.
 
 ---
 
 ## The standard flow
 
 ```
-                  ┌─ planned feature ─────────────────────────┐
-                  │                                           │
-  brainstorming ──▶ brainstorm-to-plan ──▶ (plan-to-mk) ──┐   │
-                                                          │   │
-                  ┌─ one-off maintenance task ─────────┐  │   │
-                  │                                    │  │   │
-                  │           task-to-mk ──────────────┘  │   │
-                  │                                       ▼   │
-                  │                              ┌──── mk ticket(s) ────┐
-                  │                                         │
-                  │                                  implement-issue
-                  │                              (routes by `design` tag)
-                  │                                 │             │
-                  │                                 ▼             ▼
-                  │                           design-task     code-task
-                  │                                 │             │
-                  │                                 ▼             ▼
-                  │                          (issue → in_review)
-                  │                                         │
-                  │                                         ▼
-                  │                                      review
-                  │                                         │
-                  │                                         ▼
-                  │                                  address-review  (loop)
-                  │                                         │
-                  │                                         ▼
-                  │                                      ship-it  (issue → done)
+                  ┌─ planned feature ──────────────────┐
+                  │                                     │
+  brainstorming ──▶ brainstorm-to-plan ──▶ phased plan doc
+                                                         │
+                  ┌─ one-off task ──────────────────────┤
+                  │                                     │
+                  │                                     ▼
+                  │                             setup-worktree
+                  │                                     │
+                  │                                     ▼
+                  │                              (write the code)
+                  │                                     │
+                  │                                     ▼
+                  │                                  review  (loop until clean)
+                  │                                     │
+                  │                                     ▼
+                  │                        gh pr merge  (ship it)
                   │
-                  └─ wrapping the active task: setup-worktree / finish-worktree
+                  └─ wrapping the active task: finish-worktree
                                                 diagnose-dev (when something's broken in the worktree)
 ```
 
@@ -53,41 +43,32 @@ The workflow has two entry points (planned features vs. one-off maintenance) tha
 ### 1. Planning a feature (multi-phase work)
 
 - **`brainstorming`** — open-ended ideation. Optional; just chatting to Claude works too. Use this when the shape of the work isn't clear yet.
-- **`brainstorm-to-plan`** — turns the brainstorm (a scratch markdown file or in-conversation notes) into a phased planning document under `docs/planning/`. This is the bridge from "vibes" to "tickets".
+- **`brainstorm-to-plan`** — turns the brainstorm (a scratch markdown file or in-conversation notes) into a phased planning document under `docs/planning/not-shipped/`. This is the bridge from "vibes" to concrete, sequenced work. Each phase is scoped to ship as one PR.
 
-(After `brainstorm-to-plan`, the plan doc gets seeded into `mk` as a feature plus one ticket per phase via `plan-to-mk`. That handoff is implicit in the flow but lives outside this skill's scope — if the user asks about it, point them at `plan-to-mk`.)
+For a one-off task (a bugfix, a small chore, anything that doesn't need a phased plan), skip straight to setting up a worktree.
 
-### 2. One-off maintenance task (single ticket, no plan doc)
+### 2. Working a task
 
-- **`task-to-mk`** — turns a one-line job description into a single mk ticket under the persistent **Maintenance** feature. Use this for bugfixes, small chores, anything that doesn't need a phased plan.
+- **`setup-worktree`** — scaffolds a fresh git worktree from main with `pnpm install` and a backgrounded `pnpm worktree-env start`. Use it for any isolated piece of work, whether it's one phase of a plan or an ad-hoc fix.
+- Write the code, run the relevant build/lint/unit tests, and smoke-test with `test-dev` (see below) before opening a PR.
 
-### 3. Working a ticket
+### 3. Review loop
 
-All flows below leave the issue in **`in_review`** when they finish, ready for the review loop.
+- **`review`** — independent code review of a GitHub PR. Pulls the diff, checks bugs / security / convention violations / duplication, and posts a severity-tagged comment on the PR. Accepts a PR number, a branch name, or no argument (reviews the current branch's open PR).
 
-- **`implement-issue`** — the **unified entry point**. Takes an optional `MINI-NN` (or no argument for the next unblocked todo), then routes by the `design` mk tag: design tickets go to `design-task`, everything else goes to `code-task`. Use this whenever you want "what's next?" behaviour or don't want to think about which downstream skill applies.
-- **`design-task`** — for design work. Researches patterns, produces two design options with wireframes under `docs/designs/`, opens a PR for the design artefacts, and posts a "design ready" comment on the ticket. `implement-issue` invokes it automatically for `design`-tagged tickets; call it directly when you already know the ticket is design work.
-- **`code-task`** — for coding work. **Requires an explicit `MINI-NN`** (no auto-pick — that lives in `implement-issue`). Executes end-to-end inside a worktree (code → build/lint/unit → live smoke → PR with `Closes MINI-NN`), and transitions the issue to `in_review`. Refuses to run on `design`-tagged tickets — surfaces the mistake and points back at `design-task` / `implement-issue`.
+Loop — fix the findings, push, `/review` again — until the review is clean.
 
-### 4. Review loop
+### 4. Shipping
 
-- **`review`** — independent code review of the PR for an mk ticket. Reads the ticket as the contract, pulls the diff, checks bugs / security / convention violations / duplication, and posts a severity-tagged review comment on the ticket.
-- **`address-review`** — the other side of the loop. Reads the most recent `/review` comment, drops `low`-severity findings, validates each `critical`/`high`/`medium` finding before fixing (false positives get dismissed with rationale), applies targeted fixes, runs build/lint/unit, and pushes. Transitions the issue back to `in_progress` while the work happens. Pass `--quick` (e.g. `/address-review MINI-NN --quick`) for trivial fixes — works directly on the PR branch in the main checkout, skips the worktree + dev-env spin-up, and falls back to build/lint/unit as the smoke. Quick mode is only valid when every fix is no-runtime-change (comment / dead-code / type-only / extracted-helper / pure-docs); the skill refuses mid-run if anything touches `client/`, a route handler, a migration, or seeded data.
-
-Loop `review` ↔ `address-review` until the review is clean.
-
-### 5. Shipping
-
-- **`ship-it`** — squash-merges the PR for an `in_review` ticket and transitions the issue to `done`. Pre-flights mergeability and CI status; refuses to merge into a broken state. Leaves the local worktree alone — that's `finish-worktree`'s job.
+- Once the review is clean, merge the PR yourself (`gh pr merge` or the GitHub UI). There's no dedicated ship skill — merging a reviewed PR is a deliberate, low-frequency action best done explicitly rather than automated.
 
 ---
 
 ## Wrapping skills (used during a task)
 
-These wrap around `implement-issue` (and its underlying `design-task` / `code-task`) rather than being a workflow step in their own right:
+These wrap around the worktree/code/review loop rather than being a workflow step in their own right:
 
-- **`setup-worktree`** — scaffolds a fresh git worktree from main with `pnpm install` and a backgrounded `pnpm worktree-env start`. `code-task` calls this internally; use it directly for ad-hoc work that needs an isolated worktree without the full execute loop.
-- **`finish-worktree`** — tears down a finished worktree: deletes the per-worktree VM/distro and removes the worktree dir. Run this **after** `ship-it`, never before — and never when the work is unfinished or the PR isn't merged. The remote branch is left alone (the PR points at it).
+- **`finish-worktree`** — tears down a finished worktree: deletes the per-worktree VM/distro and removes the worktree dir. Run this **after** the PR is merged, never before — and never when the work is unfinished. The remote branch is left alone (already merged or the PR points at it).
 - **`test-dev`** — runs a set of tests against the current worktree's dev environment using `playwright-cli`. Use it to smoke-test a feature before opening a PR, or any time the user asks for the change to be exercised in the running stack. Tracks issues found and reports them at the end; stops early on a show-stopper.
 - **`diagnose-dev`** — diagnoses issues in the dev environment running on a worktree. Trigger when the user mentions something is broken "in dev" — don't use it for production issues.
 
@@ -95,10 +76,11 @@ These wrap around `implement-issue` (and its underlying `design-task` / `code-ta
 
 ## General tooling skills
 
-These aren't workflow steps — they're general-purpose tools the workflow skills (and you) reach for as needed:
+These aren't workflow steps — they're general-purpose tools reached for as needed, usually around a PR:
 
-- **`mk`** — the local issue tracker that ships with the repo. Anything that creates, reads, updates, or organises tickets/features/tags/blocks/PR-attachments goes through `mk`. Prefer it over GitHub Issues for any work tracked in this repo. Most workflow skills above (`task-to-mk`, `plan-to-mk`, `implement-issue`, `design-task`, `code-task`, `review`, `address-review`, `ship-it`) call `mk` under the hood; reach for it directly when you need to inspect or tweak ticket state outside one of those flows.
 - **`playwright-cli`** — browser automation: navigation, form filling, screenshots, web testing, data extraction. `test-dev` builds on top of it; reach for it directly for ad-hoc browser interactions or one-off scraping/automation tasks.
+- **`api-change-check`** — checks whether docs, permission definitions, and registrations are in sync with the current branch's changes before opening a PR.
+- **`refactor-large-file`** — finds and refactors the codebase's largest TypeScript files.
 
 ---
 
@@ -109,15 +91,10 @@ When the user asks "what do I do next?", figure out where they are:
 | Where they are | What to suggest |
 |---|---|
 | Has an idea, no shape yet | `brainstorming` (or just chat), then `brainstorm-to-plan` |
-| Has a plan doc, no tickets | `plan-to-mk` (out of scope — point at it) |
-| Has a one-off chore | `task-to-mk` |
-| Has a ticket, not sure design vs code | `implement-issue` (routes by tag) |
-| Has a ticket, needs a design | `design-task` (or `implement-issue`) |
-| Has a ticket, ready to code | `code-task` (or `implement-issue`) |
-| Wants "next thing" / "what's next?" | `implement-issue` |
-| PR open, ticket `in_review` | `review` |
-| Review posted with findings | `address-review` (add `--quick` for trivial / no-runtime-change fixes) |
-| Review is clean | `ship-it` |
+| Has a plan doc or a one-off task, ready to code | `setup-worktree` |
+| Code written, ready for a PR | Open the PR, then `review` |
+| Review posted with findings | Fix them by hand, push, `/review` again |
+| Review is clean | Merge the PR (`gh pr merge`) |
 | PR merged, worktree still around | `finish-worktree` |
 | Something's broken in the worktree | `diagnose-dev` |
 
@@ -125,6 +102,6 @@ When the user asks "what do I do next?", figure out where they are:
 
 ## Notes
 
-- The skill list above is curated — these are the skills that form the **normal workflow** plus the general tooling that supports it. Other skills exist (e.g. `update-ui-artifacts`, `refactor-large-file`, `session-retrospective`, `api-change-check`) but they're either auxiliary or used opportunistically rather than as steps in the standard flow. Don't list them unless the user asks about them specifically.
+- The skill list above is curated — these are the skills that form the **normal workflow** plus the general tooling that supports it. Other skills exist (e.g. `update-ui-artifacts`, `generate-docs-structure`, `task-tracker-audit`) but they're either auxiliary or used opportunistically rather than as steps in the standard flow. Don't list them unless the user asks about them specifically.
 - If the user asks about a skill that isn't in this map, read its `SKILL.md` from `.claude/skills/<name>/SKILL.md` rather than guessing.
-- Keep responses focused on what the user actually asked. If they ask "how do I ship?", just describe `ship-it` and the immediate prerequisites — don't dump the whole flow on them.
+- Keep responses focused on what the user actually asked. If they ask "how do I ship?", just describe merging the PR and the immediate prerequisites — don't dump the whole flow on them.

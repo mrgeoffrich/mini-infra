@@ -18,7 +18,7 @@ import {
   type SelfUpdateStatus,
 } from "../services/self-update";
 import { emitToChannel } from "../lib/socket";
-import { Channel, ServerEvent, type OperationStep } from "@mini-infra/types";
+import { Channel, ServerEvent, type OperationStep, Permission } from "@mini-infra/types";
 
 const logger = getLogger("platform", "self-update");
 const router = express.Router();
@@ -51,7 +51,7 @@ const triggerSchema = z.object({
  * 2. Most recent DB record (persists across restarts)
  * 3. Idle
  */
-router.get("/status", requirePermission("settings:read"), async (req, res) => {
+router.get("/status", requirePermission(Permission.SettingsRead), async (req, res) => {
   try {
     // Recover stale updates where sidecar crashed and auto-removed
     await recoverStaleUpdate();
@@ -112,7 +112,7 @@ router.get("/status", requirePermission("settings:read"), async (req, res) => {
 /**
  * POST /check - Check if we're running in Docker and can self-update
  */
-router.post("/check", requirePermission("settings:read"), async (req, res) => {
+router.post("/check", requirePermission(Permission.SettingsRead), async (req, res) => {
   try {
     const containerId = getOwnContainerId();
 
@@ -148,7 +148,7 @@ router.post("/check", requirePermission("settings:read"), async (req, res) => {
  */
 router.post(
   "/trigger",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req, res) => {
     try {
       // Validate request body

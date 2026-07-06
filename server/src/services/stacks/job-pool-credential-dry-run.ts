@@ -88,6 +88,7 @@ export async function dryRunJobPoolCredentials(
       (src) =>
         src.kind === 'nats-url' ||
         src.kind === 'nats-creds' ||
+        src.kind === 'nats-creds-file' ||
         src.kind === 'nats-signer-seed' ||
         src.kind === 'nats-account-public',
     );

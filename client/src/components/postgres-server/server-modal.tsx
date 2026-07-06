@@ -3,14 +3,15 @@ import { useForm, useWatch } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import type { PostgresServerInfo } from "@mini-infra/types";
-import { POSTGRES_SSL_MODES } from "@mini-infra/types";
+import type { ContainerInfo, PostgresServerInfo } from "@mini-infra/types";
+import { POSTGRES_SSL_MODES, ApiRoute, queryKeys } from "@mini-infra/types";
 import { toast } from "sonner";
 import {
   useCreatePostgresServer,
   useUpdatePostgresServer,
   useTestServerConnection,
 } from "@/hooks/use-postgres-servers";
+import { apiFetch } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -97,15 +98,14 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
   const testConnectionMutation = useTestServerConnection();
 
   // Fetch PostgreSQL containers for linking
-  const { data: postgresContainers } = useQuery<Array<{ id: string; name: string; image: string; imageTag: string }>>({
-    queryKey: ["postgres-containers"],
+  const { data: postgresContainers } = useQuery<ContainerInfo[]>({
+    queryKey: queryKeys.containers.postgres,
     queryFn: async () => {
-      const response = await fetch("/api/containers/postgres", {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to fetch PostgreSQL containers");
-      const data = await response.json();
-      return data.data || [];
+      const data = await apiFetch<ContainerInfo[] | undefined>(
+        ApiRoute.containers.postgres(),
+        { correlationIdPrefix: "postgres-containers" },
+      );
+      return data ?? [];
     },
     enabled: open, // Only fetch when modal is open
   });

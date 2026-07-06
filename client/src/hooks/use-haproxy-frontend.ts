@@ -5,38 +5,31 @@ import {
   HAProxyFrontendListResponse,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `haproxy-frontend-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
 
 // ====================
 // HAProxy Frontend API Functions
 // ====================
+//
+// These endpoints are enveloped (`{success, data, message?}`), but every
+// existing consumer of these hooks (many outside this migration batch) reads
+// the *whole* envelope off the query result (e.g. `frontendsResponse?.data`,
+// `frontendResponse?.data`). To avoid rippling type/shape changes into files
+// outside this batch's scope, these functions keep returning the full
+// envelope via `{ unwrap: false }` rather than letting `apiFetch` auto-
+// unwrap to the inner `data` payload.
 
-async function fetchAllFrontends(
-  correlationId: string,
-): Promise<HAProxyFrontendListResponse> {
-  const response = await fetch(`/api/haproxy/frontends`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchAllFrontends(): Promise<HAProxyFrontendListResponse> {
+  const data = await apiFetch<HAProxyFrontendListResponse>(ApiRoute.haproxy.frontends(), {
+    correlationIdPrefix: "haproxy-frontends",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch HAProxy frontends: ${response.statusText}`,
-    );
-  }
-
-  const data: HAProxyFrontendListResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch HAProxy frontends");
@@ -45,25 +38,11 @@ async function fetchAllFrontends(
   return data;
 }
 
-async function fetchFrontendByName(
-  frontendName: string,
-  correlationId: string,
-): Promise<HAProxyFrontendResponse> {
-  const response = await fetch(`/api/haproxy/frontends/${encodeURIComponent(frontendName)}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+async function fetchFrontendByName(frontendName: string): Promise<HAProxyFrontendResponse> {
+  const data = await apiFetch<HAProxyFrontendResponse>(ApiRoute.haproxy.frontend(frontendName), {
+    correlationIdPrefix: "haproxy-frontend",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch HAProxy frontend: ${response.statusText}`,
-    );
-  }
-
-  const data: HAProxyFrontendResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch HAProxy frontend");
@@ -87,7 +66,6 @@ export function useAllFrontends(
 ) {
   const { enabled = true, retry = 3 } = options;
 
-  const correlationId = generateCorrelationId();
   const queryClient = useQueryClient();
   const { connected } = useSocket();
 
@@ -99,15 +77,15 @@ export function useAllFrontends(
   useSocketEvent(
     ServerEvent.HAPROXY_FRONTENDS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontend"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontendAll });
     },
     enabled,
   );
 
   return useQuery({
-    queryKey: ["haproxy-frontends"],
-    queryFn: () => fetchAllFrontends(correlationId),
+    queryKey: queryKeys.haproxy.frontends,
+    queryFn: () => fetchAllFrontends(),
     enabled,
     refetchInterval,
     retry:
@@ -115,10 +93,7 @@ export function useAllFrontends(
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (error instanceof ApiRequestError && error.isAuth) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -141,34 +116,29 @@ export function useFrontendByName(
 ) {
   const { enabled = true, retry = 3 } = options;
 
-  const correlationId = generateCorrelationId();
   const { connected } = useSocket();
 
   const refetchInterval =
     options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
 
   return useQuery({
-    queryKey: ["haproxy-frontend", frontendName],
-    queryFn: () => fetchFrontendByName(frontendName!, correlationId),
+    queryKey: queryKeys.haproxy.frontend(frontendName!),
+    queryFn: () => fetchFrontendByName(frontendName!),
     enabled: enabled && !!frontendName,
     refetchInterval,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
-              return false;
-            }
-            // Don't retry on not found errors
-            if (
-              error.message.includes("404") ||
-              error.message.includes("Not found")
-            ) {
-              return false;
+            if (error instanceof ApiRequestError) {
+              // Don't retry on authentication errors
+              if (error.isAuth) {
+                return false;
+              }
+              // Don't retry on not found errors
+              if (error.status === 404) {
+                return false;
+              }
             }
             // Retry up to the specified number of times for other errors
             return typeof retry === "boolean" ? retry : failureCount < retry;

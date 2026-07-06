@@ -11,6 +11,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("tls", "tls-renewals");
 const router = express.Router();
@@ -19,7 +20,7 @@ const router = express.Router();
  * GET /api/tls/renewals
  * List all renewal attempts with optional filtering
  */
-router.get("/", requirePermission('tls:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
   try {
     const { certificateId, status, limit } = req.query;
 
@@ -72,7 +73,7 @@ router.get("/", requirePermission('tls:read'), async (req, res) => {
  * GET /api/tls/renewals/:id
  * Get renewal attempt details
  */
-router.get("/:id", requirePermission('tls:read'), async (req, res) => {
+router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -118,7 +119,7 @@ router.get("/:id", requirePermission('tls:read'), async (req, res) => {
  * GET /api/tls/renewals/certificate/:certificateId
  * Get all renewal attempts for a specific certificate
  */
-router.get("/certificate/:certificateId", requirePermission('tls:read'), async (req, res) => {
+router.get("/certificate/:certificateId", requirePermission(Permission.TlsRead), async (req, res) => {
   try {
     const certificateId = String(req.params.certificateId);
 

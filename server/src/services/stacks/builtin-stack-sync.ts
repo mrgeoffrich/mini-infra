@@ -6,7 +6,6 @@ import { getLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
-import { runSystemStackMigrations } from "./system-stack-migrations";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
 import { seedSystemPrefixAllowlist } from "../nats/seed-system-prefix-allowlist";
 // Resolve the templates directory relative to the server root.
@@ -91,10 +90,7 @@ export async function syncBuiltinStacks(
   // here — that happens on explicit user action (template instantiation).
   await upgradeExistingStacksForTemplates(prisma, templateByName, log);
 
-  // 3. Run one-time backfill migrations (e.g. EnvironmentNetwork → InfraResource).
-  await runSystemStackMigrations(prisma);
-
-  // 4. Archive any egress policies that were created for firewall infra stacks
+  // 3. Archive any egress policies that were created for firewall infra stacks
   // (haproxy, egress-gateway) by older versions of the policy lifecycle. Newer
   // deployments skip these at create-time; this catches existing rows.
   await new EgressPolicyLifecycleService(prisma).archiveExcludedStackPolicies();

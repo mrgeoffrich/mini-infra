@@ -22,6 +22,7 @@ import {
   RegionPeekRequest,
   RegionPeekResponse,
 } from "./diagnostics.schemas";
+import { Permission } from "@mini-infra/types";
 
 const router = Router();
 const logger = getLogger("platform", "diagnostics");
@@ -35,7 +36,7 @@ describe(
     description:
       "Snapshot of process.memoryUsage(), v8.getHeapStatistics(), heap spaces, and /proc/self/{status,smaps_rollup}. Safe to poll.",
     tags: ["Diagnostics"],
-    permission: "settings:read",
+    permission: Permission.SettingsRead,
     sideEffects: "none — safe to poll",
     response: MemoryDiagnosticsResponse,
   },
@@ -95,7 +96,7 @@ describe(
     description:
       "More expensive than /memory — walks the full smaps file. Fetch on demand, not on every poll.",
     tags: ["Diagnostics"],
-    permission: "settings:read",
+    permission: Permission.SettingsRead,
     sideEffects:
       "reads /proc/self/smaps (Linux only); moderate CPU for large process maps",
     request: { query: SmapsTopQuery },
@@ -128,7 +129,7 @@ describe(
     description:
       "Used by the UI to pick a specific anonymous region to inspect with /region-peek.",
     tags: ["Diagnostics"],
-    permission: "settings:read",
+    permission: Permission.SettingsRead,
     sideEffects: "reads /proc/self/smaps (Linux only)",
     request: { query: SmapsRegionsQuery },
     response: SmapsRegionsResponse,
@@ -166,7 +167,7 @@ describe(
     description:
       "Inspects live process memory contents. Sensitive — may expose in-process secrets. Length capped at 4 MiB per request.",
     tags: ["Diagnostics"],
-    permission: "settings:write",
+    permission: Permission.SettingsWrite,
     sideEffects:
       "reads /proc/self/mem (Linux only); may expose in-process secrets in response",
     request: { body: RegionPeekRequest },
@@ -223,7 +224,7 @@ describe(
     description:
       "Downloads a JSON file that includes shared objects, libuv handles, native stack, and environment variables.",
     tags: ["Diagnostics"],
-    permission: "settings:read",
+    permission: Permission.SettingsRead,
     sideEffects: "generates an in-memory report (~1-10 MB); no side effects on the process",
     response: {
       contentType: "application/json",
@@ -263,7 +264,7 @@ describe(
     description:
       "Writes a .heapsnapshot file to a temp dir, streams it as a download, then deletes it. Loadable by Chrome DevTools Memory tab.",
     tags: ["Diagnostics"],
-    permission: "settings:write",
+    permission: Permission.SettingsWrite,
     sideEffects:
       "briefly pauses the event loop while the snapshot is written; produces a 50-500 MB file",
     response: {

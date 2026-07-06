@@ -7,9 +7,10 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { CreateManualFrontendRequest, StartConnectContainerResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // API Function
@@ -18,19 +19,15 @@ import { useOperationProgress } from "./use-operation-progress";
 async function startConnectContainer(
   request: CreateManualFrontendRequest,
 ): Promise<StartConnectContainerResponse> {
-  const response = await fetch("/api/haproxy/manual-frontends", {
+  // The route replies with the full `{ success, data }` envelope (typed
+  // directly into `StartConnectContainerResponse`) rather than the unwrapped
+  // `data` — callers read `result.data.operationId` — so this stays raw.
+  return apiFetch<StartConnectContainerResponse>(ApiRoute.haproxy.manualFrontends(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "connect-container",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to start container connection");
-  }
-
-  return response.json();
 }
 
 // ====================
@@ -59,9 +56,9 @@ export function useConnectContainerProgress(operationId: string | null, label?: 
     getStep: (p) => p.step,
     getResult: (p) => ({ success: p.success, steps: p.steps, errors: p.errors }),
     invalidateKeys: [
-      ["haproxy-frontends"],
-      ["haproxy-backends"],
-      ["containers"],
+      [...queryKeys.haproxy.frontends],
+      [...queryKeys.haproxy.backends],
+      [...queryKeys.containers.all],
     ],
     toasts: {
       success: "Container connected successfully",

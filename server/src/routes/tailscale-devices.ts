@@ -7,6 +7,7 @@ import {
 import type {
   TailscaleDevicesResponse,
 } from "@mini-infra/types";
+import { Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -25,7 +26,7 @@ const router = Router();
  */
 router.get(
   "/devices",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   asyncHandler(async (_req, res) => {
     const scheduler = TailscaleDeviceStatusScheduler.getInstance();
     if (!scheduler) {

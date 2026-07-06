@@ -85,15 +85,32 @@ func main() {
 		// stream still carries everything.
 		busSlog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		client, err := natsbus.Connect(ctx, natsbus.ConnectOptions{
-			URL:    natsURL,
-			Creds:  natsCreds,
-			Name:   "egress-gateway-" + environmentID,
-			Logger: busSlog,
+			URL:       natsURL,
+			CredsFile: cfg.NatsCredsFile,
+			Creds:     natsCreds,
+			Name:      "egress-gateway-" + environmentID,
+			Logger:    busSlog,
 		})
 		if err != nil {
 			if legacyAdmin {
 				logger.WithError(err).Warn("gateway: NATS connect failed; legacy admin mode is on, continuing on stdout decisions")
 			} else {
+				// KNOWN LIMITATION (initial-connect self-heal blind spot): we
+				// Fatal here on a failed *initial* NATS connect, and the
+				// out-of-band /healthz server further down only starts once `bus`
+				// is non-nil. So a gateway whose very first connect is
+				// auth-rejected crash-loops without ever serving /healthz — which
+				// means the P4 self-heal supervisor (it triggers on a scraped
+				// `auth-failed` from that same /healthz) can't see it and won't
+				// re-mint its creds. This is mitigated in practice by P6's
+				// default-ON live cred refresh rewriting the creds file within
+				// seconds, and by a crash-looping container being visibly
+				// unhealthy anyway. A future fix could start the health server
+				// *before* the initial connect and use nats.go's
+				// RetryOnFailedConnect instead of Fataling, so an initial
+				// auth-reject surfaces as `auth-failed` on /healthz rather than a
+				// crash-loop. Intentionally left as a follow-up — do not change
+				// the Fatal/retry behaviour here as part of this pass.
 				logger.WithError(err).Fatal("gateway: NATS connect failed and legacy admin mode is off — refusing to boot")
 			}
 		} else {
@@ -130,6 +147,24 @@ func main() {
 	// Attach the NDJSON hook with the right emitter (NATS in production,
 	// stdout in legacy mode). The hook stamps environmentId on every event.
 	logger.AddHook(proxy.NewNDJSONLogHookWithEmitter(environmentID, emitter))
+
+	// Out-of-band health surface (Phase 3, §4.2). Only meaningful with a live
+	// bus (NATS mode); in legacy stdout mode there's no NATS link to report on.
+	// The gateway shares the `nats` docker network with the mini-infra server,
+	// which scrapes this on the gateway's container IP — independent of the NATS
+	// link, so it reports `auth-failed` even when the in-band KV heartbeat can't
+	// publish. Served over the shared handler so both egress agents agree.
+	healthCtx, healthCancel := context.WithCancel(context.Background())
+	defer healthCancel()
+	if bus != nil {
+		healthLog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		ageFn := func() int64 { return bridge.LastHeartbeatAgeMs() }
+		go func() {
+			if err := natsbus.ServeHealth(healthCtx, cfg.HealthAddr, bus, ageFn, healthLog); err != nil {
+				logger.WithError(err).Error("gateway: health server error")
+			}
+		}()
+	}
 
 	// Build the full DoH → unknown-IP-deny → Smokescreen handler chain.
 	gatewayHandler := proxy.BuildGatewayHandler(containers, aclSwapper, logger, proxy.GatewayOptions{

@@ -7,6 +7,7 @@ import {
   validateApiKey,
   deleteApiKey,
 } from "../services/agent-settings-service";
+import { Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -16,7 +17,7 @@ const router = express.Router();
 
 router.get(
   "/",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const settings = await getSettings();
@@ -38,7 +39,7 @@ const updateSchema = z.object({
 
 router.post(
   "/",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = updateSchema.safeParse(req.body);
@@ -72,7 +73,7 @@ const validateSchema = z.object({
 
 router.post(
   "/validate",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = validateSchema.safeParse(req.body);
@@ -98,7 +99,7 @@ router.post(
 
 router.delete(
   "/api-key",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
       await deleteApiKey();

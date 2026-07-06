@@ -19,6 +19,8 @@ import {
   IconPlugConnected,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { ApiRoute } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 export function SetupCard() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -30,22 +32,16 @@ export function SetupCard() {
       const callbackUrl =
         window.location.origin + "/connectivity-github";
 
-      const response = await fetch("/api/settings/github-app/manifest", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ callbackUrl }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to generate manifest",
-        }));
-        throw new Error(errorData.message || "Failed to generate manifest");
-      }
-
-      const result = await response.json();
-      const manifest = result.data;
+      // Server returns the raw GitHub App manifest object (no shared type —
+      // it's typed `object` server-side too, see `github-app-setup.ts`).
+      const manifest = await apiFetch<Record<string, unknown>>(
+        ApiRoute.settings.githubAppManifest(),
+        {
+          method: "POST",
+          body: { callbackUrl },
+          correlationIdPrefix: "github-app-setup",
+        },
+      );
 
       // Create a hidden form and submit to GitHub
       const form = formRef.current;

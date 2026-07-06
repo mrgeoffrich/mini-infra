@@ -60,6 +60,55 @@ export default tseslint.config([
         },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
+      // ====================
+      // Frontend/backend contract guard (Phase 4 of
+      // docs/planning/not-shipped/frontend-backend-contract-plan.md).
+      // Blocking (error-level): the three primitives below (apiFetch,
+      // ApiRoute, queryKeys) are the only sanctioned way to talk to the API
+      // from client/src. Exemptions live in the override block further down
+      // (client/src/lib/api-client.ts itself, and test files).
+      // ====================
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.name='fetch']",
+          message:
+            "Raw fetch() is banned in client/src — use apiFetch() from '@/lib/api-client' instead (see client/src/hooks/useContainers.ts for the reference pattern).",
+        },
+        {
+          selector: "Literal[value=/^\\/(api|auth)(\\/|$)/]",
+          message:
+            "Hardcoded '/api' or '/auth' path literals are banned in client/src — use an ApiRoute.* builder from '@mini-infra/types' instead.",
+        },
+        {
+          selector: "TemplateElement[value.raw=/^\\/(api|auth)(\\/|$)/]",
+          message:
+            "Hardcoded '/api' or '/auth' path literals are banned in client/src — use an ApiRoute.* builder from '@mini-infra/types' instead.",
+        },
+        {
+          // Flags a `queryKey` array that contains at least one *literal*
+          // element directly (e.g. `["stacks", id]`) — i.e. someone typed a
+          // raw resource-name string inline. Deliberately does NOT flag
+          // composing from the registry, e.g. `[...queryKeys.tls.certificates]`
+          // or `[...queryKeys.x.y, extraId]` (no direct Literal child), which
+          // is the sanctioned pattern for call sites that need one shared
+          // key spread into a fresh array (task-type-registry.ts, etc).
+          selector: "Property[key.name='queryKey'] > ArrayExpression:has(> Literal)",
+          message:
+            "Inline queryKey array literals are banned in client/src — use a queryKeys.* builder from '@mini-infra/types' instead.",
+        },
+      ],
+    },
+  },
+  {
+    // Exemptions for the guard rules above: the shared HTTP client itself
+    // (which legitimately calls the real fetch()) and test files (per the
+    // Phase 4 plan — __tests__/** is already excluded from the main block
+    // above via `ignores`, but this also covers co-located *.test.ts(x)
+    // files living outside __tests__/).
+    files: ["src/lib/api-client.ts", "**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "no-restricted-syntax": "off",
     },
   },
   {

@@ -15,7 +15,9 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type { AuthSettingsInfo, UpdateAuthSettingsRequest } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 interface AuthSettingsFormProps {
   settings: AuthSettingsInfo;
@@ -37,20 +39,25 @@ function AuthSettingsForm({ settings }: AuthSettingsFormProps) {
 
   const updateMutation = useMutation({
     mutationFn: async (body: UpdateAuthSettingsRequest) => {
-      const response = await fetch("/api/auth-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Failed to update settings");
-      return data;
+      try {
+        return await apiFetch(ApiRoute.authSettings.root(), {
+          method: "PUT",
+          body,
+          correlationIdPrefix: "auth-settings",
+        });
+      } catch (err) {
+        // /api/auth-settings responds with `{ error: "<human message>" }`
+        // (no `.message` field) — the human-readable text lands in
+        // ApiRequestError.code, not `.message`.
+        throw new Error(
+          err instanceof ApiRequestError ? err.code : "Failed to update settings",
+          { cause: err },
+        );
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["auth-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.authSettings.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.onboarding.setupStatus });
       setIsDirty(false);
       toastWithCopy.success("Authentication settings saved");
     },
@@ -185,15 +192,11 @@ export default function AuthenticationSettingsPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["auth-settings"],
-    queryFn: async () => {
-      const response = await fetch("/api/auth-settings", {
-        credentials: "include",
-      });
-      if (!response.ok) throw new Error("Failed to fetch auth settings");
-      const data = await response.json();
-      return data.data as AuthSettingsInfo;
-    },
+    queryKey: queryKeys.authSettings.all,
+    queryFn: () =>
+      apiFetch<AuthSettingsInfo>(ApiRoute.authSettings.root(), {
+        correlationIdPrefix: "auth-settings",
+      }),
   });
 
   if (isLoading) {

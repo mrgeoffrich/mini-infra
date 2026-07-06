@@ -218,19 +218,11 @@ export class DockerExecutorService {
   }
 
   // --- Infrastructure ---
-  public async createNetwork(
-    networkName: string,
-    projectName?: string,
-    options?: {
-      driver?: string;
-      labels?: Record<string, string>;
-      /** Optional IPAM config for explicit subnet/gateway assignment */
-      ipam?: { subnet: string; gateway?: string };
-    }
-  ): Promise<void> {
-    return this.infraMgr.createNetwork(networkName, projectName, options);
-  }
-
+  // Network operations (create/exists/remove) intentionally have no wrapper
+  // here — the network overhaul moved every Docker network call behind
+  // `NetworkManager` (`services/networks/`); construct one via
+  // `createNetworkManager(dockerExecutorService)` instead. Volumes have no
+  // equivalent consolidation yet and keep their wrappers below.
   public async createVolume(
     volumeName: string,
     projectName?: string,
@@ -239,20 +231,12 @@ export class DockerExecutorService {
     return this.infraMgr.createVolume(volumeName, projectName, options);
   }
 
-  public async networkExists(networkName: string): Promise<boolean> {
-    return this.infraMgr.networkExists(networkName);
-  }
-
   public async volumeExists(volumeName: string): Promise<boolean> {
     return this.infraMgr.volumeExists(volumeName);
   }
 
   public async removeVolume(volumeName: string): Promise<void> {
     return this.infraMgr.removeVolume(volumeName);
-  }
-
-  public async removeNetwork(networkName: string): Promise<void> {
-    return this.infraMgr.removeNetwork(networkName);
   }
 
   // --- Long-Running Containers ---

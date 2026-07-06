@@ -14,15 +14,7 @@ import { BackupConfigurationManager } from "../services/backup";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
 import { PostgresDatabaseManager } from "../services/postgres";
 import { UserPreferencesService } from "../services/user-preferences";
-import {
-  CreateBackupConfigurationRequest,
-  UpdateBackupConfigurationRequest,
-  BackupConfigurationResponse,
-  BackupConfigurationDeleteResponse,
-  BackupFormat,
-  QuickBackupSetupRequest,
-  BACKUP_FORMATS,
-} from "@mini-infra/types";
+import { CreateBackupConfigurationRequest, UpdateBackupConfigurationRequest, BackupConfigurationResponse, BackupConfigurationDeleteResponse, BackupFormat, QuickBackupSetupRequest, BACKUP_FORMATS, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -94,13 +86,14 @@ const updateBackupConfigSchema = z.object({
 const quickBackupSetupSchema = z.object({
   serverId: z.string().min(1, "Server ID is required"),
   databaseName: z.string().min(1, "Database name is required"),
+  environmentId: z.string().min(1, "Environment is required"),
 });
 
 /**
  * POST /api/postgres/backup-configs/quick-setup - Quick setup backup for a database on a server
  * IMPORTANT: This route must come BEFORE /:databaseId to prevent "quick-setup" from being matched as a databaseId
  */
-router.post("/quick-setup", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -195,6 +188,7 @@ router.post("/quick-setup", requirePermission('postgres:write') as RequestHandle
       username: server.adminUsername,
       password: adminPassword,
       sslMode: server.sslMode as "prefer" | "require" | "disable",
+      environmentId: setupRequest.environmentId,
       tags: [`server:${server.name}`, "backup"],
     });
 
@@ -295,7 +289,7 @@ router.post("/quick-setup", requirePermission('postgres:write') as RequestHandle
   }
 }) as RequestHandler);
 
-router.get("/:databaseId", requirePermission('postgres:read') as RequestHandler, (async (
+router.get("/:databaseId", requirePermission(Permission.PostgresRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -377,7 +371,7 @@ router.get("/:databaseId", requirePermission('postgres:read') as RequestHandler,
 }) as RequestHandler);
 
 
-router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
+router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -519,7 +513,7 @@ router.post("/", requirePermission('postgres:write') as RequestHandler, (async (
 /**
  * PUT /api/postgres/backup-configs/:id - Update backup configuration
  */
-router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async (
+router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -654,7 +648,7 @@ router.put("/:id", requirePermission('postgres:write') as RequestHandler, (async
 /**
  * DELETE /api/postgres/backup-configs/:id - Delete backup configuration
  */
-router.delete("/:id", requirePermission('postgres:write') as RequestHandler, (async (
+router.delete("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

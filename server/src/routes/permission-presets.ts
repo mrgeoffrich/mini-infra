@@ -2,7 +2,7 @@ import { Router, Request, Response, RequestHandler } from "express";
 import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
 import { getLogger } from "../lib/logger-factory";
-import { ALL_PERMISSION_SCOPES } from "@mini-infra/types";
+import { ALL_PERMISSION_SCOPES, Permission } from "@mini-infra/types";
 import {
   getAllPresets,
   createPreset,
@@ -29,7 +29,7 @@ const updatePresetBodySchema = presetBodySchema.partial();
 // GET /api/permission-presets
 router.get(
   "/",
-  requirePermission("api-keys:read") as RequestHandler,
+  requirePermission(Permission.ApiKeysRead) as RequestHandler,
   (async (_req: Request, res: Response) => {
     try {
       const presets = await getAllPresets();
@@ -44,7 +44,7 @@ router.get(
 // POST /api/permission-presets
 router.post(
   "/",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const result = presetBodySchema.safeParse(req.body);
     if (!result.success) {
@@ -69,7 +69,7 @@ router.post(
 // PATCH /api/permission-presets/:id
 router.patch(
   "/:id",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const id = String(req.params.id);
     const result = updatePresetBodySchema.safeParse(req.body);
@@ -92,7 +92,7 @@ router.patch(
 // DELETE /api/permission-presets/:id
 router.delete(
   "/:id",
-  requirePermission("api-keys:write") as RequestHandler,
+  requirePermission(Permission.ApiKeysWrite) as RequestHandler,
   (async (req: Request, res: Response) => {
     const id = String(req.params.id);
     try {

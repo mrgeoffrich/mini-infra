@@ -18,12 +18,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  CONNECTIVITY_STATUS_TYPES,
-  ConnectivityStatusListResponse,
-  ConnectivityStatusResponse,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission, toConnectivityStatus } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "storage-connectivity");
 const router = express.Router();
@@ -41,7 +36,7 @@ const historyQuerySchema = z.object({
   sortOrder: z.enum(SORT_ORDERS).default("desc"),
 });
 
-router.get("/", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -72,7 +67,7 @@ router.get("/", requirePermission("storage:read") as RequestHandler, (async (
       data: {
         id: latestStatus.id,
         service: latestStatus.service,
-        status: latestStatus.status,
+        status: toConnectivityStatus(latestStatus.status),
         responseTimeMs:
           latestStatus.responseTimeMs != null
             ? Number(latestStatus.responseTimeMs)
@@ -101,7 +96,7 @@ router.get("/", requirePermission("storage:read") as RequestHandler, (async (
   }
 }) as RequestHandler);
 
-router.get("/history", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/history", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -149,7 +144,7 @@ router.get("/history", requirePermission("storage:read") as RequestHandler, (asy
       data: records.map((r) => ({
         id: r.id,
         service: r.service,
-        status: r.status,
+        status: toConnectivityStatus(r.status),
         responseTimeMs:
           r.responseTimeMs != null ? Number(r.responseTimeMs) : null,
         errorMessage: r.errorMessage,

@@ -11,8 +11,12 @@ const logger = getLogger("http", "settings-validation");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
+import { githubAppService } from "../services/github-app/github-app-service";
 import {
   SettingsCategory,
+  Permission,
+  type ConnectivityStatusType,
+  type ValidationResult,
 } from "@mini-infra/types";
 
 const router = express.Router();
@@ -56,6 +60,50 @@ async function raceWithTimeout<T>(
   }
 }
 
+type ServiceValidator = (
+  settings?: Record<string, string>,
+) => Promise<ValidationResult>;
+
+/**
+ * Connectivity service name → the config category the factory validates it
+ * under. Typed against `SettingsCategory`, so a non-existent category is a
+ * compile error rather than a runtime "Unsupported configuration category"
+ * throw. Aliases (`azure`/`storage` → `storage-azure`) are spelled out because
+ * the manual-validation service name and the config category diverge.
+ */
+const FACTORY_VALIDATABLE_SERVICES: Record<string, SettingsCategory> = {
+  docker: "docker",
+  cloudflare: "cloudflare",
+  azure: "storage-azure",
+  storage: "storage-azure",
+  "storage-azure": "storage-azure",
+  tls: "tls",
+  tailscale: "tailscale",
+  vault: "vault",
+};
+
+const VALIDATABLE_SERVICE_NAMES = [
+  ...Object.keys(FACTORY_VALIDATABLE_SERVICES),
+  "github-app",
+];
+
+/**
+ * Resolve the validator for a connectivity service, or `null` when the service
+ * has no live connectivity check (e.g. `system`, `deployments`, `haproxy`,
+ * `nats` — settings categories with no validator). `github-app` is validated by
+ * its own on-demand service rather than the factory; it is intentionally kept
+ * out of the factory so the periodic scheduler doesn't start hitting the GitHub
+ * API every cycle.
+ */
+function getServiceValidator(service: string): ServiceValidator | null {
+  if (service === "github-app") {
+    return (settings) => githubAppService.validate(settings);
+  }
+  const category = FACTORY_VALIDATABLE_SERVICES[service];
+  if (!category) return null;
+  return (settings) => configFactory.create({ category }).validate(settings);
+}
+
 // Validation request schema
 const validateServiceSchema = z.object({
   settings: z.record(z.string(), z.string()).optional(), // Optional settings to validate with
@@ -64,7 +112,7 @@ const validateServiceSchema = z.object({
 /**
  * POST /api/settings/validate/:service - Validate external service connectivity
  */
-router.post("/:service", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/:service", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -93,23 +141,15 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
       });
     }
 
-    // Validate service parameter
-    if (
-      ![
-        "docker",
-        "cloudflare",
-        "azure",
-        "system",
-        "deployments",
-        "haproxy",
-        "tls",
-        "github-app",
-        "tailscale",
-      ].includes(service)
-    ) {
+    // Resolve how this service is validated. Services with no live connectivity
+    // check (system, deployments, haproxy, nats, …) resolve to null and are
+    // rejected here — rather than throwing deeper in the factory and recording a
+    // bogus "error" connectivity row.
+    const validator = getServiceValidator(service);
+    if (!validator) {
       return res.status(400).json({
         error: "Bad Request",
-        message: `Invalid service '${service}'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app, tailscale`,
+        message: `Service '${service}' does not support connectivity validation. Validatable services: ${VALIDATABLE_SERVICE_NAMES.join(", ")}`,
         timestamp: new Date().toISOString(),
         requestId,
       });
@@ -139,23 +179,13 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
 
     const { settings } = bodyValidation.data;
 
-    // Get the configuration service for the requested service type
-    const configService = configFactory.create({
-      category: service as SettingsCategory,
-    });
-
     // Perform validation with timeout protection
     const startTime = Date.now();
-    const validationResult = (await raceWithTimeout(
-      configService.validate(settings),
+    const validationResult = await raceWithTimeout(
+      validator(settings),
       30000,
       "Validation timeout",
-    )) as {
-      isValid: boolean;
-      message?: string;
-      errorCode?: string;
-      metadata?: Record<string, unknown>;
-    };
+    );
 
     const responseTime = Date.now() - startTime;
 
@@ -163,7 +193,9 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
     await prisma.connectivityStatus.create({
       data: {
         service,
-        status: validationResult.isValid ? "connected" : "failed",
+        status: (validationResult.isValid
+          ? "connected"
+          : "failed") satisfies ConnectivityStatusType,
         responseTimeMs: responseTime,
         errorMessage: validationResult.isValid
           ? null
@@ -232,7 +264,7 @@ router.post("/:service", requirePermission('settings:write') as RequestHandler, 
       await prisma.connectivityStatus.create({
         data: {
           service,
-          status: "error",
+          status: "error" satisfies ConnectivityStatusType,
           responseTimeMs: responseTime,
           errorMessage:
             error instanceof Error ? error.message : "Unknown validation error",

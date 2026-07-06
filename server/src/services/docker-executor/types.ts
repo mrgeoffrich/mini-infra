@@ -9,6 +9,12 @@ export interface ContainerExecutionOptions {
   cmd?: string[]; // Custom command to run in container
   networkMode?: string; // Docker network to attach to
   binds?: string[]; // Volume binds in format "volume:/path:ro" or "/host/path:/container/path"
+  // Data piped to the container's stdin as raw bytes, then stdin is closed
+  // (EOF). Use this to hand a one-shot container a secret without exposing it
+  // in the container env (visible via `docker inspect` Config.Env). When set,
+  // the container is created with OpenStdin/StdinOnce and attached with a
+  // hijacked bidirectional stream.
+  stdin?: string | Buffer;
   // Compose-style grouping options
   projectName?: string; // Docker Compose project name
   serviceName?: string; // Docker Compose service name

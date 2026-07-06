@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import {
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import type {
   StackInfo,
@@ -18,7 +20,6 @@ import type {
   ApplyStackRequest,
   StackListResponse,
   StackResponse,
-  StackPlanResponse,
   StackValidationError,
   StackValidationResult,
   StackStatusResponseData,
@@ -26,11 +27,7 @@ import type {
   PrerequisiteEvaluation,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `stacks-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // Stack API Functions
@@ -38,283 +35,162 @@ function generateCorrelationId(): string {
 
 async function fetchStacks(
   environmentId?: string,
-  correlationId?: string,
   scope?: string,
 ): Promise<StackListResponse> {
-  const url = new URL("/api/stacks", window.location.origin);
+  const url = new URL(ApiRoute.stacks.list(), window.location.origin);
   if (scope) url.searchParams.set("scope", scope);
   else if (environmentId) url.searchParams.set("environmentId", environmentId);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+  // Enveloped response — kept as-is (not unwrapped) because several
+  // out-of-batch consumers (e.g. applications/new/page.tsx,
+  // applications/adopt/page.tsx) already read `.data` off the resolved
+  // query value.
+  const data = await apiFetch<StackListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stacks: ${response.statusText}`);
-  }
-
-  const data: StackListResponse = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch stacks");
   }
-
   return data;
 }
 
-async function fetchStack(
-  stackId: string,
-  correlationId?: string,
-): Promise<StackResponse> {
-  const response = await fetch(`/api/stacks/${stackId}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+async function fetchStack(stackId: string): Promise<StackResponse> {
+  // Enveloped — kept as-is; consumed as `.data.data` externally (e.g.
+  // egress pages' `useStack()` usage).
+  const data = await apiFetch<StackResponse>(ApiRoute.stacks.get(stackId), {
+    unwrap: false,
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stack: ${response.statusText}`);
-  }
-
-  const data: StackResponse = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch stack");
   }
-
   return data;
 }
 
-async function fetchStackPlan(
-  stackId: string,
-  correlationId?: string,
-): Promise<StackPlanResponse> {
-  const response = await fetch(`/api/stacks/${stackId}/plan`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+async function fetchStackPlan(stackId: string): Promise<StackPlan> {
+  // Only consumer is StackPlanView.tsx (same batch), so this is safely
+  // unwrapped — apiFetch throws ApiRequestError (with `.status`/`.code`/
+  // `.body`) on failure, which the call site inspects directly.
+  return apiFetch<StackPlan>(ApiRoute.stacks.plan(stackId), {
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      throw new Error("Docker is unavailable");
-    }
-    const body = await response.json().catch(() => null);
-    const message = body?.message || `Failed to fetch stack plan: ${response.statusText}`;
-    const err = new Error(message) as Error & {
-      status?: number;
-      code?: string;
-      missing?: unknown;
-    };
-    err.status = response.status;
-    err.code = body?.code;
-    err.missing = body?.missing;
-    throw err;
-  }
-
-  const data: StackPlanResponse = await response.json();
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch stack plan");
-  }
-
-  return data;
 }
 
 async function fetchStackValidation(
   stackId: string,
-  correlationId?: string,
 ): Promise<StackValidationResult> {
-  const response = await fetch(`/api/stacks/${stackId}/validate`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+  // Raw (non-{success,data}-enveloped) response shape — `{success, valid,
+  // errors, warnings}` has no `data` field, so unwrap:false and return the
+  // parsed body directly (matches original behavior, which never checked
+  // `.success` either).
+  return apiFetch<StackValidationResult>(ApiRoute.stacks.validate(stackId), {
+    unwrap: false,
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to validate stack: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data;
 }
 
 async function applyStack(
   stackId: string,
   options: ApplyStackRequest,
-  correlationId?: string,
-): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
-  const response = await fetch(`/api/stacks/${stackId}/apply`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
-    body: JSON.stringify(options),
-  });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      throw new Error("Docker is unavailable");
+): Promise<{ started: true; stackId: string }> {
+  try {
+    return await apiFetch<{ started: true; stackId: string }>(
+      ApiRoute.stacks.apply(stackId),
+      { method: "POST", body: options, correlationIdPrefix: "stacks" },
+    );
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      if (err.status === 503) throw new Error("Docker is unavailable", { cause: err });
+      if (err.status === 409) {
+        throw new Error("Stack apply already in progress", { cause: err });
+      }
     }
-    if (response.status === 409) {
-      throw new Error("Stack apply already in progress");
-    }
-    const errorData = await response.json().catch(() => null);
-    throw new Error(errorData?.message || `Failed to apply stack: ${response.statusText}`);
+    throw err;
   }
-
-  const data = await response.json();
-  if (!data.success) {
-    throw new Error(data.message || "Failed to apply stack");
-  }
-
-  return data;
 }
 
 async function fetchStackStatus(
   stackId: string,
-  correlationId?: string,
 ): Promise<{ success: boolean; data: StackStatusResponseData }> {
-  const response = await fetch(`/api/stacks/${stackId}/status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+  // Enveloped — kept as-is; consumed as `.data.data` externally
+  // (applications/[id]/layout.tsx's `useStackStatus()` usage).
+  const data = await apiFetch<{
+    success: boolean;
+    data: StackStatusResponseData;
+    message?: string;
+  }>(ApiRoute.stacks.status(stackId), {
+    unwrap: false,
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stack status: ${response.statusText}`);
-  }
-
-  const data = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch stack status");
   }
-
   return data;
 }
 
 async function fetchStackHistory(
   stackId: string,
-  correlationId?: string,
 ): Promise<{ success: boolean; data: StackDeploymentRecord[]; total?: number }> {
-  const response = await fetch(`/api/stacks/${stackId}/history`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
+  // Enveloped — kept as-is; consumed as `.data.data` externally
+  // (applications/[id]/history/page.tsx and overview/page.tsx).
+  const data = await apiFetch<{
+    success: boolean;
+    data: StackDeploymentRecord[];
+    total?: number;
+    message?: string;
+  }>(ApiRoute.stacks.history(stackId), {
+    unwrap: false,
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stack history: ${response.statusText}`);
-  }
-
-  const data = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch stack history");
   }
-
   return data;
 }
 
 async function deleteStack(
   stackId: string,
-  correlationId?: string,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`/api/stacks/${stackId}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to delete stack: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
+  // Raw response — no `data` field, and the original code never checked
+  // `.success` either, so unwrap:false with no manual check.
+  return apiFetch<{ success: boolean; message: string }>(
+    ApiRoute.stacks.get(stackId),
+    { method: "DELETE", unwrap: false, correlationIdPrefix: "stacks" },
+  );
 }
 
 async function destroyStack(
   stackId: string,
-  correlationId?: string,
-): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
-  const response = await fetch(`/api/stacks/${stackId}/destroy`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 503) {
-      throw new Error("Docker is unavailable");
+): Promise<{ started: true; stackId: string }> {
+  try {
+    return await apiFetch<{ started: true; stackId: string }>(
+      ApiRoute.stacks.destroy(stackId),
+      { method: "POST", correlationIdPrefix: "stacks" },
+    );
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      if (err.status === 503) throw new Error("Docker is unavailable", { cause: err });
+      if (err.status === 409) {
+        throw new Error("An operation is already in progress for this stack", {
+          cause: err,
+        });
+      }
     }
-    if (response.status === 409) {
-      throw new Error("An operation is already in progress for this stack");
-    }
-    let errorMessage = `Failed to destroy stack: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
+    throw err;
   }
-
-  return await response.json();
 }
 
 async function updateStackParameterValues(
   stackId: string,
   parameterValues: Record<string, string | number | boolean>,
-  correlationId?: string,
-): Promise<StackResponse> {
-  const response = await fetch(`/api/stacks/${stackId}`, {
+): Promise<StackInfo> {
+  // Not consumed downstream — safe to unwrap.
+  return apiFetch<StackInfo>(ApiRoute.stacks.get(stackId), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId ?? generateCorrelationId(),
-    },
-    body: JSON.stringify({ parameterValues }),
+    body: { parameterValues },
+    correlationIdPrefix: "stacks",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update stack parameters: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
 }
 
 export type { StackValidationError, StackValidationResult };
@@ -324,11 +200,9 @@ export type { StackValidationError, StackValidationResult };
 // ====================
 
 export function useStackValidation(stackId: string, enabled = true) {
-  const correlationId = generateCorrelationId();
-
   return useQuery<StackValidationResult>({
-    queryKey: ["stackValidation", stackId],
-    queryFn: () => fetchStackValidation(stackId, correlationId),
+    queryKey: queryKeys.stacks.validation(stackId),
+    queryFn: () => fetchStackValidation(stackId),
     enabled: !!stackId && enabled,
     staleTime: 10000,
     gcTime: 2 * 60 * 1000,
@@ -336,12 +210,11 @@ export function useStackValidation(stackId: string, enabled = true) {
 }
 
 export function useStacks(environmentId?: string, options?: { scope?: string }) {
-  const correlationId = generateCorrelationId();
   const scope = options?.scope;
 
   return useQuery({
-    queryKey: ["stacks", environmentId, scope],
-    queryFn: () => fetchStacks(environmentId, correlationId, scope),
+    queryKey: queryKeys.stacks.list(environmentId, scope),
+    queryFn: () => fetchStacks(environmentId, scope),
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -349,11 +222,9 @@ export function useStacks(environmentId?: string, options?: { scope?: string }) 
 }
 
 export function useStack(stackId: string) {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["stack", stackId],
-    queryFn: () => fetchStack(stackId, correlationId),
+    queryKey: queryKeys.stacks.detail(stackId),
+    queryFn: () => fetchStack(stackId),
     enabled: !!stackId,
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
@@ -369,16 +240,13 @@ export function useStack(stackId: string) {
  */
 export function useStackPrerequisites(stackId: string, enabled = true) {
   return useQuery<PrerequisiteEvaluation>({
-    queryKey: ["stackPrerequisites", stackId],
+    queryKey: queryKeys.stacks.prerequisites(stackId),
     queryFn: async () => {
-      const res = await fetch(`/api/stacks/${stackId}/prerequisites`, {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) {
-        throw new Error(`Failed to evaluate prerequisites: ${res.statusText}`);
-      }
-      const data = (await res.json()) as { success: boolean } & PrerequisiteEvaluation;
+      // Raw response — `{success, ok, failures}` has no `data` field.
+      const data = await apiFetch<{ success: boolean } & PrerequisiteEvaluation>(
+        ApiRoute.stacks.prerequisites(stackId),
+        { unwrap: false, correlationIdPrefix: "stacks" },
+      );
       return { ok: data.ok, failures: data.failures };
     },
     enabled: !!stackId && enabled,
@@ -387,11 +255,9 @@ export function useStackPrerequisites(stackId: string, enabled = true) {
 }
 
 export function useStackPlan(stackId: string, enabled = true) {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["stackPlan", stackId],
-    queryFn: () => fetchStackPlan(stackId, correlationId),
+    queryKey: queryKeys.stacks.plan(stackId),
+    queryFn: () => fetchStackPlan(stackId),
     enabled: !!stackId && enabled,
     staleTime: 0,
     gcTime: 2 * 60 * 1000,
@@ -399,8 +265,6 @@ export function useStackPlan(stackId: string, enabled = true) {
 }
 
 export function useStackApply() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: ({
       stackId,
@@ -408,7 +272,7 @@ export function useStackApply() {
     }: {
       stackId: string;
       options: ApplyStackRequest;
-    }) => applyStack(stackId, options, correlationId),
+    }) => applyStack(stackId, options),
     onSuccess: () => {
       // The HTTP response just confirms the apply started.
       // Final results come via Socket.IO events.
@@ -494,13 +358,13 @@ export function useStackApplyProgress(stackId: string) {
         finalResult: data,
       }));
       // Invalidate all stack and application queries so data refreshes
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.detail(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.plan(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.status(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.history(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
 
       // Toast notification
       if (data.error) {
@@ -526,15 +390,14 @@ export function useStackApplyProgress(stackId: string) {
 }
 
 export function useStackStatus(stackId: string) {
-  const correlationId = generateCorrelationId();
   const { connected } = useSocket();
 
   // Subscribe to stacks channel for push updates
   useSocketChannel(Channel.STACKS, !!stackId);
 
   return useQuery({
-    queryKey: ["stackStatus", stackId],
-    queryFn: () => fetchStackStatus(stackId, correlationId),
+    queryKey: queryKeys.stacks.status(stackId),
+    queryFn: () => fetchStackStatus(stackId),
     enabled: !!stackId,
     refetchInterval: connected ? false : 5000,
     staleTime: 2000,
@@ -544,11 +407,9 @@ export function useStackStatus(stackId: string) {
 }
 
 export function useStackHistory(stackId: string) {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["stackHistory", stackId],
-    queryFn: () => fetchStackHistory(stackId, correlationId),
+    queryKey: queryKeys.stacks.history(stackId),
+    queryFn: () => fetchStackHistory(stackId),
     enabled: !!stackId,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000,
@@ -557,13 +418,12 @@ export function useStackHistory(stackId: string) {
 
 export function useDeleteStack() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (stackId: string) => deleteStack(stackId, correlationId),
+    mutationFn: (stackId: string) => deleteStack(stackId),
     onSuccess: () => {
       toast.success("Stack deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete stack: ${(error instanceof Error ? error.message : String(error))}`);
@@ -572,10 +432,8 @@ export function useDeleteStack() {
 }
 
 export function useStackDestroy() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
-    mutationFn: (stackId: string) => destroyStack(stackId, correlationId),
+    mutationFn: (stackId: string) => destroyStack(stackId),
     onSuccess: () => {
       // HTTP response just confirms the destroy started.
       // Final results come via Socket.IO events.
@@ -611,14 +469,14 @@ export function useStackDestroyProgress(stackId: string | null) {
       setDestroying(false);
       setResult(data);
 
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       if (stackId) {
-        queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-        queryClient.invalidateQueries({ queryKey: ["stackStatus", stackId] });
-        queryClient.invalidateQueries({ queryKey: ["stackHistory", stackId] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.stacks.detail(stackId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.stacks.status(stackId) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.stacks.history(stackId) });
       }
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
 
       if (data.error) {
         toast.error(`Stack destroy failed: ${data.error}`);
@@ -649,9 +507,9 @@ export function useUpdateStackParameterValues() {
       parameterValues: Record<string, string | number | boolean>;
     }) => updateStackParameterValues(stackId, parameterValues),
     onSuccess: (_, { stackId }) => {
-      queryClient.invalidateQueries({ queryKey: ["stack", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackPlan", stackId] });
-      queryClient.invalidateQueries({ queryKey: ["stackValidation", stackId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.detail(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.plan(stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.validation(stackId) });
     },
     onError: (error: Error) => {
       toast.error(`Failed to save parameters: ${(error instanceof Error ? error.message : String(error))}`);

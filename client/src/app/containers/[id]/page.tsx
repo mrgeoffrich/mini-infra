@@ -1,14 +1,18 @@
 import { useParams, useNavigate } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LogViewer } from "@/components/containers/LogViewer";
+import { ContainerNetworksCard } from "./_components/container-networks-card";
 import { ContainerStatusBadge } from "../ContainerStatusBadge";
-import { useContainerActions } from "@/hooks/use-container-actions";
+import { useContainerActions, containerDetailKey } from "@/hooks/use-container-actions";
 import { ContainerInfo } from "@mini-infra/types/containers";
+import { ApiRoute, Channel, ServerEvent } from "@mini-infra/types";
+import { useSocket, useSocketChannel, useSocketEvent } from "@/hooks/use-socket";
+import { apiFetch } from "@/lib/api-client";
 import {
   IconArrowLeft,
   IconPlayerPlay,
@@ -18,29 +22,35 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 
-function generateCorrelationId(): string {
-  return `container-detail-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
 
 async function fetchContainer(containerId: string): Promise<ContainerInfo> {
-  const response = await fetch(`/api/containers/${containerId}`, {
-    headers: {
-      "x-request-id": generateCorrelationId(),
-    },
-    credentials: "include",
+  return apiFetch<ContainerInfo>(ApiRoute.containers.get(containerId), {
+    correlationIdPrefix: "container-detail",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || "Failed to fetch container details");
-  }
-
-  return response.json();
 }
 
 export default function ContainerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  // Subscribe to the containers channel for push updates (mirrors
+  // useContainers.ts) so this single-container view doesn't need to poll
+  // while the socket is connected.
+  useSocketChannel(Channel.CONTAINERS, !!id);
+
+  useSocketEvent(
+    ServerEvent.CONTAINER_STATUS,
+    (data) => {
+      if (id && data.id === id) {
+        queryClient.invalidateQueries({ queryKey: containerDetailKey(id) });
+      }
+    },
+    !!id,
+  );
 
   const {
     data: container,
@@ -48,10 +58,10 @@ export default function ContainerDetailPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ["container", id],
+    queryKey: containerDetailKey(id ?? ""),
     queryFn: () => fetchContainer(id!),
     enabled: !!id,
-    refetchInterval: 5000, // Refresh every 5 seconds
+    refetchInterval: connected ? false : POLL_INTERVAL_DISCONNECTED,
     retry: 3,
   });
 
@@ -253,6 +263,13 @@ export default function ContainerDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Networks Card */}
+      <ContainerNetworksCard
+        containerId={container.id}
+        containerName={container.name}
+        onMutated={refetch}
+      />
 
       {/* Volumes Card */}
       {container.volumes.length > 0 && (

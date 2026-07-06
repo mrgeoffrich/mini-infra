@@ -1,85 +1,64 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import type { ApiResponse } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 async function fetchTlsSettings(): Promise<Record<string, string>> {
-  const response = await fetch("/api/tls/settings", {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch TLS settings: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.data || {};
+  return (
+    (await apiFetch<Record<string, string>>(ApiRoute.tls.settings(), {
+      correlationIdPrefix: "tls-settings",
+    })) ?? {}
+  );
 }
 
 async function updateTlsSettings(
   settings: Record<string, string>
 ): Promise<void> {
-  const response = await fetch("/api/tls/settings", {
+  await apiFetch<void>(ApiRoute.tls.settings(), {
     method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(settings),
+    body: settings,
+    correlationIdPrefix: "tls-settings",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to save settings");
-  }
 }
 
 async function testTlsConnectivity(
   settings: Record<string, string>
 ): Promise<{ success: boolean; error?: string }> {
-  const response = await fetch("/api/tls/connectivity/test", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(settings),
-  });
+  // The server can report `success: false` in a 2xx response for a failed
+  // connectivity check (not a request error), so this opts out of
+  // apiFetch's default unwrap/throw-on-`success:false` behavior.
+  const response = await apiFetch<ApiResponse<{ error?: string }>>(
+    ApiRoute.tls.connectivityTest(),
+    {
+      method: "POST",
+      body: settings,
+      unwrap: false,
+      correlationIdPrefix: "tls-connectivity-test",
+    }
+  );
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error || "Failed to test connection");
-  }
-
-  const data = await response.json();
   // Backend returns: { success: boolean, data: { isValid: boolean, error?: string }, message?: string }
   // Transform to frontend format: { success: boolean, error?: string }
   return {
-    success: data.success,
-    error: data.data?.error || data.message || undefined,
+    success: response.success,
+    error: response.data?.error || response.message || undefined,
   };
 }
 
 async function fetchTlsContainers(): Promise<string[]> {
-  const response = await fetch("/api/tls/containers", {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch containers: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data.data?.containers || [];
+  return (
+    (
+      await apiFetch<{ containers: string[] }>(ApiRoute.tls.containers(), {
+        correlationIdPrefix: "tls-containers",
+      })
+    )?.containers ?? []
+  );
 }
 
 export function useTlsSettings() {
   return useQuery({
-    queryKey: ["settings", "tls"],
+    queryKey: queryKeys.settings.tlsSettings,
     queryFn: fetchTlsSettings,
   });
 }
@@ -90,7 +69,7 @@ export function useUpdateTlsSettings() {
   return useMutation({
     mutationFn: updateTlsSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["settings", "tls"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettings });
       toast.success("TLS settings saved successfully");
     },
     onError: (error: Error) => {
@@ -117,7 +96,7 @@ export function useTestTlsConnectivity() {
 
 export function useTlsContainers() {
   return useQuery({
-    queryKey: ["tls", "containers"],
+    queryKey: queryKeys.tls.containers,
     queryFn: fetchTlsContainers,
     staleTime: 30000, // Consider data fresh for 30 seconds
     retry: 1,

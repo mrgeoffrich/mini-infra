@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ContainerLogLine, ContainerLogEvent, ContainerLogOptions } from "@mini-infra/types/containers";
-import { DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ClientEvent, ServerEvent } from "@mini-infra/types";
+import { DEFAULT_LOG_TAIL_LINES, MAX_LOG_TAIL_LINES, ClientEvent, ServerEvent, ApiRoute } from "@mini-infra/types";
 import { useSocket } from "./use-socket";
 
 interface UseContainerLogsOptions extends ContainerLogOptions {
@@ -86,7 +86,7 @@ export function useContainerLogs(options: UseContainerLogsOptions): UseContainer
     if (since) params.set("since", since);
     if (until) params.set("until", until);
 
-    const url = `/api/containers/${containerId}/logs/stream?${params.toString()}`;
+    const url = `${ApiRoute.containers.logsStream(containerId)}?${params.toString()}`;
     const eventSource = new EventSource(url, { withCredentials: true });
     eventSourceRef.current = eventSource;
 

@@ -1,28 +1,27 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   DnsZonesResponse,
   DnsZoneRecordsResponse,
   DnsRefreshResponse,
   DnsHostnameCheckResult,
+  ApiResponse,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
+
+// These endpoints return the full `{ success, data }` envelope to the
+// caller (page.tsx reads `data?.data?.zones`, `result.data.zonesUpdated`,
+// etc.) rather than the unwrapped `data` — so every DNS query/mutation here
+// opts out of apiFetch's default unwrapping via `unwrap: false`.
 
 export function useDnsZones() {
   return useQuery<DnsZonesResponse>({
-    queryKey: ["dns-zones"],
-    queryFn: async () => {
-      const response = await fetch("/api/dns/zones", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch DNS zones",
-        }));
-        throw new Error(errorData.message || "Failed to fetch DNS zones");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.dns.zones,
+    queryFn: () =>
+      apiFetch<DnsZonesResponse>(ApiRoute.dns.zones(), {
+        unwrap: false,
+        correlationIdPrefix: "dns-zones",
+      }),
     staleTime: 60_000,
     refetchOnReconnect: true,
   });
@@ -30,21 +29,12 @@ export function useDnsZones() {
 
 export function useDnsZoneRecords(zoneId: string) {
   return useQuery<DnsZoneRecordsResponse>({
-    queryKey: ["dns-zone-records", zoneId],
-    queryFn: async () => {
-      const response = await fetch(`/api/dns/zones/${zoneId}/records`, {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch DNS records",
-        }));
-        throw new Error(errorData.message || "Failed to fetch DNS records");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.dns.zoneRecords(zoneId),
+    queryFn: () =>
+      apiFetch<DnsZoneRecordsResponse>(ApiRoute.dns.zoneRecords(zoneId), {
+        unwrap: false,
+        correlationIdPrefix: "dns-zone-records",
+      }),
     enabled: !!zoneId,
     staleTime: 60_000,
   });
@@ -54,51 +44,30 @@ export function useRefreshDnsCache() {
   const queryClient = useQueryClient();
 
   return useMutation<DnsRefreshResponse, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/dns/refresh", {
+    mutationFn: () =>
+      apiFetch<DnsRefreshResponse>(ApiRoute.dns.refresh(), {
         method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to refresh DNS cache",
-        }));
-        throw new Error(errorData.message || "Failed to refresh DNS cache");
-      }
-
-      return response.json();
-    },
+        unwrap: false,
+        correlationIdPrefix: "dns-refresh",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["dns-zones"] });
-      queryClient.invalidateQueries({ queryKey: ["dns-zone-records"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dns.zones });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dns.zoneRecordsAll });
     },
   });
 }
 
-interface DnsValidateResponse {
-  success: boolean;
-  data: DnsHostnameCheckResult;
-}
-
 export function useDnsValidateHostname(hostname: string) {
-  return useQuery<DnsValidateResponse>({
-    queryKey: ["dns-validate", hostname],
-    queryFn: async () => {
-      const response = await fetch(
-        `/api/dns/validate/${encodeURIComponent(hostname)}`,
-        { credentials: "include" }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to validate hostname",
-        }));
-        throw new Error(errorData.message || "Failed to validate hostname");
-      }
-
-      return response.json();
-    },
+  return useQuery<ApiResponse<DnsHostnameCheckResult>>({
+    queryKey: queryKeys.dns.validate(hostname),
+    queryFn: () =>
+      apiFetch<ApiResponse<DnsHostnameCheckResult>>(
+        ApiRoute.dns.validate(encodeURIComponent(hostname)),
+        {
+          unwrap: false,
+          correlationIdPrefix: "dns-validate",
+        }
+      ),
     enabled: !!hostname && hostname.includes("."),
     staleTime: 30_000,
   });

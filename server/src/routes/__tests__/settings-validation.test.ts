@@ -5,7 +5,8 @@ import {
   ValidationResult,
 } from "@mini-infra/types";
 
-const { mockPrisma, mockLogger, mockConfigService, mockConfigFactory } = vi.hoisted(() => ({
+const { mockPrisma, mockLogger, mockConfigService, mockConfigFactory, mockGithubAppValidate } = vi.hoisted(() => ({
+  mockGithubAppValidate: vi.fn(),
   mockPrisma: {
     systemSettings: {
       findMany: vi.fn(),
@@ -105,6 +106,12 @@ vi.mock("../../services/configuration-factory", () => ({
     .mockImplementation(function() { return mockConfigFactory; }),
 }));
 
+// Mock the GitHub App service singleton — github-app is validated by its own
+// on-demand service rather than the configuration factory.
+vi.mock("../../services/github-app/github-app-service", () => ({
+  githubAppService: { validate: mockGithubAppValidate },
+}));
+
 import settingsValidationRouter from "../settings-validation";
 
 describe("Settings Validation API Routes", () => {
@@ -161,6 +168,12 @@ describe("Settings Validation API Routes", () => {
       service: "docker",
       status: "connected",
       lastChecked: new Date(),
+    });
+
+    mockGithubAppValidate.mockResolvedValue({
+      isValid: true,
+      message: "GitHub App connected",
+      responseTimeMs: 120,
     });
   });
 
@@ -314,7 +327,7 @@ describe("Settings Validation API Routes", () => {
       expect(mockPrisma.systemSettings.updateMany).not.toHaveBeenCalled();
     });
 
-    it("should return 400 for invalid service", async () => {
+    it("should return 400 for an unknown service", async () => {
       const response = await request(app)
         .post("/api/settings/validate/invalid-service")
         .send({})
@@ -322,8 +335,69 @@ describe("Settings Validation API Routes", () => {
 
       expect(response.body).toMatchObject({
         error: "Bad Request",
-        message:
-          "Invalid service 'invalid-service'. Must be one of: docker, cloudflare, azure, system, deployments, haproxy, tls, github-app, tailscale",
+        message: expect.stringContaining(
+          "Service 'invalid-service' does not support connectivity validation",
+        ),
+      });
+    });
+
+    it("should return 400 for a service with no live validator (haproxy)", async () => {
+      // haproxy/system/deployments are settings categories with no connectivity
+      // check — they must be rejected cleanly, not throw and record an "error" row.
+      const response = await request(app)
+        .post("/api/settings/validate/haproxy")
+        .send({})
+        .expect(400);
+
+      expect(response.body.message).toContain(
+        "does not support connectivity validation",
+      );
+      expect(mockConfigFactory.create).not.toHaveBeenCalled();
+      expect(mockPrisma.connectivityStatus.create).not.toHaveBeenCalled();
+    });
+
+    it("should validate github-app via its own service, not the factory", async () => {
+      mockGithubAppValidate.mockResolvedValue({
+        isValid: true,
+        message: "GitHub App connected (mini-infra), 96 repositories accessible",
+        responseTimeMs: 200,
+      });
+      mockPrisma.connectivityStatus.create.mockResolvedValue({});
+
+      const response = await request(app)
+        .post("/api/settings/validate/github-app")
+        .send({})
+        .expect(200);
+
+      expect(response.body).toMatchObject({
+        success: true,
+        message: "github-app service validation successful",
+        data: { service: "github-app", isValid: true },
+      });
+
+      // Dispatched to the dedicated github-app service, never the factory.
+      expect(mockGithubAppValidate).toHaveBeenCalled();
+      expect(mockConfigFactory.create).not.toHaveBeenCalled();
+
+      expect(mockPrisma.connectivityStatus.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          service: "github-app",
+          status: "connected",
+        }),
+      });
+    });
+
+    it("maps the azure service name to the storage-azure category", async () => {
+      mockConfigService.validate.mockResolvedValue(mockValidationResult);
+      mockPrisma.connectivityStatus.create.mockResolvedValue({});
+
+      await request(app)
+        .post("/api/settings/validate/azure")
+        .send({})
+        .expect(200);
+
+      expect(mockConfigFactory.create).toHaveBeenCalledWith({
+        category: "storage-azure",
       });
     });
 

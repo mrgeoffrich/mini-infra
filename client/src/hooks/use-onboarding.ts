@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { useSystemSettings } from "@/hooks/use-settings";
+import { apiFetch } from "@/lib/api-client";
 
 const ONBOARDING_FILTER = {
   category: "system" as const,
@@ -20,20 +22,10 @@ export function useOnboardingStatus() {
 }
 
 async function completeOnboardingRequest(): Promise<void> {
-  const response = await fetch("/api/onboarding/complete", {
+  await apiFetch<void>(ApiRoute.onboarding.complete(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    correlationIdPrefix: "onboarding",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to complete onboarding: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  if (!data.success) {
-    throw new Error(data.error || "Failed to complete onboarding");
-  }
 }
 
 export function useCompleteOnboarding() {
@@ -43,11 +35,17 @@ export function useCompleteOnboarding() {
     mutationFn: completeOnboardingRequest,
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["systemSettings", ONBOARDING_FILTER],
+        queryKey: [...queryKeys.settings.systemSettings, ONBOARDING_FILTER],
       });
-      queryClient.invalidateQueries({ queryKey: ["systemSettings"] });
-      queryClient.invalidateQueries({ queryKey: ["selfBackupConfig"] });
-      queryClient.invalidateQueries({ queryKey: ["tlsSettings"] });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.systemSettings,
+      });
+      // Refresh the self-backup config (cached under "self-backup-config" in
+      // use-self-backup.ts) and the TLS settings form (cached under
+      // ["settings","tls"] in use-tls-settings.ts) so onboarding-completion
+      // changes show up without waiting for a natural refetch.
+      queryClient.invalidateQueries({ queryKey: queryKeys.selfBackup.config });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettings });
     },
   });
 

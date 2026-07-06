@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getLogger } from "../../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import tableDataService from "../../services/postgres-server/table-data-service";
-import { SORT_ORDERS } from "@mini-infra/types";
+import { SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const logger = getLogger("db", "table-data");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId and :dbId
@@ -34,7 +34,7 @@ const tableDataRequestSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables
  * List all tables in the database with metadata
  */
-router.get("/", requirePermission('postgres:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
@@ -75,7 +75,7 @@ router.get("/", requirePermission('postgres:read'), async (req, res) => {
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables/:tableName/data
  * Get paginated data from a specific table with optional filtering and sorting
  */
-router.get("/:tableName/data", requirePermission('postgres:read'), async (req, res) => {
+router.get("/:tableName/data", requirePermission(Permission.PostgresRead), async (req, res) => {
   try {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);

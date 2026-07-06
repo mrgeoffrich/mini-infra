@@ -10,12 +10,16 @@ const log = {
 } as any;
 
 function buildPrisma(
-  envRow: { egressGatewayIp: string | null } | null,
+  envRow: { egressGatewayIp: string | null; egressFirewallEnabled?: boolean } | null,
   egressResource: { name: string; metadata: unknown } | null = null,
 ) {
+  // The egress firewall defaults ON in these fixtures so the existing injection
+  // tests exercise the happy path. Pass `egressFirewallEnabled: false`
+  // explicitly to cover the opt-out gate.
+  const row = envRow === null ? null : { egressFirewallEnabled: true, ...envRow };
   return {
     environment: {
-      findUnique: vi.fn().mockResolvedValue(envRow),
+      findUnique: vi.fn().mockResolvedValue(row),
     },
     infraResource: {
       findFirst: vi.fn().mockResolvedValue(egressResource),
@@ -75,6 +79,19 @@ describe('resolveEgressEnv', () => {
     const prisma = buildPrisma({ egressGatewayIp: null });
     const env = await resolveEgressEnv(prisma, 'env-1', false);
     expect(env).toEqual({});
+    expect(prisma.infraResource.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('returns empty when egressFirewallEnabled is false (firewall opt-out)', async () => {
+    // Gateway is provisioned (egressGatewayIp set) but the operator has the
+    // firewall switched off — no proxy env should be injected.
+    const prisma = buildPrisma(
+      { egressGatewayIp: '172.30.16.3', egressFirewallEnabled: false },
+      { name: 'env1-egress', metadata: { subnet: '172.30.16.0/24' } },
+    );
+    const env = await resolveEgressEnv(prisma, 'env-1', false);
+    expect(env).toEqual({});
+    // Short-circuits after the env read — never touches the InfraResource.
     expect(prisma.infraResource.findFirst).not.toHaveBeenCalled();
   });
 
@@ -149,6 +166,19 @@ describe('attachEgressNetworkIfNeeded', () => {
     await attachEgressNetworkIfNeeded(prisma, cm, 'container-1', 'env-1', false, log);
 
     expect(cm.connectToNetwork).not.toHaveBeenCalled();
+  });
+
+  it('skips connect when egressFirewallEnabled is false (firewall opt-out)', async () => {
+    const prisma = buildPrisma(
+      { egressGatewayIp: '172.30.16.3', egressFirewallEnabled: false },
+      { name: 'env1-egress', metadata: { subnet: '172.30.16.0/24' } },
+    );
+    const cm = buildContainerManager();
+
+    await attachEgressNetworkIfNeeded(prisma, cm, 'container-1', 'env-1', false, log);
+
+    expect(cm.connectToNetwork).not.toHaveBeenCalled();
+    expect(prisma.infraResource.findFirst).not.toHaveBeenCalled();
   });
 
   it('skips connect when egress InfraResource is missing', async () => {

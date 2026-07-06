@@ -3,7 +3,34 @@ import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
   NETWORK_PROTOCOLS,
+  APPLICATIONS_NETWORK_PURPOSE,
+  isHaproxyRoutedServiceType,
+  type StackResourceInput,
+  type StackServiceType,
 } from "@mini-infra/types";
+
+/**
+ * Network declarations that put an application's container onto the
+ * environment's HAProxy `applications` network. HAProxy-routed service types
+ * (StatelessWeb / AdoptedWeb) must join it for traffic to flow — returned as
+ * both the stack-level resource input (so the purpose resolves to
+ * `<environment>-applications` at apply time) and the service-level
+ * `joinResourceNetworks` membership. Non-routed types get `undefined` for
+ * both. The server enforces the same invariant at apply time; declaring it
+ * here keeps the stored definition self-describing across new/edit/adopt.
+ */
+export function applicationsNetworkDeclaration(serviceType: StackServiceType): {
+  resourceInputs: StackResourceInput[] | undefined;
+  joinResourceNetworks: string[] | undefined;
+} {
+  if (!isHaproxyRoutedServiceType(serviceType)) {
+    return { resourceInputs: undefined, joinResourceNetworks: undefined };
+  }
+  return {
+    resourceInputs: [{ type: "docker-network", purpose: APPLICATIONS_NETWORK_PURPOSE }],
+    joinResourceNetworks: [APPLICATIONS_NETWORK_PURPOSE],
+  };
+}
 
 // ---- Shared sub-schemas for application forms ----
 
@@ -31,8 +58,26 @@ export const healthCheckSchema = z.object({
   startPeriod: z.number().int().min(0),
 });
 
+// Matches the full-hostname format enforced elsewhere for HAProxy routes
+// (see client/src/components/haproxy/add-route-dialog.tsx).
+const HOSTNAME_REGEX = /^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+// Field-level routing validation is intentionally lenient on `hostname` only
+// with respect to emptiness: a non-routed service (e.g. Stateful) keeps a
+// leftover `routing` object with an empty hostname, and that must not fail
+// validation. The "hostname is required when routing is enabled" rule is
+// enforced by `requireRoutingHostnameWhenEnabled` on the final create/edit
+// schemas, so that error only fires (and only surfaces) when the routing step
+// is actually in play. A non-empty hostname must still be a valid DNS name —
+// this is what a real Cloudflare DNS record / ACME certificate gets issued
+// for, so garbage input here fails silently much further downstream instead.
 export const routingSchema = z.object({
-  hostname: z.string().min(1, "Hostname is required"),
+  hostname: z
+    .string()
+    .refine(
+      (value) => value.length === 0 || HOSTNAME_REGEX.test(value),
+      "Must be a valid hostname (e.g. app.example.com)",
+    ),
   listeningPort: z.number().int().min(1).max(65535),
   enableSsl: z.boolean().optional(),
   enableTunnel: z.boolean().optional(),
@@ -71,6 +116,28 @@ export type ApplicationRoutingData = z.infer<
   typeof applicationRoutingBaseSchema
 >;
 
+/**
+ * Require a hostname only when routing is enabled. Applied as a superRefine on
+ * the final create/edit schemas (not the mergeable base, which must stay a
+ * ZodObject). The issue path targets `routing.hostname` so the RoutingCard's
+ * field-level message still renders it.
+ */
+function requireRoutingHostnameWhenEnabled(
+  data: { enableRouting: boolean; routing?: { hostname?: string } },
+  ctx: z.RefinementCtx,
+): void {
+  if (
+    data.enableRouting &&
+    (!data.routing || data.routing.hostname?.trim().length === 0 || !data.routing.hostname)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["routing", "hostname"],
+      message: "Hostname is required",
+    });
+  }
+}
+
 // ---- Create form schema (includes deploy + health check options) ----
 
 export const createApplicationFormSchema = z
@@ -84,7 +151,8 @@ export const createApplicationFormSchema = z
     deployImmediately: z.boolean(),
   })
   .merge(applicationConfigBaseSchema)
-  .merge(applicationRoutingBaseSchema);
+  .merge(applicationRoutingBaseSchema)
+  .superRefine(requireRoutingHostnameWhenEnabled);
 
 export type CreateApplicationFormData = z.infer<
   typeof createApplicationFormSchema
@@ -126,7 +194,8 @@ export const editApplicationFormSchema = z
     dockerTag: z.string().min(1, "Tag is required"),
   })
   .merge(applicationConfigBaseSchema)
-  .merge(applicationRoutingBaseSchema);
+  .merge(applicationRoutingBaseSchema)
+  .superRefine(requireRoutingHostnameWhenEnabled);
 
 export type EditApplicationFormData = z.infer<typeof editApplicationFormSchema>;
 

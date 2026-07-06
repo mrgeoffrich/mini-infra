@@ -5,7 +5,9 @@ import {
   SessionStatus,
   AgentSession,
 } from "../lib/agent-chat-types";
+import { ApiRoute } from "@mini-infra/types";
 import type { AgentPersistedMessage } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 import { fetchConversationDetail } from "./use-agent-conversations";
 
 const REDACTED_THINKING_PLACEHOLDER = "Thinking content is redacted.";
@@ -262,11 +264,13 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
     async function restoreMostRecent() {
       try {
-        const res = await fetch("/api/agent/conversations?limit=1", {
-          credentials: "include",
-        });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { conversations: Array<{ id: string }> };
+        const url = new URL(ApiRoute.agent.conversations(), window.location.origin);
+        url.searchParams.set("limit", "1");
+        const data = await apiFetch<{ conversations: Array<{ id: string }> }>(
+          url.toString(),
+          { unwrap: false, correlationIdPrefix: "agent-restore" },
+        );
+        if (cancelled) return;
         if (!data.conversations?.length || cancelled) return;
 
         const latest = data.conversations[0];
@@ -295,11 +299,11 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
   // Notify backend when the user's route changes during an active session
   useEffect(() => {
     if (!session || !currentPath) return;
-    fetch(`/api/agent/sessions/${session.sessionId}/context`, {
+    apiFetch(ApiRoute.agent.sessionContext(session.sessionId), {
       method: "PUT",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ currentPath }),
+      body: { currentPath },
+      unwrap: false,
+      correlationIdPrefix: "agent-context",
     }).catch(() => {
       // Non-critical — ignore failures
     });
@@ -318,7 +322,7 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
         reconnectAttemptedRef.current = false;
       }
 
-      const url = `/api/agent/sessions/${sessionId}/stream`;
+      const url = ApiRoute.agent.sessionStream(sessionId);
       const eventSource = new EventSource(url, { withCredentials: true });
       eventSourceRef.current = eventSource;
 
@@ -662,23 +666,19 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
       try {
         // Always create a new session. Follow-ups are handled via session resume
         // (sdkSessionId) by linking to the existing conversation.
-        const response = await fetch("/api/agent/sessions", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message,
-            currentPath,
-            conversationId: activeConversationIdRef.current ?? undefined,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => "Unknown error");
-          throw new Error(`Failed to create session: ${errorText}`);
-        }
-
-        const data = (await response.json()) as { sessionId: string; conversationId: string };
+        const data = await apiFetch<{ sessionId: string; conversationId: string }>(
+          ApiRoute.agent.sessions(),
+          {
+            method: "POST",
+            unwrap: false,
+            correlationIdPrefix: "agent-session-create",
+            body: {
+              message,
+              currentPath,
+              conversationId: activeConversationIdRef.current ?? undefined,
+            },
+          },
+        );
         const newSession: AgentSession = {
           sessionId: data.sessionId,
           conversationId: data.conversationId,
@@ -736,9 +736,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
     setSessionStatus("done");
 
     // Tell the backend to cancel the session (fire-and-forget)
-    fetch(`/api/agent/sessions/${session.sessionId}`, {
+    apiFetch(ApiRoute.agent.session(session.sessionId), {
       method: "DELETE",
-      credentials: "include",
+      unwrap: false,
+      correlationIdPrefix: "agent-session-delete",
     }).catch(() => {
       // Ignore errors on cleanup
     });
@@ -752,9 +753,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
     // Delete the session in the background
     if (session) {
-      fetch(`/api/agent/sessions/${session.sessionId}`, {
+      apiFetch(ApiRoute.agent.session(session.sessionId), {
         method: "DELETE",
-        credentials: "include",
+        unwrap: false,
+        correlationIdPrefix: "agent-session-delete",
       }).catch(() => {
         // Ignore errors on cleanup
       });
@@ -777,9 +779,10 @@ export function useAgentSession(currentPath?: string): UseAgentSessionResult {
 
       // Delete any active session
       if (session) {
-        fetch(`/api/agent/sessions/${session.sessionId}`, {
+        apiFetch(ApiRoute.agent.session(session.sessionId), {
           method: "DELETE",
-          credentials: "include",
+          unwrap: false,
+          correlationIdPrefix: "agent-session-delete",
         }).catch(() => {});
       }
 

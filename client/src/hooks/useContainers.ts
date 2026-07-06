@@ -3,26 +3,22 @@ import { useState, useCallback, useEffect } from "react";
 import {
   ContainerInfo,
   ContainerListResponse,
-  ContainerListApiResponse,
   ContainerFilters,
   ContainerQueryParams,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s when socket is not connected
 
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `containers-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
 async function fetchContainers(
   queryParams: ContainerQueryParams = {},
-  correlationId: string,
 ): Promise<ContainerListResponse> {
-  const url = new URL(`/api/containers`, window.location.origin);
+  const url = new URL(ApiRoute.containers.list(), window.location.origin);
 
   // Add query parameters
   if (queryParams.page !== undefined)
@@ -35,49 +31,11 @@ async function fetchContainers(
   if (queryParams.status) url.searchParams.set("status", queryParams.status);
   if (queryParams.name) url.searchParams.set("name", queryParams.name);
   if (queryParams.image) url.searchParams.set("image", queryParams.image);
-  if (queryParams.deploymentId) url.searchParams.set("deploymentId", queryParams.deploymentId);
   if (queryParams.deploymentManaged !== undefined) url.searchParams.set("deploymentManaged", queryParams.deploymentManaged.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<ContainerListResponse>(url.toString(), {
+    correlationIdPrefix: "containers",
   });
-
-  if (!response.ok) {
-    // Handle specific HTTP status codes
-    if (response.status === 503) {
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Docker service is not available");
-      } catch {
-        throw new Error(
-          "Docker service is not available. Please try again later.",
-        );
-      }
-    }
-
-    if (response.status === 504) {
-      try {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Docker API request timed out");
-      } catch {
-        throw new Error("Docker API request timed out. Please try again.");
-      }
-    }
-
-    throw new Error(`Failed to fetch containers: ${response.statusText}`);
-  }
-
-  const data: ContainerListApiResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch containers");
-  }
-
-  return data.data;
 }
 
 export interface UseContainersOptions {
@@ -111,7 +69,7 @@ export function useContainers(options: UseContainersOptions = {}) {
   useSocketEvent(
     ServerEvent.CONTAINERS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["containers"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
     },
     enabled,
   );
@@ -121,7 +79,7 @@ export function useContainers(options: UseContainersOptions = {}) {
     ServerEvent.CONTAINER_STATUS,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
-        { queryKey: ["containers"] },
+        { queryKey: queryKeys.containers.all },
         (old) => {
           if (!old) return old;
           return {
@@ -141,7 +99,7 @@ export function useContainers(options: UseContainersOptions = {}) {
     ServerEvent.CONTAINER_REMOVED,
     (data) => {
       queryClient.setQueriesData<ContainerListResponse>(
-        { queryKey: ["containers"] },
+        { queryKey: queryKeys.containers.all },
         (old) => {
           if (!old) return old;
           const filtered = old.containers.filter((c) => c.id !== data.id);
@@ -156,11 +114,9 @@ export function useContainers(options: UseContainersOptions = {}) {
     enabled,
   );
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["containers", queryParams],
-    queryFn: () => fetchContainers(queryParams, correlationId),
+    queryKey: queryKeys.containers.list(queryParams),
+    queryFn: () => fetchContainers(queryParams),
     enabled,
     refetchInterval,
     placeholderData: keepPreviousData,
@@ -168,21 +124,17 @@ export function useContainers(options: UseContainersOptions = {}) {
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
-            // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
-              return false;
-            }
+            if (error instanceof ApiRequestError) {
+              // Don't retry on authentication errors
+              if (error.isAuth) {
+                return false;
+              }
 
-            // Don't retry immediately on Docker service unavailable
-            // Let the polling interval handle reconnection attempts
-            if (
-              error.message.includes("Docker service is not available") ||
-              error.message.includes("Service Unavailable")
-            ) {
-              return false;
+              // Don't retry immediately on Docker service unavailable (503).
+              // Let the polling interval handle reconnection attempts.
+              if (error.status === 503) {
+                return false;
+              }
             }
 
             // Retry up to the specified number of times for other errors
@@ -291,7 +243,6 @@ export function useContainerFilters(initialFilters: ContainerFilters = { status:
     sortOrder,
     page,
     limit,
-    deploymentId: filters.deploymentId,
     deploymentManaged: filters.deploymentManaged,
     filters,
   };

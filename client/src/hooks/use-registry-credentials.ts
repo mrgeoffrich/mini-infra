@@ -1,15 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   RegistryCredential,
   CreateRegistryCredentialRequest,
   UpdateRegistryCredentialRequest,
   RegistryTestResult,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `registry-credentials-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // API Response Types
@@ -44,24 +41,14 @@ interface DeleteResponse {
 
 async function fetchRegistryCredentials(
   includeInactive: boolean,
-  correlationId: string,
 ): Promise<RegistryCredentialListResponse> {
-  const url = new URL(`/api/registry-credentials`, window.location.origin);
+  const url = new URL(ApiRoute.registryCredentials.list(), window.location.origin);
   url.searchParams.set("includeInactive", includeInactive.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch registry credentials: ${response.statusText}`);
-  }
-
-  const data: RegistryCredentialListResponse = await response.json();
+  const data = await apiFetch<RegistryCredentialListResponse>(
+    url.pathname + url.search,
+    { correlationIdPrefix: "registry-credentials", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch registry credentials");
@@ -72,21 +59,11 @@ async function fetchRegistryCredentials(
 
 async function fetchRegistryCredential(
   id: string,
-  correlationId: string,
 ): Promise<RegistryCredentialResponse> {
-  const response = await fetch(`/api/registry-credentials/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch registry credential: ${response.statusText}`);
-  }
-
-  const data: RegistryCredentialResponse = await response.json();
+  const data = await apiFetch<RegistryCredentialResponse>(
+    ApiRoute.registryCredentials.get(id),
+    { correlationIdPrefix: "registry-credentials", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch registry credential");
@@ -97,23 +74,16 @@ async function fetchRegistryCredential(
 
 async function createRegistryCredential(
   credential: CreateRegistryCredentialRequest,
-  correlationId: string,
 ): Promise<RegistryCredentialResponse> {
-  const response = await fetch(`/api/registry-credentials`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+  const data = await apiFetch<RegistryCredentialResponse>(
+    ApiRoute.registryCredentials.list(),
+    {
+      method: "POST",
+      body: credential,
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-    body: JSON.stringify(credential),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create registry credential: ${response.statusText}`);
-  }
-
-  const data: RegistryCredentialResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to create registry credential");
@@ -125,23 +95,16 @@ async function createRegistryCredential(
 async function updateRegistryCredential(
   id: string,
   credential: UpdateRegistryCredentialRequest,
-  correlationId: string,
 ): Promise<RegistryCredentialResponse> {
-  const response = await fetch(`/api/registry-credentials/${id}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+  const data = await apiFetch<RegistryCredentialResponse>(
+    ApiRoute.registryCredentials.get(id),
+    {
+      method: "PUT",
+      body: credential,
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-    body: JSON.stringify(credential),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update registry credential: ${response.statusText}`);
-  }
-
-  const data: RegistryCredentialResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update registry credential");
@@ -150,24 +113,15 @@ async function updateRegistryCredential(
   return data;
 }
 
-async function deleteRegistryCredential(
-  id: string,
-  correlationId: string,
-): Promise<DeleteResponse> {
-  const response = await fetch(`/api/registry-credentials/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+async function deleteRegistryCredential(id: string): Promise<DeleteResponse> {
+  const data = await apiFetch<DeleteResponse>(
+    ApiRoute.registryCredentials.get(id),
+    {
+      method: "DELETE",
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete registry credential: ${response.statusText}`);
-  }
-
-  const data: DeleteResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to delete registry credential");
@@ -176,24 +130,15 @@ async function deleteRegistryCredential(
   return data;
 }
 
-async function setDefaultCredential(
-  id: string,
-  correlationId: string,
-): Promise<DeleteResponse> {
-  const response = await fetch(`/api/registry-credentials/${id}/set-default`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+async function setDefaultCredential(id: string): Promise<DeleteResponse> {
+  const data = await apiFetch<DeleteResponse>(
+    ApiRoute.registryCredentials.setDefault(id),
+    {
+      method: "POST",
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to set default credential: ${response.statusText}`);
-  }
-
-  const data: DeleteResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to set default credential");
@@ -202,24 +147,15 @@ async function setDefaultCredential(
   return data;
 }
 
-async function testRegistryCredential(
-  id: string,
-  correlationId: string,
-): Promise<RegistryTestResponse> {
-  const response = await fetch(`/api/registry-credentials/${id}/test`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+async function testRegistryCredential(id: string): Promise<RegistryTestResponse> {
+  const data = await apiFetch<RegistryTestResponse>(
+    ApiRoute.registryCredentials.test(id),
+    {
+      method: "POST",
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to test credential: ${response.statusText}`);
-  }
-
-  const data: RegistryTestResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to test credential");
@@ -228,30 +164,21 @@ async function testRegistryCredential(
   return data;
 }
 
-async function testRegistryConnection(
-  params: {
-    registryUrl: string;
-    username: string;
-    password: string;
-    testImage?: string;
-  },
-  correlationId: string,
-): Promise<RegistryTestResponse> {
-  const response = await fetch(`/api/registry-credentials/test-connection`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+async function testRegistryConnection(params: {
+  registryUrl: string;
+  username: string;
+  password: string;
+  testImage?: string;
+}): Promise<RegistryTestResponse> {
+  const data = await apiFetch<RegistryTestResponse>(
+    ApiRoute.registryCredentials.testConnection(),
+    {
+      method: "POST",
+      body: params,
+      correlationIdPrefix: "registry-credentials",
+      unwrap: false,
     },
-    body: JSON.stringify(params),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to test connection: ${response.statusText}`);
-  }
-
-  const data: RegistryTestResponse = await response.json();
+  );
 
   if (!data.success) {
     throw new Error(data.message || "Failed to test connection");
@@ -263,6 +190,10 @@ async function testRegistryConnection(
 // ====================
 // React Query Hooks
 // ====================
+
+function isAuthError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.isAuth;
+}
 
 export interface UseRegistryCredentialsOptions {
   enabled?: boolean;
@@ -281,11 +212,9 @@ export function useRegistryCredentials(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["registry-credentials", includeInactive],
-    queryFn: () => fetchRegistryCredentials(includeInactive, correlationId),
+    queryKey: [...queryKeys.registryCredentials.all, includeInactive],
+    queryFn: () => fetchRegistryCredentials(includeInactive),
     enabled,
     refetchInterval,
     retry:
@@ -293,10 +222,7 @@ export function useRegistryCredentials(
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -320,21 +246,17 @@ export function useRegistryCredential(
   options: UseRegistryCredentialOptions = {}
 ) {
   const { enabled = true, retry = 3 } = options;
-  const correlationId = generateCorrelationId();
 
   return useQuery({
-    queryKey: ["registry-credentials", id],
-    queryFn: () => fetchRegistryCredential(id, correlationId),
+    queryKey: [...queryKeys.registryCredentials.all, id],
+    queryFn: () => fetchRegistryCredential(id),
     enabled: enabled && !!id,
     retry:
       typeof retry === "function"
         ? retry
         : (failureCount: number, error: Error) => {
             // Don't retry on authentication errors
-            if (
-              error.message.includes("401") ||
-              error.message.includes("Unauthorized")
-            ) {
+            if (isAuthError(error)) {
               return false;
             }
             // Retry up to the specified number of times for other errors
@@ -349,21 +271,19 @@ export function useRegistryCredential(
 // Mutation hooks for CRUD operations
 export function useCreateRegistryCredential() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (credential: CreateRegistryCredentialRequest) =>
-      createRegistryCredential(credential, correlationId),
+      createRegistryCredential(credential),
     onSuccess: () => {
       // Invalidate and refetch registry credentials
-      queryClient.invalidateQueries({ queryKey: ["registry-credentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
     },
   });
 }
 
 export function useUpdateRegistryCredential() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -372,13 +292,13 @@ export function useUpdateRegistryCredential() {
     }: {
       id: string;
       credential: UpdateRegistryCredentialRequest;
-    }) => updateRegistryCredential(id, credential, correlationId),
+    }) => updateRegistryCredential(id, credential),
     onSuccess: (_, variables) => {
       // Invalidate and refetch registry credentials
-      queryClient.invalidateQueries({ queryKey: ["registry-credentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
       // Update the specific credential in cache
       queryClient.invalidateQueries({
-        queryKey: ["registry-credentials", variables.id],
+        queryKey: [...queryKeys.registryCredentials.all, variables.id],
       });
     },
   });
@@ -386,49 +306,43 @@ export function useUpdateRegistryCredential() {
 
 export function useDeleteRegistryCredential() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => deleteRegistryCredential(id, correlationId),
+    mutationFn: (id: string) => deleteRegistryCredential(id),
     onSuccess: (_, id) => {
       // Invalidate and refetch registry credentials
-      queryClient.invalidateQueries({ queryKey: ["registry-credentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
       // Remove the specific credential from cache
-      queryClient.removeQueries({ queryKey: ["registry-credentials", id] });
+      queryClient.removeQueries({ queryKey: [...queryKeys.registryCredentials.all, id] });
     },
   });
 }
 
 export function useSetDefaultCredential() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
-    mutationFn: (id: string) => setDefaultCredential(id, correlationId),
+    mutationFn: (id: string) => setDefaultCredential(id),
     onSuccess: () => {
       // Invalidate and refetch registry credentials
-      queryClient.invalidateQueries({ queryKey: ["registry-credentials"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.registryCredentials.all });
     },
   });
 }
 
 export function useTestRegistryCredential() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
-    mutationFn: (id: string) => testRegistryCredential(id, correlationId),
+    mutationFn: (id: string) => testRegistryCredential(id),
   });
 }
 
 export function useTestRegistryConnection() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: (params: {
       registryUrl: string;
       username: string;
       password: string;
       testImage?: string;
-    }) => testRegistryConnection(params, correlationId),
+    }) => testRegistryConnection(params),
   });
 }

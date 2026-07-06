@@ -141,6 +141,30 @@ export const MAX_LOG_TAIL_LINES = 5000;
 /** Socket.IO transports in priority order (must match between client and server) */
 export const SOCKET_TRANSPORTS = ["websocket", "polling"] as const;
 
+/**
+ * Socket.IO reconnection/backoff tuning (Phase 6 of
+ * docs/planning/not-shipped/frontend-backend-contract-plan.md).
+ *
+ * Previously the client left these entirely to library defaults, which
+ * meant the behavior was implicit and undocumented. These make the policy
+ * deliberate: keep retrying indefinitely (a dashboard should never "give
+ * up" and strand the user on silently-stale data) with a jittered backoff
+ * so a server restart isn't hammered by every open tab reconnecting in
+ * lockstep.
+ */
+
+/** Keep trying to reconnect until the tab is closed or disconnect() is called explicitly. */
+export const SOCKET_RECONNECTION_ATTEMPTS = Infinity;
+
+/** Initial delay before the first reconnection attempt, in milliseconds. */
+export const SOCKET_RECONNECTION_DELAY_MS = 1000;
+
+/** Upper bound the exponential backoff delay is capped at, in milliseconds. */
+export const SOCKET_RECONNECTION_DELAY_MAX_MS = 10000;
+
+/** Jitter factor applied to each backoff delay (0-1) to avoid thundering-herd reconnects. */
+export const SOCKET_RECONNECTION_RANDOMIZATION_FACTOR = 0.5;
+
 /** Docker container IDs are 12 (short) or 64 (full) hex characters */
 const DOCKER_ID_RE = /^[a-f0-9]{12,64}$/;
 

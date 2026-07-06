@@ -38,6 +38,7 @@ import {
   IconShield,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { queryKeys } from "@mini-infra/types";
 import {
   useAzureProviderConfig,
   useStorageConnectivity,
@@ -124,8 +125,8 @@ export const AzureProviderConfig = React.memo(function AzureProviderConfig({
         connectionString: data.connectionString,
       });
 
-      await queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
-      await queryClient.invalidateQueries({ queryKey: ["storage"] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
       setValidationState({
         isValidating: false,
         isSuccess: true,

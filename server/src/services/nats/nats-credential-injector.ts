@@ -2,11 +2,34 @@ import type { PrismaClient } from "../../generated/prisma/client";
 import type { StackContainerConfig } from "@mini-infra/types";
 import { getNatsControlPlaneService } from "./nats-control-plane-service";
 import { getVaultKVService } from "../vault/vault-kv-service";
+import {
+  natsCredsFileName,
+  natsCredsFilePath,
+  type NatsCredsFileSpec,
+} from "./nats-creds-volume";
 
 export interface NatsInjectorContext {
-  /** Stack the calling service belongs to. Required only for `nats-signer-seed`
-   *  resolution (looks up the per-stack signing-key seed in Vault KV). */
+  /** Stack the calling service belongs to. Required for `nats-signer-seed` /
+   *  `nats-account-public` resolution (looks up the per-stack signing-key seed
+   *  in Vault KV) and for `nats-creds` (names the per-stack creds file). */
   stackId?: string;
+}
+
+/**
+ * Result of resolving a service's `dynamicEnv`.
+ *
+ * `values` are plain env-var overrides merged onto the container's env at
+ * create time. `credsFiles` are minted `.creds` blobs the **create path** must
+ * persist into the stack's `nats_creds` docker volume (Phase 5, §4.3) — the
+ * injector itself performs no Docker side effects, so the same `resolve()` is
+ * safe to call from the apply-time dry-run without writing anything. For a
+ * `nats-creds` entry the secret is delivered via `credsFiles` (file on a
+ * mounted volume) and `values` carries only the file **path**
+ * (`NATS_CREDS_FILE`), never the secret itself.
+ */
+export interface NatsInjectorResult {
+  values: Record<string, string>;
+  credsFiles: NatsCredsFileSpec[];
 }
 
 /**
@@ -42,13 +65,24 @@ export class NatsCredentialInjector {
     credentialId: string | null,
     containerConfig: StackContainerConfig,
     ctx: NatsInjectorContext = {},
-  ): Promise<Record<string, string> | null> {
+  ): Promise<NatsInjectorResult | null> {
     const dynamicEnv = containerConfig.dynamicEnv;
     if (!dynamicEnv) return null;
 
-    const hasNatsCreds = Object.values(dynamicEnv).some((src) => src.kind === "nats-creds");
+    // Both `nats-creds` (env-blob delivery) and `nats-creds-file` (file
+    // delivery, Phase 5) mint a credential and so require a bound profile.
+    const hasNatsCreds = Object.values(dynamicEnv).some(
+      (src) => src.kind === "nats-creds" || src.kind === "nats-creds-file",
+    );
     if (hasNatsCreds && !credentialId) {
       throw new Error("Service declares nats-creds but no NATS credential profile is bound");
+    }
+    // Only the file variant needs the stackId — it names the per-stack creds
+    // file (`<stackId>.creds`). Plain `nats-creds` keeps working with no stackId
+    // (generic app roles, JobPool runners) so its contract is unchanged.
+    const hasNatsCredsFile = Object.values(dynamicEnv).some((src) => src.kind === "nats-creds-file");
+    if (hasNatsCredsFile && !ctx.stackId) {
+      throw new Error("Service declares nats-creds-file but no stackId was provided to the injector");
     }
 
     const hasSigner = Object.values(dynamicEnv).some((src) => src.kind === "nats-signer-seed");
@@ -63,6 +97,7 @@ export class NatsCredentialInjector {
 
     const service = getNatsControlPlaneService(this.prisma);
     const values: Record<string, string> = {};
+    const credsFiles: NatsCredsFileSpec[] = [];
     let mintedCreds: string | null = null;
 
     // Resolve `nats-url` differently for host-mode containers. The default
@@ -78,7 +113,7 @@ export class NatsCredentialInjector {
       if (src.kind === "nats-url") {
         values[key] = isHostMode ? await service.getHostUrl() : await service.getInternalUrl();
       }
-      if (src.kind === "nats-creds") {
+      if (src.kind === "nats-creds" || src.kind === "nats-creds-file") {
         if (!credentialId) continue;
         if (!mintedCreds) {
           const profile = await this.prisma.natsCredentialProfile.findUniqueOrThrow({
@@ -87,7 +122,23 @@ export class NatsCredentialInjector {
           });
           mintedCreds = await service.mintCredentials(profile);
         }
-        values[key] = mintedCreds;
+        if (src.kind === "nats-creds") {
+          // Legacy env-blob delivery: the `.creds` body rides in the env var,
+          // loaded once by the app at connect. Unchanged from before Phase 5 —
+          // generic NATS consumers (app roles, JobPool runners) rely on this.
+          values[key] = mintedCreds;
+        } else {
+          // Phase 5, §4.3 file delivery: write the secret to a per-stack file
+          // on a mounted volume and expose only its path via the env. nats.go
+          // re-reads the file on every reconnect, so a rotated credential is
+          // picked up without a container recreate. Queue the file once per
+          // stack (mint is cached) so multiple nats-creds-file env keys on one
+          // service share the single `<stackId>.creds` file.
+          if (!credsFiles.some((f) => f.fileName === natsCredsFileName(ctx.stackId!))) {
+            credsFiles.push({ fileName: natsCredsFileName(ctx.stackId!), contents: mintedCreds });
+          }
+          values[key] = natsCredsFilePath(ctx.stackId!);
+        }
       }
       if (src.kind === "nats-signer-seed") {
         values[key] = await this.resolveSignerSeed(ctx.stackId!, src.signer);
@@ -97,7 +148,8 @@ export class NatsCredentialInjector {
       }
     }
 
-    return Object.keys(values).length > 0 ? values : null;
+    if (Object.keys(values).length === 0 && credsFiles.length === 0) return null;
+    return { values, credsFiles };
   }
 
   /**

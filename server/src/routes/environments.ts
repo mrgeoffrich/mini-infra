@@ -1,9 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import {
-  CreateEnvironmentRequest,
-  UpdateEnvironmentRequest,
-} from '@mini-infra/types';
+import { CreateEnvironmentRequest, UpdateEnvironmentRequest, Permission } from '@mini-infra/types';
 import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
 import prisma from '../lib/prisma';
@@ -34,7 +31,7 @@ const listEnvironmentsSchema = z.object({
 
 
 
-router.get('/', requirePermission('environments:read'), async (req, res) => {
+router.get('/', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     // Validate query parameters
     const validatedQuery = listEnvironmentsSchema.parse(req.query);
@@ -76,7 +73,7 @@ router.get('/', requirePermission('environments:read'), async (req, res) => {
 });
 
 
-router.post('/', requirePermission('environments:write'), async (req, res) => {
+router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
     const userId = (req as { user?: { id?: string } }).user?.id;
@@ -126,7 +123,7 @@ router.post('/', requirePermission('environments:write'), async (req, res) => {
 });
 
 
-router.get('/:id', requirePermission('environments:read'), async (req, res) => {
+router.get('/:id', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -151,7 +148,7 @@ router.get('/:id', requirePermission('environments:read'), async (req, res) => {
 });
 
 
-router.put('/:id', requirePermission('environments:write'), async (req, res) => {
+router.put('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
     const request: UpdateEnvironmentRequest = req.body;
@@ -191,7 +188,7 @@ router.put('/:id', requirePermission('environments:write'), async (req, res) => 
 
 
 // Check if environment can be deleted (pre-flight validation)
-router.get('/:id/delete-check', requirePermission('environments:read'), async (req, res) => {
+router.get('/:id/delete-check', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -228,7 +225,7 @@ router.get('/:id/delete-check', requirePermission('environments:read'), async (r
   }
 });
 
-router.delete('/:id', requirePermission('environments:write'), async (req, res) => {
+router.delete('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
     const { deleteNetworks = 'false' } = req.query;
@@ -335,7 +332,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
  * POST /api/environments/:id/remediate-haproxy
  * Trigger full HAProxy remediation for an environment
  */
-router.post('/:id/remediate-haproxy', requirePermission('environments:write'), async (req, res) => {
+router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -392,7 +389,7 @@ router.post('/:id/remediate-haproxy', requirePermission('environments:write'), a
  * GET /api/environments/:id/haproxy-status
  * Get HAProxy configuration status for an environment
  */
-router.get('/:id/haproxy-status', requirePermission('environments:read'), async (req, res) => {
+router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -467,7 +464,7 @@ router.get('/:id/haproxy-status', requirePermission('environments:read'), async 
  * GET /api/environments/:id/remediation-preview
  * Get preview of what HAProxy remediation would do
  */
-router.get('/:id/remediation-preview', requirePermission('environments:read'), async (req, res) => {
+router.get('/:id/remediation-preview', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -523,7 +520,7 @@ router.get('/:id/remediation-preview', requirePermission('environments:read'), a
  * GET /api/environments/:id/migration-preview
  * Check if environment needs migration from legacy to stack-managed HAProxy
  */
-router.get('/:id/migration-preview', requirePermission('environments:read'), async (req, res) => {
+router.get('/:id/migration-preview', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -555,7 +552,7 @@ router.get('/:id/migration-preview', requirePermission('environments:read'), asy
  * POST /api/environments/:id/migrate-haproxy
  * Migrate legacy HAProxy to stack-managed HAProxy (fire-and-forget with Socket.IO progress)
  */
-router.post('/:id/migrate-haproxy', requirePermission('environments:write'), async (req, res) => {
+router.post('/:id/migrate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
 

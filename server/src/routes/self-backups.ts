@@ -8,12 +8,14 @@ import {
   StorageService,
 } from "../services/storage/storage-service";
 import { calculateBackupHealth } from "../services/backup/backup-health-calculator";
+import { resolveSelfBackupObjectName } from "../services/backup/self-backup-seed-restore";
 import type {
   BackupHistoryResponse,
   BackupHealthResponse,
   SelfBackupInfo,
   StorageProviderId,
 } from "@mini-infra/types";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("backup", "self-backups");
 const router = express.Router();
@@ -21,7 +23,7 @@ const router = express.Router();
 /**
  * GET / - List backup history (paginated, filterable)
  */
-router.get("/", requirePermission('backups:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const {
       status,
@@ -123,7 +125,7 @@ router.get("/", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /health - Get backup health status
  */
-router.get("/health", requirePermission('backups:read'), async (req, res) => {
+router.get("/health", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const health = await calculateBackupHealth();
 
@@ -150,7 +152,7 @@ router.get("/health", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /:id - Get specific backup details
  */
-router.get("/:id", requirePermission('backups:read'), async (req, res) => {
+router.get("/:id", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -207,7 +209,7 @@ router.get("/:id", requirePermission('backups:read'), async (req, res) => {
 /**
  * GET /:id/download - Generate SAS URL and redirect to download
  */
-router.get("/:id/download", requirePermission('backups:read'), async (req, res) => {
+router.get("/:id/download", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -249,17 +251,10 @@ router.get("/:id/download", requirePermission('backups:read'), async (req, res) 
 
     // Resolve the object name. Azure's storageObjectUrl is the full Blob URL
     // (`https://{account}.blob.core.windows.net/{container}/{blob}`); Drive's
-    // is `<folderId>/<fileName>`. For Drive we use the file name verbatim;
-    // for Azure we strip the host + container.
+    // is `<folderId>/<fileName>`. Shared with the identity-seed restore path so
+    // both agree on the object name.
     const provider = backup.storageProviderAtCreation as StorageProviderId;
-    let objectName: string;
-    if (provider === "azure") {
-      const urlParts = backup.storageObjectUrl.split("/");
-      objectName =
-        urlParts.length >= 5 ? urlParts.slice(4).join("/") : backup.fileName;
-    } else {
-      objectName = backup.fileName;
-    }
+    const objectName = resolveSelfBackupObjectName(backup);
 
     if (!objectName) {
       return res.status(400).json({
@@ -377,7 +372,7 @@ router.get("/:id/download", requirePermission('backups:read'), async (req, res) 
 /**
  * DELETE /:id - Delete backup record (not blob itself)
  */
-router.delete("/:id", requirePermission('backups:write'), async (req, res) => {
+router.delete("/:id", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
 

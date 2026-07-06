@@ -72,6 +72,5 @@ See [service-addons-plan](not-shipped/service-addons-plan.md) Phase 1 for a work
 ## Notes
 
 - **Already-seeded plans:** every plan in the list except `native-heap-profiling` is already seeded to Linear. The new sections won't auto-propagate to existing Linear issues. Decide per-plan whether to manually update the issue body, or accept the doc as source-of-truth and let the Linear ticket stay as a frozen snapshot.
-- **The `plan-to-mk` skill** extracts and propagates the new fields, so any *new* plan seeded after the spec change will carry them into `mk` automatically.
-- **Strict-sequential plans don't need `[blocks-by]` brackets** in §8 — the omitted-bracket form means strict sequential. Most plans here are strict sequential and §8 needs no change.
+- **Strict-sequential plans don't need `[blocks-by]` brackets** in the phase tracking list — the omitted-bracket form means strict sequential. Most plans here are strict sequential and need no change.
 - **Delete this file** once the list is empty.

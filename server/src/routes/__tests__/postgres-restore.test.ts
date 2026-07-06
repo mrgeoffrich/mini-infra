@@ -253,6 +253,7 @@ describe("PostgreSQL Restore API", () => {
       userId: "test-user-id",
       database: "testdb",
       name: "Test Database",
+      environmentId: "env-a",
     };
 
     const mockQueuedRestore = {
@@ -318,6 +319,84 @@ describe("PostgreSQL Restore API", () => {
           }),
         }),
       );
+
+      expect(mockPrismaClient.stackService.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            stack: { environmentId: "env-a" },
+          }),
+        }),
+      );
+    });
+
+    it("should route to the null-environment restore-executor stack for a null-environment database", async () => {
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue({
+        ...mockDatabase,
+        environmentId: null,
+      });
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
+      mockPrismaClient.stackService.findFirst.mockResolvedValue({
+        stackId: "restore-stack-1",
+      });
+      mockBackupValidator.validateBackupFile.mockResolvedValue({
+        isValid: true,
+        sizeBytes: 1024,
+        lastModified: new Date(),
+      });
+      mockRunJobPool.mockResolvedValue({
+        ok: true,
+        runId: "restore-operation-1",
+        instanceRowId: "row-1",
+        containerId: "container-1",
+      });
+      mockPrismaClient.restoreOperation.findUnique.mockResolvedValue({
+        ...mockQueuedRestore,
+      });
+
+      await request(app)
+        .post("/api/postgres/restore/test-db-id")
+        .send({
+          backupUrl: "https://storage.blob.core.windows.net/backups/backup.sql",
+          confirmRestore: true,
+        })
+        .expect(201);
+
+      expect(mockPrismaClient.stackService.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            stack: { environmentId: null },
+          }),
+        }),
+      );
+    });
+
+    it("should return 503 when no restore-executor stack is applied for the database's environment", async () => {
+      mockPrismaClient.postgresDatabase.findFirst.mockResolvedValue(
+        mockDatabase,
+      );
+      mockPrismaClient.restoreOperation.findFirst.mockResolvedValue(null);
+      mockPrismaClient.backupOperation.findFirst.mockResolvedValue(null);
+      // Simulates a restore-executor stack existing, but not for this
+      // database's environment — the query's `where` filter excludes it.
+      mockPrismaClient.stackService.findFirst.mockResolvedValue(null);
+      mockBackupValidator.validateBackupFile.mockResolvedValue({
+        isValid: true,
+        sizeBytes: 1024,
+        lastModified: new Date(),
+      });
+
+      const response = await request(app)
+        .post("/api/postgres/restore/test-db-id")
+        .send({
+          backupUrl: "https://storage.blob.core.windows.net/backups/backup.sql",
+          confirmRestore: true,
+        })
+        .expect(503);
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toBe("Restore template not deployed");
+      expect(mockRunJobPool).not.toHaveBeenCalled();
     });
 
     it("should return 404 if database not found", async () => {
