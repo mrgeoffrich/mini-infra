@@ -13,6 +13,8 @@ const {
   mockPrisma,
   mockListContainers,
   mockGetDockerInstance,
+  mockResolveFwAgentHealthBaseUrl,
+  mockScrapeAgentHealth,
 } = vi.hoisted(() => ({
   mockPrisma: {
     systemSettings: {
@@ -21,6 +23,8 @@ const {
   },
   mockListContainers: vi.fn(),
   mockGetDockerInstance: vi.fn(),
+  mockResolveFwAgentHealthBaseUrl: vi.fn(),
+  mockScrapeAgentHealth: vi.fn(),
 }));
 
 vi.mock("../../../lib/prisma", () => ({ default: mockPrisma }));
@@ -31,6 +35,13 @@ vi.mock("../../docker", () => ({
       getDockerInstance: mockGetDockerInstance,
     }),
   },
+}));
+
+// Stub the out-of-band /healthz scrape so the connection-state path is
+// exercised deterministically without standing up an agent or Docker.
+vi.mock("../agent-health-scraper", () => ({
+  resolveFwAgentHealthBaseUrl: mockResolveFwAgentHealthBaseUrl,
+  scrapeAgentHealth: mockScrapeAgentHealth,
 }));
 
 // We do NOT exercise the bootstrap path in these tests — that's covered
@@ -49,6 +60,9 @@ import {
   getFwAgentConfig,
   isFwAgentHealthy,
   restartFwAgent,
+  composeFwAgentStatus,
+  getFwAgentConnState,
+  _pollAgentConnStateOnceForTest,
   FW_AGENT_STARTUP_STEPS,
 } from "../fw-agent-sidecar";
 
@@ -59,6 +73,8 @@ beforeEach(() => {
   mockGetDockerInstance.mockResolvedValue({
     listContainers: mockListContainers,
   });
+  mockResolveFwAgentHealthBaseUrl.mockReset();
+  mockScrapeAgentHealth.mockReset();
 });
 
 describe("getFwAgentConfig", () => {
@@ -156,5 +172,87 @@ describe("restartFwAgent + FW_AGENT_STARTUP_STEPS", () => {
     expect(result).toEqual({ containerId: "fw-id-1" });
     expect(events.map((e) => e.step)).toEqual([...FW_AGENT_STARTUP_STEPS]);
     expect(events.every((e) => e.status === "completed")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 — out-of-band /healthz scrape + status composition
+// ---------------------------------------------------------------------------
+
+describe("out-of-band conn-state scrape (Phase 3)", () => {
+  it("caches auth-failed from a scraped /healthz", async () => {
+    mockResolveFwAgentHealthBaseUrl.mockResolvedValue("http://172.17.0.1:9750");
+    mockScrapeAgentHealth.mockResolvedValue({
+      status: "auth-failed",
+      lastHeartbeatAgeMs: 42_000,
+    });
+
+    await _pollAgentConnStateOnceForTest();
+
+    expect(mockScrapeAgentHealth).toHaveBeenCalledWith("http://172.17.0.1:9750");
+    expect(getFwAgentConnState()).toBe("auth-failed");
+  });
+
+  it("caches null when the agent's /healthz can't be resolved/reached", async () => {
+    mockResolveFwAgentHealthBaseUrl.mockResolvedValue(null);
+    await _pollAgentConnStateOnceForTest();
+    expect(getFwAgentConnState()).toBeNull();
+    expect(mockScrapeAgentHealth).not.toHaveBeenCalled();
+  });
+});
+
+describe("composeFwAgentStatus (Phase 3)", () => {
+  it("flags authFailing when the container runs but /healthz reports auth-failed", () => {
+    const status = composeFwAgentStatus({
+      ownContainerId: "server-abc",
+      found: { id: "fw-id-1", state: "running" },
+      healthy: false, // in-band heartbeat can't publish under auth failure
+      connState: "auth-failed",
+    });
+    expect(status.authFailing).toBe(true);
+    expect(status.natsConnState).toBe("auth-failed");
+    // available stays false — the in-band health is not fresh — but the UI can
+    // now distinguish this from "still starting".
+    expect(status.available).toBe(false);
+    expect(status.containerRunning).toBe(true);
+    expect(status.containerId).toBe("fw-id-1");
+  });
+
+  it("does not flag authFailing for a healthy connected agent", () => {
+    const status = composeFwAgentStatus({
+      ownContainerId: "server-abc",
+      found: { id: "fw-id-1", state: "running" },
+      healthy: true,
+      connState: "connected",
+    });
+    expect(status.authFailing).toBe(false);
+    expect(status.available).toBe(true);
+    expect(status.natsConnState).toBe("connected");
+  });
+
+  it("does not flag authFailing when the container isn't running (still starting)", () => {
+    // connState might momentarily be auth-failed while the container is being
+    // recreated; authFailing requires the container to actually be running.
+    const status = composeFwAgentStatus({
+      ownContainerId: "server-abc",
+      found: null,
+      healthy: false,
+      connState: "auth-failed",
+    });
+    expect(status.authFailing).toBe(false);
+    expect(status.containerRunning).toBe(false);
+    expect(status.available).toBe(false);
+  });
+
+  it("reports the not-in-docker case with no auth-failing signal", () => {
+    const status = composeFwAgentStatus({
+      ownContainerId: null,
+      found: null,
+      healthy: false,
+      connState: null,
+    });
+    expect(status.available).toBe(false);
+    expect(status.authFailing).toBe(false);
+    expect(status.reason).toBe("Not running inside a Docker container");
   });
 });

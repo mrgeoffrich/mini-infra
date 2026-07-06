@@ -7,18 +7,27 @@ import type {
 } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import type { StackContainerManager } from './stack-container-manager';
-import { connectSelfToNetwork } from './self-network-reattach';
+import { connectSelfToNetwork } from './self-network-connect';
+import { createNetworkManager, resourceNetworkName, type NetworkManager } from '../networks';
 
 /**
  * Manages Docker networks and InfraResource records that back a stack's
  * resource outputs and inputs (e.g., shared networks consumed by other stacks).
+ *
+ * All Docker network operations flow through `NetworkManager` — this class
+ * never talks to Docker's network API directly.
  */
 export class StackInfraResourceManager {
+  private networkManager: NetworkManager;
+
   constructor(
     private dockerExecutor: DockerExecutorService,
     private prisma: PrismaClient,
-    private containerManager: StackContainerManager
-  ) {}
+    private containerManager: StackContainerManager,
+    networkManager?: NetworkManager,
+  ) {
+    this.networkManager = networkManager ?? createNetworkManager(dockerExecutor);
+  }
 
   /**
    * Create Docker networks and InfraResource records for resource outputs.
@@ -37,30 +46,35 @@ export class StackInfraResourceManager {
         continue;
       }
 
-      const scope = stack.environmentId ? 'environment' : 'host';
-      const name = stack.environmentId
-        ? `${stack.environment!.name}-${output.purpose}`
-        : `mini-infra-${output.purpose}`;
+      const scope: 'environment' | 'host' = stack.environmentId ? 'environment' : 'host';
+      const name = resourceNetworkName(output.purpose, stack.environmentId ? stack.environment!.name : null);
 
-      const exists = await this.dockerExecutor.networkExists(name);
-      if (!exists) {
+      const labels: Record<string, string> = {
+        'mini-infra.infra-resource': 'true',
+        'mini-infra.resource-purpose': output.purpose,
+        'mini-infra.stack-id': stack.id,
+      };
+      if (stack.environmentId) {
+        labels['mini-infra.environment'] = stack.environmentId;
+      }
+
+      // Every network — egress included — lets Docker's IPAM assign the
+      // subnet. The egress network is normally created up-front during
+      // environment provisioning (see EnvironmentManager.provisionEgressGateway),
+      // so this path only runs as a fallback when it's missing; either way we
+      // don't prescribe a subnet, which is what keeps it from overlapping
+      // other networks on a shared host. `ensure()` is idempotent — a network
+      // that already exists is left alone (mismatches are logged, not
+      // recreated) — so no separate exists-check is needed here.
+      const ensureResult = await this.networkManager.ensure({
+        name,
+        owner: { kind: scope, id: stack.environmentId ?? undefined },
+        purpose: output.purpose,
+        driver: 'bridge',
+        extraLabels: labels,
+      });
+      if (ensureResult.created) {
         log.info({ network: name, purpose: output.purpose, scope }, 'Creating infra resource network');
-        const labels: Record<string, string> = {
-          'mini-infra.infra-resource': 'true',
-          'mini-infra.resource-purpose': output.purpose,
-          'mini-infra.stack-id': stack.id,
-        };
-        if (stack.environmentId) {
-          labels['mini-infra.environment'] = stack.environmentId;
-        }
-
-        // Every network — egress included — lets Docker's IPAM assign the
-        // subnet. The egress network is normally created up-front during
-        // environment provisioning (see EnvironmentManager.provisionEgressGateway),
-        // so this path only runs as a fallback when it's missing; either way we
-        // don't prescribe a subnet, which is what keeps it from overlapping
-        // other networks on a shared host.
-        await this.dockerExecutor.createNetwork(name, '', { driver: 'bridge', labels });
       }
 
       // Use findFirst + create/update instead of upsert because host-scoped resources
@@ -171,12 +185,14 @@ export class StackInfraResourceManager {
         await this.containerManager.connectToNetwork(containerId, netName, aliases);
         log.info({ service: serviceDef.serviceName, network: netName, purpose, aliases }, 'Joined infra resource network');
       } catch (err) {
-        // Ignore "already connected" errors
-        const e = err as { message?: string; statusCode?: number };
-        const msg = e?.message || '';
-        if (!msg.includes('already exists') && e?.statusCode !== 403) {
-          log.warn({ service: serviceDef.serviceName, network: netName, purpose, error: msg }, 'Failed to join infra resource network');
-        }
+        // connectToNetwork delegates to NetworkManager.connect(), which
+        // already treats "already connected" as success (status-code driven,
+        // not message matching) — anything reaching this catch is a genuine
+        // failure, always worth a warning.
+        log.warn(
+          { service: serviceDef.serviceName, network: netName, purpose, error: err instanceof Error ? err.message : String(err) },
+          'Failed to join infra resource network',
+        );
       }
     }
   }
@@ -184,8 +200,23 @@ export class StackInfraResourceManager {
   /**
    * Connect the mini-infra container itself to resource output networks
    * that declare joinSelf: true.
+   *
+   * `environmentId` is the OWNING stack's own `environmentId` (the same
+   * value `reconcileOutputs` above used to derive each output's scope) —
+   * passed through to `connectSelfToNetwork`'s `fallbackIdentity` so its
+   * membership-row bookkeeping never has to guess a network's scope. Before
+   * this was threaded through, every `joinSelf` target defaulted to a
+   * hardcoded `scope: 'host'` guess; harmless for genuinely host-scoped
+   * outputs (vault/nats/dataplane/database) but wrong for an
+   * environment-scoped one (e.g. the egress-gateway stack's own `egress`
+   * resourceOutput) — exactly how a `local-egress` `ManagedNetwork` row
+   * ended up permanently mis-scoped `'host'` in dev (network overhaul Phase
+   * 9 finding: this self-join raced ahead of `compileStackNetworkMemberships`'s
+   * own correct write, and identity is set once, at creation, never
+   * rewritten by a later by-name lookup).
    */
   async joinSelfToOutputNetworks(
+    environmentId: string | null,
     resourceOutputs: StackResourceOutput[],
     outputNetworkMap: Map<string, string>,
     log: Logger
@@ -197,13 +228,18 @@ export class StackInfraResourceManager {
       return;
     }
 
+    const scope: 'environment' | 'host' = environmentId ? 'environment' : 'host';
+
     for (const output of resourceOutputs) {
       if (!output.joinSelf || output.type !== 'docker-network') continue;
 
       const netName = outputNetworkMap.get(output.purpose);
       if (!netName) continue;
 
-      if (await connectSelfToNetwork(this.dockerExecutor, selfId, netName, log)) {
+      const joined = await connectSelfToNetwork(this.dockerExecutor, this.prisma, selfId, netName, log, {
+        scope, environmentId, stackId: null, purpose: output.purpose,
+      });
+      if (joined) {
         log.info({ network: netName, purpose: output.purpose }, 'Mini-infra joined infra resource network (joinSelf)');
       }
     }

@@ -317,6 +317,11 @@ export function useUpdateApplication() {
       toast.success("Application updated successfully");
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.detailAll });
+      // A republish can change a service's declared `joinNetworks` (e.g. via the
+      // Overview Connected Networks card), so refresh the managed-network views
+      // that read it. The change only compiles into live memberships on the
+      // stack's next apply, but this keeps the declared-vs-live delta current.
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
     },
     onError: (error: Error) => {
       toast.error(`Failed to update application: ${error.message}`);

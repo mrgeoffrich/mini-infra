@@ -95,19 +95,18 @@ async function fetchAvailableBackups(
   sortBy: "createdAt" | "sizeBytes" | "name" = "createdAt",
   sortOrder: "asc" | "desc" = "desc",
 ): Promise<BackupBrowserResponse> {
-  // NOTE: `ApiRoute.postgres.restoreBackupsForContainer` only accepts
-  // `containerName` (the real server route is
-  // `GET /api/postgres/restore/backups/:containerName` — no `:databaseId`
-  // segment). This call has appended an extra `/${databaseId}` path segment
-  // since before this migration, which doesn't match the registered route.
-  // Preserved as-is (pre-existing bug, not introduced by this migration) —
-  // see the Phase 4 migration report for the missing-ApiRoute-builder flag.
+  // The server route is `GET /api/postgres/restore/backups/:containerName`
+  // (no `:databaseId` path segment — appending one 404'd). Backups live in a
+  // container shared across databases and are keyed by a `<databaseId>/...`
+  // blob prefix, so we scope to the current database with a `databaseId`
+  // query param that the route filters on.
   const url = new URL(
-    `${ApiRoute.postgres.restoreBackupsForContainer(containerName)}/${databaseId}`,
+    ApiRoute.postgres.restoreBackupsForContainer(containerName),
     window.location.origin,
   );
 
   // Add query parameters
+  url.searchParams.set("databaseId", databaseId);
   url.searchParams.set("page", page.toString());
   url.searchParams.set("limit", limit.toString());
   url.searchParams.set("sortBy", sortBy);

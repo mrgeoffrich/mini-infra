@@ -8,6 +8,12 @@ import fs from "fs/promises";
 import path from "path";
 import type { SelfBackup } from "../../generated/prisma/client";
 import { getDatabaseFilePath } from "../../lib/database-url-parser";
+import {
+  exportEncryptedIdentitySeeds,
+  recordSeedBackupMarker,
+  NATS_SEED_BACKUP_ZIP_ENTRY,
+  type IdentitySeedBackupMeta,
+} from "../nats/nats-identity-seed-backup";
 
 /**
  * SelfBackupExecutor handles the execution of Mini Infra database backups
@@ -89,9 +95,24 @@ export class SelfBackupExecutor {
         backupFilePath,
       }, "SQLite backup created");
 
-      // Step 2: Compress backup file
+      // Step 1b: Export the NATS identity seeds (operator + accounts) as an
+      // AES-256-GCM encrypted blob and ride it along inside the same backup
+      // artifact. Best-effort: a sealed/unavailable Vault, an uninitialised
+      // auth secret, or a pre-bootstrap NATS all yield null and the DB backup
+      // proceeds unchanged. The seeds are NEVER written in plaintext.
+      let seedExport: { blob: Buffer; meta: IdentitySeedBackupMeta } | null = null;
+      try {
+        seedExport = await exportEncryptedIdentitySeeds(this.prisma);
+      } catch (seedError) {
+        getLogger("backup", "self-backup-executor").warn({
+          backupId: backup.id,
+          error: seedError instanceof Error ? seedError.message : "Unknown error",
+        }, "NATS identity-seed export failed; continuing with DB-only backup");
+      }
+
+      // Step 2: Compress backup file (+ the encrypted seed blob when present)
       zipFilePath = path.join(SelfBackupExecutor.TEMP_DIR, fileName);
-      await this.compressBackup(backupFilePath, zipFilePath);
+      await this.compressBackup(backupFilePath, zipFilePath, seedExport?.blob ?? null);
 
       // Get file size
       const stats = await fs.stat(zipFilePath);
@@ -136,6 +157,25 @@ export class SelfBackupExecutor {
         durationSeconds: (durationMs / 1000).toFixed(1),
         fileSizeMB: (fileSize / (1024 * 1024)).toFixed(2),
       }, "Backup completed successfully");
+
+      // Record the last-identity-seed-backup marker only once the artifact is
+      // durably uploaded — so the NATS status surface's timestamp reflects a
+      // seed backup that actually reached storage. Best-effort; a marker-write
+      // failure must not fail the backup.
+      if (seedExport) {
+        try {
+          await recordSeedBackupMarker(seedExport.meta, userId, this.prisma);
+          getLogger("backup", "self-backup-executor").info({
+            backupId: backup.id,
+            identitySeedCount: seedExport.meta.count,
+          }, "NATS identity seeds captured in backup artifact");
+        } catch (markerError) {
+          getLogger("backup", "self-backup-executor").warn({
+            backupId: backup.id,
+            error: markerError instanceof Error ? markerError.message : "Unknown error",
+          }, "Failed to record NATS identity-seed backup marker (non-fatal)");
+        }
+      }
 
       return completedBackup;
 
@@ -238,13 +278,24 @@ export class SelfBackupExecutor {
    * @param backupPath - Path to .db file
    * @param zipPath - Path to output .zip file
    */
-  private async compressBackup(backupPath: string, zipPath: string): Promise<void> {
+  private async compressBackup(
+    backupPath: string,
+    zipPath: string,
+    seedBlob: Buffer | null = null,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
         const zip = new AdmZip();
 
         // Add the backup file to the ZIP
         zip.addLocalFile(backupPath);
+
+        // Add the encrypted NATS identity-seed blob as a named entry when
+        // present. Already AES-256-GCM ciphertext — safe to sit next to the
+        // (unencrypted) DB dump.
+        if (seedBlob) {
+          zip.addFile(NATS_SEED_BACKUP_ZIP_ENTRY, seedBlob);
+        }
 
         // Write the ZIP file
         zip.writeZip(zipPath);

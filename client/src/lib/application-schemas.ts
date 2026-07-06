@@ -3,7 +3,34 @@ import {
   STACK_SERVICE_TYPES,
   RESTART_POLICIES,
   NETWORK_PROTOCOLS,
+  APPLICATIONS_NETWORK_PURPOSE,
+  isHaproxyRoutedServiceType,
+  type StackResourceInput,
+  type StackServiceType,
 } from "@mini-infra/types";
+
+/**
+ * Network declarations that put an application's container onto the
+ * environment's HAProxy `applications` network. HAProxy-routed service types
+ * (StatelessWeb / AdoptedWeb) must join it for traffic to flow — returned as
+ * both the stack-level resource input (so the purpose resolves to
+ * `<environment>-applications` at apply time) and the service-level
+ * `joinResourceNetworks` membership. Non-routed types get `undefined` for
+ * both. The server enforces the same invariant at apply time; declaring it
+ * here keeps the stored definition self-describing across new/edit/adopt.
+ */
+export function applicationsNetworkDeclaration(serviceType: StackServiceType): {
+  resourceInputs: StackResourceInput[] | undefined;
+  joinResourceNetworks: string[] | undefined;
+} {
+  if (!isHaproxyRoutedServiceType(serviceType)) {
+    return { resourceInputs: undefined, joinResourceNetworks: undefined };
+  }
+  return {
+    resourceInputs: [{ type: "docker-network", purpose: APPLICATIONS_NETWORK_PURPOSE }],
+    joinResourceNetworks: [APPLICATIONS_NETWORK_PURPOSE],
+  };
+}
 
 // ---- Shared sub-schemas for application forms ----
 
@@ -56,22 +83,6 @@ export const routingSchema = z.object({
   enableTunnel: z.boolean().optional(),
 });
 
-/**
- * A link from this application's container to another container it needs to
- * reach over the Docker network (e.g. a database). The durable, round-tripped
- * unit is the `networkName` (folded into `containerConfig.joinNetworks`). The
- * `containerName` is a best-effort label captured when the user picks a
- * container — it powers the read-only host hint but can't be recovered from
- * `joinNetworks` alone, so it's optional (re-derived from live network
- * membership when an application is re-opened for editing).
- */
-export const linkedContainerSchema = z.object({
-  containerName: z.string().optional(),
-  networkName: z.string().min(1, "Network is required"),
-});
-
-export type LinkedContainer = z.infer<typeof linkedContainerSchema>;
-
 export const serviceNameSchema = z
   .string()
   .min(1, "Service name is required")
@@ -87,7 +98,6 @@ export const applicationConfigBaseSchema = z.object({
   ports: z.array(portMappingSchema),
   envVars: z.array(envVarSchema),
   volumeMounts: z.array(volumeMountSchema),
-  linkedContainers: z.array(linkedContainerSchema),
   enableHealthCheck: z.boolean(),
   healthCheck: healthCheckSchema.optional(),
   restartPolicy: z.enum(RESTART_POLICIES),
@@ -158,7 +168,6 @@ export const createApplicationDefaults: CreateApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
-  linkedContainers: [],
   enableRouting: true,
   routing: { hostname: "", listeningPort: 8080 },
   restartPolicy: "unless-stopped",
@@ -200,7 +209,6 @@ export const editApplicationDefaults: EditApplicationFormData = {
   ports: [],
   envVars: [],
   volumeMounts: [],
-  linkedContainers: [],
   enableRouting: false,
   routing: undefined,
   restartPolicy: "unless-stopped",

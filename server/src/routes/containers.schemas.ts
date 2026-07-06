@@ -144,7 +144,6 @@ export const ContainerQuerySchema = z.object({
   status: z.string().optional(),
   name: z.string().optional(),
   image: z.string().optional(),
-  deploymentId: z.string().optional(),
 });
 
 export const ContainerListResponseSchema = z.object({

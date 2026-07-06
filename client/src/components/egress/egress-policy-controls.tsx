@@ -9,6 +9,7 @@
 import { useState } from "react";
 import {
   IconAlertCircle,
+  IconAlertTriangle,
   IconCheck,
   IconX,
   IconEye,
@@ -47,6 +48,22 @@ export function GatewayHealthBadge({
     return (
       <Badge variant="outline" className="text-xs text-muted-foreground">
         Unknown
+      </Badge>
+    );
+  }
+
+  // Out-of-band signal (Phase 3): the gateway is running but its NATS creds are
+  // rejected, so it can't subscribe and every push times out. Show this ahead
+  // of the generic "Error" so the *reason* is visible. [design needed —
+  // functional badge reusing the existing badge components; a designer can refine.]
+  if (health.natsConnState === "auth-failed") {
+    return (
+      <Badge
+        variant="outline"
+        className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300"
+      >
+        <IconAlertTriangle className="h-3 w-3 mr-1" />
+        NATS auth failing
       </Badge>
     );
   }

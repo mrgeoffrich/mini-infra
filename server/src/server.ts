@@ -4,6 +4,15 @@ console.log("[STARTUP] Starting Mini Infra server...");
 // level instead of the in-code fallback.
 import { loadLoggingConfig } from "./lib/logging-config";
 loadLoggingConfig();
+// Harden outbound connections (Happy Eyeballs attempt-timeout + IPv4-first)
+// BEFORE any service module (which may make outbound fetches) is imported.
+// Node's 250ms default abandons healthy cross-region connects (e.g. to
+// api.tailscale.com), making `fetch` fail where curl succeeds. See net-runtime.
+import { configureOutboundNetworking } from "./lib/net-runtime";
+const outboundNet = configureOutboundNetworking();
+console.log(
+  `[STARTUP] Outbound networking: dnsResultOrder=${outboundNet.dnsResultOrder} autoSelectFamily=${outboundNet.autoSelectFamily} attemptTimeoutMs=${outboundNet.autoSelectFamilyAttemptTimeoutMs}`,
+);
 console.log("[STARTUP] Importing app module...");
 import { createServer } from "http";
 import v8 from "v8";
@@ -50,6 +59,13 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
+import {
+  NetworkGcScheduler,
+  NetworkConvergenceScheduler,
+  createNetworkManager,
+  convergeAll,
+  backfillNetworkMemberships,
+} from "./services/networks";
 import { JobPoolExitWatcher } from "./services/stacks/job-pool-exit-watcher";
 import { JobPoolCronRegistry } from "./services/stacks/job-pool-cron-registry";
 import { JobPoolNatsRegistry } from "./services/stacks/job-pool-nats-registry";
@@ -66,7 +82,6 @@ import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
-import { reattachSelfToManagedNetworks } from "./services/stacks/self-network-reattach";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
 import { setupHAProxyCrashLoopWatcher } from "./services/haproxy/haproxy-crash-loop-watcher";
@@ -82,6 +97,10 @@ import {
   type ShutdownFn as EgressShutdownFn,
   startFwAgentHealthWatcher,
   stopFwAgentHealthWatcher,
+  startEgressSelfHealSupervisor,
+  stopEgressSelfHealSupervisor,
+  registerEgressCredRefreshHook,
+  unregisterEgressCredRefreshHook,
 } from "./services/egress";
 
 // Global scheduler instances
@@ -105,6 +124,8 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // which both startup and the settings route call to keep it aligned with the
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
+let networkGcScheduler: NetworkGcScheduler | null = null;
+let networkConvergenceScheduler: NetworkConvergenceScheduler | null = null;
 let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
 let jobPoolCronRegistry: JobPoolCronRegistry | null = null;
 let jobPoolNatsRegistry: JobPoolNatsRegistry | null = null;
@@ -164,25 +185,62 @@ const initializeServices = async () => {
     await dockerService.initialize();
     console.log("[STARTUP] ✓ Docker service initialized");
 
-    // Re-attach the server container to its managed infra networks (vault, nats,
-    // dataplane, database, and each env's egress network — every `joinSelf`
-    // infra-resource network). These are joined at stack-apply time, but a
-    // container recreate (e.g. `docker compose up -d`) wipes them and the
-    // already-synced host stacks don't re-apply on boot, so the server would
-    // otherwise be unable to reach Vault/NATS/managed DBs. Best-effort — never
-    // blocks boot. Runs inline now (Docker connected at boot on a configured
-    // host) and again from the onConnect callback below (covers the degraded
-    // worktree case where Docker connects only after the seeder posts the host).
-    const reattachInfraNetworks = async () => {
+    // Network overhaul Phase 6 — one-shot backfill of ManagedNetwork/
+    // NetworkMembership rows from InfraResource + current stack definitions,
+    // for infrastructure that predates the Phase 6 producers. Idempotent and
+    // safe to re-run on every boot (find-or-create throughout — see
+    // services/networks/membership-backfill.ts); best-effort, never blocks
+    // boot. Also re-triggerable on demand via
+    // `POST /api/docker/networks/backfill-memberships`. Runs BEFORE the boot
+    // convergence below so a first-boot-after-upgrade sees a maximally
+    // complete set of desired-state rows to converge against.
+    const runBackfill = async () => {
       try {
         const exec = new DockerExecutorService();
         await exec.initialize();
-        await reattachSelfToManagedNetworks(exec, prisma, logger);
+        await backfillNetworkMemberships(exec, prisma, logger);
       } catch (err) {
-        logger.warn({ err }, "Re-attaching to managed infra networks failed (non-fatal)");
+        logger.warn({ err }, "Network membership backfill failed (non-fatal)");
       }
     };
-    await reattachInfraNetworks();
+    await runBackfill();
+
+    // Network overhaul Phase 8 — general boot convergence. Replaces the old
+    // self-network-reattach.ts boot workaround (which only ever re-derived
+    // the mini-infra server's OWN attachments from `InfraResource` +
+    // `joinSelf`): `convergeAll()` diffs and connects EVERY managed
+    // network's missing memberships across every stack, environment, and
+    // host scope — the server's own `containerName: 'self'` rows on
+    // vault/nats/dataplane/database/egress are just one case of the general
+    // "reality drifted from desired state" problem this now handles. A
+    // container recreate (e.g. `docker compose up -d`) wipes attachments
+    // and the already-synced host stacks don't re-apply on boot, so this
+    // is what restores them. Connect-only — never disconnects anything
+    // (enforceMemberships defaults to false on every network) — so this is
+    // safe to run unconditionally on every boot. Best-effort, never blocks
+    // boot. Runs inline now (Docker connected at boot on a configured host)
+    // and again from the onConnect callback below (covers the degraded
+    // worktree case where Docker connects only after the seeder posts the
+    // host — reuses the same onConnect hook the old workaround relied on).
+    const runBootConvergence = async () => {
+      try {
+        const exec = new DockerExecutorService();
+        await exec.initialize();
+        const networkManager = createNetworkManager(exec);
+        const result = await convergeAll({ prisma, networkManager, dockerExecutor: exec, log: logger });
+        logger.info(
+          {
+            networksCreated: result.networksCreated,
+            membershipsConnected: result.membershipsConnected,
+            membershipsDisconnected: result.membershipsDisconnected,
+          },
+          "Boot network convergence complete — restored attachment count logged above",
+        );
+      } catch (err) {
+        logger.warn({ err }, "Boot network convergence failed (non-fatal)");
+      }
+    };
+    await runBootConvergence();
 
     // Re-provision sidecars after Docker reconnects. On a fresh-boot worktree
     // the DB has no docker host yet, so initialize() lands in degraded mode
@@ -192,9 +250,13 @@ const initializeServices = async () => {
     // Both ensureXxx are idempotent — safe if they already succeeded inline.
     dockerService.onConnect(async () => {
       logger.info("Docker connected, re-provisioning sidecars");
-      // Re-attach to managed infra networks first so Vault/NATS are reachable
-      // for the fw-agent bootstrap (and everything else) below.
-      await reattachInfraNetworks();
+      // Re-run the backfill + boot convergence first so Vault/NATS are
+      // reachable for the fw-agent bootstrap (and everything else) below —
+      // the inline calls above may have run in a degraded state (Docker not
+      // yet connected at that point on a fresh-boot worktree), so both are
+      // safe/idempotent to repeat here now that Docker is actually up.
+      await runBackfill();
+      await runBootConvergence();
       try {
         // ALT-27: fw-agent is now a host-scope stack. The bootstrap is
         // idempotent — if the stack is already applied this is a couple
@@ -312,6 +374,45 @@ const initializeServices = async () => {
     poolInstanceReaper = new PoolInstanceReaper(prisma);
     poolInstanceReaper.start();
     console.log("[STARTUP] ✓ Pool instance reaper initialized");
+
+    // Initialize network GC scheduler (network overhaul Phase 4): a 15-minute
+    // dry-run-only sweep for orphaned `mini-infra.managed=true` networks —
+    // see NetworkGcScheduler for why it never mutates Docker on its own
+    // schedule (POST /api/docker/networks/gc with dryRun:false is the only
+    // way to actually remove anything).
+    console.log("[STARTUP] Initializing network GC scheduler...");
+    networkGcScheduler = new NetworkGcScheduler(prisma, {
+      createNetworkManager: async () => {
+        const executor = new DockerExecutorService();
+        await executor.initialize();
+        return createNetworkManager(executor);
+      },
+    });
+    networkGcScheduler.start();
+    console.log("[STARTUP] ✓ Network GC scheduler initialized");
+
+    // Initialize network convergence scheduler (network overhaul Phase 8):
+    // a periodic full sweep (connect-only unless a network's
+    // enforceMemberships is true) plus debounced, scoped convergence
+    // triggered by Docker `network` events and container `start` events —
+    // see NetworkConvergenceScheduler for the debounce/scoping rationale.
+    // Unlike the GC scheduler above, this one DOES mutate Docker on its own
+    // schedule: connecting a missing membership is always safe (purely
+    // additive), so there is no dry-run gate for that half of its job.
+    console.log("[STARTUP] Initializing network convergence scheduler...");
+    const buildNetworkConvergenceExecutor = async () => {
+      const executor = new DockerExecutorService();
+      await executor.initialize();
+      return executor;
+    };
+    networkConvergenceScheduler = new NetworkConvergenceScheduler(prisma, {
+      createNetworkManager: async () => createNetworkManager(await buildNetworkConvergenceExecutor()),
+      createDockerExecutor: buildNetworkConvergenceExecutor,
+    });
+    networkConvergenceScheduler.start();
+    dockerService.onContainerEvent((event) => networkConvergenceScheduler?.handleContainerEvent(event));
+    dockerService.onNetworkEvent((event) => networkConvergenceScheduler?.handleNetworkEvent(event));
+    console.log("[STARTUP] ✓ Network convergence scheduler initialized");
 
     // Initialize JobPool exit watcher (Phase 2 of job-pool-service-type):
     // subscribes to Docker `die` events to finalise JobPool runs, publish
@@ -517,6 +618,20 @@ const initializeServices = async () => {
       // avoids a slow-NATS cold boot leaving the watcher permanently
       // unstarted (review finding H1).
       startFwAgentHealthWatcher();
+      // Phase 4: start the self-heal supervisor right after the health watcher
+      // — it consumes the watcher's cached auth-failing signal and force-
+      // recreates an egress stack stuck auth-failing (re-minting its creds).
+      // It's feature-flagged (default ON), tolerates a disconnected bus (its
+      // probe is best-effort), and its first tick is deferred a full interval
+      // so the watcher has time to populate a connection state.
+      startEgressSelfHealSupervisor(prisma);
+      // Phase 6: register the live cred-refresh hook on the NATS control plane.
+      // On a NATS identity rotation it re-mints + rewrites each running egress
+      // agent's creds file in place (no recreate); the agent recovers on its
+      // next reconnect. Fully guarded — a push failure defers to the Phase 4
+      // supervisor's recreate. Feature-flagged (egress-fw-agent.live_cred_refresh,
+      // default ON).
+      registerEgressCredRefreshHook(prisma);
       // Probe whether the bus is up *now* so the operator gets a
       // confidence-building startup banner. The 3s budget is short on
       // purpose — Vault unlock + creds fetch typically takes longer than
@@ -899,6 +1014,18 @@ startServer()
         logger.info("Pool instance reaper stopped");
       }
 
+      // Stop network GC scheduler
+      if (networkGcScheduler) {
+        networkGcScheduler.stop();
+        logger.info("Network GC scheduler stopped");
+      }
+
+      // Stop network convergence scheduler
+      if (networkConvergenceScheduler) {
+        networkConvergenceScheduler.stop();
+        logger.info("Network convergence scheduler stopped");
+      }
+
       // Stop JobPool trigger registries before tearing down the bus —
       // the NATS registry's cancel handlers go through the bus.
       if (jobPoolCronRegistry) {
@@ -927,6 +1054,22 @@ startServer()
         stopFwAgentHealthWatcher();
       } catch (err) {
         logger.warn({ err }, "fw-agent health watcher stop failed (non-fatal)");
+      }
+
+      // Stop the self-heal supervisor alongside the health watcher so its
+      // tick can't fire a recreate mid-shutdown.
+      try {
+        stopEgressSelfHealSupervisor();
+      } catch (err) {
+        logger.warn({ err }, "egress self-heal supervisor stop failed (non-fatal)");
+      }
+
+      // Phase 6: clear the live cred-refresh hook so no post-apply push can
+      // fire mid-shutdown.
+      try {
+        unregisterEgressCredRefreshHook();
+      } catch (err) {
+        logger.warn({ err }, "egress live cred refresh hook unregister failed (non-fatal)");
       }
 
       // Drain the system NATS bus before stopping containers — otherwise

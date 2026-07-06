@@ -6,6 +6,7 @@ import {
   IconCheck,
   IconX,
   IconAlertCircle,
+  IconAlertTriangle,
   IconServer,
   IconSettings,
 } from "@tabler/icons-react";
@@ -33,7 +34,28 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-function StatusBadge({ available }: { available: boolean }) {
+function StatusBadge({
+  available,
+  authFailing,
+}: {
+  available: boolean;
+  authFailing: boolean;
+}) {
+  // Out-of-band signal (Phase 3): the agent is running but its NATS creds are
+  // being rejected. Distinct from a generic "Unavailable" so operators can tell
+  // "auth failing" apart from "still starting". [design needed — functional
+  // badge reusing existing status-badge components; a designer can refine.]
+  if (authFailing) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500 text-amber-700 dark:text-amber-400"
+      >
+        <IconAlertTriangle className="h-3 w-3 mr-1" />
+        NATS auth failing
+      </Badge>
+    );
+  }
   return available ? (
     <Badge variant="outline" className="border-green-500 text-green-700 dark:text-green-400">
       <IconCheck className="h-3 w-3 mr-1" />
@@ -66,9 +88,11 @@ export default function EgressFwAgentSettingsPage() {
   // server state into local state via useEffect.
   const [imageEdit, setImageEdit] = useState<string | null>(null);
   const [autoStartEdit, setAutoStartEdit] = useState<boolean | null>(null);
+  const [autoRemediationEdit, setAutoRemediationEdit] = useState<boolean | null>(null);
 
   const imageInput = imageEdit ?? config?.image ?? "";
   const autoStart = autoStartEdit ?? config?.autoStart ?? true;
+  const autoRemediation = autoRemediationEdit ?? config?.autoRemediation ?? true;
 
   if (statusLoading || configLoading) {
     return (
@@ -106,17 +130,21 @@ export default function EgressFwAgentSettingsPage() {
 
   const imageChanged = imageEdit !== null && imageEdit.trim() !== (config?.image ?? "");
   const autoStartChanged = autoStartEdit !== null && autoStartEdit !== (config?.autoStart ?? true);
-  const dirty = imageChanged || autoStartChanged;
+  const autoRemediationChanged =
+    autoRemediationEdit !== null && autoRemediationEdit !== (config?.autoRemediation ?? true);
+  const dirty = imageChanged || autoStartChanged || autoRemediationChanged;
 
   const handleSave = () => {
     if (!dirty) return;
-    const updates: { image?: string; autoStart?: boolean } = {};
+    const updates: { image?: string; autoStart?: boolean; autoRemediation?: boolean } = {};
     if (imageChanged) updates.image = imageInput.trim();
     if (autoStartChanged) updates.autoStart = autoStart;
+    if (autoRemediationChanged) updates.autoRemediation = autoRemediation;
     updateConfig(updates, {
       onSuccess: () => {
         setImageEdit(null);
         setAutoStartEdit(null);
+        setAutoRemediationEdit(null);
         toast.success("Egress fw-agent settings saved");
       },
       onError: (err) => toast.error(err.message),
@@ -157,14 +185,16 @@ export default function EgressFwAgentSettingsPage() {
               <div className="space-y-1">
                 <p className="text-sm font-medium">Admin socket</p>
                 <p className="text-xs text-muted-foreground">
-                  {status?.available
-                    ? `Reachable${status.containerId ? ` (${status.containerId})` : ""}`
-                    : status?.containerRunning
-                      ? "Container running but admin socket unreachable"
-                      : status?.reason ?? "Not running"}
+                  {status?.authFailing
+                    ? "Container running but NATS authentication is failing — its credentials are being rejected"
+                    : status?.available
+                      ? `Reachable${status.containerId ? ` (${status.containerId})` : ""}`
+                      : status?.containerRunning
+                        ? "Container running but admin socket unreachable"
+                        : status?.reason ?? "Not running"}
                 </p>
               </div>
-              <StatusBadge available={!!status?.available} />
+              <StatusBadge available={!!status?.available} authFailing={!!status?.authFailing} />
             </div>
 
             <Button
@@ -223,6 +253,23 @@ export default function EgressFwAgentSettingsPage() {
                 id="fw-agent-autostart"
                 checked={autoStart}
                 onCheckedChange={setAutoStartEdit}
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="fw-agent-autoremediation">Auto-heal auth failures</Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, Mini Infra automatically force-recreates an egress agent
+                  (this fw-agent or a gateway) that&apos;s stuck failing NATS authentication,
+                  re-minting its credentials. Recreate actions are recorded in the events log
+                  and rate-limited with a per-stack cap. Disable to require manual recovery.
+                </p>
+              </div>
+              <Switch
+                id="fw-agent-autoremediation"
+                checked={autoRemediation}
+                onCheckedChange={setAutoRemediationEdit}
               />
             </div>
 

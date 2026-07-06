@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LogViewer } from "@/components/containers/LogViewer";
+import { ContainerNetworksCard } from "./_components/container-networks-card";
 import { ContainerStatusBadge } from "../ContainerStatusBadge";
 import { useContainerActions, containerDetailKey } from "@/hooks/use-container-actions";
 import { ContainerInfo } from "@mini-infra/types/containers";
@@ -262,6 +263,13 @@ export default function ContainerDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Networks Card */}
+      <ContainerNetworksCard
+        containerId={container.id}
+        containerName={container.name}
+        onMutated={refetch}
+      />
 
       {/* Volumes Card */}
       {container.volumes.length > 0 && (

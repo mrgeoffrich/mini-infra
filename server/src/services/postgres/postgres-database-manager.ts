@@ -107,6 +107,13 @@ export class PostgresDatabaseManager {
         );
       }
 
+      const environment = await this.prisma.environment.findUnique({
+        where: { id: request.environmentId },
+      });
+      if (!environment) {
+        throw new Error(`Environment '${request.environmentId}' not found`);
+      }
+
       // Create database configuration
       const createdDb = await this.prisma.postgresDatabase.create({
         data: {
@@ -117,6 +124,7 @@ export class PostgresDatabaseManager {
           database: request.database,
           username: request.username,
           sslMode: request.sslMode,
+          environmentId: request.environmentId,
           tags: JSON.stringify(request.tags || []),
           healthStatus: "unknown",
         },
@@ -264,6 +272,20 @@ export class PostgresDatabaseManager {
 
       if (request.tags !== undefined) {
         updateData.tags = JSON.stringify(request.tags);
+      }
+
+      if (request.environmentId !== undefined) {
+        if (request.environmentId !== null) {
+          const environment = await this.prisma.environment.findUnique({
+            where: { id: request.environmentId },
+          });
+          if (!environment) {
+            throw new Error(`Environment '${request.environmentId}' not found`);
+          }
+        }
+        updateData.environment = request.environmentId
+          ? { connect: { id: request.environmentId } }
+          : { disconnect: true };
       }
 
       // Update database
@@ -900,6 +922,7 @@ export class PostgresDatabaseManager {
       database: database.database,
       username: database.username,
       sslMode: database.sslMode,
+      environmentId: database.environmentId,
       tags: JSON.parse(database.tags || "[]"),
       createdAt: database.createdAt.toISOString(),
       updatedAt: database.updatedAt.toISOString(),

@@ -2,11 +2,36 @@
 // Stack Types
 // ====================
 
+import type { NetworkDriftItem } from './docker';
+
 // Status and service type unions (mirror Prisma enums)
 export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
 export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';
+
+/**
+ * Docker network `purpose` for an environment's HAProxy "applications"
+ * network — the network every HAProxy-routed backend must join so HAProxy can
+ * reach it. Resolves per environment to `<environment>-applications` (see
+ * `resourceNetworkName()` server-side). Declared here so the client authoring
+ * flows and the server-side apply-time invariant agree on the one literal
+ * instead of re-typing `'applications'` in a dozen places.
+ */
+export const APPLICATIONS_NETWORK_PURPOSE = 'applications';
+
+/**
+ * Service types that sit behind HAProxy and therefore must be members of the
+ * environment's `applications` network for traffic to flow. Used by both the
+ * client app-authoring flows (to declare the membership) and the server
+ * reconciler invariant (to guarantee it regardless of authoring surface).
+ */
+export const HAPROXY_ROUTED_SERVICE_TYPES = ['StatelessWeb', 'AdoptedWeb'] as const satisfies readonly StackServiceType[];
+
+/** True when a service type routes through HAProxy (see {@link HAPROXY_ROUTED_SERVICE_TYPES}). */
+export function isHaproxyRoutedServiceType(serviceType: StackServiceType): boolean {
+  return (HAPROXY_ROUTED_SERVICE_TYPES as readonly StackServiceType[]).includes(serviceType);
+}
 
 // Stack parameter types
 
@@ -49,6 +74,18 @@ export type DynamicEnvSource =
   | { kind: 'pool-management-token'; poolService: string }
   | { kind: 'nats-url' }
   | { kind: 'nats-creds' }
+  /**
+   * File-based variant of `nats-creds` (egress NATS cred-resilience plan,
+   * Phase 5, §4.3). The minted `.creds` blob is written to a per-stack file
+   * (`<stackId>.creds`) on a named docker volume the consuming stack declares
+   * and mounts read-only; the env var receives the *file path*, never the
+   * secret. Unlike `nats-creds` (which bakes the blob into the env once at
+   * container create), nats.go re-reads the file on every reconnect via
+   * `nats.UserCredentials`, so a rotated credential is picked up without a
+   * container recreate. Opt-in and currently scoped to the two egress agents —
+   * generic NATS consumers keep `nats-creds` (see plan §3 non-goals).
+   */
+  | { kind: 'nats-creds-file' }
   /**
    * Cloudflare tunnel connector token for the stack's environment. Resolved
    * at apply time from the managed-tunnel store (the token issued when the
@@ -333,6 +370,41 @@ export interface StackNetwork {
   options?: Record<string, any>;
 }
 
+/**
+ * Phase 10 — unified network declaration. One shape for declaring a
+ * stack-owned or shared/resource-scoped network, instead of choosing
+ * between stack-level `networks[]` (stack scope) and
+ * `resourceOutputs[]`/`resourceInputs[]` (environment/host scope for the
+ * `docker-network` resource type).
+ *
+ * Accepted anywhere a `StackNetwork` is accepted in an authoring payload
+ * (the `networks[]` field on stack/template create + draft requests) —
+ * see `StackNetworkEntry`. Distinguished from `StackNetwork` at runtime by
+ * the presence of `purpose` (vs `name`); see
+ * `isUnifiedStackNetworkDeclaration()` in
+ * `server/src/services/networks/unified-network-declarations.ts`.
+ *
+ * Translated to the legacy shapes as early as possible (template/stack
+ * creation time) — every stored/resolved definition
+ * (`StackTemplateVersion`, `Stack`, `StackDefinition`) only ever contains
+ * the legacy shapes. See `translateUnifiedNetworkDeclarations()` in the
+ * same module for the full mixing/precedence rule.
+ */
+export interface UnifiedStackNetworkDeclaration {
+  purpose: string;
+  /**
+   * Defaults to `'stack'`. `'environment'` and `'host'` both translate to a
+   * `resourceOutputs[]` entry — the network's real resulting scope is still
+   * governed by whether the *owning* stack itself is environment- or
+   * host-scoped (unchanged existing `resourceOutputs` behavior), not by
+   * this field's literal value.
+   */
+  scope?: 'stack' | 'environment' | 'host';
+}
+
+/** Either shape may appear in an authored `networks[]` array. */
+export type StackNetworkEntry = StackNetwork | UnifiedStackNetworkDeclaration;
+
 export interface StackResourceOutput {
   type: string;
   purpose: string;
@@ -584,6 +656,21 @@ export interface StackServiceDefinition {
    * authored services. See `SyntheticServiceInfo` above.
    */
   synthetic?: SyntheticServiceInfo;
+  /**
+   * Phase 10 — unified per-service network join list. Symbolic purpose
+   * references, resolved against the stack-level `networks[]` declarations
+   * (legacy `StackNetwork.name` or unified `UnifiedStackNetworkDeclaration.purpose`,
+   * plus `resourceOutputs[]`/`resourceInputs[]` purposes) at translate time.
+   * Replaces choosing between `containerConfig.joinNetworks` and
+   * `containerConfig.joinResourceNetworks` for purposes declared via
+   * `networks[]`. Authoring-time-only sugar: always translated away (merged
+   * into `containerConfig.joinResourceNetworks`, or dropped as a no-op for
+   * stack-scope purposes) before persistence — never populated on a
+   * resolved/applied service definition. See
+   * `translateUnifiedNetworkDeclarations()` in
+   * `server/src/services/networks/unified-network-declarations.ts`.
+   */
+  networks?: string[];
 }
 
 export interface StackDefinition {
@@ -674,7 +761,7 @@ export interface CreateStackInput {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];
@@ -750,6 +837,16 @@ export interface StackPlan {
   planTime: string;
   actions: ServiceAction[];
   resourceActions: ResourceAction[];
+  /**
+   * Network overhaul Phase 7 — drift between this stack's desired-state
+   * `ManagedNetwork`/`NetworkMembership` rows and live Docker network state
+   * (missing networks, unattached services, stale attachments, spec
+   * mismatches). Always present (empty when networks are in sync), mirroring
+   * `resourceActions`. Computed by `NetworkReconciler` — see
+   * `services/networks/network-reconciler.ts`. Folds into `hasChanges`
+   * exactly like `actions`/`resourceActions` do.
+   */
+  networkActions: NetworkDriftItem[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
   warnings?: PlanWarning[];
@@ -898,7 +995,7 @@ export interface CreateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks: StackNetwork[];
+  networks: StackNetworkEntry[];
   volumes: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];
@@ -913,7 +1010,7 @@ export interface UpdateStackRequest {
   parameterValues?: Record<string, StackParameterValue>;
   resourceOutputs?: StackResourceOutput[];
   resourceInputs?: StackResourceInput[];
-  networks?: StackNetwork[];
+  networks?: StackNetworkEntry[];
   volumes?: StackVolume[];
   tlsCertificates?: StackTlsCertificate[];
   dnsRecords?: StackDnsRecord[];

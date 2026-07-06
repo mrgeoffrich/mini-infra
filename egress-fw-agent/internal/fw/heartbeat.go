@@ -12,6 +12,7 @@ package fw
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/mrgeoffrich/mini-infra/egress-shared/natsbus"
@@ -31,6 +32,13 @@ type HeartbeatPublisher struct {
 	bus           *natsbus.Bus
 	log           *slog.Logger
 	lastApplyIdFn func() string
+
+	// lastPublishMs is the UnixMilli of the most recent *successful* KV put,
+	// or 0 when none has landed. Read out-of-band by the `/healthz` handler
+	// (via LastHeartbeatAgeMs) from a different goroutine, so it's an atomic.
+	// When NATS auth is broken the put fails, this stops advancing, and the
+	// reported heartbeat age grows — corroborating the auth-failed conn state.
+	lastPublishMs atomic.Int64
 }
 
 // NewHeartbeatPublisher constructs the publisher. `lastApplyIdFn` may be
@@ -80,5 +88,24 @@ func (p *HeartbeatPublisher) publish() {
 		// reconnect are expected to fail. Warn-level and move on; the
 		// next tick will try again.
 		p.log.Warn("heartbeat KV put failed", "err", err.Error())
+		return
 	}
+	// Only advance the out-of-band freshness clock on a confirmed put.
+	p.lastPublishMs.Store(hb.ReportedAtMs)
+}
+
+// LastHeartbeatAgeMs returns the age (ms) of the most recent successful in-band
+// KV heartbeat, or -1 if none has landed yet this process. Fed to the shared
+// `/healthz` handler so operators see how stale the functional-health signal
+// is alongside the connection state.
+func (p *HeartbeatPublisher) LastHeartbeatAgeMs() int64 {
+	last := p.lastPublishMs.Load()
+	if last == 0 {
+		return -1
+	}
+	age := time.Now().UnixMilli() - last
+	if age < 0 {
+		age = 0
+	}
+	return age
 }

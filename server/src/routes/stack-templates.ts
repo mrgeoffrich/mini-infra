@@ -16,6 +16,37 @@ import {
   publishDraftSchema,
   instantiateTemplateSchema,
 } from '../services/stacks/stack-template-schemas';
+import {
+  translateUnifiedNetworkDeclarations,
+  UnifiedNetworkDeclarationError,
+} from '../services/networks';
+
+/**
+ * Phase 10 — translate a template create/draft payload's unified
+ * `networks[]` (+ per-service `networks[]`) declarations into the legacy
+ * shapes `StackTemplateService`/`createUserTemplate`/`createOrUpdateDraft`
+ * already understand. Runs immediately after schema validation, before the
+ * payload reaches the template service, so the service layer never sees a
+ * unified entry. Throws `UnifiedNetworkDeclarationError` on ambiguous input
+ * — callers should catch it and return 400.
+ */
+function translateTemplateNetworks<
+  T extends Pick<CreateStackTemplateRequest, 'networks' | 'resourceOutputs' | 'resourceInputs' | 'services'>,
+>(data: T): T {
+  const translated = translateUnifiedNetworkDeclarations({
+    networks: data.networks,
+    resourceOutputs: data.resourceOutputs,
+    resourceInputs: data.resourceInputs,
+    services: data.services,
+  });
+  return {
+    ...data,
+    networks: translated.networks ?? [],
+    resourceOutputs: translated.resourceOutputs,
+    resourceInputs: translated.resourceInputs,
+    services: translated.services ?? data.services,
+  } as T;
+}
 
 const router = Router();
 const logger = getLogger("stacks", "stack-templates");
@@ -128,9 +159,19 @@ router.post('/', requirePermission(Permission.StacksWrite), async (req, res) => 
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
+    let templateInput: CreateStackTemplateRequest;
+    try {
+      templateInput = translateTemplateNetworks(parsed.data as CreateStackTemplateRequest);
+    } catch (err) {
+      if (err instanceof UnifiedNetworkDeclarationError) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      throw err;
+    }
+
     const service = getTemplateService();
     const template = await service.createUserTemplate(
-      parsed.data as CreateStackTemplateRequest,
+      templateInput,
       (req as { user?: { id?: string } }).user?.id
     );
 
@@ -221,10 +262,20 @@ router.post('/:templateId/draft', requirePermission(Permission.StacksWrite), asy
       return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
+    let draftInput: DraftVersionInput;
+    try {
+      draftInput = translateTemplateNetworks(parsed.data as DraftVersionInput);
+    } catch (err) {
+      if (err instanceof UnifiedNetworkDeclarationError) {
+        return res.status(400).json({ success: false, message: err.message });
+      }
+      throw err;
+    }
+
     const service = getTemplateService();
     const version = await service.createOrUpdateDraft(
       String(req.params.templateId),
-      parsed.data as DraftVersionInput,
+      draftInput,
       (req as { user?: { id?: string } }).user?.id
     );
 

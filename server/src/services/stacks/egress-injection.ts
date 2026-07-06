@@ -17,6 +17,20 @@
  */
 import type { Logger } from 'pino';
 import type { PrismaClient } from '../../generated/prisma/client';
+import { getLogger } from '../../lib/logger-factory';
+import {
+  findOrCreateManagedNetworkByName,
+  resolveMembershipTarget,
+  safeMembershipWrite,
+  upsertNetworkMembership,
+  type StackServiceMembershipInput,
+} from '../networks/membership-store';
+
+// Module-level logger for `resolveEgressContext`'s failure path — used by
+// both `resolveEgressEnv` (no logger parameter) and `attachEgressNetworkIfNeeded`
+// (which has its own caller-supplied `log: Logger` parameter, kept separate
+// below so this module-level logger never shadows it).
+const moduleLog = getLogger('stacks', 'egress-injection');
 
 interface EgressContext {
   shouldInject: boolean;
@@ -31,12 +45,23 @@ interface EgressContext {
  * Gates (in order):
  * - egressBypass === true → no injection (egress-gateway itself, fw-agent, etc.)
  * - No environmentId → host-level stack, no injection.
+ * - egressFirewallEnabled === false → firewall opt-out (the default). Keeps L7
+ *   proxy env + network attach consistent with the L3/L4 fw-agent, which also
+ *   no-ops when the flag is off (see env-firewall-manager). The egress-gateway
+ *   is provisioned unconditionally at env creation, so gating on egressGatewayIp
+ *   alone kept injecting even after the operator switched the firewall off.
  * - Environment has no egressGatewayIp → gateway not provisioned, skip.
  * - No `egress` InfraResource for the env → gateway provisioning incomplete, skip.
  *
- * Never throws — egress injection failure must not break stack apply.
+ * Never throws — egress injection failure must not break stack apply. A
+ * failure inside the try (a DB/lookup blip, as opposed to a deliberate gate
+ * like "no egressGatewayIp yet") is surfaced as a structured warning rather
+ * than silently swallowed (network overhaul defect F4) — a transient DB
+ * error looks identical to "gateway not provisioned" to the caller, but
+ * operators need to be able to tell the difference from the logs instead of
+ * silently losing egress wiring for a container.
  */
-async function resolveEgressContext(
+export async function resolveEgressContext(
   prisma: PrismaClient,
   environmentId: string | null | undefined,
   egressBypass: boolean,
@@ -47,9 +72,15 @@ async function resolveEgressContext(
   try {
     const env = await prisma.environment.findUnique({
       where: { id: environmentId },
-      select: { egressGatewayIp: true },
+      select: { egressGatewayIp: true, egressFirewallEnabled: true },
     });
-    if (!env?.egressGatewayIp) return { shouldInject: false };
+    // Egress firewall is opt-in per environment (egressFirewallEnabled defaults
+    // to false). Honour it here so disabling the firewall actually stops L7
+    // injection — the L3/L4 fw-agent already no-ops when off, but the gateway is
+    // provisioned unconditionally at env creation, so gating on egressGatewayIp
+    // alone left the proxy env pointed at a gateway the operator switched off.
+    if (!env?.egressFirewallEnabled) return { shouldInject: false };
+    if (!env.egressGatewayIp) return { shouldInject: false };
 
     const resource = await prisma.infraResource.findFirst({
       where: {
@@ -66,7 +97,14 @@ async function resolveEgressContext(
     const subnet = typeof meta?.['subnet'] === 'string' ? (meta['subnet'] as string) : undefined;
 
     return { shouldInject: true, networkName: resource.name, subnet };
-  } catch {
+  } catch (err) {
+    moduleLog.warn(
+      {
+        environmentId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Egress context resolution failed (DB/lookup blip) — egress env injection and network attach skipped for this container',
+    );
     return { shouldInject: false };
   }
 }
@@ -131,13 +169,44 @@ export async function attachEgressNetworkIfNeeded(
     await containerManager.connectToNetwork(containerId, ctx.networkName);
     log.info({ containerId, network: ctx.networkName }, 'Attached container to egress network');
   } catch (err) {
-    const e = err as { message?: string; statusCode?: number };
-    const msg = e?.message || '';
-    if (!msg.includes('already exists') && e?.statusCode !== 403) {
-      log.warn(
-        { containerId, network: ctx.networkName, error: msg },
-        'Failed to attach container to egress network',
-      );
-    }
+    // connectToNetwork delegates to NetworkManager.connect(), which already
+    // treats "already connected" as success (status-code driven, not message
+    // matching) — anything reaching this catch is a genuine failure.
+    log.warn(
+      { containerId, network: ctx.networkName, error: err instanceof Error ? err.message : String(err) },
+      'Failed to attach container to egress network',
+    );
   }
+}
+
+/**
+ * Network overhaul Phase 6 — record `source: 'egress'` `NetworkMembership`
+ * rows for every service that would receive (or already has) the per-
+ * environment egress auto-attach. Reuses {@link resolveEgressContext} — the
+ * exact same gate `attachEgressNetworkIfNeeded` itself uses — so the two can
+ * never drift apart on which services are/aren't bypassed. Bypass services
+ * get no row, mirroring `attachEgressNetworkIfNeeded`'s own no-op for them.
+ *
+ * Called once per stack apply/update, alongside the membership compiler.
+ * Write-only and best-effort: never throws.
+ */
+export async function recordEgressNetworkMemberships(
+  prisma: PrismaClient,
+  environmentId: string | null | undefined,
+  services: StackServiceMembershipInput[],
+  log: Logger,
+): Promise<void> {
+  await safeMembershipWrite(log, { environmentId }, async () => {
+    for (const svc of services) {
+      const egressBypass = svc.containerConfig?.egressBypass === true;
+      const ctx = await resolveEgressContext(prisma, environmentId, egressBypass);
+      if (!ctx.shouldInject || !ctx.networkName) continue;
+
+      const target = resolveMembershipTarget(svc);
+      const row = await findOrCreateManagedNetworkByName(prisma, ctx.networkName, {
+        scope: 'environment', environmentId: environmentId ?? null, stackId: null, purpose: 'egress',
+      });
+      await upsertNetworkMembership(prisma, { ...target, networkId: row.id, source: 'egress' });
+    }
+  });
 }

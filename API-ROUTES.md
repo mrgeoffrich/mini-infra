@@ -49,6 +49,12 @@
 |--------|------|-------------|
 | GET | `/api/docker/networks` | List networks |
 | DELETE | `/api/docker/networks/:id` | Remove network |
+| GET | `/api/docker/networks/managed` | List managed networks with owner/purpose/status/members (`docker:admin`) |
+| PATCH | `/api/docker/networks/managed/enforce-memberships` | Toggle a managed network's enforce-memberships flag (`docker:admin`) |
+| GET | `/api/docker/networks/reconcile` | Network reconciler dry-run diff / drift report (`docker:admin`) |
+| POST | `/api/docker/networks/reconcile` | Converge networks/memberships to desired state (`docker:admin`) |
+| POST | `/api/docker/networks/gc` | Garbage-collect orphaned managed networks (dry-run by default) (`docker:admin`) |
+| POST | `/api/docker/networks/backfill-memberships` | Backfill desired-state membership rows from existing state (`docker:admin`) |
 | GET | `/api/docker/volumes` | List volumes |
 | DELETE | `/api/docker/volumes/:name` | Remove volume |
 | POST | `/api/docker/volumes/:name/inspect` | Start volume inspection |

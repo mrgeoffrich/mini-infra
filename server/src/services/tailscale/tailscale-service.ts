@@ -193,7 +193,7 @@ export class TailscaleService extends ConfigurationService {
       }
       throw new TailscaleAuthError(
         `Failed to reach Tailscale OAuth endpoint: ${
-          err instanceof Error ? err.message : "unknown"
+          describeFetchError(err)
         }`,
         TAILSCALE_ERROR_CODES.NETWORK_ERROR,
       );
@@ -390,7 +390,7 @@ export class TailscaleService extends ConfigurationService {
       }
       throw new TailscaleAuthError(
         `Failed to reach Tailscale DNS endpoint: ${
-          err instanceof Error ? err.message : "unknown"
+          describeFetchError(err)
         }`,
         TAILSCALE_ERROR_CODES.NETWORK_ERROR,
       );
@@ -516,7 +516,7 @@ export class TailscaleService extends ConfigurationService {
       }
       throw new TailscaleAuthError(
         `Failed to reach Tailscale device-list endpoint: ${
-          err instanceof Error ? err.message : "unknown"
+          describeFetchError(err)
         }`,
         TAILSCALE_ERROR_CODES.NETWORK_ERROR,
       );
@@ -601,7 +601,7 @@ export class TailscaleService extends ConfigurationService {
       }
       throw new TailscaleAuthError(
         `Failed to reach Tailscale device-delete endpoint: ${
-          err instanceof Error ? err.message : "unknown"
+          describeFetchError(err)
         }`,
         TAILSCALE_ERROR_CODES.NETWORK_ERROR,
       );
@@ -736,6 +736,48 @@ async function safeReadText(response: Response): Promise<string> {
   } catch {
     return "<unavailable>";
   }
+}
+
+/**
+ * Build a diagnostic string from a `fetch`/undici failure. Node's global
+ * `fetch` surfaces connection problems as a bare `TypeError: fetch failed` and
+ * hides the actionable reason (DNS miss, ENETUNREACH, ETIMEDOUT, connection
+ * refused, TLS error) on `error.cause`. When Happy Eyeballs tries several
+ * addresses the cause is an `AggregateError` whose `errors[]` carry the
+ * per-address `code` and `address`. Flatten all of that into one line so the
+ * connectivity logs — and the `validationMessage` shown to operators — explain
+ * *why* the reach failed instead of just "fetch failed".
+ *
+ * Exported for unit testing.
+ */
+export function describeFetchError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+
+  const parts: string[] = [err.message];
+  const cause = (err as { cause?: unknown }).cause;
+
+  if (cause instanceof Error) {
+    const code = (cause as { code?: string }).code;
+    parts.push(code ? `${code}: ${cause.message}` : cause.message);
+
+    // Happy Eyeballs / multi-address failures aggregate the per-address errors.
+    const subErrors = (cause as { errors?: unknown }).errors;
+    if (Array.isArray(subErrors) && subErrors.length > 0) {
+      const detail = subErrors
+        .filter((e): e is Error => e instanceof Error)
+        .map((e) => {
+          const c = (e as { code?: string }).code;
+          const addr = (e as { address?: string }).address;
+          return [addr, c].filter(Boolean).join(" ") || e.message;
+        })
+        .join("; ");
+      if (detail) parts.push(`(${detail})`);
+    }
+  } else if (cause !== undefined && cause !== null) {
+    parts.push(String(cause));
+  }
+
+  return parts.join(" — ");
 }
 
 /**

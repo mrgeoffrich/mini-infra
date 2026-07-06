@@ -15,7 +15,6 @@ import { removalDeploymentMachine, type RemovalDeploymentContext } from '../hapr
 import { runStateMachineToCompletion } from './state-machine-runner';
 import { prepareServiceContainer } from './utils';
 import { removeConflictingContainer } from './stack-conflict-detector';
-import { attachEgressNetworkIfNeeded } from './egress-injection';
 import type { StackContainerManager } from './stack-container-manager';
 import type { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackRoutingManager, type StackRoutingContext } from './stack-routing-manager';
@@ -25,6 +24,7 @@ import {
   cleanupAdoptedWebRouting,
   type StackWithReconcilerContext,
 } from './stack-state-machine-context';
+import { attachServiceNetworks, type NetworkManager } from '../networks';
 
 /**
  * Shared context passed to every service handler invocation. Contains
@@ -90,6 +90,7 @@ export class StackServiceHandlers {
     private dockerExecutor: DockerExecutorService,
     private containerManager: StackContainerManager,
     private infraManager: StackInfraResourceManager,
+    private networkManager: NetworkManager,
     private routingManager?: StackRoutingManager
   ) {}
 
@@ -130,16 +131,15 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
-        await attachEgressNetworkIfNeeded(
-          this.prisma,
-          this.containerManager,
-          containerId,
-          stack.environmentId,
-          effectiveServiceDef.containerConfig.egressBypass === true,
+        await attachServiceNetworks(containerId, action.serviceName, effectiveServiceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
           log,
-        );
+        });
 
         await this.containerManager.startContainer(containerId);
 
@@ -185,16 +185,15 @@ export class StackServiceHandlers {
           }
         );
 
-        await this.joinJoinNetworks(containerId, action.serviceName, effectiveServiceDef, log);
-        await this.infraManager.joinResourceNetworks(containerId, effectiveServiceDef, infraNetworkMap, log);
-        await attachEgressNetworkIfNeeded(
-          this.prisma,
-          this.containerManager,
-          containerId,
-          stack.environmentId,
-          effectiveServiceDef.containerConfig.egressBypass === true,
+        await attachServiceNetworks(containerId, action.serviceName, effectiveServiceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
           log,
-        );
+        });
 
         await this.containerManager.startContainer(containerId);
 
@@ -283,22 +282,26 @@ export class StackServiceHandlers {
           };
         }
 
-        const { haproxyCtx, haproxyClient } = await getInitializedHAProxyClient(this.routingManager!, stack.environmentId!);
+        const { haproxyClient } = await getInitializedHAProxyClient(this.routingManager!, stack.environmentId!);
 
-        const haproxyNetworkName = haproxyCtx.haproxyNetworkName;
-        const containerNetworks = Object.keys(target.NetworkSettings?.Networks || {});
-        if (!containerNetworks.includes(haproxyNetworkName)) {
-          log.info({ containerName: adopted.containerName, network: haproxyNetworkName }, 'Joining adopted container to HAProxy network');
-          await this.containerManager.connectToNetwork(target.Id, haproxyNetworkName);
-        }
-
-        if (serviceDef.containerConfig.joinResourceNetworks?.length) {
-          await this.infraManager.joinResourceNetworks(target.Id, serviceDef, infraNetworkMap, log);
-        }
-
-        // Attach the adopted container to any user-selected external networks
-        // (e.g. a database it needs to reach). Best-effort, like the create path.
-        await this.joinJoinNetworks(target.Id, action.serviceName, serviceDef, log);
+        // Attach every network this AdoptedWeb target needs — declared external
+        // `joinNetworks` (e.g. a database it needs to reach), the
+        // `joinResourceNetworks` (which include the `applications` network the
+        // apply-time invariant guarantees for HAProxy-routed services), and the
+        // per-env egress network — through the same shared pipeline the
+        // static-service create/recreate paths use. The HAProxy `applications`
+        // network is no longer passed as an imperative `extraJoinNetworks`; it
+        // arrives declaratively via `joinResourceNetworks` like any other
+        // network. `NetworkManager.connect` is idempotent by inspection.
+        await attachServiceNetworks(target.Id, action.serviceName, serviceDef, {
+          networkManager: this.networkManager,
+          containerManager: this.containerManager,
+          infraManager: this.infraManager,
+          prisma: this.prisma,
+          infraNetworkMap,
+          environmentId: stack.environmentId,
+          log,
+        });
 
         const routingCtx: StackRoutingContext = {
           serviceName: action.serviceName,
@@ -581,27 +584,6 @@ export class StackServiceHandlers {
     };
   }
 
-  /**
-   * Join a container to `containerConfig.joinNetworks` (external networks like HAProxy).
-   * "Already exists" errors are non-fatal.
-   */
-  private async joinJoinNetworks(
-    containerId: string,
-    serviceName: string,
-    serviceDef: StackServiceDefinition,
-    log: Logger
-  ): Promise<void> {
-    if (!serviceDef.containerConfig.joinNetworks?.length) return;
-    for (const netName of serviceDef.containerConfig.joinNetworks) {
-      if (!netName) continue;
-      try {
-        await this.containerManager.connectToNetwork(containerId, netName);
-        log.info({ service: serviceName, network: netName }, 'Joined external network');
-      } catch (err: unknown) {
-        log.warn({ service: serviceName, network: netName, error: (err instanceof Error ? err.message : String(err)) }, 'Failed to join external network');
-      }
-    }
-  }
 }
 
 /**

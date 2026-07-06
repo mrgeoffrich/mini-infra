@@ -88,6 +88,11 @@ export const queryKeys = {
     volumeInspection: (volumeName: string) => ["volume-inspection", volumeName] as const,
     volumeFileContent: (volumeName: string, filePath?: string) =>
       ["volume-file-content", volumeName, filePath] as const,
+    /** Network overhaul Phase 9 — bare root broad-invalidates every `managedNetworks(filter)` variant regardless of scope/owner filter. */
+    managedNetworksAll: ["managed-networks"] as const,
+    managedNetworks: (filter?: { scope?: string; environmentId?: string; stackId?: string }) =>
+      ["managed-networks", filter ?? {}] as const,
+    networkReconcile: (scope: string, id?: string) => ["network-reconcile", scope, id] as const,
   },
 
   egressFwAgent: {
@@ -278,12 +283,6 @@ export const queryKeys = {
       sortOrder?: string,
     ) => ["postgresDatabases", filters, page, limit, sortBy, sortOrder] as const,
     detail: (id: string) => ["postgresDatabase", id] as const,
-    /**
-     * Pre-existing invalidation target with no matching query anywhere in
-     * the app (likely a latent no-op bug predating this migration) —
-     * preserved as-is rather than silently repointed. See Phase 4 report.
-     */
-    managedDatabasesLegacy: ["managedDatabases"] as const,
   },
 
   postgresBackupConfig: {
@@ -354,14 +353,6 @@ export const queryKeys = {
     scheduleInfo: ["schedule-info"] as const,
     /** Bare root for the backup-history resource — broad-invalidates every `history(...)` variant regardless of filters. */
     historyAll: ["backup-history"] as const,
-    /**
-     * Pre-existing invalidation target with no matching query anywhere in
-     * the app (the real key is `config` = `["self-backup-config"]` above) —
-     * likely a latent no-op bug in `use-onboarding.ts`'s completion handler,
-     * predating this migration. Preserved as-is rather than silently
-     * repointed. See Phase 4 report.
-     */
-    configLegacy: ["selfBackupConfig"] as const,
     /** Paginated/filtered backup-history list query key (positional params mirror the server's query-string filters). */
     history: (
       status?: string,
@@ -396,14 +387,6 @@ export const queryKeys = {
     managedTunnel: (environmentId: string) => ["managed-tunnel", environmentId] as const,
     tailscaleSettings: ["tailscaleSettings"] as const,
     tlsSettings: ["settings", "tls"] as const,
-    /**
-     * Pre-existing invalidation target with no matching query anywhere in
-     * the app (the real key is `tlsSettings` = `["settings","tls"]` above) —
-     * likely a latent no-op bug in `use-onboarding.ts`'s completion handler,
-     * predating this migration. Preserved as-is rather than silently
-     * repointed. See Phase 4 report.
-     */
-    tlsSettingsLegacy: ["tlsSettings"] as const,
     storageSettings: ["storage", "settings"] as const,
   },
 

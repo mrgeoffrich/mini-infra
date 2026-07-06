@@ -13,11 +13,11 @@ import type { BackupHealthStatus } from "@mini-infra/types";
  */
 export async function calculateBackupHealth(): Promise<BackupHealthStatus> {
   // Check if configuration exists
-  const containerSetting = await prisma.systemSettings.findUnique({
+  const storageLocationSetting = await prisma.systemSettings.findUnique({
     where: {
       category_key: {
         category: "self-backup",
-        key: "azure_container_name",
+        key: "storage_location_id",
       },
     },
   });
@@ -32,7 +32,7 @@ export async function calculateBackupHealth(): Promise<BackupHealthStatus> {
   });
 
   const isEnabled = enabledSetting?.value === "true";
-  const isConfigured = !!containerSetting?.value;
+  const isConfigured = !!storageLocationSetting?.value;
 
   if (!isConfigured || !isEnabled) {
     return {

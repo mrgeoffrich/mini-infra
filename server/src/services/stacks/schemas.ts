@@ -99,6 +99,7 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
   }),
   z.object({ kind: z.literal("nats-url") }),
   z.object({ kind: z.literal("nats-creds") }),
+  z.object({ kind: z.literal("nats-creds-file") }),
   z.object({ kind: z.literal("cloudflare-tunnel-token") }),
   z.object({
     kind: z.literal("vault-kv"),
@@ -469,6 +470,23 @@ export const stackNetworkSchema = z.object({
   options: z.record(z.string(), z.any()).optional(),
 });
 
+// Phase 10 — unified network declaration (see
+// server/src/services/networks/unified-network-declarations.ts). One
+// purpose + optional scope, replacing the choice between stack-owned
+// `networks[]` and `resourceOutputs[]`/`resourceInputs[]` for a
+// docker-network resource.
+export const unifiedNetworkDeclarationSchema = z.object({
+  purpose: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
+  scope: z.enum(['stack', 'environment', 'host']).optional(),
+});
+
+// A `networks[]` entry may be either shape; both compile to the same
+// desired-state rows. Used in place of a bare `stackNetworkSchema` wherever
+// templates/stacks author their `networks[]` field (not in the *resolved*
+// `stackDefinitionSchema`, which only ever contains the legacy shape once
+// translation has run).
+export const stackNetworkEntrySchema = z.union([stackNetworkSchema, unifiedNetworkDeclarationSchema]);
+
 export const stackVolumeSchema = z.object({
   name: z.string().min(1),
   driver: z.string().optional(),
@@ -575,6 +593,14 @@ export const stackServiceCommonFieldsSchema = z.object({
   // validation happens in `addonsBlockSchema` below, which superRefines each
   // entry against the registered addon's manifest configSchema.
   addons: z.record(z.string().min(1), z.unknown()).optional(),
+  // Phase 10 — unified per-service network join list. Symbolic purpose
+  // references resolved against the stack-level `networks[]` declarations
+  // (legacy or unified) by `translateUnifiedNetworkDeclarations()` before
+  // this ever reaches Prisma — never persisted. Replaces choosing between
+  // `containerConfig.joinNetworks`/`joinResourceNetworks` for purposes
+  // declared via `networks[]`. See
+  // server/src/services/networks/unified-network-declarations.ts.
+  networks: z.array(z.string().min(1)).optional(),
 });
 
 /**
@@ -785,7 +811,7 @@ export const createStackSchema = z.object({
   parameterValues: parameterValuesSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
-  networks: z.array(stackNetworkSchema),
+  networks: z.array(stackNetworkEntrySchema),
   volumes: z.array(stackVolumeSchema),
   tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
   dnsRecords: z.array(stackDnsRecordSchema).optional(),
@@ -804,7 +830,7 @@ export const updateStackSchema = z.object({
   parameterValues: parameterValuesSchema.optional(),
   resourceOutputs: z.array(stackResourceOutputSchema).optional(),
   resourceInputs: z.array(stackResourceInputSchema).optional(),
-  networks: z.array(stackNetworkSchema).optional(),
+  networks: z.array(stackNetworkEntrySchema).optional(),
   volumes: z.array(stackVolumeSchema).optional(),
   tlsCertificates: z.array(stackTlsCertificateSchema).optional(),
   dnsRecords: z.array(stackDnsRecordSchema).optional(),

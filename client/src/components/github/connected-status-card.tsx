@@ -31,7 +31,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import type { ConnectivityStatusType, GitHubAgentAccessLevel } from "@mini-infra/types";
+import type { GitHubAgentAccessLevel } from "@mini-infra/types";
 import { PackageAccessSection } from "./package-access-section";
 import { AgentAccessSection } from "./agent-access-section";
 
@@ -106,9 +106,7 @@ export function ConnectedStatusCard({
           </div>
           {githubConnectivity && (
             <StatusBadge
-              status={
-                githubConnectivity.status as ConnectivityStatusType
-              }
+              status={githubConnectivity.status}
               responseTimeMs={githubConnectivity.responseTimeMs}
               size="sm"
             />

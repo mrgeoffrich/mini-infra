@@ -54,10 +54,11 @@ func main() {
 	if cfg.Transport == config.TransportNats {
 		var err error
 		bus, err = natsbus.Connect(ctx, natsbus.ConnectOptions{
-			URL:    cfg.NatsUrl,
-			Creds:  cfg.NatsCreds,
-			Name:   "mini-infra-fw-agent",
-			Logger: log,
+			URL:       cfg.NatsUrl,
+			CredsFile: cfg.NatsCredsFile,
+			Creds:     cfg.NatsCreds,
+			Name:      "mini-infra-fw-agent",
+			Logger:    log,
 		})
 		if err != nil {
 			// Hard failure on first connect: under nats transport this is
@@ -105,6 +106,17 @@ func main() {
 
 		hb := fw.NewHeartbeatPublisher(bus, log, handler.LastApplyId)
 		go hb.Run(ctx)
+
+		// Out-of-band health surface (Phase 3, §4.2). The agent runs
+		// network_mode: host, so this TCP listener binds a known host port the
+		// mini-infra server scrapes directly — independent of the NATS link, so
+		// it can report `auth-failed` even when the in-band KV heartbeat can't
+		// publish. Served over the shared handler so both egress agents agree.
+		go func() {
+			if err := natsbus.ServeHealth(ctx, cfg.HealthAddr, bus, hb.LastHeartbeatAgeMs, log); err != nil {
+				log.Warn("agent health server stopped", "err", err.Error())
+			}
+		}()
 	}
 
 	// Legacy Unix-socket admin server — only under transport=unix.

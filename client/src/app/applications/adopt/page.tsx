@@ -43,8 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { linkedContainerSchema } from "@/lib/application-schemas";
-import { ConnectToContainersField } from "../components/connect-to-containers-field";
+import { applicationsNetworkDeclaration } from "@/lib/application-schemas";
 
 // ---- Zod Schema ----
 
@@ -56,7 +55,6 @@ const adoptFormSchema = z.object({
   listeningPort: z.number().int().min(1).max(65535),
   hostname: z.string().min(1, "Hostname is required").max(253),
   healthCheckEndpoint: z.string().max(500).optional(),
-  linkedContainers: z.array(linkedContainerSchema),
 });
 
 type AdoptFormData = z.infer<typeof adoptFormSchema>;
@@ -73,7 +71,6 @@ const defaultValues: AdoptFormData = {
   // /health route) — not a call to our API, so not an ApiRoute candidate.
   // eslint-disable-next-line no-restricted-syntax
   healthCheckEndpoint: "/api/health",
-  linkedContainers: [],
 };
 
 export default function AdoptContainerPage() {
@@ -163,11 +160,11 @@ export default function AdoptContainerPage() {
         : {}),
     };
 
-    // Networks the adopted container should join to reach linked containers
-    // (e.g. a database). Applied to the existing container at deploy time.
-    const joinNetworks = Array.from(
-      new Set(data.linkedContainers.map((l) => l.networkName)),
-    );
+    // AdoptedWeb targets route through HAProxy, so they must join the
+    // environment's `applications` network (declared here + enforced by the
+    // server invariant at apply time).
+    const { resourceInputs, joinResourceNetworks } =
+      applicationsNetworkDeclaration("AdoptedWeb");
 
     try {
       await createApplication.mutateAsync({
@@ -177,9 +174,7 @@ export default function AdoptContainerPage() {
         scope: "environment",
         environmentId: data.environmentId,
         deployImmediately: true,
-        resourceInputs: [
-          { type: "docker-network", purpose: "applications" },
-        ],
+        resourceInputs,
         networks: [],
         volumes: [],
         services: [
@@ -188,8 +183,7 @@ export default function AdoptContainerPage() {
             serviceType: "AdoptedWeb" as StackServiceType,
             dockerImage: "adopted",
             dockerTag: "n/a",
-            containerConfig:
-              joinNetworks.length > 0 ? { joinNetworks } : {},
+            containerConfig: { joinResourceNetworks },
             dependsOn: [],
             order: 0,
             routing,
@@ -471,20 +465,6 @@ export default function AdoptContainerPage() {
                   />
                 </CardContent>
               </Card>
-            )}
-
-            {/* Connect to a database / another container */}
-            {selectedContainerName && (
-              <FormField
-                control={form.control}
-                name="linkedContainers"
-                render={({ field }) => (
-                  <ConnectToContainersField
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
             )}
 
             {/* Submit */}

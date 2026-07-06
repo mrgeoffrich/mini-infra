@@ -195,13 +195,26 @@ export class BackupExecutorService {
 
   /**
    * Find the applied pg-az-backup JobPool stack that owns this database's
-   * backup. For Phase 4 the constraint is "at most one applied pg-az-backup
-   * stack across the host" (documented in pg-az-backup/CLAUDE.md), so we
-   * grab the first one we find.
+   * backup — the stack whose `environmentId` matches the database's own.
+   * Throws if the database itself doesn't exist; returns `null` (not a
+   * stack from a different environment) if the database exists but no
+   * pg-az-backup stack is applied for its environment yet.
    */
-  private async findPgBackupStackForDatabase(_databaseId: string): Promise<{ id: string } | null> {
+  private async findPgBackupStackForDatabase(databaseId: string): Promise<{ id: string } | null> {
+    const database = await this.prisma.postgresDatabase.findUnique({
+      where: { id: databaseId },
+      select: { environmentId: true },
+    });
+    if (!database) {
+      throw new Error(`Database ${databaseId} not found`);
+    }
+
     const service = await this.prisma.stackService.findFirst({
-      where: { serviceName: PG_AZ_BACKUP_SERVICE_NAME, serviceType: "JobPool" },
+      where: {
+        serviceName: PG_AZ_BACKUP_SERVICE_NAME,
+        serviceType: "JobPool",
+        stack: { environmentId: database.environmentId },
+      },
       select: { stackId: true },
     });
     if (!service) return null;
