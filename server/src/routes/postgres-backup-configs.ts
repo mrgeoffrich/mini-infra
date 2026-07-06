@@ -86,6 +86,7 @@ const updateBackupConfigSchema = z.object({
 const quickBackupSetupSchema = z.object({
   serverId: z.string().min(1, "Server ID is required"),
   databaseName: z.string().min(1, "Database name is required"),
+  environmentId: z.string().min(1, "Environment is required"),
 });
 
 /**
@@ -187,6 +188,7 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
       username: server.adminUsername,
       password: adminPassword,
       sslMode: server.sslMode as "prefer" | "require" | "disable",
+      environmentId: setupRequest.environmentId,
       tags: [`server:${server.name}`, "backup"],
     });
 

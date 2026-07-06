@@ -175,6 +175,11 @@ model PostgresDatabase {
   database         String
   username         String
   sslMode          String   @default("prefer")
+  // Which environment's pg-az-backup/restore-executor stack services this
+  // database. Nullable for legacy rows; a null-environment database can
+  // never match an environment-scoped backup stack (see pg-az-backup/CLAUDE.md).
+  environmentId    String?
+  environment      Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   tags             String   // JSON array
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -185,6 +190,7 @@ model PostgresDatabase {
   backupOperations BackupOperation[]
   restoreOperations RestoreOperation[]
 
+  @@index([environmentId])
   @@map("postgres_databases")
 }
 
@@ -309,6 +315,7 @@ model Environment {
   stackTemplates   StackTemplate[]
   infraResources   InfraResource[]
   egressPolicies   EgressPolicy[]
+  postgresDatabases PostgresDatabase[]
 
   @@index([type])
   @@index([networkType])
