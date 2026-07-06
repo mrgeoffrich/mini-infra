@@ -10,10 +10,7 @@ import { getLogger } from "../lib/logger-factory";
 const logger = getLogger("integrations", "github-bug-report");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import { githubService } from "../services/github-service";
-import {
-  BugReportRequest,
-  BugReportResponse,
-} from "@mini-infra/types";
+import { BugReportRequest, BugReportResponse, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -97,7 +94,7 @@ function formatBugReportBody(
 /**
  * POST /api/github/bug-report - Create a bug report as a GitHub issue
  */
-router.post("/", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

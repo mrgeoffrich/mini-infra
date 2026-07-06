@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import type { PoolConfig, PoolInstanceInfo, PoolInstance as PoolInstanceDb } from '@mini-infra/types';
-import { hasAnyPermission, POOL_ADDON_LABELS } from '@mini-infra/types';
+import { hasAnyPermission, POOL_ADDON_LABELS, Permission } from '@mini-infra/types';
 import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requireSessionOrApiKey } from '../../middleware/auth';
@@ -152,7 +152,7 @@ function serializeInstance(row: PoolInstanceDb): PoolInstanceInfo {
 // POST / — Ensure a pool instance exists (synchronous spawn in Phase 1).
 router.post(
   '/:stackId/pools/:serviceName/instances',
-  requirePoolAccess('pools:write'),
+  requirePoolAccess(Permission.PoolsWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -360,7 +360,7 @@ async function spawnInBackground(args: SpawnBgArgs): Promise<void> {
 // GET / — List active instances (starting/running).
 router.get(
   '/:stackId/pools/:serviceName/instances',
-  requirePoolAccess('pools:read'),
+  requirePoolAccess(Permission.PoolsRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -389,7 +389,7 @@ router.get(
 // GET /:instanceId — Get a specific instance (active only).
 router.get(
   '/:stackId/pools/:serviceName/instances/:instanceId',
-  requirePoolAccess('pools:read'),
+  requirePoolAccess(Permission.PoolsRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -414,7 +414,7 @@ router.get(
 // DELETE /:instanceId — Stop and remove the instance.
 router.delete(
   '/:stackId/pools/:serviceName/instances/:instanceId',
-  requirePoolAccess('pools:write'),
+  requirePoolAccess(Permission.PoolsWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
@@ -521,7 +521,7 @@ router.delete(
 // POST /:instanceId/heartbeat — refresh lastActive for a running instance.
 router.post(
   '/:stackId/pools/:serviceName/instances/:instanceId/heartbeat',
-  requirePoolAccess('pools:write'),
+  requirePoolAccess(Permission.PoolsWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);

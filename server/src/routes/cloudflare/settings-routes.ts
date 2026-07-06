@@ -9,10 +9,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { CloudflareService } from "../../services/cloudflare";
 import { DnsCacheService } from "../../services/dns";
-import {
-  CloudflareSettingResponse,
-  CloudflareValidationResponse,
-} from "@mini-infra/types";
+import { CloudflareSettingResponse, CloudflareValidationResponse, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "settings-routes");
 
@@ -70,7 +67,7 @@ export function createCloudflareSettingsRouter(
 
   router.get(
     "/",
-    requirePermission("settings:read") as RequestHandler,
+    requirePermission(Permission.SettingsRead) as RequestHandler,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
@@ -99,7 +96,7 @@ export function createCloudflareSettingsRouter(
 
   router.post(
     "/",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
@@ -152,7 +149,7 @@ export function createCloudflareSettingsRouter(
 
   router.patch(
     "/",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
@@ -203,7 +200,7 @@ export function createCloudflareSettingsRouter(
 
   router.delete(
     "/",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
       const userId = getUserId(req);
 
@@ -220,7 +217,7 @@ export function createCloudflareSettingsRouter(
 
   router.post(
     "/test",
-    requirePermission("settings:write") as RequestHandler,
+    requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res, next) => {
       const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);

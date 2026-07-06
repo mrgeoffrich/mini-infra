@@ -26,7 +26,7 @@ import { CloudflareService } from "../services/cloudflare";
 import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
-import { Channel, ServerEvent, type CertIssuanceStep } from "@mini-infra/types";
+import { Channel, ServerEvent, type CertIssuanceStep, Permission } from "@mini-infra/types";
 
 const logger = getLogger("tls", "tls-certificates");
 const router = express.Router();
@@ -96,7 +96,7 @@ const issuingCertificates = new Set<string>();
  * POST /api/tls/certificates
  * Issue a new TLS certificate (async with Socket.IO progress)
  */
-router.post("/", requirePermission('tls:write'), async (req, res) => {
+router.post("/", requirePermission(Permission.TlsWrite), async (req, res) => {
   let guardedDomain: string | null = null;
   try {
     const user = getAuthenticatedUser(req);
@@ -204,7 +204,7 @@ router.post("/", requirePermission('tls:write'), async (req, res) => {
  * GET /api/tls/certificates
  * List all certificates
  */
-router.get("/", requirePermission('tls:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
   try {
     const certificates = await prisma.tlsCertificate.findMany({
       orderBy: { createdAt: "desc" },
@@ -238,7 +238,7 @@ router.get("/", requirePermission('tls:read'), async (req, res) => {
  * GET /api/tls/certificates/:id
  * Get certificate details
  */
-router.get("/:id", requirePermission('tls:read'), async (req, res) => {
+router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
   try {
     const id = String(req.params.id);
 
@@ -280,7 +280,7 @@ router.get("/:id", requirePermission('tls:read'), async (req, res) => {
  * POST /api/tls/certificates/:id/renew
  * Manually renew a certificate
  */
-router.post("/:id/renew", requirePermission('tls:write'), async (req, res) => {
+router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
     const user = getAuthenticatedUser(req);
@@ -313,7 +313,7 @@ router.post("/:id/renew", requirePermission('tls:write'), async (req, res) => {
  * DELETE /api/tls/certificates/:id
  * Delete a certificate
  */
-router.delete("/:id", requirePermission('tls:write'), async (req, res) => {
+router.delete("/:id", requirePermission(Permission.TlsWrite), async (req, res) => {
   try {
     const id = String(req.params.id);
     const user = getAuthenticatedUser(req);

@@ -7,7 +7,17 @@ import { emitToChannel } from "../lib/socket";
 import { requirePermission } from "../middleware/auth";
 import { getNatsControlPlaneService } from "../services/nats/nats-control-plane-service";
 import { NatsBus } from "../services/nats/nats-bus";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import {
+  restoreEncryptedIdentitySeeds,
+  IdentitySeedBackupError,
+} from "../services/nats/nats-identity-seed-backup";
+import {
+  loadIdentitySeedBlobFromSelfBackup,
+  SelfBackupNotFoundError,
+  SelfBackupNoSeedEntryError,
+} from "../services/backup/self-backup-seed-restore";
+import { ProviderNoLongerConfiguredError } from "../services/storage/storage-service";
+import { Channel, ServerEvent, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -70,6 +80,16 @@ const mintSchema = z.object({
   ttlSeconds: z.number().int().min(0).max(365 * 24 * 60 * 60).optional(),
 });
 
+const restoreSeedsSchema = z.object({
+  /** Id of the stored self-backup whose encrypted seed blob to restore from. */
+  selfBackupId: z.string().min(1),
+  /**
+   * Overwrite a present-but-different seed. Off by default so a restore can
+   * never silently swap a live identity — the normal target is an empty path.
+   */
+  force: z.boolean().optional(),
+});
+
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -81,7 +101,7 @@ function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
 
 router.get(
   "/status",
-  requirePermission("nats:read"),
+  requirePermission(Permission.NatsRead),
   asyncHandler(async (_req, res) => {
     res.json({ success: true, data: await getNatsControlPlaneService().getStatus() });
   }),
@@ -89,7 +109,7 @@ router.get(
 
 router.post(
   "/apply",
-  requirePermission("nats:admin"),
+  requirePermission(Permission.NatsAdmin),
   asyncHandler(async (_req, res) => {
     const operationId = `nats-apply-${crypto.randomUUID()}`;
     try {
@@ -111,83 +131,134 @@ router.post(
   }),
 );
 
-router.get("/accounts", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+/**
+ * Restore the NATS identity seeds (operator + accounts) from a stored
+ * self-backup into Vault KV — the Phase 2 recovery path for the exact data
+ * loss Phase 1's guard refuses to re-key through. Admin-gated. Idempotent:
+ * writes only missing/empty seed paths; a present-but-different seed is a
+ * conflict that is refused (409) unless `force` is set. Does NOT mint a new
+ * identity, so a subsequent `applyConfig` reconciles the *restored* identity.
+ */
+router.post(
+  "/identity-seeds/restore",
+  requirePermission(Permission.NatsAdmin),
+  asyncHandler(async (req, res) => {
+    const input = parseBody(restoreSeedsSchema, req.body ?? {});
+    try {
+      const blob = await loadIdentitySeedBlobFromSelfBackup(input.selfBackupId);
+      const result = await restoreEncryptedIdentitySeeds(blob, {
+        force: input.force,
+        userId: getUserId(req),
+      });
+      if (!result.applied) {
+        // Conflict: a present-but-different seed would be clobbered. Nothing
+        // was written. Surface the classification so the operator can decide
+        // whether to re-run with force.
+        return res.status(409).json({
+          success: false,
+          error: "SEED_RESTORE_CONFLICT",
+          message:
+            "One or more seeds already present in Vault differ from the backup; " +
+            "nothing was restored. Re-run with force to overwrite.",
+          data: result,
+        });
+      }
+      return res.json({ success: true, data: result });
+    } catch (err) {
+      if (err instanceof SelfBackupNotFoundError) {
+        return res.status(404).json({ success: false, error: err.code, message: err.message });
+      }
+      if (err instanceof SelfBackupNoSeedEntryError) {
+        return res.status(400).json({ success: false, error: err.code, message: err.message });
+      }
+      if (err instanceof ProviderNoLongerConfiguredError) {
+        return res.status(409).json({ success: false, error: err.code, message: err.message, providerId: err.providerId });
+      }
+      if (err instanceof IdentitySeedBackupError) {
+        return res.status(400).json({ success: false, error: "SEED_BACKUP_DECRYPT_FAILED", message: err.message });
+      }
+      throw err;
+    }
+  }),
+);
+
+router.get("/accounts", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listAccounts() });
 }));
 
-router.post("/accounts", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/accounts", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(accountCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createAccount(input, getUserId(req)) });
 }));
 
-router.patch("/accounts/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/accounts/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(accountUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateAccount(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/accounts/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/accounts/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteAccount(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.get("/credentials", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/credentials", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listCredentialProfiles() });
 }));
 
-router.post("/credentials", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/credentials", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(credentialCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createCredentialProfile(input, getUserId(req)) });
 }));
 
-router.patch("/credentials/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/credentials/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(credentialUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateCredentialProfile(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/credentials/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/credentials/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteCredentialProfile(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.post("/credentials/:id/mint", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/credentials/:id/mint", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(mintSchema, req.body ?? {});
   res.json({ success: true, data: await getNatsControlPlaneService().mintCredentialsForProfile(String(req.params.id), input.ttlSeconds) });
 }));
 
-router.get("/streams", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/streams", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listStreams() });
 }));
 
-router.post("/streams", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/streams", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(streamCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createStream(input, getUserId(req)) });
 }));
 
-router.patch("/streams/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/streams/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(streamUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateStream(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/streams/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/streams/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteStream(String(req.params.id));
   res.json({ success: true });
 }));
 
-router.get("/consumers", requirePermission("nats:read"), asyncHandler(async (_req, res) => {
+router.get("/consumers", requirePermission(Permission.NatsRead), asyncHandler(async (_req, res) => {
   res.json({ success: true, data: await getNatsControlPlaneService().listConsumers() });
 }));
 
-router.post("/consumers", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.post("/consumers", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(consumerCreateSchema, req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createConsumer(input, getUserId(req)) });
 }));
 
-router.patch("/consumers/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.patch("/consumers/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   const input = parseBody(consumerUpdateSchema, req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateConsumer(String(req.params.id), input, getUserId(req)) });
 }));
 
-router.delete("/consumers/:id", requirePermission("nats:write"), asyncHandler(async (req, res) => {
+router.delete("/consumers/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
   await getNatsControlPlaneService().deleteConsumer(String(req.params.id));
   res.json({ success: true });
 }));

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
-import { CONNECTIVITY_STATUS_TYPES } from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "tailscale-connectivity");
 
@@ -45,7 +45,7 @@ const historyQuerySchema = z.object({
 
 router.get(
   "/tailscale",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const cacheKey = "tailscale-connectivity-latest";
@@ -97,7 +97,7 @@ router.get(
 
 router.get(
   "/tailscale/history",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const queryResult = historyQuerySchema.safeParse(req.query);

@@ -26,20 +26,69 @@ import type {
   StackAdoptionCandidate,
   StackAdoptionCandidatesResponse,
   StackServiceDefinition,
+  StackNetworkEntry,
+  StackResourceOutput,
+  StackResourceInput,
 } from '@mini-infra/types';
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
 import { getUserId } from '../../lib/get-user-id';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
+import { Permission } from '@mini-infra/types';
+import type { Response } from 'express';
+import {
+  translateUnifiedNetworkDeclarations,
+  UnifiedNetworkDeclarationError,
+} from '../../services/networks';
 
 const logger = getLogger("stacks", "stacks-crud-routes");
 const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
 
 const router = Router();
 
+/**
+ * Phase 10 — translate a stack create/update payload's unified `networks[]`
+ * (+ per-service `networks[]`) declarations into the legacy shapes the rest
+ * of the create/update handlers already understand (`networks[]`,
+ * `resourceOutputs[]`, `containerConfig.joinResourceNetworks`). Runs
+ * immediately after schema validation. Returns `null` (having already
+ * written the 400 response) on ambiguous input — callers should return
+ * immediately when this returns `null`.
+ */
+function translateStackNetworks<
+  T extends {
+    networks?: StackNetworkEntry[];
+    resourceOutputs?: StackResourceOutput[];
+    resourceInputs?: StackResourceInput[];
+    services?: StackServiceDefinition[];
+  },
+>(data: T, res: Response): T | null {
+  try {
+    const translated = translateUnifiedNetworkDeclarations({
+      networks: data.networks,
+      resourceOutputs: data.resourceOutputs,
+      resourceInputs: data.resourceInputs,
+      services: data.services,
+    });
+    return {
+      ...data,
+      networks: translated.networks ?? data.networks,
+      resourceOutputs: translated.resourceOutputs,
+      resourceInputs: translated.resourceInputs,
+      services: translated.services ?? data.services,
+    } as T;
+  } catch (err) {
+    if (err instanceof UnifiedNetworkDeclarationError) {
+      res.status(400).json({ success: false, message: err.message });
+      return null;
+    }
+    throw err;
+  }
+}
+
 // GET / — List stacks
 router.get(
   '/',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const { environmentId, scope, source } = req.query;
     const where: Prisma.StackWhereInput = {};
@@ -98,7 +147,7 @@ router.get(
 // Must come before /:stackId to avoid parameter collision.
 router.get(
   '/eligible-containers',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   requireDockerConnected(),
   asyncHandler(async (req, res) => {
     const environmentId = req.query.environmentId as string | undefined;
@@ -144,7 +193,7 @@ router.get(
 // GET /:stackId — Get stack with services
 router.get(
   '/:stackId',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stack = await prisma.stack.findUnique({
       where: { id: String(req.params.stackId) },
@@ -171,7 +220,7 @@ router.get(
 // POST / — Create stack
 router.post(
   '/',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const parsed = createStackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -179,6 +228,9 @@ router.post(
         .status(400)
         .json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
+
+    const translatedData = translateStackNetworks(parsed.data, res);
+    if (!translatedData) return;
 
     const {
       name,
@@ -196,7 +248,7 @@ router.post(
       tunnelIngress,
       vaultAppRoleId,
       vaultFailClosed,
-    } = parsed.data;
+    } = translatedData;
 
     if (environmentId) {
       const environment = await prisma.environment.findUnique({ where: { id: environmentId } });
@@ -271,7 +323,7 @@ router.post(
 // PUT /:stackId — Update stack definition (or supply/rotate input values)
 router.put(
   '/:stackId',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const parsed = updateStackSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -279,6 +331,9 @@ router.put(
         .status(400)
         .json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
+
+    const translatedData = translateStackNetworks(parsed.data, res);
+    if (!translatedData) return;
 
     const stackId = String(req.params.stackId);
     const existing = await prisma.stack.findUnique({
@@ -302,7 +357,7 @@ router.put(
       vaultAppRoleId,
       inputValues,
       ...fields
-    } = parsed.data;
+    } = translatedData;
 
     // Merge supplied input values with stored ones using mergeForUpgrade so that
     // rotateOnUpgrade declarations are enforced on every input-values write.
@@ -427,7 +482,7 @@ router.put(
 // DELETE /:stackId — Delete stack
 router.delete(
   '/:stackId',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });

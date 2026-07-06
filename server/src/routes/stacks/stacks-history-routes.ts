@@ -4,13 +4,14 @@ import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { DockerExecutorService } from '../../services/docker-executor';
 import { serializeStack, mapContainerStatus } from '../../services/stacks/utils';
+import { Permission } from '@mini-infra/types';
 
 const router = Router();
 
 // GET /:stackId/status — Stack + live container status
 router.get(
   '/:stackId/status',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({
@@ -53,7 +54,7 @@ router.get(
 // GET /:stackId/history — Deployment history list
 router.get(
   '/:stackId/history',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -84,7 +85,7 @@ router.get(
 // GET /:stackId/history/:deploymentId — Specific deployment record
 router.get(
   '/:stackId/history/:deploymentId',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const deployment = await prisma.stackDeployment.findFirst({
       where: {

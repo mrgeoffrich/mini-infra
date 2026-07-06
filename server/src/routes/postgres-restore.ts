@@ -14,19 +14,7 @@ import {
   ProviderNoLongerConfiguredError,
   StorageService,
 } from "../services/storage/storage-service";
-import {
-  RestoreOperationStatusResponse,
-  CreateRestoreOperationResponse,
-  BackupBrowserResponse,
-  RestoreOperationFilter,
-  BackupBrowserFilter,
-  BackupBrowserSortOptions,
-  BackupBrowserItem,
-  RestoreOperationProgress,
-  RestoreOperationStatus,
-  BACKUP_OPERATION_STATUSES,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { RestoreOperationStatusResponse, CreateRestoreOperationResponse, BackupBrowserResponse, RestoreOperationFilter, BackupBrowserFilter, BackupBrowserSortOptions, BackupBrowserItem, RestoreOperationProgress, RestoreOperationStatus, BACKUP_OPERATION_STATUSES, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -284,13 +272,18 @@ function mapRestoreOperationToInfo(operation: Prisma.RestoreOperationGetPayload<
 }
 
 /**
- * List available backups from Azure Storage for all databases in a container
+ * List available backups from storage for a container. Backups are stored
+ * under a `<databaseId>/<file>` blob prefix in a container that is shared
+ * across databases, so pass `filterDatabaseId` to scope the results to a
+ * single database (used by the per-database restore page); omit it to list
+ * every database's backups in the container.
  */
 async function listAvailableBackupsInContainer(
   containerName: string,
   filter: BackupBrowserFilter,
   sort: BackupBrowserSortOptions,
   pagination: { page: number; limit: number },
+  filterDatabaseId?: string,
 ): Promise<{ items: BackupBrowserItem[]; totalCount: number }> {
   try {
     const storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
@@ -300,6 +293,16 @@ async function listAvailableBackupsInContainer(
 
     for (const obj of list.objects) {
       if (!obj.name.endsWith(".dump") && !obj.name.endsWith(".sql")) {
+        continue;
+      }
+
+      // Extract database ID from the blob path (`<databaseId>/<file>`).
+      const pathParts = obj.name.split("/");
+      const blobDatabaseId = pathParts.length > 1 ? pathParts[0] : "unknown";
+
+      // Scope to a single database when requested — skip other databases'
+      // backups before doing any (potentially SAS-minting) URL resolution.
+      if (filterDatabaseId && blobDatabaseId !== filterDatabaseId) {
         continue;
       }
 
@@ -324,10 +327,6 @@ async function listAvailableBackupsInContainer(
         url = `${containerName}/${obj.name}`;
       }
 
-      // Extract database ID from blob path
-      const pathParts = obj.name.split("/");
-      const databaseId = pathParts.length > 1 ? pathParts[0] : "unknown";
-
       const item: BackupBrowserItem = {
         name: obj.name,
         url,
@@ -337,7 +336,7 @@ async function listAvailableBackupsInContainer(
         lastModified:
           obj.lastModified?.toISOString() || new Date().toISOString(),
         metadata: {
-          databaseName: databaseId,
+          databaseName: blobDatabaseId,
           contentType: obj.contentType,
           etag: obj.etag,
           ...obj.metadata,
@@ -423,7 +422,7 @@ async function listAvailableBackupsInContainer(
 
 router.post(
   "/restore/:databaseId",
-  requirePermission('postgres:write'),
+  requirePermission(Permission.PostgresWrite),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -576,15 +575,17 @@ router.post(
         });
       }
 
-      // Locate the applied restore-executor JobPool stack. For Phase 5 the
-      // constraint is "at most one applied restore-executor stack" (same
-      // shape as pg-az-backup) — grab the first one. Failure here means an
-      // operator hasn't deployed the template yet; surface as 503 so the
-      // UI can hint the right next step.
+      // Locate the applied restore-executor JobPool stack whose environment
+      // matches this database's own — mirrors the pg-az-backup routing fix
+      // (see backup-executor.ts's findPgBackupStackForDatabase). Failure
+      // here means an operator hasn't deployed the template for this
+      // environment yet; surface as 503 so the UI can hint the right next
+      // step.
       const restoreService = await prisma.stackService.findFirst({
         where: {
           serviceName: RESTORE_EXECUTOR_SERVICE_NAME,
           serviceType: "JobPool",
+          stack: { environmentId: database.environmentId },
         },
         select: { stackId: true },
       });
@@ -774,7 +775,7 @@ router.post(
 
 router.get(
   "/restore/:operationId/status",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -866,11 +867,17 @@ router.get(
 
 router.get(
   "/restore/backups/:containerName",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
     const containerName = String(req.params.containerName);
+    // Optional: scope the listing to a single database. The restore page is
+    // per-database, so it passes `?databaseId=...`; omitting it lists every
+    // database's backups in the container.
+    const databaseId = req.query.databaseId
+      ? String(req.query.databaseId)
+      : undefined;
 
     if (!user?.id) {
       return res.status(401).json({
@@ -884,19 +891,20 @@ router.get(
 
     try {
       logger.debug(
-        { requestId, userId: user?.id, containerName },
+        { requestId, userId: user?.id, containerName, databaseId },
         "Browsing available backups in container",
       );
 
       // Parse query parameters
       const { pagination, filter, sort } = parseBackupBrowserQuery(req.query);
 
-      // List available backups from Azure Storage for all databases
+      // List available backups from storage (optionally scoped to one database)
       const { items, totalCount } = await listAvailableBackupsInContainer(
         containerName,
         filter,
         sort,
         pagination,
+        databaseId,
       );
 
       const response: BackupBrowserResponse = {
@@ -946,7 +954,7 @@ router.get(
 
 router.get(
   "/restore/:databaseId/operations",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);
@@ -1055,7 +1063,7 @@ router.get(
 
 router.get(
   "/restore/:operationId/progress",
-  requirePermission('postgres:read'),
+  requirePermission(Permission.PostgresRead),
   async (req, res) => {
     const requestId = res.locals.requestId;
     const user = getAuthenticatedUser(req);

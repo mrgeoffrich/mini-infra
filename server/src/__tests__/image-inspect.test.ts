@@ -71,11 +71,27 @@ describe("ImageInspectService", () => {
       expect(decodeURIComponent(mockFetch.mock.calls[0][0])).toContain("repository:myuser/myapp");
     });
 
-    it("returns exposed ports from GHCR with credentials", async () => {
+    it("returns exposed ports from GHCR with credentials, exchanging Basic creds for a Bearer token", async () => {
       const creds = { username: "user", password: "pat-token" };
       service = new ImageInspectService(creds);
 
-      // GHCR manifest (no separate token exchange needed with Basic auth)
+      // GHCR challenges anonymous /v2/ probes with a Bearer realm
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "www-authenticate"
+              ? 'Bearer realm="https://ghcr.io/token",service="ghcr.io"'
+              : null,
+        },
+      });
+      // Token exchange using the supplied Basic credentials
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ token: "ghcr-bearer-token" }),
+      });
+      // GHCR manifest, fetched with the exchanged Bearer token
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -95,8 +111,42 @@ describe("ImageInspectService", () => {
       const ports = await service.getExposedPorts("ghcr.io/owner/repo", "latest");
 
       expect(ports).toEqual([8080]);
-      // Verify Basic auth header was sent
-      const manifestCall = mockFetch.mock.calls[0];
+      // Verify the token exchange used the Basic credentials...
+      const tokenCall = mockFetch.mock.calls[1];
+      expect(tokenCall[1].headers.Authorization).toMatch(/^Basic /);
+      // ...and the manifest fetch used the exchanged Bearer token
+      const manifestCall = mockFetch.mock.calls[2];
+      expect(manifestCall[1].headers.Authorization).toBe("Bearer ghcr-bearer-token");
+    });
+
+    it("falls back to Basic auth against GHCR when no Bearer challenge is issued", async () => {
+      const creds = { username: "user", password: "pat-token" };
+      service = new ImageInspectService(creds);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          config: { digest: "sha256:def456" },
+        }),
+      });
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          config: {
+            ExposedPorts: { "8080/tcp": {} },
+          },
+        }),
+      });
+
+      const ports = await service.getExposedPorts("ghcr.io/owner/repo", "latest");
+
+      expect(ports).toEqual([8080]);
+      const manifestCall = mockFetch.mock.calls[1];
       expect(manifestCall[1].headers.Authorization).toMatch(/^Basic /);
     });
 

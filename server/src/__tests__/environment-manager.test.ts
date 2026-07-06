@@ -70,6 +70,10 @@ describe('EnvironmentManager', () => {
   let environmentManager: EnvironmentManager;
   let mockPrisma: Mocked<PrismaClient>;
   let mockDockerExecutor: Mocked<DockerExecutorService>;
+  // Reassignable per-test so individual tests can override the network
+  // inspect behaviour (e.g. to simulate a slow/hanging Docker call) that
+  // NetworkManager (services/networks/) reads via getDockerClient().getNetwork(...).inspect().
+  let mockNetworkInspect: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     // Reset singletons
@@ -85,16 +89,15 @@ describe('EnvironmentManager', () => {
         update: vi.fn(),
         delete: vi.fn(),
       },
-      environmentNetwork: {
-        upsert: vi.fn(),
-        update: vi.fn(),
-        create: vi.fn(),
-      },
       infraResource: {
         findFirst: vi.fn().mockResolvedValue(null),
         findMany: vi.fn().mockResolvedValue([]),
         create: vi.fn().mockResolvedValue({ id: 'infra-1' }),
         update: vi.fn().mockResolvedValue({}),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      managedNetwork: {
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       },
       stack: {
         findMany: vi.fn().mockResolvedValue([]),
@@ -115,21 +118,30 @@ describe('EnvironmentManager', () => {
       },
     } as any;
 
+    // NetworkManager (services/networks/) talks to the raw Docker client
+    // obtained via dockerExecutor.getDockerClient() — not the old
+    // dockerExecutor.networkExists()/createNetwork() passthroughs, which
+    // provisionEgressGateway no longer calls.
+    mockNetworkInspect = vi.fn().mockResolvedValue({
+      IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+    });
+
     mockDockerExecutor = {
       initialize: vi.fn().mockResolvedValue(undefined),
-      networkExists: vi.fn().mockResolvedValue(false),
       volumeExists: vi.fn().mockResolvedValue(false),
-      createNetwork: vi.fn().mockResolvedValue(undefined),
       createVolume: vi.fn().mockResolvedValue(undefined),
       getDockerClient: vi.fn().mockReturnValue({
         listContainers: vi.fn().mockResolvedValue([]),
         getContainer: vi.fn().mockReturnValue({ id: 'c-1' }),
+        // Used by NetworkManager.removeByOwner()'s label-filtered lookup
+        // (deleteEnvironment). Empty by default — tests that exercise
+        // network removal override this per-case.
+        listNetworks: vi.fn().mockResolvedValue([]),
         getNetwork: vi.fn().mockReturnValue({
           connect: vi.fn().mockResolvedValue(undefined),
           disconnect: vi.fn().mockResolvedValue(undefined),
-          inspect: vi.fn().mockResolvedValue({
-            IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
-          }),
+          inspect: mockNetworkInspect,
+          remove: vi.fn().mockResolvedValue(undefined),
         }),
       }),
     } as any;
@@ -171,14 +183,10 @@ describe('EnvironmentManager', () => {
         createdAt: new Date(),
         updatedAt: new Date()
       };
-      const fetchedEnvData = {
-        ...createdEnvData,
-        networks: [],
-      };
+      const fetchedEnvData = { ...createdEnvData };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
-      mockPrisma.environmentNetwork.upsert.mockResolvedValue({} as any);
 
       const request = {
         name: 'test-env',
@@ -214,14 +222,10 @@ describe('EnvironmentManager', () => {
         createdAt: new Date(),
         updatedAt: new Date()
       };
-      const fetchedEnvData = {
-        ...createdEnvData,
-        networks: [],
-      };
+      const fetchedEnvData = { ...createdEnvData };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
-      mockPrisma.environmentNetwork.upsert.mockResolvedValue({} as any);
 
       const request = {
         name: 'test-env',
@@ -252,14 +256,10 @@ describe('EnvironmentManager', () => {
         createdAt: new Date(),
         updatedAt: new Date()
       };
-      const fetchedEnvData = {
-        ...createdEnvData,
-        networks: [],
-      };
+      const fetchedEnvData = { ...createdEnvData };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
-      mockPrisma.environmentNetwork.upsert.mockResolvedValue({} as any);
 
       const request = {
         name: 'test-env',
@@ -289,16 +289,18 @@ describe('EnvironmentManager', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const fetchedEnvData = { ...createdEnvData, networks: [] };
+      const fetchedEnvData = { ...createdEnvData };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
 
-      // Make the egress provisioning step (network create) hang for a long time
-      // — long enough that any sync `await` would time out the test.
-      let resolveCreateNetwork!: () => void;
-      const blockingNetwork = new Promise<void>((resolve) => { resolveCreateNetwork = resolve; });
-      mockDockerExecutor.createNetwork.mockReturnValue(blockingNetwork as any);
+      // Make the egress provisioning step (network inspect, used by
+      // NetworkManager.ensure()/inspect() to read Docker's assigned subnet)
+      // hang for a long time — long enough that any sync `await` would time
+      // out the test.
+      let resolveNetworkInspect!: (value: unknown) => void;
+      const blockingInspect = new Promise((resolve) => { resolveNetworkInspect = resolve; });
+      mockNetworkInspect.mockReturnValue(blockingInspect);
 
       const request = { name: 'test-env', type: 'nonproduction' as const };
 
@@ -315,7 +317,7 @@ describe('EnvironmentManager', () => {
       expect(result.userEventId).toBe('user-event-1');
 
       // Release the blocked provisioning so the background work can settle.
-      resolveCreateNetwork();
+      resolveNetworkInspect({ IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] } });
       await result.provisioning;
     });
 
@@ -328,7 +330,7 @@ describe('EnvironmentManager', () => {
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const fetchedEnvData = { ...createdEnvData, networks: [] };
+      const fetchedEnvData = { ...createdEnvData };
 
       mockPrisma.environment.create.mockResolvedValue(createdEnvData as any);
       mockPrisma.environment.findUnique.mockResolvedValue(fetchedEnvData as any);
@@ -336,7 +338,12 @@ describe('EnvironmentManager', () => {
       // Make an egress provisioning step throw — provisionEgressGateway swallows
       // it, but the UserEvent should still finalise (env is usable) with a
       // warning entry in the logs. The HTTP response is unaffected.
-      mockDockerExecutor.networkExists.mockRejectedValueOnce(new Error('docker unavailable'));
+      // `environment.update` (persisting egressGatewayIp) only fires from the
+      // background provisioning path — not from the synchronous
+      // getEnvironmentById() call `createEnvironment()` makes before
+      // returning — so rejecting it here can't bleed into the synchronous
+      // assertions below.
+      mockPrisma.environment.update.mockRejectedValueOnce(new Error('docker unavailable'));
 
       const request = { name: 'test-env', type: 'nonproduction' as const };
 
@@ -363,7 +370,6 @@ describe('EnvironmentManager', () => {
         name: 'test-env',
         type: 'nonproduction',
         networkType: 'local',
-        networks: [],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -378,7 +384,6 @@ describe('EnvironmentManager', () => {
       expect(mockPrisma.environment.findUnique).toHaveBeenCalledWith({
         where: { id: 'env-1' },
         include: {
-          networks: true,
           _count: {
             select: {
               stacks: { where: { template: { source: 'user' } } },
@@ -406,7 +411,6 @@ describe('EnvironmentManager', () => {
         name: 'test-env',
         type: 'nonproduction',
         networkType: 'local',
-        networks: [],
         egressGatewayIp: '172.24.0.3',
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -492,7 +496,6 @@ describe('EnvironmentManager', () => {
           name: 'env-1',
           type: 'production',
           networkType: 'local',
-          networks: [],
           createdAt: new Date(),
           updatedAt: new Date()
         }
@@ -508,7 +511,6 @@ describe('EnvironmentManager', () => {
       expect(mockPrisma.environment.findMany).toHaveBeenCalledWith({
         where: { type: 'production' },
         include: {
-          networks: true,
           _count: {
             select: {
               stacks: { where: { template: { source: 'user' } } },
@@ -535,7 +537,6 @@ describe('EnvironmentManager', () => {
         type: 'production',
         networkType: 'local',
         egressFirewallEnabled: false,
-        networks: [],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -564,7 +565,6 @@ describe('EnvironmentManager', () => {
           egressFirewallEnabled: undefined,
         },
         include: {
-          networks: true,
           _count: {
             select: {
               stacks: { where: { template: { source: 'user' } } },
@@ -584,7 +584,6 @@ describe('EnvironmentManager', () => {
         name: 'test-env',
         type: 'nonproduction',
         networkType: 'local',
-        networks: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -655,15 +654,14 @@ describe('EnvironmentManager', () => {
   });
 
   describe('deleteEnvironment', () => {
-    it('should delete environment successfully when found', async () => {
-      const mockEnvironment = {
-        id: 'env-1',
-        name: 'test-env',
-        type: 'nonproduction',
-        networkType: 'local',
-        networks: [],
-      };
+    const mockEnvironment = {
+      id: 'env-1',
+      name: 'test-env',
+      type: 'nonproduction',
+      networkType: 'local',
+    };
 
+    it('should delete environment successfully when found', async () => {
       mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
       mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
 
@@ -681,6 +679,161 @@ describe('EnvironmentManager', () => {
       const result = await environmentManager.deleteEnvironment('non-existent');
 
       expect(result).toBe(false);
+    });
+
+    it("should only query docker-network-typed InfraResource rows as network-removal candidates (fixes PR #479 review M4 — InfraResource.type is 'extensible' per its schema doc)", async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(mockPrisma.infraResource.findMany).toHaveBeenCalledWith({
+        where: { environmentId: 'env-1', type: 'docker-network' },
+        select: { id: true, name: true },
+      });
+    });
+
+    it('should not touch Docker or InfraResource rows when the environment owns no InfraResource records', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+      const listNetworksSpy = mockDockerExecutor.getDockerClient().listNetworks as ReturnType<typeof vi.fn>;
+
+      const result = await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(result).toBe(true);
+      expect(listNetworksSpy).not.toHaveBeenCalled();
+      expect(mockPrisma.infraResource.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it('should explicitly delete owned InfraResource rows even when deleteNetworks is false (fixes L4)', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([
+        { id: 'ir-1', name: 'test-env-egress' },
+        { id: 'ir-2', name: 'test-env-applications' },
+      ] as any);
+      const listNetworksSpy = mockDockerExecutor.getDockerClient().listNetworks as ReturnType<typeof vi.fn>;
+
+      const result = await environmentManager.deleteEnvironment('env-1');
+
+      expect(result).toBe(true);
+      // deleteNetworks defaulted to false — Docker is never touched...
+      expect(listNetworksSpy).not.toHaveBeenCalled();
+      // ...but the dangling InfraResource rows are still cleaned up explicitly.
+      expect(mockPrisma.infraResource.deleteMany).toHaveBeenCalledWith({ where: { environmentId: 'env-1' } });
+    });
+
+    it('should remove every Docker network the environment owns via NetworkManager.removeByOwner when deleteNetworks=true (fixes L3)', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([
+        { id: 'ir-1', name: 'test-env-egress' },
+        { id: 'ir-2', name: 'test-env-applications' },
+      ] as any);
+      const listNetworksSpy = mockDockerExecutor.getDockerClient().listNetworks as ReturnType<typeof vi.fn>;
+
+      const result = await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(result).toBe(true);
+      // Label-driven lookup (not name reconstruction) — the fix for L3.
+      expect(listNetworksSpy).toHaveBeenCalledWith({
+        filters: {
+          label: [
+            'mini-infra.managed=true',
+            'mini-infra.owner-kind=environment',
+            'mini-infra.owner-id=env-1',
+          ],
+        },
+      });
+      // The recorded InfraResource names are passed as the pre-label-era fallback.
+      expect(mockPrisma.infraResource.deleteMany).toHaveBeenCalledWith({ where: { environmentId: 'env-1' } });
+    });
+
+    it('should force-disconnect the mini-infra server / lingering containers off env networks so the network is actually removable (fixes L3)', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([
+        { id: 'ir-1', name: 'test-env-egress' },
+      ] as any);
+      // The env's egress network still has the mini-infra server attached
+      // (the container-map-pusher self-join) at delete time — the exact case
+      // that used to leave every env network behind.
+      mockNetworkInspect.mockResolvedValue({
+        IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+        Containers: { 'mini-infra-server': {} },
+      });
+      const handle = mockDockerExecutor.getDockerClient().getNetwork();
+      const disconnectSpy = handle.disconnect as ReturnType<typeof vi.fn>;
+      const removeSpy = handle.remove as ReturnType<typeof vi.fn>;
+
+      const result = await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(result).toBe(true);
+      // Force-disconnect (Force: true) then remove — not a refuse-and-leak.
+      expect(disconnectSpy).toHaveBeenCalledWith({ Container: 'mini-infra-server', Force: true });
+      expect(removeSpy).toHaveBeenCalled();
+    });
+
+    it("should delete the environment's own ManagedNetwork rows (scope: environment) even when deleteNetworks is false and it owns no InfraResource rows (fixes PR #479 review HIGH — orphaned rows get silently reused by name on recreate)", async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      const result = await environmentManager.deleteEnvironment('env-1');
+
+      expect(result).toBe(true);
+      expect(mockPrisma.managedNetwork.deleteMany).toHaveBeenCalledWith({
+        where: { scope: 'environment', environmentId: 'env-1' },
+      });
+    });
+
+    it('should delete the ManagedNetwork rows before the environment row, so a same-name stack/network created afterwards never resolves the dead row by name', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([]);
+
+      const callOrder: string[] = [];
+      (mockPrisma.managedNetwork.deleteMany as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push('managedNetwork.deleteMany');
+        return { count: 1 };
+      });
+      (mockPrisma.environment.delete as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        callOrder.push('environment.delete');
+        return mockEnvironment;
+      });
+
+      await environmentManager.deleteEnvironment('env-1');
+
+      expect(callOrder).toEqual(['managedNetwork.deleteMany', 'environment.delete']);
+    });
+
+    it('should continue deleting the environment even when a network removal genuinely fails', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.environment.delete.mockResolvedValue(mockEnvironment as any);
+      mockPrisma.infraResource.findMany.mockResolvedValue([
+        { id: 'ir-1', name: 'test-env-egress' },
+      ] as any);
+      // Network is empty (nothing to force-disconnect) but the remove call
+      // itself fails with a non-404 (e.g. Docker hiccup) — NetworkManager.remove
+      // swallows it and returns { removed:false }, so the loop must continue
+      // and the environment row still gets deleted.
+      mockNetworkInspect.mockResolvedValue({
+        IPAM: { Config: [{ Subnet: '172.30.0.0/24', Gateway: '172.30.0.1' }] },
+        Containers: {},
+      });
+      const handle = mockDockerExecutor.getDockerClient().getNetwork();
+      (handle.remove as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error('docker daemon busy'), { statusCode: 500 }),
+      );
+
+      const result = await environmentManager.deleteEnvironment('env-1', { deleteNetworks: true });
+
+      expect(result).toBe(true);
+      expect(mockPrisma.environment.delete).toHaveBeenCalledWith({ where: { id: 'env-1' } });
+      // The InfraResource rows are still cleaned up even though Docker removal failed.
+      expect(mockPrisma.infraResource.deleteMany).toHaveBeenCalledWith({ where: { environmentId: 'env-1' } });
     });
   });
 });

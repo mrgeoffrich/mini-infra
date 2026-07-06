@@ -36,10 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
-import {
-  ConnectivityStatusInfo,
-  ConnectivityStatusType,
-} from "@mini-infra/types";
+import { ConnectivityStatusInfo } from "@mini-infra/types";
 import {
   ServiceStatusCard,
   StatusBadge,
@@ -252,7 +249,7 @@ function StatusHistoryTimeline({
                 <div key={status.id} className="flex items-start gap-3">
                   <div className="relative">
                     <StatusDot
-                      status={status.status as ConnectivityStatusType}
+                      status={status.status}
                       pulse={isLatest}
                     />
                     {index < historyItems.length - 1 && (
@@ -262,7 +259,7 @@ function StatusHistoryTimeline({
                   <div className="flex-1 min-w-0 pb-4">
                     <div className="flex items-center gap-2 mb-1">
                       <StatusBadge
-                        status={status.status as ConnectivityStatusType}
+                        status={status.status}
                         responseTimeMs={status.responseTimeMs}
                         size="sm"
                       />

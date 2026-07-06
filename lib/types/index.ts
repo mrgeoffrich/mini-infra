@@ -65,6 +65,9 @@ export * from "./user-events";
 // API response types
 export * from "./api";
 
+// Shared HTTP client primitives (header names, correlation-ID generator)
+export * from "./http";
+
 // Agent conversation types
 export * from "./agent";
 
@@ -106,6 +109,12 @@ export * from "./tailscale";
 
 // Pool-instance addon label keys
 export * from "./pool-addons";
+
+// API route registry (ApiBase/ApiRoute/ALL_API_ROUTES)
+export * from "./api-routes";
+
+// TanStack Query key factory (queryKeys)
+export * from "./query-keys";
 
 // ====================
 // Type Utilities

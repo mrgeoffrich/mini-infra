@@ -153,8 +153,12 @@ export class UserManagementService {
 
       await client.query(createQuery);
 
-      // Set password separately using parameterized query to prevent SQL injection
-      await client.query(`ALTER USER ${escapeIdentifier(sanitizedUsername)} WITH PASSWORD $1`, [params.password]);
+      // ALTER USER ... PASSWORD requires a string literal — it cannot be bound as a
+      // query parameter ("$1") since that clause isn't part of the expression grammar.
+      // Escape it as a literal instead to prevent SQL injection.
+      await client.query(
+        `ALTER USER ${escapeIdentifier(sanitizedUsername)} WITH PASSWORD ${client.escapeLiteral(params.password)}`
+      );
 
       await client.end();
 
@@ -246,7 +250,10 @@ export class UserManagementService {
     const client = await postgresServerService.getClient(serverId, userId);
 
     try {
-      await client.query(`ALTER USER ${escapeIdentifier(managedUser.username)} WITH PASSWORD $1`, [newPassword]);
+      // ALTER USER ... PASSWORD requires a string literal — see note in createUser().
+      await client.query(
+        `ALTER USER ${escapeIdentifier(managedUser.username)} WITH PASSWORD ${client.escapeLiteral(newPassword)}`
+      );
 
       await client.end();
 

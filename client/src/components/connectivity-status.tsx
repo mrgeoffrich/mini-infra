@@ -5,6 +5,7 @@ import {
   IconCircleX,
   IconClock,
   IconAlertCircle,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ import {
   ConnectivityStatusInfo,
   ConnectivityService,
   ConnectivityStatusType,
+  toConnectivityStatus,
 } from "@mini-infra/types";
 import {
   useServiceConnectivity,
@@ -45,34 +47,50 @@ interface StatusBadgeProps {
   showResponseTime?: boolean;
 }
 
+type StatusBadgeConfig = {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  variant: "default" | "destructive" | "secondary" | "outline";
+  className: string;
+};
+
+// Keyed exhaustively by ConnectivityStatusType via `satisfies` — adding a new
+// status to the shared vocabulary without a config entry here is a compile
+// error, so the badge/dot can never index this map to `undefined` at runtime.
 const statusConfig = {
   connected: {
     label: "Connected",
     icon: IconCircleCheck,
-    variant: "default" as const,
+    variant: "default",
     className:
       "bg-green-100 text-green-800 border-green-200 hover:bg-green-100",
   },
   failed: {
     label: "Failed",
     icon: IconCircleX,
-    variant: "destructive" as const,
+    variant: "destructive",
     className: "bg-red-100 text-red-800 border-red-200 hover:bg-red-100",
   },
   timeout: {
     label: "Timeout",
     icon: IconClock,
-    variant: "secondary" as const,
+    variant: "secondary",
     className:
       "bg-yellow-100 text-yellow-800 border-yellow-200 hover:bg-yellow-100",
   },
   unreachable: {
     label: "Unreachable",
     icon: IconAlertCircle,
-    variant: "outline" as const,
+    variant: "outline",
     className: "bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-100",
   },
-} as const;
+  error: {
+    label: "Error",
+    icon: IconAlertTriangle,
+    variant: "destructive",
+    className: "bg-red-100 text-red-800 border-red-200 hover:bg-red-100",
+  },
+} as const satisfies Record<ConnectivityStatusType, StatusBadgeConfig>;
 
 export function StatusBadge({
   status,
@@ -80,7 +98,10 @@ export function StatusBadge({
   size = "md",
   showResponseTime = true,
 }: StatusBadgeProps) {
-  const config = statusConfig[status];
+  // Normalise defensively: a raw/legacy DB value outside the vocabulary must
+  // degrade to a known status rather than index statusConfig to `undefined`.
+  const normalizedStatus = toConnectivityStatus(status);
+  const config = statusConfig[normalizedStatus];
   const Icon = config.icon;
 
   const sizeClasses = {
@@ -112,7 +133,7 @@ export function StatusBadge({
     >
       <Icon className={iconSizes[size]} />
       <span>{config.label}</span>
-      {showResponseTime && responseTimeMs && status === "connected" && (
+      {showResponseTime && responseTimeMs && normalizedStatus === "connected" && (
         <span className="ml-1 opacity-75">
           ({formatResponseTime(responseTimeMs)})
         </span>
@@ -136,7 +157,8 @@ export function StatusDot({
   size = "md",
   pulse = false,
 }: StatusDotProps) {
-  const config = statusConfig[status];
+  const normalizedStatus = toConnectivityStatus(status);
+  const config = statusConfig[normalizedStatus];
 
   const dotSizes = {
     sm: "h-2 w-2",
@@ -149,14 +171,15 @@ export function StatusDot({
     failed: "bg-red-500",
     timeout: "bg-yellow-500",
     unreachable: "bg-gray-500",
-  };
+    error: "bg-red-600",
+  } satisfies Record<ConnectivityStatusType, string>;
 
   return (
     <div
       className={cn(
         "rounded-full",
         dotSizes[size],
-        colors[status],
+        colors[normalizedStatus],
         pulse && "animate-pulse",
       )}
       aria-label={`Status: ${config.label}`}
@@ -264,7 +287,7 @@ export function ServiceStatusCard({
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <CardTitle className="text-base font-medium flex items-center gap-2">
-                <StatusDot status={status.status as ConnectivityStatusType} />
+                <StatusDot status={status.status} />
                 {serviceLabels[service]}
               </CardTitle>
               <CardDescription className="text-sm">
@@ -273,7 +296,7 @@ export function ServiceStatusCard({
             </div>
             <div className="flex items-center gap-2">
               <StatusBadge
-                status={status.status as ConnectivityStatusType}
+                status={status.status}
                 responseTimeMs={status.responseTimeMs}
                 size="sm"
               />
@@ -388,7 +411,7 @@ export function CompactStatus({
             )}
             onClick={onClick}
           >
-            <StatusDot status={status.status as ConnectivityStatusType} />
+            <StatusDot status={status.status} />
             {showLabel && (
               <span className="font-medium">{serviceLabels[service]}</span>
             )}
@@ -408,7 +431,7 @@ export function CompactStatus({
             <p className="font-medium">{serviceLabels[service]}</p>
             <div className="flex items-center gap-2">
               <StatusBadge
-                status={status.status as ConnectivityStatusType}
+                status={status.status}
                 responseTimeMs={status.responseTimeMs}
                 size="sm"
                 showResponseTime={false}

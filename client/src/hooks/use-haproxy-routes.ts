@@ -7,37 +7,31 @@ import {
   HAProxyRouteInfo,
   Channel,
   ServerEvent,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `haproxy-route-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
 
 // ====================
 // API Functions
 // ====================
+//
+// These endpoints are enveloped (`{success, data, message?}`), but every
+// existing consumer of these hooks (many outside this migration batch) reads
+// the *whole* envelope off the query result (e.g. `routesResponse?.data?.routes`).
+// To avoid rippling type/shape changes into files outside this batch's
+// scope, these functions keep returning the full envelope via
+// `{ unwrap: false }` rather than letting `apiFetch` auto-unwrap to the
+// inner `data` payload.
 
-async function fetchFrontendRoutes(
-  frontendName: string,
-  correlationId: string,
-): Promise<HAProxyRoutesListResponse> {
-  const response = await fetch(`/api/haproxy/frontends/${encodeURIComponent(frontendName)}/routes`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch routes: ${response.statusText}`);
-  }
-
-  const data: HAProxyRoutesListResponse = await response.json();
+async function fetchFrontendRoutes(frontendName: string): Promise<HAProxyRoutesListResponse> {
+  const data = await apiFetch<HAProxyRoutesListResponse>(
+    ApiRoute.haproxy.frontendRoutes(frontendName),
+    { correlationIdPrefix: "haproxy-route", unwrap: false },
+  );
 
   if (!data.success) {
     throw new Error("Failed to fetch routes");
@@ -49,24 +43,13 @@ async function fetchFrontendRoutes(
 async function createRoute(
   frontendName: string,
   request: CreateRouteRequest,
-  correlationId: string,
 ): Promise<CreateRouteResponse> {
-  const response = await fetch(`/api/haproxy/frontends/${encodeURIComponent(frontendName)}/routes`, {
+  const data = await apiFetch<CreateRouteResponse>(ApiRoute.haproxy.frontendRoutes(frontendName), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "haproxy-route",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to create route: ${response.statusText}`);
-  }
-
-  const data: CreateRouteResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to create route");
@@ -78,26 +61,11 @@ async function createRoute(
 async function deleteRoute(
   frontendName: string,
   routeId: string,
-  correlationId: string,
 ): Promise<DeleteRouteResponse> {
-  const response = await fetch(
-    `/api/haproxy/frontends/${encodeURIComponent(frontendName)}/routes/${routeId}`,
-    {
-      method: "DELETE",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
+  const data = await apiFetch<DeleteRouteResponse>(
+    ApiRoute.haproxy.frontendRoute(frontendName, routeId),
+    { method: "DELETE", correlationIdPrefix: "haproxy-route", unwrap: false },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to delete route: ${response.statusText}`);
-  }
-
-  const data: DeleteRouteResponse = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to delete route");
@@ -106,31 +74,21 @@ async function deleteRoute(
   return data;
 }
 
+interface UpdateRouteResponse {
+  success: boolean;
+  data: HAProxyRouteInfo;
+  message?: string;
+}
+
 async function updateRoute(
   frontendName: string,
   routeId: string,
   request: Partial<Pick<HAProxyRouteInfo, "hostname" | "backendName" | "useSSL" | "tlsCertificateId" | "priority">>,
-  correlationId: string,
-): Promise<{ success: boolean; data: HAProxyRouteInfo; message?: string }> {
-  const response = await fetch(
-    `/api/haproxy/frontends/${encodeURIComponent(frontendName)}/routes/${routeId}`,
-    {
-      method: "PATCH",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
-    },
+): Promise<UpdateRouteResponse> {
+  const data = await apiFetch<UpdateRouteResponse>(
+    ApiRoute.haproxy.frontendRoute(frontendName, routeId),
+    { method: "PATCH", body: request, correlationIdPrefix: "haproxy-route", unwrap: false },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to update route: ${response.statusText}`);
-  }
-
-  const data = await response.json();
 
   if (!data.success) {
     throw new Error(data.message || "Failed to update route");
@@ -156,7 +114,6 @@ export function useFrontendRoutes(
   options: UseHAProxyRoutesOptions = {},
 ) {
   const { enabled = true } = options;
-  const correlationId = generateCorrelationId();
   const queryClient = useQueryClient();
   const { connected } = useSocket();
 
@@ -168,24 +125,22 @@ export function useFrontendRoutes(
   useSocketEvent(
     ServerEvent.HAPROXY_FRONTENDS_LIST,
     () => {
-      queryClient.invalidateQueries({ queryKey: ["haproxy-routes"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.routes(frontendName!) });
     },
     enabled && !!frontendName,
   );
 
   return useQuery({
-    queryKey: ["haproxy-routes", frontendName],
-    queryFn: () => fetchFrontendRoutes(frontendName!, correlationId),
+    queryKey: queryKeys.haproxy.routes(frontendName!),
+    queryFn: () => fetchFrontendRoutes(frontendName!),
     enabled: enabled && !!frontendName,
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on certain errors
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized") ||
-        error.message.includes("404") ||
-        error.message.includes("not a shared frontend")
-      ) {
+      if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
+        return false;
+      }
+      if (error.message.includes("not a shared frontend")) {
         return false;
       }
       return failureCount < 3;
@@ -200,7 +155,6 @@ export function useFrontendRoutes(
  */
 export function useCreateRoute() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -209,14 +163,14 @@ export function useCreateRoute() {
     }: {
       frontendName: string;
       request: CreateRouteRequest;
-    }) => createRoute(frontendName, request, correlationId),
+    }) => createRoute(frontendName, request),
     onSuccess: (_, variables) => {
       // Invalidate routes list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-routes", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.routes(variables.frontendName) });
       // Invalidate frontend details
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontend", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontend(variables.frontendName) });
       // Invalidate all frontends list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
     },
   });
 }
@@ -226,7 +180,6 @@ export function useCreateRoute() {
  */
 export function useDeleteRoute() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -235,14 +188,14 @@ export function useDeleteRoute() {
     }: {
       frontendName: string;
       routeId: string;
-    }) => deleteRoute(frontendName, routeId, correlationId),
+    }) => deleteRoute(frontendName, routeId),
     onSuccess: (_, variables) => {
       // Invalidate routes list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-routes", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.routes(variables.frontendName) });
       // Invalidate frontend details
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontend", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontend(variables.frontendName) });
       // Invalidate all frontends list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
     },
   });
 }
@@ -252,7 +205,6 @@ export function useDeleteRoute() {
  */
 export function useUpdateRoute() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: ({
@@ -263,14 +215,14 @@ export function useUpdateRoute() {
       frontendName: string;
       routeId: string;
       request: Partial<Pick<HAProxyRouteInfo, "hostname" | "backendName" | "useSSL" | "tlsCertificateId" | "priority">>;
-    }) => updateRoute(frontendName, routeId, request, correlationId),
+    }) => updateRoute(frontendName, routeId, request),
     onSuccess: (_, variables) => {
       // Invalidate routes list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-routes", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.routes(variables.frontendName) });
       // Invalidate frontend details
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontend", variables.frontendName] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontend(variables.frontendName) });
       // Invalidate all frontends list
-      queryClient.invalidateQueries({ queryKey: ["haproxy-frontends"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.haproxy.frontends });
     },
   });
 }

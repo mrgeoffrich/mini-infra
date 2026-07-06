@@ -1,30 +1,21 @@
 import { useMutation } from "@tanstack/react-query";
-import type {
-  BugReportRequest,
-  BugReportResponse,
-} from "@mini-infra/types";
+import { ApiRoute } from "@mini-infra/types";
+import type { BugReportRequest, BugReportResponse } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
-// Hook for submitting a bug report
+// The server returns the full `{ success, data, message }` envelope as the
+// `BugReportResponse` shape itself (not just the inner `data`), and
+// bug-report-dialog.tsx reads `response.data.issueUrl` off the resolved
+// mutation value — so this is RAW from apiFetch's point of view: unwrap:false
+// so callers keep getting the whole body, matching the pre-migration shape.
 export function useSubmitBugReport() {
   return useMutation<BugReportResponse, Error, BugReportRequest>({
-    mutationFn: async (bugReport) => {
-      const response = await fetch("/api/github/bug-report", {
+    mutationFn: (bugReport) =>
+      apiFetch<BugReportResponse>(ApiRoute.githubBugReport.create(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(bugReport),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to submit bug report",
-        }));
-        throw new Error(errorData.message || "Failed to submit bug report");
-      }
-
-      return response.json();
-    },
+        body: bugReport,
+        unwrap: false,
+        correlationIdPrefix: "bug-report",
+      }),
   });
 }

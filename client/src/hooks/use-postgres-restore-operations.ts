@@ -15,12 +15,10 @@ import {
   BackupBrowserResponse,
   BackupBrowserFilter,
   BackupBrowserSortOptions,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `postgres-restore-ops-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // PostgreSQL Restore Operations API Functions
@@ -33,10 +31,9 @@ async function fetchPostgresRestoreOperations(
   limit = 20,
   sortBy: keyof RestoreOperationInfo = "startedAt",
   sortOrder: "asc" | "desc" = "desc",
-  correlationId: string,
 ): Promise<RestoreOperationListResponse> {
   const url = new URL(
-    `/api/postgres/restore/${databaseId}/operations`,
+    ApiRoute.postgres.restoreOperations(databaseId),
     window.location.origin,
   );
 
@@ -51,111 +48,42 @@ async function fetchPostgresRestoreOperations(
   if (filters.startedBefore)
     url.searchParams.set("startedBefore", filters.startedBefore);
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<RestoreOperationListResponse>(url.toString(), {
+    correlationIdPrefix: "postgres-restore-ops",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch restore operations: ${response.statusText}`,
-    );
-  }
-
-  const data: RestoreOperationListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch restore operations");
-  }
-
-  return data;
 }
 
 async function fetchPostgresRestoreOperationStatus(
   operationId: string,
-  correlationId: string,
 ): Promise<RestoreOperationStatusResponse> {
-  const response = await fetch(`/api/postgres/restore/${operationId}/status`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch restore operation status: ${response.statusText}`,
-    );
-  }
-
-  const data: RestoreOperationStatusResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch restore operation status");
-  }
-
-  return data;
+  return apiFetch<RestoreOperationStatusResponse>(
+    ApiRoute.postgres.restoreStatus(operationId),
+    { correlationIdPrefix: "postgres-restore-ops", unwrap: false },
+  );
 }
 
 async function createRestoreOperation(
   request: CreateRestoreOperationRequest,
-  correlationId: string,
 ): Promise<CreateRestoreOperationResponse> {
-  const response = await fetch(`/api/postgres/restore/${request.databaseId}`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
+  return apiFetch<CreateRestoreOperationResponse>(
+    ApiRoute.postgres.restore(request.databaseId),
+    {
+      method: "POST",
+      body: request,
+      correlationIdPrefix: "postgres-restore-ops",
+      unwrap: false,
     },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to create restore operation: ${response.statusText}`,
-    );
-  }
-
-  const data: CreateRestoreOperationResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.data?.message || "Failed to create restore operation");
-  }
-
-  return data;
+  );
 }
 
 async function fetchRestoreOperationProgress(
   operationId: string,
-  correlationId: string,
 ): Promise<{ success: boolean; data: RestoreOperationProgress }> {
-  const response = await fetch(
-    `/api/postgres/restore/${operationId}/progress`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch restore progress: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch restore progress");
-  }
-
-  return data;
+  return apiFetch(ApiRoute.postgres.restoreProgress(operationId), {
+    correlationIdPrefix: "postgres-restore-ops",
+    unwrap: false,
+  });
 }
 
 async function fetchAvailableBackups(
@@ -166,14 +94,19 @@ async function fetchAvailableBackups(
   limit = 20,
   sortBy: "createdAt" | "sizeBytes" | "name" = "createdAt",
   sortOrder: "asc" | "desc" = "desc",
-  correlationId: string,
 ): Promise<BackupBrowserResponse> {
+  // The server route is `GET /api/postgres/restore/backups/:containerName`
+  // (no `:databaseId` path segment — appending one 404'd). Backups live in a
+  // container shared across databases and are keyed by a `<databaseId>/...`
+  // blob prefix, so we scope to the current database with a `databaseId`
+  // query param that the route filters on.
   const url = new URL(
-    `/api/postgres/restore/backups/${containerName}/${databaseId}`,
+    ApiRoute.postgres.restoreBackupsForContainer(containerName),
     window.location.origin,
   );
 
   // Add query parameters
+  url.searchParams.set("databaseId", databaseId);
   url.searchParams.set("page", page.toString());
   url.searchParams.set("limit", limit.toString());
   url.searchParams.set("sortBy", sortBy);
@@ -187,27 +120,10 @@ async function fetchAvailableBackups(
   if (filters.sizeMax)
     url.searchParams.set("sizeMax", filters.sizeMax.toString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<BackupBrowserResponse>(url.toString(), {
+    correlationIdPrefix: "postgres-restore-ops",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch available backups: ${response.statusText}`,
-    );
-  }
-
-  const data: BackupBrowserResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch available backups");
-  }
-
-  return data;
 }
 
 // ====================
@@ -240,18 +156,15 @@ export function usePostgresRestoreOperations(
     sortOrder = "desc",
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: [
-      "postgresRestoreOperations",
+    queryKey: queryKeys.postgresRestoreOperations.list(
       databaseId,
       filters,
       page,
       limit,
       sortBy,
       sortOrder,
-    ],
+    ),
     queryFn: () =>
       fetchPostgresRestoreOperations(
         databaseId,
@@ -260,7 +173,6 @@ export function usePostgresRestoreOperations(
         limit,
         sortBy,
         sortOrder,
-        correlationId,
       ),
     enabled: enabled && !!databaseId,
     refetchInterval,
@@ -302,12 +214,10 @@ export function usePostgresRestoreOperationStatus(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresRestoreOperationStatus", operationId],
+    queryKey: queryKeys.postgresRestoreOperations.status(operationId),
     queryFn: () =>
-      fetchPostgresRestoreOperationStatus(operationId, correlationId),
+      fetchPostgresRestoreOperationStatus(operationId),
     enabled: enabled && !!operationId,
     refetchInterval,
     retry:
@@ -355,11 +265,9 @@ export function usePostgresRestoreOperationProgress(
     retry = 3,
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["postgresRestoreOperationProgress", operationId],
-    queryFn: () => fetchRestoreOperationProgress(operationId, correlationId),
+    queryKey: queryKeys.postgresRestoreOperations.progress(operationId),
+    queryFn: () => fetchRestoreOperationProgress(operationId),
     enabled: enabled && !!operationId,
     refetchInterval,
     retry:
@@ -418,11 +326,8 @@ export function useAvailableBackups(
     sortOrder = "desc",
   } = options;
 
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: [
-      "availableBackups",
+    queryKey: queryKeys.postgresRestoreOperations.availableBackups(
       containerName,
       databaseId,
       filters,
@@ -430,7 +335,7 @@ export function useAvailableBackups(
       limit,
       sortBy,
       sortOrder,
-    ],
+    ),
     queryFn: () =>
       fetchAvailableBackups(
         containerName,
@@ -440,7 +345,6 @@ export function useAvailableBackups(
         limit,
         sortBy,
         sortOrder,
-        correlationId,
       ),
     enabled: enabled && !!containerName && !!databaseId,
     refetchInterval,
@@ -476,15 +380,14 @@ export function useAvailableBackups(
 // Mutation hooks for restore operations
 export function useCreateRestoreOperation() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: (request: CreateRestoreOperationRequest) =>
-      createRestoreOperation(request, correlationId),
+      createRestoreOperation(request),
     onSuccess: (_, request) => {
       // Invalidate and refetch restore operations list
       queryClient.invalidateQueries({
-        queryKey: ["postgresRestoreOperations", request.databaseId],
+        queryKey: queryKeys.postgresRestoreOperations.forDatabase(request.databaseId),
       });
     },
   });

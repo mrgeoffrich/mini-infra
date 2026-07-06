@@ -13,6 +13,8 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IconLoader2, IconAlertCircle } from "@tabler/icons-react";
 import { useAuth } from "@/hooks/use-auth";
+import { ApiRoute } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 export function ForcePasswordChangePage() {
   const navigate = useNavigate();
@@ -33,24 +35,22 @@ export function ForcePasswordChangePage() {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/auth/change-password", {
+      await apiFetch(ApiRoute.auth.changePassword(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ newPassword }),
+        body: { newPassword },
+        correlationIdPrefix: "change-password",
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Password change failed");
-        return;
-      }
 
       await refetch();
       navigate("/dashboard");
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (err) {
+      // /auth/change-password responds with `{ error: "<human message>" }`
+      // (no `.message` field), so the human-readable text lands in
+      // ApiRequestError.code, not `.message` (which falls back to the
+      // generic HTTP status text for this route family).
+      setError(
+        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
+      );
     } finally {
       setIsSubmitting(false);
     }

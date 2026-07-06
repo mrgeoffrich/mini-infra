@@ -105,12 +105,18 @@ export function ApplicationCard({
   };
   const closeUpdateForm = () => setFlipped(false);
 
-  const { registerTask } = useTaskTracker();
+  const { registerTask, getTask } = useTaskTracker();
   const deployUpdate = useDeployApplicationUpdate();
 
-  // Cover the gap between deployUpdate resolving and the socket "pending" event
-  // arriving — keep the card locked until one or the other is true.
-  const effectivelyBusy = isBusy || deployUpdate.isPending;
+  // An in-flight tracked task for this stack is the authoritative "deploy is
+  // running" signal: it's registered synchronously when the user hits Redeploy
+  // and only clears on the terminal socket event. `deployUpdate.isPending` is
+  // fire-and-forget (clears on the "started" ACK) and the stack status only
+  // flips to "pending" after a refetch, so neither reliably covers the whole
+  // deploy — the tracked task does. Keep the card locked while any of them hold.
+  const trackedTask = primaryStack ? getTask(primaryStack.id) : undefined;
+  const taskExecuting = trackedTask?.operationState.phase === "executing";
+  const effectivelyBusy = isBusy || deployUpdate.isPending || taskExecuting;
 
   // Don't show the flipped face while the stack is churning — the busy overlay
   // takes precedence. Derived rather than an effect to avoid cascading renders.
@@ -277,6 +283,7 @@ export function ApplicationCard({
                       size="sm"
                       variant="outline"
                       className="flex-1"
+                      disabled={effectivelyBusy}
                       onClick={openUpdateForm}
                     >
                       <IconRefresh className="h-4 w-4 mr-1" />

@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import {
+  ApiRoute,
+  queryKeys,
   AzureContainerInfo,
   ConnectivityStatusFilter,
   ConnectivityStatusInfo,
@@ -8,6 +10,7 @@ import {
   StorageProviderId,
   ValidationResult,
 } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ====================
 // Storage settings types (provider-agnostic)
@@ -130,33 +133,6 @@ export interface StorageConnectivityFiltersState {
 // Helpers
 // ====================
 
-function generateCorrelationId(prefix: string): string {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-async function jsonRequest<T>(
-  url: string,
-  init: RequestInit,
-  correlationId: string,
-): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-      ...(init.headers ?? {}),
-    },
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(
-      `Request failed (${response.status} ${response.statusText}): ${text}`,
-    );
-  }
-  return (await response.json()) as T;
-}
-
 // ====================
 // API functions
 // ====================
@@ -170,14 +146,11 @@ interface StorageSettingsApiResponse {
   message?: string;
 }
 
-async function fetchStorageSettings(
-  correlationId: string,
-): Promise<StorageSettings> {
-  const raw = await jsonRequest<StorageSettingsApiResponse>(
-    `/api/storage`,
-    { method: "GET" },
-    correlationId,
-  );
+async function fetchStorageSettings(): Promise<StorageSettings> {
+  const raw = await apiFetch<StorageSettingsApiResponse>(ApiRoute.storage.root(), {
+    correlationIdPrefix: "storage",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to fetch storage settings");
   }
@@ -186,34 +159,32 @@ async function fetchStorageSettings(
 
 async function putActiveProvider(
   providerId: StorageProviderId,
-  correlationId: string,
 ): Promise<{ activeProviderId: StorageProviderId }> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: { activeProviderId: StorageProviderId };
     error?: string;
-  }>(
-    `/api/storage/active-provider`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ providerId }),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.activeProvider(), {
+    method: "PUT",
+    body: { providerId },
+    correlationIdPrefix: "storage",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.error || "Failed to update active storage provider");
   }
   return raw.data;
 }
 
-async function fetchAzureProviderConfig(
-  correlationId: string,
-): Promise<AzureProviderConfig> {
-  const raw = await jsonRequest<{
+async function fetchAzureProviderConfig(): Promise<AzureProviderConfig> {
+  const raw = await apiFetch<{
     success: boolean;
     data?: AzureProviderConfig;
     message?: string;
-  }>(`/api/storage/azure`, { method: "GET" }, correlationId);
+  }>(ApiRoute.storage.azure(), {
+    correlationIdPrefix: "storage-azure",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to fetch Azure provider config");
   }
@@ -222,20 +193,17 @@ async function fetchAzureProviderConfig(
 
 async function putAzureProviderConfig(
   body: UpdateAzureProviderInput,
-  correlationId: string,
 ): Promise<AzureProviderConfig> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: { connectionConfigured: boolean; accountName: string | null };
     message?: string;
-  }>(
-    `/api/storage/azure`,
-    {
-      method: "PUT",
-      body: JSON.stringify(body),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.azure(), {
+    method: "PUT",
+    body,
+    correlationIdPrefix: "storage-azure",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to update Azure provider config");
   }
@@ -248,13 +216,10 @@ async function putAzureProviderConfig(
   };
 }
 
-async function deleteAzureProviderConfig(
-  correlationId: string,
-): Promise<void> {
-  const raw = await jsonRequest<{ success: boolean; message?: string }>(
-    `/api/storage/azure`,
-    { method: "DELETE" },
-    correlationId,
+async function deleteAzureProviderConfig(): Promise<void> {
+  const raw = await apiFetch<{ success: boolean; message?: string }>(
+    ApiRoute.storage.azure(),
+    { method: "DELETE", correlationIdPrefix: "storage-azure", unwrap: false },
   );
   if (!raw.success) {
     throw new Error(raw.message || "Failed to delete Azure provider config");
@@ -263,30 +228,25 @@ async function deleteAzureProviderConfig(
 
 async function postValidateAzure(
   body: ValidateAzureInput,
-  correlationId: string,
 ): Promise<ValidationResult> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: ValidationResult;
     message?: string;
-  }>(
-    `/api/storage/azure/validate`,
-    {
-      method: "POST",
-      body: JSON.stringify(body),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.azureValidate(), {
+    method: "POST",
+    body,
+    correlationIdPrefix: "storage-azure",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to validate Azure connection");
   }
   return raw.data;
 }
 
-async function fetchAzureLocations(
-  correlationId: string,
-): Promise<StorageLocationsList> {
-  const raw = await jsonRequest<{
+async function fetchAzureLocations(): Promise<StorageLocationsList> {
+  const raw = await apiFetch<{
     success: boolean;
     data?: {
       accountName: string;
@@ -296,7 +256,10 @@ async function fetchAzureLocations(
       nextMarker?: string;
     };
     message?: string;
-  }>(`/api/storage/azure/locations`, { method: "GET" }, correlationId);
+  }>(ApiRoute.storage.azureLocations(), {
+    correlationIdPrefix: "storage-azure",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to fetch storage locations");
   }
@@ -311,20 +274,17 @@ async function fetchAzureLocations(
 
 async function postTestAzureLocation(
   locationId: string,
-  correlationId: string,
 ): Promise<TestStorageLocationResult> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: TestStorageLocationResult;
     message?: string;
-  }>(
-    `/api/storage/azure/test-location`,
-    {
-      method: "POST",
-      body: JSON.stringify({ locationId }),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.azureTestLocation(), {
+    method: "POST",
+    body: { locationId },
+    correlationIdPrefix: "storage-azure",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to test storage location");
   }
@@ -333,14 +293,15 @@ async function postTestAzureLocation(
 
 // ----- Google Drive provider -----
 
-async function fetchGoogleDriveProviderConfig(
-  correlationId: string,
-): Promise<GoogleDriveProviderConfig> {
-  const raw = await jsonRequest<{
+async function fetchGoogleDriveProviderConfig(): Promise<GoogleDriveProviderConfig> {
+  const raw = await apiFetch<{
     success: boolean;
     data?: GoogleDriveProviderConfig;
     message?: string;
-  }>(`/api/storage/google-drive`, { method: "GET" }, correlationId);
+  }>(ApiRoute.storage.googleDrive(), {
+    correlationIdPrefix: "storage-google-drive",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(
       raw.message || "Failed to fetch Google Drive provider config",
@@ -351,17 +312,17 @@ async function fetchGoogleDriveProviderConfig(
 
 async function putGoogleDriveProviderConfig(
   body: UpdateGoogleDriveProviderInput,
-  correlationId: string,
 ): Promise<GoogleDriveProviderConfig> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: GoogleDriveProviderConfig;
     message?: string;
-  }>(
-    `/api/storage/google-drive`,
-    { method: "PUT", body: JSON.stringify(body) },
-    correlationId,
-  );
+  }>(ApiRoute.storage.googleDrive(), {
+    method: "PUT",
+    body,
+    correlationIdPrefix: "storage-google-drive",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(
       raw.message || "Failed to update Google Drive provider config",
@@ -369,16 +330,13 @@ async function putGoogleDriveProviderConfig(
   }
   // Server returns a partial shape — round-trip through GET so we always
   // surface the full provider state.
-  return await fetchGoogleDriveProviderConfig(correlationId);
+  return await fetchGoogleDriveProviderConfig();
 }
 
-async function deleteGoogleDriveProviderConfig(
-  correlationId: string,
-): Promise<void> {
-  const raw = await jsonRequest<{ success: boolean; message?: string }>(
-    `/api/storage/google-drive`,
-    { method: "DELETE" },
-    correlationId,
+async function deleteGoogleDriveProviderConfig(): Promise<void> {
+  const raw = await apiFetch<{ success: boolean; message?: string }>(
+    ApiRoute.storage.googleDrive(),
+    { method: "DELETE", correlationIdPrefix: "storage-google-drive", unwrap: false },
   );
   if (!raw.success) {
     throw new Error(
@@ -387,25 +345,30 @@ async function deleteGoogleDriveProviderConfig(
   }
 }
 
-async function postDisconnectGoogleDrive(correlationId: string): Promise<void> {
-  const raw = await jsonRequest<{ success: boolean; message?: string }>(
-    `/api/storage/google-drive/disconnect`,
-    { method: "POST", body: JSON.stringify({}) },
-    correlationId,
+async function postDisconnectGoogleDrive(): Promise<void> {
+  const raw = await apiFetch<{ success: boolean; message?: string }>(
+    ApiRoute.storage.googleDriveDisconnect(),
+    {
+      method: "POST",
+      body: {},
+      correlationIdPrefix: "storage-google-drive",
+      unwrap: false,
+    },
   );
   if (!raw.success) {
     throw new Error(raw.message || "Failed to disconnect Google Drive");
   }
 }
 
-async function fetchGoogleDriveFolders(
-  correlationId: string,
-): Promise<GoogleDriveFolderList> {
-  const raw = await jsonRequest<{
+async function fetchGoogleDriveFolders(): Promise<GoogleDriveFolderList> {
+  const raw = await apiFetch<{
     success: boolean;
     data?: GoogleDriveFolderList;
     message?: string;
-  }>(`/api/storage/google-drive/locations`, { method: "GET" }, correlationId);
+  }>(ApiRoute.storage.googleDriveLocations(), {
+    correlationIdPrefix: "storage-google-drive",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to fetch Google Drive folders");
   }
@@ -414,20 +377,17 @@ async function fetchGoogleDriveFolders(
 
 async function postTestGoogleDriveLocation(
   locationId: string,
-  correlationId: string,
 ): Promise<TestStorageLocationResult> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: TestStorageLocationResult;
     message?: string;
-  }>(
-    `/api/storage/google-drive/test-location`,
-    {
-      method: "POST",
-      body: JSON.stringify({ locationId }),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.googleDriveTestLocation(), {
+    method: "POST",
+    body: { locationId },
+    correlationIdPrefix: "storage-google-drive",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to test Google Drive folder");
   }
@@ -436,20 +396,17 @@ async function postTestGoogleDriveLocation(
 
 async function postCreateGoogleDriveFolder(
   name: string,
-  correlationId: string,
 ): Promise<{ id: string; displayName: string }> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: { id: string; displayName: string };
     message?: string;
-  }>(
-    `/api/storage/google-drive/create-folder`,
-    {
-      method: "POST",
-      body: JSON.stringify({ name }),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.googleDriveCreateFolder(), {
+    method: "POST",
+    body: { name },
+    correlationIdPrefix: "storage-google-drive",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to create Google Drive folder");
   }
@@ -459,38 +416,41 @@ async function postCreateGoogleDriveFolder(
 async function putStorageLocation(
   slot: StorageSlotKey,
   locationId: string,
-  correlationId: string,
 ): Promise<{ slot: StorageSlotKey; locationId: string }> {
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: { slot: StorageSlotKey; locationId: string };
     error?: string;
-  }>(
-    `/api/storage/locations/${encodeURIComponent(slot)}`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ locationId }),
-    },
-    correlationId,
-  );
+  }>(ApiRoute.storage.location(encodeURIComponent(slot)), {
+    method: "PUT",
+    body: { locationId },
+    correlationIdPrefix: "storage",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.error || "Failed to update storage location");
   }
   return raw.data;
 }
 
-async function fetchStorageConnectivity(
-  correlationId: string,
-): Promise<ConnectivityStatusInfo> {
-  const response = await fetch(`/api/connectivity/storage`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-  if (!response.ok) {
-    if (response.status === 404) {
+async function fetchStorageConnectivity(): Promise<ConnectivityStatusInfo> {
+  try {
+    const data = await apiFetch<{
+      success: boolean;
+      data?: ConnectivityStatusInfo;
+      message?: string;
+    }>(ApiRoute.connectivity.storage(), {
+      correlationIdPrefix: "storage-conn",
+      unwrap: false,
+    });
+    if (!data.success || !data.data) {
+      throw new Error(
+        data.message || "Failed to fetch storage connectivity status",
+      );
+    }
+    return data.data;
+  } catch (err) {
+    if (err instanceof ApiRequestError && err.status === 404) {
       return {
         id: "no-status",
         service: "storage",
@@ -504,21 +464,8 @@ async function fetchStorageConnectivity(
         metadata: null,
       };
     }
-    throw new Error(
-      `Failed to fetch storage connectivity status: ${response.statusText}`,
-    );
+    throw err;
   }
-  const data = (await response.json()) as {
-    success: boolean;
-    data?: ConnectivityStatusInfo;
-    message?: string;
-  };
-  if (!data.success || !data.data) {
-    throw new Error(
-      data.message || "Failed to fetch storage connectivity status",
-    );
-  }
-  return data.data;
 }
 
 async function fetchStorageConnectivityHistory(
@@ -527,12 +474,8 @@ async function fetchStorageConnectivityHistory(
   limit: number,
   sortBy: "checkedAt" | "status" | "responseTimeMs",
   sortOrder: "asc" | "desc",
-  correlationId: string,
 ): Promise<ConnectivityStatusListResponse> {
-  const url = new URL(
-    `/api/connectivity/storage/history`,
-    window.location.origin,
-  );
+  const url = new URL(ApiRoute.connectivity.storageHistory(), window.location.origin);
   url.searchParams.set("page", page.toString());
   url.searchParams.set("limit", limit.toString());
   url.searchParams.set("sortBy", sortBy);
@@ -545,19 +488,10 @@ async function fetchStorageConnectivityHistory(
   if (filters.endDate)
     url.searchParams.set("endDate", filters.endDate.toISOString());
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch storage connectivity history: ${response.statusText}`,
-    );
-  }
-  const data = (await response.json()) as ConnectivityStatusListResponse;
+  const data = await apiFetch<ConnectivityStatusListResponse>(
+    url.pathname + url.search,
+    { correlationIdPrefix: "storage-conn-hist", unwrap: false },
+  );
   if (!data.success) {
     throw new Error(
       data.message || "Failed to fetch storage connectivity history",
@@ -601,60 +535,85 @@ export interface ForgetProviderResult {
 
 async function fetchStorageSwitchPrecheck(
   targetProvider: StorageProviderId,
-  correlationId: string,
 ): Promise<StorageSwitchPrecheck> {
-  const url = new URL(
-    `/api/storage/switch-precheck`,
-    window.location.origin,
-  );
+  const url = new URL(ApiRoute.storage.switchPrecheck(), window.location.origin);
   url.searchParams.set("targetProvider", targetProvider);
-  const raw = await jsonRequest<{
+  const raw = await apiFetch<{
     success: boolean;
     data?: StorageSwitchPrecheck;
     message?: string;
-  }>(url.pathname + url.search, { method: "GET" }, correlationId);
+  }>(url.pathname + url.search, {
+    correlationIdPrefix: "storage-precheck",
+    unwrap: false,
+  });
   if (!raw.success || !raw.data) {
     throw new Error(raw.message || "Failed to compute switch precheck");
   }
   return raw.data;
 }
 
+type ForgetProviderEnvelope = {
+  success?: boolean;
+  error?: string;
+  message?: string;
+  data?: ForgetProviderResult & { referencingRowCount?: number };
+};
+
+/** Throws an `Error` shaped exactly like the pre-migration `postForgetProvider`
+ * error (`.status`/`.data`/`.code`) — `StorageForgetProviderButton.tsx` (outside
+ * this migration batch) reads those fields directly off the caught error. */
+function throwForgetError(
+  status: number,
+  code: string | undefined,
+  message: string,
+  data: ForgetProviderEnvelope["data"],
+): never {
+  const err = new Error(message) as Error & {
+    status?: number;
+    data?: ForgetProviderEnvelope["data"];
+    code?: string;
+  };
+  err.status = status;
+  err.data = data;
+  err.code = code;
+  throw err;
+}
+
 async function postForgetProvider(
   provider: StorageProviderId,
   force: boolean,
-  correlationId: string,
 ): Promise<ForgetProviderResult> {
-  const url = new URL(
-    `/api/storage/${encodeURIComponent(provider)}/forget`,
-    window.location.origin,
-  );
+  const url = new URL(ApiRoute.storage.forget(provider), window.location.origin);
   if (force) url.searchParams.set("force", "true");
-  const response = await fetch(url.pathname + url.search, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify({}),
-  });
-  const json = (await response.json().catch(() => ({}))) as {
-    success?: boolean;
-    error?: string;
-    message?: string;
-    data?: ForgetProviderResult & { referencingRowCount?: number };
-  };
-  if (!response.ok || !json.success) {
-    const detail = json.message || json.error || `HTTP ${response.status}`;
-    const err = new Error(detail) as Error & {
-      status?: number;
-      data?: typeof json.data;
-      code?: string;
-    };
-    err.status = response.status;
-    err.data = json.data;
-    err.code = json.error;
+
+  let json: ForgetProviderEnvelope;
+  try {
+    json = await apiFetch<ForgetProviderEnvelope>(url.pathname + url.search, {
+      method: "POST",
+      body: {},
+      correlationIdPrefix: "storage-forget",
+      unwrap: false,
+    });
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      const body = err.body as ForgetProviderEnvelope | undefined;
+      throwForgetError(
+        err.status,
+        body?.error ?? err.code,
+        body?.message || body?.error || err.message,
+        body?.data,
+      );
+    }
     throw err;
+  }
+
+  if (!json.success) {
+    throwForgetError(
+      200,
+      json.error,
+      json.message || json.error || "Request failed",
+      json.data,
+    );
   }
   if (!json.data) {
     throw new Error("Forget provider response missing data");
@@ -662,18 +621,15 @@ async function postForgetProvider(
   return json.data;
 }
 
+
 export function useStorageSwitchPrecheck(
   targetProvider: StorageProviderId | null,
   options: { enabled?: boolean } = {},
 ) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["storage", "switch-precheck", targetProvider],
-    queryFn: () =>
-      fetchStorageSwitchPrecheck(
-        targetProvider as StorageProviderId,
-        generateCorrelationId("storage-precheck"),
-      ),
+    queryKey: queryKeys.storage.switchPrecheck(targetProvider),
+    queryFn: () => fetchStorageSwitchPrecheck(targetProvider as StorageProviderId),
     enabled: enabled && targetProvider !== null,
     staleTime: 0,
     gcTime: 60_000,
@@ -690,15 +646,10 @@ export function useForgetStorageProvider() {
     }: {
       provider: StorageProviderId;
       force?: boolean;
-    }) =>
-      postForgetProvider(
-        provider,
-        !!force,
-        generateCorrelationId("storage-forget"),
-      ),
+    }) => postForgetProvider(provider, !!force),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -711,8 +662,8 @@ export interface UseStorageSettingsOptions {
 export function useStorageSettings(options: UseStorageSettingsOptions = {}) {
   const { enabled = true, refetchInterval } = options;
   return useQuery({
-    queryKey: ["storage", "settings"],
-    queryFn: () => fetchStorageSettings(generateCorrelationId("storage")),
+    queryKey: queryKeys.settings.storageSettings,
+    queryFn: () => fetchStorageSettings(),
     enabled,
     refetchInterval,
     staleTime: 5_000,
@@ -725,10 +676,9 @@ export function useStorageSettings(options: UseStorageSettingsOptions = {}) {
 export function useUpdateActiveProvider() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (providerId: StorageProviderId) =>
-      putActiveProvider(providerId, generateCorrelationId("storage")),
+    mutationFn: (providerId: StorageProviderId) => putActiveProvider(providerId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
     },
   });
 }
@@ -736,10 +686,9 @@ export function useUpdateActiveProvider() {
 export function useUpdateStorageLocation(slot: StorageSlotKey) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (locationId: string) =>
-      putStorageLocation(slot, locationId, generateCorrelationId("storage")),
+    mutationFn: (locationId: string) => putStorageLocation(slot, locationId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage", "settings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.storageSettings });
     },
   });
 }
@@ -749,9 +698,8 @@ export function useAzureProviderConfig(
 ) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["storage", "azure", "config"],
-    queryFn: () =>
-      fetchAzureProviderConfig(generateCorrelationId("storage-azure")),
+    queryKey: queryKeys.storage.azureConfig,
+    queryFn: () => fetchAzureProviderConfig(),
     enabled,
     staleTime: 5_000,
     gcTime: 5 * 60 * 1000,
@@ -763,11 +711,10 @@ export function useAzureProviderConfig(
 export function useUpdateAzureProviderConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: UpdateAzureProviderInput) =>
-      putAzureProviderConfig(body, generateCorrelationId("storage-azure")),
+    mutationFn: (body: UpdateAzureProviderInput) => putAzureProviderConfig(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -775,20 +722,18 @@ export function useUpdateAzureProviderConfig() {
 export function useDeleteAzureProviderConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      deleteAzureProviderConfig(generateCorrelationId("storage-azure")),
+    mutationFn: () => deleteAzureProviderConfig(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
-      queryClient.removeQueries({ queryKey: ["storage", "azure", "locations"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+      queryClient.removeQueries({ queryKey: queryKeys.storage.azureLocations });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
 
 export function useValidateAzureConnection() {
   return useMutation({
-    mutationFn: (body: ValidateAzureInput = {}) =>
-      postValidateAzure(body, generateCorrelationId("storage-azure")),
+    mutationFn: (body: ValidateAzureInput = {}) => postValidateAzure(body),
   });
 }
 
@@ -809,8 +754,8 @@ export function useStorageLocationsList(
 ) {
   const { enabled = true, refetchInterval } = options;
   return useQuery({
-    queryKey: ["storage", provider, "locations"],
-    queryFn: () => fetchAzureLocations(generateCorrelationId("storage-azure")),
+    queryKey: queryKeys.storage.locations(provider),
+    queryFn: () => fetchAzureLocations(),
     enabled: enabled && provider === "azure",
     refetchInterval,
     staleTime: 30_000,
@@ -824,15 +769,9 @@ export function useTestStorageLocationAccess(provider: StorageProviderId) {
   return useMutation({
     mutationFn: (locationId: string) => {
       if (provider === "azure") {
-        return postTestAzureLocation(
-          locationId,
-          generateCorrelationId("storage-azure"),
-        );
+        return postTestAzureLocation(locationId);
       }
-      return postTestGoogleDriveLocation(
-        locationId,
-        generateCorrelationId("storage-google-drive"),
-      );
+      return postTestGoogleDriveLocation(locationId);
     },
   });
 }
@@ -844,11 +783,8 @@ export function useGoogleDriveProviderConfig(
 ) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["storage", "google-drive", "config"],
-    queryFn: () =>
-      fetchGoogleDriveProviderConfig(
-        generateCorrelationId("storage-google-drive"),
-      ),
+    queryKey: queryKeys.storage.googleDriveConfig,
+    queryFn: () => fetchGoogleDriveProviderConfig(),
     enabled,
     staleTime: 5_000,
     gcTime: 5 * 60 * 1000,
@@ -861,13 +797,10 @@ export function useUpdateGoogleDriveProviderConfig() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: UpdateGoogleDriveProviderInput) =>
-      putGoogleDriveProviderConfig(
-        body,
-        generateCorrelationId("storage-google-drive"),
-      ),
+      putGoogleDriveProviderConfig(body),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -875,13 +808,10 @@ export function useUpdateGoogleDriveProviderConfig() {
 export function useDeleteGoogleDriveProviderConfig() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      deleteGoogleDriveProviderConfig(
-        generateCorrelationId("storage-google-drive"),
-      ),
+    mutationFn: () => deleteGoogleDriveProviderConfig(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage"] });
-      queryClient.invalidateQueries({ queryKey: ["connectivityStatus"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
   });
 }
@@ -889,12 +819,11 @@ export function useDeleteGoogleDriveProviderConfig() {
 export function useDisconnectGoogleDrive() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      postDisconnectGoogleDrive(generateCorrelationId("storage-google-drive")),
+    mutationFn: () => postDisconnectGoogleDrive(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["storage", "google-drive"] });
-      queryClient.invalidateQueries({ queryKey: ["storage", "settings"] });
-      queryClient.invalidateQueries({ queryKey: ["storage", "connectivity"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.googleDriveAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.storageSettings });
+      queryClient.invalidateQueries({ queryKey: queryKeys.storage.connectivity });
     },
   });
 }
@@ -907,16 +836,15 @@ export function useDisconnectGoogleDrive() {
  */
 export function useStartGoogleDriveOAuth() {
   return {
-    authorizeUrl: "/api/storage/google-drive/oauth/start",
+    authorizeUrl: ApiRoute.storage.googleDriveOauthStart(),
   };
 }
 
 export function useGoogleDriveFolders(options: { enabled?: boolean } = {}) {
   const { enabled = true } = options;
   return useQuery({
-    queryKey: ["storage", "google-drive", "folders"],
-    queryFn: () =>
-      fetchGoogleDriveFolders(generateCorrelationId("storage-google-drive")),
+    queryKey: queryKeys.storage.googleDriveFolders,
+    queryFn: () => fetchGoogleDriveFolders(),
     enabled,
     staleTime: 30_000,
     gcTime: 5 * 60 * 1000,
@@ -928,14 +856,10 @@ export function useGoogleDriveFolders(options: { enabled?: boolean } = {}) {
 export function useCreateGoogleDriveFolder() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) =>
-      postCreateGoogleDriveFolder(
-        name,
-        generateCorrelationId("storage-google-drive"),
-      ),
+    mutationFn: (name: string) => postCreateGoogleDriveFolder(name),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ["storage", "google-drive", "folders"],
+        queryKey: queryKeys.storage.googleDriveFolders,
       });
     },
   });
@@ -951,9 +875,8 @@ export function useStorageConnectivity(
 ) {
   const { enabled = true, refetchInterval = 30_000 } = options;
   return useQuery({
-    queryKey: ["storage", "connectivity"],
-    queryFn: () =>
-      fetchStorageConnectivity(generateCorrelationId("storage-conn")),
+    queryKey: queryKeys.storage.connectivity,
+    queryFn: () => fetchStorageConnectivity(),
     enabled,
     refetchInterval,
     staleTime: 10_000,
@@ -984,25 +907,15 @@ export function useStorageConnectivityHistory(
     sortOrder = "desc",
   } = options;
   return useQuery({
-    queryKey: [
-      "storage",
-      "connectivity",
-      "history",
+    queryKey: queryKeys.storage.connectivityHistory(
       filters,
       page,
       limit,
       sortBy,
       sortOrder,
-    ],
+    ),
     queryFn: () =>
-      fetchStorageConnectivityHistory(
-        filters,
-        page,
-        limit,
-        sortBy,
-        sortOrder,
-        generateCorrelationId("storage-conn-hist"),
-      ),
+      fetchStorageConnectivityHistory(filters, page, limit, sortBy, sortOrder),
     enabled,
     staleTime: 30_000,
     gcTime: 10 * 60 * 1000,

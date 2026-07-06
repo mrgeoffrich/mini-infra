@@ -1,4 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
+import { ApiRoute } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 interface DetectPortsParams {
   image: string;
@@ -21,37 +23,45 @@ async function validateImage({
   image,
   tag,
 }: DetectPortsParams): Promise<ImageValidationResult> {
-  const url = new URL("/api/images/inspect-ports", window.location.origin);
+  const url = new URL(ApiRoute.images.inspectPorts(), window.location.origin);
   url.searchParams.set("image", image);
   url.searchParams.set("tag", tag);
 
-  const res = await fetch(url.toString(), {
-    credentials: "include",
-  });
-
-  let data: DetectPortsResponse;
   try {
-    data = await res.json();
-  } catch {
+    // Raw response — `{success, ports, error}` has no `{success, data}`
+    // envelope, and its `error` field is a human-readable message (not a
+    // machine code), so it's read straight off `.body` rather than via
+    // apiFetch's `.message`/`.code` extraction (which look for `.message`
+    // and `.error`-as-code respectively — a mismatch for this shape).
+    const data = await apiFetch<DetectPortsResponse>(url.toString(), {
+      unwrap: false,
+      correlationIdPrefix: "images",
+    });
+
+    if (!data) {
+      return { status: "error", message: `Unexpected response` };
+    }
+    if (data.success) {
+      return { status: "success", ports: data.ports };
+    }
+    return { status: "error", message: data.error ?? "Failed to inspect image" };
+  } catch (err) {
+    if (err instanceof ApiRequestError) {
+      const body = err.body as DetectPortsResponse | undefined;
+      const message = body?.error ?? `Failed to inspect image (${err.status})`;
+      if (err.status === 404) {
+        return { status: "not-found", message };
+      }
+      if (err.status === 401 || err.status === 403) {
+        return { status: "auth-required", message };
+      }
+      return { status: "error", message };
+    }
     return {
       status: "error",
-      message: `Unexpected response (${res.status})`,
+      message: err instanceof Error ? err.message : "Unexpected error",
     };
   }
-
-  if (res.ok && data.success) {
-    return { status: "success", ports: data.ports };
-  }
-
-  const message = data.error ?? `Failed to inspect image (${res.status})`;
-
-  if (res.status === 404) {
-    return { status: "not-found", message };
-  }
-  if (res.status === 502 && /authentication/i.test(message)) {
-    return { status: "auth-required", message };
-  }
-  return { status: "error", message };
 }
 
 export function useDetectImagePorts() {

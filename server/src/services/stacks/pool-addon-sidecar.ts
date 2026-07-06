@@ -1,8 +1,11 @@
 import { POOL_ADDON_LABELS, type StackContainerConfig, type StackServiceDefinition } from '@mini-infra/types';
 import type { PrismaClient } from '../../generated/prisma/client';
 import type { DockerExecutorService } from '../docker-executor';
-import { attachEgressNetworkIfNeeded } from './egress-injection';
 import { getLogger } from '../../lib/logger-factory';
+import { getStackProjectName } from './template-engine';
+import { StackContainerManager } from './stack-container-manager';
+import { StackInfraResourceManager } from './stack-infra-resource-manager';
+import { attachServiceNetworks, createNetworkManager, type NetworkManager } from '../networks';
 
 const log = getLogger('stacks', 'pool-addon-sidecar');
 
@@ -45,9 +48,10 @@ function buildSidecarContainerName(
   environmentName: string | null,
   syntheticServiceName: string,
 ): string {
-  const projectName = environmentName
-    ? `${environmentName}-${stackName}`
-    : `mini-infra-${stackName}`;
+  const projectName = getStackProjectName({
+    name: stackName,
+    environment: environmentName ? { name: environmentName } : null,
+  });
   const raw = `${projectName}-pool-${syntheticServiceName}`;
   const sanitised = raw
     .toLowerCase()
@@ -82,8 +86,16 @@ export async function spawnPoolAddonSidecars(
   const results: PoolAddonSidecarResult[] = [];
   if (input.syntheticDefinitions.length === 0) return results;
 
+  // Built once per batch and reused across sidecars — same pattern as the
+  // pool spawner: a NetworkManager + StackContainerManager +
+  // StackInfraResourceManager trio wired to the shared `attachServiceNetworks`
+  // helper instead of a raw-connect shim.
+  const networkManager = createNetworkManager(input.dockerExecutor);
+  const containerManager = new StackContainerManager(input.dockerExecutor, input.prisma);
+  const infraManager = new StackInfraResourceManager(input.dockerExecutor, input.prisma, containerManager);
+
   for (const def of input.syntheticDefinitions) {
-    const result = await spawnOne(input, def);
+    const result = await spawnOne(input, def, { networkManager, containerManager, infraManager });
     results.push(result);
   }
   return results;
@@ -92,6 +104,11 @@ export async function spawnPoolAddonSidecars(
 async function spawnOne(
   input: SpawnPoolAddonSidecarsInput,
   def: StackServiceDefinition,
+  managers: {
+    networkManager: NetworkManager;
+    containerManager: StackContainerManager;
+    infraManager: StackInfraResourceManager;
+  },
 ): Promise<PoolAddonSidecarResult> {
   const containerName = buildSidecarContainerName(
     input.stackName,
@@ -193,20 +210,22 @@ async function spawnOne(
   // Auto-attach the per-env egress network so the sidecar's HTTP_PROXY env
   // resolves the gateway DNS alias. Tailscale's control plane is then
   // template-allowlisted via `requiredEgress` on the synthetic sidecar.
+  // Routed through the same `attachServiceNetworks` helper the worker and
+  // static services use instead of a raw-connect shim wrapping
+  // `attachEgressNetworkIfNeeded` directly — a no-op for joinNetworks/
+  // joinResourceNetworks today since synthetic addon definitions don't
+  // declare either, but it means a future addon that does gets the same
+  // pipeline for free instead of a second reimplementation.
   try {
-    const docker = input.dockerExecutor.getDockerClient();
-    await attachEgressNetworkIfNeeded(
-      input.prisma,
-      {
-        connectToNetwork: async (id, name) => {
-          await docker.getNetwork(name).connect({ Container: id });
-        },
-      },
-      createdContainer.id,
-      input.environmentId,
-      cfg.egressBypass === true,
+    await attachServiceNetworks(createdContainer.id, def.serviceName, def, {
+      networkManager: managers.networkManager,
+      containerManager: managers.containerManager,
+      infraManager: managers.infraManager,
+      prisma: input.prisma,
+      infraNetworkMap: new Map(),
+      environmentId: input.environmentId,
       log,
-    );
+    });
   } catch (err) {
     log.warn(
       {
@@ -214,7 +233,7 @@ async function spawnOne(
         serviceName: def.serviceName,
         err: err instanceof Error ? err.message : String(err),
       },
-      'Failed to attach egress network to per-instance sidecar (continuing)',
+      'Failed to attach networks to per-instance sidecar (continuing)',
     );
   }
 

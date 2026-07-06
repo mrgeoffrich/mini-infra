@@ -1,3 +1,4 @@
+import { createId } from "@paralleldrive/cuid2";
 import { testPrisma } from "./integration-test-helpers";
 import { PostgresDatabaseManager } from "../services/postgres";
 import { CreatePostgresDatabaseRequest } from "@mini-infra/types";
@@ -5,14 +6,28 @@ import { buildPostgresDatabaseRequest } from "./test-data-factories";
 
 describe("PostgreSQL System-Wide Database Management", () => {
   let databaseConfigService: PostgresDatabaseManager;
+  let environmentId: string;
 
   beforeAll(() => {
     databaseConfigService = new PostgresDatabaseManager(testPrisma);
   });
 
+  beforeEach(async () => {
+    // The integration suite truncates the DB after every test (see
+    // setup-integration.ts's global afterEach) — re-seed per test.
+    const environment = await testPrisma.environment.create({
+      data: {
+        name: `env-${createId().slice(0, 8)}`,
+        type: "nonproduction",
+        networkType: "local",
+      },
+    });
+    environmentId = environment.id;
+  });
+
   describe("Database Creation", () => {
     it("should create a database without requiring userId", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest(environmentId, {
         name: "test-database",
         host: "localhost",
         port: 5432,
@@ -31,10 +46,11 @@ describe("PostgreSQL System-Wide Database Management", () => {
       expect(createdDatabase.port).toBe(5432);
       expect(createdDatabase.tags).toEqual(["test"]);
       expect(createdDatabase.connectionString).toBe("[REDACTED]");
+      expect(createdDatabase.environmentId).toBe(environmentId);
     });
 
     it("should enforce system-wide unique database names", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest(environmentId, {
         name: "unique-database",
         host: "localhost",
         port: 5432,
@@ -52,11 +68,21 @@ describe("PostgreSQL System-Wide Database Management", () => {
         databaseConfigService.createDatabase(createRequest)
       ).rejects.toThrow("Database configuration with name 'unique-database' already exists");
     });
+
+    it("should reject an environmentId that doesn't exist", async () => {
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest("nonexistent-env-id", {
+        name: "orphan-database",
+      });
+
+      await expect(
+        databaseConfigService.createDatabase(createRequest)
+      ).rejects.toThrow("Environment 'nonexistent-env-id' not found");
+    });
   });
 
   describe("Database Retrieval", () => {
     it("should retrieve database by ID without userId filter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest(environmentId, {
         name: "retrievable-database",
         host: "localhost",
         port: 5432,
@@ -78,7 +104,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
     it("should list all databases system-wide", async () => {
       // Create multiple databases
       const databases = [
-        buildPostgresDatabaseRequest({
+        buildPostgresDatabaseRequest(environmentId, {
           name: "database-1",
           host: "host1.example.com",
           port: 5432,
@@ -87,7 +113,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
           password: "pass1",
           sslMode: "prefer" as const,
         }),
-        buildPostgresDatabaseRequest({
+        buildPostgresDatabaseRequest(environmentId, {
           name: "database-2",
           host: "host2.example.com",
           port: 5433,
@@ -112,7 +138,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
   describe("Database Updates", () => {
     it("should update database without userId parameter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest(environmentId, {
         name: "updatable-database",
         host: "localhost",
         port: 5432,
@@ -142,7 +168,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
     it("should rebuild connection string preserving password when only host/port changes", async () => {
       const createdDatabase = await databaseConfigService.createDatabase(
-        buildPostgresDatabaseRequest({
+        buildPostgresDatabaseRequest(environmentId, {
           name: "partial-update-db",
           host: "oldhost.example.com",
           port: 5432,
@@ -174,7 +200,7 @@ describe("PostgreSQL System-Wide Database Management", () => {
 
     it("should rebuild connection string when password changes", async () => {
       const createdDatabase = await databaseConfigService.createDatabase(
-        buildPostgresDatabaseRequest({
+        buildPostgresDatabaseRequest(environmentId, {
           name: "password-update-db",
           host: "host.example.com",
           port: 5432,
@@ -197,11 +223,47 @@ describe("PostgreSQL System-Wide Database Management", () => {
         "postgresql://myuser:new-pw@host.example.com:5432/mydb?sslmode=require",
       );
     });
+
+    it("should update and clear environmentId", async () => {
+      const otherEnvironment = await testPrisma.environment.create({
+        data: {
+          name: `env-${createId().slice(0, 8)}`,
+          type: "nonproduction",
+          networkType: "local",
+        },
+      });
+
+      const createdDatabase = await databaseConfigService.createDatabase(
+        buildPostgresDatabaseRequest(environmentId, { name: "env-reassign-db" }),
+      );
+
+      const reassigned = await databaseConfigService.updateDatabase(createdDatabase.id, {
+        environmentId: otherEnvironment.id,
+      });
+      expect(reassigned.environmentId).toBe(otherEnvironment.id);
+
+      const cleared = await databaseConfigService.updateDatabase(createdDatabase.id, {
+        environmentId: null,
+      });
+      expect(cleared.environmentId).toBeNull();
+    });
+
+    it("should reject updating to an environmentId that doesn't exist", async () => {
+      const createdDatabase = await databaseConfigService.createDatabase(
+        buildPostgresDatabaseRequest(environmentId, { name: "env-update-reject-db" }),
+      );
+
+      await expect(
+        databaseConfigService.updateDatabase(createdDatabase.id, {
+          environmentId: "nonexistent-env-id",
+        }),
+      ).rejects.toThrow("Environment 'nonexistent-env-id' not found");
+    });
   });
 
   describe("Database Deletion", () => {
     it("should delete database without userId parameter", async () => {
-      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest({
+      const createRequest: CreatePostgresDatabaseRequest = buildPostgresDatabaseRequest(environmentId, {
         name: "deletable-database",
         host: "localhost",
         port: 5432,

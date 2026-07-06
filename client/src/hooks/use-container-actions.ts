@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ContainerAction, ContainerActionResponse } from "@mini-infra/types/containers";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { toast } from "sonner";
+import { apiFetch } from "@/lib/api-client";
 
 interface UseContainerActionsOptions {
   containerId: string;
@@ -20,29 +22,27 @@ interface UseContainerActionsResult {
   isPerformingAction: boolean;
 }
 
-function generateCorrelationId(): string {
-  return `container-action-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+/**
+ * Query key for a single container's detail query. No registry builder
+ * exists yet for this key (see Phase 4 report) — centralized here (rather
+ * than inlined at each call site) so this hook and the container detail page
+ * stay in sync until a `queryKeys.containers.detail(id)` builder is added.
+ */
+export function containerDetailKey(containerId: string) {
+  return ["container", containerId] as const;
 }
 
 async function performContainerAction(
   containerId: string,
   action: ContainerAction
 ): Promise<ContainerActionResponse> {
-  const response = await fetch(`/api/containers/${containerId}/${action}`, {
+  // Flat response shape ({ success, message, containerId, action, status } —
+  // no nested `data`), so this stays raw rather than unwrapped.
+  return apiFetch<ContainerActionResponse>(ApiRoute.containers.action(containerId, action), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-request-id": generateCorrelationId(),
-    },
-    credentials: "include",
+    correlationIdPrefix: "container-action",
+    unwrap: false,
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Failed to ${action} container`);
-  }
-
-  return response.json();
 }
 
 export function useContainerActions(options: UseContainerActionsOptions): UseContainerActionsResult {
@@ -53,8 +53,8 @@ export function useContainerActions(options: UseContainerActionsOptions): UseCon
     mutationFn: () => performContainerAction(containerId, action),
     onSuccess: (data: ContainerActionResponse) => {
       // Invalidate container queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ["containers"] });
-      queryClient.invalidateQueries({ queryKey: ["container", containerId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
+      queryClient.invalidateQueries({ queryKey: containerDetailKey(containerId) });
 
       // Show success toast
       toast.success(`Container ${action} successful`, {

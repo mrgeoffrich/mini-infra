@@ -24,12 +24,17 @@ import {
   removeAdoptedServiceRouting,
   removeStackContainers,
   removeStackNetworksAndVolumes,
+  removeStackInfraResources,
+  removeStackManagedNetworks,
 } from '../../services/stacks/stack-destroy-helpers';
 import { revokeStackNatsSigningKeys } from '../../services/stacks/stack-nats-revocation';
 import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registry';
 import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
+import { Permission } from '@mini-infra/types';
+import { getStackProjectName } from '../../services/stacks/template-engine';
+import { synthesiseDefaultNetworkIfNeeded } from '../../services/stacks/utils';
 
 const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
@@ -38,7 +43,7 @@ const egressPolicyLifecycle = new EgressPolicyLifecycleService(prisma);
 // POST /:stackId/destroy — Destroy stack: remove containers, networks, volumes, DB record
 router.post(
   '/:stackId/destroy',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const stack = await prisma.stack.findUnique({ where: { id: stackId } });
@@ -92,10 +97,15 @@ async function runDestroyInBackground(
       where: { id: stackId },
       include: { services: true, environment: true },
     });
-    const projectName = fullStack.environment
-      ? `${fullStack.environment.name}-${fullStack.name}`
-      : fullStack.name;
-    const networks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+    // Single source of truth for the project-name prefix (fixes a prior bug
+    // where this route derived it inline without the `mini-infra-` prefix
+    // for host-scoped stacks, so destroy's network lookup silently missed
+    // every network a host-scoped stack owned).
+    const projectName = getStackProjectName(fullStack);
+    const declaredNetworks = (fullStack.networks as unknown as StackNetwork[]) ?? [];
+    // Include the synthesised `default` network so multi-service stacks that
+    // never declared `networks[]` don't leak `${projectName}_default`.
+    const networks = synthesiseDefaultNetworkIfNeeded(declaredNetworks, fullStack.services, logger);
     const volumes = (fullStack.volumes as unknown as StackVolume[]) ?? [];
 
     // Step 1: Destroy stack-level resources (DNS, tunnels) before container removal
@@ -161,6 +171,7 @@ async function runDestroyInBackground(
 
     // Step 5: Remove networks and volumes
     const { networksRemoved, volumesRemoved } = await removeStackNetworksAndVolumes(
+      stackId,
       projectName,
       networks,
       volumes,
@@ -193,6 +204,19 @@ async function runDestroyInBackground(
         'JobPool trigger registry teardown failed during destroy (non-fatal)',
       );
     }
+
+    // Step 6.7: explicitly delete this stack's InfraResource rows (fixes L4 —
+    // `stackId` is `onDelete: SetNull`, so without this the row would survive
+    // the stack delete below with a dangling null FK forever).
+    await removeStackInfraResources(stackId);
+
+    // Step 6.8: explicitly delete this stack's ManagedNetwork/NetworkMembership
+    // rows (fixes a PR #479 review HIGH — `ManagedNetwork.name` is globally
+    // unique with no id component, so an orphaned row left behind here would
+    // get silently reused by a later stack recreated under the same
+    // env+name). Must run before the stack (and its services) are deleted
+    // below — see `removeStackManagedNetworks`'s doc comment.
+    await removeStackManagedNetworks(stackId);
 
     // Step 7: Delete stack record (cascades to deployments, services, resources)
     const duration = Date.now() - startTime;

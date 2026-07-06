@@ -134,6 +134,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
         label: "Manage Docker Resources",
         description: "Remove networks and volumes",
       },
+      {
+        scope: "docker:admin",
+        domain: "docker",
+        action: "write",
+        label: "Docker Administration",
+        description: "Manage Docker networks: view managed networks and their memberships, run reconcile/converge, garbage-collect orphaned networks, backfill membership records, and toggle membership enforcement",
+      },
     ],
   },
   {
@@ -622,6 +629,121 @@ export const ALL_PERMISSION_SCOPES: PermissionScope[] =
 /** All read-only permission scopes */
 export const READ_ONLY_SCOPES: PermissionScope[] =
   ALL_PERMISSION_SCOPES.filter((s) => s.endsWith(":read"));
+
+// ====================
+// Permission Constants (Phase 10)
+// ====================
+
+/**
+ * Symbolic names for every permission scope, mirroring the `Channel` /
+ * `ServerEvent` idiom in `socket-events.ts`. Use `Permission.Xyz` instead of
+ * a raw `"resource:action"` string literal when calling `requirePermission()`
+ * or setting a `describeRoute()` `permission` meta field.
+ *
+ * This is a rename of the literal to a constant, not a scope change — every
+ * value below must be an EXISTING scope string from `ALL_PERMISSION_SCOPES`,
+ * verbatim. `assertPermissionCatalogInSync()` below enforces that the two
+ * can never silently drift apart (`PERMISSION_GROUPS` isn't `as const`, so
+ * this can't be pinned at the type level with a `satisfies` union — see the
+ * comment on that function for why).
+ */
+export const Permission = {
+  ContainersRead: "containers:read",
+  ContainersWrite: "containers:write",
+  DockerRead: "docker:read",
+  DockerWrite: "docker:write",
+  DockerAdmin: "docker:admin",
+  EnvironmentsRead: "environments:read",
+  EnvironmentsWrite: "environments:write",
+  EgressRead: "egress:read",
+  EgressWrite: "egress:write",
+  StacksRead: "stacks:read",
+  StacksWrite: "stacks:write",
+  PoolsRead: "pools:read",
+  PoolsWrite: "pools:write",
+  HaproxyRead: "haproxy:read",
+  HaproxyWrite: "haproxy:write",
+  PostgresRead: "postgres:read",
+  PostgresWrite: "postgres:write",
+  TlsRead: "tls:read",
+  TlsWrite: "tls:write",
+  SettingsRead: "settings:read",
+  SettingsWrite: "settings:write",
+  StorageRead: "storage:read",
+  StorageWrite: "storage:write",
+  EventsRead: "events:read",
+  EventsWrite: "events:write",
+  ApiKeysRead: "api-keys:read",
+  ApiKeysWrite: "api-keys:write",
+  UserRead: "user:read",
+  UserWrite: "user:write",
+  AgentUse: "agent:use",
+  AgentRead: "agent:read",
+  AgentWrite: "agent:write",
+  BackupsRead: "backups:read",
+  BackupsWrite: "backups:write",
+  MonitoringRead: "monitoring:read",
+  MonitoringWrite: "monitoring:write",
+  RegistryRead: "registry:read",
+  RegistryWrite: "registry:write",
+  VaultRead: "vault:read",
+  VaultWrite: "vault:write",
+  VaultAdmin: "vault:admin",
+  TemplateVaultWrite: "template-vault:write",
+  NatsRead: "nats:read",
+  NatsWrite: "nats:write",
+  NatsAdmin: "nats:admin",
+  TemplateNatsWrite: "template-nats:write",
+  VaultKvRead: "vault-kv:read",
+  VaultKvWrite: "vault-kv:write",
+  VaultKvDestroy: "vault-kv:destroy",
+} as const satisfies Record<string, PermissionScope>;
+
+/** Symbolic key of the `Permission` map (e.g. `"ContainersRead"`). */
+export type PermissionName = keyof typeof Permission;
+
+/**
+ * Runtime invariant: the set of `Permission` values must exactly equal
+ * `ALL_PERMISSION_SCOPES` — no scope missing from the map, no stale/extra
+ * value left in it, no duplicate. `PERMISSION_GROUPS` (and therefore
+ * `ALL_PERMISSION_SCOPES`, derived from it via `flatMap`) is typed as
+ * `PermissionGroup[]`, not `as const` — its scope strings are widened to
+ * the general `PermissionScope` (`string`) type, so literal-type union
+ * matching (the usual `satisfies`-based trick) can't catch drift here at
+ * compile time. This function is the enforcement instead: it's called once
+ * at module load (see the call below), so any drift throws immediately in
+ * every consumer — server boot, server test run, or client dev/build —
+ * rather than shipping a scope silently out of sync with the catalog.
+ */
+export function assertPermissionCatalogInSync(): void {
+  const mapValues = Object.values(Permission);
+  const mapSet = new Set<string>(mapValues);
+  const catalogSet = new Set<string>(ALL_PERMISSION_SCOPES);
+
+  if (mapValues.length !== mapSet.size) {
+    throw new Error(
+      "Permission map (lib/types/permissions.ts) contains duplicate scope values.",
+    );
+  }
+
+  const missingFromMap = ALL_PERMISSION_SCOPES.filter((s) => !mapSet.has(s));
+  const staleInMap = mapValues.filter((s) => !catalogSet.has(s));
+
+  if (missingFromMap.length > 0 || staleInMap.length > 0) {
+    const parts: string[] = [
+      "Permission map (lib/types/permissions.ts) has drifted from ALL_PERMISSION_SCOPES / PERMISSION_GROUPS.",
+    ];
+    if (missingFromMap.length > 0) {
+      parts.push(`In ALL_PERMISSION_SCOPES but missing from Permission: ${missingFromMap.join(", ")}`);
+    }
+    if (staleInMap.length > 0) {
+      parts.push(`In Permission but not a real scope in ALL_PERMISSION_SCOPES: ${staleInMap.join(", ")}`);
+    }
+    throw new Error(parts.join(" "));
+  }
+}
+
+assertPermissionCatalogInSync();
 
 // ====================
 // Permission Presets

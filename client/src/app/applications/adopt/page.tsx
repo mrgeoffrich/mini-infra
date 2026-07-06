@@ -43,6 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { applicationsNetworkDeclaration } from "@/lib/application-schemas";
 
 // ---- Zod Schema ----
 
@@ -65,6 +66,10 @@ const defaultValues: AdoptFormData = {
   containerName: "",
   listeningPort: 3000,
   hostname: "",
+  // Default suggestion for the ADOPTED APPLICATION's own health-check path
+  // (a convention on the user's container, unrelated to Mini Infra's own
+  // /health route) — not a call to our API, so not an ApiRoute candidate.
+  // eslint-disable-next-line no-restricted-syntax
   healthCheckEndpoint: "/api/health",
 };
 
@@ -155,6 +160,12 @@ export default function AdoptContainerPage() {
         : {}),
     };
 
+    // AdoptedWeb targets route through HAProxy, so they must join the
+    // environment's `applications` network (declared here + enforced by the
+    // server invariant at apply time).
+    const { resourceInputs, joinResourceNetworks } =
+      applicationsNetworkDeclaration("AdoptedWeb");
+
     try {
       await createApplication.mutateAsync({
         name: templateName,
@@ -163,9 +174,7 @@ export default function AdoptContainerPage() {
         scope: "environment",
         environmentId: data.environmentId,
         deployImmediately: true,
-        resourceInputs: [
-          { type: "docker-network", purpose: "applications" },
-        ],
+        resourceInputs,
         networks: [],
         volumes: [],
         services: [
@@ -174,7 +183,7 @@ export default function AdoptContainerPage() {
             serviceType: "AdoptedWeb" as StackServiceType,
             dockerImage: "adopted",
             dockerTag: "n/a",
-            containerConfig: {},
+            containerConfig: { joinResourceNetworks },
             dependsOn: [],
             order: 0,
             routing,

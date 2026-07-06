@@ -1,7 +1,7 @@
 {
   "name": "egress-gateway",
   "displayName": "Egress Gateway",
-  "builtinVersion": 11,
+  "builtinVersion": 13,
   "scope": "environment",
   "category": "infrastructure",
   "description": "Smokescreen-based HTTP/HTTPS forward proxy for environment egress traffic control. Talks to the Mini Infra server over NATS (subjects under mini-infra.egress.gw.>). Requires a synced NATS host stack (which transitively requires Vault to be bootstrapped).",
@@ -23,7 +23,9 @@
     { "type": "docker-network", "purpose": "egress", "joinSelf": true }
   ],
   "networks": [],
-  "volumes": [],
+  "volumes": [
+    { "name": "nats_creds" }
+  ],
   "nats": {
     "subjectPrefix": "mini-infra.egress.gw",
     "roles": [
@@ -41,7 +43,8 @@
         "kvBuckets": [
           "egress-gw-health"
         ],
-        "inboxAuto": "both"
+        "inboxAuto": "both",
+        "ttlSeconds": 0
       }
     ]
   },
@@ -62,8 +65,16 @@
         },
         "dynamicEnv": {
           "NATS_URL": { "kind": "nats-url" },
-          "NATS_CREDS": { "kind": "nats-creds" }
+          "NATS_CREDS_FILE": { "kind": "nats-creds-file" }
         },
+        "mounts": [
+          {
+            "source": "nats_creds",
+            "target": "/etc/nats-creds",
+            "type": "volume",
+            "readOnly": true
+          }
+        ],
         "ports": [
           { "containerPort": 3128, "hostPort": 0, "protocol": "tcp", "exposeOnHost": false }
         ],

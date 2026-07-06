@@ -439,13 +439,28 @@ export class StackTemplateService {
   async deleteTemplate(templateId: string): Promise<void> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: templateId },
-      include: { stacks: { select: { id: true, removedAt: true } } },
+      include: { stacks: { select: { id: true, name: true, status: true, removedAt: true } } },
     });
     if (!template) {
       throw new TemplateError("Template not found", 404);
     }
     if (template.source === "system") {
       throw new TemplateError("Cannot delete system templates", 403);
+    }
+
+    // A deployed stack has real Docker containers/networks/volumes that this
+    // delete only removes DB rows for — destroying the template out from
+    // under it would orphan those resources with no UI path left to find or
+    // clean them up. Require the stack to be torn down (POST
+    // /stacks/:id/destroy) or never deployed before the template can go.
+    const deployedStack = template.stacks.find(
+      (stack) => stack.removedAt === null && stack.status !== "undeployed",
+    );
+    if (deployedStack) {
+      throw new TemplateError(
+        `Cannot delete: stack "${deployedStack.name}" is still deployed. Stop it first.`,
+        409
+      );
     }
 
     await this.prisma.$transaction([

@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 interface HealthResponse {
   status: string;
@@ -13,19 +15,22 @@ export interface SystemInfo {
 
 export function useSystemInfo() {
   const { data } = useQuery<HealthResponse>({
-    queryKey: ["app-health"],
-    queryFn: async () => {
-      const res = await fetch("/health");
-      if (!res.ok) throw new Error("Failed to fetch system info");
-      return res.json();
-    },
+    queryKey: queryKeys.appHealth.all,
+    queryFn: () =>
+      apiFetch<HealthResponse>(ApiRoute.health(), {
+        unwrap: false,
+        correlationIdPrefix: "app-health",
+      }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
 
   const info: SystemInfo = {
     forceInsecureOverride: data?.forceInsecureOverride ?? false,
-    protocol: typeof window !== "undefined" && window.location.protocol === "https:" ? "https" : "http",
+    protocol:
+      typeof window !== "undefined" && window.location.protocol === "https:"
+        ? "https"
+        : "http",
   };
 
   return info;

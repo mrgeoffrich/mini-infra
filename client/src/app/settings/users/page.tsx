@@ -40,7 +40,16 @@ import {
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { useAuth } from "@/hooks/use-auth";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type { UserInfo } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
+
+// /api/users responds with `{ error: "<human message>" }` on failure (no
+// `.message` field) — the human-readable text lands in
+// ApiRequestError.code, not `.message`.
+function usersErrorMessage(err: unknown, fallback: string): string {
+  return err instanceof ApiRequestError ? err.code : fallback;
+}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -75,13 +84,11 @@ export default function UserManagementPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const response = await fetch("/api/users", { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch users");
-      const data = await response.json();
-      return data.data as UserInfo[];
-    },
+    queryKey: queryKeys.users.all,
+    queryFn: () =>
+      apiFetch<UserInfo[]>(ApiRoute.users.list(), {
+        correlationIdPrefix: "users",
+      }),
   });
 
   const createUserMutation = useMutation({
@@ -90,18 +97,18 @@ export default function UserManagementPage() {
       displayName: string;
       password: string;
     }) => {
-      const response = await fetch("/api/users", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to create user");
-      return data;
+      try {
+        return await apiFetch<UserInfo>(ApiRoute.users.list(), {
+          method: "POST",
+          body,
+          correlationIdPrefix: "users",
+        });
+      } catch (err) {
+        throw new Error(usersErrorMessage(err, "Failed to create user"), { cause: err });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setAddDialogOpen(false);
       setNewEmail("");
       setNewDisplayName("");
@@ -112,16 +119,17 @@ export default function UserManagementPage() {
 
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/users/${userId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to delete user");
-      return data;
+      try {
+        await apiFetch<void>(ApiRoute.users.get(userId), {
+          method: "DELETE",
+          correlationIdPrefix: "users",
+        });
+      } catch (err) {
+        throw new Error(usersErrorMessage(err, "Failed to delete user"), { cause: err });
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setDeleteDialog({ isOpen: false, user: null });
       toastWithCopy.success("User deleted");
     },
@@ -129,17 +137,18 @@ export default function UserManagementPage() {
 
   const resetPasswordMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const response = await fetch(`/api/users/${userId}/reset-password`, {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || "Failed to reset password");
-      return data.data.temporaryPassword as string;
+      try {
+        const data = await apiFetch<{ temporaryPassword: string }>(
+          ApiRoute.users.resetPassword(userId),
+          { method: "POST", correlationIdPrefix: "users" },
+        );
+        return data.temporaryPassword;
+      } catch (err) {
+        throw new Error(usersErrorMessage(err, "Failed to reset password"), { cause: err });
+      }
     },
     onSuccess: (tempPassword) => {
-      queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setResetDialog((prev) => ({ ...prev, tempPassword: tempPassword }));
     },
   });

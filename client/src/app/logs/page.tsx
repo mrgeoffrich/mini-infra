@@ -9,6 +9,7 @@ import {
   useLokiServices,
   useLokiLogs,
   TIME_RANGE_SECONDS,
+  LOKI_LOGS_PREFIX_KEY,
 } from "@/hooks/use-loki-logs";
 import { LogControls } from "./LogControls";
 import { LogStream } from "./LogStream";
@@ -113,7 +114,7 @@ export function LogsPage({ fullscreen = false }: LogsPageProps) {
                 filters={filters}
                 services={services}
                 updateFilter={updateFilter}
-                onRefresh={() => queryClient.invalidateQueries({ queryKey: ["lokiLogs"] })}
+                onRefresh={() => queryClient.invalidateQueries({ queryKey: LOKI_LOGS_PREFIX_KEY })}
                 isLoading={logsLoading || isFetching}
                 extraActions={maximizeButton}
               />

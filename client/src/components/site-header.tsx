@@ -14,13 +14,11 @@ import {
   IconWorld,
   IconX,
 } from "@tabler/icons-react";
-import {
-  useConnectivityStatus,
-  ConnectivityService,
-} from "@/hooks/use-settings";
 import { useStorageSettings } from "@/hooks/use-storage-settings";
 import { useBackupHealth } from "@/hooks/use-self-backup";
 import { useAgentChat } from "@/hooks/use-agent-chat";
+import { useServicesConnectivity } from "@/hooks/use-all-services-status";
+import { ConnectivityIndicator } from "@/components/connectivity-indicator";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { TaskTrackerPopover } from "@/components/task-tracker/task-tracker-popover";
 import { HelpSearchBar } from "@/components/help/HelpSearchBar";
@@ -81,82 +79,6 @@ function BackupHealthIndicator() {
       className="flex items-center gap-1.5"
       title={`Self-Backup: ${message}`}
       data-tour="header-backup-health"
-    >
-      {content}
-    </div>
-  );
-}
-
-// Connectivity status indicator component
-function ConnectivityIndicator({
-  service,
-  icon: Icon,
-  label,
-  tourId,
-}: {
-  service: ConnectivityService;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-  tourId?: string;
-}) {
-  const { data: connectivityData } = useConnectivityStatus({
-    filters: { service: service },
-    limit: 1,
-  });
-
-  // Get the most recent status for this service
-  const latestStatus = connectivityData?.data?.[0];
-  const isConnected = latestStatus?.status === "connected";
-
-  // Map services to their connectivity page routes
-  const getConnectivityRoute = (serviceName: string): string => {
-    switch (serviceName) {
-      case "docker":
-        return "/connectivity-docker";
-      case "cloudflare":
-        return "/connectivity-cloudflare";
-      case "storage":
-        return "/connectivity-storage";
-      case "github-app":
-        return "/connectivity-github";
-      case "tailscale":
-        return "/connectivity-tailscale";
-      default:
-        return "/dashboard";
-    }
-  };
-
-  const content = (
-    <div className="flex items-center gap-1.5">
-      <Icon className="size-4 text-muted-foreground" />
-      <div
-        className={`w-2 h-2 rounded-full ${
-          isConnected ? "bg-green-500" : "bg-red-500"
-        }`}
-      />
-    </div>
-  );
-
-  // If disconnected, make it clickable to go to settings
-  if (!isConnected) {
-    return (
-      <Link
-        to={getConnectivityRoute(service)}
-        className="flex items-center gap-1.5 hover:opacity-75 cursor-pointer"
-        title={`${label}: Disconnected - Click to configure`}
-        {...(tourId ? { "data-tour": tourId } : {})}
-      >
-        {content}
-      </Link>
-    );
-  }
-
-  // If connected, just show the status without link
-  return (
-    <div
-      className="flex items-center gap-1.5"
-      title={`${label}: Connected`}
-      {...(tourId ? { "data-tour": tourId } : {})}
     >
       {content}
     </div>
@@ -231,25 +153,13 @@ function AssistedSetupButton() {
   const { agentEnabled, setIsOpen, sendMessage, startNewChat } =
     useAgentChat();
 
-  const { data: dockerData } = useConnectivityStatus({
-    filters: { service: "docker" },
-    limit: 1,
-  });
-  const { data: cloudflareData } = useConnectivityStatus({
-    filters: { service: "cloudflare" },
-    limit: 1,
-  });
-  const { data: azureData } = useConnectivityStatus({
-    filters: { service: "storage" },
-    limit: 1,
-  });
-  const { data: githubData } = useConnectivityStatus({
-    filters: { service: "github-app" },
-    limit: 1,
-  });
+  const { docker, cloudflare, storage, githubApp } = useServicesConnectivity();
 
-  const hasDisconnected = [dockerData, cloudflareData, azureData, githubData].some(
-    (data) => data?.data?.[0] && data.data[0].status !== "connected"
+  // Only a confirmed "down" state should prompt guided setup — a query
+  // that's still loading/errored/empty is "unknown", not evidence the
+  // service needs configuring.
+  const hasDisconnected = [docker, cloudflare, storage, githubApp].some(
+    (service) => service.state === "down",
   );
 
   if (dismissed || !agentEnabled || !hasDisconnected) {

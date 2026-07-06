@@ -5,6 +5,7 @@ import { requirePermission } from "../middleware/auth";
 import { getAuthenticatedUser } from "../lib/auth-middleware";
 import { UserPreferencesService } from "../services/user-preferences";
 import { TlsConfigService } from "../services/tls/tls-config";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("http", "onboarding");
 const router = Router();
@@ -52,7 +53,7 @@ async function upsertSelfBackupDefault(
  */
 router.post(
   "/complete",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: Request, res: Response) => {
     // Use the unified helper so API-key auth (where req.user isn't
     // populated by the JWT middleware) works the same as a session.

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   StackTemplateInfo,
   StackTemplateListResponse,
@@ -11,379 +12,164 @@ import type {
   StackListResponse,
   StackResponse,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `applications-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Application API Functions
 // ====================
 
-async function fetchApplications(
-  correlationId: string,
-): Promise<StackTemplateListResponse> {
-  const url = new URL("/api/stack-templates", window.location.origin);
+async function fetchApplications(): Promise<StackTemplateListResponse> {
+  const url = new URL(ApiRoute.stackTemplates.list(), window.location.origin);
   url.searchParams.set("source", "user");
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  // Enveloped — kept as-is; consumed as `.data` externally
+  // (applications/page.tsx).
+  const data = await apiFetch<StackTemplateListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch applications: ${response.statusText}`);
-  }
-
-  const data: StackTemplateListResponse = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch applications");
   }
-
   return data;
 }
 
-async function fetchApplication(
-  id: string,
-  correlationId: string,
-): Promise<StackTemplateResponse> {
-  const response = await fetch(`/api/stack-templates/${id}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch application: ${response.statusText}`);
-  }
-
-  const data: StackTemplateResponse = await response.json();
+async function fetchApplication(id: string): Promise<StackTemplateResponse> {
+  // Enveloped — kept as-is; consumed as `.data` externally
+  // (applications/[id]/layout.tsx).
+  const data = await apiFetch<StackTemplateResponse>(
+    ApiRoute.stackTemplates.get(id),
+    { unwrap: false, correlationIdPrefix: "applications" },
+  );
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch application");
   }
-
   return data;
 }
 
 async function createApplication(
   request: CreateStackTemplateRequest,
-  correlationId: string,
 ): Promise<StackTemplateResponse> {
-  const response = await fetch("/api/stack-templates", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(request),
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to create application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data: StackTemplateResponse = await response.json();
+  // Enveloped — kept as-is; `.data.id` is read both internally (below) and
+  // externally (claude-shell/page.tsx's `result.data.id`).
+  const data = await apiFetch<StackTemplateResponse>(
+    ApiRoute.stackTemplates.list(),
+    { method: "POST", body: request, correlationIdPrefix: "applications", unwrap: false },
+  );
   if (!data.success) {
     throw new Error(data.message || "Failed to create application");
   }
-
   return data;
 }
 
-async function publishApplication(
-  templateId: string,
-  correlationId: string,
-): Promise<void> {
-  const response = await fetch(`/api/stack-templates/${templateId}/publish`, {
+async function publishApplication(templateId: string): Promise<void> {
+  await apiFetch(ApiRoute.stackTemplates.publish(templateId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify({}),
+    body: {},
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to publish application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
 }
 
 async function createDraft(
   templateId: string,
   input: DraftVersionInput,
-  correlationId: string,
 ): Promise<void> {
-  const response = await fetch(`/api/stack-templates/${templateId}/draft`, {
+  await apiFetch(ApiRoute.stackTemplates.draft(templateId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(input),
+    body: input,
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
 }
 
 async function updateTemplateMetadata(
   templateId: string,
   metadata: { displayName?: string; description?: string; category?: string },
-  correlationId: string,
 ): Promise<void> {
-  const response = await fetch(`/api/stack-templates/${templateId}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(metadata),
+  await apiFetch(ApiRoute.stackTemplates.get(templateId), {
+    method: "PATCH",
+    body: metadata,
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update application metadata: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
 }
 
 async function deleteTemplate(
   id: string,
-  correlationId: string,
 ): Promise<{ success: boolean; message: string }> {
-  const response = await fetch(`/api/stack-templates/${id}`, {
-    method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to delete application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
+  // Raw response — original code never checked `.success` either.
+  return apiFetch<{ success: boolean; message: string }>(
+    ApiRoute.stackTemplates.get(id),
+    { method: "DELETE", unwrap: false, correlationIdPrefix: "applications" },
+  );
 }
-
 
 async function instantiateApplication(
   templateId: string,
   body: { name?: string; environmentId?: string; parameterValues?: Record<string, unknown> },
-  correlationId: string,
 ): Promise<StackResponse> {
-  const response = await fetch(`/api/stack-templates/${templateId}/instantiate`, {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to instantiate application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  const data: StackResponse = await response.json();
+  // Enveloped — kept as-is; `.data.id` read internally below.
+  const data = await apiFetch<StackResponse>(
+    ApiRoute.stackTemplates.instantiate(templateId),
+    { method: "POST", body, correlationIdPrefix: "applications", unwrap: false },
+  );
   if (!data.success) {
     throw new Error(data.message || "Failed to instantiate application");
   }
-
   return data;
 }
 
 async function applyStack(
   stackId: string,
-  correlationId: string,
-): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
-  const response = await fetch(`/api/stacks/${stackId}/apply`, {
+): Promise<{ started: true; stackId: string }> {
+  return apiFetch<{ started: true; stackId: string }>(ApiRoute.stacks.apply(stackId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify({}),
+    body: {},
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to deploy application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
 }
 
 async function destroyStack(
   stackId: string,
-  correlationId: string,
-): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
-  const response = await fetch(`/api/stacks/${stackId}/destroy`, {
+): Promise<{ started: true; stackId: string }> {
+  return apiFetch<{ started: true; stackId: string }>(ApiRoute.stacks.destroy(stackId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to stop application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
 }
 
 async function updateStack(
   stackId: string,
-  correlationId: string,
-): Promise<{ success: boolean; data: { started: true; stackId: string } }> {
-  const response = await fetch(`/api/stacks/${stackId}/update`, {
+): Promise<{ started: true; stackId: string }> {
+  return apiFetch<{ started: true; stackId: string }>(ApiRoute.stacks.update(stackId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update application: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
 }
 
 async function updateStackService(
   stackId: string,
   serviceName: string,
   patch: { dockerTag?: string; dockerImage?: string },
-  correlationId: string,
-): Promise<StackResponse> {
-  const response = await fetch(
-    `/api/stacks/${stackId}/services/${encodeURIComponent(serviceName)}`,
-    {
-      method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(patch),
-    },
-  );
-
-  if (!response.ok) {
-    let errorMessage = `Failed to update service: ${response.statusText}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorMessage;
-    } catch {
-      // Use default error message
-    }
-    throw new Error(errorMessage);
-  }
-
-  return await response.json();
+): Promise<StackInfo> {
+  return apiFetch<StackInfo>(ApiRoute.stacks.service(stackId, serviceName), {
+    method: "PUT",
+    body: patch,
+    correlationIdPrefix: "applications",
+  });
 }
 
-async function fetchUserStacks(
-  correlationId: string,
-): Promise<StackListResponse> {
-  const url = new URL("/api/stacks", window.location.origin);
+async function fetchUserStacks(): Promise<StackListResponse> {
+  const url = new URL(ApiRoute.stacks.list(), window.location.origin);
   url.searchParams.set("source", "user");
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  // Enveloped — kept as-is; consumed as `.data` externally
+  // (applications/page.tsx, applications/new/page.tsx).
+  const data = await apiFetch<StackListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "applications",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stacks: ${response.statusText}`);
-  }
-
-  const data: StackListResponse = await response.json();
   if (!data.success) {
     throw new Error(data.message || "Failed to fetch stacks");
   }
-
   return data;
 }
 
@@ -392,11 +178,9 @@ async function fetchUserStacks(
 // ====================
 
 export function useApplications() {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["applications"],
-    queryFn: () => fetchApplications(correlationId),
+    queryKey: queryKeys.applications.all,
+    queryFn: () => fetchApplications(),
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -404,11 +188,9 @@ export function useApplications() {
 }
 
 export function useApplication(id: string) {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["application", id],
-    queryFn: () => fetchApplication(id, correlationId),
+    queryKey: queryKeys.applications.detail(id),
+    queryFn: () => fetchApplication(id),
     enabled: !!id,
     staleTime: 5000,
     gcTime: 5 * 60 * 1000,
@@ -416,11 +198,9 @@ export function useApplication(id: string) {
 }
 
 export function useUserStacks() {
-  const correlationId = generateCorrelationId();
-
   return useQuery({
-    queryKey: ["userStacks"],
-    queryFn: () => fetchUserStacks(correlationId),
+    queryKey: queryKeys.applications.userStacks,
+    queryFn: () => fetchUserStacks(),
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -429,7 +209,6 @@ export function useUserStacks() {
 
 export function useCreateApplication() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async (
@@ -450,16 +229,15 @@ export function useCreateApplication() {
       },
     ) => {
       // Create template
-      const result = await createApplication(request, correlationId);
+      const result = await createApplication(request);
       // Publish the draft immediately
-      await publishApplication(result.data.id, correlationId);
+      await publishApplication(result.data.id);
 
       // If deployImmediately, instantiate and apply
       if (request.deployImmediately && request.environmentId) {
         const stackResult = await instantiateApplication(
           result.data.id,
           { name: result.data.name, environmentId: request.environmentId },
-          correlationId,
         );
         // Run the post-instantiate hook (e.g. claude-shell deploy-key upload)
         // before kicking off apply so the first apply already sees Vault.
@@ -480,7 +258,7 @@ export function useCreateApplication() {
           // Register task tracking before apply starts
           request.onStackCreated?.(stackResult.data.id);
           // Apply is fire-and-forget (progress via Socket.IO)
-          await applyStack(stackResult.data.id, correlationId);
+          await applyStack(stackResult.data.id);
           return { ...result, stackId: stackResult.data.id };
         } catch (err) {
           // Template was created + instantiated successfully, but the
@@ -503,10 +281,10 @@ export function useCreateApplication() {
         ? "Application created and deployment started"
         : "Application created successfully";
       toast.success(message);
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       if (variables.deployImmediately) {
-        queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-        queryClient.invalidateQueries({ queryKey: ["stacks"] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+        queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       }
     },
     onError: (error: Error) => {
@@ -517,7 +295,6 @@ export function useCreateApplication() {
 
 export function useUpdateApplication() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async ({
@@ -530,16 +307,21 @@ export function useUpdateApplication() {
       draft: DraftVersionInput;
     }) => {
       // Update metadata
-      await updateTemplateMetadata(templateId, metadata, correlationId);
+      await updateTemplateMetadata(templateId, metadata);
       // Create a new draft
-      await createDraft(templateId, draft, correlationId);
+      await createDraft(templateId, draft);
       // Publish it
-      await publishApplication(templateId, correlationId);
+      await publishApplication(templateId);
     },
     onSuccess: () => {
       toast.success("Application updated successfully");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["application"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.detailAll });
+      // A republish can change a service's declared `joinNetworks` (e.g. via the
+      // Overview Connected Networks card), so refresh the managed-network views
+      // that read it. The change only compiles into live memberships on the
+      // stack's next apply, but this keeps the declared-vs-live delta current.
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
     },
     onError: (error: Error) => {
       toast.error(`Failed to update application: ${error.message}`);
@@ -549,17 +331,16 @@ export function useUpdateApplication() {
 
 export function useDeleteApplication() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async ({ templateId }: { templateId: string }) => {
-      return deleteTemplate(templateId, correlationId);
+      return deleteTemplate(templateId);
     },
     onSuccess: () => {
       toast.success("Application deleted successfully");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     onError: (error: Error) => {
       toast.error(`Failed to delete application: ${error.message}`);
@@ -569,7 +350,6 @@ export function useDeleteApplication() {
 
 export function useDeployApplication() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async ({
@@ -587,19 +367,18 @@ export function useDeployApplication() {
       const stackResult = await instantiateApplication(
         templateId,
         { name, environmentId },
-        correlationId,
       );
       // Register task tracking before apply starts
       onStackCreated?.(stackResult.data.id);
       // Apply/deploy the stack
-      await applyStack(stackResult.data.id, correlationId);
+      await applyStack(stackResult.data.id);
       return stackResult.data;
     },
     onSuccess: () => {
       toast.success("Application deployment started");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     onError: (error: Error) => {
       toast.error(`Failed to deploy application: ${error.message}`);
@@ -608,11 +387,9 @@ export function useDeployApplication() {
 }
 
 export function useStopApplication() {
-  const correlationId = generateCorrelationId();
-
   return useMutation({
     mutationFn: async (stackId: string) => {
-      await destroyStack(stackId, correlationId);
+      await destroyStack(stackId);
     },
     onError: (error: Error) => {
       toast.error(`Failed to stop application: ${error.message}`);
@@ -622,17 +399,16 @@ export function useStopApplication() {
 
 export function useRedeployApplication() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async (stackId: string) => {
-      await updateStack(stackId, correlationId);
+      await updateStack(stackId);
     },
     onSuccess: () => {
       toast.success("Application update started");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     onError: (error: Error) => {
       toast.error(`Failed to update application: ${error.message}`);
@@ -642,7 +418,6 @@ export function useRedeployApplication() {
 
 export function useDeployApplicationUpdate() {
   const queryClient = useQueryClient();
-  const correlationId = generateCorrelationId();
 
   return useMutation({
     mutationFn: async (args: {
@@ -656,18 +431,17 @@ export function useDeployApplicationUpdate() {
           args.stackId,
           args.serviceName,
           { dockerTag: args.newTag },
-          correlationId,
         );
-        await applyStack(args.stackId, correlationId);
+        await applyStack(args.stackId);
       } else {
-        await updateStack(args.stackId, correlationId);
+        await updateStack(args.stackId);
       }
     },
     onSuccess: () => {
       toast.success("Application update started");
-      queryClient.invalidateQueries({ queryKey: ["applications"] });
-      queryClient.invalidateQueries({ queryKey: ["userStacks"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
     onError: (error: Error) => {
       toast.error(`Failed to update application: ${error.message}`);

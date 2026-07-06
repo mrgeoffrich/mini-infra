@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { ApiRoute } from "@mini-infra/types";
 import {
   Card,
   CardContent,
@@ -817,7 +818,7 @@ function BackupHistoryRow({
         )}
         {backup.status === "completed" && backup.storageObjectUrl && (
           <Button variant="ghost" size="sm" asChild>
-            <a href={`/api/self-backups/${backup.id}/download`}>
+            <a href={ApiRoute.selfBackups.download(backup.id)}>
               <IconDownload className="mr-1 h-3 w-3" />
               Download
             </a>

@@ -14,7 +14,7 @@ import {
 } from "../../services/vault/vault-policy-service";
 import { getVaultServices } from "../../services/vault/vault-services";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission } from "@mini-infra/types";
 
 const log = getLogger("platform", "vault-policies-routes");
 
@@ -40,7 +40,7 @@ const updateSchema = z.object({
 
 router.get(
   "/",
-  requirePermission("vault:read") as RequestHandler,
+  requirePermission(Permission.VaultRead) as RequestHandler,
   (async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const list = await getService().list();
@@ -53,7 +53,7 @@ router.get(
 
 router.post(
   "/",
-  requirePermission("vault:write") as RequestHandler,
+  requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -73,7 +73,7 @@ router.post(
 
 router.get(
   "/:id",
-  requirePermission("vault:read") as RequestHandler,
+  requirePermission(Permission.VaultRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const policy = await getService().get(String(req.params.id));
@@ -89,7 +89,7 @@ router.get(
 
 router.put(
   "/:id",
-  requirePermission("vault:write") as RequestHandler,
+  requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     const parsed = updateSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -116,7 +116,7 @@ router.put(
 
 router.post(
   "/:id/publish",
-  requirePermission("vault:write") as RequestHandler,
+  requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const policy = await getService().publish(String(req.params.id));
@@ -138,7 +138,7 @@ router.post(
 
 router.delete(
   "/:id",
-  requirePermission("vault:write") as RequestHandler,
+  requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       await getService().delete(String(req.params.id));

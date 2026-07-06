@@ -2,9 +2,10 @@
  * Socket.IO client hook for real-time server push events.
  *
  * Provides:
- * - useSocket()        — access the shared socket instance and connection status
- * - useSocketEvent()   — subscribe to a typed server event and bridge it into TanStack Query cache
- * - useSocketChannel() — auto-subscribe/unsubscribe to a room on mount/unmount
+ * - useSocket()             — access the shared socket instance and connection status
+ * - useSocketEvent()        — subscribe to a typed server event and bridge it into TanStack Query cache
+ * - useSocketChannel()      — auto-subscribe/unsubscribe to a room on mount/unmount
+ * - useSocketReconnecting() — true only when a previously-connected socket has dropped (drives the global banner)
  */
 
 import {
@@ -21,7 +22,14 @@ import type {
   ClientToServerEvents,
   SocketChannel,
 } from "@mini-infra/types";
-import { ClientEvent, SOCKET_TRANSPORTS } from "@mini-infra/types";
+import {
+  ClientEvent,
+  SOCKET_TRANSPORTS,
+  SOCKET_RECONNECTION_ATTEMPTS,
+  SOCKET_RECONNECTION_DELAY_MS,
+  SOCKET_RECONNECTION_DELAY_MAX_MS,
+  SOCKET_RECONNECTION_RANDOMIZATION_FACTOR,
+} from "@mini-infra/types";
 
 // Fully typed client socket
 type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -32,6 +40,12 @@ type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 let socket: TypedSocket | null = null;
 let connectionAttempted = false;
+
+// Latch: true once the socket has connected at least once. Used to
+// distinguish "still doing the first handshake" (not yet connected, not an
+// error) from "was connected, then dropped" (a real reconnect situation) —
+// see useSocketReconnecting() below.
+let hasConnectedOnce = false;
 
 // Reference counter for channel subscriptions — prevents premature
 // UNSUBSCRIBE when multiple components share the same channel.
@@ -44,7 +58,34 @@ function getSocket(): TypedSocket {
       withCredentials: true,
       transports: [...SOCKET_TRANSPORTS],
       autoConnect: false,
+      // Deliberate reconnection/backoff policy — see socket-events.ts for
+      // rationale on each value.
+      reconnection: true,
+      reconnectionAttempts: SOCKET_RECONNECTION_ATTEMPTS,
+      reconnectionDelay: SOCKET_RECONNECTION_DELAY_MS,
+      reconnectionDelayMax: SOCKET_RECONNECTION_DELAY_MAX_MS,
+      randomizationFactor: SOCKET_RECONNECTION_RANDOMIZATION_FACTOR,
     }) as TypedSocket;
+
+    socket.on("connect", () => {
+      hasConnectedOnce = true;
+    });
+
+    // Quiet, non-spammy breadcrumb for devtools — the user-facing signal is
+    // the "reconnecting to server…" banner (see useSocketReconnecting /
+    // ReconnectingBanner), not console noise. Socket.IO already retries
+    // automatically per the reconnection config above; this just logs each
+    // failed attempt so a dropped connection is diagnosable locally instead
+    // of silently failing to reconnect.
+    socket.on("connect_error", (err) => {
+      console.warn("[socket] connect_error:", err.message);
+    });
+
+    // Logged once on a successful reconnect (not per-attempt, to avoid
+    // spamming the console during a long outage with a short backoff cap).
+    socket.io.on("reconnect", (attempt) => {
+      console.warn(`[socket] reconnected after ${attempt} attempt(s)`);
+    });
   }
   return socket;
 }
@@ -71,6 +112,42 @@ function useSocketConnected(socketInstance: TypedSocket): boolean {
     [socketInstance],
   );
   return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
+ * useSyncExternalStore-based subscription to the "has connected at least
+ * once" latch. Only flips true→ (never back), on the first successful
+ * `connect`.
+ */
+function useHasConnectedOnce(socketInstance: TypedSocket): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      socketInstance.on("connect", onChange);
+      return () => {
+        socketInstance.off("connect", onChange);
+      };
+    },
+    [socketInstance],
+  );
+  const getSnapshot = useCallback(() => hasConnectedOnce, []);
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
+ * True only when the socket previously connected and has since dropped —
+ * i.e. an actual reconnection is in progress. Deliberately false during the
+ * very first handshake on page load (avoids flashing a "reconnecting"
+ * banner before the app has ever successfully connected), and false again
+ * as soon as `connect` fires.
+ *
+ * This is what the global "reconnecting to server…" banner keys off — see
+ * `client/src/components/reconnecting-banner.tsx`.
+ */
+export function useSocketReconnecting(): boolean {
+  const socketInstance = useMemo(() => getSocket(), []);
+  const connected = useSocketConnected(socketInstance);
+  const hasConnectedOnce = useHasConnectedOnce(socketInstance);
+  return hasConnectedOnce && !connected;
 }
 
 // ====================

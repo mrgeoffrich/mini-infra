@@ -11,14 +11,7 @@ const logger = getLogger("http", "settings");
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  SettingResponse,
-  SettingsListResponse,
-  SystemSettings,
-  SystemSettingsInfo,
-  VALIDATION_STATUSES,
-  SORT_ORDERS,
-} from "@mini-infra/types";
+import { SettingResponse, SettingsListResponse, SystemSettings, SystemSettingsInfo, VALIDATION_STATUSES, SORT_ORDERS, Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -172,7 +165,7 @@ async function validateSecuritySettingChange(
 /**
  * GET /api/settings - List system settings with filtering and pagination
  */
-router.get("/", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -292,7 +285,7 @@ router.get("/", requirePermission('settings:read') as RequestHandler, (async (
 /**
  * POST /api/settings - Create a new system setting
  */
-router.post("/", requirePermission('settings:write') as RequestHandler, (async (
+router.post("/", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -440,7 +433,7 @@ router.post("/", requirePermission('settings:write') as RequestHandler, (async (
 /**
  * GET /api/settings/:id - Get specific setting by ID
  */
-router.get("/:id", requirePermission('settings:read') as RequestHandler, (async (
+router.get("/:id", requirePermission(Permission.SettingsRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -527,7 +520,7 @@ router.get("/:id", requirePermission('settings:read') as RequestHandler, (async 
 /**
  * PUT /api/settings/:id - Update an existing system setting
  */
-router.put("/:id", requirePermission('settings:write') as RequestHandler, (async (
+router.put("/:id", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -691,7 +684,7 @@ router.put("/:id", requirePermission('settings:write') as RequestHandler, (async
 /**
  * DELETE /api/settings/:id - Delete a system setting
  */
-router.delete("/:id", requirePermission('settings:write') as RequestHandler, (async (
+router.delete("/:id", requirePermission(Permission.SettingsWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,

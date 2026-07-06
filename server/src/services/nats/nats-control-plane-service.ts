@@ -18,6 +18,13 @@ import {
   type NatsPermissions,
 } from "./nats-key-manager";
 import { renderNatsConfig, type RenderedNatsAccount } from "./nats-config-renderer";
+import {
+  NatsIdentityError,
+  NatsIdentityMissing,
+  NatsIdentityMismatch,
+} from "./nats-identity-errors";
+import { getIdentitySeedBackupStatus } from "./nats-identity-seed-backup";
+import { UserEventService } from "../user-events/user-event-service";
 import type {
   CreateNatsAccountRequest,
   CreateNatsConsumerRequest,
@@ -78,10 +85,14 @@ export const NATS_SIGNER_KV_PATH_PREFIX = "shared/nats-signers";
 export const NATS_SERVER_BUS_CREDS_KV_PATH = "shared/nats-server-bus-creds";
 export const FIELD_SERVER_BUS_CREDS = "creds";
 
-const FIELD_OPERATOR_SEED = "operator_seed";
+// Exported so the identity-seed backup/restore module (nats-identity-seed-backup.ts)
+// reads/writes the operator + account seeds at the exact same Vault KV fields
+// this service uses — one source of truth, so a restore lands on the canonical
+// path the guard and applyConfig expect.
+export const FIELD_OPERATOR_SEED = "operator_seed";
 const FIELD_OPERATOR_JWT = "operator_jwt";
 const FIELD_OPERATOR_PUBLIC = "operator_public";
-const FIELD_ACCOUNT_SEED = "account_seed";
+export const FIELD_ACCOUNT_SEED = "account_seed";
 const FIELD_ACCOUNT_JWT = "account_jwt";
 const FIELD_ACCOUNT_PUBLIC = "account_public";
 const FIELD_CONFIG = "conf";
@@ -112,6 +123,57 @@ export interface NatsApplyConfigResult {
   unpropagatedAccountPublicKeys: string[];
 }
 
+/**
+ * Post-`applyConfig` notification (egress NATS cred-resilience plan, Phase 6).
+ *
+ * `applyConfig` is the single chokepoint every NATS rotation path routes
+ * through (server boot, Vault bootstrap, the health watcher's auto-unseal,
+ * manual `POST /api/nats/apply`, stack apply, signer revocation). Phase 6
+ * hangs a hook here so that, when an apply *actually rotates* the operator /
+ * account identity, the server can re-mint and rewrite each running egress
+ * agent's `<stackId>.creds` file **in place** — the agent's Phase-5 reload-on-
+ * reconnect then picks up the fresh cred with no container recreate.
+ *
+ * `rotated` is the load-bearing field: it is `true` only when the identity
+ * fingerprint (operator public key + the set of account public keys) changed
+ * across this apply *and* an identity was already recorded before it (so a
+ * genuine first-boot generation is never treated as a rotation). Routine
+ * applies that don't touch identity therefore never churn agent creds.
+ */
+export interface NatsIdentityRotationInfo {
+  /** True when this apply changed the recorded operator/account identity. */
+  rotated: boolean;
+  /** True when this apply generated fresh identity (genuine first boot). */
+  generatedSeeds: boolean;
+  /** The operator public key in effect after this apply. */
+  operatorPublic: string;
+  /** The system account public key after this apply (null if none). */
+  systemAccountPublic: string | null;
+}
+
+export type NatsPostApplyHook = (info: NatsIdentityRotationInfo) => Promise<void> | void;
+
+// Process-global post-apply hook. Registered once at server boot by the egress
+// module (`registerEgressCredRefreshHook`) and cleared on shutdown / in tests.
+// Kept module-scoped (not per-instance) because `applyConfig` fans in from many
+// call sites but there is only ever one live NATS identity per process.
+let postApplyHook: NatsPostApplyHook | null = null;
+
+/**
+ * Register (or clear, with `null`) the post-`applyConfig` hook. Idempotent —
+ * a later call replaces the previous hook. The control plane stays ignorant of
+ * what the hook does (egress cred refresh) so this module keeps zero egress /
+ * Docker imports.
+ */
+export function setNatsPostApplyHook(hook: NatsPostApplyHook | null): void {
+  postApplyHook = hook;
+}
+
+/** Stable identity fingerprint — operator public key + sorted account publics. */
+function identityFingerprint(operatorPublic: string | null, accountPublics: string[]): string {
+  return [operatorPublic ?? "", ...[...accountPublics].sort()].join("|");
+}
+
 type CredentialWithAccount = Prisma.NatsCredentialProfileGetPayload<{
   include: { account: true };
 }>;
@@ -139,12 +201,13 @@ export class NatsControlPlaneService {
   }
 
   async getStatus(): Promise<NatsStatus> {
-    const [state, accounts, credentialProfiles, streams, consumers] = await Promise.all([
+    const [state, accounts, credentialProfiles, streams, consumers, seedBackup] = await Promise.all([
       this.db.natsState.findUnique({ where: { kind: "primary" } }),
       this.db.natsAccount.count(),
       this.db.natsCredentialProfile.count(),
       this.db.natsStream.count(),
       this.db.natsConsumer.count(),
+      getIdentitySeedBackupStatus(this.db),
     ]);
 
     let reachable = false;
@@ -175,6 +238,8 @@ export class NatsControlPlaneService {
       credentialProfiles,
       streams,
       consumers,
+      lastIdentitySeedBackupAt: seedBackup.lastIdentitySeedBackupAt,
+      lastIdentitySeedBackupCount: seedBackup.lastIdentitySeedBackupCount,
       ...(errorMessage ? { errorMessage } : {}),
     };
   }
@@ -395,12 +460,42 @@ export class NatsControlPlaneService {
   }
 
   private async applyConfigInner(): Promise<NatsApplyConfigResult> {
+    // `ensureDefaultAccount` only upserts account *metadata* rows (name,
+    // displayName, isSystem, seedKvPath) — it never touches seeds, public
+    // keys, JWTs, or Vault — so it is safe to run before the re-key guard.
     await this.ensureDefaultAccount();
+
+    // Phase 1 re-key guard (load-bearing). Before generating or writing ANY
+    // identity material, confirm every identity the DB already records still
+    // has its seed in Vault. A recorded-but-missing seed is data loss / a
+    // post-unseal read race, NEVER a first boot — aborting here leaves the
+    // running identity, config, and account claims completely untouched, and
+    // avoids the silent re-key that orphans running agents' baked-in creds.
+    // Every applyConfig caller (server boot, Vault bootstrap, the health
+    // watcher's auto-unseal, manual POST /api/nats/apply, stack apply) routes
+    // through here, so this one call site protects them all.
+    await this.assertRecordedIdentitiesHaveSeeds();
+
+    // Phase 6 rotation detection: snapshot the identity fingerprint BEFORE any
+    // seed is generated or account public key is overwritten below. Compared
+    // against the post-apply fingerprint at the end to decide whether this
+    // apply actually rotated identity (and so must live-refresh running egress
+    // agent creds) vs. a routine reconcile that left identity untouched.
+    const prevState = await this.db.natsState.findUnique({ where: { kind: "primary" } });
+    const prevOperatorPublic = prevState?.operatorPublic ?? null;
+    const prevAccountPublics = (await this.db.natsAccount.findMany({ select: { publicKey: true } }))
+      .map((a) => a.publicKey)
+      .filter((k): k is string => !!k);
+    const prevFingerprint = identityFingerprint(prevOperatorPublic, prevAccountPublics);
+
     const kv = getVaultKVService();
 
     let operatorSeed = await this.tryReadField(NATS_OPERATOR_KV_PATH, FIELD_OPERATOR_SEED);
     let generatedSeeds = false;
     if (!operatorSeed) {
+      // Reachable only on a genuine first boot: the guard above throws if the
+      // operator public key is recorded but its seed is gone, so a null seed
+      // here means the DB has no recorded operator identity yet.
       const op = await generateOperator(OPERATOR_NAME);
       await kv.write(NATS_OPERATOR_KV_PATH, {
         [FIELD_OPERATOR_SEED]: op.seed,
@@ -433,6 +528,9 @@ export class NatsControlPlaneService {
     for (const account of accounts) {
       let accountSeed = await this.tryReadField(account.seedKvPath, FIELD_ACCOUNT_SEED);
       if (!accountSeed) {
+        // First boot for this account: the guard above throws if the account
+        // already has a recorded publicKey but its seed is missing, so a null
+        // seed here means the DB has no recorded identity for this account.
         const generated = await generateAccount(account.name, operatorKp, [], {
           isSystem: account.isSystem,
         });
@@ -553,12 +651,185 @@ export class NatsControlPlaneService {
       { accountCount: accounts.length, unpropagated: unpropagatedAccountPublicKeys.length },
       "NATS config rendered to Vault KV",
     );
+
+    // Phase 6: fire the post-apply hook. `rotated` is true only when an
+    // identity was already recorded before this apply AND its fingerprint
+    // changed — a genuine first boot (no prior operator) is never a rotation.
+    // The hook is best-effort and fully guarded (see `invokePostApplyHook`),
+    // so a live-refresh failure never breaks the apply path (Phase 4's
+    // recreate-based self-heal is the backstop).
+    const newFingerprint = identityFingerprint(
+      operatorMaterial.publicKey,
+      renderedAccounts.map((a) => a.publicKey),
+    );
+    const rotated = prevOperatorPublic !== null && prevFingerprint !== newFingerprint;
+    await this.invokePostApplyHook({
+      rotated,
+      generatedSeeds,
+      operatorPublic: operatorMaterial.publicKey,
+      systemAccountPublic,
+    });
+
     return {
       generatedSeeds,
       operatorPublic: operatorMaterial.publicKey,
       systemAccountPublic,
       unpropagatedAccountPublicKeys,
     };
+  }
+
+  /**
+   * Invoke the registered post-apply hook (Phase 6), swallowing any error. The
+   * hook drives the egress live cred refresh; a failure there must never fail
+   * `applyConfig` — the running identity is already fully applied by the time
+   * this fires, and Phase 4's self-heal supervisor recreates any agent the
+   * live-refresh couldn't reach.
+   */
+  private async invokePostApplyHook(info: NatsIdentityRotationInfo): Promise<void> {
+    const hook = postApplyHook;
+    if (!hook) return;
+    try {
+      await hook(info);
+    } catch (err) {
+      log.warn(
+        { err: err instanceof Error ? err.message : String(err), rotated: info.rotated },
+        "NATS post-apply hook failed (non-fatal; deferring to self-heal)",
+      );
+    }
+  }
+
+  /**
+   * Phase 1 re-key guard. Confirm that every NATS identity the DB *already*
+   * records (the operator via `natsState.operatorPublic`, and each account via
+   * `natsAccount.publicKey`) still has a matching seed in Vault KV.
+   *
+   * Distinguishes the two states from §4.1 of the resilience plan:
+   *   - **First boot** — no recorded public key. Nothing to protect; the check
+   *     passes and `applyConfig` generates the identity.
+   *   - **Re-key hazard** — a public key is recorded but Vault returns no seed
+   *     (or a seed that derives to a different key). This is Vault data loss or
+   *     a post-unseal read race, never a reason to regenerate. Throws
+   *     {@link NatsIdentityMissing} / {@link NatsIdentityMismatch} after
+   *     raising a loud alarm.
+   *
+   * This is the single load-bearing gate: `applyConfigInner` calls it before
+   * touching any seed, and the Vault→NATS auto-apply path
+   * (`vault-health-watcher`) calls it directly before `applyConfig` so a
+   * missing seed can never reach the generation path. Both call sites share
+   * this one implementation — no divergent copies.
+   */
+  async assertRecordedIdentitiesHaveSeeds(): Promise<void> {
+    const [state, accounts] = await Promise.all([
+      this.db.natsState.findUnique({ where: { kind: "primary" } }),
+      this.db.natsAccount.findMany(),
+    ]);
+
+    if (state?.operatorPublic) {
+      await this.assertSeedPresentAndMatches({
+        kvPath: NATS_OPERATOR_KV_PATH,
+        field: FIELD_OPERATOR_SEED,
+        recordedPublicKey: state.operatorPublic,
+        identityLabel: `operator ${OPERATOR_NAME}`,
+      });
+    }
+
+    for (const account of accounts) {
+      // A null publicKey means this account has never been applied — a genuine
+      // first boot for it. Only recorded identities are guarded.
+      if (account.publicKey) {
+        await this.assertSeedPresentAndMatches({
+          kvPath: account.seedKvPath,
+          field: FIELD_ACCOUNT_SEED,
+          recordedPublicKey: account.publicKey,
+          identityLabel: `account ${account.name}`,
+        });
+      }
+    }
+  }
+
+  /**
+   * Assert a single recorded identity still has a backing seed in Vault whose
+   * derived public key matches the DB record. Reads via `tryReadField`, so a
+   * `path_not_found` / `field_not_found` surfaces as `null` (the "seed absent"
+   * signal) rather than an exception. On any violation this raises the alarm
+   * and throws — it never returns normally on a bad seed.
+   */
+  private async assertSeedPresentAndMatches(input: {
+    kvPath: string;
+    field: string;
+    recordedPublicKey: string;
+    identityLabel: string;
+  }): Promise<void> {
+    const seed = await this.tryReadField(input.kvPath, input.field);
+    if (!seed) {
+      throw await this.raiseIdentityAlarm(
+        new NatsIdentityMissing(input.identityLabel, input.kvPath, input.recordedPublicKey),
+      );
+    }
+    // Seed↔DB consistency check (plan Phase 1, optional deliverable): a present
+    // seed that derives to a different public key is as dangerous as a missing
+    // one — proceeding would swap identities under running agents.
+    const derivedPublicKey = loadKeyPair(seed).getPublicKey();
+    if (derivedPublicKey !== input.recordedPublicKey) {
+      throw await this.raiseIdentityAlarm(
+        new NatsIdentityMismatch(
+          input.identityLabel,
+          input.kvPath,
+          input.recordedPublicKey,
+          derivedPublicKey,
+        ),
+      );
+    }
+  }
+
+  /**
+   * Emit the loud alarm for a tripped re-key guard — an error-level log line
+   * AND a failed, infrastructure-category `UserEvent` so the audit log / NATS
+   * status surface show it. Returns the passed error so callers can
+   * `throw await this.raiseIdentityAlarm(err)` and keep TypeScript's
+   * control-flow narrowing. The audit write is best-effort: a failure to
+   * record it must never mask the original identity failure.
+   */
+  private async raiseIdentityAlarm(err: NatsIdentityError): Promise<NatsIdentityError> {
+    log.error(
+      {
+        identity: err.identityLabel,
+        kvPath: err.kvPath,
+        recordedPublicKey: err.recordedPublicKey,
+        errorType: err.name,
+        err: err.message,
+      },
+      "NATS identity seed missing from Vault — refusing to regenerate to avoid orphaning credentials",
+    );
+    try {
+      await new UserEventService(this.db).createEvent({
+        eventType: "system_maintenance",
+        eventCategory: "infrastructure",
+        eventName: "NATS identity seed missing — refusing to re-key",
+        triggeredBy: "system",
+        status: "failed",
+        progress: 0,
+        resourceType: "system",
+        resourceName: "nats-identity",
+        description:
+          "NATS identity seed missing from Vault — refusing to regenerate to avoid orphaning credentials",
+        metadata: {
+          identity: err.identityLabel,
+          kvPath: err.kvPath,
+          recordedPublicKey: err.recordedPublicKey,
+          errorType: err.name,
+          ...(err instanceof NatsIdentityMismatch
+            ? { derivedPublicKey: err.derivedPublicKey }
+            : {}),
+        },
+      });
+    } catch (auditErr) {
+      log.warn(
+        { err: auditErr instanceof Error ? auditErr.message : String(auditErr) },
+        "Failed to record NATS identity-missing alarm UserEvent (non-fatal)",
+      );
+    }
+    return err;
   }
 
   /**

@@ -41,6 +41,7 @@ import {
   type WildcardSuggestion,
 } from "@/lib/egress-wildcard-suggestions";
 import type { EgressRuleSummary, EgressDefaultAction } from "@mini-infra/types";
+import { queryKeys } from "@mini-infra/types";
 import { useQuery } from "@tanstack/react-query";
 
 // ---------------------------------------------------------------------------
@@ -444,7 +445,7 @@ export function EgressPromoteWizard({
   // (destination, pattern) with mergedHits, so 200 rows comfortably
   // covers the unique destinations a wizard run needs to consider.
   const eventsQuery = useQuery({
-    queryKey: ["egressEvents", "wizard", policyId],
+    queryKey: queryKeys.egress.eventsWizard(policyId),
     queryFn: () =>
       listEgressEventsForPolicy(policyId, { since: since7d(), limit: 200 }),
     enabled: open,

@@ -1,10 +1,14 @@
 /**
  * Egress Firewall API client functions.
  *
- * All fetchers follow the same shape as the rest of the app:
- * raw `fetch` with credentials + X-Correlation-ID header, throw on non-OK.
+ * All fetchers go through the shared `apiFetch` client. Egress list/detail
+ * endpoints return flat envelopes matching the convention used by other
+ * mini-infra collection endpoints (e.g., GET /api/environments) — they are
+ * NOT wrapped in `{ success, data }` — so every call here passes
+ * `unwrap: false` and returns the parsed body's own shape directly.
  */
 
+import { ApiRoute } from "@mini-infra/types";
 import type {
   EgressPolicySummary,
   EgressRuleSummary,
@@ -12,18 +16,11 @@ import type {
   EgressMode,
   EgressDefaultAction,
 } from "@mini-infra/types";
-
-function generateCorrelationId(): string {
-  return `egress-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Response envelope types
 // ====================
-
-// All egress list endpoints return flat envelopes matching the convention used
-// by other mini-infra collection endpoints (e.g., GET /api/environments). They
-// are NOT wrapped in `{ success, data }`.
 
 export interface PaginationMeta {
   total: number;
@@ -81,8 +78,7 @@ export interface ListEgressEventsQuery {
 export async function listEgressPolicies(
   query: ListEgressPoliciesQuery = {},
 ): Promise<EgressPolicyListResponse> {
-  const correlationId = generateCorrelationId();
-  const url = new URL("/api/egress/policies", window.location.origin);
+  const url = new URL(ApiRoute.egress.policies(), window.location.origin);
 
   if (query.environmentId) url.searchParams.set("environmentId", query.environmentId);
   if (query.stackId) url.searchParams.set("stackId", query.stackId);
@@ -90,64 +86,34 @@ export async function listEgressPolicies(
   if (query.page !== undefined) url.searchParams.set("page", String(query.page));
   if (query.limit !== undefined) url.searchParams.set("limit", String(query.limit));
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EgressPolicyListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "egress-policies",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch egress policies: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function getEgressPolicy(
   policyId: string,
 ): Promise<EgressPolicyDetailResponse> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/policies/${policyId}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EgressPolicyDetailResponse>(ApiRoute.egress.policy(policyId), {
+    unwrap: false,
+    correlationIdPrefix: "egress-policy",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch egress policy: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function listEgressRules(
   policyId: string,
 ): Promise<EgressRuleListResponse> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/policies/${policyId}/rules`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EgressRuleListResponse>(ApiRoute.egress.policyRules(policyId), {
+    unwrap: false,
+    correlationIdPrefix: "egress-rules",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch egress rules: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function listEgressEvents(
   query: ListEgressEventsQuery = {},
 ): Promise<EgressEventListResponse> {
-  const correlationId = generateCorrelationId();
-  const url = new URL("/api/egress/events", window.location.origin);
+  const url = new URL(ApiRoute.egress.events(), window.location.origin);
 
   if (query.environmentId) url.searchParams.set("environmentId", query.environmentId);
   if (query.stackId) url.searchParams.set("stackId", query.stackId);
@@ -160,19 +126,10 @@ export async function listEgressEvents(
   if (query.page !== undefined) url.searchParams.set("page", String(query.page));
   if (query.limit !== undefined) url.searchParams.set("limit", String(query.limit));
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EgressEventListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "egress-events",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch egress events: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 /**
@@ -189,11 +146,7 @@ export async function listEgressEventsForPolicy(
   policyId: string,
   query: ListEgressEventsForPolicyQuery = {},
 ): Promise<EgressEventListResponse> {
-  const correlationId = generateCorrelationId();
-  const url = new URL(
-    `/api/egress/policies/${policyId}/events`,
-    window.location.origin,
-  );
+  const url = new URL(ApiRoute.egress.policyEvents(policyId), window.location.origin);
 
   if (query.action) url.searchParams.set("action", query.action);
   if (query.sourceServiceName)
@@ -203,19 +156,10 @@ export async function listEgressEventsForPolicy(
   if (query.page !== undefined) url.searchParams.set("page", String(query.page));
   if (query.limit !== undefined) url.searchParams.set("limit", String(query.limit));
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+  return apiFetch<EgressEventListResponse>(url.toString(), {
+    unwrap: false,
+    correlationIdPrefix: "egress-events-policy",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch egress events for policy: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 // ====================
@@ -243,81 +187,42 @@ export async function patchEgressPolicy(
   policyId: string,
   body: PatchEgressPolicyBody,
 ): Promise<EgressPolicyDetailResponse> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/policies/${policyId}`, {
+  return apiFetch<EgressPolicyDetailResponse>(ApiRoute.egress.policy(policyId), {
     method: "PATCH",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(body),
+    body,
+    unwrap: false,
+    correlationIdPrefix: "egress-policy-patch",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update egress policy: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function createEgressRule(
   policyId: string,
   body: CreateEgressRuleBody,
 ): Promise<EgressRuleSummary> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/policies/${policyId}/rules`, {
+  return apiFetch<EgressRuleSummary>(ApiRoute.egress.policyRules(policyId), {
     method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(body),
+    body,
+    unwrap: false,
+    correlationIdPrefix: "egress-rule-create",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to create egress rule: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function patchEgressRule(
   ruleId: string,
   body: PatchEgressRuleBody,
 ): Promise<EgressRuleSummary> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/rules/${ruleId}`, {
+  return apiFetch<EgressRuleSummary>(ApiRoute.egress.rule(ruleId), {
     method: "PATCH",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
-    body: JSON.stringify(body),
+    body,
+    unwrap: false,
+    correlationIdPrefix: "egress-rule-patch",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to update egress rule: ${response.statusText}`);
-  }
-
-  return response.json();
 }
 
 export async function deleteEgressRule(ruleId: string): Promise<void> {
-  const correlationId = generateCorrelationId();
-  const response = await fetch(`/api/egress/rules/${ruleId}`, {
+  await apiFetch<void>(ApiRoute.egress.rule(ruleId), {
     method: "DELETE",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Correlation-ID": correlationId,
-    },
+    unwrap: false,
+    correlationIdPrefix: "egress-rule-delete",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to delete egress rule: ${response.statusText}`);
-  }
-  // 204 No Content — no body to parse
 }

@@ -9,16 +9,13 @@ import {
   restartFwAgent,
   findFwAgent,
   isFwAgentHealthy,
+  getFwAgentConnState,
+  composeFwAgentStatus,
   getFwAgentConfig,
   FW_AGENT_STARTUP_STEPS,
 } from "../services/egress/fw-agent-sidecar";
 import { emitToChannel } from "../lib/socket";
-import {
-  Channel,
-  ServerEvent,
-  type EgressFwAgentStatus,
-  type OperationStep,
-} from "@mini-infra/types";
+import { Channel, ServerEvent, type EgressFwAgentStatus, type OperationStep, Permission } from "@mini-infra/types";
 
 const logger = getLogger("stacks", "egress-fw-agent-routes");
 const router = express.Router();
@@ -28,6 +25,8 @@ const SETTINGS_CATEGORY = "egress-fw-agent";
 const configSchema = z.object({
   image: z.string().min(1).max(500).optional(),
   autoStart: z.boolean().optional(),
+  autoRemediation: z.boolean().optional(),
+  liveCredRefresh: z.boolean().optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -36,31 +35,31 @@ const configSchema = z.object({
 
 router.get(
   "/status",
-  requirePermission("egress:read"),
+  requirePermission(Permission.EgressRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const ownContainerId = getOwnContainerId();
       if (!ownContainerId) {
-        const status: EgressFwAgentStatus = {
-          available: false,
-          containerRunning: false,
-          containerId: null,
-          reason: "Not running inside a Docker container",
-          health: null,
-        };
+        const status: EgressFwAgentStatus = composeFwAgentStatus({
+          ownContainerId,
+          found: null,
+          healthy: false,
+          connState: null,
+        });
         res.json({ success: true, ...status });
         return;
       }
 
       const existing = await findFwAgent();
-      const healthy = isFwAgentHealthy();
 
-      const status: EgressFwAgentStatus = {
-        available: healthy && existing?.state === "running",
-        containerRunning: existing?.state === "running",
-        containerId: existing?.id?.slice(0, 12) ?? null,
-        health: healthy ? { status: "ok" } : null,
-      };
+      // In-band KV heartbeat (functional health) + out-of-band /healthz scrape
+      // (connection state — reports auth-failed even when the heartbeat can't).
+      const status: EgressFwAgentStatus = composeFwAgentStatus({
+        ownContainerId,
+        found: existing,
+        healthy: isFwAgentHealthy(),
+        connState: getFwAgentConnState(),
+      });
       res.json({ success: true, ...status });
     } catch (err) {
       logger.error({ err }, "Failed to get egress fw-agent status");
@@ -78,7 +77,7 @@ const RESTART_GUARD_KEY = "egress-fw-agent";
 
 router.post(
   "/restart",
-  requirePermission("egress:write"),
+  requirePermission(Permission.EgressWrite),
   async (_req: express.Request, res: express.Response) => {
     try {
       if (restartingFwAgent.has(RESTART_GUARD_KEY)) {
@@ -171,7 +170,7 @@ router.post(
 
 router.post(
   "/start",
-  requirePermission("egress:write"),
+  requirePermission(Permission.EgressWrite),
   async (_req: express.Request, res: express.Response) => {
     try {
       if (restartingFwAgent.has(RESTART_GUARD_KEY)) {
@@ -258,7 +257,7 @@ router.post(
 
 router.get(
   "/config",
-  requirePermission("settings:read"),
+  requirePermission(Permission.SettingsRead),
   async (_req: express.Request, res: express.Response) => {
     try {
       const config = await getFwAgentConfig();
@@ -276,7 +275,7 @@ router.get(
 
 router.patch(
   "/config",
-  requirePermission("settings:write"),
+  requirePermission(Permission.SettingsWrite),
   async (req: express.Request, res: express.Response) => {
     try {
       const parsed = configSchema.safeParse(req.body);
@@ -301,6 +300,10 @@ router.patch(
         settingEntries.push({ key: "image", value: updates.image });
       if (updates.autoStart !== undefined)
         settingEntries.push({ key: "auto_start", value: String(updates.autoStart) });
+      if (updates.autoRemediation !== undefined)
+        settingEntries.push({ key: "auto_remediation", value: String(updates.autoRemediation) });
+      if (updates.liveCredRefresh !== undefined)
+        settingEntries.push({ key: "live_cred_refresh", value: String(updates.liveCredRefresh) });
 
       for (const { key, value } of settingEntries) {
         await prisma.systemSettings.upsert({

@@ -1,5 +1,5 @@
 /**
- * Integration tests for builtin-vault-reconcile.ts and system-stack-migrations.ts.
+ * Integration tests for builtin-vault-reconcile.ts.
  *
  * Uses a real SQLite DB. Vault service calls are mocked at the facade level
  * (injected via the services parameter of runStackVaultReconciler). The module
@@ -10,9 +10,6 @@
  *   - runBuiltinVaultReconcile skips when Vault services are not ready
  *   - runBuiltinVaultReconcile skips stacks with no vault section in DB template version
  *   - runBuiltinVaultReconcile is non-fatal: reconciler failure logs but does not throw
- *   - runSystemStackMigrations backfills InfraResource from EnvironmentNetwork
- *   - runSystemStackMigrations is idempotent
- *   - runSystemStackMigrations links InfraResource to the owning stack
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -21,13 +18,11 @@ import { createId } from '@paralleldrive/cuid2';
 import type { PolicyServiceFacade, AppRoleServiceFacade } from '../services/stacks/stack-vault-reconciler';
 import { runStackVaultReconciler } from '../services/stacks/stack-vault-reconciler';
 import type { LoadedTemplate } from '../services/stacks/template-file-loader';
-import { runSystemStackMigrations } from '../services/stacks/system-stack-migrations';
 import { makePolicySvc, makeAppRoleSvc, makeKVSvc, makeFakeLog } from './fixtures/vault-mocks';
 type FakeLog = ReturnType<typeof makeFakeLog>;
-import { createTestEnvironment, createTestStackTemplate, createTestStack } from './fixtures/vault-test-db';
+import { createTestStackTemplate, createTestStack } from './fixtures/vault-test-db';
 
-// Local naming aliases retained so the existing test bodies keep reading.
-const createEnv = createTestEnvironment;
+// Local naming alias retained so the existing test bodies keep reading.
 async function createTemplateWithVault(
   opts: { policies?: unknown[]; appRoles?: unknown[] } = {},
 ): Promise<{ templateId: string; version: number }> {
@@ -248,120 +243,5 @@ describe('runBuiltinVaultReconcile — core reconcile loop', () => {
 
     await expect(runBuiltinVaultReconcile(testPrisma, templateByName, makeFakeLog())).resolves.not.toThrow();
     vi.restoreAllMocks();
-  });
-});
-
-// ─── Tests: runSystemStackMigrations ─────────────────────────────────────────
-
-describe('runSystemStackMigrations', () => {
-  it('runs without error when there are no EnvironmentNetworks', async () => {
-    await expect(runSystemStackMigrations(testPrisma)).resolves.not.toThrow();
-  });
-
-  it('backfills InfraResource from an applications EnvironmentNetwork', async () => {
-    const envId = await createEnv();
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `apps-net-${createId().slice(0, 6)}`, purpose: 'applications' },
-    });
-
-    await runSystemStackMigrations(testPrisma);
-
-    const resource = await testPrisma.infraResource.findFirst({
-      where: { environmentId: envId, purpose: 'applications' },
-    });
-    expect(resource).not.toBeNull();
-    expect(resource?.type).toBe('docker-network');
-    expect(resource?.scope).toBe('environment');
-  });
-
-  it('backfills InfraResource from a tunnel EnvironmentNetwork', async () => {
-    const envId = await createEnv();
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `tunnel-net-${createId().slice(0, 6)}`, purpose: 'tunnel' },
-    });
-
-    await runSystemStackMigrations(testPrisma);
-
-    const resource = await testPrisma.infraResource.findFirst({
-      where: { environmentId: envId, purpose: 'tunnel' },
-    });
-    expect(resource).not.toBeNull();
-  });
-
-  it('is idempotent — running twice creates only one InfraResource per network', async () => {
-    const envId = await createEnv();
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `idem-net-${createId().slice(0, 6)}`, purpose: 'applications' },
-    });
-
-    await runSystemStackMigrations(testPrisma);
-    await runSystemStackMigrations(testPrisma);
-
-    const resources = await testPrisma.infraResource.findMany({
-      where: { environmentId: envId, purpose: 'applications' },
-    });
-    expect(resources).toHaveLength(1);
-  });
-
-  it('links the InfraResource to the owning haproxy stack when present', async () => {
-    const envId = await createEnv();
-    const haproxyId = createId();
-    await testPrisma.stack.create({
-      data: {
-        id: haproxyId,
-        name: 'haproxy',
-        networks: JSON.stringify([]),
-        volumes: JSON.stringify([]),
-        environmentId: envId,
-      },
-    });
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `haproxy-net-${createId().slice(0, 6)}`, purpose: 'applications' },
-    });
-
-    await runSystemStackMigrations(testPrisma);
-
-    const resource = await testPrisma.infraResource.findFirst({
-      where: { environmentId: envId, purpose: 'applications' },
-    });
-    expect(resource?.stackId).toBe(haproxyId);
-  });
-
-  it('links the InfraResource to the cloudflare-tunnel stack for tunnel networks', async () => {
-    const envId = await createEnv();
-    const cfId = createId();
-    await testPrisma.stack.create({
-      data: {
-        id: cfId,
-        name: 'cloudflare-tunnel',
-        networks: JSON.stringify([]),
-        volumes: JSON.stringify([]),
-        environmentId: envId,
-      },
-    });
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `cf-net-${createId().slice(0, 6)}`, purpose: 'tunnel' },
-    });
-
-    await runSystemStackMigrations(testPrisma);
-
-    const resource = await testPrisma.infraResource.findFirst({
-      where: { environmentId: envId, purpose: 'tunnel' },
-    });
-    expect(resource?.stackId).toBe(cfId);
-  });
-
-  it('sets stackId to null when there is no owning stack for an EnvironmentNetwork', async () => {
-    const envId = await createEnv();
-    await testPrisma.environmentNetwork.create({
-      data: { id: createId(), environmentId: envId, name: `orphan-net-${createId().slice(0, 6)}`, purpose: 'applications' },
-    });
-
-    await expect(runSystemStackMigrations(testPrisma)).resolves.not.toThrow();
-
-    const resource = await testPrisma.infraResource.findFirst({
-      where: { environmentId: envId, purpose: 'applications' },
-    });
-    expect(resource?.stackId).toBeNull();
   });
 });

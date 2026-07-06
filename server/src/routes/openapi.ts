@@ -2,6 +2,7 @@ import express, { Request, Response, RequestHandler } from "express";
 import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
 import { requirePermission } from "../middleware/auth";
 import { openApiRegistry } from "../lib/openapi-registry";
+import { Permission } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ const router = express.Router();
  */
 router.get(
   "/",
-  requirePermission("agent:use") as RequestHandler,
+  requirePermission(Permission.AgentUse) as RequestHandler,
   (_req: Request, res: Response) => {
     const generator = new OpenApiGeneratorV31(openApiRegistry.definitions);
     const doc = generator.generateDocument({

@@ -57,7 +57,6 @@ export interface ContainerFilters {
   status?: string;
   name?: string;
   image?: string;
-  deploymentId?: string;
   deploymentManaged?: boolean; // Filter for containers managed by deployments
   /**
    * When true, restrict the list to containers labelled
@@ -74,7 +73,6 @@ export interface ContainerQueryParams {
   status?: string;
   name?: string;
   image?: string;
-  deploymentId?: string;
   deploymentManaged?: boolean;
   poolInstance?: boolean;
   filters?: ContainerFilters;
@@ -90,12 +88,6 @@ export interface ContainerListResponse {
   lastUpdated: string; // ISO string for JSON serialization
   page?: number;
   limit?: number;
-}
-
-export interface ContainerResponse {
-  success: boolean;
-  data: ContainerInfo;
-  message?: string;
 }
 
 export interface ContainerListApiResponse {
@@ -126,15 +118,17 @@ export interface ContainerCacheResponse {
   requestId?: string;
 }
 
+export interface ContainerCacheFlushResponse {
+  message: string;
+  timestamp: string;
+  requestId?: string;
+}
+
 // ====================
 // Container Action Types
 // ====================
 
 export type ContainerAction = "start" | "stop" | "restart" | "remove";
-
-export interface ContainerActionRequest {
-  action: ContainerAction;
-}
 
 export interface ContainerActionResponse {
   success: boolean;

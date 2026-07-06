@@ -7,12 +7,10 @@ import {
   UpdateManagedDatabaseUserRequest,
   ChangeUserPasswordRequest,
   SyncUsersResponse,
+  ApiRoute,
+  queryKeys,
 } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `managed-database-user-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Managed Database User API Functions
@@ -20,222 +18,90 @@ function generateCorrelationId(): string {
 
 async function fetchManagedDatabaseUsers(
   serverId: string,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserListResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
+  return apiFetch<ManagedDatabaseUserListResponse>(
+    ApiRoute.postgresServer.users(serverId),
+    { correlationIdPrefix: "managed-database-user", unwrap: false },
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch managed database users: ${response.statusText}`,
-    );
-  }
-
-  const data: ManagedDatabaseUserListResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch managed database users");
-  }
-
-  return data;
 }
 
 async function fetchManagedDatabaseUser(
   serverId: string,
   userId: string,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users/${userId}`,
-    {
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
+  return apiFetch<ManagedDatabaseUserResponse>(
+    ApiRoute.postgresServer.user(serverId, userId),
+    { correlationIdPrefix: "managed-database-user", unwrap: false },
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch managed database user: ${response.statusText}`,
-    );
-  }
-
-  const data: ManagedDatabaseUserResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch managed database user");
-  }
-
-  return data;
 }
 
 async function createManagedDatabaseUser(
   serverId: string,
   user: CreateManagedDatabaseUserRequest,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users`,
+  return apiFetch<ManagedDatabaseUserResponse>(
+    ApiRoute.postgresServer.users(serverId),
     {
       method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(user),
+      body: user,
+      correlationIdPrefix: "managed-database-user",
+      unwrap: false,
     },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create user");
-  }
-
-  const data: ManagedDatabaseUserResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create user");
-  }
-
-  return data;
 }
 
 async function updateManagedDatabaseUser(
   serverId: string,
   userId: string,
   updates: UpdateManagedDatabaseUserRequest,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users/${userId}`,
+  return apiFetch<ManagedDatabaseUserResponse>(
+    ApiRoute.postgresServer.user(serverId, userId),
     {
       method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(updates),
+      body: updates,
+      correlationIdPrefix: "managed-database-user",
+      unwrap: false,
     },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to update user");
-  }
-
-  const data: ManagedDatabaseUserResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update user");
-  }
-
-  return data;
 }
 
 async function changeUserPassword(
   serverId: string,
   userId: string,
   request: ChangeUserPasswordRequest,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users/${userId}/password`,
+  // The server route (server/src/routes/postgres-server/users.ts) is
+  // registered as `router.post("/:userId/password", ...)` and the registry
+  // documents `ApiRoute.postgresServer.userPassword` as POST — so this must
+  // use POST, not PUT (a PUT hit no registered route and 404'd).
+  return apiFetch<ManagedDatabaseUserResponse>(
+    ApiRoute.postgresServer.userPassword(serverId, userId),
     {
-      method: "PUT",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
+      method: "POST",
+      body: request,
+      correlationIdPrefix: "managed-database-user",
+      unwrap: false,
     },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to change password");
-  }
-
-  const data: ManagedDatabaseUserResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to change password");
-  }
-
-  return data;
 }
 
 async function deleteManagedDatabaseUser(
   serverId: string,
   userId: string,
-  correlationId: string,
 ): Promise<ManagedDatabaseUserDeleteResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users/${userId}`,
-    {
-      method: "DELETE",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
+  return apiFetch<ManagedDatabaseUserDeleteResponse>(
+    ApiRoute.postgresServer.user(serverId, userId),
+    { method: "DELETE", correlationIdPrefix: "managed-database-user", unwrap: false },
   );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to delete user");
-  }
-
-  const data: ManagedDatabaseUserDeleteResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete user");
-  }
-
-  return data;
 }
 
-async function syncUsers(
-  serverId: string,
-  correlationId: string,
-): Promise<SyncUsersResponse> {
-  const response = await fetch(
-    `/api/postgres-server/servers/${serverId}/users/sync`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to sync users");
-  }
-
-  const data: SyncUsersResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to sync users");
-  }
-
-  return data;
+async function syncUsers(serverId: string): Promise<SyncUsersResponse> {
+  return apiFetch<SyncUsersResponse>(ApiRoute.postgresServer.usersSync(serverId), {
+    method: "POST",
+    correlationIdPrefix: "managed-database-user",
+    unwrap: false,
+  });
 }
 
 // ====================
@@ -247,9 +113,8 @@ async function syncUsers(
  */
 export function useManagedDatabaseUsers(serverId: string | undefined) {
   return useQuery({
-    queryKey: ["postgres-servers", serverId, "users"],
-    queryFn: () =>
-      fetchManagedDatabaseUsers(serverId!, generateCorrelationId()),
+    queryKey: queryKeys.postgresServer.usersForServer(serverId ?? ""),
+    queryFn: () => fetchManagedDatabaseUsers(serverId!),
     enabled: !!serverId,
     staleTime: 30000, // Consider data fresh for 30 seconds
   });
@@ -263,9 +128,8 @@ export function useManagedDatabaseUser(
   userId: string | undefined,
 ) {
   return useQuery({
-    queryKey: ["postgres-users", userId],
-    queryFn: () =>
-      fetchManagedDatabaseUser(serverId!, userId!, generateCorrelationId()),
+    queryKey: queryKeys.postgresServer.user(userId ?? ""),
+    queryFn: () => fetchManagedDatabaseUser(serverId!, userId!),
     enabled: !!serverId && !!userId,
     staleTime: 30000,
   });
@@ -279,15 +143,15 @@ export function useCreateManagedDatabaseUser(serverId: string) {
 
   return useMutation({
     mutationFn: (user: CreateManagedDatabaseUserRequest) =>
-      createManagedDatabaseUser(serverId, user, generateCorrelationId()),
+      createManagedDatabaseUser(serverId, user),
     onSuccess: () => {
       // Invalidate users list to refetch
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(serverId),
       });
       // Also invalidate the server to update counts
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId],
+        queryKey: queryKeys.postgresServer.detail(serverId),
       });
     },
   });
@@ -311,15 +175,14 @@ export function useUpdateManagedDatabaseUser(serverId: string) {
         serverId,
         userId,
         updates,
-        generateCorrelationId(),
       ),
     onSuccess: (data) => {
       // Invalidate both the list and the individual user
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(serverId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-users", data.data.id],
+        queryKey: queryKeys.postgresServer.user(data.data.id),
       });
     },
   });
@@ -343,12 +206,11 @@ export function useChangeUserPassword(serverId: string) {
         serverId,
         userId,
         { password },
-        generateCorrelationId(),
       ),
     onSuccess: (data) => {
       // Invalidate the individual user
       queryClient.invalidateQueries({
-        queryKey: ["postgres-users", data.data.id],
+        queryKey: queryKeys.postgresServer.user(data.data.id),
       });
     },
   });
@@ -362,15 +224,15 @@ export function useDeleteManagedDatabaseUser(serverId: string) {
 
   return useMutation({
     mutationFn: (userId: string) =>
-      deleteManagedDatabaseUser(serverId, userId, generateCorrelationId()),
+      deleteManagedDatabaseUser(serverId, userId),
     onSuccess: () => {
       // Invalidate users list to refetch
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(serverId),
       });
       // Also invalidate the server to update counts
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId],
+        queryKey: queryKeys.postgresServer.detail(serverId),
       });
     },
   });
@@ -383,15 +245,15 @@ export function useSyncUsers(serverId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: () => syncUsers(serverId, generateCorrelationId()),
+    mutationFn: () => syncUsers(serverId),
     onSuccess: () => {
       // Invalidate users list to refetch
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(serverId),
       });
       // Also invalidate the server to update counts
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId],
+        queryKey: queryKeys.postgresServer.detail(serverId),
       });
     },
   });

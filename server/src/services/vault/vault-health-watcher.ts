@@ -182,7 +182,16 @@ export class VaultHealthWatcher {
       // not refresh it. Non-fatal so a NATS hiccup never blocks Vault.
       try {
         await this.admin.authenticateAsAdmin();
-        await getNatsControlPlaneService().applyConfig();
+        const controlPlane = getNatsControlPlaneService();
+        // Phase 1: this auto-unseal is the exact restart trigger that could
+        // silently re-key NATS if Vault returns a spurious post-unseal 404.
+        // Assert the recorded identity's seeds are present BEFORE apply runs —
+        // if one is missing, this throws (raising the re-key alarm) and we
+        // never fall through to applyConfig, leaving the running identity
+        // untouched. Shares the one guard implementation with applyConfig, so
+        // the two paths can't drift.
+        await controlPlane.assertRecordedIdentitiesHaveSeeds();
+        await controlPlane.applyConfig();
       } catch (natsErr) {
         log.warn(
           { err: natsErr instanceof Error ? natsErr.message : String(natsErr) },

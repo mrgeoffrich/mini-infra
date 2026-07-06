@@ -28,8 +28,10 @@ import {
 import { Channel } from "@mini-infra/types";
 import type { StackParameterValue } from "@mini-infra/types";
 import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues, useStackPrerequisites } from "@/hooks/use-stacks";
+import { ApiRequestError } from "@/lib/api-client";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
+import { NetworkDriftRow } from "./NetworkDriftRow";
 import { StackApplyProgress } from "./StackApplyProgress";
 import { StackParametersDialog } from "./StackParametersDialog";
 import { PoolServiceRow } from "./PoolServiceRow";
@@ -54,7 +56,7 @@ export const StackPlanView = React.memo(function StackPlanView({
   onDestroyCompleted,
 }: StackPlanViewProps) {
   const {
-    data: planResponse,
+    data: plan,
     isLoading,
     error,
     refetch,
@@ -86,8 +88,6 @@ export const StackPlanView = React.memo(function StackPlanView({
   const [selectedServices, setSelectedServices] = useState<Set<string>>(
     new Set(),
   );
-
-  const plan = planResponse?.data;
 
   const sortedActions = !plan?.actions
     ? []
@@ -299,12 +299,20 @@ export const StackPlanView = React.memo(function StackPlanView({
 
   // Error state
   if (error) {
-    const isDockerUnavailable = error.message.includes("Docker is unavailable");
-    const errWithMeta = error as Error & {
-      code?: string;
-      missing?: Array<{ resource: string; settings: string[]; settingsUrl: string; reason: string }>;
-    };
-    const isMissingConfig = errWithMeta.code === "MISSING_CONFIGURATION" && Array.isArray(errWithMeta.missing);
+    const isDockerUnavailable =
+      error instanceof ApiRequestError && error.status === 503;
+    const missing =
+      error instanceof ApiRequestError
+        ? (
+            error.body as
+              | { missing?: Array<{ resource: string; settings: string[]; settingsUrl: string; reason: string }> }
+              | undefined
+          )?.missing
+        : undefined;
+    const isMissingConfig =
+      error instanceof ApiRequestError &&
+      error.code === "MISSING_CONFIGURATION" &&
+      Array.isArray(missing);
 
     if (isMissingConfig) {
       return (
@@ -314,7 +322,7 @@ export const StackPlanView = React.memo(function StackPlanView({
           <AlertDescription className="space-y-2">
             <p>This stack has external-resource requirements that aren&apos;t configured yet.</p>
             <ul className="list-disc pl-5 space-y-1">
-              {errWithMeta.missing!.map((m) => (
+              {missing!.map((m) => (
                 <li key={m.resource}>
                   <span className="font-medium">{m.reason}</span>{" "}
                   <span>Configure: {m.settings.join(", ")}.</span>{" "}
@@ -548,6 +556,12 @@ export const StackPlanView = React.memo(function StackPlanView({
         {counts["no-op"] > 0 && (
           <Badge variant="secondary">{counts["no-op"]} unchanged</Badge>
         )}
+        {plan.networkActions.length > 0 && (
+          <Badge className="bg-amber-500 text-white hover:bg-amber-600">
+            {plan.networkActions.length} network issue
+            {plan.networkActions.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </div>
 
       {/* Service action list */}
@@ -566,6 +580,30 @@ export const StackPlanView = React.memo(function StackPlanView({
           ))}
         </CardContent>
       </Card>
+
+      {/* Network drift — network overhaul Phase 7. Report-only: these items
+          describe drift between desired-state network rows and live Docker
+          state, but nothing here can be "applied" yet (enforcement is Phase
+          8). Rendered as its own section, below container actions, so an
+          operator can see *why* a stack reads as changed even when every
+          container action above is "No Change". */}
+      {plan.networkActions.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-muted-foreground">
+            Network drift
+          </h4>
+          <Card>
+            <CardContent className="py-2">
+              {plan.networkActions.map((item, index) => (
+                <div key={`${item.managedNetworkId}-${item.type}-${index}`}>
+                  <NetworkDriftRow item={item} />
+                  {index < plan.networkActions.length - 1 && <Separator />}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Pool services — on-demand instance templates, live instance list.
           Rendered below the standard action list because pool services are

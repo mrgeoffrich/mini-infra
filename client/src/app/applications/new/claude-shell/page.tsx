@@ -13,11 +13,12 @@ import {
 } from "@/hooks/use-applications";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
-import { Channel } from "@mini-infra/types";
+import { Channel, ApiRoute } from "@mini-infra/types";
 import type {
   CreateStackTemplateRequest,
   StackServiceDefinition,
 } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -193,27 +194,24 @@ export default function NewClaudeShellPage() {
         ...request,
         onStackInstantiated: async (stackId: string) => {
           if (!deployKey) return;
-          const res = await fetch(
-            `/api/stacks/${stackId}/services/${CLAUDE_SHELL_SERVICE_NAME}/git-deploy-key`,
-            {
-              method: "PUT",
-              credentials: "include",
-              headers: { "Content-Type": "application/json" },
-              // NOTE: never log this body. The Vault KV service stores it
-              // opaque; the route logs only `git-deploy-key written`.
-              body: JSON.stringify({ privateKey: deployKey }),
-            },
-          );
-          if (!res.ok) {
-            let message = `Deploy key upload failed: ${res.statusText}`;
-            try {
-              const body = await res.json();
-              if (body?.message) message = `Deploy key upload failed: ${body.message}`;
-            } catch {
-              // fall through to default
-            }
+          try {
+            await apiFetch(
+              ApiRoute.stacks.serviceGitDeployKey(stackId, CLAUDE_SHELL_SERVICE_NAME),
+              {
+                method: "PUT",
+                // NOTE: never log this body. The Vault KV service stores it
+                // opaque; the route logs only `git-deploy-key written`.
+                body: { privateKey: deployKey },
+                correlationIdPrefix: "claude-shell",
+              },
+            );
+          } catch (err) {
+            const message =
+              err instanceof ApiRequestError
+                ? `Deploy key upload failed: ${err.message}`
+                : `Deploy key upload failed: ${err instanceof Error ? err.message : "Unknown error"}`;
             setKeyUploadError(message);
-            throw new Error(message);
+            throw new Error(message, { cause: err });
           }
         },
         onStackCreated: (stackId: string) => {

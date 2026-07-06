@@ -36,7 +36,9 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
+import { ApiRoute } from "@mini-infra/types";
 import type { DockerSocketDetectionResult } from "@mini-infra/types";
+import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 // ---------------------------------------------------------------------------
 // Step 1 — Create Account
@@ -64,33 +66,31 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch("/auth/setup", {
+      await apiFetch(ApiRoute.auth.setup(), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, displayName, password }),
+        body: { email, displayName, password },
+        correlationIdPrefix: "setup",
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error || "Setup failed");
-        return;
-      }
 
       // Save timezone preference (user is now auto-logged in)
       try {
-        await fetch("/api/user/preferences", {
+        await apiFetch(ApiRoute.userPreferences.preferences(), {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ timezone }),
+          body: { timezone },
+          correlationIdPrefix: "setup",
         });
       } catch {
         // Non-fatal — timezone can be set later in user settings
       }
 
       onComplete();
-    } catch {
-      setError("An unexpected error occurred");
+    } catch (err) {
+      // /auth/setup responds with `{ error: "<human message>" }` (no
+      // `.message` field) — the human-readable text lands in
+      // ApiRequestError.code, not `.message`.
+      setError(
+        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -246,11 +246,12 @@ function DockerDetectionStep({
     setIsDetecting(true);
     setError(false);
     try {
-      const response = await fetch("/auth/setup/detect-docker", {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error("Detection failed");
-      const data: DockerSocketDetectionResult = await response.json();
+      // /auth/setup/detect-docker returns the DockerSocketDetectionResult
+      // body directly (no `{ success, data }` envelope) — RAW.
+      const data = await apiFetch<DockerSocketDetectionResult>(
+        ApiRoute.auth.setupDetectDocker(),
+        { method: "POST", unwrap: false, correlationIdPrefix: "setup" },
+      );
       setResult(data);
     } catch {
       setError(true);
@@ -494,15 +495,25 @@ export function SetupPage() {
                   if (host) body.dockerHost = host;
                   if (ip) body.dockerHostIp = ip;
 
-                  const response = await fetch("/auth/setup/complete", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(body),
-                  });
-
-                  if (!response.ok) {
-                    const data = await response.json().catch(() => ({}));
-                    throw new Error(data.error || "Failed to complete setup");
+                  try {
+                    await apiFetch(ApiRoute.auth.setupComplete(), {
+                      method: "POST",
+                      body,
+                      correlationIdPrefix: "setup",
+                    });
+                  } catch (err) {
+                    // /auth/setup/complete responds with `{ error: "<human
+                    // message>" }` (no `.message` field) — the human-readable
+                    // text lands in ApiRequestError.code, not `.message`.
+                    // Re-thrown as a plain Error so DockerDetectionStep's
+                    // `(err as Error).message` read in handleContinue's
+                    // catch still shows the real text.
+                    throw new Error(
+                      err instanceof ApiRequestError
+                        ? err.code
+                        : "Failed to complete setup",
+                      { cause: err },
+                    );
                   }
 
                   // Full page reload to clear stale cached auth/setup queries.

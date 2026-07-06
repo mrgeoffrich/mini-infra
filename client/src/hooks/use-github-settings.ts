@@ -1,29 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   GitHubSettingResponse,
   GitHubValidationResponse,
   CreateGitHubSettingRequest,
   ValidateGitHubConnectionRequest,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 // Hook for retrieving current GitHub settings
 export function useGitHubSettings() {
   return useQuery<GitHubSettingResponse>({
-    queryKey: ["github-settings"],
-    queryFn: async () => {
-      const response = await fetch("/api/settings/github", {
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to fetch GitHub settings",
-        }));
-        throw new Error(errorData.message || "Failed to fetch settings");
-      }
-
-      return response.json();
-    },
+    queryKey: queryKeys.githubSettings.all,
+    queryFn: () =>
+      // Enveloped endpoint, but callers read the full `{ success, data }`
+      // shape (matches `GitHubSettingResponse`) rather than the unwrapped
+      // `data` — preserve that contract with `unwrap: false`.
+      apiFetch<GitHubSettingResponse>(ApiRoute.settings.github(), {
+        correlationIdPrefix: "github-settings",
+        unwrap: false,
+      }),
     staleTime: 30000, // 30 seconds
     retry: (failureCount, error) => {
       // Don't retry on 401/403 errors
@@ -47,28 +43,16 @@ export function useUpdateGitHubSettings() {
     Error,
     CreateGitHubSettingRequest
   >({
-    mutationFn: async (payload) => {
-      const response = await fetch("/api/settings/github", {
+    mutationFn: (payload) =>
+      apiFetch<GitHubSettingResponse>(ApiRoute.settings.github(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to update GitHub settings",
-        }));
-        throw new Error(errorData.message || "Failed to update settings");
-      }
-
-      return response.json();
-    },
+        body: payload,
+        correlationIdPrefix: "github-settings",
+        unwrap: false,
+      }),
     onSuccess: () => {
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["github-settings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubSettings.all });
     },
   });
 }
@@ -78,24 +62,18 @@ export function useDeleteGitHubSettings() {
   const queryClient = useQueryClient();
 
   return useMutation<{ success: boolean; message?: string }, Error>({
-    mutationFn: async () => {
-      const response = await fetch("/api/settings/github", {
-        method: "DELETE",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to delete GitHub settings",
-        }));
-        throw new Error(errorData.message || "Failed to delete settings");
-      }
-
-      return response.json();
-    },
+    mutationFn: () =>
+      apiFetch<{ success: boolean; message?: string }>(
+        ApiRoute.settings.github(),
+        {
+          method: "DELETE",
+          correlationIdPrefix: "github-settings",
+          unwrap: false,
+        },
+      ),
     onSuccess: () => {
       // Invalidate related queries
-      queryClient.invalidateQueries({ queryKey: ["github-settings"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.githubSettings.all });
     },
   });
 }
@@ -103,24 +81,12 @@ export function useDeleteGitHubSettings() {
 // Hook for testing GitHub connection
 export function useTestGitHubConnection() {
   return useMutation<GitHubValidationResponse, Error, ValidateGitHubConnectionRequest>({
-    mutationFn: async (payload) => {
-      const response = await fetch("/api/settings/github/test", {
+    mutationFn: (payload) =>
+      apiFetch<GitHubValidationResponse>(ApiRoute.settings.githubTest(), {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({
-          message: "Failed to test GitHub connection",
-        }));
-        throw new Error(errorData.message || "Connection test failed");
-      }
-
-      return response.json();
-    },
+        body: payload,
+        correlationIdPrefix: "github-settings",
+        unwrap: false,
+      }),
   });
 }

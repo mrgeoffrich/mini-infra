@@ -4,17 +4,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import {
-  HAProxyBackendInfo,
-  HAProxyBackendListResponse,
-  HAProxyBackendResponse,
-  HAProxyServerInfo,
-  HAProxyServerListResponse,
-  HAProxyServerResponse,
-  ForceDeleteBackendResponse,
-  ForceDeleteServerResponse,
-  BackendSourceType,
-} from "@mini-infra/types";
+import { HAProxyBackendInfo, HAProxyBackendListResponse, HAProxyBackendResponse, HAProxyServerInfo, HAProxyServerListResponse, HAProxyServerResponse, ForceDeleteBackendResponse, ForceDeleteServerResponse, BackendSourceType, Permission } from "@mini-infra/types";
 import { HAProxyDataPlaneClient } from "../services/haproxy/haproxy-dataplane-client";
 import DockerService from "../services/docker";
 import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
@@ -158,7 +148,7 @@ const updateServerSchema = z.object({
  */
 router.get(
   "/",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const { environmentId, status, sourceType, name } = req.query;
@@ -211,7 +201,7 @@ router.get(
  */
 router.get(
   "/:backendName",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName);
@@ -275,7 +265,7 @@ router.get(
  */
 router.patch(
   "/:backendName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName);
@@ -405,7 +395,7 @@ router.patch(
  */
 router.get(
   "/:backendName/servers",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName);
@@ -465,7 +455,7 @@ router.get(
  */
 router.get(
   "/:backendName/servers/:serverName",
-  requirePermission('haproxy:read') as RequestHandler,
+  requirePermission(Permission.HaproxyRead) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName); const serverName = String(req.params.serverName);
@@ -538,7 +528,7 @@ router.get(
  */
 router.patch(
   "/:backendName/servers/:serverName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName); const serverName = String(req.params.serverName);
@@ -677,7 +667,7 @@ router.patch(
  */
 router.delete(
   "/:backendName/servers/:serverName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName);
@@ -780,7 +770,7 @@ router.delete(
  */
 router.delete(
   "/:backendName",
-  requirePermission('haproxy:write') as RequestHandler,
+  requirePermission(Permission.HaproxyWrite) as RequestHandler,
   async (req: Request, res: Response) => {
     try {
       const backendName = String(req.params.backendName);

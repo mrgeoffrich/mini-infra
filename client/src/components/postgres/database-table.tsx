@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -7,7 +8,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { IconCalendar, IconDownload, IconPencil, IconTrash, IconPlayerPlay } from "@tabler/icons-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { IconCalendar, IconDownload, IconPencil, IconTrash, IconPlayerPlay, IconAlertTriangle } from "@tabler/icons-react";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { useCreateManualBackup } from "@/hooks/use-postgres-backup-operations";
 import { usePostgresBackupConfig } from "@/hooks/use-postgres-backup-configs";
@@ -47,7 +53,33 @@ export function DatabaseTable({
       <TableBody>
         {databases.map((database) => (
           <TableRow key={database.id}>
-            <TableCell className="font-medium">{database.name}</TableCell>
+            <TableCell className="font-medium">
+              <div className="flex items-center gap-2">
+                {database.name}
+                {!database.environmentId && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => onEditDatabase(database)}
+                        className="cursor-pointer"
+                      >
+                        <Badge
+                          variant="outline"
+                          className="text-yellow-700 border-yellow-200"
+                        >
+                          <IconAlertTriangle className="w-3 h-3 mr-1" />
+                          No environment
+                        </Badge>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Not backed up — set an environment to enable automated backups</p>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </TableCell>
             <TableCell>
               {database.host}:{database.port}
             </TableCell>

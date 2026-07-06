@@ -1,10 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   StackTemplateInfo,
-  StackTemplateListResponse,
-  StackTemplateResponse,
   StackTemplateVersionInfo,
-  StackTemplateVersionListResponse,
   CreateStackTemplateRequest,
   UpdateStackTemplateRequest,
   DraftVersionInput,
@@ -12,7 +10,9 @@ import type {
   StackTemplateSource,
   StackTemplateScope,
   PrerequisiteEvaluation,
+  StackInfo,
 } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 // ─── Filter params type ───────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ export interface StackTemplateFilterParams {
 async function fetchStackTemplates(
   params?: StackTemplateFilterParams,
 ): Promise<StackTemplateInfo[]> {
-  const url = new URL("/api/stack-templates", window.location.origin);
+  const url = new URL(ApiRoute.stackTemplates.list(), window.location.origin);
   if (params?.source) url.searchParams.set("source", params.source);
   if (params?.scope) url.searchParams.set("scope", params.scope);
   if (params?.environmentId) url.searchParams.set("environmentId", params.environmentId);
@@ -38,173 +38,91 @@ async function fetchStackTemplates(
   if (params?.includeLinkedStacks)
     url.searchParams.set("includeLinkedStacks", String(params.includeLinkedStacks));
 
-  const response = await fetch(url.toString(), {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stack templates: ${response.statusText}`);
-  }
-
-  const data: StackTemplateListResponse = await response.json();
-  return data.data || [];
+  // Enveloped `{success, data, message}`; already unwrapped by the
+  // original code (`return data.data || []`), so the default unwrap here
+  // is behavior-preserving for every consumer.
+  return (await apiFetch<StackTemplateInfo[]>(url.toString(), {
+    correlationIdPrefix: "stack-templates",
+  })) ?? [];
 }
 
 async function fetchStackTemplate(templateId: string): Promise<StackTemplateInfo> {
-  const response = await fetch(`/api/stack-templates/${templateId}`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.get(templateId), {
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch stack template: ${response.statusText}`);
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  return data.data;
 }
 
 async function fetchStackTemplateVersions(
   templateId: string,
 ): Promise<StackTemplateVersionInfo[]> {
-  const response = await fetch(`/api/stack-templates/${templateId}/versions`, {
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch stack template versions: ${response.statusText}`,
-    );
-  }
-
-  const data: StackTemplateVersionListResponse = await response.json();
-  return data.data || [];
+  return (await apiFetch<StackTemplateVersionInfo[]>(
+    ApiRoute.stackTemplates.versions(templateId),
+    { correlationIdPrefix: "stack-templates" },
+  )) ?? [];
 }
 
 async function createStackTemplate(
   request: CreateStackTemplateRequest,
 ): Promise<StackTemplateInfo> {
-  const response = await fetch("/api/stack-templates", {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.list(), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
+    body: request,
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to create stack template: ${response.statusText}`,
-    );
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  return data.data;
 }
 
 async function updateStackTemplate(args: {
   templateId: string;
   request: UpdateStackTemplateRequest;
 }): Promise<StackTemplateInfo> {
-  const response = await fetch(`/api/stack-templates/${args.templateId}`, {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.get(args.templateId), {
     method: "PATCH",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args.request),
+    body: args.request,
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to update stack template: ${response.statusText}`,
-    );
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  return data.data;
 }
 
 async function saveDraft(args: {
   templateId: string;
   request: DraftVersionInput;
 }): Promise<StackTemplateInfo> {
-  const response = await fetch(`/api/stack-templates/${args.templateId}/draft`, {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.draft(args.templateId), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args.request),
+    body: args.request,
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to save draft: ${response.statusText}`,
-    );
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  return data.data;
 }
 
 async function publishDraft(args: {
   templateId: string;
   request: PublishDraftRequest;
 }): Promise<StackTemplateInfo> {
-  const response = await fetch(`/api/stack-templates/${args.templateId}/publish`, {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.publish(args.templateId), {
     method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args.request),
+    body: args.request,
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to publish draft: ${response.statusText}`,
-    );
-  }
-
-  const data: StackTemplateResponse = await response.json();
-  return data.data;
 }
 
 async function discardDraft(templateId: string): Promise<void> {
-  const response = await fetch(`/api/stack-templates/${templateId}/draft`, {
+  await apiFetch(ApiRoute.stackTemplates.draft(templateId), {
     method: "DELETE",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to discard draft: ${response.statusText}`,
-    );
-  }
 }
 
 async function deleteTemplate(templateId: string): Promise<void> {
-  const response = await fetch(`/api/stack-templates/${templateId}`, {
+  await apiFetch(ApiRoute.stackTemplates.get(templateId), {
     method: "DELETE",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    correlationIdPrefix: "stack-templates",
   });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null);
-    throw new Error(
-      errorData?.message || `Failed to delete stack template: ${response.statusText}`,
-    );
-  }
 }
 
 // ─── Query hooks ──────────────────────────────────────────────────────────────
 
 export function useStackTemplates(params?: StackTemplateFilterParams) {
   return useQuery({
-    queryKey: ["stackTemplates", params],
+    queryKey: queryKeys.stackTemplates.list(params),
     queryFn: () => fetchStackTemplates(params),
     retry: 1,
   });
@@ -212,7 +130,7 @@ export function useStackTemplates(params?: StackTemplateFilterParams) {
 
 export function useStackTemplate(templateId: string | undefined) {
   return useQuery({
-    queryKey: ["stackTemplate", templateId],
+    queryKey: queryKeys.stackTemplates.detail(templateId ?? ""),
     queryFn: () => fetchStackTemplate(templateId!),
     enabled: !!templateId,
     retry: 1,
@@ -221,7 +139,7 @@ export function useStackTemplate(templateId: string | undefined) {
 
 export function useStackTemplateVersions(templateId: string | undefined) {
   return useQuery({
-    queryKey: ["stackTemplateVersions", templateId],
+    queryKey: queryKeys.stackTemplates.versions(templateId ?? ""),
     queryFn: () => fetchStackTemplateVersions(templateId!),
     enabled: !!templateId,
     retry: 1,
@@ -236,7 +154,7 @@ export function useCreateStackTemplate() {
   return useMutation({
     mutationFn: createStackTemplate,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
     },
   });
 }
@@ -247,9 +165,9 @@ export function useUpdateStackTemplate() {
   return useMutation({
     mutationFn: updateStackTemplate,
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplate", variables.templateId],
+        queryKey: queryKeys.stackTemplates.detail(variables.templateId),
       });
     },
   });
@@ -261,12 +179,12 @@ export function useSaveDraft() {
   return useMutation({
     mutationFn: saveDraft,
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplate", variables.templateId],
+        queryKey: queryKeys.stackTemplates.detail(variables.templateId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplateVersions", variables.templateId],
+        queryKey: queryKeys.stackTemplates.versions(variables.templateId),
       });
     },
   });
@@ -278,12 +196,12 @@ export function usePublishDraft() {
   return useMutation({
     mutationFn: publishDraft,
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplate", variables.templateId],
+        queryKey: queryKeys.stackTemplates.detail(variables.templateId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplateVersions", variables.templateId],
+        queryKey: queryKeys.stackTemplates.versions(variables.templateId),
       });
     },
   });
@@ -295,10 +213,10 @@ export function useDiscardDraft() {
   return useMutation({
     mutationFn: discardDraft,
     onSuccess: (_data, templateId) => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
-      queryClient.invalidateQueries({ queryKey: ["stackTemplate", templateId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.detail(templateId) });
       queryClient.invalidateQueries({
-        queryKey: ["stackTemplateVersions", templateId],
+        queryKey: queryKeys.stackTemplates.versions(templateId),
       });
     },
   });
@@ -310,7 +228,7 @@ export function useDeleteTemplate() {
   return useMutation({
     mutationFn: deleteTemplate,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
     },
   });
 }
@@ -331,25 +249,21 @@ export function useTemplatePrerequisites(args: {
 }) {
   const { templateId, environmentId, enabled = true } = args;
   return useQuery<PrerequisiteEvaluation>({
-    queryKey: ["templatePrerequisites", templateId, environmentId ?? null],
+    queryKey: queryKeys.stackTemplates.prerequisites(templateId!, environmentId),
     queryFn: async () => {
       const url = new URL(
-        `/api/stack-templates/${templateId}/prerequisites`,
+        ApiRoute.stackTemplates.prerequisites(templateId!),
         window.location.origin,
       );
       if (environmentId) url.searchParams.set("environmentId", environmentId);
-      const res = await fetch(url.toString(), {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) {
-        // 400 with ENVIRONMENT_ID_REQUIRED is expected for env-scoped
-        // templates when the user hasn't picked an env yet — don't
-        // treat it as a hard error in the hook; surface the response.
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message ?? `Failed to evaluate prerequisites: ${res.statusText}`);
-      }
-      const data = (await res.json()) as { success: boolean } & PrerequisiteEvaluation;
+      // Raw response — `{success, ok, failures}` has no `data` field.
+      // 400 with ENVIRONMENT_ID_REQUIRED is expected for env-scoped
+      // templates when the user hasn't picked an env yet — apiFetch's
+      // built-in message extraction from the error body surfaces it.
+      const data = await apiFetch<{ success: boolean } & PrerequisiteEvaluation>(
+        url.toString(),
+        { unwrap: false, correlationIdPrefix: "stack-templates" },
+      );
       return { ok: data.ok, failures: data.failures };
     },
     enabled: !!templateId && enabled,
@@ -368,26 +282,19 @@ export function useInstantiateTemplate() {
       environmentId?: string;
       parameterValues?: Record<string, unknown>;
     }) => {
-      const response = await fetch(`/api/stack-templates/${args.templateId}/instantiate`, {
+      return apiFetch<StackInfo>(ApiRoute.stackTemplates.instantiate(args.templateId), {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           name: args.name,
           environmentId: args.environmentId,
           parameterValues: args.parameterValues,
-        }),
+        },
+        correlationIdPrefix: "stack-templates",
       });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.message || `Failed to instantiate template: ${response.statusText}`);
-      }
-      const data = await response.json();
-      return data.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["stackTemplates"] });
-      queryClient.invalidateQueries({ queryKey: ["stacks"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
   });
 }

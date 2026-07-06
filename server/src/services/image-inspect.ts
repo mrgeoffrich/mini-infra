@@ -1,4 +1,5 @@
 import { getLogger } from "../lib/logger-factory";
+import { getRegistryAuthHeader } from "./registry-auth";
 
 const logger = getLogger("docker", "image-inspect");
 
@@ -153,14 +154,12 @@ export class ImageInspectService {
       return this.getDockerHubToken(ref.repository);
     }
 
-    if (this.credentials) {
-      const encoded = Buffer.from(
-        `${this.credentials.username}:${this.credentials.password}`,
-      ).toString("base64");
-      return `Basic ${encoded}`;
-    }
-
-    return null;
+    return getRegistryAuthHeader(
+      ref.registry,
+      ref.repository,
+      this.credentials?.username,
+      this.credentials?.password,
+    );
   }
 
   private async getDockerHubToken(repository: string): Promise<string> {

@@ -10,6 +10,7 @@ import type {
   UpdateSelfBackupConfigRequest,
   TriggerBackupResponse,
 } from "@mini-infra/types";
+import { Permission } from "@mini-infra/types";
 
 const logger = getLogger("http", "settings-self-backup");
 const router = express.Router();
@@ -24,7 +25,7 @@ const configSchema = z.object({
 /**
  * GET / - Get current self-backup configuration
  */
-router.get("/", requirePermission('backups:read'), async (req, res) => {
+router.get("/", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     // Load configuration from database
     const settings = await prisma.systemSettings.findMany({
@@ -83,7 +84,7 @@ router.get("/", requirePermission('backups:read'), async (req, res) => {
 /**
  * PUT / - Update configuration (schedule, container, timezone)
  */
-router.put("/", requirePermission('backups:write'), async (req, res) => {
+router.put("/", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -174,7 +175,7 @@ router.put("/", requirePermission('backups:write'), async (req, res) => {
 /**
  * POST /enable - Enable scheduled backups
  */
-router.post("/enable", requirePermission('backups:write'), async (req, res) => {
+router.post("/enable", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -267,7 +268,7 @@ router.post("/enable", requirePermission('backups:write'), async (req, res) => {
 /**
  * POST /disable - Disable scheduled backups
  */
-router.post("/disable", requirePermission('backups:write'), async (req, res) => {
+router.post("/disable", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -340,7 +341,7 @@ router.post("/disable", requirePermission('backups:write'), async (req, res) => 
 /**
  * POST /trigger - Trigger manual backup immediately
  */
-router.post("/trigger", requirePermission('backups:write'), async (req, res) => {
+router.post("/trigger", requirePermission(Permission.BackupsWrite), async (req, res) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -438,7 +439,7 @@ router.post("/trigger", requirePermission('backups:write'), async (req, res) => 
 /**
  * GET /schedule-info - Get next scheduled run time and status
  */
-router.get("/schedule-info", requirePermission('backups:read'), async (req, res) => {
+router.get("/schedule-info", requirePermission(Permission.BackupsRead), async (req, res) => {
   try {
     const scheduler = SelfBackupScheduler.getInstance();
     const scheduleInfo = scheduler?.getScheduleInfo() || null;

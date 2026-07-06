@@ -41,6 +41,7 @@ import type {
   ResourceType,
   ServiceApplyResult,
 } from '@mini-infra/types';
+import { Permission } from '@mini-infra/types';
 
 const logger = getLogger("stacks", "stacks-apply-route");
 const router = Router();
@@ -50,7 +51,7 @@ const router = Router();
 // POST /:stackId/apply, so the frontend can use one rendering path.
 router.get(
   '/:stackId/prerequisites',
-  requirePermission('stacks:read'),
+  requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const exists = await prisma.stack.findUnique({
@@ -76,7 +77,7 @@ router.get(
 // POST /:stackId/apply — Apply changes (fire-and-forget with Socket.IO progress)
 router.post(
   '/:stackId/apply',
-  requirePermission('stacks:write'),
+  requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
     const parsed = applyStackSchema.safeParse(req.body);

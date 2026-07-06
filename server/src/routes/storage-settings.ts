@@ -41,11 +41,7 @@ import {
   GoogleDriveTokenManager,
   DRIVE_SETTING_KEYS,
 } from "../services/storage/providers/google-drive/google-drive-token-manager";
-import {
-  AzureContainerInfo,
-  STORAGE_PROVIDER_IDS,
-  StorageProviderId,
-} from "@mini-infra/types";
+import { AzureContainerInfo, STORAGE_PROVIDER_IDS, StorageProviderId, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "storage-settings");
 const router = express.Router();
@@ -118,7 +114,7 @@ async function readSlotMap(): Promise<Record<string, string>> {
 // ====================
 
 /** GET / — return active provider + per-slot locations */
-router.get("/", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -149,7 +145,7 @@ router.get("/", requirePermission("storage:read") as RequestHandler, (async (
 }) as RequestHandler);
 
 /** PUT /active-provider — switch active storage provider */
-router.put("/active-provider", requirePermission("storage:write") as RequestHandler, (async (
+router.put("/active-provider", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -187,7 +183,7 @@ router.put("/active-provider", requirePermission("storage:write") as RequestHand
 
 // ----- Azure provider config -----
 
-router.get("/azure", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/azure", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -213,7 +209,7 @@ router.get("/azure", requirePermission("storage:read") as RequestHandler, (async
   }
 }) as RequestHandler);
 
-router.put("/azure", requirePermission("storage:write") as RequestHandler, (async (
+router.put("/azure", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -261,7 +257,7 @@ router.put("/azure", requirePermission("storage:write") as RequestHandler, (asyn
   }
 }) as RequestHandler);
 
-router.delete("/azure", requirePermission("storage:write") as RequestHandler, (async (
+router.delete("/azure", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -286,7 +282,7 @@ router.delete("/azure", requirePermission("storage:write") as RequestHandler, (a
   }
 }) as RequestHandler);
 
-router.post("/azure/validate", requirePermission("storage:write") as RequestHandler, (async (
+router.post("/azure/validate", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -329,7 +325,7 @@ router.post("/azure/validate", requirePermission("storage:write") as RequestHand
   }
 }) as RequestHandler);
 
-router.get("/azure/locations", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/azure/locations", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -373,7 +369,7 @@ router.get("/azure/locations", requirePermission("storage:read") as RequestHandl
   }
 }) as RequestHandler);
 
-router.post("/azure/test-location", requirePermission("storage:write") as RequestHandler, (async (
+router.post("/azure/test-location", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -419,7 +415,7 @@ function getDriveBackend(): GoogleDriveBackend {
 
 router.get(
   "/google-drive",
-  requirePermission("storage:read") as RequestHandler,
+  requirePermission(Permission.StorageRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const tokens = new GoogleDriveTokenManager(prisma);
@@ -450,7 +446,7 @@ router.get(
 
 router.put(
   "/google-drive",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -512,7 +508,7 @@ router.put(
 
 router.delete(
   "/google-drive",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -536,7 +532,7 @@ router.delete(
 
 router.post(
   "/google-drive/disconnect",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);
@@ -560,7 +556,7 @@ router.post(
 
 router.post(
   "/google-drive/validate",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const backend = getDriveBackend();
@@ -578,7 +574,7 @@ router.post(
 
 router.get(
   "/google-drive/locations",
-  requirePermission("storage:read") as RequestHandler,
+  requirePermission(Permission.StorageRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const search =
@@ -618,7 +614,7 @@ router.get(
 
 router.post(
   "/google-drive/test-location",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = testLocationSchema.safeParse(req.body);
@@ -644,7 +640,7 @@ router.post(
 
 router.post(
   "/google-drive/create-folder",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = createDriveFolderSchema.safeParse(req.body);
@@ -673,7 +669,7 @@ export { DRIVE_SETTING_KEYS };
 
 // ----- Slot wiring -----
 
-router.get("/locations/:slot", requirePermission("storage:read") as RequestHandler, (async (
+router.get("/locations/:slot", requirePermission(Permission.StorageRead) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -700,7 +696,7 @@ router.get("/locations/:slot", requirePermission("storage:read") as RequestHandl
   }
 }) as RequestHandler);
 
-router.put("/locations/:slot", requirePermission("storage:write") as RequestHandler, (async (
+router.put("/locations/:slot", requirePermission(Permission.StorageWrite) as RequestHandler, (async (
   req: Request,
   res: Response,
   next: NextFunction,
@@ -816,7 +812,7 @@ interface SwitchPrecheckResponse {
  */
 router.get(
   "/switch-precheck",
-  requirePermission("storage:read") as RequestHandler,
+  requirePermission(Permission.StorageRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = switchPrecheckQuerySchema.safeParse(req.query);
@@ -984,7 +980,7 @@ router.get(
  */
 router.post(
   "/:provider/forget",
-  requirePermission("storage:write") as RequestHandler,
+  requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getAuthenticatedUser(req);

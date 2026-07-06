@@ -1,15 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   UserPreferenceInfo,
   UpdateUserPreferencesRequest,
 } from "@mini-infra/types";
-
-interface ApiResponse<T> {
-  success: boolean;
-  data: T;
-  message?: string;
-  error?: string;
-}
+import { apiFetch } from "@/lib/api-client";
 
 interface TimezoneOption {
   value: string;
@@ -18,75 +13,38 @@ interface TimezoneOption {
 
 // API functions
 async function fetchUserPreferences(): Promise<UserPreferenceInfo> {
-  const response = await fetch("/api/user/preferences", {
-    method: "GET",
-    credentials: "include",
+  return apiFetch<UserPreferenceInfo>(ApiRoute.userPreferences.preferences(), {
+    correlationIdPrefix: "user-preferences",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user preferences: ${response.statusText}`);
-  }
-
-  const result: ApiResponse<UserPreferenceInfo> = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || "Failed to fetch user preferences");
-  }
-
-  return result.data;
 }
 
 async function updateUserPreferences(
   updates: UpdateUserPreferencesRequest,
 ): Promise<UserPreferenceInfo> {
-  const response = await fetch("/api/user/preferences", {
+  return apiFetch<UserPreferenceInfo>(ApiRoute.userPreferences.preferences(), {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    credentials: "include",
-    body: JSON.stringify(updates),
+    body: updates,
+    correlationIdPrefix: "user-preferences",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to update user preferences: ${response.statusText}`,
-    );
-  }
-
-  const result: ApiResponse<UserPreferenceInfo> = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || "Failed to update user preferences");
-  }
-
-  return result.data;
 }
 
 async function fetchTimezones(): Promise<TimezoneOption[]> {
-  const response = await fetch("/api/user/timezones", {
-    method: "GET",
-    credentials: "include",
+  return apiFetch<TimezoneOption[]>(ApiRoute.userPreferences.timezones(), {
+    correlationIdPrefix: "user-preferences",
   });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch timezones: ${response.statusText}`);
-  }
-
-  const result: ApiResponse<TimezoneOption[]> = await response.json();
-
-  if (!result.success) {
-    throw new Error(result.error || "Failed to fetch timezones");
-  }
-
-  return result.data;
 }
 
 // Query keys
+//
+// Re-exported (not just used internally) because `client/src/lib/auth-context.tsx`
+// imports `userPreferencesKeys` directly to prefetch/clear the preferences
+// cache on login/logout. Derived from the shared `queryKeys.userPreferences`
+// registry so both files keep agreeing on the same cache entries.
 export const userPreferencesKeys = {
-  all: ["userPreferences"] as const,
-  preferences: () => [...userPreferencesKeys.all, "preferences"] as const,
-  timezones: () => [...userPreferencesKeys.all, "timezones"] as const,
+  all: queryKeys.userPreferences.all,
+  preferences: () =>
+    [...queryKeys.userPreferences.all, "preferences"] as const,
+  timezones: () => queryKeys.userPreferences.timezones,
 };
 
 // Hooks

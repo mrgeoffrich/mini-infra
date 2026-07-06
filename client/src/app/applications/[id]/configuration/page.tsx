@@ -32,6 +32,7 @@ import type { StackServiceType } from "@mini-infra/types";
 import {
   editApplicationFormSchema,
   editApplicationDefaults,
+  applicationsNetworkDeclaration,
   type EditApplicationFormData,
 } from "@/lib/application-schemas";
 import { ConfigurationCard } from "../../components/configuration-card";
@@ -201,6 +202,25 @@ export default function ApplicationConfigurationTab() {
         ? existingVersion.networks
         : [{ name: `${templateName}-net` }];
 
+    // Network membership is authored on the Overview tab's Connected Networks
+    // card (which edits `joinNetworks` directly). A config save must NOT touch
+    // that set — preserve whatever the persisted service already declares,
+    // unioned with the app's own stack network(s), so saving unrelated config
+    // never drops a network added there.
+    const existingJoinNetworks =
+      existingService?.containerConfig?.joinNetworks ?? [];
+    const joinNetworks = Array.from(
+      new Set([...networks.map((n) => n.name), ...existingJoinNetworks]),
+    );
+
+    // HAProxy-routed services (StatelessWeb) must re-declare membership of the
+    // environment's `applications` network on every save — otherwise editing an
+    // app would drop the resource input the create flow set. The server also
+    // enforces this at apply time; declaring it keeps the draft self-describing.
+    const { resourceInputs, joinResourceNetworks } = applicationsNetworkDeclaration(
+      formData.serviceType as StackServiceType,
+    );
+
     try {
       await updateApplication.mutateAsync({
         templateId,
@@ -210,6 +230,7 @@ export default function ApplicationConfigurationTab() {
         },
         draft: {
           networks,
+          resourceInputs,
           volumes,
           services: [
             {
@@ -221,7 +242,8 @@ export default function ApplicationConfigurationTab() {
                 env: Object.keys(env).length > 0 ? env : undefined,
                 ports: ports.length > 0 ? ports : undefined,
                 mounts: mounts.length > 0 ? mounts : undefined,
-                joinNetworks: networks.map((n) => n.name),
+                joinNetworks,
+                joinResourceNetworks,
                 restartPolicy: formData.restartPolicy,
                 healthcheck,
               },
@@ -308,7 +330,21 @@ export default function ApplicationConfigurationTab() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Service Type</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // Routing (HAProxy zero-downtime blue-green) only applies to
+                        // StatelessWeb — mirrors ServiceTypeStep's reset in the create
+                        // wizard so a leftover "enabled" flag can't smuggle a routing
+                        // config onto a Stateful service.
+                        form.setValue(
+                          "enableRouting",
+                          value === "StatelessWeb",
+                          { shouldValidate: true },
+                        );
+                      }}
+                      value={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />

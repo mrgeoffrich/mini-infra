@@ -1,10 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { QuickSetupRequest, QuickSetupResponse } from "@mini-infra/types";
-
-// Generate correlation ID for debugging
-function generateCorrelationId(): string {
-  return `quick-setup-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
+import { QuickSetupRequest, QuickSetupResponse, ApiRoute, queryKeys } from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Quick Setup API Function
@@ -12,33 +8,13 @@ function generateCorrelationId(): string {
 
 async function createAppDatabase(
   request: QuickSetupRequest,
-  correlationId: string,
 ): Promise<QuickSetupResponse> {
-  const response = await fetch(
-    `/api/postgres-server/workflows/create-app-database`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Correlation-ID": correlationId,
-      },
-      body: JSON.stringify(request),
-    },
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.message || "Failed to create application database");
-  }
-
-  const data: QuickSetupResponse = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create application database");
-  }
-
-  return data;
+  return apiFetch<QuickSetupResponse>(ApiRoute.postgresServer.createAppDatabase(), {
+    method: "POST",
+    body: request,
+    correlationIdPrefix: "quick-setup",
+    unwrap: false,
+  });
 }
 
 // ====================
@@ -54,20 +30,20 @@ export function useQuickSetup(serverId: string) {
 
   return useMutation({
     mutationFn: (request: Omit<QuickSetupRequest, "serverId">) =>
-      createAppDatabase({ ...request, serverId }, generateCorrelationId()),
+      createAppDatabase({ ...request, serverId }),
     onSuccess: () => {
       // Invalidate all related queries
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "databases"],
+        queryKey: queryKeys.postgresServer.databasesForServer(serverId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId, "users"],
+        queryKey: queryKeys.postgresServer.usersForServer(serverId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-servers", serverId],
+        queryKey: queryKeys.postgresServer.detail(serverId),
       });
       queryClient.invalidateQueries({
-        queryKey: ["postgres-grants"],
+        queryKey: queryKeys.postgresServer.grants,
       });
     },
   });
