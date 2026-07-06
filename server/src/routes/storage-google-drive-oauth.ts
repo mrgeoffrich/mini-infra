@@ -24,11 +24,14 @@ import express, {
 import { getLogger } from "../lib/logger-factory";
 import { getAuthenticatedUser, requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
+import * as authSettingsService from "../lib/auth-settings-service";
 import { GoogleDriveTokenManager } from "../services/storage/providers/google-drive/google-drive-token-manager";
 import {
   buildGoogleDriveRedirectUri,
+  resolveGoogleDriveRedirectUri,
   GoogleDrivePublicUrlNotConfiguredError,
 } from "../services/storage/providers/google-drive/google-drive-redirect";
+import { requestOrigin } from "../lib/request-origin";
 import {
   buildOAuthState,
   OAuthStateInvalidError,
@@ -42,15 +45,35 @@ const logger = getLogger("integrations", "storage-google-drive-oauth");
 const router = express.Router();
 
 const POST_REDIRECT_PATH = "/connectivity-storage";
+const SETUP_REDIRECT_PATH = "/setup";
 
-function buildPostRedirect(qs: string): string {
-  return `${POST_REDIRECT_PATH}?${qs}`;
+/**
+ * Where the browser lands after the OAuth round-trip. During onboarding
+ * (no users yet) the Drive connect is driven from the setup wizard's
+ * "Load from Backup" flow, so we return the user to `/setup` with a
+ * `restore=…` marker; otherwise the normal storage settings page.
+ */
+async function isSetupInProgress(): Promise<boolean> {
+  try {
+    const userCount = await prisma.user.count();
+    if (userCount > 0) return false;
+    return !(await authSettingsService.isSetupComplete());
+  } catch {
+    return false;
+  }
 }
 
-function buildErrorRedirect(reason: string): string {
-  return buildPostRedirect(
-    `google-drive=error&reason=${encodeURIComponent(reason)}`,
-  );
+function buildSuccessRedirect(setupInProgress: boolean): string {
+  return setupInProgress
+    ? `${SETUP_REDIRECT_PATH}?restore=drive-connected`
+    : `${POST_REDIRECT_PATH}?google-drive=connected`;
+}
+
+function buildErrorRedirect(reason: string, setupInProgress: boolean): string {
+  const encoded = encodeURIComponent(reason);
+  return setupInProgress
+    ? `${SETUP_REDIRECT_PATH}?restore=drive-error&reason=${encoded}`
+    : `${POST_REDIRECT_PATH}?google-drive=error&reason=${encoded}`;
 }
 
 router.get(
@@ -117,6 +140,10 @@ router.get(
   // (Cookies are also still in scope so the user remains authenticated when
   // the callback eventually redirects them to the SPA.)
   (async (req: Request, res: Response) => {
+    // Resolve where to send the browser back to. During onboarding the Drive
+    // connect is driven from the setup wizard, so land back on `/setup`.
+    const setupInProgress = await isSetupInProgress();
+
     const stateRaw =
       typeof req.query.state === "string" ? req.query.state : undefined;
     const code =
@@ -129,7 +156,7 @@ router.get(
         { error: errorParam },
         "Google denied Drive authorization",
       );
-      return res.redirect(302, buildErrorRedirect(errorParam));
+      return res.redirect(302, buildErrorRedirect(errorParam, setupInProgress));
     }
 
     try {
@@ -144,12 +171,12 @@ router.get(
         },
         "Google Drive OAuth state verification failed",
       );
-      return res.redirect(302, buildErrorRedirect(reason));
+      return res.redirect(302, buildErrorRedirect(reason, setupInProgress));
     }
 
     if (!code) {
       logger.warn("Google Drive OAuth callback missing 'code'");
-      return res.redirect(302, buildErrorRedirect("missing_code"));
+      return res.redirect(302, buildErrorRedirect("missing_code", setupInProgress));
     }
 
     try {
@@ -158,15 +185,18 @@ router.get(
       if (!credentials) {
         return res.redirect(
           302,
-          buildErrorRedirect("client_credentials_missing"),
+          buildErrorRedirect("client_credentials_missing", setupInProgress),
         );
       }
-      const redirectUri = await buildGoogleDriveRedirectUri();
+      // Resolve the redirect URI with a request-origin fallback so the token
+      // exchange matches the authorize leg even on a fresh instance that
+      // hasn't set `system.public_url` yet (the onboarding restore path).
+      const redirectUri = await resolveGoogleDriveRedirectUri(requestOrigin(req));
       const oauthClient = await tokens.buildOAuthClient(redirectUri);
       if (!oauthClient) {
         return res.redirect(
           302,
-          buildErrorRedirect("client_credentials_missing"),
+          buildErrorRedirect("client_credentials_missing", setupInProgress),
         );
       }
       const tokenSet = await oauthClient.exchangeCodeForTokens(code);
@@ -203,17 +233,17 @@ router.get(
       }
 
       logger.info(
-        { userId },
+        { userId, setupInProgress },
         "Google Drive OAuth flow completed; tokens stored",
       );
-      return res.redirect(302, buildPostRedirect("google-drive=connected"));
+      return res.redirect(302, buildSuccessRedirect(setupInProgress));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       logger.error({ error: message }, "Google Drive code exchange failed");
       const reason = message.toLowerCase().includes("redirect_uri")
         ? "redirect_uri_mismatch"
         : "exchange_failed";
-      return res.redirect(302, buildErrorRedirect(reason));
+      return res.redirect(302, buildErrorRedirect(reason, setupInProgress));
     }
   }) as RequestHandler,
 );
