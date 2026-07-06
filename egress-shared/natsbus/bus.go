@@ -59,8 +59,16 @@ type ConnectOptions struct {
 	// URL is required (e.g. nats://vault-nats-nats:4222). No default — let the
 	// caller decide rather than baking in a wrong URL.
 	URL string
-	// CredsFile contents (the body of a `.creds` blob). Optional — useful when
-	// connecting to a no-auth dev NATS for round-trip tests.
+	// CredsFile is a path to a `.creds` file on a mounted volume (Phase 5,
+	// §4.3). Preferred over Creds when set: nats.go re-reads this file on every
+	// (re)connect via nats.UserCredentials, so a rotated credential is picked
+	// up without a container recreate. Injected as NATS_CREDS_FILE by the
+	// stack template's `nats-creds` dynamicEnv.
+	CredsFile string
+	// Creds is a `.creds` blob body passed inline (the legacy env-var path,
+	// NATS_CREDS). Kept for dev/tests and for image-vs-template version skew:
+	// used only when CredsFile is empty. Loaded once via nats.UserJWTAndSeed,
+	// so a rotation does NOT reach a Creds-based connection without a recreate.
 	Creds string
 	// Name shows up in the NATS server's connection list. Defaults to
 	// "mini-infra-fw-agent" when empty so log-correlation across the bus
@@ -185,15 +193,12 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 			opts.Logger.Warn("nats async error", "subject", subj, "err", err.Error())
 		}),
 	}
-	if opts.Creds != "" {
-		// `UserJWTAndSeed` is the SDK's way to feed `.creds` body without a
-		// file on disk. Splitting into JWT + nkey seed is the same shape
-		// `credsAuthenticator` consumes on the TS side.
-		jwt, seed, err := splitCredsBody(opts.Creds)
-		if err != nil {
-			return nil, fmt.Errorf("natsbus: parse creds: %w", err)
-		}
-		natsOpts = append(natsOpts, nats.UserJWTAndSeed(jwt, seed))
+	credsOpt, credsSrc, err := resolveCredsOption(opts)
+	if err != nil {
+		return nil, err
+	}
+	if credsOpt != nil {
+		natsOpts = append(natsOpts, credsOpt)
 	}
 
 	// Ensure context cancellation propagates if Connect blocks (e.g. NATS
@@ -227,7 +232,10 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 		nc.Close()
 		return nil, fmt.Errorf("natsbus: jetstream context: %w", err)
 	}
-	opts.Logger.Info("nats bus connected", "url", nc.ConnectedUrlRedacted(), "name", name)
+	// `creds source=file` is the Phase 5 Verify-in-prod signal: it proves the
+	// agent authenticated from the mounted, reload-on-reconnect creds file
+	// rather than the legacy baked-in env credential.
+	opts.Logger.Info("nats bus connected", "url", nc.ConnectedUrlRedacted(), "name", name, "creds", string(credsSrc))
 	b.nc = nc
 	b.js = js
 	b.statusFn = nc.Status
@@ -399,6 +407,48 @@ func (b *Bus) Respond(
 		}
 		return b.nc.Publish(msg.Reply, body)
 	})
+}
+
+// credsSource labels how a bus obtained its credentials, surfaced on the
+// connect log line as `creds=<source>`. `file` is the Phase 5 target (§4.3):
+// nats.go re-reads the file on every reconnect, so a rotation is picked up
+// without a container recreate. `env` is the legacy inline-blob path, loaded
+// once. `none` is a no-auth (dev) connection.
+type credsSource string
+
+const (
+	credsSourceNone credsSource = "none"
+	credsSourceFile credsSource = "file"
+	credsSourceEnv  credsSource = "env"
+)
+
+// resolveCredsOption selects the NATS auth option from ConnectOptions,
+// preferring a CredsFile (reload-on-reconnect via nats.UserCredentials) over an
+// inline Creds blob (loaded once via nats.UserJWTAndSeed). Preferring the file
+// and falling back to the env blob makes the bus tolerant of image-vs-template
+// version skew: an older template still injecting NATS_CREDS keeps working, and
+// a newer template injecting NATS_CREDS_FILE gets live reload. Returns a nil
+// option (source "none") when neither is set, so a no-auth dev NATS still
+// connects.
+func resolveCredsOption(opts ConnectOptions) (nats.Option, credsSource, error) {
+	if opts.CredsFile != "" {
+		// nats.UserCredentials reads the file lazily inside its JWT/signature
+		// callbacks — invoked on the initial connect and on every reconnect —
+		// so a rewrite of the file is adopted with no recreate.
+		return nats.UserCredentials(opts.CredsFile), credsSourceFile, nil
+	}
+	if opts.Creds != "" {
+		// `UserJWTAndSeed` is the SDK's way to feed a `.creds` body without a
+		// file on disk. Splitting into JWT + nkey seed is the same shape
+		// `credsAuthenticator` consumes on the TS side. Loaded once — a
+		// rotation does not reach this connection without a recreate.
+		jwt, seed, err := splitCredsBody(opts.Creds)
+		if err != nil {
+			return nil, credsSourceNone, fmt.Errorf("natsbus: parse creds: %w", err)
+		}
+		return nats.UserJWTAndSeed(jwt, seed), credsSourceEnv, nil
+	}
+	return nil, credsSourceNone, nil
 }
 
 // splitCredsBody pulls the JWT and nkey seed out of a `.creds` blob.

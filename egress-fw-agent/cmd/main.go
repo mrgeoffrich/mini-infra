@@ -54,10 +54,11 @@ func main() {
 	if cfg.Transport == config.TransportNats {
 		var err error
 		bus, err = natsbus.Connect(ctx, natsbus.ConnectOptions{
-			URL:    cfg.NatsUrl,
-			Creds:  cfg.NatsCreds,
-			Name:   "mini-infra-fw-agent",
-			Logger: log,
+			URL:       cfg.NatsUrl,
+			CredsFile: cfg.NatsCredsFile,
+			Creds:     cfg.NatsCreds,
+			Name:      "mini-infra-fw-agent",
+			Logger:    log,
 		})
 		if err != nil {
 			// Hard failure on first connect: under nats transport this is

@@ -7,6 +7,12 @@ import "os"
 type GatewayConfig struct {
 	// ProxyPort is the TCP port the forward proxy listens on.
 	ProxyPort string
+	// NatsCredsFile is the path to a `.creds` file on a mounted volume,
+	// injected as NATS_CREDS_FILE by the stack template's `nats-creds`
+	// dynamicEnv (Phase 5, §4.3). Preferred over the inline NATS_CREDS blob
+	// when set — the bus re-reads it on every reconnect so a rotated credential
+	// is picked up without a container recreate. Empty on older templates.
+	NatsCredsFile string
 	// AdminSocketPath is the Unix-domain socket for the admin API.
 	AdminSocketPath string
 	// HealthAddr is the listen address for the out-of-band HTTP `/healthz`
@@ -34,6 +40,7 @@ func LoadGatewayConfig() GatewayConfig {
 	}
 	return GatewayConfig{
 		ProxyPort:       proxyPort,
+		NatsCredsFile:   os.Getenv("NATS_CREDS_FILE"),
 		AdminSocketPath: adminSocket,
 		HealthAddr:      healthAddr,
 		LogLevel:        os.Getenv("LOG_LEVEL"),

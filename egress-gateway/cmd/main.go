@@ -85,10 +85,11 @@ func main() {
 		// stream still carries everything.
 		busSlog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 		client, err := natsbus.Connect(ctx, natsbus.ConnectOptions{
-			URL:    natsURL,
-			Creds:  natsCreds,
-			Name:   "egress-gateway-" + environmentID,
-			Logger: busSlog,
+			URL:       natsURL,
+			CredsFile: cfg.NatsCredsFile,
+			Creds:     natsCreds,
+			Name:      "egress-gateway-" + environmentID,
+			Logger:    busSlog,
 		})
 		if err != nil {
 			if legacyAdmin {

@@ -75,6 +75,18 @@ export type DynamicEnvSource =
   | { kind: 'nats-url' }
   | { kind: 'nats-creds' }
   /**
+   * File-based variant of `nats-creds` (egress NATS cred-resilience plan,
+   * Phase 5, §4.3). The minted `.creds` blob is written to a per-stack file
+   * (`<stackId>.creds`) on a named docker volume the consuming stack declares
+   * and mounts read-only; the env var receives the *file path*, never the
+   * secret. Unlike `nats-creds` (which bakes the blob into the env once at
+   * container create), nats.go re-reads the file on every reconnect via
+   * `nats.UserCredentials`, so a rotated credential is picked up without a
+   * container recreate. Opt-in and currently scoped to the two egress agents —
+   * generic NATS consumers keep `nats-creds` (see plan §3 non-goals).
+   */
+  | { kind: 'nats-creds-file' }
+  /**
    * Cloudflare tunnel connector token for the stack's environment. Resolved
    * at apply time from the managed-tunnel store (the token issued when the
    * managed tunnel was created) and injected as a plain env var — cloudflared

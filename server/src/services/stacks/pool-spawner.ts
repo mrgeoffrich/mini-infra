@@ -11,6 +11,7 @@ import type { DockerExecutorService } from '../docker-executor';
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
+import { writeNatsCredsFiles } from '../nats/nats-creds-volume';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { getLogger } from '../../lib/logger-factory';
 import {
@@ -234,6 +235,7 @@ export async function spawnPoolInstance(
       (src) =>
         src.kind === 'nats-url' ||
         src.kind === 'nats-creds' ||
+        src.kind === 'nats-creds-file' ||
         src.kind === 'nats-signer-seed' ||
         src.kind === 'nats-account-public',
     )
@@ -245,7 +247,16 @@ export async function spawnPoolInstance(
         containerConfig,
         { stackId: ctx.stackId },
       );
-      if (resolved) natsEnv = resolved;
+      if (resolved) {
+        natsEnv = resolved.values;
+        // Phase 5, §4.3: persist minted `.creds` into the stack's `nats_creds`
+        // volume (the env carries only the file path). Same file-delivery
+        // contract as the static apply path.
+        await writeNatsCredsFiles(dockerExecutor, {
+          projectName,
+          files: resolved.credsFiles,
+        });
+      }
     } catch (err) {
       return {
         success: false,

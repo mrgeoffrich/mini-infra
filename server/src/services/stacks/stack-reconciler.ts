@@ -42,6 +42,7 @@ import { StackServiceHandlers, type ServiceHandlerContext } from './stack-servic
 import { VaultCredentialInjector } from '../vault/vault-credential-injector';
 import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
+import { writeNatsCredsFiles, type NatsCredsFileSpec } from '../nats/nats-creds-volume';
 import { CloudflareTunnelTokenInjector } from '../cloudflare/cloudflare-tunnel-token-injector';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
@@ -351,7 +352,7 @@ export class StackReconciler {
       // before any container is created, so wrapped secret_ids have the
       // tightest possible lifetime around container start.
       const activeServiceNames = new Set(actions.map((a) => a.serviceName));
-      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordApply } =
+      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordApply, credsFiles: applyCredsFiles } =
         await this.resolveVaultEnv(
           stack,
           stack.services,
@@ -360,6 +361,12 @@ export class StackReconciler {
           activeServiceNames,
           log,
         );
+
+      // Phase 5, §4.3: persist minted `.creds` into the stack's `nats_creds`
+      // volume before any container is created, so the agent mounts a
+      // populated file and re-reads it on every reconnect (the declared volume
+      // was already ensured in step 5b). Throws (aborting apply) on failure.
+      await writeNatsCredsFiles(this.dockerExecutor, { projectName, files: applyCredsFiles });
 
       for (const action of actions) {
         const actionStart = Date.now();
@@ -655,7 +662,7 @@ export class StackReconciler {
         recreatedCallers,
       );
       const activeServiceNames = new Set(actions.map((a) => a.serviceName));
-      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordUpdate } =
+      const { overrides: resolvedEnvOverrides, serviceBindingsToRecord: serviceBindingsToRecordUpdate, credsFiles: updateCredsFiles } =
         await this.resolveVaultEnv(
           stack,
           stack.services,
@@ -664,6 +671,12 @@ export class StackReconciler {
           activeServiceNames,
           log,
         );
+
+      // Phase 5, §4.3: persist minted `.creds` into the stack's `nats_creds`
+      // volume before recreating containers. `writeNatsCredsFiles` ensures the
+      // volume exists first (the update path does not run step 5b's volume
+      // provisioning).
+      await writeNatsCredsFiles(this.dockerExecutor, { projectName, files: updateCredsFiles });
 
       for (const action of actions) {
         const svc = serviceMap.get(action.serviceName);
@@ -797,9 +810,17 @@ export class StackReconciler {
     overrides: Map<string, Record<string, string>>;
     /** serviceName → effective AppRoleId, populated only for services with their OWN binding. */
     serviceBindingsToRecord: Map<string, string>;
+    /**
+     * Minted `.creds` blobs the caller must persist into the stack's
+     * `nats_creds` volume (Phase 5, §4.3) before creating containers. Deduped
+     * by file name — one `<stackId>.creds` per stack (all egress agents are
+     * one-nats-creds-service-per-stack).
+     */
+    credsFiles: NatsCredsFileSpec[];
   }> {
     const overrides = new Map<string, Record<string, string>>();
     const serviceBindingsToRecord = new Map<string, string>();
+    const credsFilesByName = new Map<string, NatsCredsFileSpec>();
     const serviceByName = new Map(services.map((s) => [s.serviceName, s]));
     const vaultReady = vaultServicesReady();
     const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
@@ -826,6 +847,7 @@ export class StackReconciler {
         (src) =>
           src.kind === 'nats-url' ||
           src.kind === 'nats-creds' ||
+          src.kind === 'nats-creds-file' ||
           src.kind === 'nats-signer-seed' ||
           src.kind === 'nats-account-public',
       );
@@ -890,14 +912,17 @@ export class StackReconciler {
 
       if (hasNatsEntries) {
         try {
-          const values = await natsInjector.resolve(
+          const resolved = await natsInjector.resolve(
             svcRow.natsCredentialId ?? null,
             serviceDef.containerConfig,
             { stackId: stack.id },
           );
-          if (values) {
+          if (resolved) {
             const existing = overrides.get(serviceName) ?? {};
-            overrides.set(serviceName, { ...existing, ...values });
+            overrides.set(serviceName, { ...existing, ...resolved.values });
+            for (const file of resolved.credsFiles) {
+              credsFilesByName.set(file.fileName, file);
+            }
           }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -950,7 +975,7 @@ export class StackReconciler {
         );
       }
     }
-    return { overrides, serviceBindingsToRecord };
+    return { overrides, serviceBindingsToRecord, credsFiles: [...credsFilesByName.values()] };
   }
 
   /**

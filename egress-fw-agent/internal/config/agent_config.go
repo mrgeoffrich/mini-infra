@@ -30,6 +30,12 @@ type AgentConfig struct {
 	// (`nats-url` + `nats-creds`). Empty under Transport == "unix".
 	NatsUrl   string
 	NatsCreds string
+	// NatsCredsFile is the path to a `.creds` file on a mounted volume,
+	// injected as NATS_CREDS_FILE by the stack template's `nats-creds`
+	// dynamicEnv (Phase 5, §4.3). Preferred over NatsCreds when set — the bus
+	// re-reads it on every reconnect so a rotated credential is picked up
+	// without a container recreate. Empty on older images / templates.
+	NatsCredsFile string
 	// HealthAddr is the listen address for the out-of-band HTTP `/healthz`
 	// endpoint (Phase 3, §4.2). Because the agent runs `network_mode: host`,
 	// this binds a host TCP port the mini-infra server can scrape directly.
@@ -55,11 +61,12 @@ func LoadAgentConfig() AgentConfig {
 		healthAddr = ":9750"
 	}
 	return AgentConfig{
-		Transport:  transport,
-		SocketPath: socketPath,
-		NatsUrl:    os.Getenv("NATS_URL"),
-		NatsCreds:  os.Getenv("NATS_CREDS"),
-		HealthAddr: healthAddr,
-		LogLevel:   os.Getenv("LOG_LEVEL"),
+		Transport:     transport,
+		SocketPath:    socketPath,
+		NatsUrl:       os.Getenv("NATS_URL"),
+		NatsCreds:     os.Getenv("NATS_CREDS"),
+		NatsCredsFile: os.Getenv("NATS_CREDS_FILE"),
+		HealthAddr:    healthAddr,
+		LogLevel:      os.Getenv("LOG_LEVEL"),
 	}
 }
