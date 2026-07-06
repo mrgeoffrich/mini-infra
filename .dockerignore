@@ -1,5 +1,20 @@
 # .dockerignore - Exclude files from Docker build context
 
+# Claude Code local state — parallel-dev git worktrees under .claude/worktrees/
+# each hold a full source checkout. node_modules/dist below are filtered, but
+# the source itself would otherwise ship ~100MB / thousands of files to
+# BuildKit on every local rebuild. None of this is needed by any build stage.
+.claude
+
+# Local dev/prod environment descriptors — these contain live URLs, API keys,
+# and admin credentials (see CLAUDE.md). No build stage copies them, but they
+# must never enter the build context.
+environment-details.xml
+environment-config.xml
+
+# Standalone proof-of-concept apps not part of the main image build
+auth-proxy-poc
+
 # Dependencies (will be installed during build)
 node_modules
 */node_modules
