@@ -89,6 +89,7 @@ const createDatabaseSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
   sslMode: z.enum(POSTGRES_SSL_MODES),
+  environmentId: z.string().min(1, "Environment is required"),
   tags: z.array(z.string()).optional().default([]),
 });
 
@@ -110,6 +111,7 @@ const updateDatabaseSchema = z.object({
   username: z.string().min(1, "Username is required").optional(),
   password: z.string().min(1, "Password is required").optional(),
   sslMode: z.enum(POSTGRES_SSL_MODES).optional(),
+  environmentId: z.string().min(1).nullable().optional(),
   tags: z.array(z.string()).optional(),
 });
 
@@ -431,7 +433,8 @@ router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, 
 
       if (
         error.message.includes("Encryption failed") ||
-        error.message.includes("Invalid")
+        error.message.includes("Invalid") ||
+        (error.message.includes("Environment") && error.message.includes("not found"))
       ) {
         return res.status(400).json({
           error: "Bad Request",
@@ -548,6 +551,15 @@ router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler
     );
 
     if (error instanceof Error) {
+      if (error.message.includes("Environment") && error.message.includes("not found")) {
+        return res.status(400).json({
+          error: "Bad Request",
+          message: error.message,
+          timestamp: new Date().toISOString(),
+          requestId,
+        });
+      }
+
       if (
         error.message.includes("not found") ||
         error.message.includes("Access denied")

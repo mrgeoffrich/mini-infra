@@ -7,6 +7,10 @@ import { useContainers } from "@/hooks/useContainers";
 import { useConnectivityStatus } from "@/hooks/use-settings";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import {
+  useDebouncedFalse,
+  INFRA_BLIP_GRACE_MS,
+} from "@/hooks/use-debounced-false";
+import {
   useMonitoringStatus,
   usePrometheusRangeQuery,
 } from "@/hooks/use-monitoring";
@@ -37,27 +41,36 @@ export function ContainerSummary() {
 
   // Get the latest Docker connectivity status
   const latestDockerStatus = connectivityData?.data?.[0];
-  const isDockerConnected = latestDockerStatus?.status === "connected";
+  const isDockerConnectedLive = latestDockerStatus?.status === "connected";
+  // Debounced so a brief connectivity blip doesn't collapse this whole section
+  // and shift page scroll (see useDebouncedFalse).
+  const isDockerConnected = useDebouncedFalse(
+    isDockerConnectedLive,
+    INFRA_BLIP_GRACE_MS,
+  );
   const hasDockerError =
     latestDockerStatus?.status === "failed" ||
     latestDockerStatus?.status === "error";
 
   // Check if monitoring stack is running
   const { data: monitoringStatus } = useMonitoringStatus();
-  const isMonitoringRunning = monitoringStatus?.running === true;
+  const isMonitoringRunning = useDebouncedFalse(
+    monitoringStatus?.running === true,
+    INFRA_BLIP_GRACE_MS,
+  );
 
   // Fetch CPU and memory metrics (1h range, 60s step) — only when monitoring is up
   const { data: cpuData } = usePrometheusRangeQuery(
     'rate(docker_container_cpu_usage_total{container_name!=""}[5m]) / 1e9',
     3600,
     "60s",
-    { enabled: isMonitoringRunning }
+    { enabled: isMonitoringRunning },
   );
   const { data: memoryData } = usePrometheusRangeQuery(
     'docker_container_mem_usage{container_name!=""}',
     3600,
     "60s",
-    { enabled: isMonitoringRunning }
+    { enabled: isMonitoringRunning },
   );
 
   // Only fetch containers if Docker is connected

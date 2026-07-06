@@ -155,6 +155,7 @@ export interface PostgresDatabase {
   database: string;
   username: string;
   sslMode: string;
+  environmentId: string | null;
   tags: string; // JSON array
   createdAt: Date;
   updatedAt: Date;
@@ -172,6 +173,10 @@ export interface PostgresDatabaseInfo {
   database: string;
   username: string;
   sslMode: string;
+  // Which environment's pg-az-backup/restore-executor stack services this
+  // database. Null means "not backed up" — an environment-scoped backup
+  // stack can never match a null-environment database.
+  environmentId: string | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -201,6 +206,7 @@ export interface CreatePostgresDatabaseRequest {
   username: string;
   password: string; // Will be encrypted and stored in connectionString
   sslMode: PostgreSSLMode;
+  environmentId: string;
   tags?: string[];
 }
 
@@ -212,6 +218,7 @@ export interface UpdatePostgresDatabaseRequest {
   username?: string;
   password?: string; // Will be encrypted and stored in connectionString
   sslMode?: PostgreSSLMode;
+  environmentId?: string | null;
   tags?: string[];
 }
 
@@ -506,6 +513,7 @@ export interface UpdateBackupConfigurationRequest {
 export interface QuickBackupSetupRequest {
   serverId: string;
   databaseName: string;
+  environmentId: string;
 }
 
 // ====================

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -24,11 +24,13 @@ import { ManagedDatabaseInfo } from "@mini-infra/types";
 import { useQuickSetupPostgresBackup } from "@/hooks/use-postgres-backup-configs";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { useSystemSettings } from "@/hooks/use-settings";
+import { useEnvironments } from "@/hooks/use-environments";
 import { toast } from "sonner";
 
 // Validation schema
 const quickBackupSetupSchema = z.object({
   databaseName: z.string().min(1, "Database selection is required"),
+  environmentId: z.string().min(1, "Environment is required"),
 });
 
 type QuickBackupSetupFormData = z.infer<typeof quickBackupSetupSchema>;
@@ -53,6 +55,8 @@ export function QuickBackupSetupModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const quickSetupMutation = useQuickSetupPostgresBackup();
   const { data: userPreferences } = useUserPreferences();
+  const { data: environmentsData, isLoading: environmentsLoading } = useEnvironments();
+  const environments = useMemo(() => environmentsData?.environments ?? [], [environmentsData]);
 
   // Fetch default container setting
   const { data: defaultContainerData } = useSystemSettings({
@@ -74,10 +78,12 @@ export function QuickBackupSetupModal({
     resolver: zodResolver(quickBackupSetupSchema),
     defaultValues: {
       databaseName: preSelectedDatabase || "",
+      environmentId: "",
     },
   });
 
   const selectedDatabaseName = useWatch({ control, name: "databaseName" });
+  const selectedEnvironmentId = useWatch({ control, name: "environmentId" });
   const timezone = userPreferences?.timezone || "UTC";
   const defaultContainer =
     defaultContainerData?.data?.[0]?.value || "postgres-backups";
@@ -89,12 +95,20 @@ export function QuickBackupSetupModal({
     }
   }, [open, preSelectedDatabase, setValue]);
 
+  // Auto-select the sole environment, same as the main database registration form.
+  useEffect(() => {
+    if (!environmentsLoading && environments.length === 1 && !selectedEnvironmentId) {
+      setValue("environmentId", environments[0].id, { shouldValidate: true });
+    }
+  }, [environmentsLoading, environments, selectedEnvironmentId, setValue]);
+
   const handleFormSubmit = async (data: QuickBackupSetupFormData) => {
     setIsSubmitting(true);
     try {
       await quickSetupMutation.mutateAsync({
         serverId,
         databaseName: data.databaseName,
+        environmentId: data.environmentId,
       });
 
       toast.success("Backup configured successfully", {
@@ -167,6 +181,41 @@ export function QuickBackupSetupModal({
               )}
             </div>
 
+            {/* Environment Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="environmentId">Environment *</Label>
+              <Select
+                value={selectedEnvironmentId}
+                onValueChange={(value) => setValue("environmentId", value, { shouldValidate: true })}
+                disabled={environments.length === 1 || environmentsLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      environmentsLoading
+                        ? "Loading environments..."
+                        : "Select an environment"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {environments.map((env) => (
+                    <SelectItem key={env.id} value={env.id}>
+                      {env.name}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        ({env.networkType})
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {errors.environmentId && (
+                <p className="text-sm text-destructive">
+                  {errors.environmentId.message}
+                </p>
+              )}
+            </div>
+
             {/* Configuration Preview */}
             <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
               <h4 className="text-sm font-medium">Backup Configuration</h4>
@@ -215,7 +264,7 @@ export function QuickBackupSetupModal({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !selectedDatabaseName}
+              disabled={isSubmitting || !selectedDatabaseName || !selectedEnvironmentId}
             >
               {isSubmitting ? (
                 <>

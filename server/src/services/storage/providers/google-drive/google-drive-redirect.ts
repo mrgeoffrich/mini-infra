@@ -38,3 +38,22 @@ export async function buildGoogleDriveRedirectUri(): Promise<string> {
   const base = publicUrl.replace(/\/+$/, "");
   return `${base}${GOOGLE_DRIVE_OAUTH_CALLBACK_PATH}`;
 }
+
+/**
+ * Like {@link buildGoogleDriveRedirectUri} but falls back to a caller-supplied
+ * origin (e.g. the incoming request's `protocol://host`) when no public URL is
+ * configured. Used by the onboarding "Load from Backup" flow, which must run on
+ * a fresh instance that hasn't set `system.public_url` yet. Both the authorize
+ * redirect and the token exchange resolve through here with the same request
+ * origin, so the redirect URI matches on both legs of the OAuth round-trip.
+ */
+export async function resolveGoogleDriveRedirectUri(
+  fallbackOrigin?: string | null,
+): Promise<string> {
+  const publicUrl = await getPublicUrl();
+  const base = (publicUrl ?? fallbackOrigin ?? "").replace(/\/+$/, "");
+  if (!base) {
+    throw new GoogleDrivePublicUrlNotConfiguredError();
+  }
+  return `${base}${GOOGLE_DRIVE_OAUTH_CALLBACK_PATH}`;
+}

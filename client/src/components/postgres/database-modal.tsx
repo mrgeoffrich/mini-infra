@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
   useTestDatabaseConnection,
   useDiscoverDatabases,
 } from "@/hooks/use-postgres-databases";
+import { useEnvironments } from "@/hooks/use-environments";
 import { IconEye, IconEyeOff, IconFlask, IconLoader2, IconArrowRight, IconArrowLeft } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -70,6 +71,9 @@ export function DatabaseModal({
 
   const isEditing = !!database;
 
+  const { data: environmentsData, isLoading: environmentsLoading } = useEnvironments();
+  const environments = useMemo(() => environmentsData?.environments ?? [], [environmentsData]);
+
   const createMutation = useCreatePostgresDatabase();
   const updateMutation = useUpdatePostgresDatabase();
   const testConnectionMutation = useTestDatabaseConnection();
@@ -99,11 +103,11 @@ export function DatabaseModal({
       username: "",
       password: "",
       sslMode: "prefer",
+      environmentId: "",
       tags: [],
     },
     mode: "onChange",
   });
-
   // Reset forms and step when modal opens or database changes. The setState
   // calls are routed through a ref so the effect body itself doesn't call
   // setState directly (avoids set-state-in-effect).
@@ -120,6 +124,7 @@ export function DatabaseModal({
         username: database?.username || "",
         password: "",
         sslMode: (database?.sslMode as PostgreSSLMode) || "prefer",
+        environmentId: database?.environmentId || "",
         tags: database?.tags || [],
       });
     } else {
@@ -144,6 +149,7 @@ export function DatabaseModal({
         username: "",
         password: "",
         sslMode: "prefer",
+        environmentId: "",
         tags: [],
       });
     }
@@ -155,6 +161,27 @@ export function DatabaseModal({
   useEffect(() => {
     resetFormsRef.current();
   }, [isOpen, database, isEditing]);
+
+  // Auto-select the sole environment whenever the field is unset — covers
+  // both a fresh create (reset blanks it) and editing a legacy database that
+  // predates this field (environmentId: null). Must depend on `isOpen`: this
+  // component stays mounted while closed, so environments can finish loading
+  // (and this effect can fire) before the modal ever opens. Without `isOpen`
+  // in the deps, the *next* open's reset-forms effect blanks the field again
+  // and this effect has no reason to re-run to fix it, since none of its
+  // other deps changed. Declared after the reset-forms effect so that, in
+  // the shared open-triggering commit, the reset runs first and this effect
+  // (which reads the freshly-reset value) runs last and wins.
+  useEffect(() => {
+    if (
+      isOpen &&
+      !environmentsLoading &&
+      environments.length === 1 &&
+      !finalForm.getValues("environmentId")
+    ) {
+      finalForm.setValue("environmentId", environments[0].id, { shouldValidate: true });
+    }
+  }, [isOpen, environmentsLoading, environments, finalForm]);
 
   const handleConnectionTest = async () => {
     const formData = connectionForm.getValues();
@@ -198,6 +225,7 @@ export function DatabaseModal({
       username: connectionData.username,
       password: connectionData.password,
       sslMode: connectionData.sslMode,
+      environmentId: finalForm.getValues("environmentId"),
       tags: [],
     });
 
@@ -530,6 +558,46 @@ export function DatabaseModal({
                   )}
                 />
 
+                <FormField
+                  control={finalForm.control}
+                  name="environmentId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Environment</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                        disabled={environments.length === 1 || environmentsLoading}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                environmentsLoading
+                                  ? "Loading environments..."
+                                  : "Select an environment"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {environments.map((env) => (
+                            <SelectItem key={env.id} value={env.id}>
+                              {env.name}
+                              <span className="ml-2 text-xs text-muted-foreground">
+                                ({env.networkType})
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={finalForm.control}
                   name="sslMode"

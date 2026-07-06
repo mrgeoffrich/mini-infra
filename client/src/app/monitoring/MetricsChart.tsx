@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { MouseHandlerDataParam } from "recharts";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   Card,
@@ -31,6 +32,10 @@ const COLOR_MAP: Record<string, string> = {
   orange: "hsl(25, 95%, 53%)",
 };
 
+// Hovered series within this many pixels of the nearest one are all treated as "closest"
+// (handles overlapping/tied lines rather than picking one arbitrarily)
+const NEAREST_SERIES_TOLERANCE_PX = 6;
+
 // Stable color palette for containers
 const CONTAINER_COLORS = [
   "hsl(217, 91%, 60%)",
@@ -51,14 +56,35 @@ export function MetricsChart({
   valueFormatter,
   color,
 }: MetricsChartProps) {
+  const chartWrapperRef = useRef<HTMLDivElement>(null);
+  // What the tooltip should show for the current hover:
+  //   Set    - the container names nearest the cursor's Y position (the common case)
+  //   "all"  - fail open, show every series (used when we can't reliably measure)
+  //   null   - measurement pending (fresh hover, dots not painted yet) or not hovering;
+  //            the tooltip renders nothing so we never flash the full series list.
+  const [nearestNames, setNearestNames] = useState<Set<string> | "all" | null>(
+    null,
+  );
+
   const { chartData, containerNames, chartConfig } = useMemo(() => {
     if (!data?.data?.result?.length) {
-      return { chartData: [], containerNames: [] as string[], chartConfig: {} as ChartConfig };
+      return {
+        chartData: [],
+        containerNames: [] as string[],
+        chartConfig: {} as ChartConfig,
+      };
     }
 
-    const names = [...new Set(data.data.result.map(
-      (r) => r.metric.container_name || r.metric.com_docker_compose_service || "unknown"
-    ))];
+    const names = [
+      ...new Set(
+        data.data.result.map(
+          (r) =>
+            r.metric.container_name ||
+            r.metric.com_docker_compose_service ||
+            "unknown",
+        ),
+      ),
+    ];
 
     // Build time-series data keyed by timestamp
     const timeMap = new Map<number, Record<string, number>>();
@@ -80,7 +106,7 @@ export function MetricsChart({
     }
 
     const sorted = Array.from(timeMap.values()).sort(
-      (a, b) => (a.timestamp as number) - (b.timestamp as number)
+      (a, b) => (a.timestamp as number) - (b.timestamp as number),
     );
 
     // Build chart config
@@ -88,7 +114,10 @@ export function MetricsChart({
     for (let i = 0; i < names.length; i++) {
       config[names[i]] = {
         label: names[i],
-        color: names.length === 1 ? COLOR_MAP[color] : CONTAINER_COLORS[i % CONTAINER_COLORS.length],
+        color:
+          names.length === 1
+            ? COLOR_MAP[color]
+            : CONTAINER_COLORS[i % CONTAINER_COLORS.length],
       };
     }
 
@@ -114,6 +143,57 @@ export function MetricsChart({
     );
   }
 
+  const updateNearestNames = (
+    state: MouseHandlerDataParam,
+    event: { clientY: number },
+  ) => {
+    // activeTooltipIndex is a stringified array index (recharts v3 TooltipIndex type)
+    const parsedIndex =
+      typeof state.activeTooltipIndex === "string"
+        ? Number(state.activeTooltipIndex)
+        : NaN;
+    const index = Number.isInteger(parsedIndex) ? parsedIndex : null;
+    const wrapper = chartWrapperRef.current;
+    const row = index !== null ? chartData[index] : undefined;
+    if (index === null || !wrapper || !row) {
+      setNearestNames(null);
+      return;
+    }
+
+    const presentNames = containerNames.filter(
+      (name) => row[name] !== undefined,
+    );
+    const cursorY = event.clientY;
+
+    // Defer to the next frame so Recharts has painted the active dots
+    // for this hover position before we measure them.
+    requestAnimationFrame(() => {
+      const dots = Array.from(
+        wrapper.querySelectorAll<SVGCircleElement>(
+          ".recharts-active-dot circle",
+        ),
+      );
+      if (dots.length === 0 || dots.length !== presentNames.length) {
+        // Mismatch between rendered dots and known series - fail open to showing all.
+        setNearestNames("all");
+        return;
+      }
+
+      const distances = dots.map((dot) => {
+        const rect = dot.getBoundingClientRect();
+        return Math.abs(rect.top + rect.height / 2 - cursorY);
+      });
+      const minDistance = Math.min(...distances);
+      const nearest = new Set<string>();
+      distances.forEach((distance, i) => {
+        if (distance - minDistance <= NEAREST_SERIES_TOLERANCE_PX) {
+          nearest.add(presentNames[i]);
+        }
+      });
+      setNearestNames(nearest);
+    });
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -124,74 +204,103 @@ export function MetricsChart({
         <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="h-[250px] w-full">
-          <AreaChart data={chartData}>
-            <CartesianGrid vertical={false} />
-            <XAxis
-              dataKey="timestamp"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={40}
-              tickFormatter={(value) => {
-                const date = new Date(value * 1000);
-                return date.toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
-              }}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              width={60}
-              tickFormatter={valueFormatter}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(_value, payload) => {
-                    const timestamp = payload?.[0]?.payload?.timestamp;
-                    if (!timestamp) return "Unknown";
-                    const date = new Date(Number(timestamp) * 1000);
-                    return date.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    });
-                  }}
-                  formatter={(value, name, item) => (
-                    <div className="flex flex-1 items-center gap-2">
-                      <div
-                        className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                        style={{ backgroundColor: item.color }}
-                      />
-                      <span className="text-muted-foreground flex-1">
-                        {name as string}
-                      </span>
-                      <span className="text-foreground font-mono font-medium tabular-nums">
-                        {valueFormatter(Number(value))}
-                      </span>
-                    </div>
-                  )}
-                  hideIndicator
-                />
-              }
-            />
-            {containerNames.map((name) => (
-              <Area
-                key={name}
-                dataKey={name}
-                type="monotone"
-                fill="transparent"
-                stroke={chartConfig[name]?.color || COLOR_MAP[color]}
-                strokeWidth={2}
+        <div ref={chartWrapperRef}>
+          <ChartContainer config={chartConfig} className="h-[250px] w-full">
+            <AreaChart
+              data={chartData}
+              onMouseEnter={updateNearestNames}
+              onMouseMove={updateNearestNames}
+              onMouseLeave={() => setNearestNames(null)}
+            >
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="timestamp"
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={40}
+                tickFormatter={(value) => {
+                  const date = new Date(value * 1000);
+                  return date.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  });
+                }}
               />
-            ))}
-          </AreaChart>
-        </ChartContainer>
+              <YAxis
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                width={60}
+                tickFormatter={valueFormatter}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={({ active, payload, label, coordinate }) => {
+                  // Measurement not done yet for this hover (or not hovering).
+                  // Render nothing rather than flashing the full series list for
+                  // one frame before we narrow to the nearest line.
+                  if (nearestNames === null) {
+                    return null;
+                  }
+
+                  const filtered =
+                    nearestNames === "all"
+                      ? payload
+                      : payload?.filter(
+                          (item) =>
+                            item.name != null &&
+                            nearestNames.has(String(item.name)),
+                        );
+
+                  return (
+                    <ChartTooltipContent
+                      active={active}
+                      payload={filtered?.length ? filtered : payload}
+                      label={label}
+                      coordinate={coordinate}
+                      labelFormatter={(_value, payload) => {
+                        const timestamp = payload?.[0]?.payload?.timestamp;
+                        if (!timestamp) return "Unknown";
+                        const date = new Date(Number(timestamp) * 1000);
+                        return date.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        });
+                      }}
+                      formatter={(value, name, item) => (
+                        <div className="flex flex-1 items-center gap-2">
+                          <div
+                            className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                            style={{ backgroundColor: item.color }}
+                          />
+                          <span className="text-muted-foreground flex-1">
+                            {name as string}
+                          </span>
+                          <span className="text-foreground font-mono font-medium tabular-nums">
+                            {valueFormatter(Number(value))}
+                          </span>
+                        </div>
+                      )}
+                      hideIndicator
+                    />
+                  );
+                }}
+              />
+              {containerNames.map((name) => (
+                <Area
+                  key={name}
+                  dataKey={name}
+                  type="monotone"
+                  fill="transparent"
+                  stroke={chartConfig[name]?.color || COLOR_MAP[color]}
+                  strokeWidth={2}
+                />
+              ))}
+            </AreaChart>
+          </ChartContainer>
+        </div>
       </CardContent>
     </Card>
   );
