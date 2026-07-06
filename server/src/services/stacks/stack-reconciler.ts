@@ -44,6 +44,7 @@ import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { writeNatsCredsFiles, type NatsCredsFileSpec } from '../nats/nats-creds-volume';
 import { CloudflareTunnelTokenInjector } from '../cloudflare/cloudflare-tunnel-token-injector';
+import { TailscaleAuthkeyInjector } from '../tailscale/tailscale-authkey-injector';
 import { rotatePoolManagementTokens } from './pool-management-token';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import {
@@ -826,6 +827,7 @@ export class StackReconciler {
     const injector = vaultReady ? new VaultCredentialInjector(this.prisma) : null;
     const natsInjector = new NatsCredentialInjector(this.prisma);
     const tunnelTokenInjector = new CloudflareTunnelTokenInjector(this.prisma);
+    const tailscaleAuthkeyInjector = new TailscaleAuthkeyInjector(this.prisma);
 
     for (const [serviceName, serviceDef] of resolvedDefinitions.entries()) {
       if (!activeServiceNames.has(serviceName)) continue;
@@ -857,6 +859,9 @@ export class StackReconciler {
       const hasTunnelTokenEntries = Object.values(dynamicEnv).some(
         (src) => src.kind === 'cloudflare-tunnel-token',
       );
+      const hasTailscaleAuthkeyEntries = Object.values(dynamicEnv).some(
+        (src) => src.kind === 'tailscale-authkey',
+      );
 
       // Cloudflare tunnel token resolves inline from the managed-tunnel store —
       // no Vault / NATS / AppRole involved. It's independent of the other kinds,
@@ -881,6 +886,32 @@ export class StackReconciler {
           );
           throw new Error(
             `Cloudflare tunnel token injection failed for service "${serviceName}": ${msg}`,
+            { cause: err },
+          );
+        }
+      }
+
+      // Tailscale authkey mints inline from the tailscale connected service —
+      // no Vault / NATS / AppRole involved, independent of the other kinds, so
+      // resolve + merge it up front like the tunnel token. An authkey-only
+      // service (the tailscale-ingress sidecar) then falls through the
+      // Vault/NATS gates below and keeps these values. Fails closed if the
+      // tailscale connected service isn't configured.
+      if (hasTailscaleAuthkeyEntries) {
+        try {
+          const values = await tailscaleAuthkeyInjector.resolve(serviceDef.containerConfig);
+          if (values) {
+            const existing = overrides.get(serviceName) ?? {};
+            overrides.set(serviceName, { ...existing, ...values });
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.error(
+            { service: serviceName, err: msg },
+            'Tailscale authkey resolution failed',
+          );
+          throw new Error(
+            `Tailscale authkey injection failed for service "${serviceName}": ${msg}`,
             { cause: err },
           );
         }

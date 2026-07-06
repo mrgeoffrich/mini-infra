@@ -101,6 +101,7 @@ const dynamicEnvSourceSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("nats-creds") }),
   z.object({ kind: z.literal("nats-creds-file") }),
   z.object({ kind: z.literal("cloudflare-tunnel-token") }),
+  z.object({ kind: z.literal("tailscale-authkey") }),
   z.object({
     kind: z.literal("vault-kv"),
     path: kvPathSchema,

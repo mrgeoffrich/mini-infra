@@ -2,8 +2,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useStacks } from "@/hooks/use-stacks";
 import { useStackTemplates, useInstantiateTemplate } from "@/hooks/use-stack-templates";
-import type { StackInfo, StackStatus, StackTemplateInfo } from "@mini-infra/types";
-import { StackPlanView } from "@/components/stacks";
+import type { StackInfo, StackTemplateInfo } from "@mini-infra/types";
+import { StackPlanView, StackStatusBadge } from "@/components/stacks";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,36 +30,6 @@ interface StacksListProps {
   scope?: "host";
   className?: string;
 }
-
-const statusBadgeVariants: Record<
-  StackStatus,
-  { className: string; label: string }
-> = {
-  synced: {
-    className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-    label: "Synced",
-  },
-  drifted: {
-    className: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-    label: "Drifted",
-  },
-  pending: {
-    className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-    label: "Pending",
-  },
-  error: {
-    className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-    label: "Error",
-  },
-  undeployed: {
-    className: "",
-    label: "Undeployed",
-  },
-  removed: {
-    className: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300",
-    label: "Removed",
-  },
-};
 
 /**
  * Surfaces the soft NATS-drift signal layered on top of the stack status.
@@ -225,7 +195,6 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
             <div className="grid gap-3">
               {stacks.map((stack) => {
                 const isExpanded = expandedStackId === stack.id;
-                const badge = statusBadgeVariants[stack.status];
 
                 return (
                   <div key={stack.id} className="rounded-md border">
@@ -240,16 +209,7 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
                             <span className="font-medium">
                               {stack.name}
                             </span>
-                            <Badge
-                              variant={
-                                stack.status === "undeployed"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                              className={badge.className}
-                            >
-                              {badge.label}
-                            </Badge>
+                            <StackStatusBadge status={stack.status} />
                             {stack.natsDrift?.drifted && (
                               <NatsDriftBadge reasons={stack.natsDrift.reasons} />
                             )}

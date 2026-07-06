@@ -1,0 +1,68 @@
+{
+  "name": "tailscale-ingress",
+  "displayName": "Tailscale Ingress",
+  "builtinVersion": 1,
+  "scope": "host",
+  "category": "networking",
+  "description": "Reach Mini Infra's own admin UI/API over HTTPS via your tailnet, with no manual reverse proxy or TLS. Runs a tailscaled sidecar that self-registers an ephemeral device and serves https://<hostname>.<tailnet>.ts.net to Mini Infra's own container. Requires the Tailscale connected service to be configured and HTTPS certificates enabled on your tailnet (MagicDNS + HTTPS in the Tailscale admin console).",
+  "parameters": [
+    {
+      "name": "hostname",
+      "type": "string",
+      "default": "mini-infra",
+      "description": "Tailnet device hostname for the ingress. The admin UI becomes reachable at https://<hostname>.<your-tailnet>.ts.net."
+    }
+  ],
+  "resourceOutputs": [
+    { "type": "docker-network", "purpose": "tailscale-ingress", "joinSelf": true }
+  ],
+  "networks": [],
+  "volumes": [
+    { "name": "tailscale_ingress_state" },
+    { "name": "tailscale_ingress_config" }
+  ],
+  "services": [
+    {
+      "serviceName": "tailscaled",
+      "serviceType": "Stateful",
+      "dockerImage": "tailscale/tailscale",
+      "dockerTag": "stable",
+      "containerConfig": {
+        "capAdd": ["NET_ADMIN", "SYS_MODULE"],
+        "env": {
+          "TS_HOSTNAME": "{{params.hostname}}",
+          "TS_STATE_DIR": "/var/lib/tailscale",
+          "TS_USERSPACE": "false",
+          "TS_SERVE_CONFIG": "/etc/tailscale/serve.json"
+        },
+        "dynamicEnv": {
+          "TS_AUTHKEY": { "kind": "tailscale-authkey" }
+        },
+        "mounts": [
+          { "source": "tailscale_ingress_state", "target": "/var/lib/tailscale", "type": "volume" },
+          { "source": "tailscale_ingress_config", "target": "/etc/tailscale", "type": "volume" }
+        ],
+        "restartPolicy": "unless-stopped",
+        "joinResourceNetworks": ["tailscale-ingress"],
+        "requiredEgress": ["controlplane.tailscale.com", "*.tailscale.com", "*.tailscale.io"],
+        "logConfig": {
+          "type": "json-file",
+          "maxSize": "10m",
+          "maxFile": "3"
+        }
+      },
+      "dependsOn": [],
+      "order": 1
+    }
+  ],
+  "configFiles": [
+    {
+      "serviceName": "tailscaled",
+      "fileName": "serve.json",
+      "volumeName": "tailscale_ingress_config",
+      "mountPath": "/serve.json",
+      "contentFile": "serve.json",
+      "permissions": "644"
+    }
+  ]
+}

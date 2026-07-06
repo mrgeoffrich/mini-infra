@@ -65,6 +65,7 @@ export const queryKeys = {
   connectivity: {
     status: ["connectivityStatus"] as const,
     cloudflare: ["cloudflare-connectivity"] as const,
+    tailscaleIngress: ["tailscale-ingress-status"] as const,
   },
 
   diagnostics: {

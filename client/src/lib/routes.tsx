@@ -19,6 +19,7 @@ import StorageSettingsPage from "@/app/connectivity-storage/page";
 import GitHubConnectivityPage from "@/app/connectivity/github/page";
 import TailscaleSettingsPage from "@/app/connectivity/tailscale/page";
 import SystemSettingsPage from "@/app/settings/system/page";
+import NetworkAccessPage from "@/app/network-access/page";
 import RegistryCredentialsPage from "@/app/settings/registry-credentials/page";
 import SelfBackupSettingsPage from "@/app/settings/self-backup/page";
 import GitHubSettingsPage from "@/app/settings/github/page";
@@ -323,6 +324,10 @@ export const router = createBrowserRouter([
       {
         path: "connectivity-tailscale",
         element: <TailscaleSettingsPage />,
+      },
+      {
+        path: "network-access",
+        element: <NetworkAccessPage />,
       },
       {
         path: "settings-system",

@@ -32,6 +32,7 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "GET", path: "/api/connectivity/storage/history" },
   { method: "GET", path: "/api/connectivity/tailscale" },
   { method: "GET", path: "/api/connectivity/tailscale/history" },
+  { method: "GET", path: "/api/connectivity/tailscale/ingress" },
   { method: "GET", path: "/api/containers" },
   { method: "GET", path: "/api/containers/:id" },
   { method: "POST", path: "/api/containers/:id/:action" },

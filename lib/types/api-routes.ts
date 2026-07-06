@@ -185,6 +185,8 @@ export const ApiRoute = {
     tailscale: (): string => `${ApiBase.tailscaleConnectivity}/tailscale`,
     /** GET /api/connectivity/tailscale/history */
     tailscaleHistory: (): string => `${ApiBase.tailscaleConnectivity}/tailscale/history`,
+    /** GET /api/connectivity/tailscale/ingress */
+    tailscaleIngress: (): string => `${ApiBase.tailscaleConnectivity}/tailscale/ingress`,
   },
 
   diagnostics: {

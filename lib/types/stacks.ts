@@ -97,6 +97,20 @@ export type DynamicEnvSource =
    */
   | { kind: 'cloudflare-tunnel-token' }
   /**
+   * Ephemeral, pre-authorized Tailscale authkey minted at apply time via the
+   * `tailscale` connected service (OAuth client credentials → the tailnet's
+   * `POST /tailnet/-/keys`). Injected as a plain env var — `tailscaled` reads
+   * `TS_AUTHKEY` natively on first boot to register the device, then persists
+   * its node key on the state volume so subsequent restarts don't need it.
+   *
+   * Resolving dynamically (rather than baking a key into a stack parameter)
+   * means the key is always fresh, single-use, and never appears in the stack
+   * definition hash or applied snapshot. Used by the `tailscale-ingress`
+   * host-scoped stack, which fronts Mini Infra's own control-plane container.
+   * Fails closed if the `tailscale` connected service isn't configured.
+   */
+  | { kind: 'tailscale-authkey' }
+  /**
    * Read a single field from a Vault KV v2 path at apply time using the
    * Mini Infra admin token. The container receives the value as a plain
    * env var — no Vault client SDK or AppRole needed by the running app.
