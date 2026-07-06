@@ -404,6 +404,17 @@ export const routeConfig: Record<string, RouteConfig> = {
     },
   },
 
+  "/network-access": {
+    path: "/network-access",
+    title: "Network Access",
+    icon: IconNetwork,
+    showInNav: true,
+    navGroup: "main",
+    navSection: "networking",
+    description: "How Mini Infra itself is reached — Public URL, CORS, Docker Host IP, and Tailscale ingress",
+    helpDoc: "networking/network-access",
+  },
+
   "/dns": {
     path: "/dns",
     title: "DNS Zones",

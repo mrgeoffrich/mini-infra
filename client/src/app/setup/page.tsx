@@ -19,6 +19,8 @@ import {
   IconCircleCheck,
   IconCircleDashed,
   IconSelector,
+  IconSparkles,
+  IconDatabaseImport,
 } from "@tabler/icons-react";
 import { useSetupStatus } from "@/hooks/use-setup-status";
 import { useTimezones } from "@/hooks/use-user-preferences";
@@ -39,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { ApiRoute } from "@mini-infra/types";
 import type { DockerSocketDetectionResult } from "@mini-infra/types";
 import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { RestoreFromBackupFlow, type DriveReturn } from "./restore-from-backup";
 
 // ---------------------------------------------------------------------------
 // Step 1 — Create Account
@@ -432,35 +435,106 @@ function StepIndicator({
 }
 
 // ---------------------------------------------------------------------------
+// Mode selection — Fresh Install vs Load from Backup
+// ---------------------------------------------------------------------------
+
+function ModeSelectionStep({
+  onFresh,
+  onRestore,
+}: {
+  onFresh: () => void;
+  onRestore: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <button
+        type="button"
+        onClick={onFresh}
+        className="flex w-full items-center gap-3 rounded-lg border p-4 text-left transition-colors hover:border-primary hover:bg-accent"
+      >
+        <IconSparkles className="h-6 w-6 flex-shrink-0 text-primary" />
+        <div>
+          <p className="text-sm font-medium">Fresh Install</p>
+          <p className="text-xs text-muted-foreground">
+            Start from scratch — create an admin account and connect Docker.
+          </p>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={onRestore}
+        className="flex w-full items-center gap-3 rounded-lg border p-4 text-left transition-colors hover:border-primary hover:bg-accent"
+      >
+        <IconDatabaseImport className="h-6 w-6 flex-shrink-0 text-primary" />
+        <div>
+          <p className="text-sm font-medium">Load from Backup</p>
+          <p className="text-xs text-muted-foreground">
+            Restore a previous instance from an Azure or Google Drive backup.
+          </p>
+        </div>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Setup Page
 // ---------------------------------------------------------------------------
 
+type SetupMode = "select" | "fresh" | "restore";
+
 export function SetupPage() {
   const { data: setupStatus } = useSetupStatus();
-  const [step, setStep] = useState(1);
 
-  // If setup already has users (e.g. page refresh mid-wizard), skip to step 2.
-  // We snapshot the trigger value (true means "hasUsers and we are still on
-  // step 1") via a ref so the setState lives inside a ref-controlled branch
-  // (avoids set-state-in-effect) and only fires on the leading edge.
+  // Detect a return from the Google Drive OAuth round-trip (the callback
+  // redirects to /setup?restore=drive-connected | drive-error&reason=...).
+  // Lazy useState initializer — read the URL once at mount.
+  const [driveReturn] = useState<DriveReturn | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const restore = params.get("restore");
+    if (restore === "drive-connected") return { status: "connected" };
+    if (restore === "drive-error") {
+      return { status: "error", reason: params.get("reason") ?? undefined };
+    }
+    return null;
+  });
+
+  const [mode, setMode] = useState<SetupMode>(driveReturn ? "restore" : "select");
+  const [step, setStep] = useState(1); // fresh mode: 1 = create account, 2 = docker
+
+  // Strip the restore marker from the URL so a refresh doesn't re-trigger it.
+  const urlCleanedRef = useRef(false);
+  useEffect(() => {
+    if (driveReturn && !urlCleanedRef.current) {
+      urlCleanedRef.current = true;
+      window.history.replaceState({}, "", "/setup");
+    }
+  }, [driveReturn]);
+
+  // If setup already has users (e.g. page refresh mid fresh-install wizard),
+  // resume at the Docker step. Snapshot via a ref so the setState lives inside
+  // a ref-controlled branch (avoids set-state-in-effect) and fires once.
   const prevShouldAdvanceRef = useRef(false);
   useEffect(() => {
-    const shouldAdvance = !!(setupStatus?.hasUsers && step === 1);
+    const shouldAdvance = !!(setupStatus?.hasUsers && mode !== "restore");
     const prev = prevShouldAdvanceRef.current;
     prevShouldAdvanceRef.current = shouldAdvance;
     if (prev || !shouldAdvance) return;
+    setMode("fresh");
     setStep(2);
-  }, [setupStatus?.hasUsers, step]);
+  }, [setupStatus?.hasUsers, mode]);
 
   const stepTitles = [
     { icon: <IconAlertCircle className="h-3.5 w-3.5" />, title: "Create Account" },
     { icon: <IconBrandDocker className="h-3.5 w-3.5" />, title: "Docker Connection" },
   ];
 
-  const stepDescription = {
-    1: "Create your admin account to get started.",
-    2: "Let's check if Docker is available on this host.",
-  }[step];
+  const description =
+    mode === "select"
+      ? "How would you like to get started?"
+      : mode === "restore"
+        ? "Restore this instance from a previous backup."
+        : { 1: "Create your admin account to get started.", 2: "Let's check if Docker is available on this host." }[step];
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
@@ -468,27 +542,46 @@ export function SetupPage() {
         <Card>
           <CardHeader>
             <CardTitle>Welcome to Mini Infra</CardTitle>
-            <CardDescription>{stepDescription}</CardDescription>
+            <CardDescription>{description}</CardDescription>
 
-            <div className="flex items-center gap-4 pt-2">
-              {stepTitles.map((s, i) => (
-                <StepIndicator
-                  key={i}
-                  number={i + 1}
-                  icon={s.icon}
-                  title={s.title}
-                  done={step > i + 1}
-                  active={step === i + 1}
-                />
-              ))}
-            </div>
+            {mode === "fresh" && (
+              <div className="flex items-center gap-4 pt-2">
+                {stepTitles.map((s, i) => (
+                  <StepIndicator
+                    key={i}
+                    number={i + 1}
+                    icon={s.icon}
+                    title={s.title}
+                    done={step > i + 1}
+                    active={step === i + 1}
+                  />
+                ))}
+              </div>
+            )}
           </CardHeader>
 
           <CardContent>
-            {step === 1 && (
+            {mode === "select" && (
+              <ModeSelectionStep
+                onFresh={() => {
+                  setStep(1);
+                  setMode("fresh");
+                }}
+                onRestore={() => setMode("restore")}
+              />
+            )}
+
+            {mode === "restore" && (
+              <RestoreFromBackupFlow
+                onBack={() => setMode("select")}
+                driveReturn={driveReturn}
+              />
+            )}
+
+            {mode === "fresh" && step === 1 && (
               <CreateAccountStep onComplete={() => setStep(2)} />
             )}
-            {step === 2 && (
+            {mode === "fresh" && step === 2 && (
               <DockerDetectionStep
                 onComplete={async (host, ip) => {
                   const body: Record<string, string> = {};

@@ -50,6 +50,9 @@ export * from "./environments";
 // Self-backup types
 export * from "./self-backup";
 
+// Load-from-backup onboarding restore types
+export * from "./setup-restore";
+
 // Monitoring types
 export * from "./monitoring";
 

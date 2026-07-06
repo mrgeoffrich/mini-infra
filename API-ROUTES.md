@@ -17,6 +17,21 @@
 | GET | `/auth/status` | Auth status |
 | GET | `/auth/user` | Current user profile |
 
+## Setup Restore (`/auth/setup/restore`)
+
+Public, setup-scoped "Load from Backup" onboarding flow. Every route 403s once a user exists or setup is complete.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/auth/setup/restore/status` | Restore-flow status (provider configured/connected) |
+| POST | `/auth/setup/restore/azure/credentials` | Validate + store Azure connection string |
+| GET | `/auth/setup/restore/azure/locations` | List Azure containers |
+| POST | `/auth/setup/restore/google-drive/credentials` | Store Google Drive OAuth client credentials |
+| GET | `/auth/setup/restore/google-drive/oauth/start` | Begin Google Drive OAuth (302 redirect) |
+| GET | `/auth/setup/restore/google-drive/locations` | List Google Drive folders |
+| POST | `/auth/setup/restore/backups` | List `mini-infra-*.db.zip` backups in a location |
+| POST | `/auth/setup/restore/execute` | Stage the selected backup and restart to apply |
+
 ## API Keys (`/api/keys`)
 
 | Method | Path | Description |

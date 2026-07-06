@@ -36,6 +36,7 @@ import type { ContainerAction } from "./containers";
  */
 export const ApiBase = {
   auth: "/auth",
+  setupRestore: "/auth/setup/restore",
   users: "/api/users",
   authSettings: "/api/auth-settings",
   apiKeys: "/api/keys",
@@ -185,6 +186,8 @@ export const ApiRoute = {
     tailscale: (): string => `${ApiBase.tailscaleConnectivity}/tailscale`,
     /** GET /api/connectivity/tailscale/history */
     tailscaleHistory: (): string => `${ApiBase.tailscaleConnectivity}/tailscale/history`,
+    /** GET /api/connectivity/tailscale/ingress */
+    tailscaleIngress: (): string => `${ApiBase.tailscaleConnectivity}/tailscale/ingress`,
   },
 
   diagnostics: {
@@ -884,6 +887,33 @@ export const ApiRoute = {
     status: (): string => `${ApiBase.auth}/status`,
     /** GET /auth/user */
     user: (): string => `${ApiBase.auth}/user`,
+  },
+
+  /**
+   * Public, setup-scoped "Load from Backup" restore flow. Every route is
+   * gated server-side on "setup in progress" (no users yet + setup not
+   * complete), so these run before an admin account exists.
+   */
+  setupRestore: {
+    /** GET /auth/setup/restore/status */
+    status: (): string => `${ApiBase.setupRestore}/status`,
+    /** POST /auth/setup/restore/azure/credentials */
+    azureCredentials: (): string => `${ApiBase.setupRestore}/azure/credentials`,
+    /** GET /auth/setup/restore/azure/locations */
+    azureLocations: (): string => `${ApiBase.setupRestore}/azure/locations`,
+    /** POST /auth/setup/restore/google-drive/credentials */
+    googleDriveCredentials: (): string =>
+      `${ApiBase.setupRestore}/google-drive/credentials`,
+    /** GET /auth/setup/restore/google-drive/oauth/start */
+    googleDriveOauthStart: (): string =>
+      `${ApiBase.setupRestore}/google-drive/oauth/start`,
+    /** GET /auth/setup/restore/google-drive/locations */
+    googleDriveLocations: (): string =>
+      `${ApiBase.setupRestore}/google-drive/locations`,
+    /** POST /auth/setup/restore/backups */
+    backups: (): string => `${ApiBase.setupRestore}/backups`,
+    /** POST /auth/setup/restore/execute */
+    execute: (): string => `${ApiBase.setupRestore}/execute`,
   },
 
   /** GET /health — unversioned health check, mounted outside /api */

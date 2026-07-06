@@ -57,9 +57,14 @@ export function MetricsChart({
   color,
 }: MetricsChartProps) {
   const chartWrapperRef = useRef<HTMLDivElement>(null);
-  // Container names nearest the cursor's Y position at the hovered timestamp.
-  // null means "unknown/not hovering" - the tooltip falls back to showing every series.
-  const [nearestNames, setNearestNames] = useState<Set<string> | null>(null);
+  // What the tooltip should show for the current hover:
+  //   Set    - the container names nearest the cursor's Y position (the common case)
+  //   "all"  - fail open, show every series (used when we can't reliably measure)
+  //   null   - measurement pending (fresh hover, dots not painted yet) or not hovering;
+  //            the tooltip renders nothing so we never flash the full series list.
+  const [nearestNames, setNearestNames] = useState<Set<string> | "all" | null>(
+    null,
+  );
 
   const { chartData, containerNames, chartConfig } = useMemo(() => {
     if (!data?.data?.result?.length) {
@@ -170,7 +175,7 @@ export function MetricsChart({
       );
       if (dots.length === 0 || dots.length !== presentNames.length) {
         // Mismatch between rendered dots and known series - fail open to showing all.
-        setNearestNames(null);
+        setNearestNames("all");
         return;
       }
 
@@ -232,13 +237,21 @@ export function MetricsChart({
               <ChartTooltip
                 cursor={false}
                 content={({ active, payload, label, coordinate }) => {
-                  const filtered = nearestNames
-                    ? payload?.filter(
-                        (item) =>
-                          item.name != null &&
-                          nearestNames.has(String(item.name)),
-                      )
-                    : payload;
+                  // Measurement not done yet for this hover (or not hovering).
+                  // Render nothing rather than flashing the full series list for
+                  // one frame before we narrow to the nearest line.
+                  if (nearestNames === null) {
+                    return null;
+                  }
+
+                  const filtered =
+                    nearestNames === "all"
+                      ? payload
+                      : payload?.filter(
+                          (item) =>
+                            item.name != null &&
+                            nearestNames.has(String(item.name)),
+                        );
 
                   return (
                     <ChartTooltipContent
