@@ -23,7 +23,7 @@ describe("egress-fw-agent template", () => {
     expect(json.name).toBe("egress-fw-agent");
     expect(json.scope).toBe("host");
     expect(json.category).toBe("infrastructure");
-    expect(json.builtinVersion).toBe(4);
+    expect(json.builtinVersion).toBe(5);
 
     // The agent role declares the KV bucket Phase 2 needs.
     expect(json.nats.subjectPrefix).toBe("mini-infra.egress.fw");
@@ -50,7 +50,25 @@ describe("egress-fw-agent template", () => {
     expect(svc.containerConfig.capAdd).toEqual(["NET_ADMIN", "NET_RAW"]);
     expect(svc.natsRole).toBe("agent");
     expect(svc.containerConfig.dynamicEnv.NATS_URL).toEqual({ kind: "nats-url" });
-    expect(svc.containerConfig.dynamicEnv.NATS_CREDS).toEqual({ kind: "nats-creds" });
+    // Phase 5 (§4.3): the creds are delivered as a file on a mounted volume,
+    // not baked into the env — the dynamicEnv now carries the file PATH env
+    // (`NATS_CREDS_FILE`, kind `nats-creds-file`), and the legacy `NATS_CREDS`
+    // secret env is gone.
+    expect(svc.containerConfig.dynamicEnv.NATS_CREDS_FILE).toEqual({ kind: "nats-creds-file" });
+    expect(svc.containerConfig.dynamicEnv.NATS_CREDS).toBeUndefined();
+
+    // The stack declares its own per-stack creds volume (like `vault` declares
+    // `openbao_data`) and mounts it read-only at the well-known creds dir.
+    expect(json.volumes).toContainEqual({ name: "nats_creds" });
+    const credsMount = (svc.containerConfig.mounts ?? []).find(
+      (m: { source: string }) => m.source === "nats_creds",
+    );
+    expect(credsMount).toEqual({
+      source: "nats_creds",
+      target: "/etc/nats-creds",
+      type: "volume",
+      readOnly: true,
+    });
 
     // Phase 2 acceptance: no Unix socket mount on the template.
     const mountTargets = (svc.containerConfig.mounts ?? []).map((m: { target: string }) => m.target);
@@ -76,9 +94,12 @@ describe("egress-fw-agent template", () => {
       env: { LOG_LEVEL: "info" },
       dynamicEnv: {
         NATS_URL: { kind: "nats-url" },
-        NATS_CREDS: { kind: "nats-creds" },
+        NATS_CREDS_FILE: { kind: "nats-creds-file" },
       },
-      mounts: [{ source: "/lib/modules", target: "/lib/modules", type: "bind", readOnly: true }],
+      mounts: [
+        { source: "/lib/modules", target: "/lib/modules", type: "bind", readOnly: true },
+        { source: "nats_creds", target: "/etc/nats-creds", type: "volume", readOnly: true },
+      ],
       labels: { "mini-infra.egress.fw-agent": "true" },
       restartPolicy: "unless-stopped",
       logConfig: { type: "json-file", maxSize: "10m", maxFile: "3" },

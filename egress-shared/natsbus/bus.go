@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -27,6 +29,29 @@ import (
 // DefaultRequestTimeout matches the TS bus default (5 s).
 const DefaultRequestTimeout = 5 * time.Second
 
+// ConnState is the out-of-band connection state a bus reports over the agent
+// `/healthz` endpoint (§4.2 of the egress NATS credential-resilience plan).
+// It is distinct from the in-band KV heartbeat: the heartbeat needs a working
+// NATS link to publish, so it can't distinguish "creds rejected" from "still
+// starting" — this state can, because it's derived from the SDK's own
+// connection callbacks + status rather than from a published message.
+type ConnState string
+
+const (
+	// ConnStateConnected — the link is up and authenticated.
+	ConnStateConnected ConnState = "connected"
+	// ConnStateReconnecting — the SDK dropped the link and is retrying, with no
+	// evidence the drop was an auth rejection.
+	ConnStateReconnecting ConnState = "reconnecting"
+	// ConnStateAuthFailed — the link is not up and the last transition carried
+	// an authorization/authentication error. This is the signal the 15-hour
+	// production incident lacked: an agent whose baked-in creds were orphaned.
+	ConnStateAuthFailed ConnState = "auth-failed"
+	// ConnStateDisconnected — the link is not up for a non-auth reason (never
+	// connected, closed, or a plain network drop).
+	ConnStateDisconnected ConnState = "disconnected"
+)
+
 // ConnectOptions controls Bus.Connect. NATS_URL/NATS_CREDS are typically
 // injected via the stack template's `dynamicEnv` (`nats-url` + `nats-creds`),
 // but the call site reads them from the env so a test can override.
@@ -34,8 +59,16 @@ type ConnectOptions struct {
 	// URL is required (e.g. nats://vault-nats-nats:4222). No default — let the
 	// caller decide rather than baking in a wrong URL.
 	URL string
-	// CredsFile contents (the body of a `.creds` blob). Optional — useful when
-	// connecting to a no-auth dev NATS for round-trip tests.
+	// CredsFile is a path to a `.creds` file on a mounted volume (Phase 5,
+	// §4.3). Preferred over Creds when set: nats.go re-reads this file on every
+	// (re)connect via nats.UserCredentials, so a rotated credential is picked
+	// up without a container recreate. Injected as NATS_CREDS_FILE by the
+	// stack template's `nats-creds` dynamicEnv.
+	CredsFile string
+	// Creds is a `.creds` blob body passed inline (the legacy env-var path,
+	// NATS_CREDS). Kept for dev/tests and for image-vs-template version skew:
+	// used only when CredsFile is empty. Loaded once via nats.UserJWTAndSeed,
+	// so a rotation does NOT reach a Creds-based connection without a recreate.
 	Creds string
 	// Name shows up in the NATS server's connection list. Defaults to
 	// "mini-infra-fw-agent" when empty so log-correlation across the bus
@@ -58,6 +91,19 @@ type Bus struct {
 	nc  *nats.Conn
 	js  nats.JetStreamContext
 	log *slog.Logger
+
+	// authFailed records whether the most recent async/disconnect error the SDK
+	// surfaced was an authorization/authentication rejection. Set from the SDK
+	// callback goroutines, read from the `/healthz` handler goroutine — hence
+	// atomic.Bool, mirroring the gateway's `proxyUp atomic.Bool` listener-health
+	// tracking. Cleared on a clean reconnect (or the next time we observe a live
+	// CONNECTED status) so a transient auth blip doesn't wedge the reported state.
+	authFailed atomic.Bool
+
+	// statusFn returns the SDK's live connection status. In production it is
+	// `nc.Status`; tests inject a stub so the ConnState state machine can be
+	// exercised without a live NATS server.
+	statusFn func() nats.Status
 
 	// kvCache memoises the JetStream KV handle per bucket. KV resolution is
 	// a JS API call (creates the underlying stream if missing); caching it
@@ -86,6 +132,13 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 	if maxReconnects == 0 {
 		maxReconnects = -1 // unlimited
 	}
+	// Build the Bus value up front so the async SDK callbacks below can record
+	// connection-state transitions into it (auth-failed detection). `nc`/`js`
+	// are filled in once the connect succeeds.
+	b := &Bus{
+		log:     opts.Logger,
+		kvCache: make(map[string]nats.KeyValue),
+	}
 	natsOpts := []nats.Option{
 		nats.Name(name),
 		nats.MaxReconnects(maxReconnects),
@@ -106,18 +159,33 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 		// these the agent silently flap-loops on a transient NATS bounce.
 		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
 			if err != nil {
+				// A disconnect carrying an auth error is the re-key hazard: the
+				// server rejected our (now-orphaned) creds. Flag it so /healthz
+				// reports auth-failed while the reconnect loop keeps trying.
+				if isAuthError(err) {
+					b.authFailed.Store(true)
+				}
 				opts.Logger.Warn("nats bus disconnected", "err", err.Error())
 			} else {
 				opts.Logger.Info("nats bus disconnected (clean)")
 			}
 		}),
 		nats.ReconnectHandler(func(c *nats.Conn) {
+			// A successful reconnect proves the creds are accepted again — clear
+			// any auth-failed flag so the reported state returns to connected.
+			b.authFailed.Store(false)
 			opts.Logger.Info("nats bus reconnected", "url", c.ConnectedUrlRedacted())
 		}),
 		nats.ClosedHandler(func(_ *nats.Conn) {
 			opts.Logger.Warn("nats bus connection closed")
 		}),
 		nats.ErrorHandler(func(_ *nats.Conn, sub *nats.Subscription, err error) {
+			// The async error handler is where `nats: authorization violation`
+			// surfaces when the server rejects our creds after the initial
+			// connect. Record it for the out-of-band health signal.
+			if isAuthError(err) {
+				b.authFailed.Store(true)
+			}
 			subj := ""
 			if sub != nil {
 				subj = sub.Subject
@@ -125,15 +193,12 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 			opts.Logger.Warn("nats async error", "subject", subj, "err", err.Error())
 		}),
 	}
-	if opts.Creds != "" {
-		// `UserJWTAndSeed` is the SDK's way to feed `.creds` body without a
-		// file on disk. Splitting into JWT + nkey seed is the same shape
-		// `credsAuthenticator` consumes on the TS side.
-		jwt, seed, err := splitCredsBody(opts.Creds)
-		if err != nil {
-			return nil, fmt.Errorf("natsbus: parse creds: %w", err)
-		}
-		natsOpts = append(natsOpts, nats.UserJWTAndSeed(jwt, seed))
+	credsOpt, credsSrc, err := resolveCredsOption(opts)
+	if err != nil {
+		return nil, err
+	}
+	if credsOpt != nil {
+		natsOpts = append(natsOpts, credsOpt)
 	}
 
 	// Ensure context cancellation propagates if Connect blocks (e.g. NATS
@@ -167,13 +232,14 @@ func Connect(ctx context.Context, opts ConnectOptions) (*Bus, error) {
 		nc.Close()
 		return nil, fmt.Errorf("natsbus: jetstream context: %w", err)
 	}
-	opts.Logger.Info("nats bus connected", "url", nc.ConnectedUrlRedacted(), "name", name)
-	return &Bus{
-		nc:      nc,
-		js:      js,
-		log:     opts.Logger,
-		kvCache: make(map[string]nats.KeyValue),
-	}, nil
+	// `creds source=file` is the Phase 5 Verify-in-prod signal: it proves the
+	// agent authenticated from the mounted, reload-on-reconnect creds file
+	// rather than the legacy baked-in env credential.
+	opts.Logger.Info("nats bus connected", "url", nc.ConnectedUrlRedacted(), "name", name, "creds", string(credsSrc))
+	b.nc = nc
+	b.js = js
+	b.statusFn = nc.Status
+	return b, nil
 }
 
 // Close drains pending publishes and closes the connection. Idempotent.
@@ -197,6 +263,52 @@ func (b *Bus) Close() error {
 // publishes on it (the SDK buffers up to its `ReconnectBufSize`).
 func (b *Bus) IsConnected() bool {
 	return b.nc != nil && b.nc.IsConnected()
+}
+
+// ConnState returns the §4.2 out-of-band connection state, combining the SDK's
+// live `nc.Status()` with the auth-failed flag recorded by the async error /
+// disconnect callbacks. Goroutine-safe: `statusFn` is the SDK's own
+// concurrency-safe status read and `authFailed` is an atomic.
+//
+//   - CONNECTED                    → connected (and any stale auth flag cleared)
+//   - not up + last error was auth → auth-failed
+//   - not up + RECONNECTING        → reconnecting
+//   - otherwise                    → disconnected
+func (b *Bus) ConnState() ConnState {
+	if b == nil || b.statusFn == nil {
+		return ConnStateDisconnected
+	}
+	status := b.statusFn()
+	if status == nats.CONNECTED {
+		// A live connection proves the creds are currently accepted; clear any
+		// stale auth flag from a prior blip so we never wedge on auth-failed.
+		b.authFailed.Store(false)
+		return ConnStateConnected
+	}
+	// Not up. An auth rejection takes precedence so operators can tell "creds
+	// rejected" apart from "still starting / plain network drop".
+	if b.authFailed.Load() {
+		return ConnStateAuthFailed
+	}
+	if status == nats.RECONNECTING {
+		return ConnStateReconnecting
+	}
+	return ConnStateDisconnected
+}
+
+// isAuthError reports whether err is a NATS authorization/authentication
+// rejection. The async ErrorHandler surfaces these as `nats: authorization
+// violation` (creds not accepted) or `nats: authentication expired` (a rotated
+// account); both must map to auth-failed. Substring matching is used rather
+// than sentinel comparison so the classification is resilient to the SDK
+// wrapping the error — the async handler often hands us a fresh error built
+// from the server's `-ERR` line rather than a wrapped sentinel.
+func isAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authorization") || strings.Contains(msg, "authentication")
 }
 
 // Publish marshals `payload` to JSON and publishes on `subject`. Returns the
@@ -297,6 +409,48 @@ func (b *Bus) Respond(
 	})
 }
 
+// credsSource labels how a bus obtained its credentials, surfaced on the
+// connect log line as `creds=<source>`. `file` is the Phase 5 target (§4.3):
+// nats.go re-reads the file on every reconnect, so a rotation is picked up
+// without a container recreate. `env` is the legacy inline-blob path, loaded
+// once. `none` is a no-auth (dev) connection.
+type credsSource string
+
+const (
+	credsSourceNone credsSource = "none"
+	credsSourceFile credsSource = "file"
+	credsSourceEnv  credsSource = "env"
+)
+
+// resolveCredsOption selects the NATS auth option from ConnectOptions,
+// preferring a CredsFile (reload-on-reconnect via nats.UserCredentials) over an
+// inline Creds blob (loaded once via nats.UserJWTAndSeed). Preferring the file
+// and falling back to the env blob makes the bus tolerant of image-vs-template
+// version skew: an older template still injecting NATS_CREDS keeps working, and
+// a newer template injecting NATS_CREDS_FILE gets live reload. Returns a nil
+// option (source "none") when neither is set, so a no-auth dev NATS still
+// connects.
+func resolveCredsOption(opts ConnectOptions) (nats.Option, credsSource, error) {
+	if opts.CredsFile != "" {
+		// nats.UserCredentials reads the file lazily inside its JWT/signature
+		// callbacks — invoked on the initial connect and on every reconnect —
+		// so a rewrite of the file is adopted with no recreate.
+		return nats.UserCredentials(opts.CredsFile), credsSourceFile, nil
+	}
+	if opts.Creds != "" {
+		// `UserJWTAndSeed` is the SDK's way to feed a `.creds` body without a
+		// file on disk. Splitting into JWT + nkey seed is the same shape
+		// `credsAuthenticator` consumes on the TS side. Loaded once — a
+		// rotation does not reach this connection without a recreate.
+		jwt, seed, err := splitCredsBody(opts.Creds)
+		if err != nil {
+			return nil, credsSourceNone, fmt.Errorf("natsbus: parse creds: %w", err)
+		}
+		return nats.UserJWTAndSeed(jwt, seed), credsSourceEnv, nil
+	}
+	return nil, credsSourceNone, nil
+}
+
 // splitCredsBody pulls the JWT and nkey seed out of a `.creds` blob.
 //
 // `.creds` is two `-----BEGIN/END NATS USER JWT-----` and `-----BEGIN/END USER NKEY SEED-----`
@@ -361,15 +515,6 @@ func extractArmored(body, label string) (string, error) {
 
 // Tiny string helpers — avoiding `strings` keeps this file's deps minimal
 // and exposes the parsing semantics on one screen.
-
-func indexOf(s, sub string) int {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return i
-		}
-	}
-	return -1
-}
 
 func splitLines(s string) []string {
 	var out []string

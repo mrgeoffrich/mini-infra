@@ -22,6 +22,7 @@
 import type { PrismaClient } from '../../generated/prisma/client';
 import { type StackPolicyEntry } from './egress-gateway-client';
 import { pushRulesViaNats, readGatewayHealth } from './egress-gateway-transport';
+import { scrapeGatewayConnState } from './agent-health-scraper';
 import { getLogger } from '../../lib/logger-factory';
 import { emitEgressGatewayHealth } from './egress-socket-emitter';
 
@@ -284,7 +285,9 @@ export class EgressRulePusher {
       // if the bucket isn't ready yet, we still emit success for rules.
       const health = await readGatewayHealth(env.id);
 
-      // Emit gateway health — success
+      // Emit gateway health — success. The gateway just acknowledged this push
+      // over NATS, so its connection is demonstrably up — surface that as the
+      // out-of-band conn state without paying for a redundant /healthz scrape.
       emitEgressGatewayHealth({
         environmentId: env.id,
         gatewayIp: env.egressGatewayIp,
@@ -298,6 +301,7 @@ export class EgressRulePusher {
           lastSuccessAt: new Date().toISOString(),
           lastFailureAt: null,
         },
+        natsConnState: 'connected',
       });
     };
 
@@ -328,7 +332,11 @@ export class EgressRulePusher {
         // Roll back the version bump so the next push increments from a sane baseline
         state.version -= 1;
 
-        // Emit gateway health — failure
+        // Emit gateway health — failure. A push timeout is exactly the symptom
+        // of an auth-failing gateway (it can't subscribe, so it never responds).
+        // Best-effort out-of-band scrape of the gateway's /healthz explains why:
+        // `auth-failed` distinguishes "creds rejected" from a plain outage.
+        const natsConnState = await scrapeGatewayConnState(env.id);
         emitEgressGatewayHealth({
           environmentId: env.id,
           gatewayIp: env.egressGatewayIp,
@@ -343,6 +351,7 @@ export class EgressRulePusher {
             lastFailureAt: new Date().toISOString(),
           },
           errorMessage: errMsg,
+          natsConnState,
         });
       }
     }

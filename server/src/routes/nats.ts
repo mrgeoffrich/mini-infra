@@ -7,6 +7,16 @@ import { emitToChannel } from "../lib/socket";
 import { requirePermission } from "../middleware/auth";
 import { getNatsControlPlaneService } from "../services/nats/nats-control-plane-service";
 import { NatsBus } from "../services/nats/nats-bus";
+import {
+  restoreEncryptedIdentitySeeds,
+  IdentitySeedBackupError,
+} from "../services/nats/nats-identity-seed-backup";
+import {
+  loadIdentitySeedBlobFromSelfBackup,
+  SelfBackupNotFoundError,
+  SelfBackupNoSeedEntryError,
+} from "../services/backup/self-backup-seed-restore";
+import { ProviderNoLongerConfiguredError } from "../services/storage/storage-service";
 import { Channel, ServerEvent, Permission } from "@mini-infra/types";
 
 const router = Router();
@@ -70,6 +80,16 @@ const mintSchema = z.object({
   ttlSeconds: z.number().int().min(0).max(365 * 24 * 60 * 60).optional(),
 });
 
+const restoreSeedsSchema = z.object({
+  /** Id of the stored self-backup whose encrypted seed blob to restore from. */
+  selfBackupId: z.string().min(1),
+  /**
+   * Overwrite a present-but-different seed. Off by default so a restore can
+   * never silently swap a live identity — the normal target is an empty path.
+   */
+  force: z.boolean().optional(),
+});
+
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -106,6 +126,57 @@ router.post(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       emitToChannel(Channel.NATS, ServerEvent.NATS_APPLIED, { operationId, success: false, message });
+      throw err;
+    }
+  }),
+);
+
+/**
+ * Restore the NATS identity seeds (operator + accounts) from a stored
+ * self-backup into Vault KV — the Phase 2 recovery path for the exact data
+ * loss Phase 1's guard refuses to re-key through. Admin-gated. Idempotent:
+ * writes only missing/empty seed paths; a present-but-different seed is a
+ * conflict that is refused (409) unless `force` is set. Does NOT mint a new
+ * identity, so a subsequent `applyConfig` reconciles the *restored* identity.
+ */
+router.post(
+  "/identity-seeds/restore",
+  requirePermission(Permission.NatsAdmin),
+  asyncHandler(async (req, res) => {
+    const input = parseBody(restoreSeedsSchema, req.body ?? {});
+    try {
+      const blob = await loadIdentitySeedBlobFromSelfBackup(input.selfBackupId);
+      const result = await restoreEncryptedIdentitySeeds(blob, {
+        force: input.force,
+        userId: getUserId(req),
+      });
+      if (!result.applied) {
+        // Conflict: a present-but-different seed would be clobbered. Nothing
+        // was written. Surface the classification so the operator can decide
+        // whether to re-run with force.
+        return res.status(409).json({
+          success: false,
+          error: "SEED_RESTORE_CONFLICT",
+          message:
+            "One or more seeds already present in Vault differ from the backup; " +
+            "nothing was restored. Re-run with force to overwrite.",
+          data: result,
+        });
+      }
+      return res.json({ success: true, data: result });
+    } catch (err) {
+      if (err instanceof SelfBackupNotFoundError) {
+        return res.status(404).json({ success: false, error: err.code, message: err.message });
+      }
+      if (err instanceof SelfBackupNoSeedEntryError) {
+        return res.status(400).json({ success: false, error: err.code, message: err.message });
+      }
+      if (err instanceof ProviderNoLongerConfiguredError) {
+        return res.status(409).json({ success: false, error: err.code, message: err.message, providerId: err.providerId });
+      }
+      if (err instanceof IdentitySeedBackupError) {
+        return res.status(400).json({ success: false, error: "SEED_BACKUP_DECRYPT_FAILED", message: err.message });
+      }
       throw err;
     }
   }),

@@ -33,7 +33,12 @@ import { getLogger } from "../../lib/logger-factory";
 import DockerService from "../docker";
 import prisma from "../../lib/prisma";
 import { bootstrapFwAgentStack } from "./fw-agent-stack-bootstrap";
-import type { OperationStep } from "@mini-infra/types";
+import { resolveFwAgentHealthBaseUrl, scrapeAgentHealth } from "./agent-health-scraper";
+import type {
+  EgressAgentConnState,
+  EgressFwAgentStatus,
+  OperationStep,
+} from "@mini-infra/types";
 // `NatsBus` is imported lazily so the `isFwAgentHealthy()` polling watcher
 // doesn't pull the prisma chain at import time when this module is brought
 // up by a unit test of an unrelated route.
@@ -63,6 +68,11 @@ let cachedHealthy = false;
 let lastHealthReportedAtMs: number | null = null;
 let lastHealthLastApplyId: string | null = null;
 let cachedNatsBusForHealth: NatsBus | null = null;
+// Out-of-band NATS connection state scraped from the agent's local /healthz
+// (Phase 3, §4.2). Distinct from `cachedHealthy` (the in-band KV heartbeat):
+// this stays reachable — and so can report `auth-failed` — even when NATS auth
+// is what's broken. `null` = the /healthz scrape didn't reach the agent.
+let cachedConnState: EgressAgentConnState | null = null;
 
 async function loadNatsBusForHealth(): Promise<NatsBus> {
   if (cachedNatsBusForHealth) return cachedNatsBusForHealth;
@@ -105,6 +115,27 @@ async function pollHealthOnce(): Promise<void> {
 }
 
 /**
+ * Scrape the fw-agent's out-of-band `/healthz` once and cache the connection
+ * state. Runs alongside `pollHealthOnce` on the watcher tick. The scrape helper
+ * never throws (returns `null` on any failure), so `cachedConnState` faithfully
+ * reflects "reached and reported X" vs "not reachable" (`null`).
+ */
+async function pollAgentConnStateOnce(): Promise<void> {
+  const baseUrl = await resolveFwAgentHealthBaseUrl();
+  if (!baseUrl) {
+    cachedConnState = null;
+    return;
+  }
+  const report = await scrapeAgentHealth(baseUrl);
+  cachedConnState = report?.status ?? null;
+}
+
+/** One watcher tick: the in-band KV heartbeat read + the out-of-band scrape. */
+async function pollFwAgentHealthTick(): Promise<void> {
+  await Promise.allSettled([pollHealthOnce(), pollAgentConnStateOnce()]);
+}
+
+/**
  * Start the background health watcher. Idempotent — calling twice is a
  * no-op. Call from server boot once the NatsBus has been started.
  */
@@ -112,8 +143,8 @@ export function startFwAgentHealthWatcher(): void {
   if (healthPollTimer) return;
   // Kick off immediately so a freshly-booted server doesn't show "stale"
   // for the first 2 s; subsequent polls run on the interval.
-  void pollHealthOnce();
-  healthPollTimer = setInterval(() => void pollHealthOnce(), HEALTH_POLL_INTERVAL_MS);
+  void pollFwAgentHealthTick();
+  healthPollTimer = setInterval(() => void pollFwAgentHealthTick(), HEALTH_POLL_INTERVAL_MS);
   logger.info({ intervalMs: HEALTH_POLL_INTERVAL_MS }, "fw-agent health watcher started");
 }
 
@@ -124,6 +155,16 @@ export function stopFwAgentHealthWatcher(): void {
     healthPollTimer = null;
   }
   cachedNatsBusForHealth = null;
+  cachedConnState = null;
+}
+
+/**
+ * Test-only: run one out-of-band scrape tick. Exposed so the health-scrape path
+ * can be exercised deterministically (with `scrapeAgentHealth` stubbed) rather
+ * than waiting on the interval.
+ */
+export async function _pollAgentConnStateOnceForTest(): Promise<void> {
+  await pollAgentConnStateOnce();
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +188,15 @@ export function isFwAgentHealthy(): boolean {
 }
 
 /**
+ * The most-recently scraped out-of-band NATS connection state (Phase 3, §4.2),
+ * or `null` when the agent's `/healthz` hasn't been reached this poll. Backed by
+ * the same watcher as `isFwAgentHealthy()`.
+ */
+export function getFwAgentConnState(): EgressAgentConnState | null {
+  return cachedConnState;
+}
+
+/**
  * Richer status snapshot for diagnostics. Returns null when the watcher
  * has never observed a heartbeat in this process.
  */
@@ -155,6 +205,7 @@ export function getFwAgentHealthSnapshot(): {
   reportedAtMs: number | null;
   ageMs: number | null;
   lastApplyId: string | null;
+  natsConnState: EgressAgentConnState | null;
 } {
   const now = Date.now();
   return {
@@ -162,6 +213,46 @@ export function getFwAgentHealthSnapshot(): {
     reportedAtMs: lastHealthReportedAtMs,
     ageMs: lastHealthReportedAtMs !== null ? now - lastHealthReportedAtMs : null,
     lastApplyId: lastHealthLastApplyId,
+    natsConnState: cachedConnState,
+  };
+}
+
+/**
+ * Compose the fw-agent status response from its constituent signals. Pure so
+ * the route handler stays thin and the `auth-failing` vs `starting`/`stale`
+ * distinction is unit-testable without standing up Docker or NATS.
+ *
+ * `available` keeps its existing meaning (in-band healthy AND container
+ * running). `authFailing` is the new out-of-band signal: the container is
+ * running but its NATS creds are being rejected — a state that in-band health
+ * alone reports identically to "still starting".
+ */
+export function composeFwAgentStatus(input: {
+  ownContainerId: string | null;
+  found: { id: string; state: string } | null;
+  healthy: boolean;
+  connState: EgressAgentConnState | null;
+}): EgressFwAgentStatus {
+  const { ownContainerId, found, healthy, connState } = input;
+  if (!ownContainerId) {
+    return {
+      available: false,
+      containerRunning: false,
+      containerId: null,
+      reason: "Not running inside a Docker container",
+      health: null,
+      natsConnState: null,
+      authFailing: false,
+    };
+  }
+  const containerRunning = found?.state === "running";
+  return {
+    available: healthy && containerRunning,
+    containerRunning,
+    containerId: found?.id?.slice(0, 12) ?? null,
+    health: healthy ? { status: "ok" } : null,
+    natsConnState: connState,
+    authFailing: containerRunning && connState === "auth-failed",
   };
 }
 
@@ -179,11 +270,22 @@ async function getSettings(): Promise<Map<string, string>> {
 export async function getFwAgentConfig(): Promise<{
   image: string | null;
   autoStart: boolean;
+  autoRemediation: boolean;
+  liveCredRefresh: boolean;
 }> {
   const settings = await getSettings();
   return {
     image: settings.get("image") || process.env.EGRESS_FW_AGENT_IMAGE_TAG || null,
     autoStart: settings.get("auto_start") !== "false",
+    // Default ON (Phase 4): auto-remediation only disengages when the operator
+    // explicitly sets the setting to "false". Mirrors the `auto_start` pattern.
+    autoRemediation: settings.get("auto_remediation") !== "false",
+    // Default ON (Phase 6): live cred refresh pushes a re-minted `.creds` file
+    // into each running egress agent's volume on a NATS identity rotation, so
+    // the agent recovers on its next reconnect with no container recreate. When
+    // set to "false" the server takes no live-push action and recovery falls
+    // back to Phase 4's recreate-based self-heal. Mirrors the flags above.
+    liveCredRefresh: settings.get("live_cred_refresh") !== "false",
   };
 }
 

@@ -18,6 +18,24 @@ import { createNetworkManager, stackNetworkName } from '../networks';
 
 const logger = getLogger("stacks", "stack-destroy-helpers");
 
+/**
+ * Effective docker volume names (`${projectName}_${vol.name}`) that must NEVER
+ * be removed on stack destroy — they hold crown-jewel data whose in-place loss
+ * is unrecoverable.
+ *
+ * Currently the vault (OpenBao) data volume, which stores the Vault KV that
+ * holds the NATS *identity seeds*. Phase 1's re-key guard refuses to
+ * regenerate a recorded-but-missing identity, so silently dropping this volume
+ * on a vault-stack destroy would strand every egress agent's baked-in creds
+ * with no recovery short of the Phase 2 seed backup. The vault host stack is
+ * deterministically named `mini-infra-vault` (host scope → `mini-infra-${name}`)
+ * and its template declares a `openbao_data` volume, so the effective name is
+ * fixed. Destroying the vault stack now preserves this volume; an operator who
+ * genuinely wants it gone removes it explicitly with
+ * `docker volume rm mini-infra-vault_openbao_data`.
+ */
+const PROTECTED_DATA_VOLUMES = new Set<string>(["mini-infra-vault_openbao_data"]);
+
 type StackWithRelations = Awaited<ReturnType<PrismaClient['stack']['findUniqueOrThrow']>> & {
   services: Array<{
     serviceName: string;
@@ -261,6 +279,16 @@ export async function removeStackNetworksAndVolumes(
   const volumesRemoved: string[] = [];
   for (const vol of volumes) {
     const volName = `${projectName}_${vol.name}`;
+    if (PROTECTED_DATA_VOLUMES.has(volName)) {
+      // Durability hardening (Phase 2): keep the vault stack's KV data (NATS
+      // identity seeds) even when its stack is destroyed. A re-deploy re-mounts
+      // the surviving volume, preserving the identity.
+      logger.warn(
+        { volume: volName, stackId },
+        'Preserving protected data volume on stack destroy (holds Vault KV / NATS identity seeds); remove manually if truly intended',
+      );
+      continue;
+    }
     try {
       if (await dockerExecutor.volumeExists(volName)) {
         await dockerExecutor.removeVolume(volName);

@@ -158,6 +158,7 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "DELETE", path: "/api/nats/credentials/:id" },
   { method: "PATCH", path: "/api/nats/credentials/:id" },
   { method: "POST", path: "/api/nats/credentials/:id/mint" },
+  { method: "POST", path: "/api/nats/identity-seeds/restore" },
   { method: "GET", path: "/api/nats/prefix-allowlist" },
   { method: "POST", path: "/api/nats/prefix-allowlist" },
   { method: "DELETE", path: "/api/nats/prefix-allowlist/:prefix" },

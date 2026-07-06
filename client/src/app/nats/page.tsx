@@ -104,6 +104,18 @@ export default function NatsPage({ view = "overview" }: Props) {
               <CardContent className="space-y-2 text-sm">
                 <div>Client: <span className="font-mono">{status.data?.clientUrl ?? "Not registered"}</span></div>
                 <div>Monitor: <span className="font-mono">{status.data?.monitorUrl ?? "Not registered"}</span></div>
+                <div>
+                  Identity seed backup:{" "}
+                  <span className={status.data?.lastIdentitySeedBackupAt ? "font-mono" : "font-mono text-muted-foreground"}>
+                    {status.data?.lastIdentitySeedBackupAt
+                      ? `${new Date(status.data.lastIdentitySeedBackupAt).toLocaleString()}${
+                          status.data.lastIdentitySeedBackupCount != null
+                            ? ` (${status.data.lastIdentitySeedBackupCount} seeds)`
+                            : ""
+                        }`
+                      : "Never — operator + account seeds not yet backed up"}
+                  </span>
+                </div>
                 {status.data?.errorMessage && <div className="text-destructive">{status.data.errorMessage}</div>}
               </CardContent>
             </Card>

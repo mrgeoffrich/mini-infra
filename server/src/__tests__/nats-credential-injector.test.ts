@@ -54,7 +54,9 @@ describe('NatsCredentialInjector — nats-account-public', () => {
       stackId: 'stack-1',
     });
 
-    expect(out).toEqual({ NATS_ACCOUNT_PUB: 'AAAAAAAAAACCOUNTPUB' });
+    // resolve() now returns { values, credsFiles }; account-public produces a
+    // plain env value and no creds file.
+    expect(out).toEqual({ values: { NATS_ACCOUNT_PUB: 'AAAAAAAAAACCOUNTPUB' }, credsFiles: [] });
   });
 
   it('throws if no stackId is provided', async () => {

@@ -8,6 +8,7 @@ import {
   StorageService,
 } from "../services/storage/storage-service";
 import { calculateBackupHealth } from "../services/backup/backup-health-calculator";
+import { resolveSelfBackupObjectName } from "../services/backup/self-backup-seed-restore";
 import type {
   BackupHistoryResponse,
   BackupHealthResponse,
@@ -250,17 +251,10 @@ router.get("/:id/download", requirePermission(Permission.BackupsRead), async (re
 
     // Resolve the object name. Azure's storageObjectUrl is the full Blob URL
     // (`https://{account}.blob.core.windows.net/{container}/{blob}`); Drive's
-    // is `<folderId>/<fileName>`. For Drive we use the file name verbatim;
-    // for Azure we strip the host + container.
+    // is `<folderId>/<fileName>`. Shared with the identity-seed restore path so
+    // both agree on the object name.
     const provider = backup.storageProviderAtCreation as StorageProviderId;
-    let objectName: string;
-    if (provider === "azure") {
-      const urlParts = backup.storageObjectUrl.split("/");
-      objectName =
-        urlParts.length >= 5 ? urlParts.slice(4).join("/") : backup.fileName;
-    } else {
-      objectName = backup.fileName;
-    }
+    const objectName = resolveSelfBackupObjectName(backup);
 
     if (!objectName) {
       return res.status(400).json({
