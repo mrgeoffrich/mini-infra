@@ -46,13 +46,12 @@ export class DeployApplicationContainers {
                     ? Object.entries(context.containerEnvironment).map(([name, value]): ContainerEnvVar => ({ name, value }))
                     : [],
                 labels: context.containerLabels ?? {},
+                // Networks come purely from the caller's declared membership
+                // (`containerNetworks`, built from the stack's resource inputs).
+                // The HAProxy `applications` network is included there via the
+                // apply-time invariant — it is no longer force-attached here.
                 networks: context.containerNetworks ?? [context.haproxyNetworkName],
             };
-
-            // Ensure the container is attached to the HAProxy network
-            if (!containerConfig.networks.includes(context.haproxyNetworkName)) {
-                containerConfig.networks.push(context.haproxyNetworkName);
-            }
 
             // Add deployment-specific labels
             const deploymentLabels = {

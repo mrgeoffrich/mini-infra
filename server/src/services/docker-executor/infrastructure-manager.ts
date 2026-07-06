@@ -2,84 +2,21 @@ import Docker from "dockerode";
 import { getLogger } from "../../lib/logger-factory";
 
 /**
- * InfrastructureManager - Manages Docker networks and volumes
+ * InfrastructureManager - Manages Docker volumes.
+ *
+ * Network methods (createNetwork/networkExists/removeNetwork) used to live
+ * here too, but the network overhaul (docs/designs/docker-network-management-redesign.md)
+ * moved every Docker network operation behind `NetworkManager`
+ * (`services/networks/network-manager.ts`) — the ONLY place permitted to
+ * call Docker's network API (enforced by
+ * `server/src/__tests__/network-api-boundary.test.ts`). Volumes have no
+ * equivalent consolidation yet, so they stay here.
  */
 export class InfrastructureManager {
   private docker: Docker;
 
   constructor(docker: Docker) {
     this.docker = docker;
-  }
-
-  /**
-   * Create a Docker network with compose-style labels
-   * Note: networkName should already be prefixed with environment name
-   */
-  public async createNetwork(
-    networkName: string,
-    projectName?: string,
-    options?: {
-      driver?: string;
-      labels?: Record<string, string>;
-      /** Optional IPAM config for explicit subnet/gateway assignment */
-      ipam?: { subnet: string; gateway?: string };
-    }
-  ): Promise<void> {
-    try {
-      const networks = await this.docker.listNetworks();
-      const existingNetwork = networks.find(net => net.Name === networkName);
-
-      if (!existingNetwork) {
-        const labels: Record<string, string> = {
-          'mini-infra.managed': 'true',
-        };
-
-        if (projectName) {
-          labels['com.docker.compose.project'] = projectName;
-          labels['com.docker.compose.network'] = networkName;
-          labels['mini-infra.project'] = projectName;
-        }
-
-        if (options?.labels) {
-          Object.assign(labels, options.labels);
-        }
-
-        const createOptions: Docker.NetworkCreateOptions = {
-          Name: networkName,
-          Driver: options?.driver || 'bridge',
-          Labels: labels,
-        };
-
-        if (options?.ipam) {
-          const ipamConfig: Docker.IPAM = {
-            Driver: 'default',
-            Config: [
-              {
-                Subnet: options.ipam.subnet,
-                ...(options.ipam.gateway ? { Gateway: options.ipam.gateway } : {}),
-              },
-            ],
-          };
-          createOptions.IPAM = ipamConfig;
-        }
-
-        await this.docker.createNetwork(createOptions);
-
-        getLogger("docker", "infrastructure-manager").info({ network: networkName, project: projectName, subnet: options?.ipam?.subnet }, 'Created network');
-      } else {
-        getLogger("docker", "infrastructure-manager").info({ network: networkName }, 'Network already exists');
-      }
-    } catch (error) {
-      getLogger("docker", "infrastructure-manager").error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-          network: networkName,
-          project: projectName,
-        },
-        "Failed to create network",
-      );
-      throw error;
-    }
   }
 
   /**
@@ -133,25 +70,6 @@ export class InfrastructureManager {
   }
 
   /**
-   * Check if a Docker network exists
-   */
-  public async networkExists(networkName: string): Promise<boolean> {
-    try {
-      const networks = await this.docker.listNetworks();
-      return networks.some(network => network.Name === networkName);
-    } catch (error) {
-      getLogger("docker", "infrastructure-manager").error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-          networkName,
-        },
-        "Failed to check if network exists"
-      );
-      return false;
-    }
-  }
-
-  /**
    * Check if a Docker volume exists
    */
   public async volumeExists(volumeName: string): Promise<boolean> {
@@ -185,26 +103,6 @@ export class InfrastructureManager {
           volumeName,
         },
         "Failed to remove Docker volume"
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Remove a Docker network
-   */
-  public async removeNetwork(networkName: string): Promise<void> {
-    try {
-      const network = this.docker.getNetwork(networkName);
-      await network.remove();
-      getLogger("docker", "infrastructure-manager").info({ networkName }, 'Docker network removed successfully');
-    } catch (error) {
-      getLogger("docker", "infrastructure-manager").error(
-        {
-          error: error instanceof Error ? error.message : "Unknown error",
-          networkName,
-        },
-        "Failed to remove Docker network"
       );
       throw error;
     }

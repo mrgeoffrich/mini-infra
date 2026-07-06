@@ -32,11 +32,11 @@ import type { StackServiceType } from "@mini-infra/types";
 import {
   editApplicationFormSchema,
   editApplicationDefaults,
+  applicationsNetworkDeclaration,
   type EditApplicationFormData,
 } from "@/lib/application-schemas";
 import { ConfigurationCard } from "../../components/configuration-card";
 import { RoutingCard } from "../../components/routing-card";
-import { ConnectToContainersField } from "../../components/connect-to-containers-field";
 import type { ApplicationDetailContext } from "../layout";
 
 type ApplicationData = ApplicationDetailContext["template"];
@@ -70,18 +70,6 @@ function buildDefaultValues(
   const hasRouting = !!service.routing;
   const hc = service.containerConfig?.healthcheck;
 
-  // Derive "connect to container" links from the persisted joinNetworks,
-  // excluding the app's own stack network(s) — those are managed here, not
-  // user-chosen links. containerName isn't recoverable from joinNetworks, so
-  // it's left undefined and re-derived from live network membership in the UI.
-  const ownedNetworkNames = new Set<string>([
-    ...(version?.networks ?? []).map((n) => n.name),
-    `${application.name}-net`,
-  ]);
-  const linkedContainers = (service.containerConfig?.joinNetworks ?? [])
-    .filter((netName) => !ownedNetworkNames.has(netName))
-    .map((networkName) => ({ networkName }));
-
   return {
     displayName: application.displayName,
     description: application.description ?? "",
@@ -95,7 +83,6 @@ function buildDefaultValues(
     ports,
     envVars,
     volumeMounts,
-    linkedContainers,
     enableRouting: hasRouting,
     routing:
       hasRouting && service.routing
@@ -215,14 +202,23 @@ export default function ApplicationConfigurationTab() {
         ? existingVersion.networks
         : [{ name: `${templateName}-net` }];
 
-    // joinNetworks = the app's own stack network(s) + any user-selected
-    // linked-container networks. Deduped so a link that happens to name the
-    // owned network can't produce a duplicate.
+    // Network membership is authored on the Overview tab's Connected Networks
+    // card (which edits `joinNetworks` directly). A config save must NOT touch
+    // that set — preserve whatever the persisted service already declares,
+    // unioned with the app's own stack network(s), so saving unrelated config
+    // never drops a network added there.
+    const existingJoinNetworks =
+      existingService?.containerConfig?.joinNetworks ?? [];
     const joinNetworks = Array.from(
-      new Set([
-        ...networks.map((n) => n.name),
-        ...formData.linkedContainers.map((l) => l.networkName),
-      ]),
+      new Set([...networks.map((n) => n.name), ...existingJoinNetworks]),
+    );
+
+    // HAProxy-routed services (StatelessWeb) must re-declare membership of the
+    // environment's `applications` network on every save — otherwise editing an
+    // app would drop the resource input the create flow set. The server also
+    // enforces this at apply time; declaring it keeps the draft self-describing.
+    const { resourceInputs, joinResourceNetworks } = applicationsNetworkDeclaration(
+      formData.serviceType as StackServiceType,
     );
 
     try {
@@ -234,6 +230,7 @@ export default function ApplicationConfigurationTab() {
         },
         draft: {
           networks,
+          resourceInputs,
           volumes,
           services: [
             {
@@ -246,6 +243,7 @@ export default function ApplicationConfigurationTab() {
                 ports: ports.length > 0 ? ports : undefined,
                 mounts: mounts.length > 0 ? mounts : undefined,
                 joinNetworks,
+                joinResourceNetworks,
                 restartPolicy: formData.restartPolicy,
                 healthcheck,
               },
@@ -399,17 +397,6 @@ export default function ApplicationConfigurationTab() {
           </Card>
 
           <ConfigurationCard />
-
-          <FormField
-            control={form.control}
-            name="linkedContainers"
-            render={({ field }) => (
-              <ConnectToContainersField
-                value={field.value}
-                onChange={field.onChange}
-              />
-            )}
-          />
 
           {(serviceType === "StatelessWeb" || enableRouting) && (
             <RoutingCard networkType={networkType} showEnableToggle />

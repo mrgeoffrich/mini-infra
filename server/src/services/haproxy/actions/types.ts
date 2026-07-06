@@ -82,6 +82,8 @@ export interface ActionContext {
     healthCheckEndpoint?: string;
     healthCheckInterval?: number;
     healthCheckRetries?: number;
+    /** Max ms to wait for the green server to report UP before rolling back. */
+    healthCheckTimeoutMs?: number;
 
     // Deployment metadata
     triggerType?: string;

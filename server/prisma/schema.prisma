@@ -175,6 +175,11 @@ model PostgresDatabase {
   database         String
   username         String
   sslMode          String   @default("prefer")
+  // Which environment's pg-az-backup/restore-executor stack services this
+  // database. Nullable for legacy rows; a null-environment database can
+  // never match an environment-scoped backup stack (see pg-az-backup/CLAUDE.md).
+  environmentId    String?
+  environment      Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
   tags             String   // JSON array
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -185,6 +190,7 @@ model PostgresDatabase {
   backupOperations BackupOperation[]
   restoreOperations RestoreOperation[]
 
+  @@index([environmentId])
   @@map("postgres_databases")
 }
 
@@ -303,35 +309,17 @@ model Environment {
   egressFirewallEnabled Boolean @default(false)
 
   // Relations
-  networks    EnvironmentNetwork[]
   haproxyFrontends HAProxyFrontend[]
   haproxyBackends  HAProxyBackend[]
   stacks           Stack[]
   stackTemplates   StackTemplate[]
   infraResources   InfraResource[]
   egressPolicies   EgressPolicy[]
+  postgresDatabases PostgresDatabase[]
 
   @@index([type])
   @@index([networkType])
   @@map("environments")
-}
-
-// EnvironmentNetwork - Tracks Docker networks for environments
-model EnvironmentNetwork {
-  id            String   @id @default(cuid())
-  environmentId String
-  environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
-  name          String
-  purpose       String   @default("custom") // 'applications', 'tunnel', 'custom'
-  driver        String   @default("bridge")
-  options       Json?    // Network options
-  dockerId      String?  // Docker network ID when created
-  createdAt     DateTime @default(now())
-
-  @@unique([environmentId, name])
-  @@unique([environmentId, purpose])
-  @@index([environmentId])
-  @@map("environment_networks")
 }
 
 // HostService model - Tracks host-level services (not scoped to an environment)
@@ -1546,6 +1534,61 @@ model InfraResource {
   @@index([stackId])
   @@index([environmentId])
   @@map("infra_resources")
+}
+
+// ManagedNetwork / NetworkMembership - Desired-state model for Docker network
+// ownership and container attachment (network overhaul Phase 5). No readers
+// or writers yet — these tables exist empty so later phases (6+) can read
+// and write desired state without coupling DDL to feature rollout. See
+// docs/designs/docker-network-management-redesign.md §3.1 and
+// docs/planning/not-shipped/docker-network-overhaul-plan.md §5/§6 Phase 5.
+model ManagedNetwork {
+  id            String   @id @default(cuid())
+  scope         String   // 'host' | 'environment' | 'stack'
+  environmentId String?
+  stackId       String?
+  purpose       String   // 'applications', 'egress', 'default', user-defined…
+  name          String   @unique // derived once at creation, then immutable
+  driver        String   @default("bridge")
+  options       Json?
+  dockerId      String?  // recorded from inspect, never prescribed
+  subnet        String?  // recorded, never prescribed
+  status        String   @default("pending") // pending|present|missing|error
+  // Network overhaul Phase 8 — per-network gate for stale-endpoint disconnects.
+  // Defaults to false (connect-only convergence) on every network; an operator
+  // must explicitly opt a specific network in via the API before the
+  // reconciler will ever disconnect a "membership-stale" endpoint on it. See
+  // docs/designs/docker-network-management-redesign.md §3.5 and
+  // docs/planning/not-shipped/docker-network-overhaul-plan.md §6 Phase 8.
+  enforceMemberships Boolean @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  memberships   NetworkMembership[]
+
+  @@unique([scope, environmentId, stackId, purpose])
+  @@index([environmentId])
+  @@index([stackId])
+  @@map("managed_networks")
+}
+
+model NetworkMembership {
+  id             String         @id @default(cuid())
+  networkId      String
+  network        ManagedNetwork @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  stackServiceId String?        // managed service — resolved to live container(s) by label at reconcile time
+  containerName  String?        // adopted/external container, or the 'self' sentinel for the server
+  aliases        Json?          // string[]
+  staticIp       String?        // egress gateway only
+  source         String         // 'template' | 'user' | 'egress' | 'haproxy' | 'system'
+  createdBy      String?        // userId when source = 'user'
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([networkId, stackServiceId, containerName])
+  @@index([networkId])
+  @@map("network_memberships")
 }
 
 // StackTemplate - Reusable blueprint for stack definitions

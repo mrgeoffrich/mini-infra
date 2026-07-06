@@ -1,4 +1,5 @@
 import { assign, setup } from 'xstate';
+import { DEFAULT_HEALTH_CHECK_TIMEOUT_MS } from './health-check-timeout';
 import type { DeploymentVolume } from '@mini-infra/types';
 import { DeployApplicationContainers} from './actions/deploy-application-containers';
 import { MonitorContainerStartup } from './actions/monitor-container-startup';
@@ -80,6 +81,7 @@ export interface InitialDeploymentContext {
     healthCheckEndpoint?: string;
     healthCheckInterval?: number;
     healthCheckRetries?: number;
+    healthCheckTimeoutMs?: number;
     containerPorts?: { containerPort: number; hostPort: number; protocol: 'tcp' | 'udp' }[];
     containerVolumes?: DeploymentVolume[];
     containerEnvironment?: Record<string, string>;
@@ -282,6 +284,11 @@ export const initialDeploymentMachine = setup({
         serversHealthy: ({ context }) => {
             return context.healthChecksPassed;
         }
+    },
+    delays: {
+        // Blue-green health-check timeout — per-service via context (sourced
+        // from healthcheck.startPeriod), defaulting to the historical 90s.
+        healthCheckTimeout: ({ context }) => context.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
     }
 }).createMachine({
     id: 'initialDeployment',
@@ -336,6 +343,7 @@ export const initialDeploymentMachine = setup({
         healthCheckEndpoint: deploymentInput?.healthCheckEndpoint,
         healthCheckInterval: deploymentInput?.healthCheckInterval,
         healthCheckRetries: deploymentInput?.healthCheckRetries,
+        healthCheckTimeoutMs: deploymentInput?.healthCheckTimeoutMs,
         containerPorts: deploymentInput?.containerPorts,
         containerVolumes: deploymentInput?.containerVolumes,
         containerEnvironment: deploymentInput?.containerEnvironment,
@@ -453,9 +461,12 @@ export const initialDeploymentMachine = setup({
                 }
             },
             after: {
-                90000: { // 90 second timeout
+                healthCheckTimeout: {
                     target: 'rollbackRemoveHaproxyConfig',
-                    actions: assign({ error: 'Health check timeout after 90 seconds' })
+                    actions: assign({
+                        error: ({ context }) =>
+                            `Health check timeout after ${Math.round((context.healthCheckTimeoutMs ?? DEFAULT_HEALTH_CHECK_TIMEOUT_MS) / 1000)} seconds`,
+                    })
                 }
             }
         },

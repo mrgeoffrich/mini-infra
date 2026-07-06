@@ -2,7 +2,6 @@ export const ENVIRONMENT_TYPES = ['production', 'nonproduction'] as const;
 export type EnvironmentType = typeof ENVIRONMENT_TYPES[number];
 export const ENVIRONMENT_NETWORK_TYPES = ['local', 'internet'] as const;
 export type EnvironmentNetworkType = typeof ENVIRONMENT_NETWORK_TYPES[number];
-export type EnvironmentNetworkPurpose = 'custom';
 
 export interface Environment {
   id: string;
@@ -13,7 +12,6 @@ export interface Environment {
   tunnelId?: string;
   tunnelServiceUrl?: string;
   egressFirewallEnabled: boolean;
-  networks: EnvironmentNetwork[];
   stackCount: number;
   systemStackCount: number;
   /**
@@ -49,17 +47,6 @@ export interface EgressNetworkInfo {
   gatewayContainerIp: string | null;
   /** Derived health of the egress network. */
   status: EgressNetworkStatus;
-}
-
-export interface EnvironmentNetwork {
-  id: string;
-  environmentId: string;
-  name: string;
-  purpose: EnvironmentNetworkPurpose;
-  driver: string;
-  options?: Record<string, any>;
-  dockerId?: string;
-  createdAt: Date;
 }
 
 // Request/Response types
@@ -102,22 +89,6 @@ export interface ListEnvironmentsResponse {
   totalPages: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
-}
-
-// Network management types
-export interface CreateNetworkRequest {
-  name: string;
-  driver?: string;
-  options?: Record<string, any>;
-}
-
-export interface UpdateNetworkRequest {
-  driver?: string;
-  options?: Record<string, any>;
-}
-
-export interface NetworksResponse {
-  networks: EnvironmentNetwork[];
 }
 
 // Delete check types

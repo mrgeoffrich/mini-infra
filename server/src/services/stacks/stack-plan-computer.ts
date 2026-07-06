@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import type {
+  NetworkDriftItem,
   ServiceAction,
   StackDefinition,
   StackDnsRecord,
@@ -16,6 +17,7 @@ import { buildStackTemplateContext, buildContainerMap, mergeParameterValues, toS
 import { generateDiffs, buildReason } from './stack-diff-generator';
 import { detectConflicts } from './stack-conflict-detector';
 import type { StackResourceReconciler } from './stack-resource-reconciler';
+import { createNetworkManager, reconcileStack } from '../networks';
 
 /**
  * Computes the plan (diff) for a stack: compares desired state against
@@ -316,6 +318,30 @@ export class StackPlanComputer {
       planWarnings.push(...refWarnings);
     }
 
+    // Network overhaul Phase 7 — network drift (missing networks, unattached
+    // services, stale attachments, spec mismatches), computed against the
+    // desired-state `ManagedNetwork`/`NetworkMembership` rows Phase 6 writes.
+    // Report-only: `NetworkReconciler` never mutates Docker. Failures are
+    // caught and logged rather than allowed to fail the whole plan — this is
+    // net-new functionality layered onto an existing, load-bearing endpoint,
+    // and a bug here must not regress container-level planning.
+    let networkActions: NetworkDriftItem[] = [];
+    try {
+      const networkManager = createNetworkManager(this.dockerExecutor);
+      const networkReport = await reconcileStack(stackId, {
+        prisma: this.prisma,
+        networkManager,
+        dockerExecutor: this.dockerExecutor,
+        log,
+      });
+      networkActions = networkReport.items;
+    } catch (err) {
+      log.warn(
+        { stackId, error: err instanceof Error ? err.message : String(err) },
+        'Network reconcile failed while computing plan — continuing with container/resource actions only',
+      );
+    }
+
     const plan: StackPlan = {
       stackId,
       stackName: stack.name,
@@ -323,7 +349,11 @@ export class StackPlanComputer {
       planTime: new Date().toISOString(),
       actions,
       resourceActions,
-      hasChanges: actions.some((a) => a.action !== 'no-op') || resourceActions.some((a) => a.action !== 'no-op'),
+      networkActions,
+      hasChanges:
+        actions.some((a) => a.action !== 'no-op') ||
+        resourceActions.some((a) => a.action !== 'no-op') ||
+        networkActions.length > 0,
       templateUpdateAvailable,
       warnings: planWarnings.length > 0 ? planWarnings : undefined,
     };

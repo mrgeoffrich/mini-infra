@@ -31,6 +31,7 @@ import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, us
 import { ApiRequestError } from "@/lib/api-client";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
+import { NetworkDriftRow } from "./NetworkDriftRow";
 import { StackApplyProgress } from "./StackApplyProgress";
 import { StackParametersDialog } from "./StackParametersDialog";
 import { PoolServiceRow } from "./PoolServiceRow";
@@ -555,6 +556,12 @@ export const StackPlanView = React.memo(function StackPlanView({
         {counts["no-op"] > 0 && (
           <Badge variant="secondary">{counts["no-op"]} unchanged</Badge>
         )}
+        {plan.networkActions.length > 0 && (
+          <Badge className="bg-amber-500 text-white hover:bg-amber-600">
+            {plan.networkActions.length} network issue
+            {plan.networkActions.length !== 1 ? "s" : ""}
+          </Badge>
+        )}
       </div>
 
       {/* Service action list */}
@@ -573,6 +580,30 @@ export const StackPlanView = React.memo(function StackPlanView({
           ))}
         </CardContent>
       </Card>
+
+      {/* Network drift — network overhaul Phase 7. Report-only: these items
+          describe drift between desired-state network rows and live Docker
+          state, but nothing here can be "applied" yet (enforcement is Phase
+          8). Rendered as its own section, below container actions, so an
+          operator can see *why* a stack reads as changed even when every
+          container action above is "No Change". */}
+      {plan.networkActions.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-sm font-semibold text-muted-foreground">
+            Network drift
+          </h4>
+          <Card>
+            <CardContent className="py-2">
+              {plan.networkActions.map((item, index) => (
+                <div key={`${item.managedNetworkId}-${item.type}-${index}`}>
+                  <NetworkDriftRow item={item} />
+                  {index < plan.networkActions.length - 1 && <Separator />}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Pool services — on-demand instance templates, live instance list.
           Rendered below the standard action list because pool services are

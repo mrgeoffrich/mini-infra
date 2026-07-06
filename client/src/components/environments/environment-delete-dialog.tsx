@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
-import { IconLoader2, IconAlertTriangle, IconNetwork, IconStack2, IconLayoutNavbar, IconServer } from "@tabler/icons-react";
+import { IconLoader2, IconAlertTriangle, IconStack2, IconLayoutNavbar, IconServer } from "@tabler/icons-react";
 
 interface EnvironmentDeleteDialogProps {
   open: boolean;
@@ -91,11 +91,6 @@ export function EnvironmentDeleteDialog({
                 {environment.description}
               </div>
             )}
-
-            <div className="flex items-center gap-1 text-sm pt-2">
-              <IconNetwork className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>{environment.networks.length} Networks</span>
-            </div>
           </div>
 
           {/* Blocking dependencies */}
@@ -121,7 +116,7 @@ export function EnvironmentDeleteDialog({
           )}
 
           {/* Resources that will be deleted */}
-          {!hasBlockers && environment.networks.length > 0 && (
+          {!hasBlockers && (
             <Alert>
               <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
@@ -134,7 +129,7 @@ export function EnvironmentDeleteDialog({
           )}
 
           {/* Network deletion options */}
-          {!hasBlockers && environment.networks.length > 0 && (
+          {!hasBlockers && (
             <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
               <div className="font-medium text-sm">Additional Cleanup Options</div>
 
@@ -150,10 +145,10 @@ export function EnvironmentDeleteDialog({
                     htmlFor="delete-networks"
                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    Also delete networks ({environment.networks.length})
+                    Also delete this environment's Docker networks
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Networks: {environment.networks.map(n => n.name).join(", ")}
+                    Removes egress, applications, and any other networks owned by this environment.
                   </p>
                 </div>
               </div>

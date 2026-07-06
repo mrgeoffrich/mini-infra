@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   createApplicationFormSchema,
   createApplicationDefaults,
+  applicationsNetworkDeclaration,
   type CreateApplicationFormData,
 } from "@/lib/application-schemas";
 
@@ -27,7 +28,6 @@ import { ServiceTypeStep } from "./components/service-type-step";
 import { ImageStep } from "./components/image-step";
 import { ConfigurationStep } from "./components/configuration-step";
 import { RoutingStep } from "./components/routing-step";
-import { ConnectToContainersField } from "../components/connect-to-containers-field";
 
 export default function NewApplicationPage() {
   const navigate = useNavigate();
@@ -185,14 +185,11 @@ export default function NewApplicationPage() {
           }
         : undefined;
 
-    const resourceInputs =
-      data.serviceType === "StatelessWeb"
-        ? [{ type: "docker-network", purpose: "applications" }]
-        : undefined;
-
-    // Networks the app must join to reach linked containers (e.g. a database).
-    const joinNetworks = Array.from(
-      new Set(data.linkedContainers.map((l) => l.networkName)),
+    // HAProxy-routed services (StatelessWeb) must join the environment's
+    // `applications` network so HAProxy can reach the backend. Declared as a
+    // stack resource input + a service-level joinResourceNetworks membership.
+    const { resourceInputs, joinResourceNetworks } = applicationsNetworkDeclaration(
+      data.serviceType as StackServiceType,
     );
 
     try {
@@ -215,7 +212,7 @@ export default function NewApplicationPage() {
               env: Object.keys(env).length > 0 ? env : undefined,
               ports: ports.length > 0 ? ports : undefined,
               mounts: mounts.length > 0 ? mounts : undefined,
-              joinNetworks: joinNetworks.length > 0 ? joinNetworks : undefined,
+              joinResourceNetworks,
               restartPolicy: data.restartPolicy,
               healthcheck,
             },
@@ -279,19 +276,6 @@ export default function NewApplicationPage() {
             )}
 
             {canShowConfig && <ConfigurationStep />}
-
-            {canShowConfig && (
-              <FormField
-                control={form.control}
-                name="linkedContainers"
-                render={({ field }) => (
-                  <ConnectToContainersField
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            )}
 
             {canShowRouting && (
               <RoutingStep

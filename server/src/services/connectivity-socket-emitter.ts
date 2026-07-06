@@ -6,7 +6,7 @@
  * so no debounce is needed.
  */
 
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, toConnectivityStatus } from "@mini-infra/types";
 import type { ConnectivityStatusInfo } from "@mini-infra/types";
 import { emitToChannel } from "../lib/socket";
 import prisma from "../lib/prisma";
@@ -34,6 +34,7 @@ function serializeConnectivityStatus(
 ): ConnectivityStatusInfo {
   return {
     ...status,
+    status: toConnectivityStatus(status.status),
     responseTimeMs: status.responseTimeMs
       ? Number(status.responseTimeMs)
       : null,

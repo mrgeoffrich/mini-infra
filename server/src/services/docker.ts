@@ -9,6 +9,26 @@ import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 import type { DockerContainerEvent } from "../lib/docker-event-pattern-detector";
 
+/**
+ * A `Type: "network"` Docker event — connect/disconnect/create/destroy.
+ * Network overhaul Phase 8: consumed by `NetworkConvergenceScheduler`
+ * (`services/networks/network-convergence-scheduler.ts`) to trigger scoped,
+ * debounced re-convergence (e.g. `docker network disconnect` on a
+ * managed-service container's network should self-heal without waiting for
+ * the periodic sweep).
+ */
+export interface DockerNetworkEvent {
+  action: string;
+  networkId: string;
+  /** Docker network name, when present on the event's actor attributes. */
+  networkName?: string;
+}
+// Imported directly from network-manager.ts (not the `./networks` barrel) —
+// the barrel's `createNetworkManager()` helper imports this module for its
+// cache-invalidation hook, so importing the barrel here would create a
+// require cycle. `NetworkManager` itself has no dependency on DockerService.
+import { NetworkManager } from "./networks/network-manager";
+
 class DockerService {
   private static instance: DockerService;
   private docker: Docker;
@@ -18,7 +38,18 @@ class DockerService {
   private dockerConfigService: DockerConfigService;
   private containerChangeCallbacks: Array<() => void> = [];
   private containerEventCallbacks: Array<(event: DockerContainerEvent) => void> = [];
+  private networkEventCallbacks: Array<(event: DockerNetworkEvent) => void> = [];
   private connectCallbacks: Array<() => void | Promise<void>> = [];
+  /**
+   * The single owner of Docker network mutation (create/connect/disconnect/
+   * remove) — see `services/networks/network-manager.ts`. DockerService
+   * remains the Docker client/cache owner that NetworkManager depends on;
+   * this instance just gives `removeNetwork()` below a safe implementation
+   * to delegate to instead of driving the network API independently (that
+   * used to be a second, unsafe `remove` implementation — network overhaul
+   * defect F2).
+   */
+  private networkManager: NetworkManager;
 
   private constructor() {
     // Initialize cache with 3-second TTL
@@ -29,9 +60,17 @@ class DockerService {
 
     // Initialize Docker client - this will be done asynchronously in initialize()
     this.docker = {} as Docker; // Placeholder, will be set in initialize()
-    
+
     // Initialize Docker configuration service - will be done in initialize()
     this.dockerConfigService = {} as DockerConfigService; // Placeholder
+
+    // `getDockerClient` reads `this.docker` lazily on every call, so it picks
+    // up client swaps from `refreshConnection()`/`initialize()` rather than
+    // capturing the placeholder above.
+    this.networkManager = new NetworkManager(
+      { getDockerClient: () => this.docker },
+      { invalidateCache: () => this.invalidateNetworksCache() },
+    );
   }
 
   public static getInstance(): DockerService {
@@ -402,6 +441,19 @@ class DockerService {
                   "Network event received, invalidating network cache",
                 );
                 this.cache.del("networks");
+
+                const networkEvent: DockerNetworkEvent = {
+                  action: event.Action,
+                  networkId: event.id || event.Actor?.ID || "",
+                  networkName: event.Actor?.Attributes?.name,
+                };
+                for (const cb of this.networkEventCallbacks) {
+                  try {
+                    cb(networkEvent);
+                  } catch (err) {
+                    getLogger("docker", "docker").error({ error: err }, "Network event callback failed");
+                  }
+                }
               } else if (event.Type === "volume") {
                 getLogger("docker", "docker").debug(
                   {
@@ -802,6 +854,17 @@ class DockerService {
   }
 
   /**
+   * Invalidate just the cached network list. Called by `NetworkManager`
+   * (`services/networks/`) after any mutation — create/connect/disconnect/
+   * remove — that changes network state or membership via a Docker client
+   * other than this service's own, so `listNetworks()` doesn't keep serving
+   * stale data for the remainder of its 3s TTL.
+   */
+  public invalidateNetworksCache(): void {
+    this.cache.del("networks");
+  }
+
+  /**
    * Register a callback to be invoked when Docker container state changes.
    * Used by the socket emitter to push updates to clients.
    */
@@ -815,6 +878,15 @@ class DockerService {
    */
   public onContainerEvent(callback: (event: DockerContainerEvent) => void): void {
     this.containerEventCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback to receive typed network events (connect, disconnect,
+   * create, destroy). Used by `NetworkConvergenceScheduler` (network overhaul
+   * Phase 8) to trigger scoped, debounced re-convergence.
+   */
+  public onNetworkEvent(callback: (event: DockerNetworkEvent) => void): void {
+    this.networkEventCallbacks.push(callback);
   }
 
   /**
@@ -981,44 +1053,37 @@ class DockerService {
   }
 
   /**
-   * Remove a Docker network by ID
-   * Only removes networks that have no containers attached
+   * Remove a Docker network by ID.
+   * Delegates to `NetworkManager` — the sole "safe remove" implementation
+   * (inspect first, refuse when containers are attached, 5s timeouts, cache
+   * invalidation). This used to be a second, independent remove
+   * implementation with the same safety semantics duplicated inline; see
+   * network overhaul defect F2.
    */
   public async removeNetwork(id: string): Promise<void> {
     if (!this.connected) {
       throw new Error("Docker service not connected");
     }
 
-    // First, inspect the network to check if it has containers
-    const network = this.docker.getNetwork(id);
-    const networkInfo = await this.raceWithTimeout(
-      network.inspect(),
-      5000,
-      "Docker API timeout while inspecting network",
-    );
+    const result = await this.networkManager.remove(id);
 
-    // Check if network has containers
-    const containerCount = Object.keys(networkInfo.Containers || {}).length;
-    if (containerCount > 0) {
-      throw new Error(
-        `Cannot remove network ${networkInfo.Name}: ${containerCount} container(s) are connected`,
+    if (result.removed) {
+      getLogger("docker", "docker").info(
+        { networkId: id },
+        "Network removed successfully",
       );
+      return;
     }
 
-    // Remove the network
-    await this.raceWithTimeout(
-      network.remove(),
-      5000,
-      "Docker API timeout while removing network",
-    );
+    if (result.reason === "has-containers") {
+      throw new Error(`Cannot remove network ${id}: one or more containers are connected`);
+    }
 
-    // Invalidate cache
-    this.cache.del("networks");
+    if (result.reason === "not-found") {
+      throw new Error(`Network not found: ${id}`);
+    }
 
-    getLogger("docker", "docker").info(
-      { networkId: id, networkName: networkInfo.Name },
-      "Network removed successfully",
-    );
+    throw new Error(`Failed to remove network ${id}`);
   }
 
   /**

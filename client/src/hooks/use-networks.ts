@@ -3,6 +3,15 @@ import {
   DockerNetwork,
   DockerNetworkListResponse,
   DockerNetworkDeleteResponse,
+  NetworkAttachmentResponse,
+  ManagedNetworkListResponse,
+  ManagedNetworkView,
+  DockerNetworkGcResponse,
+  DockerNetworkGcReport,
+  NetworkConvergeResponse,
+  NetworkConvergeResult,
+  SetNetworkEnforceMembershipsResponse,
+  ManagedNetworkSummary,
   Channel,
   ServerEvent,
   ApiRoute,
@@ -13,6 +22,23 @@ import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 const POLL_INTERVAL_DISCONNECTED = 5000; // 5s fallback when socket not connected
+
+/**
+ * Networks an application can meaningfully join to reach another container by
+ * name. Excludes:
+ *  - the default `bridge` network (containers can't resolve each other by name)
+ *  - `host` / `none` pseudo-networks (no shared bridge to join)
+ *  - `null`/`host`-driver networks the daemon can't use for name DNS
+ * Everything else is a user-defined bridge/overlay where Docker DNS lets the
+ * app reach peers by container name. Used by the application detail's
+ * Connected Networks picker.
+ */
+export function isUsableLinkNetwork(net: DockerNetwork): boolean {
+  if (net.driver === "host" || net.driver === "null") return false;
+  if (net.name === "host" || net.name === "none") return false;
+  if (net.name === "bridge" && net.driver === "bridge") return false;
+  return true;
+}
 
 /** Best-effort extraction of a `.message` string off an unknown error body. */
 function extractBodyMessage(body: unknown): string | undefined {
@@ -154,5 +180,291 @@ export function useDeleteNetwork(options: UseDeleteNetworkOptions = {}) {
   });
 }
 
+export interface ContainerNetworkMutationInput {
+  networkId: string;
+  containerId: string;
+  /** disconnect only — force-detach even from a running container. */
+  force?: boolean;
+}
+
+async function connectContainerNetwork(
+  input: ContainerNetworkMutationInput,
+): Promise<NetworkAttachmentResponse> {
+  return apiFetch<NetworkAttachmentResponse>(
+    ApiRoute.docker.networkConnect(input.networkId),
+    {
+      method: "POST",
+      body: { containerId: input.containerId },
+      correlationIdPrefix: "connect-container-network",
+      unwrap: false,
+    },
+  );
+}
+
+async function disconnectContainerNetwork(
+  input: ContainerNetworkMutationInput,
+): Promise<NetworkAttachmentResponse> {
+  return apiFetch<NetworkAttachmentResponse>(
+    ApiRoute.docker.networkDisconnect(input.networkId),
+    {
+      method: "POST",
+      body: { containerId: input.containerId, force: input.force },
+      correlationIdPrefix: "disconnect-container-network",
+      unwrap: false,
+    },
+  );
+}
+
+export interface UseContainerNetworkOptions {
+  onSuccess?: (result: NetworkAttachmentResponse) => void;
+  onError?: (error: Error) => void;
+}
+
+/**
+ * Attach a container to a Docker network — the imperative equivalent of
+ * `docker network connect`. On success invalidates both the raw and managed
+ * network lists so the container detail's Networks card (which derives its rows
+ * from the raw list) refreshes immediately, independent of the socket push.
+ */
+export function useConnectContainerNetwork(options: UseContainerNetworkOptions = {}) {
+  const { onSuccess, onError } = options;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: ContainerNetworkMutationInput) => connectContainerNetwork(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      toast.success(
+        result.alreadyConnected
+          ? "Container is already connected to this network"
+          : "Connected container to network",
+      );
+      onSuccess?.(result);
+    },
+    onError: (error: Error) => {
+      toast.error("Failed to connect container to network", {
+        description: error.message,
+      });
+      onError?.(error);
+    },
+  });
+}
+
+/**
+ * Detach a container from a Docker network — the imperative equivalent of
+ * `docker network disconnect`. Same cache-invalidation as connect above.
+ */
+export function useDisconnectContainerNetwork(options: UseContainerNetworkOptions = {}) {
+  const { onSuccess, onError } = options;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: ContainerNetworkMutationInput) => disconnectContainerNetwork(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      toast.success("Disconnected container from network");
+      onSuccess?.(result);
+    },
+    onError: (error: Error) => {
+      toast.error("Failed to disconnect container from network", {
+        description: error.message,
+      });
+      onError?.(error);
+    },
+  });
+}
+
 // Type exports for convenience
 export type { DockerNetwork, DockerNetworkListResponse };
+
+// ====================
+// Managed Networks (network overhaul Phase 9 — visibility UI)
+// ====================
+//
+// Everything below reads/mutates the desired-state `ManagedNetwork`/
+// `NetworkMembership` rows (Phases 5-8) rather than raw Docker networks —
+// owner, purpose, drift status, and the full desired-vs-actual membership
+// table with per-membership source/creator.
+
+export interface ManagedNetworkFilter {
+  scope?: "host" | "environment" | "stack";
+  environmentId?: string;
+  stackId?: string;
+}
+
+function buildManagedNetworksUrl(filter: ManagedNetworkFilter = {}): string {
+  const url = new URL(ApiRoute.docker.networksManaged(), window.location.origin);
+  if (filter.scope) url.searchParams.set("scope", filter.scope);
+  if (filter.environmentId) url.searchParams.set("environmentId", filter.environmentId);
+  if (filter.stackId) url.searchParams.set("stackId", filter.stackId);
+  return url.toString();
+}
+
+async function fetchManagedNetworks(filter: ManagedNetworkFilter): Promise<ManagedNetworkView[]> {
+  const response = await apiFetch<ManagedNetworkListResponse>(buildManagedNetworksUrl(filter), {
+    correlationIdPrefix: "managed-networks",
+    unwrap: false,
+  });
+  return response.data;
+}
+
+export interface UseManagedNetworksOptions {
+  enabled?: boolean;
+  refetchInterval?: number;
+}
+
+/**
+ * Lists `ManagedNetwork` rows (owner, purpose, status, desired-vs-actual
+ * members with per-membership source/creator), optionally filtered by
+ * scope/environmentId/stackId. Backs the networks tab's managed-network
+ * view, the environment detail networks panel, and the application detail
+ * connected-networks list.
+ */
+export function useManagedNetworks(
+  filter: ManagedNetworkFilter = {},
+  options: UseManagedNetworksOptions = {},
+) {
+  const { enabled = true } = options;
+  const queryClient = useQueryClient();
+  const { connected } = useSocket();
+
+  // Managed networks don't have a dedicated socket channel of their own —
+  // reuse the existing raw-networks channel, which already fires on every
+  // connect/disconnect/create/remove, so a stack apply or reconcile action
+  // elsewhere in the app refreshes this view too.
+  useSocketChannel(Channel.NETWORKS, enabled);
+  useSocketEvent(
+    ServerEvent.NETWORKS_LIST,
+    () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+    },
+    enabled,
+  );
+
+  const refetchInterval =
+    options.refetchInterval ?? (connected ? false : POLL_INTERVAL_DISCONNECTED);
+
+  return useQuery({
+    queryKey: queryKeys.docker.managedNetworks(filter),
+    queryFn: () => fetchManagedNetworks(filter),
+    enabled,
+    refetchInterval,
+    staleTime: 2000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+  });
+}
+
+async function runNetworkGc(dryRun: boolean): Promise<DockerNetworkGcReport> {
+  const response = await apiFetch<DockerNetworkGcResponse>(ApiRoute.docker.networksGc(), {
+    method: "POST",
+    body: { dryRun },
+    correlationIdPrefix: "network-gc",
+    unwrap: false,
+  });
+  return response.data;
+}
+
+/** Label-driven GC sweep (Phase 4) — dry-run by default; pass `false` to actually remove orphaned managed networks. */
+export function useNetworkGc() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (dryRun: boolean) => runNetworkGc(dryRun),
+    onSuccess: (report) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      if (report.dryRun) {
+        toast.info(
+          report.orphans.length === 0
+            ? "No orphaned networks found"
+            : `Found ${report.orphans.length} orphaned network(s) (dry run — none removed)`,
+        );
+      } else {
+        toast.success(
+          report.removedCount === 0
+            ? "No orphaned networks needed removal"
+            : `Removed ${report.removedCount} orphaned network(s)`,
+        );
+      }
+    },
+    onError: (error: Error) => {
+      toast.error("Network GC failed", { description: error.message });
+    },
+  });
+}
+
+export type NetworkReconcileScopeInput =
+  | { scope: "all" }
+  | { scope: "environment"; environmentId: string }
+  | { scope: "stack"; stackId: string };
+
+async function runNetworkConverge(input: NetworkReconcileScopeInput): Promise<NetworkConvergeResult> {
+  const response = await apiFetch<NetworkConvergeResponse>(ApiRoute.docker.networksReconcile(), {
+    method: "POST",
+    body: input,
+    correlationIdPrefix: "network-reconcile-converge",
+    unwrap: false,
+  });
+  return response.data;
+}
+
+/** Manual reconcile trigger (Phase 8 convergence) — connects missing memberships (and disconnects stale ones only where a network's `enforceMemberships` is already true). */
+export function useReconcileNetworks() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: NetworkReconcileScopeInput) => runNetworkConverge(input),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.networks });
+      const parts: string[] = [];
+      if (result.networksCreated > 0) parts.push(`${result.networksCreated} network(s) created`);
+      if (result.membershipsConnected > 0) parts.push(`${result.membershipsConnected} membership(s) reconnected`);
+      if (result.membershipsDisconnected > 0) parts.push(`${result.membershipsDisconnected} stale membership(s) disconnected`);
+      toast.success(parts.length > 0 ? `Reconciled: ${parts.join(", ")}` : "Already in sync — nothing to reconcile");
+    },
+    onError: (error: Error) => {
+      toast.error("Network reconcile failed", { description: error.message });
+    },
+  });
+}
+
+async function setNetworkEnforceMemberships(input: {
+  name: string;
+  enforceMemberships: boolean;
+}): Promise<ManagedNetworkSummary> {
+  const response = await apiFetch<SetNetworkEnforceMembershipsResponse>(
+    ApiRoute.docker.networksEnforceMemberships(),
+    {
+      method: "PATCH",
+      body: input,
+      correlationIdPrefix: "network-enforce-memberships",
+      unwrap: false,
+    },
+  );
+  return response.data;
+}
+
+/** Toggles a single managed network's `enforceMemberships` gate — operator-driven, defaults to false everywhere (see Phase 8). */
+export function useSetNetworkEnforceMemberships() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: setNetworkEnforceMemberships,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
+      toast.success(
+        data.enforceMemberships
+          ? `Enforcement enabled for "${data.name}" — stale attachments will now be disconnected`
+          : `Enforcement disabled for "${data.name}"`,
+      );
+    },
+    onError: (error: Error) => {
+      toast.error("Failed to update enforcement setting", { description: error.message });
+    },
+  });
+}

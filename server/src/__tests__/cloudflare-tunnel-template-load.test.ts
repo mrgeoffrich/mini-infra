@@ -72,4 +72,17 @@ describe('cloudflare-tunnel template.json', () => {
     expect(test[0]).not.toBe('CMD-SHELL');
     expect(test.join(' ')).not.toMatch(/\b(wget|curl)\b/);
   });
+
+  it('bypasses egress injection — cloudflared is an ingress connector, not firewalled egress', () => {
+    const svc = loadTunnel().definition.services[0];
+    // cloudflared reaches its internal HAProxy origin AND the Cloudflare edge.
+    // With HTTP_PROXY injected it tries to CONNECT through the egress-gateway
+    // proxy (which it can't even resolve — it only joins the `tunnel` network),
+    // so the origin is unreachable and the tunnel serves a Cloudflare error.
+    // Treat it like the other infra containers (egress-gateway, fw-agent).
+    expect(svc.containerConfig.egressBypass).toBe(true);
+    // A bypassed service must not also carry an egress allowlist — it never
+    // touches the proxy, so `requiredEgress` would be dead and misleading.
+    expect(svc.containerConfig.requiredEgress).toBeUndefined();
+  });
 });

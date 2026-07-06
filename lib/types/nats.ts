@@ -21,7 +21,48 @@ export interface NatsStatus {
   credentialProfiles: number;
   streams: number;
   consumers: number;
+  /**
+   * ISO timestamp of the last successful identity-seed backup (operator +
+   * account NKey seeds captured into the encrypted self-backup artifact), or
+   * `null` if no seed backup has been recorded yet. Populated from the
+   * `nats-seed-backup` marker written by the self-backup executor.
+   */
+  lastIdentitySeedBackupAt: string | null;
+  /** Number of identity seeds captured in that last backup (operator + accounts). */
+  lastIdentitySeedBackupCount: number | null;
   errorMessage?: string;
+}
+
+/** Outcome of restoring one identity seed back into Vault KV. */
+export interface NatsIdentitySeedRestoreEntry {
+  /** Human label, e.g. `operator mini-infra-operator` / `account foo`. */
+  label: string;
+  /** Canonical Vault KV path the seed belongs at. */
+  kvPath: string;
+  /**
+   * - `restored`  — the path was empty/missing and the backed-up seed was written.
+   * - `unchanged` — the same seed is already present (idempotent no-op).
+   * - `conflict`  — a *different* seed is present; not overwritten unless `force`.
+   */
+  outcome: "restored" | "unchanged" | "conflict";
+  /** Public key derived from the backed-up seed. */
+  backupPublicKey: string;
+  /** Public key currently in Vault (only set for `unchanged` / `conflict`). */
+  currentPublicKey?: string | null;
+}
+
+/** Aggregate result of an identity-seed restore. */
+export interface NatsIdentitySeedRestoreResult {
+  /**
+   * `true` when the restore was applied. `false` means at least one seed
+   * conflicted with a present-but-different seed and `force` was not set, so
+   * NOTHING was written (all-or-nothing on conflict for safety).
+   */
+  applied: boolean;
+  restored: number;
+  unchanged: number;
+  conflicts: number;
+  entries: NatsIdentitySeedRestoreEntry[];
 }
 
 export interface NatsAccountInfo {

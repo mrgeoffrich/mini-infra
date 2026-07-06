@@ -45,6 +45,7 @@ export function buildRegistryCredentialUpdateRequest(
 }
 
 export function buildPostgresDatabaseRequest(
+  environmentId: string,
   overrides: Partial<CreatePostgresDatabaseRequest> = {},
 ): CreatePostgresDatabaseRequest {
   const token = nextTestToken("postgres");
@@ -57,6 +58,7 @@ export function buildPostgresDatabaseRequest(
     username: `${token.replace(/-/g, "_")}_user`,
     password: `pass-${token}`,
     sslMode: "prefer",
+    environmentId,
     tags: [token],
     ...overrides,
   };
