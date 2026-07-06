@@ -13,6 +13,7 @@ import AdmZip from "adm-zip";
 import prismaDefault, { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
 import { StorageService } from "../storage/storage-service";
+import { bufferStream } from "../storage/stream-utils";
 import type { StorageProviderId } from "@mini-infra/types";
 import { NATS_SEED_BACKUP_ZIP_ENTRY } from "../nats/nats-identity-seed-backup";
 
@@ -55,18 +56,6 @@ export function resolveSelfBackupObjectName(backup: {
     return urlParts.length >= 5 ? urlParts.slice(4).join("/") : backup.fileName;
   }
   return backup.fileName;
-}
-
-async function bufferStream(stream: unknown): Promise<Buffer> {
-  const readable = stream as NodeJS.ReadableStream;
-  const chunks: Buffer[] = [];
-  return new Promise<Buffer>((resolve, reject) => {
-    readable.on("data", (chunk: Buffer | string) =>
-      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk),
-    );
-    readable.on("end", () => resolve(Buffer.concat(chunks)));
-    readable.on("error", reject);
-  });
 }
 
 /**

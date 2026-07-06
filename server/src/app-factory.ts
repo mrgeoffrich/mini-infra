@@ -21,6 +21,7 @@ import { createHelmetDispatcher } from "./lib/security";
 import { errorHandler, notFoundHandler } from "./lib/error-handler";
 import { extractJwtUser } from "./lib/jwt-middleware";
 import authRoutes from "./routes/auth";
+import setupRestoreRoutes from "./routes/setup-restore";
 import apiKeyRoutes from "./routes/api-keys";
 import containerRoutes from "./routes/containers";
 import dockerRoutes from "./routes/docker";
@@ -178,6 +179,7 @@ function warnOnRouteMetadataDrift(routes: RawRoute[]): void {
 function getRouteDefinitions(): RouteDefinition[] {
   return [
     { id: "auth", path: ApiBase.auth, name: "authRoutes", getRouter: () => authRoutes },
+    { id: "setupRestore", path: ApiBase.setupRestore, name: "setupRestoreRoutes", getRouter: () => setupRestoreRoutes },
     { id: "users", path: ApiBase.users, name: "usersRoutes", getRouter: () => usersRoutes },
     { id: "authSettings", path: ApiBase.authSettings, name: "authSettingsRoutes", getRouter: () => authSettingsRoutes },
     { id: "apiKeys", path: ApiBase.apiKeys, name: "apiKeyRoutes", getRouter: () => apiKeyRoutes },
