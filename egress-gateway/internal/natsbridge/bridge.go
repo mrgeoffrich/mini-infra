@@ -112,12 +112,16 @@ type Options struct {
 // and unsubscribes from the command subjects; main.go is responsible for
 // closing the underlying `natsbus.Bus`.
 type Bridge struct {
-	opts             Options
-	subRules         *nats.Subscription
-	subContainerMap  *nats.Subscription
-	heartbeatStop    chan struct{}
-	startedAt        time.Time
-	containerMapVer  atomic.Int64 // int64 so we can use atomic — server sends int
+	opts            Options
+	subRules        *nats.Subscription
+	subContainerMap *nats.Subscription
+	heartbeatStop   chan struct{}
+	startedAt       time.Time
+	containerMapVer atomic.Int64 // int64 so we can use atomic — server sends int
+	// lastHeartbeatMs is the UnixMilli of the most recent *successful* KV
+	// heartbeat put, or 0 when none has landed. Read out-of-band by the shared
+	// `/healthz` handler (via LastHeartbeatAgeMs) so it's an atomic.
+	lastHeartbeatMs atomic.Int64
 }
 
 // New constructs a Bridge. Connect() does the actual subscribe + ticker work.
@@ -372,5 +376,28 @@ func (b *Bridge) publishHeartbeat() {
 		// loop, log at debug. The control plane creates the bucket on stack
 		// apply for the egress-gateway template.
 		b.opts.Logger.WithError(err).Debug("natsbridge: heartbeat KV put failed")
+		return
 	}
+	// Only advance the out-of-band freshness clock on a confirmed put.
+	b.lastHeartbeatMs.Store(hb.ReportedAtMs)
+}
+
+// LastHeartbeatAgeMs returns the age (ms) of the most recent successful in-band
+// KV heartbeat, or -1 if none has landed yet this process. Fed to the shared
+// `/healthz` handler so the server can report heartbeat staleness alongside the
+// connection state. Nil-safe so the health closure in main.go can call it
+// before the bridge has connected.
+func (b *Bridge) LastHeartbeatAgeMs() int64 {
+	if b == nil {
+		return -1
+	}
+	last := b.lastHeartbeatMs.Load()
+	if last == 0 {
+		return -1
+	}
+	age := time.Now().UnixMilli() - last
+	if age < 0 {
+		age = 0
+	}
+	return age
 }

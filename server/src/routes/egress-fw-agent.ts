@@ -9,6 +9,8 @@ import {
   restartFwAgent,
   findFwAgent,
   isFwAgentHealthy,
+  getFwAgentConnState,
+  composeFwAgentStatus,
   getFwAgentConfig,
   FW_AGENT_STARTUP_STEPS,
 } from "../services/egress/fw-agent-sidecar";
@@ -36,26 +38,26 @@ router.get(
     try {
       const ownContainerId = getOwnContainerId();
       if (!ownContainerId) {
-        const status: EgressFwAgentStatus = {
-          available: false,
-          containerRunning: false,
-          containerId: null,
-          reason: "Not running inside a Docker container",
-          health: null,
-        };
+        const status: EgressFwAgentStatus = composeFwAgentStatus({
+          ownContainerId,
+          found: null,
+          healthy: false,
+          connState: null,
+        });
         res.json({ success: true, ...status });
         return;
       }
 
       const existing = await findFwAgent();
-      const healthy = isFwAgentHealthy();
 
-      const status: EgressFwAgentStatus = {
-        available: healthy && existing?.state === "running",
-        containerRunning: existing?.state === "running",
-        containerId: existing?.id?.slice(0, 12) ?? null,
-        health: healthy ? { status: "ok" } : null,
-      };
+      // In-band KV heartbeat (functional health) + out-of-band /healthz scrape
+      // (connection state — reports auth-failed even when the heartbeat can't).
+      const status: EgressFwAgentStatus = composeFwAgentStatus({
+        ownContainerId,
+        found: existing,
+        healthy: isFwAgentHealthy(),
+        connState: getFwAgentConnState(),
+      });
       res.json({ success: true, ...status });
     } catch (err) {
       logger.error({ err }, "Failed to get egress fw-agent status");

@@ -6,6 +6,7 @@ import {
   IconCheck,
   IconX,
   IconAlertCircle,
+  IconAlertTriangle,
   IconServer,
   IconSettings,
 } from "@tabler/icons-react";
@@ -33,7 +34,28 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 
-function StatusBadge({ available }: { available: boolean }) {
+function StatusBadge({
+  available,
+  authFailing,
+}: {
+  available: boolean;
+  authFailing: boolean;
+}) {
+  // Out-of-band signal (Phase 3): the agent is running but its NATS creds are
+  // being rejected. Distinct from a generic "Unavailable" so operators can tell
+  // "auth failing" apart from "still starting". [design needed — functional
+  // badge reusing existing status-badge components; a designer can refine.]
+  if (authFailing) {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500 text-amber-700 dark:text-amber-400"
+      >
+        <IconAlertTriangle className="h-3 w-3 mr-1" />
+        NATS auth failing
+      </Badge>
+    );
+  }
   return available ? (
     <Badge variant="outline" className="border-green-500 text-green-700 dark:text-green-400">
       <IconCheck className="h-3 w-3 mr-1" />
@@ -157,14 +179,16 @@ export default function EgressFwAgentSettingsPage() {
               <div className="space-y-1">
                 <p className="text-sm font-medium">Admin socket</p>
                 <p className="text-xs text-muted-foreground">
-                  {status?.available
-                    ? `Reachable${status.containerId ? ` (${status.containerId})` : ""}`
-                    : status?.containerRunning
-                      ? "Container running but admin socket unreachable"
-                      : status?.reason ?? "Not running"}
+                  {status?.authFailing
+                    ? "Container running but NATS authentication is failing — its credentials are being rejected"
+                    : status?.available
+                      ? `Reachable${status.containerId ? ` (${status.containerId})` : ""}`
+                      : status?.containerRunning
+                        ? "Container running but admin socket unreachable"
+                        : status?.reason ?? "Not running"}
                 </p>
               </div>
-              <StatusBadge available={!!status?.available} />
+              <StatusBadge available={!!status?.available} authFailing={!!status?.authFailing} />
             </div>
 
             <Button

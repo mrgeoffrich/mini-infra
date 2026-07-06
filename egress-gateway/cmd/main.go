@@ -131,6 +131,24 @@ func main() {
 	// stdout in legacy mode). The hook stamps environmentId on every event.
 	logger.AddHook(proxy.NewNDJSONLogHookWithEmitter(environmentID, emitter))
 
+	// Out-of-band health surface (Phase 3, §4.2). Only meaningful with a live
+	// bus (NATS mode); in legacy stdout mode there's no NATS link to report on.
+	// The gateway shares the `nats` docker network with the mini-infra server,
+	// which scrapes this on the gateway's container IP — independent of the NATS
+	// link, so it reports `auth-failed` even when the in-band KV heartbeat can't
+	// publish. Served over the shared handler so both egress agents agree.
+	healthCtx, healthCancel := context.WithCancel(context.Background())
+	defer healthCancel()
+	if bus != nil {
+		healthLog := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		ageFn := func() int64 { return bridge.LastHeartbeatAgeMs() }
+		go func() {
+			if err := natsbus.ServeHealth(healthCtx, cfg.HealthAddr, bus, ageFn, healthLog); err != nil {
+				logger.WithError(err).Error("gateway: health server error")
+			}
+		}()
+	}
+
 	// Build the full DoH → unknown-IP-deny → Smokescreen handler chain.
 	gatewayHandler := proxy.BuildGatewayHandler(containers, aclSwapper, logger, proxy.GatewayOptions{
 		DenyRanges: proxy.BuiltinPrivateRanges(),

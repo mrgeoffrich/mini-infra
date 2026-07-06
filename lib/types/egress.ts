@@ -168,6 +168,47 @@ export interface EgressGatewayHealthEvent {
     lastFailureAt: string | null;
   };
   errorMessage?: string;
+  /**
+   * Out-of-band NATS connection state scraped from the gateway's local
+   * `/healthz` (Phase 3, §4.2). Optional/`null` when the scrape wasn't reached.
+   * `"auth-failed"` lets the gateway health badge show a distinct "NATS auth
+   * failing" state — the reason a rules/container-map push is timing out (the
+   * gateway can't subscribe because its creds are rejected) rather than a
+   * silent generic error.
+   */
+  natsConnState?: EgressAgentConnState | null;
+}
+
+// ----------------------------------------------------------------------------
+// Out-of-band egress agent health (Phase 3, §4.2)
+// ----------------------------------------------------------------------------
+
+/**
+ * The NATS connection state an egress agent reports over its local HTTP
+ * `/healthz`, independent of the in-band KV heartbeat. Mirror of the Go
+ * `natsbus.ConnState` values — the single source of truth for both agents and
+ * the server-side scraper. `auth-failed` is the signal the 15-hour production
+ * incident lacked: an agent running but with its baked-in creds rejected.
+ */
+export type EgressAgentConnState =
+  | "connected"
+  | "reconnecting"
+  | "auth-failed"
+  | "disconnected";
+
+/**
+ * The JSON body an egress agent returns from `GET /healthz`. Mirror of the Go
+ * `natsbus.HealthReport` produced by both egress binaries and consumed by
+ * `server/src/services/egress/agent-health-scraper.ts`.
+ */
+export interface EgressAgentHealthReport {
+  /** The §4.2 connection state. */
+  status: EgressAgentConnState;
+  /**
+   * Age (ms) of the most recent successful in-band KV heartbeat, or -1 when the
+   * agent has not yet landed a heartbeat this process.
+   */
+  lastHeartbeatAgeMs: number;
 }
 
 // ----------------------------------------------------------------------------
@@ -188,6 +229,19 @@ export interface EgressFwAgentStatus {
   health: {
     status: "ok";
   } | null;
+  /**
+   * Out-of-band NATS connection state scraped from the agent's local `/healthz`
+   * (Phase 3, §4.2). `null` when the agent isn't running or the scrape didn't
+   * reach it — distinct from `disconnected` (reached, but link is down).
+   */
+  natsConnState?: EgressAgentConnState | null;
+  /**
+   * True when the agent's container is running but its NATS connection is being
+   * rejected on auth — i.e. `natsConnState === "auth-failed"`. Lets the UI show
+   * a distinct "NATS auth failing" state instead of a generic "unavailable"
+   * that's indistinguishable from "still starting".
+   */
+  authFailing?: boolean;
 }
 
 export interface EgressFwAgentConfig {
