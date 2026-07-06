@@ -23,7 +23,7 @@ describe("egress-fw-agent template", () => {
     expect(json.name).toBe("egress-fw-agent");
     expect(json.scope).toBe("host");
     expect(json.category).toBe("infrastructure");
-    expect(json.builtinVersion).toBe(5);
+    expect(json.builtinVersion).toBe(6);
 
     // The agent role declares the KV bucket Phase 2 needs.
     expect(json.nats.subjectPrefix).toBe("mini-infra.egress.fw");
@@ -42,6 +42,10 @@ describe("egress-fw-agent template", () => {
     // requests) but no SUB, so KV Puts hit a Permissions Violation on the
     // ack-subscribe and timed out as `context deadline exceeded`.
     expect(role.inboxAuto).toBe("both");
+    // Non-expiring credential JWT. The unset (3600s default) TTL caused the
+    // agent's cred to expire hourly, which the self-heal supervisor (Phase 4)
+    // "fixed" by force-recreating the stack every ~61 minutes forever.
+    expect(role.ttlSeconds).toBe(0);
 
     // Host networking + privileged caps are the whole reason this template
     // exists (vs being a regular bridge-mode stack).
@@ -82,6 +86,7 @@ describe("egress-fw-agent template", () => {
       subscribe: ["rules.apply"],
       kvBuckets: ["egress-fw-health"],
       inboxAuto: "both",
+      ttlSeconds: 0,
     };
     expect(() => templateNatsRoleSchema.parse(role)).not.toThrow();
   });
