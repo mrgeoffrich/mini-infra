@@ -48,6 +48,8 @@ A per-agent connection-state signal — one of `connected` / `reconnecting` / `a
 
 The `nats-creds` `dynamicEnv` resolver mints a `.creds` blob per the bound `natsRole`. Today it is delivered as the `NATS_CREDS` env var and loaded once via static `nats.UserJWTAndSeed(jwt, seed)` in `egress-shared/natsbus/bus.go` (the single chokepoint both agents share). The new contract delivers the `.creds` to a **file** the agent re-reads on every reconnect via `nats.UserCredentials(<file>)`. Referenced by Phase 5 (establishes file delivery + reload) and Phase 6 (refreshes the file in place on rotation).
 
+**Delivery mechanism — decided: a shared named docker volume.** The minted `.creds` files live in one shared named volume, one file per consuming stack (e.g. `<stackId>.creds`). The server writes into that volume; each egress agent mounts it read-only and points `nats.UserCredentials` at its own file. A rewrite of the file is therefore picked up on the agent's next reconnect with no container recreate — the same mechanism serves both the initial delivery (Phase 5) and the live rotation refresh (Phase 6). Rejected alternatives (see §6): an authenticated re-fetch endpoint (needs a bootstrap credential that must itself survive rotation) and `docker exec` writes (fragile across restarts). Two sub-choices are left to Phase 5 implementation — how the server writes into the volume (direct mount vs one-shot helper container) and single-shared-volume vs per-agent volume — captured in §6.
+
 ## 5. Phased rollout
 
 Phases 1, 2, 3, and 5 are independent and can start in any order. Phase 4 depends on Phase 3's health signal; Phase 6 depends on Phase 5's file-based reload. The set is committed as one body of work — see §7 for the dependency graph.
@@ -144,9 +146,10 @@ Verify in prod: an auth-failing egress stack self-recovers with no human action 
 **Goal:** egress agents authenticate from a creds file they re-read on reconnect, replacing the static baked-in env credential.
 
 Deliverables:
-- The `nats-creds` `dynamicEnv` resolver delivers the minted `.creds` to a file in the container (mounted path) instead of the `NATS_CREDS` env var, per §4.3.
+- A shared named docker volume for creds (per §4.3), and the `nats-creds` `dynamicEnv` resolver writes the minted `.creds` into it as a per-stack file (`<stackId>.creds`) instead of setting the `NATS_CREDS` env var.
+- The server-side write path into that volume — direct mount into the server container vs a one-shot helper container (reusing `ContainerExecutor`), decided at implementation per §6.
 - `egress-shared/natsbus/bus.go` switches from static `nats.UserJWTAndSeed(jwt, seed)` to `nats.UserCredentials(<file>)`, so nats.go re-reads the file on each (re)connect.
-- Both egress templates (`server/templates/egress-*/template.json`) declare the file-based creds mount instead of the `NATS_CREDS` env.
+- Both egress templates (`server/templates/egress-*/template.json`) mount the shared creds volume read-only instead of declaring the `NATS_CREDS` env.
 
 Reversibility: forward-only — the cred-delivery contract changes; running containers must be recreated to adopt it and a revert is a forward-fix.
 
@@ -165,7 +168,7 @@ Verify in prod: both egress agents connect via file creds (a `creds source=file`
 **Goal:** a NATS identity/cred rotation reaches running egress agents without recreating their containers.
 
 Deliverables:
-- A server mechanism that, on cred rotation, writes the freshly-minted `.creds` into each running egress container's creds file (delivery mechanism resolved from the §6 open fork).
+- A server mechanism that, on cred rotation, rewrites the freshly-minted `.creds` in the shared named volume (per §4.3) for each affected running agent.
 - Agents pick up the new creds on their next reconnect via Phase 5's reload-on-reconnect, with no recreate.
 - A feature flag gating live-push, falling back to the Phase 4 recreate path when disabled or when a push fails.
 
@@ -183,8 +186,8 @@ Verify in prod: a production cred rotation results in agents recovering with zer
 
 ## 6. Risks & open questions
 
-- **Phase 6 delivery mechanism is unresolved.** Writing fresh creds into a running container's file can be done by a shared named volume the server writes, an authenticated re-fetch endpoint the agent pulls from, or a `docker exec` write. Each has different tradeoffs — filesystem sharing between server and agent containers; a bootstrap credential that must itself survive rotation; `docker exec` reliability. Decide before Phase 6 implementation.
-- **Root-cause of the original 404 is not yet confirmed.** Whether Vault lost its KV data or a post-unseal read race returned a spurious 404 is open. Phase 1 makes the system robust either way; confirming the cause would sharpen Phase 2's durability hardening (volume config vs read-ordering).
+- **Cred delivery mechanism — decided: shared named volume** (§4.3). Two sub-choices remain for Phase 5 implementation: (a) *how the server writes* — mounting the volume into the mini-infra server container (stable, but changes the server's own deployment / self-update definition, higher blast radius) vs a one-shot helper container that mounts the volume (reuses the existing `ContainerExecutor` pattern, leaves the server deployment untouched — **preferred**); (b) *volume topology* — a single shared volume with per-stack files (simplest, but every egress agent can read every other's cred file) vs per-agent volumes (least-privilege, but the server juggles N mounts). Default: one-shot helper writing a single shared volume with per-stack files — the cross-read exposure is acceptable since all egress agents are mini-infra-managed infra in one trust domain and the creds are already role-scoped.
+- **Root-cause of the original 404 — partially identified.** Phase 2 found a concrete silent-drop path: stack destroy removed the vault stack's named `openbao_data` volume unprotected (now guarded via `PROTECTED_DATA_VOLUMES`). Whether the production incident was that path, a Vault re-init, or a post-unseal read race is still not confirmed from logs; Phase 1's guard makes the system robust regardless.
 - **Self-heal (Phase 4) and live-refresh (Phase 6) overlap as recovery paths.** This is intentional defense-in-depth — Phase 4 is the recreate-based backstop, Phase 6 the graceful in-place path. Keeping both means a live-push failure still recovers via recreate.
 - **Supervisor tuning is deferred to implementation.** Threshold, backoff curve, and recreate cap values for Phase 4 are set at implementation time, not fixed here.
 
