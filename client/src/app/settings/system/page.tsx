@@ -1,7 +1,8 @@
 import { useState, useEffect, useEffectEvent, useMemo } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Link } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -45,36 +46,22 @@ import {
   IconLoader2,
   IconLock,
   IconSettings,
-  IconNetwork,
   IconShield,
   IconHistory,
   IconClock,
-  IconWorld,
 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { SystemSettingsInfo } from "@mini-infra/types";
 
-// System settings schema
+// System settings schema. Public URL, CORS, and Docker Host IP now live on the
+// Network Access page (they describe how Mini Infra is reached); this page
+// keeps the remaining system-wide toggles.
 const systemSettingsSchema = z.object({
-  // Public URL and security toggles
-  publicUrl: z.string().optional().refine(
-    (val) => !val || /^https?:\/\//.test(val),
-    "Must be a valid URL starting with http:// or https://"
-  ),
+  // HTTPS enforcement
   httpsOnlyMode: z.boolean(),
-  corsEnabled: z.boolean(),
 
   // Production mode setting
   isProduction: z.boolean(),
-
-  // Docker Host IP Configuration
-  dockerHostIp: z
-    .string()
-    .optional()
-    .refine(
-      (val) => !val || /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/.test(val),
-      "Must be a valid IPv4 address (e.g., 192.168.1.100)"
-    ),
 
   // User Events Retention Settings
   userEventsRetentionDays: z
@@ -113,11 +100,8 @@ export default function SystemSettingsPage() {
   const form = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
-      publicUrl: "",
       httpsOnlyMode: false,
-      corsEnabled: false,
       isProduction: false,
-      dockerHostIp: "",
       userEventsRetentionDays: "30",
     },
     mode: "onChange",
@@ -141,20 +125,14 @@ export default function SystemSettingsPage() {
   // effect body (avoids set-state-in-effect).
   const syncFormFromSettings = useEffectEvent(
     (settingsMap: Record<string, SystemSettingsInfo>) => {
-      form.setValue("publicUrl", settingsMap.public_url?.value || "");
       form.setValue(
         "httpsOnlyMode",
         settingsMap.https_only_mode?.value === "true",
       );
       form.setValue(
-        "corsEnabled",
-        settingsMap.cors_enabled?.value === "true",
-      );
-      form.setValue(
         "isProduction",
         settingsMap.is_production?.value === "true",
       );
-      form.setValue("dockerHostIp", settingsMap.docker_host_ip?.value || "");
       form.setValue(
         "userEventsRetentionDays",
         settingsMap.user_events_retention_days?.value || "30",
@@ -173,32 +151,14 @@ export default function SystemSettingsPage() {
       const systemSettingsToSave = [
         {
           category: "system" as const,
-          key: "public_url",
-          value: data.publicUrl || "",
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
           key: "https_only_mode",
           value: data.httpsOnlyMode.toString(),
           isEncrypted: false,
         },
         {
           category: "system" as const,
-          key: "cors_enabled",
-          value: data.corsEnabled.toString(),
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
           key: "is_production",
           value: data.isProduction.toString(),
-          isEncrypted: false,
-        },
-        {
-          category: "system" as const,
-          key: "docker_host_ip",
-          value: data.dockerHostIp || "",
           isEncrypted: false,
         },
         {
@@ -265,18 +225,13 @@ export default function SystemSettingsPage() {
     await handleSubmit(data);
   };
 
-  // Form-level guards on the security toggles. publicUrl must exist for either
-  // toggle; HTTPS-only additionally requires an https:// publicUrl. Returning
-  // helper text alongside makes the disabled reason discoverable in the UI
-  // rather than the user having to read the docs.
-  const watchedPublicUrl = useWatch({ control: form.control, name: "publicUrl" }) ?? "";
-  const corsToggleDisabled = !watchedPublicUrl;
-  const httpsOnlyToggleDisabled = !watchedPublicUrl || !watchedPublicUrl.startsWith("https://");
-  const corsHelperText = corsToggleDisabled
-    ? "Set the Public URL above to enable this option — that's the origin allowed past CORS."
-    : "When enabled, only the Public URL above is allowed as a cross-origin request source. When disabled, all origins are allowed.";
+  // HTTPS-only requires an https:// Public URL, which now lives on the Network
+  // Access page. Gate the toggle on the *persisted* public_url (the server
+  // validates against the same stored value), and point the operator there.
+  const persistedPublicUrl = settings.public_url?.value ?? "";
+  const httpsOnlyToggleDisabled = !persistedPublicUrl.startsWith("https://");
   const httpsOnlyHelperText = httpsOnlyToggleDisabled
-    ? "Set the Public URL above to an https:// URL to enable this option."
+    ? "Set an https:// Public URL on the Network Access page to enable this option."
     : "When enabled, the server emits HSTS, upgrades insecure requests, and marks auth cookies Secure. Browsers will then refuse plain-HTTP access.";
 
 
@@ -317,7 +272,11 @@ export default function SystemSettingsPage() {
           <div>
             <h1 className="text-3xl font-bold">System Settings</h1>
             <p className="text-muted-foreground">
-              Configure system-wide settings for backup, restore, and HAProxy load balancer operations
+              System-wide toggles for this instance. Looking for Public URL, CORS, or Docker Host IP? They moved to{" "}
+              <Link to="/network-access" className="underline underline-offset-4">
+                Network Access
+              </Link>
+              .
             </p>
           </div>
         </div>
@@ -325,14 +284,6 @@ export default function SystemSettingsPage() {
 
       <div className="px-4 lg:px-6 max-w-6xl">
         <div className="grid gap-6">
-          {/* Description */}
-          <div className="space-y-2">
-            <p className="text-muted-foreground">
-              These settings control Docker containers, networks, and HAProxy
-              load balancer for deployment operations.
-            </p>
-          </div>
-
           {settingsLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-48 w-full" />
@@ -345,37 +296,18 @@ export default function SystemSettingsPage() {
                 onSubmit={form.handleSubmit(onFormSubmit)}
                 className="space-y-6"
               >
-                {/* Public URL, HTTPS-only mode, CORS */}
+                {/* HTTPS enforcement */}
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
-                      <IconWorld className="h-5 w-5" />
-                      <span>Public URL &amp; security</span>
+                      <IconLock className="h-5 w-5" />
+                      <span>HTTPS enforcement</span>
                     </CardTitle>
                     <CardDescription>
-                      Configure the externally-reachable URL for this instance, HTTPS-only enforcement, and cross-origin request policy
+                      Enforce HTTPS for this instance. Requires an https:// Public URL, configured on the Network Access page.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="publicUrl"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Public URL</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="https://mini-infra.example.com"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            The externally-reachable URL for this instance. Used for OAuth callback URLs and post-login redirects. Leave empty if serving from the same origin.
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
                     <FormField
                       control={form.control}
                       name="httpsOnlyMode"
@@ -394,29 +326,6 @@ export default function SystemSettingsPage() {
                               checked={field.value}
                               onCheckedChange={field.onChange}
                               disabled={httpsOnlyToggleDisabled && !field.value}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="corsEnabled"
-                      render={({ field }) => (
-                        <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                          <div className="space-y-0.5">
-                            <FormLabel className="text-base">
-                              Restrict CORS
-                            </FormLabel>
-                            <FormDescription>
-                              {corsHelperText}
-                            </FormDescription>
-                          </div>
-                          <FormControl>
-                            <Switch
-                              checked={field.value}
-                              onCheckedChange={field.onChange}
-                              disabled={corsToggleDisabled && !field.value}
                             />
                           </FormControl>
                         </FormItem>
@@ -466,59 +375,6 @@ export default function SystemSettingsPage() {
                       <AlertDescription>
                         This setting is for display purposes only and does not affect system functionality.
                         It helps visually distinguish production instances from development or staging environments.
-                      </AlertDescription>
-                    </Alert>
-                  </CardContent>
-                </Card>
-
-                {/* Docker Host Network Configuration */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center space-x-2">
-                      <IconNetwork className="h-5 w-5" />
-                      <span>Docker Host Network Configuration</span>
-                    </CardTitle>
-                    <CardDescription>
-                      Configure the Docker host IP address for DNS record creation
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="rounded-md bg-muted p-4 space-y-2">
-                      <h4 className="text-sm font-medium">What is this?</h4>
-                      <p className="text-sm text-muted-foreground">
-                        When deploying applications with DNS records, the system needs to know the public IP address
-                        of your Docker host to create proper DNS A records in Cloudflare.
-                      </p>
-                      <p className="text-sm text-muted-foreground mt-2">
-                        This is typically your server's public IP address or the IP where HAProxy is accessible.
-                      </p>
-                    </div>
-
-                    <FormField
-                      control={form.control}
-                      name="dockerHostIp"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Docker Host IP Address</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="e.g., 192.168.1.100 or 203.0.113.1"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            IPv4 address of your Docker host (required for DNS record creation)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    <Alert>
-                      <IconAlertCircle className="h-4 w-4" />
-                      <AlertDescription>
-                        This IP address will be used to create DNS A records for deployed applications.
-                        Make sure it's accessible from the internet if you're deploying public-facing services.
                       </AlertDescription>
                     </Alert>
                   </CardContent>

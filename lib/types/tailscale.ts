@@ -5,6 +5,36 @@
 /** Default tag the OAuth client must own and that all minted authkeys carry. */
 export const TAILSCALE_DEFAULT_TAG = "tag:mini-infra-managed";
 
+/** Programmatic name of the host-scoped stack template that fronts Mini Infra's own control plane. */
+export const TAILSCALE_INGRESS_TEMPLATE_NAME = "tailscale-ingress";
+
+/**
+ * Default tailnet device hostname for the ingress. Must match the `hostname`
+ * parameter default in `server/templates/tailscale-ingress/template.json` — a
+ * template-load test pins the two together so they can't drift.
+ */
+export const TAILSCALE_INGRESS_DEFAULT_HOSTNAME = "mini-infra";
+
+/**
+ * GET /api/connectivity/tailscale/ingress — status of the Tailscale ingress
+ * that fronts Mini Infra's own control plane. Drives the Network Access page's
+ * deploy/validate/adopt flow.
+ */
+export interface TailscaleIngressStatus {
+  /** Whether the `tailscale` connected service has OAuth credentials configured. */
+  configured: boolean;
+  /** Ingress device hostname — from the deployed stack's params, else the template default. */
+  hostname: string;
+  /** Tailnet MagicDNS suffix (e.g. `tail-abc.ts.net`); null when unresolved. */
+  tailnetDomain: string | null;
+  /** Full `https://` URL the ingress serves, or null if it can't be resolved yet. */
+  ingressUrl: string | null;
+  /** Whether the ingress device is registered and currently online on the tailnet. */
+  deviceOnline: boolean;
+  /** Full MagicDNS name of the matched ingress device, or null if not registered yet. */
+  deviceName: string | null;
+}
+
 /** Settings keys persisted in the `tailscale` configuration category. */
 export const TAILSCALE_SETTING_KEYS = {
   CLIENT_ID: "client_id",

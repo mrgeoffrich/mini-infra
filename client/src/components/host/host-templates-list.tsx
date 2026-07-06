@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useStackTemplates, useInstantiateTemplate, useTemplatePrerequisites } from "@/hooks/use-stack-templates";
 import type { StackTemplateInfo, StackTemplateLinkedStack } from "@mini-infra/types";
-import { StackPlanView } from "@/components/stacks";
+import { StackPlanView, StackStatusBadge } from "@/components/stacks";
 import { PrerequisitesBanner } from "@/components/stacks/PrerequisitesBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,33 +22,6 @@ import { toast } from "sonner";
 interface HostTemplatesListProps {
   className?: string;
 }
-
-const statusBadgeVariants: Record<string, { className: string; label: string }> = {
-  synced: {
-    className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-    label: "Synced",
-  },
-  drifted: {
-    className: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-    label: "Drifted",
-  },
-  pending: {
-    className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-    label: "Pending",
-  },
-  error: {
-    className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-    label: "Error",
-  },
-  undeployed: {
-    className: "",
-    label: "Undeployed",
-  },
-  removed: {
-    className: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300",
-    label: "Removed",
-  },
-};
 
 export function HostTemplatesList({ className }: HostTemplatesListProps) {
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
@@ -150,7 +123,6 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
               {templates.map((template) => {
                 const stack = getHostStack(template);
                 const isExpanded = expandedTemplateId === template.id;
-                const badge = stack ? statusBadgeVariants[stack.status] || statusBadgeVariants.undeployed : null;
                 const deployable = isDeployable(stack);
 
                 return (
@@ -165,15 +137,9 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{template.displayName}</span>
-                            {badge && (
-                              <Badge
-                                variant={stack?.status === "undeployed" || !stack ? "secondary" : "outline"}
-                                className={badge.className}
-                              >
-                                {badge.label}
-                              </Badge>
-                            )}
-                            {!stack && (
+                            {stack ? (
+                              <StackStatusBadge status={stack.status} />
+                            ) : (
                               <Badge variant="secondary">Not deployed</Badge>
                             )}
                           </div>

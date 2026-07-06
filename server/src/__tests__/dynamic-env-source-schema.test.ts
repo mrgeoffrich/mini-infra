@@ -40,6 +40,22 @@ describe('dynamicEnvSource — discriminated union', () => {
     });
     expect(r.success).toBe(true);
   });
+
+  it('accepts tailscale-authkey', () => {
+    expect(parseDyn({ TS_AUTHKEY: { kind: 'tailscale-authkey' } }).success).toBe(true);
+  });
+
+  it('accepts tailscale-authkey with restartPolicy="unless-stopped" (authkey persisted to state volume, not re-consumed on restart)', () => {
+    // The tailscaled sidecar stays up (unless-stopped). The authkey is
+    // single-use for device registration, but tailscaled persists its node
+    // key on the state volume, so restarts don't re-consume it — it must NOT
+    // trip the single-use restart guard (which is scoped to wrapped secrets).
+    const r = stackContainerConfigSchema.safeParse({
+      dynamicEnv: { TS_AUTHKEY: { kind: 'tailscale-authkey' } },
+      restartPolicy: 'unless-stopped',
+    });
+    expect(r.success).toBe(true);
+  });
 });
 
 describe('dynamicEnvSource — vault-kv (new in Phase 1)', () => {
