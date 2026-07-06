@@ -264,6 +264,26 @@ export const blueGreenDeploymentMachine = setup({
             monitorDrain.execute(context, (event) => self.send(event));
         },
 
+        // Draining the old blue container happens *after* traffic has already
+        // been cut over to green (green is health-checked and live). A slow or
+        // failed drain of the superseded blue therefore must NOT roll back a
+        // healthy green — treat it as non-critical and fall through to the same
+        // best-effort blue teardown the later decommission steps already use.
+        markDrainFailureNonCritical: assign({
+            error: 'Blue connection drain did not complete cleanly (Non-Critical) - green is live',
+        }),
+
+        logDrainFailureNonCritical: ({ context, event }) => {
+            const logger = getLogger("deploy", "blue-green-deployment-state-machine");
+            logger.warn({
+                deploymentId: context.deploymentId,
+                applicationName: context.applicationName,
+                oldContainerId: context.oldContainerId?.slice(0, 12),
+                event: event.type,
+                error: 'error' in event ? event.error : undefined,
+            }, 'Blue drain did not complete post-cutover - force-removing blue instead of rolling back (green is live)');
+        },
+
         // Blue decommission actions
         removeBlueFromLB: ({ context, self }) => {
             // Map oldContainerId to containerId for the action
@@ -314,24 +334,6 @@ export const blueGreenDeploymentMachine = setup({
         },
 
         // Rollback actions
-        restoreBlueTraffic: ({ context, self }) => {
-            // Map oldContainerId to containerId for the action
-            const contextWithContainerId = {
-                ...context,
-                containerId: context.oldContainerId
-            };
-            enableTraffic.execute(contextWithContainerId, (event) => {
-                // Map the standard traffic events to rollback events
-                if (event.type === 'TRAFFIC_ENABLED') {
-                    self.send({ type: 'ROLLBACK_BLUE_TRAFFIC_RESTORED' });
-                } else if (event.type === 'TRAFFIC_ENABLE_FAILED') {
-                    self.send({ type: 'ROLLBACK_ERROR', error: event.error });
-                } else {
-                    self.send(event);
-                }
-            });
-        },
-
         disableGreenTraffic: ({ context, self }) => {
             // Map newContainerId to containerId for the action
             const contextWithContainerId = {
@@ -948,9 +950,11 @@ export const blueGreenDeploymentMachine = setup({
                     target: 'waitingForDrain',
                     actions: assign({ blueDraining: true })
                 },
+                // Post-cutover: drain-initiation trouble on the old blue is
+                // non-fatal — force-remove blue rather than roll back live green.
                 DRAIN_ISSUES: {
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: 'preserveErrorContext'
+                    target: 'decommissioningBlueLB',
+                    actions: ['markDrainFailureNonCritical', 'logDrainFailureNonCritical']
                 }
             }
         },
@@ -966,19 +970,23 @@ export const blueGreenDeploymentMachine = setup({
                         activeConnections: 0
                     })
                 },
+                // A blue that won't drain in time (long-lived/websocket
+                // connections) or a HAProxy hiccup while draining is non-fatal
+                // post-cutover — proceed to force-remove blue, don't roll back
+                // the already-live green.
                 DRAIN_TIMEOUT: {
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: assign({ error: 'Blue connection drain timeout' })
+                    target: 'decommissioningBlueLB',
+                    actions: ['markDrainFailureNonCritical', 'logDrainFailureNonCritical']
                 },
                 DRAIN_ISSUES: {
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: 'preserveErrorContext'
+                    target: 'decommissioningBlueLB',
+                    actions: ['markDrainFailureNonCritical', 'logDrainFailureNonCritical']
                 }
             },
             after: {
-                120000: { // 2 minute drain timeout
-                    target: 'rollbackRestoreBlueTraffic',
-                    actions: assign({ error: 'Forced drain timeout after 2 minutes' })
+                120000: { // 2 minute drain budget — then force-remove blue (non-fatal)
+                    target: 'decommissioningBlueLB',
+                    actions: ['markDrainFailureNonCritical', 'logDrainFailureNonCritical']
                 }
             }
         },
@@ -1087,21 +1095,8 @@ export const blueGreenDeploymentMachine = setup({
             }
         },
 
-        // Rollback states
-        rollbackRestoreBlueTraffic: {
-            description: 'Restoring traffic to the blue application during rollback',
-            entry: 'restoreBlueTraffic',
-            on: {
-                ROLLBACK_BLUE_TRAFFIC_RESTORED: {
-                    target: 'rollbackDisableGreenTraffic'
-                },
-                ROLLBACK_ERROR: {
-                    target: 'rollbackDisableGreenTraffic',
-                    actions: 'preserveErrorContext'
-                }
-            }
-        },
-
+        // Rollback states (reached only by pre-cutover failures; once traffic
+        // is on green there is no rollback — a failed blue drain is non-fatal).
         rollbackDisableGreenTraffic: {
             description: 'Disabling traffic to green environment during rollback',
             entry: 'disableGreenTraffic',
