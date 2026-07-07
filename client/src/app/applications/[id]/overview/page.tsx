@@ -40,6 +40,7 @@ import type { StackDeploymentRecord } from "@mini-infra/types";
 import { StatusStrip } from "../_components/status-strip";
 import { ConnectCard } from "../_components/connect-card";
 import { ConnectedNetworksCard } from "../_components/connected-networks-card";
+import { AddonsCard } from "../_components/addons-card";
 import type { ApplicationDetailContext } from "../layout";
 
 function formatDateTime(value: string | null): string {
@@ -179,6 +180,12 @@ export default function ApplicationOverviewTab() {
           template={template}
         />
       )}
+
+      {/* Unlike the Connect / Connected-Networks cards (gated behind an applied
+          snapshot), the Add-ons card renders whenever the app has a template
+          version — so operators can attach addons at config time, before the
+          first deploy. */}
+      <AddonsCard templateId={template.id} template={template} />
 
       {!hasStacks && (
         <Card>
