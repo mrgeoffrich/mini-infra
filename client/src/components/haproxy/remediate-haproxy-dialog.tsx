@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { toastApiError } from "@/lib/errors";
 import { RemediateHAProxyStep } from "@mini-infra/types";
 import {
   IconLoader2,
@@ -86,9 +87,7 @@ export function RemediateHAProxyDialog({
     } catch (error) {
       setResult(null);
       setDialogState("error");
-      toast.error(
-        `Rebuild failed: ${error instanceof Error ? error.message : "Unknown error"}`
-      );
+      toastApiError(error, { title: "Rebuild failed" });
     }
   };
 

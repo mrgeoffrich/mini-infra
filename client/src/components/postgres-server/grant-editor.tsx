@@ -204,8 +204,9 @@ function GrantEditorInner({
         toast.success("Grant created successfully");
       }
       onOpenChange(false);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to save permissions");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -217,8 +218,9 @@ function GrantEditorInner({
       await deleteMutation.mutateAsync(existingGrant.id);
       toast.success("All permissions revoked");
       onOpenChange(false);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to revoke permissions");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

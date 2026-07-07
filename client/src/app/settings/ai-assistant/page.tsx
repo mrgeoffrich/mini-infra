@@ -130,9 +130,7 @@ export default function AiAssistantSettingsPage() {
           setValidationResult(null);
           toast.success("API key saved successfully");
         },
-        onError: (err) => {
-          toast.error(err.message);
-        },
+        // Error toast handled by the global MutationCache.onError.
       },
     );
   };
@@ -142,9 +140,7 @@ export default function AiAssistantSettingsPage() {
       onSuccess: () => {
         toast.success("API key removed");
       },
-      onError: (err) => {
-        toast.error(err.message);
-      },
+      // Error toast handled by the global MutationCache.onError.
     });
   };
 
@@ -157,9 +153,7 @@ export default function AiAssistantSettingsPage() {
           setSelectedModel(null);
           toast.success("Model updated successfully");
         },
-        onError: (err) => {
-          toast.error(err.message);
-        },
+        // Error toast handled by the global MutationCache.onError.
       },
     );
   };

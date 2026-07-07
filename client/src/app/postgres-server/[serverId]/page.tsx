@@ -86,8 +86,9 @@ export default function PostgresServerDetailsPage() {
       } else {
         toast.error(result.error || "Connection failed");
       }
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Connection failed");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

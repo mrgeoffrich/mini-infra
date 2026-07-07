@@ -35,7 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toast } from "sonner";
 
 export default function VaultAppRolesPage() {
   const { data: roles, isLoading } = useVaultAppRoles();
@@ -123,10 +122,10 @@ function AppRoleTable({
               onClick={async () => {
                 try {
                   await apply.mutateAsync(r.id);
-                } catch (err) {
-                  toast.error(
-                    err instanceof Error ? err.message : "Apply failed",
-                  );
+                } catch {
+                  // Swallow: the global MutationCache.onError already shows
+                  // an actionable toast for this mutation's real
+                  // ApiRequestError.
                 }
               }}
               disabled={apply.isPending}
@@ -140,10 +139,10 @@ function AppRoleTable({
                 if (!confirm(`Delete AppRole ${r.name}?`)) return;
                 try {
                   await del.mutateAsync(r.id);
-                } catch (err) {
-                  toast.error(
-                    err instanceof Error ? err.message : "Delete failed",
-                  );
+                } catch {
+                  // Swallow: the global MutationCache.onError already shows
+                  // an actionable toast for this mutation's real
+                  // ApiRequestError.
                 }
               }}
             >
@@ -184,8 +183,9 @@ function CreateAppRoleDialog({
       setPolicyId(null);
       setSecretIdNumUses(1);
       setTokenPeriod("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create failed");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

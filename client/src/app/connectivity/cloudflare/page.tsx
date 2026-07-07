@@ -43,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { queryKeys, SystemSettingsInfo } from "@mini-infra/types";
 import { ApiRequestError } from "@/lib/api-client";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -203,7 +204,7 @@ export default function CloudflareSettingsPage() {
       }, 5000);
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = getUserFacingError(error).description;
       setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
       // Real ApiRequestError failures (the validate/create/update settings
       // mutations above) are already toasted by the global
@@ -212,7 +213,7 @@ export default function CloudflareSettingsPage() {
       // thrown above, which isn't a mutation rejection and so never reaches
       // the global handler.
       if (!(error instanceof ApiRequestError)) {
-        toast.error(`Failed to validate and save: ${errorMessage}`);
+        toastApiError(error, { title: "Failed to validate and save" });
       }
     }
   };

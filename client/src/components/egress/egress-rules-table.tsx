@@ -74,12 +74,9 @@ export function EgressRulesTable({
       await deleteMutation.mutateAsync({ ruleId: deleteRuleId, policyId });
       toast.success("Rule deleted");
       setDeleteRuleId(null);
-    } catch (err) {
-      toast.error(
-        `Failed to delete rule: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     } finally {
       setDeleteRulePending(false);
     }

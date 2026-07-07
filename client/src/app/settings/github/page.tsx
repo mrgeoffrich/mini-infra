@@ -118,10 +118,10 @@ export default function GitHubSettingsPage() {
 
       toast.success("GitHub settings saved successfully");
       await refetchSettings();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to save settings",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError.
     } finally {
       setIsSaving(false);
     }
@@ -139,15 +139,19 @@ export default function GitHubSettingsPage() {
         repo_name: formValues.repo_name || undefined,
       });
 
+      // `result.data.message` is the server's own human-readable summary of
+      // the connection test outcome (not a raw error message), so it's
+      // shown directly rather than through toastApiError, which is only for
+      // caught exceptions.
+      const resultMessage = result.data.message;
       if (result.data.isValid) {
-        toast.success(result.data.message || "Connection successful");
+        toast.success(resultMessage || "Connection successful");
       } else {
-        toast.error(result.data.message || "Connection failed");
+        toast.error(resultMessage || "Connection failed");
       }
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Connection test failed",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     } finally {
       setIsTesting(false);
     }

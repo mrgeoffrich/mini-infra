@@ -71,7 +71,11 @@ export function ConnectedStatusCard({
             `Connection successful${data.authenticatedAs ? ` as ${data.authenticatedAs}` : ""} (${data.responseTimeMs}ms)`,
           );
         } else {
-          toast.error(`Connection test failed: ${data.message}`);
+          // `data.message` is the server's own human-readable validation
+          // summary (not a raw error message) — shown directly rather than
+          // through toastApiError, which is only for caught exceptions.
+          const resultMessage = data.message;
+          toast.error(`Connection test failed: ${resultMessage}`);
         }
       },
       // No onError — a genuine request failure (network/5xx) is already

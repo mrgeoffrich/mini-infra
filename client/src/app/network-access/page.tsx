@@ -51,7 +51,6 @@ import {
   type StackTemplateLinkedStack,
   type SystemSettingsInfo,
 } from "@mini-infra/types";
-import { toast } from "sonner";
 import { toastWithCopy } from "@/lib/toast-utils";
 import {
   IconAlertCircle,
@@ -258,8 +257,9 @@ export default function NetworkAccessPage() {
         channel: Channel.STACKS,
       });
       refetchTemplates();
-    } catch (err) {
-      toast.error(`Failed to deploy Tailscale ingress: ${(err as Error).message}`);
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

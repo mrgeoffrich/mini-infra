@@ -31,6 +31,7 @@ import {
 } from "@/hooks/use-settings";
 import { useValidateService } from "@/hooks/use-settings-validation";
 import { useCompleteOnboarding } from "@/hooks/use-onboarding";
+import { toastApiError } from "@/lib/errors";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -284,7 +285,7 @@ function DockerSetupStep({ onComplete }: { onComplete: () => void }) {
       toast.success("Docker connected successfully");
       onComplete();
     } catch (error) {
-      toast.error(`Docker connection failed: ${(error as Error).message}`);
+      toastApiError(error, { title: "Docker connection failed" });
     }
   };
 

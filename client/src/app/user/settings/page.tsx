@@ -103,11 +103,9 @@ export function UserSettingsPage() {
       });
 
       toast.success("Settings updated successfully!");
-    } catch (error: unknown) {
-      console.error("Failed to update settings:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to update settings";
-      toast.error(errorMessage);
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     } finally {
       setIsSubmitting(false);
     }

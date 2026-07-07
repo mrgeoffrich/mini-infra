@@ -292,10 +292,9 @@ export default function SelfBackupSettingsPage() {
       await triggerBackup.mutateAsync();
       toast.success("Backup triggered successfully");
       refetchHistory();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to trigger backup"
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
