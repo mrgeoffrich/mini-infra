@@ -24,10 +24,8 @@
 
 import { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
-import {
-  NatsPrefixAllowlistService,
-  NatsPrefixAllowlistError,
-} from "./nats-prefix-allowlist-service";
+import { NatsPrefixAllowlistService } from "./nats-prefix-allowlist-service";
+import { CustomError } from "../../lib/error-handler";
 
 const log = getLogger("integrations", "nats-prefix-allowlist-seed");
 const SYSTEM_USER = "system";
@@ -135,9 +133,9 @@ export async function seedSystemPrefixAllowlist(
       // Don't fail the whole seed run if one entry fails — the rest may
       // still be applicable. Surface the error loudly so an operator
       // notices on next boot.
-      if (err instanceof NatsPrefixAllowlistError) {
+      if (err instanceof CustomError) {
         log.error(
-          { prefix: seed.prefix, statusCode: err.statusCode, msg: err.message },
+          { prefix: seed.prefix, statusCode: err.statusCode, code: err.code, msg: err.message },
           "system prefix allowlist seed failed (validation)",
         );
       } else {

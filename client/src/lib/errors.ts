@@ -96,6 +96,19 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+
+  // NATS — only where the generic status-class verb phrase ("already
+  // exists" / "invalid") would misdescribe the failure (these are 400/409s
+  // whose resource didn't "already exist" or get literally "invalidated").
+  [ErrorCode.NATS_SYSTEM_ACCOUNT_PROTECTED]: "System account protected",
+  [ErrorCode.NATS_IDENTITY_SEED_MISSING]: "NATS identity seed missing",
+  [ErrorCode.NATS_IDENTITY_SEED_MISMATCH]: "NATS identity seed mismatch",
+  [ErrorCode.NATS_IDENTITY_SEED_RESTORE_CONFLICT]: "Identity seed restore conflict",
+  [ErrorCode.NATS_NOT_CONFIGURED]: "NATS not configured",
+  [ErrorCode.NATS_SUBJECT_PREFIX_NOT_ALLOWLISTED]: "Subject prefix not allowlisted",
+  [ErrorCode.NATS_IMPORT_INVALID]: "Invalid NATS import",
+  [ErrorCode.NATS_IMPORT_PRODUCER_NOT_READY]: "Producer stack not ready",
+  [ErrorCode.NATS_PREFIX_ALLOWLIST_OVERLAP]: "Prefix overlaps existing entry",
 };
 
 function statusClassFallback(status: number): string {

@@ -13,20 +13,22 @@ import { ensureEgressGatewaySeeded } from "../nats/system-nats-bootstrap";
 import { generateScopedSigningKey } from "../nats/nats-key-manager";
 import { getVaultKVService } from "../vault/vault-kv-service";
 import { getLogger } from "../../lib/logger-factory";
-import type {
-  EnvironmentNetworkType,
-  EnvironmentType,
-  StackParameterDefinition,
-  StackParameterValue,
-  TemplateNatsAccount,
-  TemplateNatsConsumer,
-  TemplateNatsCredential,
-  TemplateNatsImport,
-  TemplateNatsRole,
-  TemplateNatsRoleConsumer,
-  TemplateNatsRoleStream,
-  TemplateNatsSigner,
-  TemplateNatsStream,
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import {
+  ErrorCode,
+  type EnvironmentNetworkType,
+  type EnvironmentType,
+  type StackParameterDefinition,
+  type StackParameterValue,
+  type TemplateNatsAccount,
+  type TemplateNatsConsumer,
+  type TemplateNatsCredential,
+  type TemplateNatsImport,
+  type TemplateNatsRole,
+  type TemplateNatsRoleConsumer,
+  type TemplateNatsRoleStream,
+  type TemplateNatsSigner,
+  type TemplateNatsStream,
 } from "@mini-infra/types";
 
 export type NatsApplyPhaseStatus = "applied" | "noop" | "skipped" | "error";
@@ -180,7 +182,14 @@ async function runStackNatsApplyPhaseUnlocked(
 
   const status = await getNatsControlPlaneService(prisma).getStatus();
   if (!status.configured && opts.requireNatsReady) {
-    throw new Error("NATS is not configured; deploy the vault and nats host stacks before applying a NATS-bearing template");
+    throw new ValidationError(
+      ErrorCode.NATS_NOT_CONFIGURED,
+      "NATS is not configured; deploy the vault and nats host stacks before applying a NATS-bearing template",
+      {
+        resource: { type: "stack", id: stackId },
+        action: "Deploy the vault and nats host stacks, then re-run apply.",
+      },
+    );
   }
 
   // System NATS seed self-heal: if the boot-time seed failed (DB race on
@@ -265,7 +274,16 @@ async function runStackNatsApplyPhaseUnlocked(
     for (const credential of credentials) {
       const accountId = accountIdByName.get(credential.account)
         ?? (await prisma.natsAccount.findUnique({ where: { name: credential.account } }))?.id;
-      if (!accountId) throw new Error(`NATS credential '${credential.name}' references unknown account '${credential.account}'`);
+      if (!accountId) {
+        throw new NotFoundError(
+          ErrorCode.NATS_ACCOUNT_NOT_FOUND,
+          `NATS credential '${credential.name}' references unknown account '${credential.account}'`,
+          {
+            resource: { type: "natsAccount", name: credential.account },
+            action: "Declare the account in the template's nats.accounts[] before referencing it.",
+          },
+        );
+      }
       const name = concreteName(render(credential.name, ctx), credential.scope, stack.name, stack.environment?.name ?? null);
       const existing = await prisma.natsCredentialProfile.findUnique({ where: { name } });
       const data = {
@@ -293,7 +311,16 @@ async function runStackNatsApplyPhaseUnlocked(
     for (const stream of streams) {
       const accountId = accountIdByName.get(stream.account)
         ?? (await prisma.natsAccount.findUnique({ where: { name: stream.account } }))?.id;
-      if (!accountId) throw new Error(`NATS stream '${stream.name}' references unknown account '${stream.account}'`);
+      if (!accountId) {
+        throw new NotFoundError(
+          ErrorCode.NATS_ACCOUNT_NOT_FOUND,
+          `NATS stream '${stream.name}' references unknown account '${stream.account}'`,
+          {
+            resource: { type: "natsAccount", name: stream.account },
+            action: "Declare the account in the template's nats.accounts[] before referencing it.",
+          },
+        );
+      }
       const name = concreteName(render(stream.name, ctx), stream.scope, stack.name, stack.environment?.name ?? null);
       const existing = await prisma.natsStream.findUnique({ where: { name } });
       const data = {
@@ -323,7 +350,16 @@ async function runStackNatsApplyPhaseUnlocked(
     for (const consumer of consumers) {
       const streamId = streamIdByName.get(consumer.stream)
         ?? (await prisma.natsStream.findUnique({ where: { name: consumer.stream } }))?.id;
-      if (!streamId) throw new Error(`NATS consumer '${consumer.name}' references unknown stream '${consumer.stream}'`);
+      if (!streamId) {
+        throw new NotFoundError(
+          ErrorCode.NATS_STREAM_NOT_FOUND,
+          `NATS consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
+          {
+            resource: { type: "natsStream", name: consumer.stream },
+            action: "Declare the stream in the template's nats.streams[] before referencing it.",
+          },
+        );
+      }
       const name = concreteName(render(consumer.name, ctx), consumer.scope, stack.name, stack.environment?.name ?? null);
       const existing = await prisma.natsConsumer.findFirst({ where: { streamId, name } });
       const data = {
@@ -724,15 +760,25 @@ async function resolveAndValidateSubjectPrefix(args: {
   const allowlist = new NatsPrefixAllowlistService(args.prisma);
   const allowedTemplateIds = await allowlist.lookupAllowedTemplateIds(resolved);
   if (!allowedTemplateIds) {
-    throw new Error(
-      `NATS apply: subjectPrefix '${resolved}' is not in the prefix allowlist. ` +
-        `Either remove the explicit subjectPrefix to use the default (${defaultResolved}), ` +
-        `or add an allowlist entry via POST /api/nats/prefix-allowlist.`,
+    throw new ValidationError(
+      ErrorCode.NATS_SUBJECT_PREFIX_NOT_ALLOWLISTED,
+      `NATS apply: subjectPrefix '${resolved}' is not in the prefix allowlist`,
+      {
+        resource: { type: "natsSubjectPrefix", name: resolved },
+        action:
+          `Remove the explicit subjectPrefix to use the default (${defaultResolved}), ` +
+          `or add an allowlist entry via POST /api/nats/prefix-allowlist.`,
+      },
     );
   }
   if (!allowedTemplateIds.includes(args.templateId)) {
-    throw new Error(
-      `NATS apply: subjectPrefix '${resolved}' is allowlisted but template '${args.templateId}' is not in its allowedTemplateIds.`,
+    throw new ValidationError(
+      ErrorCode.NATS_SUBJECT_PREFIX_NOT_ALLOWLISTED,
+      `NATS apply: subjectPrefix '${resolved}' is allowlisted but template '${args.templateId}' is not in its allowedTemplateIds`,
+      {
+        resource: { type: "natsSubjectPrefix", name: resolved },
+        action: "Add this template's id to the prefix allowlist entry via PUT /api/nats/prefix-allowlist/:prefix.",
+      },
     );
   }
 
@@ -1269,7 +1315,9 @@ async function resolveImport(args: {
   consumerEnvironmentId: string | null;
 }): Promise<string[]> {
   if (args.imp.fromStack === "") {
-    throw new Error(`NATS apply: imports[].fromStack is empty`);
+    throw new ValidationError(ErrorCode.NATS_IMPORT_INVALID, `NATS apply: imports[].fromStack is empty`, {
+      resource: { type: "stack", id: args.consumerStackId },
+    });
   }
   // Scope the lookup to the consumer's environment. A host-scoped consumer
   // (`environmentId === null`) only sees host-scoped producers; an
@@ -1295,20 +1343,34 @@ async function resolveImport(args: {
     },
   });
   if (!producer) {
-    throw new Error(
-      `NATS apply: imports[].fromStack '${args.imp.fromStack}' not found — apply the producer stack first`,
+    throw new NotFoundError(
+      ErrorCode.NATS_IMPORT_PRODUCER_NOT_FOUND,
+      `NATS apply: imports[].fromStack '${args.imp.fromStack}' not found`,
+      {
+        resource: { type: "stack", name: args.imp.fromStack },
+        action: "Apply the producer stack first, or fix the fromStack name.",
+      },
     );
   }
   if (producer.id === args.consumerStackId) {
-    throw new Error(`NATS apply: imports[].fromStack cannot reference the consumer stack itself`);
+    throw new ValidationError(
+      ErrorCode.NATS_IMPORT_INVALID,
+      `NATS apply: imports[].fromStack cannot reference the consumer stack itself`,
+      { resource: { type: "stack", id: producer.id, name: producer.name } },
+    );
   }
   // Source of truth is the NATS snapshot itself, not stack.lastAppliedAt — the
   // orchestrator only writes the snapshot, the reconciler sets lastAppliedAt
   // for the broader apply. A populated snapshot is sufficient to know the
   // producer's NATS phase ran successfully.
   if (!producer.lastAppliedNatsSnapshot) {
-    throw new Error(
-      `NATS apply: producer stack '${args.imp.fromStack}' has no applied NATS snapshot — apply it before importing`,
+    throw new ConflictError(
+      ErrorCode.NATS_IMPORT_PRODUCER_NOT_READY,
+      `NATS apply: producer stack '${args.imp.fromStack}' has no applied NATS snapshot`,
+      {
+        resource: { type: "stack", id: producer.id, name: producer.name },
+        action: "Apply the producer stack before importing from it.",
+      },
     );
   }
 
@@ -1326,9 +1388,13 @@ async function resolveImport(args: {
     environmentId: args.consumerEnvironmentId,
   });
   if (cyclePath) {
-    throw new Error(
-      `NATS apply: cross-stack import would create a cycle (${cyclePath.join(" → ")}). ` +
-        `Cross-stack imports must form a DAG — break the cycle by removing one direction.`,
+    throw new ValidationError(
+      ErrorCode.NATS_IMPORT_INVALID,
+      `NATS apply: cross-stack import would create a cycle (${cyclePath.join(" → ")})`,
+      {
+        resource: { type: "stack", id: args.consumerStackId, name: args.consumerStackName },
+        action: "Cross-stack imports must form a DAG — break the cycle by removing one direction.",
+      },
     );
   }
 
@@ -1336,15 +1402,25 @@ async function resolveImport(args: {
   try {
     snapshot = JSON.parse(producer.lastAppliedNatsSnapshot);
   } catch {
-    throw new Error(
-      `NATS apply: producer stack '${args.imp.fromStack}' has a corrupt NATS snapshot — re-apply the producer`,
+    throw new ConflictError(
+      ErrorCode.NATS_IMPORT_PRODUCER_NOT_READY,
+      `NATS apply: producer stack '${args.imp.fromStack}' has a corrupt NATS snapshot`,
+      {
+        resource: { type: "stack", id: producer.id, name: producer.name },
+        action: "Re-apply the producer stack to regenerate its NATS snapshot.",
+      },
     );
   }
   const producerPrefix = snapshot.subjectPrefix;
   const producerExports = snapshot.resolvedExports ?? [];
   if (!producerPrefix || producerExports.length === 0) {
-    throw new Error(
+    throw new ConflictError(
+      ErrorCode.NATS_IMPORT_PRODUCER_NOT_READY,
       `NATS apply: producer stack '${args.imp.fromStack}' did not export any subjects in its last apply`,
+      {
+        resource: { type: "stack", id: producer.id, name: producer.name },
+        action: "Add a nats.exports[] entry to the producer template and re-apply it.",
+      },
     );
   }
 
@@ -1353,8 +1429,10 @@ async function resolveImport(args: {
     const absolute = `${producerPrefix}.${subject}`;
     const matches = producerExports.some((pattern) => natsSubjectMatches(pattern, absolute));
     if (!matches) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.NATS_IMPORT_INVALID,
         `NATS apply: imports[].subjects '${subject}' does not match any export of producer '${args.imp.fromStack}' (exports: ${producerExports.join(", ")})`,
+        { resource: { type: "stack", id: producer.id, name: producer.name } },
       );
     }
     resolved.push(absolute);

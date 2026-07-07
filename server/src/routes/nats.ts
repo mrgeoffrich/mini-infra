@@ -17,7 +17,8 @@ import {
   SelfBackupNoSeedEntryError,
 } from "../services/backup/self-backup-seed-restore";
 import { ProviderNoLongerConfiguredError } from "../services/storage/storage-service";
-import { Channel, ServerEvent, Permission } from "@mini-infra/types";
+import { ConflictError, NotFoundError, ValidationError } from "../lib/errors";
+import { Channel, ServerEvent, ErrorCode, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -90,14 +91,10 @@ const restoreSeedsSchema = z.object({
   force: z.boolean().optional(),
 });
 
-function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    const message = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    throw Object.assign(new Error(`Validation failed: ${message}`), { statusCode: 400 });
-  }
-  return parsed.data;
-}
+// `schema.parse()` throws the native `ZodError` on failure, which the central
+// middleware (`server/src/lib/error-handler.ts`) already maps to the standard
+// `VALIDATION_FAILED` 400 envelope with per-field `details` — no bespoke
+// parsing/response code needed here.
 
 router.get(
   "/status",
@@ -143,42 +140,63 @@ router.post(
   "/identity-seeds/restore",
   requirePermission(Permission.NatsAdmin),
   asyncHandler(async (req, res) => {
-    const input = parseBody(restoreSeedsSchema, req.body ?? {});
+    const input = restoreSeedsSchema.parse(req.body ?? {});
+
+    let blob: Buffer;
     try {
-      const blob = await loadIdentitySeedBlobFromSelfBackup(input.selfBackupId);
-      const result = await restoreEncryptedIdentitySeeds(blob, {
-        force: input.force,
-        userId: getUserId(req),
-      });
-      if (!result.applied) {
-        // Conflict: a present-but-different seed would be clobbered. Nothing
-        // was written. Surface the classification so the operator can decide
-        // whether to re-run with force.
-        return res.status(409).json({
-          success: false,
-          error: "SEED_RESTORE_CONFLICT",
-          message:
-            "One or more seeds already present in Vault differ from the backup; " +
-            "nothing was restored. Re-run with force to overwrite.",
-          data: result,
-        });
-      }
-      return res.json({ success: true, data: result });
+      blob = await loadIdentitySeedBlobFromSelfBackup(input.selfBackupId);
     } catch (err) {
       if (err instanceof SelfBackupNotFoundError) {
-        return res.status(404).json({ success: false, error: err.code, message: err.message });
+        throw new NotFoundError(ErrorCode.NATS_SELF_BACKUP_NOT_FOUND, err.message, {
+          resource: { type: "selfBackup", id: input.selfBackupId },
+        });
       }
       if (err instanceof SelfBackupNoSeedEntryError) {
-        return res.status(400).json({ success: false, error: err.code, message: err.message });
+        throw new ValidationError(ErrorCode.NATS_SELF_BACKUP_NO_SEED_ENTRY, err.message, {
+          resource: { type: "selfBackup", id: input.selfBackupId },
+        });
       }
+      // ProviderNoLongerConfiguredError comes from the storage domain, which
+      // hasn't migrated onto the taxonomy yet (Phase 10) — keep this one
+      // bespoke mapping until that phase lands.
       if (err instanceof ProviderNoLongerConfiguredError) {
-        return res.status(409).json({ success: false, error: err.code, message: err.message, providerId: err.providerId });
-      }
-      if (err instanceof IdentitySeedBackupError) {
-        return res.status(400).json({ success: false, error: "SEED_BACKUP_DECRYPT_FAILED", message: err.message });
+        return res
+          .status(409)
+          .json({ success: false, error: err.code, message: err.message, providerId: err.providerId });
       }
       throw err;
     }
+
+    let result: Awaited<ReturnType<typeof restoreEncryptedIdentitySeeds>>;
+    try {
+      result = await restoreEncryptedIdentitySeeds(blob, {
+        force: input.force,
+        userId: getUserId(req),
+      });
+    } catch (err) {
+      if (err instanceof IdentitySeedBackupError) {
+        throw new ValidationError(ErrorCode.NATS_SEED_BACKUP_DECRYPT_FAILED, err.message, {
+          resource: { type: "selfBackup", id: input.selfBackupId },
+        });
+      }
+      throw err;
+    }
+
+    if (!result.applied) {
+      // A present-but-different seed would be clobbered; nothing was
+      // written. Surface the classification so the operator can decide
+      // whether to re-run with force.
+      throw new ConflictError(
+        ErrorCode.NATS_IDENTITY_SEED_RESTORE_CONFLICT,
+        "One or more seeds already present in Vault differ from the backup; nothing was restored.",
+        {
+          resource: { type: "natsIdentity" },
+          action: "Re-run the restore with force to overwrite the conflicting seed(s).",
+          details: result,
+        },
+      );
+    }
+    res.json({ success: true, data: result });
   }),
 );
 
@@ -187,12 +205,12 @@ router.get("/accounts", requirePermission(Permission.NatsRead), asyncHandler(asy
 }));
 
 router.post("/accounts", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(accountCreateSchema, req.body);
+  const input = accountCreateSchema.parse(req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createAccount(input, getUserId(req)) });
 }));
 
 router.patch("/accounts/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(accountUpdateSchema, req.body);
+  const input = accountUpdateSchema.parse(req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateAccount(String(req.params.id), input, getUserId(req)) });
 }));
 
@@ -206,12 +224,12 @@ router.get("/credentials", requirePermission(Permission.NatsRead), asyncHandler(
 }));
 
 router.post("/credentials", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(credentialCreateSchema, req.body);
+  const input = credentialCreateSchema.parse(req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createCredentialProfile(input, getUserId(req)) });
 }));
 
 router.patch("/credentials/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(credentialUpdateSchema, req.body);
+  const input = credentialUpdateSchema.parse(req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateCredentialProfile(String(req.params.id), input, getUserId(req)) });
 }));
 
@@ -221,7 +239,7 @@ router.delete("/credentials/:id", requirePermission(Permission.NatsWrite), async
 }));
 
 router.post("/credentials/:id/mint", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(mintSchema, req.body ?? {});
+  const input = mintSchema.parse(req.body ?? {});
   res.json({ success: true, data: await getNatsControlPlaneService().mintCredentialsForProfile(String(req.params.id), input.ttlSeconds) });
 }));
 
@@ -230,12 +248,12 @@ router.get("/streams", requirePermission(Permission.NatsRead), asyncHandler(asyn
 }));
 
 router.post("/streams", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(streamCreateSchema, req.body);
+  const input = streamCreateSchema.parse(req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createStream(input, getUserId(req)) });
 }));
 
 router.patch("/streams/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(streamUpdateSchema, req.body);
+  const input = streamUpdateSchema.parse(req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateStream(String(req.params.id), input, getUserId(req)) });
 }));
 
@@ -249,12 +267,12 @@ router.get("/consumers", requirePermission(Permission.NatsRead), asyncHandler(as
 }));
 
 router.post("/consumers", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(consumerCreateSchema, req.body);
+  const input = consumerCreateSchema.parse(req.body);
   res.status(201).json({ success: true, data: await getNatsControlPlaneService().createConsumer(input, getUserId(req)) });
 }));
 
 router.patch("/consumers/:id", requirePermission(Permission.NatsWrite), asyncHandler(async (req, res) => {
-  const input = parseBody(consumerUpdateSchema, req.body);
+  const input = consumerUpdateSchema.parse(req.body);
   res.json({ success: true, data: await getNatsControlPlaneService().updateConsumer(String(req.params.id), input, getUserId(req)) });
 }));
 

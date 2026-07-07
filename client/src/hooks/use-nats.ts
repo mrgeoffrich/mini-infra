@@ -77,7 +77,10 @@ export function useApplyNats() {
       toast.success("NATS configuration applied");
       qc.invalidateQueries({ queryKey: queryKeys.nats.all });
     },
-    onError: (err: Error) => toast.error(`NATS apply failed: ${err.message}`),
+    // Failure is toasted by the global `MutationCache.onError` default (see
+    // `client/src/lib/query-client.ts`), which renders the server's `code` /
+    // `resource` / `action` via `getUserFacingError` instead of a bare
+    // "NATS apply failed: <message>" string.
   });
 }
 
