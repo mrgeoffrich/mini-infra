@@ -40,7 +40,8 @@ import {
 import { cn } from "@/lib/utils";
 import { ApiRoute } from "@mini-infra/types";
 import type { DockerSocketDetectionResult } from "@mini-infra/types";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 import { RestoreFromBackupFlow, type DriveReturn } from "./restore-from-backup";
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,9 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [timezone, setTimezone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
   const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const { data: timezones } = useTimezones();
 
@@ -88,12 +91,7 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 
       onComplete();
     } catch (err) {
-      // /auth/setup responds with `{ error: "<human message>" }` (no
-      // `.message` field) — the human-readable text lands in
-      // ApiRequestError.code, not `.message`.
-      setError(
-        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
-      );
+      setError(getUserFacingError(err).description);
     } finally {
       setIsSubmitting(false);
     }
@@ -158,7 +156,10 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 
       <div className="space-y-2">
         <Label>Timezone</Label>
-        <Popover open={timezonePopoverOpen} onOpenChange={setTimezonePopoverOpen}>
+        <Popover
+          open={timezonePopoverOpen}
+          onOpenChange={setTimezonePopoverOpen}
+        >
           <PopoverTrigger asChild>
             <Button
               variant="outline"
@@ -170,7 +171,8 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
               )}
             >
               {timezone
-                ? timezones?.find((tz) => tz.value === timezone)?.label || timezone
+                ? timezones?.find((tz) => tz.value === timezone)?.label ||
+                  timezone
                 : "Select a timezone"}
               <IconSelector className="ml-2 h-4 w-4 shrink-0 opacity-50" />
             </Button>
@@ -233,7 +235,10 @@ function CreateAccountStep({ onComplete }: { onComplete: () => void }) {
 function DockerDetectionStep({
   onComplete,
 }: {
-  onComplete: (dockerHost: string | null, dockerHostIp: string) => Promise<void>;
+  onComplete: (
+    dockerHost: string | null,
+    dockerHostIp: string,
+  ) => Promise<void>;
 }) {
   const [isDetecting, setIsDetecting] = useState(true);
   const [result, setResult] = useState<DockerSocketDetectionResult | null>(
@@ -279,7 +284,8 @@ function DockerDetectionStep({
       setIpError("Docker Host IP is required");
       return false;
     }
-    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    const ipv4Regex =
+      /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
     if (!ipv4Regex.test(value)) {
       setIpError("Must be a valid IPv4 address (e.g., 192.168.1.100)");
       return false;
@@ -356,12 +362,10 @@ function DockerDetectionStep({
         />
         <p className="text-xs text-muted-foreground">
           The LAN or public IP of this machine. Used for DNS records that point
-          to your services. Make sure this machine has a static IP address —
-          if it changes, DNS records will break.
+          to your services. Make sure this machine has a static IP address — if
+          it changes, DNS records will break.
         </p>
-        {ipError && (
-          <p className="text-xs text-destructive">{ipError}</p>
-        )}
+        {ipError && <p className="text-xs text-destructive">{ipError}</p>}
       </div>
 
       {submitError && (
@@ -422,7 +426,11 @@ function StepIndicator({
       </div>
       <div
         className={`flex items-center gap-1.5 text-sm ${
-          active ? "font-medium" : done ? "text-muted-foreground" : "text-muted-foreground/40"
+          active
+            ? "font-medium"
+            : done
+              ? "text-muted-foreground"
+              : "text-muted-foreground/40"
         }`}
       >
         {icon}
@@ -499,7 +507,9 @@ export function SetupPage() {
     return null;
   });
 
-  const [mode, setMode] = useState<SetupMode>(driveReturn ? "restore" : "select");
+  const [mode, setMode] = useState<SetupMode>(
+    driveReturn ? "restore" : "select",
+  );
   const [step, setStep] = useState(1); // fresh mode: 1 = create account, 2 = docker
 
   // Strip the restore marker from the URL so a refresh doesn't re-trigger it.
@@ -525,8 +535,14 @@ export function SetupPage() {
   }, [setupStatus?.hasUsers, mode]);
 
   const stepTitles = [
-    { icon: <IconAlertCircle className="h-3.5 w-3.5" />, title: "Create Account" },
-    { icon: <IconBrandDocker className="h-3.5 w-3.5" />, title: "Docker Connection" },
+    {
+      icon: <IconAlertCircle className="h-3.5 w-3.5" />,
+      title: "Create Account",
+    },
+    {
+      icon: <IconBrandDocker className="h-3.5 w-3.5" />,
+      title: "Docker Connection",
+    },
   ];
 
   const description =
@@ -534,7 +550,10 @@ export function SetupPage() {
       ? "How would you like to get started?"
       : mode === "restore"
         ? "Restore this instance from a previous backup."
-        : { 1: "Create your admin account to get started.", 2: "Let's check if Docker is available on this host." }[step];
+        : {
+            1: "Create your admin account to get started.",
+            2: "Let's check if Docker is available on this host.",
+          }[step];
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
@@ -595,18 +614,12 @@ export function SetupPage() {
                       correlationIdPrefix: "setup",
                     });
                   } catch (err) {
-                    // /auth/setup/complete responds with `{ error: "<human
-                    // message>" }` (no `.message` field) — the human-readable
-                    // text lands in ApiRequestError.code, not `.message`.
                     // Re-thrown as a plain Error so DockerDetectionStep's
                     // `(err as Error).message` read in handleContinue's
                     // catch still shows the real text.
-                    throw new Error(
-                      err instanceof ApiRequestError
-                        ? err.code
-                        : "Failed to complete setup",
-                      { cause: err },
-                    );
+                    throw new Error(getUserFacingError(err).description, {
+                      cause: err,
+                    });
                   }
 
                   // Full page reload to clear stale cached auth/setup queries.

@@ -1,8 +1,11 @@
 import { Router, Request, Response, RequestHandler } from "express";
 import { getLogger } from "../lib/logger-factory";
 import { requireAuth } from "../lib/auth-middleware";
-import * as authSettingsService from "../lib/auth-settings-service";
+import { asyncHandler } from "../lib/async-handler";
+import { ValidationError } from "../lib/errors";
+import { ErrorCode } from "@mini-infra/types";
 import type { UpdateAuthSettingsRequest } from "@mini-infra/types";
+import * as authSettingsService from "../lib/auth-settings-service";
 
 const logger = getLogger("auth", "auth-settings");
 const router = Router();
@@ -11,31 +14,32 @@ const router = Router();
 router.use(requireAuth as RequestHandler);
 
 // Get auth settings
-router.get("/", (async (_req: Request, res: Response) => {
-  try {
+router.get(
+  "/",
+  asyncHandler(async (_req: Request, res: Response) => {
     const settings = await authSettingsService.getSettings();
     res.json({ success: true, data: settings });
-  } catch (error) {
-    logger.error({ error }, "Error fetching auth settings");
-    res.status(500).json({ error: "Failed to fetch auth settings" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // Update auth settings
-router.put("/", (async (req: Request, res: Response) => {
-  try {
+router.put(
+  "/",
+  asyncHandler(async (req: Request, res: Response) => {
     const data = req.body as UpdateAuthSettingsRequest;
 
     // Validate: if enabling Google OAuth, require both credentials
     if (data.googleOAuthEnabled === true) {
       const current = await authSettingsService.getSettingsInternal();
       const hasClientId = data.googleClientId || current.googleClientId;
-      const hasClientSecret = data.googleClientSecret || current.googleClientSecret;
+      const hasClientSecret =
+        data.googleClientSecret || current.googleClientSecret;
 
       if (!hasClientId || !hasClientSecret) {
-        return res.status(400).json({
-          error: "Google Client ID and Client Secret are required to enable Google OAuth",
-        });
+        throw new ValidationError(
+          ErrorCode.AUTH_GOOGLE_OAUTH_CREDENTIALS_REQUIRED,
+          "Google Client ID and Client Secret are required to enable Google OAuth.",
+        );
       }
     }
 
@@ -44,10 +48,7 @@ router.put("/", (async (req: Request, res: Response) => {
     const updated = await authSettingsService.getSettings();
     logger.info({ updatedBy: req.user!.id }, "Auth settings updated");
     res.json({ success: true, data: updated });
-  } catch (error) {
-    logger.error({ error }, "Error updating auth settings");
-    res.status(500).json({ error: "Failed to update auth settings" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 export default router;

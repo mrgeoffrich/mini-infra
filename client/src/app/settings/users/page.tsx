@@ -42,14 +42,8 @@ import { toastWithCopy } from "@/lib/toast-utils";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiRoute, queryKeys } from "@mini-infra/types";
 import type { UserInfo } from "@mini-infra/types";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
-
-// /api/users responds with `{ error: "<human message>" }` on failure (no
-// `.message` field) — the human-readable text lands in
-// ApiRequestError.code, not `.message`.
-function usersErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof ApiRequestError ? err.code : fallback;
-}
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -96,17 +90,12 @@ export default function UserManagementPage() {
       email: string;
       displayName: string;
       password: string;
-    }) => {
-      try {
-        return await apiFetch<UserInfo>(ApiRoute.users.list(), {
-          method: "POST",
-          body,
-          correlationIdPrefix: "users",
-        });
-      } catch (err) {
-        throw new Error(usersErrorMessage(err, "Failed to create user"), { cause: err });
-      }
-    },
+    }) =>
+      apiFetch<UserInfo>(ApiRoute.users.list(), {
+        method: "POST",
+        body,
+        correlationIdPrefix: "users",
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setAddDialogOpen(false);
@@ -115,42 +104,39 @@ export default function UserManagementPage() {
       setNewPassword("");
       toastWithCopy.success("User created successfully");
     },
+    // This dialog shows the error inline (below) rather than via the global
+    // toast — see client/ARCHITECTURE.md's error-handling section.
+    meta: { skipErrorToast: true },
   });
 
   const deleteUserMutation = useMutation({
     mutationFn: async (userId: string) => {
-      try {
-        await apiFetch<void>(ApiRoute.users.get(userId), {
-          method: "DELETE",
-          correlationIdPrefix: "users",
-        });
-      } catch (err) {
-        throw new Error(usersErrorMessage(err, "Failed to delete user"), { cause: err });
-      }
+      await apiFetch<void>(ApiRoute.users.get(userId), {
+        method: "DELETE",
+        correlationIdPrefix: "users",
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setDeleteDialog({ isOpen: false, user: null });
       toastWithCopy.success("User deleted");
     },
+    meta: { skipErrorToast: true },
   });
 
   const resetPasswordMutation = useMutation({
     mutationFn: async (userId: string) => {
-      try {
-        const data = await apiFetch<{ temporaryPassword: string }>(
-          ApiRoute.users.resetPassword(userId),
-          { method: "POST", correlationIdPrefix: "users" },
-        );
-        return data.temporaryPassword;
-      } catch (err) {
-        throw new Error(usersErrorMessage(err, "Failed to reset password"), { cause: err });
-      }
+      const data = await apiFetch<{ temporaryPassword: string }>(
+        ApiRoute.users.resetPassword(userId),
+        { method: "POST", correlationIdPrefix: "users" },
+      );
+      return data.temporaryPassword;
     },
     onSuccess: (tempPassword) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
       setResetDialog((prev) => ({ ...prev, tempPassword: tempPassword }));
     },
+    meta: { skipErrorToast: true },
   });
 
   const handleCopyPassword = async (password: string) => {
@@ -272,7 +258,7 @@ export default function UserManagementPage() {
               <Alert variant="destructive">
                 <IconAlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  {createUserMutation.error.message}
+                  {getUserFacingError(createUserMutation.error).description}
                 </AlertDescription>
               </Alert>
             )}
@@ -315,10 +301,7 @@ export default function UserManagementPage() {
               >
                 Cancel
               </Button>
-              <Button
-                type="submit"
-                disabled={createUserMutation.isPending}
-              >
+              <Button type="submit" disabled={createUserMutation.isPending}>
                 {createUserMutation.isPending ? (
                   <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
@@ -333,7 +316,10 @@ export default function UserManagementPage() {
       <Dialog
         open={deleteDialog.isOpen}
         onOpenChange={(open) =>
-          setDeleteDialog({ isOpen: open, user: open ? deleteDialog.user : null })
+          setDeleteDialog({
+            isOpen: open,
+            user: open ? deleteDialog.user : null,
+          })
         }
       >
         <DialogContent>
@@ -349,7 +335,7 @@ export default function UserManagementPage() {
             <Alert variant="destructive">
               <IconAlertCircle className="h-4 w-4" />
               <AlertDescription>
-                {deleteUserMutation.error.message}
+                {getUserFacingError(deleteUserMutation.error).description}
               </AlertDescription>
             </Alert>
           )}
@@ -401,7 +387,7 @@ export default function UserManagementPage() {
             <Alert variant="destructive">
               <IconAlertCircle className="h-4 w-4" />
               <AlertDescription>
-                {resetPasswordMutation.error.message}
+                {getUserFacingError(resetPasswordMutation.error).description}
               </AlertDescription>
             </Alert>
           )}
@@ -414,9 +400,7 @@ export default function UserManagementPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  handleCopyPassword(resetDialog.tempPassword!)
-                }
+                onClick={() => handleCopyPassword(resetDialog.tempPassword!)}
               >
                 {copied ? (
                   <IconCheck className="h-4 w-4 text-green-500" />

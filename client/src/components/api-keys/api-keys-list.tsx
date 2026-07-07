@@ -26,7 +26,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -40,10 +46,14 @@ import {
   IconAlertTriangle,
   IconEye,
   IconEyeOff,
-  IconKey
+  IconKey,
 } from "@tabler/icons-react";
 import { ApiKey } from "@/lib/auth-types";
-import { useRevokeApiKey, useRotateApiKey, useDeleteApiKey } from "@/hooks/use-api-keys";
+import {
+  useRevokeApiKey,
+  useRotateApiKey,
+  useDeleteApiKey,
+} from "@/hooks/use-api-keys";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { toast } from "sonner";
 import { PERMISSION_PRESETS } from "@mini-infra/types";
@@ -58,7 +68,10 @@ function getPermissionSummary(permissions: string[] | null): {
   label: string;
   variant: "default" | "secondary" | "outline";
 } {
-  if (permissions === null || (permissions.length === 1 && permissions[0] === "*")) {
+  if (
+    permissions === null ||
+    (permissions.length === 1 && permissions[0] === "*")
+  ) {
     return { label: "Full Access", variant: "default" };
   }
   // Check if it matches a known preset
@@ -66,7 +79,10 @@ function getPermissionSummary(permissions: string[] | null): {
     if (preset.id === "full-access") continue;
     const presetSet = new Set(preset.permissions);
     const permSet = new Set(permissions);
-    if (presetSet.size === permSet.size && [...presetSet].every((s) => permSet.has(s))) {
+    if (
+      presetSet.size === permSet.size &&
+      [...presetSet].every((s) => permSet.has(s))
+    ) {
       return { label: preset.name, variant: "secondary" };
     }
   }
@@ -105,7 +121,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
 
   const handleCopyRotatedKey = async () => {
     if (!rotatedKey) return;
-    
+
     try {
       await navigator.clipboard.writeText(rotatedKey);
       toast.success("New API key copied to clipboard!");
@@ -115,41 +131,35 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
     }
   };
 
-  const handleRevoke = async (keyId: string) => {
-    try {
-      await revokeApiKeyMutation.mutateAsync(keyId);
-      toast.success("API key revoked successfully");
-      setRevokeKeyId(null);
-    } catch (error: unknown) {
-      console.error("Failed to revoke API key:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to revoke API key";
-      toast.error(errorMessage);
-    }
+  // Errors from these mutations are surfaced by the global mutation-error
+  // toast (client/src/lib/query-client.ts) — only the success path needs
+  // handling here, so the confirmation dialogs simply stay open on failure.
+  const handleRevoke = (keyId: string) => {
+    revokeApiKeyMutation.mutate(keyId, {
+      onSuccess: () => {
+        toast.success("API key revoked successfully");
+        setRevokeKeyId(null);
+      },
+    });
   };
 
-  const handleRotate = async (keyId: string) => {
-    try {
-      const result = await rotateApiKeyMutation.mutateAsync(keyId);
-      setRotatedKey(result.key);
-      setRotateKeyId(null);
-      toast.success("API key rotated successfully");
-    } catch (error: unknown) {
-      console.error("Failed to rotate API key:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to rotate API key";
-      toast.error(errorMessage);
-    }
+  const handleRotate = (keyId: string) => {
+    rotateApiKeyMutation.mutate(keyId, {
+      onSuccess: (result) => {
+        setRotatedKey(result.key);
+        setRotateKeyId(null);
+        toast.success("API key rotated successfully");
+      },
+    });
   };
 
-  const handleDelete = async (keyId: string) => {
-    try {
-      await deleteApiKeyMutation.mutateAsync(keyId);
-      toast.success("API key deleted permanently");
-      setDeleteKeyId(null);
-    } catch (error: unknown) {
-      console.error("Failed to delete API key:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete API key";
-      toast.error(errorMessage);
-    }
+  const handleDelete = (keyId: string) => {
+    deleteApiKeyMutation.mutate(keyId, {
+      onSuccess: () => {
+        toast.success("API key deleted permanently");
+        setDeleteKeyId(null);
+      },
+    });
   };
 
   const closeRotatedKeyDialog = () => {
@@ -163,14 +173,15 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
         <IconKey className="mx-auto h-12 w-12 text-muted-foreground/50" />
         <h3 className="mt-4 text-lg font-medium">No API keys</h3>
         <p className="mt-2 text-muted-foreground">
-          You haven't created any API keys yet. Create one to get started with programmatic access.
+          You haven't created any API keys yet. Create one to get started with
+          programmatic access.
         </p>
       </div>
     );
   }
 
-  const revokeKey = apiKeys.find(key => key.id === revokeKeyId);
-  const deleteKey = apiKeys.find(key => key.id === deleteKeyId);
+  const revokeKey = apiKeys.find((key) => key.id === revokeKeyId);
+  const deleteKey = apiKeys.find((key) => key.id === deleteKeyId);
 
   return (
     <>
@@ -190,9 +201,7 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
           <TableBody>
             {apiKeys.map((apiKey) => (
               <TableRow key={apiKey.id}>
-                <TableCell className="font-medium">
-                  {apiKey.name}
-                </TableCell>
+                <TableCell className="font-medium">{apiKey.name}</TableCell>
                 <TableCell>
                   <Badge variant={apiKey.active ? "default" : "secondary"}>
                     {apiKey.active ? "Active" : "Revoked"}
@@ -202,25 +211,31 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                   {(() => {
                     const summary = getPermissionSummary(apiKey.permissions);
                     const perms = apiKey.permissions;
-                    if (perms === null || (perms.length === 1 && perms[0] === "*")) {
+                    if (
+                      perms === null ||
+                      (perms.length === 1 && perms[0] === "*")
+                    ) {
                       return (
-                        <Badge variant={summary.variant}>
-                          {summary.label}
-                        </Badge>
+                        <Badge variant={summary.variant}>{summary.label}</Badge>
                       );
                     }
                     return (
                       <TooltipProvider>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Badge variant={summary.variant} className="cursor-help">
+                            <Badge
+                              variant={summary.variant}
+                              className="cursor-help"
+                            >
                               {summary.label}
                             </Badge>
                           </TooltipTrigger>
                           <TooltipContent side="bottom" className="max-w-xs">
                             <div className="space-y-1">
                               {perms.map((p) => (
-                                <div key={p} className="text-xs font-mono">{p}</div>
+                                <div key={p} className="text-xs font-mono">
+                                  {p}
+                                </div>
                               ))}
                             </div>
                           </TooltipContent>
@@ -249,10 +264,9 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
-                  {apiKey.lastUsedAt 
+                  {apiKey.lastUsedAt
                     ? formatDateTime(new Date(apiKey.lastUsedAt))
-                    : "Never"
-                  }
+                    : "Never"}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {formatDateTime(new Date(apiKey.createdAt))}
@@ -267,18 +281,22 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                     <DropdownMenuContent align="end">
                       {apiKey.active && (
                         <>
-                          <DropdownMenuItem onClick={() => setRotateKeyId(apiKey.id)}>
+                          <DropdownMenuItem
+                            onClick={() => setRotateKeyId(apiKey.id)}
+                          >
                             <IconRotateClockwise2 className="mr-2 h-4 w-4" />
                             Rotate
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setRevokeKeyId(apiKey.id)}>
+                          <DropdownMenuItem
+                            onClick={() => setRevokeKeyId(apiKey.id)}
+                          >
                             <IconBan className="mr-2 h-4 w-4" />
                             Revoke
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                         </>
                       )}
-                      <DropdownMenuItem 
+                      <DropdownMenuItem
                         onClick={() => setDeleteKeyId(apiKey.id)}
                         className="text-destructive focus:text-destructive"
                       >
@@ -295,13 +313,17 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
       </div>
 
       {/* Revoke confirmation dialog */}
-      <AlertDialog open={!!revokeKeyId} onOpenChange={() => setRevokeKeyId(null)}>
+      <AlertDialog
+        open={!!revokeKeyId}
+        onOpenChange={() => setRevokeKeyId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke API Key</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to revoke the API key "{revokeKey?.name}"? 
-              This action will immediately disable the key, but you can rotate it later to create a new one.
+              Are you sure you want to revoke the API key "{revokeKey?.name}"?
+              This action will immediately disable the key, but you can rotate
+              it later to create a new one.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -317,13 +339,17 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
       </AlertDialog>
 
       {/* Delete confirmation dialog */}
-      <AlertDialog open={!!deleteKeyId} onOpenChange={() => setDeleteKeyId(null)}>
+      <AlertDialog
+        open={!!deleteKeyId}
+        onOpenChange={() => setDeleteKeyId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete API Key</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently delete the API key "{deleteKey?.name}"? 
-              This action cannot be undone and the key will be completely removed from the system.
+              Are you sure you want to permanently delete the API key "
+              {deleteKey?.name}"? This action cannot be undone and the key will
+              be completely removed from the system.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -333,20 +359,26 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
               disabled={deleteApiKeyMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deleteApiKeyMutation.isPending ? "Deleting..." : "Delete Permanently"}
+              {deleteApiKeyMutation.isPending
+                ? "Deleting..."
+                : "Delete Permanently"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
       {/* Rotate confirmation dialog */}
-      <AlertDialog open={!!rotateKeyId} onOpenChange={() => setRotateKeyId(null)}>
+      <AlertDialog
+        open={!!rotateKeyId}
+        onOpenChange={() => setRotateKeyId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Rotate API Key</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to rotate this API key? This will generate a new key and immediately 
-              deactivate the current one. You'll need to update any applications using the old key.
+              Are you sure you want to rotate this API key? This will generate a
+              new key and immediately deactivate the current one. You'll need to
+              update any applications using the old key.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -370,7 +402,8 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
               API Key Rotated
             </DialogTitle>
             <DialogDescription>
-              Your API key has been rotated successfully. The old key has been deactivated and this new key is now active.
+              Your API key has been rotated successfully. The old key has been
+              deactivated and this new key is now active.
             </DialogDescription>
           </DialogHeader>
 
@@ -390,7 +423,13 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
                 <div className="flex-1 relative">
                   <Input
                     id="new-api-key"
-                    value={rotatedKey ? (showRotatedKey ? rotatedKey : "mk_" + "•".repeat(64)) : ""}
+                    value={
+                      rotatedKey
+                        ? showRotatedKey
+                          ? rotatedKey
+                          : "mk_" + "•".repeat(64)
+                        : ""
+                    }
                     readOnly
                     className="font-mono text-sm pr-10"
                   />
@@ -424,16 +463,15 @@ export function ApiKeysList({ apiKeys }: ApiKeysListProps) {
             <Alert variant="destructive">
               <IconAlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <strong>Important:</strong> Make sure to update any applications or scripts using the old API key 
-                with this new key. The old key is now inactive and will no longer work.
+                <strong>Important:</strong> Make sure to update any applications
+                or scripts using the old API key with this new key. The old key
+                is now inactive and will no longer work.
               </AlertDescription>
             </Alert>
 
             {/* Actions */}
             <div className="flex justify-end">
-              <Button onClick={closeRotatedKeyDialog}>
-                Done
-              </Button>
+              <Button onClick={closeRotatedKeyDialog}>Done</Button>
             </div>
           </div>
         </DialogContent>

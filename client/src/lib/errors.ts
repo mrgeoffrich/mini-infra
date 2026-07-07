@@ -96,6 +96,11 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+  // Auth / API keys / users / permissions (Phase 9)
+  [ErrorCode.API_KEY_NOT_FOUND]: "API key not found",
+  [ErrorCode.PERMISSION_PRESET_NAME_EXISTS]: "Preset name already taken",
+  [ErrorCode.PERMISSION_PRESET_NOT_FOUND]: "Permission preset not found",
+  [ErrorCode.AUTH_ACCOUNT_LOCKED]: "Account locked",
 };
 
 function statusClassFallback(status: number): string {

@@ -15,7 +15,8 @@ import {
   IconDatabase,
   IconFolder,
 } from "@tabler/icons-react";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 import { ApiRoute } from "@mini-infra/types";
 import type {
   StorageProviderId,
@@ -26,12 +27,7 @@ import type {
 } from "@mini-infra/types";
 
 type RestoreStep =
-  | "provider"
-  | "credentials"
-  | "location"
-  | "select"
-  | "confirm"
-  | "restarting";
+  "provider" | "credentials" | "location" | "select" | "confirm" | "restarting";
 
 /** Signal passed down from the setup page after the Drive OAuth redirect. */
 export interface DriveReturn {
@@ -40,9 +36,8 @@ export interface DriveReturn {
 }
 
 function errMessage(err: unknown, fallback: string): string {
-  // Our restore endpoints respond `{ success:false, error:"<message>" }` — the
-  // human text lands in ApiRequestError.code (see api-client extractCode).
-  return err instanceof ApiRequestError ? err.code : fallback;
+  const description = getUserFacingError(err).description;
+  return description || fallback;
 }
 
 function formatBytes(bytes: number): string {
@@ -575,8 +570,8 @@ function ConfirmStep({
           All settings, connected services, and stacks from the backup will be
           applied. After the restart, sign in with the backup's admin account.
           You may need to re-enter your Vault passphrase / unlock Vault to bring
-          NATS back online, and review the Docker host settings restored from the
-          backup.
+          NATS back online, and review the Docker host settings restored from
+          the backup.
         </AlertDescription>
       </Alert>
       {backupName && (

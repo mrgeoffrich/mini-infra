@@ -11,7 +11,10 @@ import os from "os";
 import passport from "../lib/passport";
 import { getLogger } from "../lib/logger-factory";
 import { serverConfig, authConfig } from "../lib/config-new";
-import { isHttpsOnlyEnabled, isForceInsecureOverride } from "../lib/public-url-service";
+import {
+  isHttpsOnlyEnabled,
+  isForceInsecureOverride,
+} from "../lib/public-url-service";
 import { generateToken } from "../lib/jwt";
 import prisma from "../lib/prisma";
 import {
@@ -28,6 +31,15 @@ import * as authSettingsService from "../lib/auth-settings-service";
 import { requireAuth } from "../lib/auth-middleware";
 import { getAuthSecret } from "../lib/security-config";
 import { ConfigurationServiceFactory } from "../services/configuration-factory";
+import { asyncHandler } from "../lib/async-handler";
+import { CustomError } from "../lib/error-handler";
+import {
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from "../lib/errors";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   AuthStatus,
   UserProfile,
@@ -40,11 +52,21 @@ import type {
   DockerSocketDetectionResult,
 } from "@mini-infra/types";
 
+/** Shared fallback for a too-weak password across setup/recover/change-password. */
+function passwordTooWeak(message: string | undefined): ValidationError {
+  return new ValidationError(
+    ErrorCode.AUTH_PASSWORD_TOO_WEAK,
+    message ?? "Password does not meet strength requirements.",
+  );
+}
+
 const logger = getLogger("auth", "auth");
 const router = Router();
 
 // Helper function to convert JWTUser to UserProfile for API responses
-function serializeUserProfile(user: JWTUser & { mustResetPwd?: boolean }): UserProfile {
+function serializeUserProfile(
+  user: JWTUser & { mustResetPwd?: boolean },
+): UserProfile {
   return {
     id: user.id,
     email: user.email,
@@ -88,40 +110,46 @@ router.use(passport.initialize());
 // ==========================================
 // Public: Setup status
 // ==========================================
-router.get("/setup-status", (async (_req: Request, res: Response) => {
-  try {
+router.get(
+  "/setup-status",
+  asyncHandler(async (_req: Request, res: Response) => {
     const userCount = await prisma.user.count();
-    const setupComplete = userCount > 0 && (await authSettingsService.isSetupComplete());
+    const setupComplete =
+      userCount > 0 && (await authSettingsService.isSetupComplete());
     const googleOAuthEnabled = await authSettingsService.isGoogleOAuthEnabled();
 
     res.json({ setupComplete, hasUsers: userCount > 0, googleOAuthEnabled });
-  } catch (error) {
-    logger.error({ error }, "Error checking setup status");
-    res.status(500).json({ error: "Failed to check setup status" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: First-time setup (create first user)
 // ==========================================
-router.post("/setup", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/setup",
+  asyncHandler(async (req: Request, res: Response) => {
     const { email, displayName, password } = req.body as SetupRequest;
 
     if (!email || !displayName || !password) {
-      return res.status(400).json({ error: "Email, display name, and password are required" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Email, display name, and password are required.",
+      );
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid email format.",
+      );
     }
 
     // Validate password strength
     const strengthCheck = validatePasswordStrength(password);
     if (!strengthCheck.valid) {
-      return res.status(400).json({ error: strengthCheck.message });
+      throw passwordTooWeak(strengthCheck.message);
     }
 
     // Use a transaction to prevent race conditions
@@ -145,7 +173,11 @@ router.post("/setup", (async (req: Request, res: Response) => {
     });
 
     if (!result) {
-      return res.status(403).json({ error: "Setup has already been completed" });
+      throw new ForbiddenError(
+        ErrorCode.AUTH_SETUP_ALREADY_COMPLETE,
+        "Setup has already been completed.",
+        { action: "Sign in instead." },
+      );
     }
 
     // Auto-login: issue JWT so remaining setup steps are authenticated
@@ -158,33 +190,53 @@ router.post("/setup", (async (req: Request, res: Response) => {
     const token = generateToken(profile);
     await setAuthCookie(res, token);
 
-    logger.info({ userId: result.id, email: result.email }, "Initial user created during setup");
+    logger.info(
+      { userId: result.id, email: result.email },
+      "Initial user created during setup",
+    );
     res.status(201).json({ success: true });
-  } catch (error) {
-    logger.error({ error }, "Error during setup");
-    res.status(500).json({ error: "Setup failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: Setup — auto-detect Docker socket
 // ==========================================
-router.post("/setup/detect-docker", (async (_req: Request, res: Response) => {
-  try {
+router.post(
+  "/setup/detect-docker",
+  asyncHandler(async (_req: Request, res: Response) => {
     const userCount = await prisma.user.count();
     const setupComplete = await authSettingsService.isSetupComplete();
     if (userCount === 0 || setupComplete) {
-      return res.status(403).json({ error: "Setup is not in progress" });
+      throw new ForbiddenError(
+        ErrorCode.AUTH_SETUP_NOT_IN_PROGRESS,
+        "Setup is not in progress.",
+        { action: "Complete setup, or sign in if it's already done." },
+      );
     }
 
     const home = os.homedir();
     const candidates = [
-      { socketPath: "/var/run/docker.sock", display: "unix:///var/run/docker.sock" },
+      {
+        socketPath: "/var/run/docker.sock",
+        display: "unix:///var/run/docker.sock",
+      },
       { socketPath: "/run/docker.sock", display: "unix:///run/docker.sock" },
-      { socketPath: `${home}/.docker/run/docker.sock`, display: `unix://${home}/.docker/run/docker.sock` },
-      { socketPath: `${home}/.colima/default/docker.sock`, display: `unix://${home}/.colima/default/docker.sock` },
-      { socketPath: `${home}/.orbstack/run/docker.sock`, display: `unix://${home}/.orbstack/run/docker.sock` },
-      { socketPath: "//./pipe/docker_engine", display: "npipe:////./pipe/docker_engine" },
+      {
+        socketPath: `${home}/.docker/run/docker.sock`,
+        display: `unix://${home}/.docker/run/docker.sock`,
+      },
+      {
+        socketPath: `${home}/.colima/default/docker.sock`,
+        display: `unix://${home}/.colima/default/docker.sock`,
+      },
+      {
+        socketPath: `${home}/.orbstack/run/docker.sock`,
+        display: `unix://${home}/.orbstack/run/docker.sock`,
+      },
+      {
+        socketPath: "//./pipe/docker_engine",
+        display: "npipe:////./pipe/docker_engine",
+      },
     ];
 
     const sockets: DockerSocketDetectionResult["sockets"] = [];
@@ -200,16 +252,20 @@ router.post("/setup/detect-docker", (async (_req: Request, res: Response) => {
         ]);
 
         const pingStr =
-          ping instanceof Buffer ? ping.toString().trim() :
-          typeof ping === "string" ? ping.trim() :
-          String(ping).trim();
+          ping instanceof Buffer
+            ? ping.toString().trim()
+            : typeof ping === "string"
+              ? ping.trim()
+              : String(ping).trim();
 
         if (pingStr.toLowerCase() === "ok" || ping === true) {
           let version: string | undefined;
           try {
             const info = await docker.version();
             version = info.Version;
-          } catch { /* version is optional */ }
+          } catch {
+            /* version is optional */
+          }
 
           sockets.push({
             path: candidate.socketPath,
@@ -228,21 +284,23 @@ router.post("/setup/detect-docker", (async (_req: Request, res: Response) => {
     };
 
     res.json(result);
-  } catch (error) {
-    logger.error({ error }, "Error during Docker socket detection");
-    res.status(500).json({ error: "Docker detection failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: Setup — complete setup wizard
 // ==========================================
-router.post("/setup/complete", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/setup/complete",
+  asyncHandler(async (req: Request, res: Response) => {
     const userCount = await prisma.user.count();
     const setupComplete = await authSettingsService.isSetupComplete();
     if (userCount === 0 || setupComplete) {
-      return res.status(403).json({ error: "Setup is not in progress" });
+      throw new ForbiddenError(
+        ErrorCode.AUTH_SETUP_NOT_IN_PROGRESS,
+        "Setup is not in progress.",
+        { action: "Complete setup, or sign in if it's already done." },
+      );
     }
 
     const { dockerHost } = req.body as { dockerHost?: string };
@@ -255,7 +313,10 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
       await dockerConfig.set("host", dockerHost, "system");
       // validate() pings Docker and records connectivity status
       const validation = await dockerConfig.validate();
-      logger.info({ dockerHost, connected: validation.isValid }, "Docker host saved and validated during setup");
+      logger.info(
+        { dockerHost, connected: validation.isValid },
+        "Docker host saved and validated during setup",
+      );
     }
 
     // Save Docker host IP address (used for DNS record creation)
@@ -283,9 +344,12 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
 
     // Instantiate and apply the dataplane-network stack (fire-and-forget) so HAProxy can communicate
     try {
-      const { StackTemplateService: TemplateService } = await import("../services/stacks/stack-template-service");
-      const { DockerExecutorService } = await import("../services/docker-executor");
-      const { StackReconciler } = await import("../services/stacks/stack-reconciler");
+      const { StackTemplateService: TemplateService } =
+        await import("../services/stacks/stack-template-service");
+      const { DockerExecutorService } =
+        await import("../services/docker-executor");
+      const { StackReconciler } =
+        await import("../services/stacks/stack-reconciler");
 
       const dataplaneTemplate = await prisma.stackTemplate.findFirst({
         where: { name: "dataplane-network", source: "system" },
@@ -300,11 +364,17 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
         });
         let stackId = existingStack?.id;
         if (!stackId) {
-          const newStack = await templateService.createStackFromTemplate({
-            templateId: dataplaneTemplate.id,
-          }, "system");
+          const newStack = await templateService.createStackFromTemplate(
+            {
+              templateId: dataplaneTemplate.id,
+            },
+            "system",
+          );
           stackId = newStack.id;
-          logger.info({ stackId }, "Instantiated dataplane-network stack from template during setup");
+          logger.info(
+            { stackId },
+            "Instantiated dataplane-network stack from template during setup",
+          );
         }
 
         const dockerExecutor = new DockerExecutorService();
@@ -312,69 +382,107 @@ router.post("/setup/complete", (async (req: Request, res: Response) => {
         const reconciler = new StackReconciler(dockerExecutor, prisma);
 
         // Run in background — don't block setup completion
-        reconciler.apply(stackId, { triggeredBy: "system" })
-          .then((result) => logger.info({ stackId, success: result.success }, "dataplane-network stack applied during setup"))
-          .catch((err) => logger.warn({ error: (err as Error).message }, "Failed to apply dataplane-network stack during setup (non-fatal)"));
+        reconciler
+          .apply(stackId, { triggeredBy: "system" })
+          .then((result) =>
+            logger.info(
+              { stackId, success: result.success },
+              "dataplane-network stack applied during setup",
+            ),
+          )
+          .catch((err) =>
+            logger.warn(
+              { error: (err as Error).message },
+              "Failed to apply dataplane-network stack during setup (non-fatal)",
+            ),
+          );
       }
     } catch (err) {
-      logger.warn({ error: (err as Error).message }, "Failed to initiate dataplane-network stack apply during setup (non-fatal)");
+      logger.warn(
+        { error: (err as Error).message },
+        "Failed to initiate dataplane-network stack apply during setup (non-fatal)",
+      );
     }
 
     await authSettingsService.markSetupComplete();
     logger.info("Setup wizard completed");
     res.json({ success: true });
-  } catch (error) {
-    logger.error({ error }, "Error completing setup");
-    res.status(500).json({ error: "Failed to complete setup" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: Local login
 // ==========================================
-router.post("/login", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/login",
+  asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body as LocalLoginRequest;
 
     if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Email and password are required.",
+      );
     }
 
-    // Find user by email (case-insensitive)
+    // Find user by email (case-insensitive). Same message regardless of
+    // *why* credentials didn't check out (unknown email, wrong password, no
+    // local password set) so the response never leaks whether an email is
+    // registered.
     const user = await prisma.user.findUnique({
       where: { email: email.toLowerCase().trim() },
     });
 
     if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      throw new UnauthorizedError(
+        ErrorCode.AUTH_INVALID_CREDENTIALS,
+        "Invalid email or password.",
+      );
     }
 
     // Check lockout
     const lockoutStatus = checkLockout(user);
     if (lockoutStatus.locked) {
-      return res.status(423).json({
-        error: `Account locked. Try again in ${lockoutStatus.remainingMinutes} minute(s).`,
-      });
+      throw new CustomError(
+        `Account locked. Try again in ${lockoutStatus.remainingMinutes} minute(s).`,
+        423,
+        true,
+        ErrorCode.AUTH_ACCOUNT_LOCKED,
+        { action: "Wait for the lockout to expire, or use password recovery." },
+      );
     }
 
     // Check if user has a password (Google-only users don't)
     if (!user.passwordHash) {
-      return res.status(401).json({ error: "Invalid credentials" });
+      throw new UnauthorizedError(
+        ErrorCode.AUTH_INVALID_CREDENTIALS,
+        "Invalid email or password.",
+      );
     }
 
     // Verify password
     const valid = await verifyPassword(user.passwordHash, password);
     if (!valid) {
       await recordFailedAttempt(user.id);
-      return res.status(401).json({ error: "Invalid credentials" });
+      throw new UnauthorizedError(
+        ErrorCode.AUTH_INVALID_CREDENTIALS,
+        "Invalid email or password.",
+      );
     }
 
     // Check ALLOWED_ADMIN_EMAILS if configured
     const allowedEmails = authConfig.allowedEmails;
     if (allowedEmails && allowedEmails.length > 0) {
       if (!allowedEmails.includes(user.email.toLowerCase())) {
-        logger.warn({ email: user.email }, "Login rejected - email not in ALLOWED_ADMIN_EMAILS list");
-        return res.status(403).json({ error: "Email not authorized" });
+        logger.warn(
+          { email: user.email },
+          "Login rejected - email not in ALLOWED_ADMIN_EMAILS list",
+        );
+        throw new ForbiddenError(
+          ErrorCode.AUTH_EMAIL_NOT_ALLOWED,
+          "This email is not authorized to sign in.",
+          { action: "Contact your administrator." },
+        );
       }
     }
 
@@ -401,26 +509,28 @@ router.post("/login", (async (req: Request, res: Response) => {
 
     logger.info({ userId: user.id }, "Local login successful");
     res.json({ success: true, mustResetPwd: user.mustResetPwd });
-  } catch (error) {
-    logger.error({ error }, "Error during login");
-    res.status(500).json({ error: "Login failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: Password recovery - request token
 // ==========================================
-router.post("/recover/request", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/recover/request",
+  asyncHandler(async (req: Request, res: Response) => {
     const { email } = req.body as RecoverRequestPayload;
 
     if (!email) {
-      return res.status(400).json({ error: "Email is required" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Email is required.",
+      );
     }
 
     // Always return 200 to prevent email enumeration
     const genericResponse = {
-      message: "If an account exists with that email, a recovery token has been generated. Check the server logs.",
+      message:
+        "If an account exists with that email, a recovery token has been generated. Check the server logs.",
     };
 
     const user = await prisma.user.findUnique({
@@ -464,26 +574,27 @@ router.post("/recover/request", (async (req: Request, res: Response) => {
       "Password reset token generated — operator must deliver this to the user out-of-band",
     );
     res.json(genericResponse);
-  } catch (error) {
-    logger.error({ error }, "Error generating recovery token");
-    res.status(500).json({ error: "Recovery request failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Public: Password recovery - reset with token
 // ==========================================
-router.post("/recover/reset", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/recover/reset",
+  asyncHandler(async (req: Request, res: Response) => {
     const { email, token, newPassword } = req.body as RecoverResetPayload;
 
     if (!email || !token || !newPassword) {
-      return res.status(400).json({ error: "Email, token, and new password are required" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Email, token, and new password are required.",
+      );
     }
 
     const strengthCheck = validatePasswordStrength(newPassword);
     if (!strengthCheck.valid) {
-      return res.status(400).json({ error: strengthCheck.message });
+      throw passwordTooWeak(strengthCheck.message);
     }
 
     const user = await prisma.user.findUnique({
@@ -491,7 +602,10 @@ router.post("/recover/reset", (async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(400).json({ error: "Invalid or expired recovery token" });
+      throw new ValidationError(
+        ErrorCode.AUTH_RECOVERY_TOKEN_INVALID,
+        "Invalid or expired recovery token.",
+      );
     }
 
     // Find matching token
@@ -506,7 +620,10 @@ router.post("/recover/reset", (async (req: Request, res: Response) => {
     });
 
     if (!resetToken) {
-      return res.status(400).json({ error: "Invalid or expired recovery token" });
+      throw new ValidationError(
+        ErrorCode.AUTH_RECOVERY_TOKEN_INVALID,
+        "Invalid or expired recovery token.",
+      );
     }
 
     // Update password and mark token as used
@@ -529,45 +646,62 @@ router.post("/recover/reset", (async (req: Request, res: Response) => {
 
     logger.info({ userId: user.id }, "Password reset via recovery token");
     res.json({ success: true });
-  } catch (error) {
-    logger.error({ error }, "Error resetting password");
-    res.status(500).json({ error: "Password reset failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Authenticated: Change password
 // ==========================================
-router.post("/change-password", requireAuth, (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/change-password",
+  requireAuth,
+  asyncHandler(async (req: Request, res: Response) => {
     const { currentPassword, newPassword } = req.body as ChangePasswordRequest;
     const userId = req.user!.id;
 
     if (!newPassword) {
-      return res.status(400).json({ error: "New password is required" });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "New password is required.",
+      );
     }
 
     const strengthCheck = validatePasswordStrength(newPassword);
     if (!strengthCheck.valid) {
-      return res.status(400).json({ error: strengthCheck.message });
+      throw passwordTooWeak(strengthCheck.message);
     }
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      throw new NotFoundError(
+        ErrorCode.USER_NOT_FOUND,
+        `User '${userId}' not found.`,
+        {
+          resource: { type: "user", id: userId },
+        },
+      );
     }
 
     // If not forced reset, verify current password
     if (!user.mustResetPwd) {
       if (!currentPassword) {
-        return res.status(400).json({ error: "Current password is required" });
+        throw new ValidationError(
+          ErrorCode.AUTH_CURRENT_PASSWORD_REQUIRED,
+          "Current password is required.",
+        );
       }
       if (!user.passwordHash) {
-        return res.status(400).json({ error: "No password set on this account" });
+        throw new ValidationError(
+          ErrorCode.AUTH_NO_PASSWORD_SET,
+          "No password is set on this account.",
+        );
       }
       const valid = await verifyPassword(user.passwordHash, currentPassword);
       if (!valid) {
-        return res.status(401).json({ error: "Current password is incorrect" });
+        throw new UnauthorizedError(
+          ErrorCode.AUTH_CURRENT_PASSWORD_INCORRECT,
+          "Current password is incorrect.",
+        );
       }
     }
 
@@ -594,16 +728,17 @@ router.post("/change-password", requireAuth, (async (req: Request, res: Response
 
     logger.info({ userId }, "Password changed successfully");
     res.json({ success: true });
-  } catch (error) {
-    logger.error({ error }, "Error changing password");
-    res.status(500).json({ error: "Password change failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Google OAuth (conditional)
 // ==========================================
-router.get("/google", (async (req: Request, res: Response, next: NextFunction) => {
+router.get("/google", (async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
   // Check if Google OAuth is enabled
   const enabled = await authSettingsService.isGoogleOAuthEnabled();
   if (!enabled) {
@@ -619,7 +754,11 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
   const { configureGoogleStrategy } = await import("../lib/passport");
   const { getPublicUrl } = await import("../lib/public-url-service");
   const publicUrl = await getPublicUrl();
-  configureGoogleStrategy(credentials.clientId, credentials.clientSecret, publicUrl);
+  configureGoogleStrategy(
+    credentials.clientId,
+    credentials.clientSecret,
+    publicUrl,
+  );
 
   const redirectParam = req.query.redirect as string;
   logger.debug({ redirect: redirectParam }, "Initiating Google OAuth flow");
@@ -653,84 +792,108 @@ router.get("/google", (async (req: Request, res: Response, next: NextFunction) =
   })(req, res, next);
 }) as RequestHandler);
 
-router.get("/google/callback", ((req: Request, res: Response, next: NextFunction) => {
-  passport.authenticate("google", async (err: Error | null, authedUser: false | { id: string; email: string; name: string | null; image: string | null; createdAt: Date }) => {
-    const user = authedUser;
-    const storedNonce = req.cookies?.["oauth-state"];
-    res.clearCookie("oauth-state", { path: "/auth/google/callback" });
+router.get("/google/callback", ((
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  passport.authenticate(
+    "google",
+    async (
+      err: Error | null,
+      authedUser:
+        | false
+        | {
+            id: string;
+            email: string;
+            name: string | null;
+            image: string | null;
+            createdAt: Date;
+          },
+    ) => {
+      const user = authedUser;
+      const storedNonce = req.cookies?.["oauth-state"];
+      res.clearCookie("oauth-state", { path: "/auth/google/callback" });
 
-    if (err || !user) {
-      logger.error({ error: err }, "OAuth authentication error");
-      return res.redirect("/auth/failure");
-    }
-
-    if (!storedNonce) {
-      logger.warn("OAuth callback missing oauth-state cookie");
-      return res.redirect("/auth/failure");
-    }
-
-    let stateNonce: string | undefined;
-    let stateRedirect: string | undefined;
-    try {
-      const stateRaw = req.query.state as string;
-      if (stateRaw) {
-        const parsed = JSON.parse(Buffer.from(stateRaw, "base64").toString("utf8"));
-        stateNonce = parsed.nonce;
-        stateRedirect = parsed.redirect;
+      if (err || !user) {
+        logger.error({ error: err }, "OAuth authentication error");
+        return res.redirect("/auth/failure");
       }
-    } catch {
-      logger.warn("Failed to parse OAuth state parameter");
-      return res.redirect("/auth/failure");
-    }
 
-    const nonceBuf = Buffer.from(stateNonce || "");
-    const storedBuf = Buffer.from(storedNonce);
-    if (
-      !stateNonce ||
-      nonceBuf.length !== storedBuf.length ||
-      !crypto.timingSafeEqual(nonceBuf, storedBuf)
-    ) {
-      logger.warn("OAuth state nonce mismatch");
-      return res.redirect("/auth/failure");
-    }
+      if (!storedNonce) {
+        logger.warn("OAuth callback missing oauth-state cookie");
+        return res.redirect("/auth/failure");
+      }
 
-    try {
-      const profile: UserProfile = {
-        id: user.id,
-        email: user.email,
-        name: user.name || undefined,
-        image: user.image || undefined,
-        createdAt: user.createdAt.toISOString(),
-      };
-      const token = generateToken(profile);
+      let stateNonce: string | undefined;
+      let stateRedirect: string | undefined;
+      try {
+        const stateRaw = req.query.state as string;
+        if (stateRaw) {
+          const parsed = JSON.parse(
+            Buffer.from(stateRaw, "base64").toString("utf8"),
+          );
+          stateNonce = parsed.nonce;
+          stateRedirect = parsed.redirect;
+        }
+      } catch {
+        logger.warn("Failed to parse OAuth state parameter");
+        return res.redirect("/auth/failure");
+      }
 
-      let redirectPath = "/dashboard";
+      const nonceBuf = Buffer.from(stateNonce || "");
+      const storedBuf = Buffer.from(storedNonce);
       if (
-        stateRedirect &&
-        stateRedirect.startsWith("/") &&
-        !stateRedirect.startsWith("//") &&
-        !stateRedirect.includes("://")
+        !stateNonce ||
+        nonceBuf.length !== storedBuf.length ||
+        !crypto.timingSafeEqual(nonceBuf, storedBuf)
       ) {
-        redirectPath = stateRedirect;
+        logger.warn("OAuth state nonce mismatch");
+        return res.redirect("/auth/failure");
       }
 
-      const { getPublicUrl: getPublicUrlForRedirect } = await import("../lib/public-url-service");
-      const frontendUrl =
-        (await getPublicUrlForRedirect()) ||
-        (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
+      try {
+        const profile: UserProfile = {
+          id: user.id,
+          email: user.email,
+          name: user.name || undefined,
+          image: user.image || undefined,
+          createdAt: user.createdAt.toISOString(),
+        };
+        const token = generateToken(profile);
 
-      await setAuthCookie(res, token);
-      res.redirect(`${frontendUrl}${redirectPath}`);
-    } catch (error) {
-      logger.error({ error }, "Error generating JWT after OAuth");
-      return res.redirect("/auth/failure");
-    }
-  })(req, res, next);
+        let redirectPath = "/dashboard";
+        if (
+          stateRedirect &&
+          stateRedirect.startsWith("/") &&
+          !stateRedirect.startsWith("//") &&
+          !stateRedirect.includes("://")
+        ) {
+          redirectPath = stateRedirect;
+        }
+
+        const { getPublicUrl: getPublicUrlForRedirect } =
+          await import("../lib/public-url-service");
+        const frontendUrl =
+          (await getPublicUrlForRedirect()) ||
+          (serverConfig.nodeEnv === "development"
+            ? "http://localhost:3000"
+            : "");
+
+        await setAuthCookie(res, token);
+        res.redirect(`${frontendUrl}${redirectPath}`);
+      } catch (error) {
+        logger.error({ error }, "Error generating JWT after OAuth");
+        return res.redirect("/auth/failure");
+      }
+    },
+  )(req, res, next);
 }) as RequestHandler);
 
 // OAuth failure redirect
 router.get("/failure", (async (req: Request, res: Response) => {
-  const { getPublicUrl: getPublicUrlForFailure } = await import("../lib/public-url-service");
+  const { getPublicUrl: getPublicUrlForFailure } =
+    await import("../lib/public-url-service");
   const frontendUrl =
     (await getPublicUrlForFailure()) ||
     (serverConfig.nodeEnv === "development" ? "http://localhost:3000" : "");
@@ -740,8 +903,9 @@ router.get("/failure", (async (req: Request, res: Response) => {
 // ==========================================
 // Logout
 // ==========================================
-router.post("/logout", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/logout",
+  asyncHandler(async (req: Request, res: Response) => {
     const secure = await getSecureCookieFlag();
     res.clearCookie("auth-token", {
       httpOnly: true,
@@ -749,11 +913,8 @@ router.post("/logout", (async (req: Request, res: Response) => {
       sameSite: secure ? "strict" : "lax",
     });
     res.json({ message: "Logged out successfully" });
-  } catch (error) {
-    logger.error({ error }, "Error during logout");
-    res.status(500).json({ error: "Logout failed" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // ==========================================
 // Auth status
@@ -778,7 +939,10 @@ router.get("/status", ((req: Request, res: Response) => {
 // Get current user profile
 router.get("/user", ((req: Request, res: Response) => {
   if (!req.user) {
-    return res.status(401).json({ error: "Not authenticated" });
+    throw new UnauthorizedError(
+      ErrorCode.AUTH_NOT_AUTHENTICATED,
+      "Not authenticated.",
+    );
   }
   res.json(serializeUserProfile(req.user));
 }) as RequestHandler);
