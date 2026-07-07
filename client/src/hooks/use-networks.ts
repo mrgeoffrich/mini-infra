@@ -167,12 +167,9 @@ export function useDeleteNetwork(options: UseDeleteNetworkOptions = {}) {
       }
     },
     onError: (error: Error, networkId) => {
-      // Show error toast
-      toast.error("Failed to delete network", {
-        description: error.message,
-      });
-
-      // Call optional error callback
+      // Toasted globally by the mutation cache's default onError (see
+      // client/src/lib/query-client.ts) — only forward to the optional
+      // caller-supplied callback here.
       if (onError) {
         onError(networkId, error);
       }
@@ -243,9 +240,7 @@ export function useConnectContainerNetwork(options: UseContainerNetworkOptions =
       onSuccess?.(result);
     },
     onError: (error: Error) => {
-      toast.error("Failed to connect container to network", {
-        description: error.message,
-      });
+      // Toasted globally by the mutation cache's default onError.
       onError?.(error);
     },
   });
@@ -268,9 +263,7 @@ export function useDisconnectContainerNetwork(options: UseContainerNetworkOption
       onSuccess?.(result);
     },
     onError: (error: Error) => {
-      toast.error("Failed to disconnect container from network", {
-        description: error.message,
-      });
+      // Toasted globally by the mutation cache's default onError.
       onError?.(error);
     },
   });
@@ -391,9 +384,7 @@ export function useNetworkGc() {
         );
       }
     },
-    onError: (error: Error) => {
-      toast.error("Network GC failed", { description: error.message });
-    },
+    // Errors are toasted globally by the mutation cache's default onError.
   });
 }
 
@@ -427,9 +418,7 @@ export function useReconcileNetworks() {
       if (result.membershipsDisconnected > 0) parts.push(`${result.membershipsDisconnected} stale membership(s) disconnected`);
       toast.success(parts.length > 0 ? `Reconciled: ${parts.join(", ")}` : "Already in sync — nothing to reconcile");
     },
-    onError: (error: Error) => {
-      toast.error("Network reconcile failed", { description: error.message });
-    },
+    // Errors are toasted globally by the mutation cache's default onError.
   });
 }
 
@@ -463,8 +452,6 @@ export function useSetNetworkEnforceMemberships() {
           : `Enforcement disabled for "${data.name}"`,
       );
     },
-    onError: (error: Error) => {
-      toast.error("Failed to update enforcement setting", { description: error.message });
-    },
+    // Errors are toasted globally by the mutation cache's default onError.
   });
 }

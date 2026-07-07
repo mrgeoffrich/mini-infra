@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { CreateEnvironmentRequest, UpdateEnvironmentRequest, Permission } from '@mini-infra/types';
+import { CreateEnvironmentRequest, UpdateEnvironmentRequest, Permission, ErrorCode } from '@mini-infra/types';
 import { EnvironmentManager } from '../services/environment';
 import { requirePermission } from '../middleware/auth';
+import { ConflictError, NotFoundError } from '../lib/errors';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
 import { haproxyRemediationService, HAProxyDataPlaneClient } from '../services/haproxy';
@@ -31,11 +32,11 @@ const listEnvironmentsSchema = z.object({
 
 
 
-router.get('/', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
-    // Validate query parameters
-    const validatedQuery = listEnvironmentsSchema.parse(req.query);
-    const { type, page = 1, limit = 20 } = validatedQuery;
+    // Validate query parameters — a ZodError here is handled by the central
+    // middleware (400 VALIDATION_FAILED), so no bespoke mapping needed.
+    const { type, page = 1, limit = 20 } = listEnvironmentsSchema.parse(req.query);
 
     const result = await environmentManager.listEnvironments(
       type,
@@ -56,24 +57,13 @@ router.get('/', requirePermission(Permission.EnvironmentsRead), async (req, res)
     });
 
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Invalid query parameters',
-        message: 'Validation failed',
-        details: error.issues
-      });
-    }
-
     logger.error({ error }, 'Failed to list environments');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to list environments'
-    });
+    next(error);
   }
 });
 
 
-router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
+router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, res, next) => {
   try {
     const request: CreateEnvironmentRequest = req.body;
     const userId = (req as { user?: { id?: string } }).user?.id;
@@ -84,12 +74,20 @@ router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, re
       select: { id: true, name: true },
     });
     if (existingWithNetworkType) {
-      return res.status(409).json({
-        error: 'Network type already in use',
-        message: `A ${networkType} environment ("${existingWithNetworkType.name}") already exists. Only one ${networkType} environment is allowed.`,
-      });
+      throw new ConflictError(
+        ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT,
+        `A ${networkType} environment ("${existingWithNetworkType.name}") already exists. Only one ${networkType} environment is allowed.`,
+        {
+          resource: { type: 'environment', name: existingWithNetworkType.name },
+          action: `Edit the existing ${networkType} environment, or remove it before creating another.`,
+        },
+      );
     }
 
+    // Duplicate-name conflicts (the other environments.create conflict case)
+    // are attributed by the service — see environment-manager.ts's
+    // ENVIRONMENT_NAME_EXISTS ConflictError — and reach the central
+    // middleware via the catch below like any other taxonomy error.
     const { environment, userEventId } = await environmentManager.createEnvironment(request, userId);
 
     logger.debug({
@@ -107,59 +105,49 @@ router.post('/', requirePermission(Permission.EnvironmentsWrite), async (req, re
 
   } catch (error) {
     logger.error({ error, request: req.body }, 'Failed to create environment');
-
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Unique constraint')) {
-      return res.status(409).json({
-        error: 'Environment name already exists',
-        message: 'An environment with this name already exists'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to create environment'
-    });
+    next(error);
   }
 });
 
 
-router.get('/:id', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/:id', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
 
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     res.json(environment);
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to get environment');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve environment'
-    });
+    next(error);
   }
 });
 
 
-router.put('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
+router.put('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const request: UpdateEnvironmentRequest = req.body;
 
+    // The service throws NotFoundError (P2025) rather than returning null —
+    // this null-check is a defensive fallback only.
     const environment = await environmentManager.updateEnvironment(id, request);
 
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     logger.debug({
@@ -171,24 +159,13 @@ router.put('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, 
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id, request: req.body }, 'Failed to update environment');
-
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Unique constraint')) {
-      return res.status(409).json({
-        error: 'Environment name already exists',
-        message: 'An environment with this name already exists'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to update environment'
-    });
+    next(error);
   }
 });
 
 
 // Check if environment can be deleted (pre-flight validation)
-router.get('/:id/delete-check', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/:id/delete-check', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
@@ -218,14 +195,11 @@ router.get('/:id/delete-check', requirePermission(Permission.EnvironmentsRead), 
     res.json({ canDelete, dependencies });
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to check environment delete eligibility');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to check delete eligibility',
-    });
+    next(error);
   }
 });
 
-router.delete('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
+router.delete('/:id', requirePermission(Permission.EnvironmentsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const { deleteNetworks = 'false' } = req.query;
@@ -240,10 +214,11 @@ router.delete('/:id', requirePermission(Permission.EnvironmentsWrite), async (re
     });
 
     if (!success) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     logger.debug({
@@ -256,18 +231,7 @@ router.delete('/:id', requirePermission(Permission.EnvironmentsWrite), async (re
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to delete environment');
-
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes('Cannot delete a running environment')) {
-      return res.status(400).json({
-        error: 'Environment is running',
-        message: 'Cannot delete a running environment. Stop it first.'
-      });
-    }
-
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to delete environment'
-    });
+    next(error);
   }
 });
 
@@ -332,17 +296,18 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
  * POST /api/environments/:id/remediate-haproxy
  * Trigger full HAProxy remediation for an environment
  */
-router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
+router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     // Check if environment has HAProxy stack
@@ -378,10 +343,7 @@ router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsW
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to remediate HAProxy');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to remediate HAProxy'
-    });
+    next(error);
   }
 });
 
@@ -389,17 +351,18 @@ router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsW
  * GET /api/environments/:id/haproxy-status
  * Get HAProxy configuration status for an environment
  */
-router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     // Check if environment has HAProxy stack
@@ -453,10 +416,7 @@ router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead)
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to get HAProxy status');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'Failed to retrieve HAProxy status'
-    });
+    next(error);
   }
 });
 
@@ -464,17 +424,18 @@ router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead)
  * GET /api/environments/:id/remediation-preview
  * Get preview of what HAProxy remediation would do
  */
-router.get('/:id/remediation-preview', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/:id/remediation-preview', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     // Verify environment exists
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     // Check if environment has HAProxy stack
@@ -509,10 +470,7 @@ router.get('/:id/remediation-preview', requirePermission(Permission.Environments
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to get remediation preview');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to get remediation preview'
-    });
+    next(error);
   }
 });
 
@@ -520,16 +478,17 @@ router.get('/:id/remediation-preview', requirePermission(Permission.Environments
  * GET /api/environments/:id/migration-preview
  * Check if environment needs migration from legacy to stack-managed HAProxy
  */
-router.get('/:id/migration-preview', requirePermission(Permission.EnvironmentsRead), async (req, res) => {
+router.get('/:id/migration-preview', requirePermission(Permission.EnvironmentsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     const preview = await haproxyMigrationService.getMigrationPreview(id, prisma);
@@ -541,10 +500,7 @@ router.get('/:id/migration-preview', requirePermission(Permission.EnvironmentsRe
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to get migration preview');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to get migration preview'
-    });
+    next(error);
   }
 });
 
@@ -552,23 +508,28 @@ router.get('/:id/migration-preview', requirePermission(Permission.EnvironmentsRe
  * POST /api/environments/:id/migrate-haproxy
  * Migrate legacy HAProxy to stack-managed HAProxy (fire-and-forget with Socket.IO progress)
  */
-router.post('/:id/migrate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res) => {
+router.post('/:id/migrate-haproxy', requirePermission(Permission.EnvironmentsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
     const environment = await environmentManager.getEnvironmentById(id);
     if (!environment) {
-      return res.status(404).json({
-        error: 'Environment not found',
-        message: `Environment with ID ${id} does not exist`
-      });
+      throw new NotFoundError(
+        ErrorCode.ENVIRONMENT_NOT_FOUND,
+        `Environment with ID ${id} does not exist.`,
+        { resource: { type: 'environment', id } },
+      );
     }
 
     if (migratingEnvironments.has(id)) {
-      return res.status(409).json({
-        success: false,
-        message: 'HAProxy migration already in progress for this environment'
-      });
+      throw new ConflictError(
+        ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS,
+        'An HAProxy migration is already in progress for this environment.',
+        {
+          resource: { type: 'environment', id },
+          action: 'Wait for the current migration to finish before starting another.',
+        },
+      );
     }
 
     migratingEnvironments.add(id);
@@ -621,10 +582,7 @@ router.post('/:id/migrate-haproxy', requirePermission(Permission.EnvironmentsWri
 
   } catch (error) {
     logger.error({ error, environmentId: req.params.id }, 'Failed to start HAProxy migration');
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : 'Failed to start HAProxy migration'
-    });
+    next(error);
   }
 });
 

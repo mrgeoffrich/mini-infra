@@ -115,6 +115,13 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.NATS_IMPORT_INVALID]: "Invalid NATS import",
   [ErrorCode.NATS_IMPORT_PRODUCER_NOT_READY]: "Producer stack not ready",
   [ErrorCode.NATS_PREFIX_ALLOWLIST_OVERLAP]: "Prefix overlaps existing entry",
+
+  // Environments / networks (Phase 4) — the generic 409 "already exists"
+  // status-class fallback is actively misleading for these three: none of
+  // them are about the target resource already existing.
+  [ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT]: "Network type already in use",
+  [ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS]: "Migration already in progress",
+  [ErrorCode.DOCKER_NETWORK_IN_USE]: "Network still in use",
 };
 
 function statusClassFallback(status: number): string {

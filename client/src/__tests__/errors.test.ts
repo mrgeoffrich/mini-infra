@@ -52,6 +52,44 @@ describe("getUserFacingError", () => {
     );
   });
 
+  it("uses the curated title for DOCKER_NETWORK_IN_USE instead of the misleading 409 'already exists' fallback", () => {
+    // Phase 4 (environments/networks): the generic resource-based title for
+    // a 409 would read "Docker Network already exists", which is wrong —
+    // the network already exists just fine, it's still attached to
+    // containers. This is exactly the case CODE_TITLES exists for.
+    const body = {
+      error: ErrorCode.DOCKER_NETWORK_IN_USE,
+      message: 'Cannot remove network "app-net": one or more containers are connected.',
+      resource: { type: "dockerNetwork", id: "app-net" },
+      action: "Disconnect the attached containers first, then try again.",
+    };
+    const err = new ApiRequestError(409, ErrorCode.DOCKER_NETWORK_IN_USE, body.message, body);
+
+    const result = getUserFacingError(err);
+
+    expect(result.title).toBe("Network still in use");
+    expect(result.description).toBe(body.message);
+    expect(result.action).toBe(body.action);
+  });
+
+  it("uses the curated title for ENVIRONMENT_NETWORK_TYPE_CONFLICT and ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS", () => {
+    const networkTypeConflict = new ApiRequestError(
+      409,
+      ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT,
+      'A local environment ("prod") already exists. Only one local environment is allowed.',
+      { error: ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT, resource: { type: "environment", name: "prod" } },
+    );
+    expect(getUserFacingError(networkTypeConflict).title).toBe("Network type already in use");
+
+    const migrationInProgress = new ApiRequestError(
+      409,
+      ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS,
+      "An HAProxy migration is already in progress for this environment.",
+      { error: ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS, resource: { type: "environment", id: "env-1" } },
+    );
+    expect(getUserFacingError(migrationInProgress).title).toBe("Migration already in progress");
+  });
+
   it("sharpens the title from body.resource when the code has no curated title", () => {
     const body = {
       error: "STACK_ALREADY_DEPLOYED",

@@ -8,7 +8,9 @@ import {
   EgressNetworkStatus,
   CreateEnvironmentRequest,
   UpdateEnvironmentRequest,
+  ErrorCode,
 } from '@mini-infra/types';
+import { ConflictError, NotFoundError } from '../../lib/errors';
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
@@ -94,14 +96,34 @@ export class EnvironmentManager {
 
       // Create environment record
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Creating environment record...`);
-      const environmentData = await this.prisma.environment.create({
-        data: {
-          name: request.name,
-          description: request.description,
-          type: request.type,
-          networkType: request.networkType || 'local',
-        },
-      });
+      let environmentData;
+      try {
+        environmentData = await this.prisma.environment.create({
+          data: {
+            name: request.name,
+            description: request.description,
+            type: request.type,
+            networkType: request.networkType || 'local',
+          },
+        });
+      } catch (createErr) {
+        // `Environment.name` is `@unique` — a raw Prisma P2002 used to bubble
+        // to the route as an unattributed 500, which then had to
+        // string-match Prisma's own English error text to recover a 409
+        // (docs/planning/not-shipped/error-handling-overhaul-plan.md §1/Phase 4).
+        // Attribute the conflict here instead, once, at the source.
+        if (createErr instanceof Prisma.PrismaClientKnownRequestError && createErr.code === 'P2002') {
+          throw new ConflictError(
+            ErrorCode.ENVIRONMENT_NAME_EXISTS,
+            `An environment named "${request.name}" already exists.`,
+            {
+              resource: { type: 'environment', name: request.name },
+              action: 'Choose a different name, or edit the existing environment instead.',
+            },
+          );
+        }
+        throw createErr;
+      }
       await this.userEventService.appendLogs(userEvent.id, `[${new Date().toISOString()}] Environment record created (ID: ${environmentData.id})`);
 
       // Fetch the complete environment with relations
@@ -378,28 +400,44 @@ export class EnvironmentManager {
         select: { egressFirewallEnabled: true, name: true },
       });
 
-      const environment = await this.prisma.environment.update({
-        where: { id },
-        data: {
-          description: request.description,
-          type: request.type,
-          networkType: request.networkType,
-          tunnelId: request.tunnelId,
-          tunnelServiceUrl: request.tunnelServiceUrl,
-          egressFirewallEnabled: request.egressFirewallEnabled,
-        },
-        include: {
-          _count: {
-              select: {
-                stacks: { where: { template: { source: 'user' } } },
+      let environment;
+      try {
+        environment = await this.prisma.environment.update({
+          where: { id },
+          data: {
+            description: request.description,
+            type: request.type,
+            networkType: request.networkType,
+            tunnelId: request.tunnelId,
+            tunnelServiceUrl: request.tunnelServiceUrl,
+            egressFirewallEnabled: request.egressFirewallEnabled,
+          },
+          include: {
+            _count: {
+                select: {
+                  stacks: { where: { template: { source: 'user' } } },
+                },
               },
-            },
-            stacks: {
-              where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
-              select: { id: true },
-            },
+              stacks: {
+                where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+                select: { id: true },
+              },
+          }
+        });
+      } catch (updateErr) {
+        // Prisma's `update()` throws P2025 (not found) rather than returning
+        // null — this method's `| null` return type suggests otherwise, but
+        // that branch was unreachable; attribute the real failure here so the
+        // route gets a proper 404 instead of a generic 500.
+        if (updateErr instanceof Prisma.PrismaClientKnownRequestError && updateErr.code === 'P2025') {
+          throw new NotFoundError(
+            ErrorCode.ENVIRONMENT_NOT_FOUND,
+            `Environment with ID ${id} does not exist.`,
+            { resource: { type: 'environment', id } },
+          );
         }
-      });
+        throw updateErr;
+      }
 
       this.logger.info({ environmentId: id, request }, 'Environment updated successfully');
 

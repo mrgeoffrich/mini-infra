@@ -106,12 +106,10 @@ export function EnvironmentEditDialog({
       toast.success(`Environment "${environment.name}" updated successfully`);
       onOpenChange(false);
       onSuccess?.();
-    } catch (error) {
-      toast.error(
-        `Failed to update environment: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Error toast handled globally by the mutation cache's default
+      // onError (see client/src/lib/query-client.ts) — nothing further to
+      // do here; the dialog stays open so the user can correct the input.
     }
   };
 

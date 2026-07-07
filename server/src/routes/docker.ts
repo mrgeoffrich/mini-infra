@@ -4,8 +4,9 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, NetworkAttachmentResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, NetworkAttachmentResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission, ErrorCode } from "@mini-infra/types";
 import prisma from "../lib/prisma";
+import { NotFoundError } from "../lib/errors";
 import { DockerExecutorService } from "../services/docker-executor";
 import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll, listManagedNetworks } from "../services/networks";
 
@@ -220,15 +221,10 @@ router.delete(
 
       res.json(response);
     } catch (error) {
-      if ((error instanceof Error ? error.message : String(error))?.includes("Cannot remove network")) {
-        logger.warn({ error, networkId: req.params.id }, "Cannot remove network");
-        return res.status(400).json({
-          success: false,
-          message: (error instanceof Error ? error.message : String(error)),
-          networkId: req.params.id,
-        });
-      }
-
+      // Taxonomy errors thrown by DockerService.removeNetwork() (has-containers
+      // -> 409 DOCKER_NETWORK_IN_USE, not-found -> 404 DOCKER_NETWORK_NOT_FOUND)
+      // carry their own status/code and reach the central middleware via
+      // next(error) below — no more message-substring status mapping here.
       logger.error({ error, networkId: req.params.id }, "Failed to remove Docker network");
       next(error);
     }
@@ -621,10 +617,11 @@ router.patch(
       const { name, enforceMemberships } = parsed.data;
       const existing = await prisma.managedNetwork.findUnique({ where: { name } });
       if (!existing) {
-        return res.status(404).json({
-          success: false,
-          message: `No managed network found with name "${name}"`,
-        });
+        throw new NotFoundError(
+          ErrorCode.MANAGED_NETWORK_NOT_FOUND,
+          `No managed network found with name "${name}".`,
+          { resource: { type: 'managedNetwork', name } },
+        );
       }
 
       const updated = await prisma.managedNetwork.update({
