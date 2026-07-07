@@ -1,5 +1,8 @@
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../lib/logger-factory";
 import { getRegistryAuthHeader } from "./registry-auth";
+import { NotFoundError, UnauthorizedError } from "../lib/errors";
+import { ServiceError } from "../lib/error-handler";
 
 const logger = getLogger("docker", "image-inspect");
 
@@ -81,9 +84,31 @@ export class ImageInspectService {
     });
 
     if (!manifestRes.ok) {
-      if (manifestRes.status === 404) throw new Error("Image not found");
-      if (manifestRes.status === 401) throw new Error("Authentication failed");
-      throw new Error(`Registry returned ${manifestRes.status}`);
+      if (manifestRes.status === 404) {
+        throw new NotFoundError(
+          ErrorCode.IMAGE_NOT_FOUND,
+          `Image '${image}:${tag}' not found in registry`,
+          {
+            resource: { type: "image", name: `${image}:${tag}` },
+            action: "Check the image name and tag, then try again.",
+          },
+        );
+      }
+      if (manifestRes.status === 401) {
+        throw new UnauthorizedError(
+          ErrorCode.IMAGE_AUTH_FAILED,
+          `Authentication failed while inspecting image '${image}:${tag}'`,
+          {
+            resource: { type: "image", name: `${image}:${tag}` },
+            action: "Check the registry credentials for this image in Settings.",
+          },
+        );
+      }
+      throw new ServiceError(
+        `Registry returned ${manifestRes.status} while inspecting image '${image}:${tag}'`,
+        502,
+        "docker",
+      );
     }
 
     let manifest = await manifestRes.json();
@@ -112,7 +137,11 @@ export class ImageInspectService {
       );
 
       if (!archManifestRes.ok) {
-        throw new Error(`Failed to fetch arch manifest: ${archManifestRes.status}`);
+        throw new ServiceError(
+          `Failed to fetch arch manifest: ${archManifestRes.status}`,
+          502,
+          "docker",
+        );
       }
 
       manifest = await archManifestRes.json();
@@ -133,7 +162,11 @@ export class ImageInspectService {
     });
 
     if (!blobRes.ok) {
-      throw new Error(`Failed to fetch config blob: ${blobRes.status}`);
+      throw new ServiceError(
+        `Failed to fetch config blob: ${blobRes.status}`,
+        502,
+        "docker",
+      );
     }
 
     const config = await blobRes.json();
@@ -180,7 +213,7 @@ export class ImageInspectService {
 
     const res = await this.fetchWithTimeout(url, { headers });
     if (!res.ok) {
-      throw new Error("Failed to obtain Docker Hub token");
+      throw new ServiceError("Failed to obtain Docker Hub token", 502, "docker");
     }
 
     const data = await res.json();

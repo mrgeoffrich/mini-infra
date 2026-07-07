@@ -525,22 +525,30 @@ class DockerService {
       return cached;
     }
 
-    const containers = await this.raceWithTimeout(
-      this.docker.listContainers({ all }),
-      5000,
-      "Docker API timeout",
-    );
+    try {
+      const containers = await this.raceWithTimeout(
+        this.docker.listContainers({ all }),
+        5000,
+        "Docker API timeout",
+      );
 
-    const containerInfos = await Promise.all(
-      containers.map((container) => this.transformContainerData(container)),
-    );
+      const containerInfos = await Promise.all(
+        containers.map((container) => this.transformContainerData(container)),
+      );
 
-    this.cache.set(cacheKey, containerInfos);
-    getLogger("docker", "docker").info(
-      `Retrieved ${containerInfos.length} containers from Docker API`,
-    );
+      this.cache.set(cacheKey, containerInfos);
+      getLogger("docker", "docker").info(
+        `Retrieved ${containerInfos.length} containers from Docker API`,
+      );
 
-    return containerInfos;
+      return containerInfos;
+    } catch (error) {
+      getLogger("docker", "docker").error(
+        { error },
+        "Failed to list containers from Docker API",
+      );
+      throw toServiceError(error, "docker");
+    }
   }
 
   public async getContainer(id: string): Promise<DockerContainerInfo | null> {
@@ -1033,25 +1041,33 @@ class DockerService {
       return cached;
     }
 
-    const volumeData = await this.raceWithTimeout(
-      this.docker.listVolumes(),
-      5000,
-      "Docker API timeout while listing volumes",
-    );
+    try {
+      const volumeData = await this.raceWithTimeout(
+        this.docker.listVolumes(),
+        5000,
+        "Docker API timeout while listing volumes",
+      );
 
-    // Get all containers to determine which volumes are in use
-    const containers = await this.docker.listContainers({ all: true });
+      // Get all containers to determine which volumes are in use
+      const containers = await this.docker.listContainers({ all: true });
 
-    const volumeInfos = (volumeData.Volumes || []).map((volume) =>
-      this.transformVolumeData(volume, containers),
-    );
+      const volumeInfos = (volumeData.Volumes || []).map((volume) =>
+        this.transformVolumeData(volume, containers),
+      );
 
-    this.cache.set(cacheKey, volumeInfos);
-    getLogger("docker", "docker").info(
-      `Retrieved ${volumeInfos.length} volumes from Docker API`,
-    );
+      this.cache.set(cacheKey, volumeInfos);
+      getLogger("docker", "docker").info(
+        `Retrieved ${volumeInfos.length} volumes from Docker API`,
+      );
 
-    return volumeInfos;
+      return volumeInfos;
+    } catch (error) {
+      getLogger("docker", "docker").error(
+        { error },
+        "Failed to list volumes from Docker API",
+      );
+      throw toServiceError(error, "docker");
+    }
   }
 
   /**
@@ -1129,9 +1145,13 @@ class DockerService {
     } catch (error) {
       // Docker returns a 409 Conflict if volume is in use
       if ((error as { statusCode?: number }).statusCode === 409) {
-        throw new Error(
-          `Cannot remove volume ${name}: volume is in use by one or more containers`,
-          { cause: error },
+        throw new ConflictError(
+          ErrorCode.VOLUME_IN_USE,
+          `Cannot remove volume '${name}': volume is in use by one or more containers`,
+          {
+            resource: { type: "volume", name },
+            action: "Stop and remove the containers using this volume, then try again.",
+          },
         );
       }
       throw toServiceError(error, "docker");

@@ -70,6 +70,8 @@ vi.mock("../services/backup/self-backup-scheduler", () => ({
 
 import { createApp } from "../app-factory";
 import createImagesRouter from "../routes/images";
+import { NotFoundError, UnauthorizedError } from "../lib/errors";
+import { ErrorCode } from "@mini-infra/types";
 
 describe("GET /api/images/inspect-ports", () => {
   let app: Application;
@@ -106,7 +108,7 @@ describe("GET /api/images/inspect-ports", () => {
       .query({ tag: "latest" });
 
     expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe(ErrorCode.VALIDATION_FAILED);
   });
 
   it("returns 400 when tag is missing", async () => {
@@ -115,27 +117,57 @@ describe("GET /api/images/inspect-ports", () => {
       .query({ image: "nginx" });
 
     expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe(ErrorCode.VALIDATION_FAILED);
   });
 
-  it("returns 404 when image not found", async () => {
-    mockGetExposedPorts.mockRejectedValue(new Error("Image not found"));
+  // Canonical Phase 7 conflict/not-found envelope check (docs/planning/not-shipped/error-handling-overhaul-plan.md):
+  // a taxonomy error thrown from the (mocked) ImageInspectService reaches
+  // the central middleware and comes back as the one envelope shape, not a
+  // route-level string-matched status.
+  it("returns 404 with the taxonomy envelope when the image is not found", async () => {
+    mockGetExposedPorts.mockRejectedValue(
+      new NotFoundError(
+        ErrorCode.IMAGE_NOT_FOUND,
+        "Image 'nonexistent/image:latest' not found in registry",
+        {
+          resource: { type: "image", name: "nonexistent/image:latest" },
+          action: "Check the image name and tag, then try again.",
+        },
+      ),
+    );
 
     const res = await request(app)
       .get("/api/images/inspect-ports")
       .query({ image: "nonexistent/image", tag: "latest" });
 
     expect(res.status).toBe(404);
+    expect(res.body).toMatchObject({
+      error: ErrorCode.IMAGE_NOT_FOUND,
+      message: "Image 'nonexistent/image:latest' not found in registry",
+      resource: { type: "image", name: "nonexistent/image:latest" },
+      action: "Check the image name and tag, then try again.",
+    });
+    expect(res.body.requestId).toBeDefined();
   });
 
-  it("returns 401 when auth fails", async () => {
-    mockGetExposedPorts.mockRejectedValue(new Error("Authentication failed"));
+  it("returns 401 with the taxonomy envelope when auth fails", async () => {
+    mockGetExposedPorts.mockRejectedValue(
+      new UnauthorizedError(
+        ErrorCode.IMAGE_AUTH_FAILED,
+        "Authentication failed while inspecting image 'private/image:latest'",
+        {
+          resource: { type: "image", name: "private/image:latest" },
+          action: "Check the registry credentials for this image in Settings.",
+        },
+      ),
+    );
 
     const res = await request(app)
       .get("/api/images/inspect-ports")
       .query({ image: "private/image", tag: "latest" });
 
     expect(res.status).toBe(401);
+    expect(res.body.error).toBe(ErrorCode.IMAGE_AUTH_FAILED);
   });
 
   it("returns empty ports array when image has no EXPOSE", async () => {

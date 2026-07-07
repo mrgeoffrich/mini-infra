@@ -146,6 +146,12 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_NOT_FOUND]: "Managed tunnel not found",
   [ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_EXISTS]: "Hostname already exists",
   [ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_NOT_FOUND]: "Hostname not found",
+  // Containers / images / volumes (Phase 7)
+  [ErrorCode.CONTAINER_ALREADY_IN_STATE]: "Container already in this state",
+  [ErrorCode.CONTAINER_NOT_RUNNING]: "Container not running",
+  [ErrorCode.VOLUME_IN_USE]: "Volume in use",
+  [ErrorCode.IMAGE_AUTH_FAILED]: "Registry authentication failed",
+  [ErrorCode.DOCKER_NOT_CONNECTED]: "Docker unavailable",
 };
 
 function statusClassFallback(status: number): string {
