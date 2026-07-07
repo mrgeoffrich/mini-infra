@@ -4,10 +4,11 @@ import { getLogger } from "../../lib/logger-factory";
 import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import prisma from "../../lib/prisma";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 import { CloudflareService } from "../../services/cloudflare";
 import { StackTemplateService } from "../../services/stacks/stack-template-service";
 import { tunnelCache } from "../../services/cloudflare/tunnel-cache";
-import { ManagedTunnelListResponse, ManagedTunnelResponse, ManagedTunnelWithStack, Permission } from "@mini-infra/types";
+import { ErrorCode, ManagedTunnelListResponse, ManagedTunnelResponse, ManagedTunnelWithStack, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "managed-tunnels-routes");
 
@@ -100,40 +101,45 @@ export function createManagedTunnelsRouter(
       const environmentId = String(req.params.environmentId);
       const userId = getUserId(req);
 
-      const parsed = createManagedTunnelSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid request",
-          details: parsed.error.issues,
-        });
-      }
+      // A thrown ZodError is handled centrally (server/src/lib/error-handler.ts
+      // maps it to VALIDATION_FAILED).
+      const parsed = createManagedTunnelSchema.parse(req.body);
 
       const environment = await prisma.environment.findUnique({
         where: { id: environmentId },
       });
       if (!environment) {
-        return res.status(404).json({
-          success: false,
-          error: "Environment not found",
-        });
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_TUNNEL_ENVIRONMENT_NOT_FOUND,
+          `Environment not found: ${environmentId}`,
+          {
+            resource: { type: "environment", id: environmentId },
+            action: "Verify the environment ID.",
+          },
+        );
       }
       if (environment.networkType !== "internet") {
-        return res.status(400).json({
-          success: false,
-          error:
-            "Managed tunnels can only be created for internet-facing environments",
-        });
+        throw new ValidationError(
+          ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_REQUIRES_INTERNET_ENV,
+          "Managed tunnels can only be created for internet-facing environments",
+          {
+            resource: { type: "environment", id: environmentId, name: environment.name },
+            action: "Change the environment's network type to internet, or choose a different environment.",
+          },
+        );
       }
 
       const existing =
         await cloudflareConfigService.getManagedTunnelInfo(environmentId);
       if (existing) {
-        return res.status(409).json({
-          success: false,
-          error: "A managed tunnel already exists for this environment",
-          data: existing,
-        });
+        throw new ConflictError(
+          ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_EXISTS,
+          "A managed tunnel already exists for this environment",
+          {
+            resource: { type: "cloudflareManagedTunnel", id: environmentId },
+            action: "Delete the existing managed tunnel before creating a new one.",
+          },
+        );
       }
 
       // Ensure the cloudflare-tunnel connector stack exists for this
@@ -161,11 +167,12 @@ export function createManagedTunnelsRouter(
           select: { id: true },
         });
         if (!template) {
-          return res.status(500).json({
-            success: false,
-            error:
-              "The cloudflare-tunnel system template is missing — cannot provision the connector stack",
-          });
+          // Genuine internal invariant — a missing system template means a
+          // broken install, not a request the caller can fix; stays a plain
+          // 500 through the central middleware rather than a taxonomy 4xx.
+          throw new Error(
+            "The cloudflare-tunnel system template is missing — cannot provision the connector stack",
+          );
         }
         const created = await new StackTemplateService(
           prisma,
@@ -179,7 +186,7 @@ export function createManagedTunnelsRouter(
 
       const result = await cloudflareConfigService.createManagedTunnel(
         environmentId,
-        parsed.data.name,
+        parsed.name,
         userId,
       );
 
@@ -223,11 +230,14 @@ export function createManagedTunnelsRouter(
       });
 
       if (stack && stack.status === "synced") {
-        return res.status(409).json({
-          success: false,
-          error:
-            "The cloudflare-tunnel stack is still running. Stop it before deleting the tunnel.",
-        });
+        throw new ConflictError(
+          ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_STACK_RUNNING,
+          "The cloudflare-tunnel stack is still running. Stop it before deleting the tunnel.",
+          {
+            resource: { type: "stack", id: stack.id },
+            action: "Stop the cloudflare-tunnel stack before deleting the tunnel.",
+          },
+        );
       }
 
       await cloudflareConfigService.deleteManagedTunnel(environmentId, userId);

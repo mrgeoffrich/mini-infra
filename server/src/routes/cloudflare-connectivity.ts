@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
-import { CONNECTIVITY_STATUS_TYPES, Permission } from "@mini-infra/types";
+import { NotFoundError } from "../lib/errors";
+import { CONNECTIVITY_STATUS_TYPES, ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "cloudflare-connectivity");
 
@@ -82,10 +83,14 @@ router.get(
       });
 
       if (!latestStatus) {
-        return res.status(404).json({
-          error: "No connectivity status found for Cloudflare",
-          service: "cloudflare",
-        });
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_CONNECTIVITY_STATUS_NOT_FOUND,
+          "No connectivity status found for Cloudflare",
+          {
+            resource: { type: "cloudflareConnectivityStatus" },
+            action: "Configure Cloudflare settings to run a connectivity check.",
+          },
+        );
       }
 
       // Parse metadata if it's a string
@@ -137,17 +142,9 @@ router.get(
   requirePermission(Permission.SettingsRead),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // Validate query parameters
-      const queryResult = historyQuerySchema.safeParse(req.query);
-
-      if (!queryResult.success) {
-        return res.status(400).json({
-          error: "Invalid query parameters",
-          details: queryResult.error.flatten(),
-        });
-      }
-
-      const { limit, offset, status } = queryResult.data;
+      // Validate query parameters — a thrown ZodError is handled centrally
+      // (server/src/lib/error-handler.ts maps it to VALIDATION_FAILED).
+      const { limit, offset, status } = historyQuerySchema.parse(req.query);
       const cacheKey = `cloudflare-connectivity-history-${limit}-${offset}-${status || "all"}`;
       const cached = getCachedResponse(cacheKey);
 

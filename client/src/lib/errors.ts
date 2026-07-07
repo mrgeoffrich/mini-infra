@@ -136,6 +136,16 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE]: "HAProxy unavailable",
   [ErrorCode.HAPROXY_SETUP_IN_PROGRESS]: "Setup already in progress",
   [ErrorCode.HAPROXY_DATAPLANE_VERSION_CONFLICT]: "Configuration changed",
+  // Certificates / TLS / ACME / DNS (Phase 5)
+  [ErrorCode.TLS_CERTIFICATE_NOT_FOUND]: "Certificate not found",
+  [ErrorCode.TLS_CERTIFICATE_ISSUANCE_IN_PROGRESS]: "Issuance already in progress",
+  [ErrorCode.TLS_STORAGE_NOT_CONFIGURED]: "Certificate storage not configured",
+  [ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND]: "Cloudflare zone not found",
+  [ErrorCode.CLOUDFLARE_TUNNEL_NOT_FOUND]: "Tunnel not found",
+  [ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_EXISTS]: "Managed tunnel already exists",
+  [ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_NOT_FOUND]: "Managed tunnel not found",
+  [ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_EXISTS]: "Hostname already exists",
+  [ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_NOT_FOUND]: "Hostname not found",
 };
 
 function statusClassFallback(status: number): string {

@@ -87,10 +87,10 @@ function AddHostnameDialog({ tunnelId }: { tunnelId: string }) {
       setService("");
       setPath("");
       setOpen(false);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to add hostname",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError.
     }
   };
 
@@ -230,10 +230,10 @@ function TunnelConfigurationSection({ tunnelId }: { tunnelId: string }) {
       });
 
       toast.success(`Hostname ${hostname} removed successfully.`);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to remove hostname",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError.
     }
   };
 

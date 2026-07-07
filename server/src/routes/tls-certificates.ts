@@ -16,6 +16,7 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { emitToChannel } from "../lib/socket";
+import { ConflictError, NotFoundError } from "../lib/errors";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { StorageCertificateStore } from "../services/tls/storage-certificate-store";
 import { AcmeClientManager } from "../services/tls/acme-client-manager";
@@ -26,7 +27,7 @@ import { CloudflareService } from "../services/cloudflare";
 import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
-import { Channel, ServerEvent, type CertIssuanceStep, Permission } from "@mini-infra/types";
+import { Channel, ServerEvent, type CertIssuanceStep, ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("tls", "tls-certificates");
 const router = express.Router();
@@ -96,22 +97,27 @@ const issuingCertificates = new Set<string>();
  * POST /api/tls/certificates
  * Issue a new TLS certificate (async with Socket.IO progress)
  */
-router.post("/", requirePermission(Permission.TlsWrite), async (req, res) => {
+router.post("/", requirePermission(Permission.TlsWrite), async (req, res, next) => {
   let guardedDomain: string | null = null;
   try {
     const user = getAuthenticatedUser(req);
     const userId = user?.id || "unknown";
 
-    // Validate request body
+    // Validate request body — a ZodError thrown here is handled centrally
+    // (server/src/lib/error-handler.ts maps it to VALIDATION_FAILED).
     const validatedData = createCertificateSchema.parse(req.body);
     const operationId = randomUUID();
 
     // Concurrency guard — set BEFORE any await to prevent race conditions
     if (issuingCertificates.has(validatedData.primaryDomain)) {
-      return res.status(409).json({
-        success: false,
-        message: "Certificate issuance already in progress for this domain",
-      });
+      throw new ConflictError(
+        ErrorCode.TLS_CERTIFICATE_ISSUANCE_IN_PROGRESS,
+        "Certificate issuance already in progress for this domain",
+        {
+          resource: { type: "tlsCertificate", name: validatedData.primaryDomain },
+          action: "Wait for the in-progress issuance to finish before retrying.",
+        },
+      );
     }
     guardedDomain = validatedData.primaryDomain;
     issuingCertificates.add(guardedDomain);
@@ -182,21 +188,14 @@ router.post("/", requirePermission(Permission.TlsWrite), async (req, res) => {
     })();
   } catch (error) {
     if (guardedDomain) issuingCertificates.delete(guardedDomain);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
 
     logger.error({ error }, "Failed to start certificate issuance");
 
-    res.status(500).json({
-      success: false,
-      error: "Failed to start certificate issuance",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    // Taxonomy errors (ConflictError above, ZodError from .parse(), or a
+    // taxonomy error thrown deep inside initializeLifecycleManager — e.g.
+    // TLS_STORAGE_NOT_CONFIGURED) carry their own status/code and are
+    // handled by the central error middleware.
+    next(error);
   }
 });
 
@@ -204,7 +203,7 @@ router.post("/", requirePermission(Permission.TlsWrite), async (req, res) => {
  * GET /api/tls/certificates
  * List all certificates
  */
-router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
+router.get("/", requirePermission(Permission.TlsRead), async (req, res, next) => {
   try {
     const certificates = await prisma.tlsCertificate.findMany({
       orderBy: { createdAt: "desc" },
@@ -225,12 +224,7 @@ router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
     });
   } catch (error) {
     logger.error({ error }, "Failed to list certificates");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to list certificates",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 
@@ -238,7 +232,7 @@ router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
  * GET /api/tls/certificates/:id
  * Get certificate details
  */
-router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
+router.get("/:id", requirePermission(Permission.TlsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
@@ -252,10 +246,14 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
     });
 
     if (!certificate) {
-      return res.status(404).json({
-        success: false,
-        error: "Certificate not found",
-      });
+      throw new NotFoundError(
+        ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+        `Certificate not found: ${id}`,
+        {
+          resource: { type: "tlsCertificate", id },
+          action: "Verify the certificate ID or check the certificates list.",
+        },
+      );
     }
 
     // Parse JSON fields
@@ -267,12 +265,7 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
     });
   } catch (error) {
     logger.error({ error, certificateId: req.params.id }, "Failed to get certificate");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to get certificate",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 
@@ -280,7 +273,7 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
  * POST /api/tls/certificates/:id/renew
  * Manually renew a certificate
  */
-router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, res) => {
+router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const user = getAuthenticatedUser(req);
@@ -291,7 +284,9 @@ router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, re
     // Initialize lifecycle manager
     const lifecycleManager = await initializeLifecycleManager();
 
-    // Renew certificate
+    // Renew certificate — throws NotFoundError (TLS_CERTIFICATE_NOT_FOUND)
+    // when `id` doesn't match a stored certificate; forwarded to the
+    // central middleware below instead of being papered over as a 500.
     const certificate = await lifecycleManager.renewCertificate(id);
 
     res.json({
@@ -300,12 +295,7 @@ router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, re
     });
   } catch (error) {
     logger.error({ error, certificateId: req.params.id }, "Failed to renew certificate");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to renew certificate",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 
@@ -313,7 +303,7 @@ router.post("/:id/renew", requirePermission(Permission.TlsWrite), async (req, re
  * DELETE /api/tls/certificates/:id
  * Delete a certificate
  */
-router.delete("/:id", requirePermission(Permission.TlsWrite), async (req, res) => {
+router.delete("/:id", requirePermission(Permission.TlsWrite), async (req, res, next) => {
   try {
     const id = String(req.params.id);
     const user = getAuthenticatedUser(req);
@@ -327,10 +317,14 @@ router.delete("/:id", requirePermission(Permission.TlsWrite), async (req, res) =
     });
 
     if (!certificate) {
-      return res.status(404).json({
-        success: false,
-        error: "Certificate not found",
-      });
+      throw new NotFoundError(
+        ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+        `Certificate not found: ${id}`,
+        {
+          resource: { type: "tlsCertificate", id },
+          action: "Verify the certificate ID or check the certificates list.",
+        },
+      );
     }
 
     // Delete from database (cascade will delete renewal history)
@@ -347,12 +341,7 @@ router.delete("/:id", requirePermission(Permission.TlsWrite), async (req, res) =
     });
   } catch (error) {
     logger.error({ error, certificateId: req.params.id }, "Failed to delete certificate");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete certificate",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 

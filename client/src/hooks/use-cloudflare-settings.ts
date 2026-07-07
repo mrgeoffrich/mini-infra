@@ -229,9 +229,7 @@ export function useAddTunnelHostname() {
         queryKey: queryKeys.settings.cloudflareTunnelConfig(data.data.tunnelId),
       });
     },
-    onError: (error) => {
-      console.error("Failed to add hostname to tunnel:", error.message);
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 
@@ -269,9 +267,7 @@ export function useRemoveTunnelHostname() {
         queryKey: queryKeys.settings.cloudflareTunnelConfig(data.data.tunnelId),
       });
     },
-    onError: (error) => {
-      console.error("Failed to remove hostname from tunnel:", error.message);
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 

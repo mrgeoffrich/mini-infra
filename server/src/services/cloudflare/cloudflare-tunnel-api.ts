@@ -2,7 +2,9 @@ import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels
 import {
   CloudflareTunnelConfig,
   CloudflareTunnelIngressRule,
+  ErrorCode,
 } from "@mini-infra/types";
+import { ConflictError, NotFoundError } from "../../lib/errors";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 
 /**
@@ -111,7 +113,14 @@ export class CloudflareTunnelApi {
   ): Promise<CloudflareTunnelConfig> {
     const currentConfig = await this.getTunnelConfig(tunnelId);
     if (!currentConfig || !currentConfig.config) {
-      throw new Error("Unable to retrieve current tunnel configuration");
+      throw new NotFoundError(
+        ErrorCode.CLOUDFLARE_TUNNEL_CONFIG_UNAVAILABLE,
+        "Unable to retrieve current tunnel configuration",
+        {
+          resource: { type: "cloudflareTunnelConfig", id: tunnelId },
+          action: "Verify the tunnel exists and Cloudflare credentials are configured.",
+        },
+      );
     }
 
     const ingress = [...(currentConfig.config.ingress ?? [])];
@@ -119,8 +128,13 @@ export class CloudflareTunnelApi {
       (rule) => rule.hostname === hostname && rule.path === path,
     );
     if (existingIndex !== -1) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_EXISTS,
         `Hostname ${hostname}${path ? ` with path ${path}` : ""} already exists`,
+        {
+          resource: { type: "cloudflareTunnelHostname", name: hostname },
+          action: "Remove the existing hostname first, or choose a different one.",
+        },
       );
     }
 
@@ -152,7 +166,14 @@ export class CloudflareTunnelApi {
   ): Promise<CloudflareTunnelConfig> {
     const currentConfig = await this.getTunnelConfig(tunnelId);
     if (!currentConfig || !currentConfig.config) {
-      throw new Error("Unable to retrieve current tunnel configuration");
+      throw new NotFoundError(
+        ErrorCode.CLOUDFLARE_TUNNEL_CONFIG_UNAVAILABLE,
+        "Unable to retrieve current tunnel configuration",
+        {
+          resource: { type: "cloudflareTunnelConfig", id: tunnelId },
+          action: "Verify the tunnel exists and Cloudflare credentials are configured.",
+        },
+      );
     }
 
     const ingress = [...(currentConfig.config.ingress ?? [])];
@@ -163,8 +184,13 @@ export class CloudflareTunnelApi {
     );
 
     if (ruleIndex === -1) {
-      throw new Error(
+      throw new NotFoundError(
+        ErrorCode.CLOUDFLARE_TUNNEL_HOSTNAME_NOT_FOUND,
         `Hostname ${hostname}${path ? ` with path ${path}` : ""} not found`,
+        {
+          resource: { type: "cloudflareTunnelHostname", name: hostname },
+          action: "Check the tunnel's hostname list and try again.",
+        },
       );
     }
 

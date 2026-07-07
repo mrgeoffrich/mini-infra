@@ -11,7 +11,8 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { Permission } from "@mini-infra/types";
+import { NotFoundError } from "../lib/errors";
+import { ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("tls", "tls-renewals");
 const router = express.Router();
@@ -20,7 +21,7 @@ const router = express.Router();
  * GET /api/tls/renewals
  * List all renewal attempts with optional filtering
  */
-router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
+router.get("/", requirePermission(Permission.TlsRead), async (req, res, next) => {
   try {
     const { certificateId, status, limit } = req.query;
 
@@ -60,12 +61,7 @@ router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
     });
   } catch (error) {
     logger.error({ error }, "Failed to list renewal attempts");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to list renewal attempts",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 
@@ -73,7 +69,7 @@ router.get("/", requirePermission(Permission.TlsRead), async (req, res) => {
  * GET /api/tls/renewals/:id
  * Get renewal attempt details
  */
-router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
+router.get("/:id", requirePermission(Permission.TlsRead), async (req, res, next) => {
   try {
     const id = String(req.params.id);
 
@@ -94,10 +90,14 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
     });
 
     if (!renewal) {
-      return res.status(404).json({
-        success: false,
-        error: "Renewal attempt not found",
-      });
+      throw new NotFoundError(
+        ErrorCode.TLS_RENEWAL_NOT_FOUND,
+        `Renewal attempt not found: ${id}`,
+        {
+          resource: { type: "tlsCertificateRenewal", id },
+          action: "Check the renewal history list for a valid renewal ID.",
+        },
+      );
     }
 
     res.json({
@@ -106,12 +106,7 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
     });
   } catch (error) {
     logger.error({ error, renewalId: req.params.id }, "Failed to get renewal attempt");
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to get renewal attempt",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 
@@ -119,7 +114,7 @@ router.get("/:id", requirePermission(Permission.TlsRead), async (req, res) => {
  * GET /api/tls/renewals/certificate/:certificateId
  * Get all renewal attempts for a specific certificate
  */
-router.get("/certificate/:certificateId", requirePermission(Permission.TlsRead), async (req, res) => {
+router.get("/certificate/:certificateId", requirePermission(Permission.TlsRead), async (req, res, next) => {
   try {
     const certificateId = String(req.params.certificateId);
 
@@ -130,10 +125,14 @@ router.get("/certificate/:certificateId", requirePermission(Permission.TlsRead),
     });
 
     if (!certificate) {
-      return res.status(404).json({
-        success: false,
-        error: "Certificate not found",
-      });
+      throw new NotFoundError(
+        ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+        `Certificate not found: ${certificateId}`,
+        {
+          resource: { type: "tlsCertificate", id: certificateId },
+          action: "Verify the certificate ID or check the certificates list.",
+        },
+      );
     }
 
     const renewals = await prisma.tlsCertificateRenewal.findMany({
@@ -153,12 +152,7 @@ router.get("/certificate/:certificateId", requirePermission(Permission.TlsRead),
       { error, certificateId: req.params.certificateId },
       "Failed to get certificate renewal history"
     );
-
-    res.status(500).json({
-      success: false,
-      error: "Failed to get certificate renewal history",
-      message: error instanceof Error ? error.message : String(error),
-    });
+    next(error);
   }
 });
 

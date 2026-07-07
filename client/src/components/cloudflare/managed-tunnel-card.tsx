@@ -79,6 +79,12 @@ export function ManagedTunnelCard({
   const isPending = tunnel?.stackStatus === "pending";
   const isError = tunnel?.stackStatus === "error";
 
+  // Each handler below swallows the mutation's rejection after an optional
+  // success toast — the global MutationCache.onError (client/src/lib/
+  // query-client.ts) already shows an actionable toast for the real
+  // ApiRequestError, so re-toasting here would double up. The empty catch
+  // just prevents mutateAsync's rejection from becoming an unhandled
+  // promise rejection.
   const handleCreate = async () => {
     try {
       await createMutation.mutateAsync({
@@ -87,10 +93,8 @@ export function ManagedTunnelCard({
       });
       setCreateDialogOpen(false);
       toast.success("Managed tunnel created");
-    } catch (error) {
-      toast.error(
-        `Failed to create tunnel: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+    } catch {
+      // Swallow — see comment above.
     }
   };
 
@@ -102,10 +106,8 @@ export function ManagedTunnelCard({
         options: {},
       });
       toast.success("Deploying cloudflared...");
-    } catch (error) {
-      toast.error(
-        `Failed to deploy: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+    } catch {
+      // Swallow — see comment above.
     }
   };
 
@@ -114,10 +116,8 @@ export function ManagedTunnelCard({
     try {
       await destroyMutation.mutateAsync(tunnel.stackId);
       toast.success("Removing cloudflared...");
-    } catch (error) {
-      toast.error(
-        `Failed to remove: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+    } catch {
+      // Swallow — see comment above.
     }
   };
 
@@ -125,10 +125,8 @@ export function ManagedTunnelCard({
     try {
       await deleteMutation.mutateAsync(environment.id);
       toast.success("Managed tunnel deleted");
-    } catch (error) {
-      toast.error(
-        `Failed to delete tunnel: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+    } catch {
+      // Swallow — see comment above.
     }
   };
 

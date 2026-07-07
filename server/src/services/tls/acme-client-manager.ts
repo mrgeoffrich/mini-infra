@@ -7,7 +7,9 @@
 
 import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError } from "../../lib/errors";
 import { TlsConfigService } from "./tls-config";
 import { StorageCertificateStore } from "./storage-certificate-store";
 import { AcmeCertificateResult } from "./types";
@@ -261,7 +263,14 @@ export class AcmeClientManager {
       });
 
       if (!existingCert) {
-        throw new Error(`Certificate not found: ${certificateId}`);
+        throw new NotFoundError(
+          ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+          `Certificate not found: ${certificateId}`,
+          {
+            resource: { type: "tlsCertificate", id: certificateId },
+            action: "Verify the certificate ID or check the certificates list.",
+          },
+        );
       }
 
       // Request new certificate with same domains (ensure it's an array)

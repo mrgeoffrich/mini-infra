@@ -1,6 +1,8 @@
 import * as cron from "node-cron";
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { withOperation } from "../../lib/logging-context";
+import { ValidationError } from "../../lib/errors";
 import { DnsCacheService } from "./dns-cache-service";
 
 const logger = getLogger("platform", "dns-cache-scheduler");
@@ -19,7 +21,14 @@ export class DnsCacheScheduler {
    */
   async start(cronExpression: string = "*/30 * * * *"): Promise<void> {
     if (!cron.validate(cronExpression)) {
-      throw new Error(`Invalid cron expression: ${cronExpression}`);
+      throw new ValidationError(
+        ErrorCode.DNS_INVALID_CACHE_CRON,
+        `Invalid cron expression: ${cronExpression}`,
+        {
+          resource: { type: "dnsCacheSchedule" },
+          action: "Enter a valid 5-field cron expression (e.g. \"*/30 * * * *\").",
+        },
+      );
     }
 
     if (this.cronJob) {

@@ -33,10 +33,11 @@ export default function DnsPage() {
       toast.success(
         `Refreshed ${result.data.zonesUpdated} zone${result.data.zonesUpdated !== 1 ? "s" : ""} with ${result.data.recordsUpdated} records`
       );
-    } catch (err) {
-      toast.error(
-        `Failed to refresh: ${err instanceof Error ? err.message : "Unknown error"}`
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError. We only need to catch here so
+      // mutateAsync's rejection doesn't become an unhandled promise rejection.
     }
   };
 
