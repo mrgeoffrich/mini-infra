@@ -18,6 +18,7 @@ import type {
 } from "@mini-infra/types";
 import { Logger } from "pino";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import {
   CertificateMetadata,
   CertificateInfo,
@@ -277,7 +278,7 @@ export class StorageCertificateStore {
       /-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----/,
     );
     if (!certMatch || !keyMatch) {
-      throw new Error(
+      throw new InternalError(
         "Invalid combined PEM format: missing certificate or private key",
       );
     }

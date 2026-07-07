@@ -9,6 +9,7 @@ import {
 } from "@mini-infra/types";
 import { PrismaClient } from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
+import { InternalError } from "../lib/errors";
 
 export class DockerConfigService extends ConfigurationService {
   private docker: Docker | null = null;
@@ -384,7 +385,7 @@ export class DockerConfigService extends ConfigurationService {
     if (!this.docker) {
       const host = await this.get("host");
       if (!host) {
-        throw new Error("Docker host not configured");
+        throw new InternalError("Docker host not configured");
       }
       const apiVersion = await this.get("apiVersion");
       this.docker = this.createDockerClient(host, apiVersion);

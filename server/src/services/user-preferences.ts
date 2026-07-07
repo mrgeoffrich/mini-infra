@@ -1,9 +1,11 @@
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   UserPreference,
   UpdateUserPreferencesRequest,
 } from "@mini-infra/types";
+import { ValidationError } from "../lib/errors";
 
 const logger = getLogger("platform", "user-preferences");
 
@@ -58,7 +60,14 @@ export class UserPreferencesService {
           { userId, timezone: updates.timezone },
           "Invalid timezone provided",
         );
-        throw new Error(`Invalid timezone: ${updates.timezone}`);
+        throw new ValidationError(
+          ErrorCode.USER_PREFERENCES_INVALID_TIMEZONE,
+          `Invalid timezone: ${updates.timezone}`,
+          {
+            resource: { type: "userPreferences", id: userId },
+            action: "Choose a valid IANA timezone (e.g. \"America/New_York\").",
+          },
+        );
       }
     }
 

@@ -10,7 +10,7 @@ import {
   UpdateEnvironmentRequest,
   ErrorCode,
 } from '@mini-infra/types';
-import { ConflictError, NotFoundError } from '../../lib/errors';
+import { ConflictError, NotFoundError, InternalError } from '../../lib/errors';
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { UserEventService } from '../user-events';
@@ -129,7 +129,7 @@ export class EnvironmentManager {
       // Fetch the complete environment with relations
       const environment = await this.getEnvironmentById(environmentData.id);
       if (!environment) {
-        throw new Error('Failed to retrieve created environment');
+        throw new InternalError('Failed to retrieve created environment');
       }
 
       // Backfill resourceId on the UserEvent now that the row exists
@@ -827,7 +827,7 @@ export class EnvironmentManager {
         const inspectResult = await networkManager.inspect(egressNetworkName);
         const ipamCfg = inspectResult?.ipam;
         if (!ipamCfg?.subnet) {
-          throw new Error(`Egress network ${egressNetworkName} has no IPAM subnet`);
+          throw new InternalError(`Egress network ${egressNetworkName} has no IPAM subnet`);
         }
         subnet = ipamCfg.subnet;
         const subnetOctets = subnet.split('/')[0].split('.');

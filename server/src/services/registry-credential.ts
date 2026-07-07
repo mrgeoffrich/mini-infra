@@ -7,6 +7,8 @@ import type {
   UpdateRegistryCredentialRequest,
   RegistryTestResult,
 } from "@mini-infra/types";
+import { ErrorCode } from "@mini-infra/types";
+import { NotFoundError } from "../lib/errors";
 import { DockerExecutorService } from "./docker-executor";
 
 export class RegistryCredentialService {
@@ -296,7 +298,14 @@ export class RegistryCredentialService {
   ): Promise<RegistryTestResult> {
     const credential = await this.getCredential(id);
     if (!credential) {
-      throw new Error("Credential not found");
+      throw new NotFoundError(
+        ErrorCode.REGISTRY_CREDENTIAL_NOT_FOUND,
+        "Credential not found",
+        {
+          resource: { type: "registryCredential", id },
+          action: "Verify the credential ID or check the credentials list.",
+        },
+      );
     }
 
     return this.testCredential(

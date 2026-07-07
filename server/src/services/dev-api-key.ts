@@ -2,6 +2,7 @@ import prisma from "../lib/prisma";
 import { createApiKey } from "../lib/api-key-service";
 import { getLogger } from "../lib/logger-factory";
 import appConfig from "../lib/config-new";
+import { InternalError } from "../lib/errors";
 
 const logger = getLogger("auth", "dev-api-key");
 
@@ -104,9 +105,7 @@ export async function initializeDevApiKey(): Promise<DevApiKeyResult | null> {
     }
   } catch (error) {
     logger.error({ error }, "Failed to initialize development API key");
-    throw new Error("Failed to initialize development API key", {
-      cause: error,
-    });
+    throw new InternalError("Failed to initialize development API key");
   }
 }
 
@@ -187,7 +186,7 @@ export async function recreateDevApiKey(): Promise<DevApiKeyResult | null> {
 
     if (!devUser) {
       logger.error("Development user not found, cannot recreate API key");
-      throw new Error("Development user not found");
+      throw new InternalError("Development user not found");
     }
 
     // Revoke existing keys with the same name

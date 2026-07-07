@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
@@ -70,7 +70,7 @@ router.get("/preferences", requirePermission(Permission.UserRead), async (req: R
 });
 
 
-router.put("/preferences", requirePermission(Permission.UserWrite), async (req: Request, res: Response) => {
+router.put("/preferences", requirePermission(Permission.UserWrite), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = req.user as JWTUser;
     const userId = user.id;
@@ -110,21 +110,12 @@ router.put("/preferences", requirePermission(Permission.UserWrite), async (req: 
       });
     }
 
-    if ((error instanceof Error ? error.message : String(error)).includes("Invalid timezone")) {
-      logger.warn({ error: (error instanceof Error ? error.message : String(error)) }, "Invalid timezone provided");
-      return res.status(400).json({
-        success: false,
-        message: (error instanceof Error ? error.message : String(error)),
-      });
-    }
-
+    // UserPreferencesService.updateUserPreferences() throws a taxonomy
+    // ValidationError (USER_PREFERENCES_INVALID_TIMEZONE) for a bad
+    // timezone — let the central middleware render it instead of
+    // string-matching the message here.
     logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update user preferences");
-
-    res.status(500).json({
-      success: false,
-      message: "Failed to update user preferences",
-      error: (error instanceof Error ? error.message : String(error)),
-    });
+    next(error);
   }
 });
 

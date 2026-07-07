@@ -1,5 +1,6 @@
 import { getLogger } from "../lib/logger-factory";
 import { agentConversationService } from "./agent-conversation-service";
+import { InternalError } from "../lib/errors";
 import {
   getAgentSidecarUrl,
   getInternalToken,
@@ -102,7 +103,7 @@ class AgentProxyService {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(
+      throw new InternalError(
         `Sidecar turn creation failed: ${response.status} ${text}`,
       );
     }

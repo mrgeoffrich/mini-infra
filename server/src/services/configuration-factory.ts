@@ -6,6 +6,7 @@ import {
   SettingsCategory,
 } from "@mini-infra/types";
 import { getLogger } from "../lib/logger-factory";
+import { InternalError } from "../lib/errors";
 import { DockerConfigService } from "./docker-config";
 import { CloudflareService } from "./cloudflare";
 import { TlsConfigService } from "./tls/tls-config";
@@ -39,7 +40,7 @@ export class ConfigurationServiceFactory
     const { category } = options;
 
     if (!this.supportedCategories.includes(category)) {
-      throw new Error(`Unsupported configuration category: ${category}`);
+      throw new InternalError(`Unsupported configuration category: ${category}`);
     }
 
     try {
@@ -63,7 +64,7 @@ export class ConfigurationServiceFactory
           return new TailscaleService(this.prisma);
 
         default:
-          throw new Error(`Unknown configuration category: ${category}`);
+          throw new InternalError(`Unknown configuration category: ${category}`);
       }
     } catch (error) {
       getLogger("platform", "configuration-factory").error(

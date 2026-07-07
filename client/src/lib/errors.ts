@@ -189,6 +189,11 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.SELF_UPDATE_IN_PROGRESS]: "Update already in progress",
   [ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN]: "Self-update unavailable",
   [ErrorCode.MONITORING_SERVICE_UNAVAILABLE]: "Monitoring unavailable",
+
+  // Phase 11 — tls/misc — the 400 "invalid" status-class fallback would
+  // misdescribe a missing-configuration case (mirrors TLS_STORAGE_NOT_CONFIGURED/
+  // VAULT_NOT_CONFIGURED/STORAGE_NOT_CONFIGURED above).
+  [ErrorCode.GITHUB_NOT_CONFIGURED]: "GitHub not configured",
 };
 
 function statusClassFallback(status: number): string {

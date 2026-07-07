@@ -135,25 +135,6 @@ router.post("/", requirePermission(Permission.SettingsWrite) as RequestHandler, 
 
     const { userData, systemInfo } = validationResult.data;
 
-    // Check if GitHub is configured
-    const configStatus = await githubService.getConfigStatus();
-    if (!configStatus.isConfigured) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-        },
-        "Bug report failed: GitHub not configured",
-      );
-
-      return res.status(400).json({
-        success: false,
-        error: "GitHub not configured",
-        message:
-          "Please configure GitHub settings before submitting bug reports",
-      });
-    }
-
     // Format the issue body
     const issueBody = formatBugReportBody(userData, systemInfo);
 
@@ -208,45 +189,11 @@ router.post("/", requirePermission(Permission.SettingsWrite) as RequestHandler, 
       "Failed to create bug report",
     );
 
-    // Return appropriate error response
-    if (errorMessage.includes("not configured")) {
-      return res.status(400).json({
-        success: false,
-        error: "Configuration error",
-        message: errorMessage,
-      });
-    }
-
-    if (errorMessage.includes("timeout")) {
-      return res.status(504).json({
-        success: false,
-        error: "Request timeout",
-        message: "The request to GitHub API timed out",
-      });
-    }
-
-    if (
-      errorMessage.includes("rate limit") ||
-      errorMessage.includes("Rate limit")
-    ) {
-      return res.status(429).json({
-        success: false,
-        error: "Rate limited",
-        message: "Too many requests to GitHub API. Please try again later.",
-      });
-    }
-
-    if (
-      errorMessage.includes("Bad credentials") ||
-      errorMessage.includes("Unauthorized")
-    ) {
-      return res.status(401).json({
-        success: false,
-        error: "Authentication failed",
-        message: "Invalid GitHub credentials. Please update your settings.",
-      });
-    }
-
+    // githubService.createIssue() already maps every known failure mode
+    // (not configured -> ValidationError, timeout/rate-limit/auth ->
+    // ServiceError via toServiceError/GITHUB_MAPPINGS) onto a typed error
+    // with the correct status code — let the central middleware render it
+    // instead of re-deriving the status from string-matching the message.
     next(error);
   }
 }) as RequestHandler);
