@@ -7,6 +7,7 @@
 
 import { Logger } from "pino";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import { StorageCertificateStore } from "./storage-certificate-store";
 import { HAProxyService } from "../haproxy/haproxy-service";
 import { HAProxyDataPlaneClient } from "../haproxy/haproxy-dataplane-client";
@@ -158,7 +159,9 @@ export class CertificateDistributor {
             method: "volume-mount-reload",
           };
         } else {
-          throw new Error("No HAProxy container ID provided for graceful reload fallback", { cause: runtimeApiError });
+          throw new InternalError(
+            `No HAProxy container ID provided for graceful reload fallback: ${runtimeApiError instanceof Error ? runtimeApiError.message : String(runtimeApiError)}`,
+          );
         }
       }
     } catch (error) {
@@ -187,7 +190,7 @@ export class CertificateDistributor {
   ): Promise<void> {
     const dpClient = client || this.dataPlaneClient;
     if (!dpClient) {
-      throw new Error("DataPlane client not available");
+      throw new InternalError("DataPlane client not available");
     }
 
     this.logger.info({ certFileName }, "Deploying certificate via DataPlane API");
@@ -248,7 +251,7 @@ export class CertificateDistributor {
       );
 
       if (!haproxyContainer || !haproxyContainer.Id) {
-        throw new Error("HAProxy container not found or not running");
+        throw new InternalError("HAProxy container not found or not running");
       }
 
       const docker = this.dockerExecutor.getDockerClient();

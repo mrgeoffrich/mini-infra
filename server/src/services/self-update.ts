@@ -7,7 +7,7 @@ import { RegistryCredentialService } from "./registry-credential";
 import { RegistryManager } from "./docker-executor/registry-manager";
 import { ErrorCode } from "@mini-infra/types";
 import type { SelfUpdateState, SelfUpdateStatus, OperationStep } from "@mini-infra/types";
-import { ConflictError, ValidationError } from "../lib/errors";
+import { ConflictError, ValidationError, InternalError } from "../lib/errors";
 
 const logger = getLogger("platform", "self-update");
 
@@ -160,7 +160,7 @@ export async function launchSidecar(
   // The caller (route handler) must have already acquired the lock via acquireLaunchLock().
   // We verify it here as a safety check but do NOT re-acquire — that's the caller's job.
   if (!launchInProgress) {
-    throw new Error("Launch lock not held — call acquireLaunchLock() before launchSidecar()");
+    throw new InternalError("Launch lock not held — call acquireLaunchLock() before launchSidecar()");
   }
 
   const totalSteps = SELF_UPDATE_LAUNCH_STEPS.length;

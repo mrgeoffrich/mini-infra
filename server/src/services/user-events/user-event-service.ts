@@ -8,7 +8,9 @@ import {
   UpdateUserEventRequest,
   Channel,
   ServerEvent,
+  ErrorCode,
 } from '@mini-infra/types';
+import { NotFoundError } from '../../lib/errors';
 import { emitToChannel } from '../../lib/socket';
 import type { UserEvent } from "../../generated/prisma/client";
 import { Prisma } from "../../generated/prisma/client";
@@ -224,7 +226,14 @@ export class UserEventService {
       });
 
       if (!event) {
-        throw new Error(`User event not found: ${eventId}`);
+        throw new NotFoundError(
+          ErrorCode.USER_EVENT_NOT_FOUND,
+          `User event not found: ${eventId}`,
+          {
+            resource: { type: 'userEvent', id: eventId },
+            action: 'Verify the event ID.',
+          },
+        );
       }
 
       const existingLogs = event.logs || '';
