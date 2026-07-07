@@ -1,6 +1,7 @@
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
-import { PERMISSION_PRESETS } from "@mini-infra/types";
+import { ConflictError, NotFoundError } from "../lib/errors";
+import { ErrorCode, PERMISSION_PRESETS } from "@mini-infra/types";
 import type {
   PermissionPresetRecord,
   PermissionScope,
@@ -52,7 +53,9 @@ export async function seedDefaultPresets(): Promise<void> {
         update: {},
       });
     }
-    logger.info(`Seeded ${PERMISSION_PRESETS.length} default permission presets`);
+    logger.info(
+      `Seeded ${PERMISSION_PRESETS.length} default permission presets`,
+    );
   } catch (error) {
     logger.error({ error }, "Failed to seed default permission presets");
     throw error;
@@ -69,6 +72,20 @@ export async function getAllPresets(): Promise<PermissionPresetRecord[]> {
 export async function createPreset(
   data: CreatePermissionPresetRequest,
 ): Promise<PermissionPresetRecord> {
+  const existing = await prisma.permissionPreset.findUnique({
+    where: { name: data.name },
+  });
+  if (existing) {
+    throw new ConflictError(
+      ErrorCode.PERMISSION_PRESET_NAME_EXISTS,
+      `A permission preset named '${data.name}' already exists.`,
+      {
+        resource: { type: "permissionPreset", name: data.name },
+        action: "Use a different name, or edit the existing preset instead.",
+      },
+    );
+  }
+
   const preset = await prisma.permissionPreset.create({
     data: {
       name: data.name,
@@ -79,13 +96,24 @@ export async function createPreset(
   return toRecord(preset);
 }
 
+function presetNotFound(id: string): NotFoundError {
+  return new NotFoundError(
+    ErrorCode.PERMISSION_PRESET_NOT_FOUND,
+    `Permission preset '${id}' not found.`,
+    {
+      resource: { type: "permissionPreset", id },
+      action: "Check the preset id and try again.",
+    },
+  );
+}
+
 export async function updatePreset(
   id: string,
   data: UpdatePermissionPresetRequest,
 ): Promise<PermissionPresetRecord> {
   const existing = await prisma.permissionPreset.findUnique({ where: { id } });
   if (!existing) {
-    throw new Error(`Permission preset not found: ${id}`);
+    throw presetNotFound(id);
   }
 
   const preset = await prisma.permissionPreset.update({
@@ -104,7 +132,7 @@ export async function updatePreset(
 export async function deletePreset(id: string): Promise<void> {
   const existing = await prisma.permissionPreset.findUnique({ where: { id } });
   if (!existing) {
-    throw new Error(`Permission preset not found: ${id}`);
+    throw presetNotFound(id);
   }
   await prisma.permissionPreset.delete({ where: { id } });
 }

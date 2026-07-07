@@ -16,8 +16,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import { toastWithCopy } from "@/lib/toast-utils";
 import { ApiRoute, queryKeys } from "@mini-infra/types";
-import type { AuthSettingsInfo, UpdateAuthSettingsRequest } from "@mini-infra/types";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import type {
+  AuthSettingsInfo,
+  UpdateAuthSettingsRequest,
+} from "@mini-infra/types";
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 
 interface AuthSettingsFormProps {
   settings: AuthSettingsInfo;
@@ -32,35 +36,31 @@ interface AuthSettingsFormProps {
 function AuthSettingsForm({ settings }: AuthSettingsFormProps) {
   const queryClient = useQueryClient();
 
-  const [googleEnabled, setGoogleEnabled] = useState(settings.googleOAuthEnabled);
+  const [googleEnabled, setGoogleEnabled] = useState(
+    settings.googleOAuthEnabled,
+  );
   const [clientId, setClientId] = useState(settings.googleClientId || "");
   const [clientSecret, setClientSecret] = useState("");
   const [isDirty, setIsDirty] = useState(false);
 
   const updateMutation = useMutation({
-    mutationFn: async (body: UpdateAuthSettingsRequest) => {
-      try {
-        return await apiFetch(ApiRoute.authSettings.root(), {
-          method: "PUT",
-          body,
-          correlationIdPrefix: "auth-settings",
-        });
-      } catch (err) {
-        // /api/auth-settings responds with `{ error: "<human message>" }`
-        // (no `.message` field) — the human-readable text lands in
-        // ApiRequestError.code, not `.message`.
-        throw new Error(
-          err instanceof ApiRequestError ? err.code : "Failed to update settings",
-          { cause: err },
-        );
-      }
-    },
+    mutationFn: async (body: UpdateAuthSettingsRequest) =>
+      apiFetch(ApiRoute.authSettings.root(), {
+        method: "PUT",
+        body,
+        correlationIdPrefix: "auth-settings",
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.authSettings.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.onboarding.setupStatus });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.onboarding.setupStatus,
+      });
       setIsDirty(false);
       toastWithCopy.success("Authentication settings saved");
     },
+    // This form shows the error inline (below) rather than via the global
+    // toast — see client/ARCHITECTURE.md's error-handling section.
+    meta: { skipErrorToast: true },
   });
 
   const handleSave = () => {
@@ -89,7 +89,7 @@ function AuthSettingsForm({ settings }: AuthSettingsFormProps) {
           <Alert variant="destructive">
             <IconAlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {updateMutation.error.message}
+              {getUserFacingError(updateMutation.error).description}
             </AlertDescription>
           </Alert>
         )}
@@ -144,8 +144,8 @@ function AuthSettingsForm({ settings }: AuthSettingsFormProps) {
               />
               {settings.hasGoogleClientSecret && (
                 <p className="text-xs text-muted-foreground">
-                  A client secret is already configured. Leave blank to keep
-                  it unchanged.
+                  A client secret is already configured. Leave blank to keep it
+                  unchanged.
                 </p>
               )}
             </div>
@@ -220,7 +220,9 @@ export default function AuthenticationSettingsPage() {
     return (
       <Alert variant="destructive">
         <IconAlertCircle className="h-4 w-4" />
-        <AlertDescription>Failed to load authentication settings</AlertDescription>
+        <AlertDescription>
+          Failed to load authentication settings
+        </AlertDescription>
       </Alert>
     );
   }

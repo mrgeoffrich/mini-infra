@@ -117,28 +117,23 @@ export function CreateApiKeyPage() {
     initDefaultPresetRef.current();
   }, [dbPresets]);
 
-  const handleSubmit = async (data: CreateApiKeyFormData) => {
-    try {
-      let permissions: PermissionScope[] | null = null;
-      if (selectedPermissions.has("*")) {
-        // Wildcard = full access, send null for backwards compatibility
-        permissions = null;
-      } else {
-        permissions = Array.from(selectedPermissions);
-      }
+  const handleSubmit = (data: CreateApiKeyFormData) => {
+    // Wildcard = full access, send null for backwards compatibility.
+    const permissions: PermissionScope[] | null = selectedPermissions.has("*")
+      ? null
+      : Array.from(selectedPermissions);
 
-      const result = await createApiKeyMutation.mutateAsync({
-        name: data.name,
-        permissions,
-      });
-      setCreatedKey(result.key);
-      toast.success("API key created successfully!");
-    } catch (error: unknown) {
-      console.error("Failed to create API key:", error);
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to create API key";
-      toast.error(errorMessage);
-    }
+    // Errors are surfaced by the global mutation-error toast
+    // (client/src/lib/query-client.ts) — only the success path is handled here.
+    createApiKeyMutation.mutate(
+      { name: data.name, permissions },
+      {
+        onSuccess: (result) => {
+          setCreatedKey(result.key);
+          toast.success("API key created successfully!");
+        },
+      },
+    );
   };
 
   const handleCopy = async () => {
@@ -174,9 +169,7 @@ export function CreateApiKeyPage() {
 
     setSelectedPreset("custom");
     const domainScopes = group.permissions.map((p) => p.scope);
-    const allSelected = domainScopes.every((s) =>
-      selectedPermissions.has(s),
-    );
+    const allSelected = domainScopes.every((s) => selectedPermissions.has(s));
 
     setSelectedPermissions((prev) => {
       const next = new Set(prev);
@@ -197,7 +190,9 @@ export function CreateApiKeyPage() {
 
   const isCustom = selectedPreset === "custom";
   const isFullAccess = selectedPermissions.has("*");
-  const permissionCount = isFullAccess ? "All" : selectedPermissions.size.toString();
+  const permissionCount = isFullAccess
+    ? "All"
+    : selectedPermissions.size.toString();
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -296,7 +291,10 @@ export function CreateApiKeyPage() {
                     )}
                     {!isCustom && !selectedPermissions.has("*") && (
                       <p className="text-sm text-muted-foreground">
-                        {dbPresets?.find((p) => p.id === selectedPreset)?.description}
+                        {
+                          dbPresets?.find((p) => p.id === selectedPreset)
+                            ?.description
+                        }
                       </p>
                     )}
                     {isCustom && (
@@ -311,9 +309,7 @@ export function CreateApiKeyPage() {
                   <Accordion
                     type="multiple"
                     defaultValue={
-                      isCustom
-                        ? PERMISSION_GROUPS.map((g) => g.domain)
-                        : []
+                      isCustom ? PERMISSION_GROUPS.map((g) => g.domain) : []
                     }
                     className="w-full"
                   >
@@ -323,30 +319,20 @@ export function CreateApiKeyPage() {
                       );
                       const allSelected =
                         !selectedPermissions.has("*") &&
-                        domainScopes.every((s) =>
-                          selectedPermissions.has(s),
-                        );
+                        domainScopes.every((s) => selectedPermissions.has(s));
                       const someSelected =
                         selectedPermissions.has("*") ||
-                        domainScopes.some((s) =>
-                          selectedPermissions.has(s),
-                        );
+                        domainScopes.some((s) => selectedPermissions.has(s));
 
                       return (
-                        <AccordionItem
-                          key={group.domain}
-                          value={group.domain}
-                        >
+                        <AccordionItem key={group.domain} value={group.domain}>
                           <AccordionTrigger className="hover:no-underline">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">
-                                {group.label}
-                              </span>
+                              <span className="font-medium">{group.label}</span>
                               {someSelected && (
                                 <Badge
                                   variant={
-                                    allSelected ||
-                                    selectedPermissions.has("*")
+                                    allSelected || selectedPermissions.has("*")
                                       ? "default"
                                       : "secondary"
                                   }
@@ -371,12 +357,9 @@ export function CreateApiKeyPage() {
                                 <Checkbox
                                   id={`${group.domain}-all`}
                                   checked={
-                                    selectedPermissions.has("*") ||
-                                    allSelected
+                                    selectedPermissions.has("*") || allSelected
                                   }
-                                  disabled={
-                                    selectedPermissions.has("*")
-                                  }
+                                  disabled={selectedPermissions.has("*")}
                                   onCheckedChange={() =>
                                     toggleDomainAll(group.domain)
                                   }
@@ -398,13 +381,9 @@ export function CreateApiKeyPage() {
                                     id={perm.scope}
                                     checked={
                                       selectedPermissions.has("*") ||
-                                      selectedPermissions.has(
-                                        perm.scope,
-                                      )
+                                      selectedPermissions.has(perm.scope)
                                     }
-                                    disabled={
-                                      selectedPermissions.has("*")
-                                    }
+                                    disabled={selectedPermissions.has("*")}
                                     onCheckedChange={() =>
                                       togglePermission(perm.scope)
                                     }
@@ -547,12 +526,8 @@ export function CreateApiKeyPage() {
               <CardContent className="space-y-3 text-sm text-muted-foreground">
                 <p>Add one of these headers to your HTTP requests:</p>
                 <div className="bg-muted p-3 rounded-md font-mono text-xs space-y-1">
-                  <div>
-                    Authorization: Bearer {`mk_${"x".repeat(64)}`}
-                  </div>
-                  <div>
-                    x-api-key: {`mk_${"x".repeat(64)}`}
-                  </div>
+                  <div>Authorization: Bearer {`mk_${"x".repeat(64)}`}</div>
+                  <div>x-api-key: {`mk_${"x".repeat(64)}`}</div>
                 </div>
               </CardContent>
             </Card>

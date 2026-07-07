@@ -151,6 +151,41 @@ describe("getUserFacingError", () => {
       description: "An unexpected error occurred.",
     });
   });
+
+  it("uses the curated title for API_KEY_NOT_FOUND over the resource-derived one (Phase 9)", () => {
+    // Mirrors the real revoke/rotate/delete 404 envelope (see
+    // api-keys-not-found.integration.test.ts on the server).
+    const body = {
+      error: ErrorCode.API_KEY_NOT_FOUND,
+      message: "API key not found or not owned by user",
+      resource: { type: "apiKey", id: "key-123" },
+      action: "Check the key ID — it must belong to your account.",
+    };
+    const err = new ApiRequestError(404, ErrorCode.API_KEY_NOT_FOUND, body.message, body);
+
+    const result = getUserFacingError(err);
+
+    expect(result.title).toBe("API key not found");
+    expect(result.description).toBe("API key not found or not owned by user");
+    expect(result.action).toBe(body.action);
+  });
+
+  it("uses the curated title for AUTH_ACCOUNT_LOCKED on a 423 status the generic fallback doesn't cover (Phase 9)", () => {
+    // 423 isn't one of statusClassFallback's mapped status classes, so
+    // without a CODE_TITLES entry this would fall through to the generic
+    // "Something went wrong".
+    const body = {
+      error: ErrorCode.AUTH_ACCOUNT_LOCKED,
+      message: "Account locked. Try again in 42 minute(s).",
+      action: "Wait for the lockout to expire, or use password recovery.",
+    };
+    const err = new ApiRequestError(423, ErrorCode.AUTH_ACCOUNT_LOCKED, body.message, body);
+
+    const result = getUserFacingError(err);
+
+    expect(result.title).toBe("Account locked");
+    expect(result.description).toBe("Account locked. Try again in 42 minute(s).");
+  });
 });
 
 describe("toastApiError", () => {

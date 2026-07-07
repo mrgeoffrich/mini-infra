@@ -1,13 +1,17 @@
 import { Router, Request, Response, RequestHandler } from "express";
+import { z } from "zod";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
 import { requireAuth } from "../lib/auth-middleware";
+import { asyncHandler } from "../lib/async-handler";
+import { ConflictError, NotFoundError, ValidationError } from "../lib/errors";
 import {
   hashPassword,
   generateTemporaryPassword,
   validatePasswordStrength,
 } from "../lib/password-service";
-import type { CreateUserRequest, UserInfo } from "@mini-infra/types";
+import { ErrorCode } from "@mini-infra/types";
+import type { UserInfo } from "@mini-infra/types";
 
 const logger = getLogger("auth", "users");
 const router = Router();
@@ -15,9 +19,27 @@ const router = Router();
 // All routes require authentication
 router.use(requireAuth as RequestHandler);
 
+const createUserSchema = z.object({
+  email: z.string().min(1, "Email is required").email("Invalid email format"),
+  displayName: z.string().min(1, "Display name is required"),
+  password: z.string().min(1, "Password is required"),
+});
+
+function userNotFound(id: string): NotFoundError {
+  return new NotFoundError(
+    ErrorCode.USER_NOT_FOUND,
+    `User '${id}' not found.`,
+    {
+      resource: { type: "user", id },
+      action: "Check the user id and try again.",
+    },
+  );
+}
+
 // List all users
-router.get("/", (async (_req: Request, res: Response) => {
-  try {
+router.get(
+  "/",
+  asyncHandler(async (_req: Request, res: Response) => {
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -38,43 +60,48 @@ router.get("/", (async (_req: Request, res: Response) => {
     }));
 
     res.json({ success: true, data: result });
-  } catch (error) {
-    logger.error({ error }, "Error listing users");
-    res.status(500).json({ error: "Failed to list users" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // Create a new user
-router.post("/", (async (req: Request, res: Response) => {
-  try {
-    const { email, displayName, password } = req.body as CreateUserRequest;
-
-    if (!email || !displayName || !password) {
-      return res.status(400).json({ error: "Email, display name, and password are required" });
+router.post(
+  "/",
+  asyncHandler(async (req: Request, res: Response) => {
+    const parsed = createUserSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw parsed.error;
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
+    const { email, displayName, password } = parsed.data;
+    const normalizedEmail = email.toLowerCase().trim();
 
     const strengthCheck = validatePasswordStrength(password);
     if (!strengthCheck.valid) {
-      return res.status(400).json({ error: strengthCheck.message });
+      throw new ValidationError(
+        ErrorCode.AUTH_PASSWORD_TOO_WEAK,
+        strengthCheck.message ??
+          "Password does not meet strength requirements.",
+      );
     }
 
     // Check uniqueness
     const existing = await prisma.user.findUnique({
-      where: { email: email.toLowerCase().trim() },
+      where: { email: normalizedEmail },
     });
     if (existing) {
-      return res.status(409).json({ error: "A user with this email already exists" });
+      throw new ConflictError(
+        ErrorCode.USER_EMAIL_EXISTS,
+        `A user with email '${normalizedEmail}' already exists.`,
+        {
+          resource: { type: "user", name: normalizedEmail },
+          action: "Use a different email address.",
+        },
+      );
     }
 
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase().trim(),
+        email: normalizedEmail,
         name: displayName.trim(),
         passwordHash,
         authMethod: "local",
@@ -82,7 +109,10 @@ router.post("/", (async (req: Request, res: Response) => {
       },
     });
 
-    logger.info({ userId: user.id, email: user.email, createdBy: req.user!.id }, "User created");
+    logger.info(
+      { userId: user.id, email: user.email, createdBy: req.user!.id },
+      "User created",
+    );
 
     const result: UserInfo = {
       id: user.id,
@@ -93,44 +123,44 @@ router.post("/", (async (req: Request, res: Response) => {
     };
 
     res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    logger.error({ error }, "Error creating user");
-    res.status(500).json({ error: "Failed to create user" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // Delete a user
-router.delete("/:id", (async (req: Request, res: Response) => {
-  try {
+router.delete(
+  "/:id",
+  asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id as string;
 
     if (id === req.user!.id) {
-      return res.status(400).json({ error: "You cannot delete your own account" });
+      throw new ValidationError(
+        ErrorCode.USER_SELF_DELETE_FORBIDDEN,
+        "You cannot delete your own account.",
+        { action: "Ask another admin to delete this account." },
+      );
     }
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      throw userNotFound(id);
     }
 
     await prisma.user.delete({ where: { id } });
 
     logger.info({ userId: id, deletedBy: req.user!.id }, "User deleted");
     res.json({ success: true });
-  } catch (error) {
-    logger.error({ error }, "Error deleting user");
-    res.status(500).json({ error: "Failed to delete user" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 // Reset a user's password (admin action)
-router.post("/:id/reset-password", (async (req: Request, res: Response) => {
-  try {
+router.post(
+  "/:id/reset-password",
+  asyncHandler(async (req: Request, res: Response) => {
     const id = req.params.id as string;
 
     const user = await prisma.user.findUnique({ where: { id } });
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      throw userNotFound(id);
     }
 
     const temporaryPassword = generateTemporaryPassword();
@@ -146,13 +176,13 @@ router.post("/:id/reset-password", (async (req: Request, res: Response) => {
       },
     });
 
-    logger.info({ userId: id, resetBy: req.user!.id }, "User password reset by admin");
+    logger.info(
+      { userId: id, resetBy: req.user!.id },
+      "User password reset by admin",
+    );
 
     res.json({ success: true, data: { temporaryPassword } });
-  } catch (error) {
-    logger.error({ error }, "Error resetting user password");
-    res.status(500).json({ error: "Failed to reset password" });
-  }
-}) as RequestHandler);
+  }),
+);
 
 export default router;

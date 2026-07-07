@@ -4,6 +4,7 @@ import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { apiFetch, ApiRequestError } from "./api-client";
 import { createQueryClient, resetAuthRedirectLatch } from "./query-client";
 import { toastWithCopy } from "./toast-utils";
+import { getUserFacingError } from "./errors";
 import {
   AuthContextType,
   AuthState,
@@ -249,10 +250,12 @@ function AuthProviderInner({ children }: AuthProviderProps) {
     password: string,
   ): Promise<{ success: boolean; mustResetPwd?: boolean; error?: string }> => {
     try {
-      // /auth/login returns { success, mustResetPwd } on success and
-      // { error: "..." } on failure — neither matches the standard
-      // {success,data} envelope, so this call opts out of apiFetch's
-      // automatic unwrap/throw and reads the raw body itself.
+      // /auth/login returns { success, mustResetPwd } on success — not the
+      // standard {success,data} envelope, so this call opts out of apiFetch's
+      // automatic unwrap/throw and reads the raw body itself. On failure it
+      // throws an `ApiRequestError` through the standard envelope
+      // (`message` is human text, `error` a machine `ErrorCode`) —
+      // `getUserFacingError` extracts the right description either way.
       const data = await apiFetch<{ success: boolean; mustResetPwd?: boolean }>(
         ApiRoute.auth.login(),
         {
@@ -269,17 +272,7 @@ function AuthProviderInner({ children }: AuthProviderProps) {
 
       return { success: true, mustResetPwd: data.mustResetPwd };
     } catch (error) {
-      if (error instanceof ApiRequestError) {
-        const body = error.body as { error?: string } | undefined;
-        return { success: false, error: body?.error || "Login failed" };
-      }
-      return {
-        success: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "An unexpected error occurred",
-      };
+      return { success: false, error: getUserFacingError(error).description };
     }
   };
 

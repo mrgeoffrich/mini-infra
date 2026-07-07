@@ -14,7 +14,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IconLoader2, IconAlertCircle } from "@tabler/icons-react";
 import { useAuth } from "@/hooks/use-auth";
 import { ApiRoute } from "@mini-infra/types";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 
 export function ForcePasswordChangePage() {
   const navigate = useNavigate();
@@ -44,13 +45,7 @@ export function ForcePasswordChangePage() {
       await refetch();
       navigate("/dashboard");
     } catch (err) {
-      // /auth/change-password responds with `{ error: "<human message>" }`
-      // (no `.message` field), so the human-readable text lands in
-      // ApiRequestError.code, not `.message` (which falls back to the
-      // generic HTTP status text for this route family).
-      setError(
-        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
-      );
+      setError(getUserFacingError(err).description);
     } finally {
       setIsSubmitting(false);
     }
