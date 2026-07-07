@@ -104,6 +104,8 @@ function toastApiError(err: unknown, opts?: { title?: string }): void;
 //  - getUserFacingError(err) → sonner toast (description + optional action button/link)
 ```
 
+**Global wiring (decided — global default + opt-out).** Mutation errors are toasted by a single `MutationCache.onError` on the app `QueryClient` (extending the existing 401 handler in `client/src/lib/query-client.ts`) that calls `toastApiError` by default. A site opts out with `useMutation({ meta: { skipErrorToast: true } })` when it renders the error inline or handles it bespoke. Consequence for Phases 3–10: they mostly **delete** hand-rolled `onError` toasts rather than rewrite them, adding the opt-out only where a site needs custom/inline handling.
+
 ## 5. Phased rollout
 
 The foundation is deliberately split **server (Phase 1) then client (Phase 2)**: they define two *different* contracts (the response envelope vs. the presentation helper), so they're two concerns and two PRs, and the client genuinely depends on the server shipping `code`/`action` first. From Phase 3 on, each phase merely *applies* the settled contract to one domain, so those phases span both sides as a single concern and **fan out in parallel** — they're designed to be handed to independent (Sonnet) agents, one per domain, each fully briefed by §4. Phase 11 gates on all of them.
@@ -137,7 +139,8 @@ Verify in prod: postgres conflict/not-found responses carry a machine `code` + `
 Deliverables:
 - `client/src/lib/errors.ts` — `getUserFacingError(err)` (§4.4) mapping `code`/`status`/`resource`/`action` into `{ title, description, action? }` and reconciling the `.code`-vs-`.message` split.
 - `toastApiError(err, { title? })` over sonner, with an optional action affordance.
-- The quick-backup-setup modal and `use-postgres-backup-configs` hooks routed through `toastApiError`, replacing the hand-rolled `catch`; the postgres-area `.code` workaround removed.
+- A global `MutationCache.onError` on the app `QueryClient` (`client/src/lib/query-client.ts`) that calls `toastApiError` by default, with a `meta.skipErrorToast` opt-out (extends the existing 401-only cache handler — §4.4).
+- The quick-backup-setup modal and `use-postgres-backup-configs` hooks routed through `toastApiError` (or relying on the global default), replacing the hand-rolled `catch`; the postgres-area `.code` workaround removed.
 - Unit tests for `getUserFacingError` across representative codes and status classes.
 - `client/ARCHITECTURE.md` error-handling/canonical-hook section documenting the `toastApiError` pattern.
 
@@ -344,7 +347,7 @@ Verify in prod: n/a — internal only.
 
 ## 6. Risks & open questions
 
-- **Global auto-toast vs. per-site.** A `MutationCache.onError` defaulting to `toastApiError` (with per-site opt-out) would be the DRYest end state and shrink the per-site edits dramatically — but it risks double-toasting where a site already toasts, and changes error UX broadly in one go. Decide before Phase 2 whether the domain phases route *each* site explicitly or lean on a global default; it materially changes the size of Phases 3–10.
+- **Global auto-toast vs. per-site — DECIDED: global default + opt-out.** A `MutationCache.onError` calls `toastApiError` by default; sites opt out via `useMutation({ meta: { skipErrorToast: true } })` when they render errors inline or handle them bespoke (wired in Phase 2 — §4.4). Phases 3–10 therefore mostly *delete* hand-rolled toasts rather than rewrite them. Residual risk to watch during migration: double-toasts where a site both keeps a local toast and inherits the global one, and the handful of sites that show inline errors rather than toasts (those get the opt-out).
 - **500→4xx is a behaviour change.** Some monitoring/alerting may key off status codes or the old message strings. Each domain PR should note the reclassification in release notes.
 - **Not every raw throw should become 4xx.** Genuine internal invariants must keep returning 500; the taxonomy and the Phase 11 lint rule need a clean escape hatch so correctness bugs aren't laundered into client-friendly 4xx.
 - **Transition safety for the `.code` workaround pages.** The ~5 pages that read `.code` today must keep working until their domain phase (9) removes the workaround; sequence the extraction fix so they don't regress in between.
