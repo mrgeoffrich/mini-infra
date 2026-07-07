@@ -6,6 +6,7 @@ import prisma from "../lib/prisma";
 import appConfig, { agentConfig } from "../lib/config-new";
 import { getEffectiveModel, getEffectiveApiKey } from "./agent-settings-service";
 import { getAgentApiKey } from "./agent-api-key";
+import { InternalError } from "../lib/errors";
 import type { OperationStep } from "@mini-infra/types";
 
 const logger = getLogger("agent", "agent-sidecar");
@@ -315,9 +316,8 @@ async function createAgentSidecar(
     } catch (pullErr) {
       logger.error({ err: pullErr, image: config.image }, "Failed to pull agent sidecar image");
       reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(
+      throw new InternalError(
         `Failed to pull agent sidecar image "${config.image}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
-        { cause: pullErr },
       );
     }
 
@@ -462,7 +462,7 @@ export async function proxyToSidecar(
   options: { method: string; body?: unknown },
 ): Promise<Response> {
   if (!sidecarUrl) {
-    throw new Error("Agent sidecar not available");
+    throw new InternalError("Agent sidecar not available");
   }
 
   const headers: Record<string, string> = {

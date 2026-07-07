@@ -53,12 +53,9 @@ export default function StorageSettingsPage() {
         toast.success(
           `Active storage provider set to ${providerId === "azure" ? "Azure Blob Storage" : "Google Drive"}`,
         );
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to update active provider",
-        );
+      } catch {
+        // Swallow: the global MutationCache.onError already shows an
+        // actionable toast for this mutation's real ApiRequestError.
       }
     },
     [updateActiveProvider],
@@ -315,12 +312,9 @@ function SlotRowFrame({
       try {
         await updateSlot.mutateAsync(locationId);
         toast.success(`${label} updated successfully`);
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : `Failed to save ${label.toLowerCase()}`,
-        );
+      } catch {
+        // Swallow: the global MutationCache.onError already shows an
+        // actionable toast for this mutation's real ApiRequestError.
       }
     },
     [label, updateSlot],

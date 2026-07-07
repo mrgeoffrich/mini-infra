@@ -24,6 +24,7 @@ import { google, drive_v3 } from "googleapis";
 import { Readable } from "stream";
 import type { PrismaClient } from "../../../../lib/prisma";
 import { getLogger } from "../../../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   ConnectivityStatusType,
   ServiceHealthStatus,
@@ -41,6 +42,7 @@ import type {
   RetentionEnforcementResult,
   RetentionPolicy,
 } from "@mini-infra/types";
+import { NotFoundError, ConflictError, ValidationError, InternalError } from "../../../../lib/errors";
 import { GoogleDriveTokenManager } from "./google-drive-token-manager";
 
 const log = () => getLogger("integrations", "google-drive-backend");
@@ -95,8 +97,13 @@ export class GoogleDriveBackend implements StorageBackend {
   private async requireDriveClient(): Promise<drive_v3.Drive> {
     const client = await this.buildDriveClient();
     if (!client) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_NOT_CONNECTED,
         "Google Drive provider is not connected — run the OAuth flow first",
+        {
+          resource: { type: "storageProvider", id: "google-drive" },
+          action: "Connect Google Drive via OAuth in Settings > Storage.",
+        },
       );
     }
     return client;
@@ -397,7 +404,9 @@ export class GoogleDriveBackend implements StorageBackend {
    * existing folder.
    */
   async createFolder(name: string): Promise<LocationInfo> {
-    if (!name.trim()) throw new Error("Folder name is required");
+    if (!name.trim()) {
+      throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Folder name is required");
+    }
     const drive = await this.requireDriveClient();
     const created = await drive.files.create({
       requestBody: {
@@ -407,7 +416,7 @@ export class GoogleDriveBackend implements StorageBackend {
       fields: "id, name, modifiedTime",
     });
     if (!created.data.id) {
-      throw new Error("Drive folder creation returned no id");
+      throw new InternalError("Drive folder creation returned no id");
     }
     return {
       id: created.data.id,
@@ -469,9 +478,7 @@ export class GoogleDriveBackend implements StorageBackend {
         { folderId: ref.id, prefix: opts?.prefix, error: message },
         "Failed to list Drive files",
       );
-      throw new Error(`Failed to list Drive files: ${message}`, {
-        cause: error,
-      });
+      throw new InternalError(`Failed to list Drive files: ${message}`);
     }
   }
 
@@ -502,7 +509,7 @@ export class GoogleDriveBackend implements StorageBackend {
       const { status, message } = this.extractDriveErrorInfo(error);
       if (status === 404) return null;
       log().error({ folderId: ref.id, name, error: message }, "Drive head failed");
-      throw new Error(`Drive head failed: ${message}`, { cause: error });
+      throw new InternalError(`Drive head failed: ${message}`);
     }
   }
 
@@ -548,7 +555,7 @@ export class GoogleDriveBackend implements StorageBackend {
         { folderId: ref.id, name, error: message },
         "Failed to upload to Google Drive",
       );
-      throw new Error(`Drive upload failed: ${message}`, { cause: error });
+      throw new InternalError(`Drive upload failed: ${message}`);
     }
   }
 
@@ -558,7 +565,11 @@ export class GoogleDriveBackend implements StorageBackend {
   ): Promise<DownloadStream> {
     const fileId = await this.findFileIdByName(ref.id, name);
     if (!fileId) {
-      throw new Error(`Drive file '${name}' not found in folder '${ref.id}'`);
+      throw new NotFoundError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_FILE_NOT_FOUND,
+        `Drive file '${name}' not found in folder '${ref.id}'`,
+        { resource: { type: "storageObject", name } },
+      );
     }
     const drive = await this.requireDriveClient();
     const meta = await drive.files.get({
@@ -589,8 +600,13 @@ export class GoogleDriveBackend implements StorageBackend {
     const redirectUri = await this.resolveRedirectUri();
     let accessToken = await this.tokens.getValidAccessToken(redirectUri);
     if (!accessToken) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_NOT_CONNECTED,
         "Google Drive provider is not connected — cannot mint upload handle",
+        {
+          resource: { type: "storageProvider", id: "google-drive" },
+          action: "Connect Google Drive via OAuth in Settings > Storage.",
+        },
       );
     }
     // If the existing token has less than the requested TTL remaining, force
@@ -648,7 +664,7 @@ export class GoogleDriveBackend implements StorageBackend {
         { folderId: ref.id, name, status, error: message },
         "Failed to delete Drive file",
       );
-      throw new Error(`Drive delete failed: ${message}`, { cause: error });
+      throw new InternalError(`Drive delete failed: ${message}`);
     }
   }
 
@@ -772,7 +788,7 @@ export class GoogleDriveBackend implements StorageBackend {
         { folderId, name, status, error: message },
         "Drive name lookup failed",
       );
-      throw new Error(`Drive lookup failed: ${message}`, { cause: error });
+      throw new InternalError(`Drive lookup failed: ${message}`);
     }
   }
 

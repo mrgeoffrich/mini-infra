@@ -1,14 +1,38 @@
 import {
+  ErrorCode,
   GitHubAppPackage,
   GitHubAppPackageVersion,
   GitHubAppRepository,
   GitHubAppActionsRun,
 } from "@mini-infra/types";
-import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppContext } from "./github-app-constants";
+import { NotFoundError, ValidationError } from "../../lib/errors";
+import {
+  GITHUB_API_BASE,
+  SETTING_KEYS,
+  GitHubAppContext,
+  githubApiFailure,
+} from "./github-app-constants";
 import { GitHubAppAuth } from "./github-app-auth";
 import { GitHubAppOAuth } from "./github-app-oauth";
 
 type GitHubApiObject = Record<string, unknown>;
+
+/**
+ * The `owner` setting is only ever populated alongside `app_id` during
+ * `GitHubAppSetup.completeSetup()` — a missing owner means the app itself
+ * isn't configured, so this reuses `GITHUB_APP_NOT_CONFIGURED` rather than a
+ * separate code.
+ */
+function ownerNotConfigured(): ValidationError {
+  return new ValidationError(
+    ErrorCode.GITHUB_APP_NOT_CONFIGURED,
+    "GitHub App owner not configured",
+    {
+      resource: { type: "githubApp" },
+      action: "Configure the GitHub App in Settings > GitHub.",
+    },
+  );
+}
 
 /**
  * Handles listing GitHub resources: packages, package versions,
@@ -33,7 +57,7 @@ export class GitHubAppResources {
     const ownerType = await this.ctx.getSetting(SETTING_KEYS.OWNER_TYPE);
 
     if (!owner) {
-      throw new Error("GitHub App owner not configured");
+      throw ownerNotConfigured();
     }
 
     // Try user token (PAT or OAuth) first — only classic PATs with read:packages
@@ -87,9 +111,7 @@ export class GitHubAppResources {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Failed to list packages (${response.status}): ${errorBody}`,
-      );
+      throw githubApiFailure("list packages", response, errorBody);
     }
 
     const packages = await response.json();
@@ -128,7 +150,7 @@ export class GitHubAppResources {
     const ownerType = await this.ctx.getSetting(SETTING_KEYS.OWNER_TYPE);
 
     if (!owner) {
-      throw new Error("GitHub App owner not configured");
+      throw ownerNotConfigured();
     }
 
     const endpoint =
@@ -146,9 +168,17 @@ export class GitHubAppResources {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Failed to list package versions (${response.status}): ${errorBody}`,
-      );
+      if (response.status === 404) {
+        throw new NotFoundError(
+          ErrorCode.GITHUB_APP_PACKAGE_NOT_FOUND,
+          `Package '${packageName}' was not found`,
+          {
+            resource: { type: "githubAppPackage", name: packageName },
+            action: "Check the package name in the package list.",
+          },
+        );
+      }
+      throw githubApiFailure("list package versions", response, errorBody);
     }
 
     const versions = await response.json();
@@ -185,9 +215,7 @@ export class GitHubAppResources {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Failed to list repositories (${response.status}): ${errorBody}`,
-      );
+      throw githubApiFailure("list repositories", response, errorBody);
     }
 
     const data = await response.json();
@@ -233,9 +261,17 @@ export class GitHubAppResources {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Failed to list action runs (${response.status}): ${errorBody}`,
-      );
+      if (response.status === 404) {
+        throw new NotFoundError(
+          ErrorCode.GITHUB_APP_REPOSITORY_NOT_FOUND,
+          `Repository '${owner}/${repo}' was not found or is not accessible to the installation`,
+          {
+            resource: { type: "githubAppRepository", name: `${owner}/${repo}` },
+            action: "Check the repository name in the repository list.",
+          },
+        );
+      }
+      throw githubApiFailure("list action runs", response, errorBody);
     }
 
     const data = await response.json();

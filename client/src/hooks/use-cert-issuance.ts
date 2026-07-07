@@ -6,7 +6,6 @@
  */
 
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { CreateCertificateRequest, StartCertIssuanceResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
@@ -36,9 +35,7 @@ async function startCertIssuance(
 export function useStartCertIssuance() {
   return useMutation({
     mutationFn: startCertIssuance,
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 

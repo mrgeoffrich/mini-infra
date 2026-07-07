@@ -4,6 +4,7 @@ import {
   VolumeRequirement
 } from './interfaces/application-service';
 import { getLogger } from '../lib/logger-factory';
+import { InternalError } from '../lib/errors';
 import DockerService from './docker';
 
 export interface ServiceCreationOptions {
@@ -167,7 +168,7 @@ export class ApplicationServiceFactory {
   public async startService(serviceName: string) {
     const service = this.getService(serviceName);
     if (!service) {
-      throw new Error(`Service not found: ${serviceName}`);
+      throw new InternalError(`Service not found: ${serviceName}`);
     }
 
     try {

@@ -7,7 +7,8 @@ import { getLogger } from "../lib/logger-factory";
 import {
   RegistryCredentialService,
 } from "../services/registry-credential";
-import { Permission } from "@mini-infra/types";
+import { ValidationError } from "../lib/errors";
+import { Permission, ErrorCode } from "@mini-infra/types";
 
 type ImagesRouterOptions = {
   logger?: ReturnType<typeof getLogger>;
@@ -29,39 +30,31 @@ export default function createImagesRouter(
   router.get(
     "/inspect-ports",
     requirePermission(Permission.ContainersRead) as RequestHandler,
-    async (req, res) => {
+    (async (req, res) => {
       const image = req.query.image as string | undefined;
       const tag = req.query.tag as string | undefined;
 
       if (!image || !tag) {
-        return res.status(400).json({
-          success: false,
-          error: "Both 'image' and 'tag' query parameters are required",
-        });
+        throw new ValidationError(
+          ErrorCode.VALIDATION_FAILED,
+          "Both 'image' and 'tag' query parameters are required",
+        );
       }
 
-      try {
-        const credentials =
-          await registryCredentialService.getCredentialsForImage(image);
-        const inspectService = new ImageInspectService(credentials);
-        const ports = await inspectService.getExposedPorts(image, tag);
+      // Errors thrown from here on (ImageInspectService's NotFoundError/
+      // UnauthorizedError/ServiceError) carry their own status/code and
+      // reach the central error middleware — Express 5 forwards a rejected
+      // promise from an async handler to `next(error)` automatically, so no
+      // local try/catch/status-mapping is needed (see
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md, Phase 7).
+      const credentials =
+        await registryCredentialService.getCredentialsForImage(image);
+      const inspectService = new ImageInspectService(credentials);
+      const ports = await inspectService.getExposedPorts(image, tag);
 
-        res.json({ success: true, ports });
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
-
-        logger.error({ error: message, image, tag }, "Failed to inspect image ports");
-
-        if (message.includes("not found")) {
-          return res.status(404).json({ success: false, error: message });
-        }
-        if (message.includes("Authentication")) {
-          return res.status(401).json({ success: false, error: message });
-        }
-        res.status(502).json({ success: false, error: "Failed to inspect image" });
-      }
-    },
+      logger.debug({ image, tag, ports }, "Inspected image ports");
+      res.json({ success: true, ports });
+    }) as RequestHandler,
   );
 
   return router;

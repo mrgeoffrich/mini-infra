@@ -17,6 +17,7 @@ import { IconAlertTriangle, IconUnlink } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { StorageProviderId } from "@mini-infra/types";
 import { useForgetStorageProvider } from "@/hooks/use-storage-settings";
+import { toastApiError } from "@/lib/errors";
 
 interface StorageForgetProviderButtonProps {
   /** The provider to disconnect. Must NOT be the currently active provider. */
@@ -136,11 +137,7 @@ export function StorageForgetProviderButton({
       setOpen(false);
       setPhase({ kind: "idle" });
     } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : `Failed to disconnect ${providerLabel}`,
-      );
+      toastApiError(err, { title: `Failed to disconnect ${providerLabel}` });
     }
   };
 

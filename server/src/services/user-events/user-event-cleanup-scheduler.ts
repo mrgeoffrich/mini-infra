@@ -1,7 +1,9 @@
 import prisma, { PrismaClient } from '../../lib/prisma';
 import * as cron from 'node-cron';
+import { ErrorCode } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
 import { withOperation } from '../../lib/logging-context';
+import { ValidationError } from '../../lib/errors';
 import { UserEventService } from './user-event-service';
 
 /**
@@ -241,7 +243,14 @@ export class UserEventCleanupScheduler {
   public async updateSchedule(newSchedule: string): Promise<void> {
     try {
       if (!cron.validate(newSchedule)) {
-        throw new Error(`Invalid cron expression: ${newSchedule}`);
+        throw new ValidationError(
+          ErrorCode.USER_EVENT_INVALID_CLEANUP_CRON,
+          `Invalid cron expression: ${newSchedule}`,
+          {
+            resource: { type: 'userEventCleanupSchedule' },
+            action: 'Enter a valid 5-field cron expression (e.g. "0 2 * * *").',
+          },
+        );
       }
 
       this.logger.info(

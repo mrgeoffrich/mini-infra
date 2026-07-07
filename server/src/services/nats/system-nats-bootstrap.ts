@@ -25,6 +25,7 @@
 
 import type { PrismaClient } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import {
   BackupSubject,
   EgressGwSubject,
@@ -66,7 +67,10 @@ const SYSTEM_PREFIX_BINDINGS: Array<{ prefix: string; templateNames: string[] }>
 function subjectPrefixOf(subject: string, depth: number): string {
   const tokens = subject.split(".");
   if (tokens.length < depth || tokens[0] !== NATS_SYSTEM_PREFIX) {
-    throw new Error(
+    // A hardcoded subject constant (`EgressGwSubject.*` / `BackupSubject.*`)
+    // shaped wrong at boot — a programmer error caught at server startup,
+    // never a condition any request can trigger.
+    throw new InternalError(
       `bootstrap: unexpected subject shape '${subject}' — expected at least ${depth} dotted tokens beginning with '${NATS_SYSTEM_PREFIX}'`,
     );
   }

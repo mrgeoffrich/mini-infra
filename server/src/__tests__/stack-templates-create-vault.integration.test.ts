@@ -47,6 +47,7 @@ vi.mock('../middleware/auth', () => ({
 vi.mock('../lib/prisma', () => ({ default: testPrisma }));
 
 import stackTemplateRouter from '../routes/stack-templates';
+import { errorHandler } from '../lib/error-handler';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,9 @@ function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/stack-templates', stackTemplateRouter);
+  // Real central error middleware — the route now throws taxonomy errors
+  // instead of writing its own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -180,8 +184,7 @@ describe('POST /api/stack-templates — single-call create with vault + inputs',
     const res = await supertest(buildApp()).post('/api/stack-templates').send(body);
 
     expect(res.status).toBe(403);
-    expect(res.body.success).toBe(false);
-    expect(res.body.code).toBe('template_vault_scope_required');
+    expect(res.body.error).toBe('STACK_TEMPLATE_VAULT_SCOPE_REQUIRED');
   });
 
   it('session users bypass the vault scope gate', async () => {

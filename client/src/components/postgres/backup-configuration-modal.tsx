@@ -1,10 +1,8 @@
 import { useState } from "react";
-import React from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Form,
   FormControl,
@@ -52,7 +50,6 @@ import { useStorageSettings } from "@/hooks/use-storage-settings";
 import { StorageLocationSelector } from "@/components/storage/StorageLocationSelector";
 import { useUserPreferences, useTimezones } from "@/hooks/use-user-preferences";
 import {
-  IconAlertCircle,
   IconLoader2,
   IconCalendar,
   IconClock,
@@ -86,7 +83,6 @@ export function BackupConfigurationModal({
   onClose,
 }: BackupConfigurationModalProps) {
   const { formatDateTime } = useFormattedDate();
-  const [submitError, setSubmitError] = useState<string | null>(null);
   const [timezonePopoverOpen, setTimezonePopoverOpen] = useState(false);
   const isEditing = !!backupConfig;
 
@@ -124,7 +120,6 @@ export function BackupConfigurationModal({
   const watchedIsEnabled = useWatch({ control: form.control, name: "isEnabled" });
 
   const onSubmit = async (data: BackupConfigFormData) => {
-    setSubmitError(null);
     try {
       if (isEditing && backupConfig) {
         const updateData: UpdateBackupConfigurationRequest = data;
@@ -142,10 +137,14 @@ export function BackupConfigurationModal({
         toast.success("Backup configuration created successfully");
       }
       onClose();
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      setSubmitError(errorMessage);
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError (code/resource/action now flow
+      // through, see use-postgres-backup-configs.ts). We only need to catch
+      // here so mutateAsync's rejection doesn't become an unhandled promise
+      // rejection — not calling onClose() below leaves the dialog open so
+      // the user can fix the form and retry.
     }
   };
 
@@ -159,12 +158,9 @@ export function BackupConfigurationModal({
       });
       toast.success("Backup configuration deleted successfully");
       onClose();
-    } catch (error) {
-      toast.error(
-        `Failed to delete backup configuration: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -172,25 +168,11 @@ export function BackupConfigurationModal({
     try {
       await manualBackupMutation.mutateAsync(database.id);
       toast.success("Manual backup triggered successfully");
-    } catch (error) {
-      toast.error(
-        `Failed to trigger manual backup: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
-
-  // Clear error when the modal opens. Tracked via a ref so the setState
-  // call sits outside the effect's reactive body.
-  const prevIsOpenRef = React.useRef(isOpen);
-  React.useEffect(() => {
-    const justOpened = isOpen && !prevIsOpenRef.current;
-    prevIsOpenRef.current = isOpen;
-    if (justOpened) {
-      setSubmitError(null);
-    }
-  }, [isOpen]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -203,19 +185,6 @@ export function BackupConfigurationModal({
             Configure automated backups for {database.name}
           </DialogDescription>
         </DialogHeader>
-
-        {submitError && (
-          <Alert variant="destructive">
-            <IconAlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              {submitError.includes("container") ||
-              submitError.includes("storage") ||
-              submitError.includes("Storage")
-                ? `Storage Error: ${submitError}. Please ensure the storage backend is configured and the location exists.`
-                : submitError}
-            </AlertDescription>
-          </Alert>
-        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">

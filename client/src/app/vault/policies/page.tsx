@@ -28,7 +28,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
 
 export default function VaultPoliciesPage() {
   const { data: policies, isLoading } = useVaultPolicies();
@@ -116,8 +115,10 @@ function PolicyTable({
               onClick={async () => {
                 try {
                   await publish.mutateAsync(p.id);
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Publish failed");
+                } catch {
+                  // Swallow: the global MutationCache.onError already shows
+                  // an actionable toast for this mutation's real
+                  // ApiRequestError.
                 }
               }}
               disabled={publish.isPending}
@@ -132,10 +133,10 @@ function PolicyTable({
                   if (!confirm(`Delete policy ${p.name}?`)) return;
                   try {
                     await del.mutateAsync(p.id);
-                  } catch (err) {
-                    toast.error(
-                      err instanceof Error ? err.message : "Delete failed",
-                    );
+                  } catch {
+                    // Swallow: the global MutationCache.onError already
+                    // shows an actionable toast for this mutation's real
+                    // ApiRequestError.
                   }
                 }}
               >
@@ -176,8 +177,9 @@ function CreatePolicyDialog({
       setName("");
       setDisplayName("");
       setDescription("");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create failed");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

@@ -97,6 +97,17 @@ export default tseslint.config([
           message:
             "Inline queryKey array literals are banned in client/src — use a queryKeys.* builder from '@mini-infra/types' instead.",
         },
+        {
+          // Phase 11 (error-handling overhaul): a `toast.error(...)` that
+          // surfaces a raw `error.message` is a bare, non-actionable server
+          // sentence. Route caught errors through `toastApiError(err, { title })`
+          // / `getUserFacingError` from '@/lib/errors'; mutation errors already
+          // toast by default via the global MutationCache.onError.
+          selector:
+            "CallExpression[callee.object.name='toast'][callee.property.name='error'] MemberExpression[property.name='message']",
+          message:
+            "Do not surface a raw `error.message` in a toast. Use `toastApiError(err, { title })` from '@/lib/errors' (or getUserFacingError for inline errors); mutation errors already toast via the global MutationCache.onError.",
+        },
       ],
     },
   },

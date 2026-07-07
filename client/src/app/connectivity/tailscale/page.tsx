@@ -48,6 +48,7 @@ import {
   type TailscaleSettingsResponse,
 } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 
 const tagRegex = /^tag:[a-z0-9-]+$/;
 
@@ -246,15 +247,14 @@ export default function TailscaleSettingsPage() {
         );
       }, 5000);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to save Tailscale settings";
+      const message = getUserFacingError(error).description;
       setValidationState({
         isValidating: false,
         isSuccess: false,
         error: message,
         errorCode: null,
       });
-      toast.error(message);
+      toastApiError(error, { title: "Failed to save Tailscale settings" });
     }
   };
 

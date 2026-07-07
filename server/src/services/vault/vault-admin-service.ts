@@ -7,9 +7,10 @@ import { VaultStateService } from "./vault-state-service";
 import { getLogger } from "../../lib/logger-factory";
 import { getNatsControlPlaneService } from "../nats/nats-control-plane-service";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent } from "@mini-infra/types";
+import { Channel, ServerEvent, ErrorCode } from "@mini-infra/types";
 import type { OperationStep } from "@mini-infra/types";
 import type { VaultBootstrapResult } from "@mini-infra/types";
+import { ConflictError } from "../../lib/errors";
 // Bootstrap and per-login self-heal both read system policy bodies from the
 // seeded DB rows (`isSystem: true`), which `seedVaultPolicies` keeps pinned
 // to the codebase constants in `vault-policy-bodies.ts`. No HCL import here.
@@ -178,7 +179,14 @@ export class VaultAdminService {
     const client = this.client!;
 
     if (await this.stateService.isBootstrapped()) {
-      throw new Error("Vault is already bootstrapped");
+      throw new ConflictError(
+        ErrorCode.VAULT_ALREADY_BOOTSTRAPPED,
+        "Vault is already bootstrapped",
+        {
+          resource: { type: "vault" },
+          action: "Vault is already bootstrapped; no further action needed.",
+        },
+      );
     }
 
     // Passphrase-first: set it so subsequent state-service calls can wrap.
@@ -211,7 +219,14 @@ export class VaultAdminService {
         }
         const s = await client.sealStatus();
         if (s.sealed) {
-          throw new Error("Vault is still sealed after submitting 2 shares");
+          throw new ConflictError(
+            ErrorCode.VAULT_UNSEAL_FAILED,
+            "Vault is still sealed after submitting 2 shares",
+            {
+              resource: { type: "vault" },
+              action: "Check the stored unseal keys and retry the bootstrap flow.",
+            },
+          );
         }
       },
       onStep,
@@ -353,9 +368,21 @@ export class VaultAdminService {
    * Requires operator passphrase to be unlocked.
    */
   async unseal(onStep?: StepCallback): Promise<void> {
-    if (!this.client) throw new Error("No Vault address configured");
+    if (!this.client)
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "No Vault address configured",
+        { resource: { type: "vault" }, action: "Configure the Vault address and bootstrap Vault." },
+      );
     if (!this.passphrase.isUnlocked()) {
-      throw new Error("Operator passphrase must be unlocked before unseal");
+      throw new ConflictError(
+        ErrorCode.VAULT_LOCKED,
+        "Operator passphrase must be unlocked before unseal",
+        {
+          resource: { type: "vault" },
+          action: "Unlock the Vault operator passphrase, then retry.",
+        },
+      );
     }
     const total = UNSEAL_STEPS.length;
     let completed = 0;
@@ -377,7 +404,14 @@ export class VaultAdminService {
       async () => {
         const s = await this.client!.sealStatus();
         if (s.sealed) {
-          throw new Error("Vault is still sealed after submitting shares");
+          throw new ConflictError(
+            ErrorCode.VAULT_UNSEAL_FAILED,
+            "Vault is still sealed after submitting shares",
+            {
+              resource: { type: "vault" },
+              action: "Check the stored unseal keys and retry.",
+            },
+          );
         }
       },
       onStep,
@@ -415,9 +449,21 @@ export class VaultAdminService {
   }
 
   private async authenticateAsAdminInner(): Promise<void> {
-    if (!this.client) throw new Error("No Vault address configured");
+    if (!this.client)
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "No Vault address configured",
+        { resource: { type: "vault" }, action: "Configure the Vault address and bootstrap Vault." },
+      );
     if (!this.passphrase.isUnlocked()) {
-      throw new Error("Operator passphrase must be unlocked");
+      throw new ConflictError(
+        ErrorCode.VAULT_LOCKED,
+        "Operator passphrase must be unlocked",
+        {
+          resource: { type: "vault" },
+          action: "Unlock the Vault operator passphrase, then retry.",
+        },
+      );
     }
     const roleId = await this.stateService.readAdminRoleId();
     const secretId = await this.stateService.readAdminSecretId();
@@ -456,7 +502,12 @@ export class VaultAdminService {
    * or the AppRole login fails.
    */
   async getAuthenticatedClient(): Promise<VaultHttpClient> {
-    if (!this.client) throw new Error("No Vault address configured");
+    if (!this.client)
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "No Vault address configured",
+        { resource: { type: "vault" }, action: "Configure the Vault address and bootstrap Vault." },
+      );
     if (!this.adminToken) {
       await this.authenticateAsAdmin();
     }

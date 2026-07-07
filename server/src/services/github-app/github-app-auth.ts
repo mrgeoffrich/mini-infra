@@ -1,5 +1,12 @@
 import jwt from "jsonwebtoken";
-import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppContext } from "./github-app-constants";
+import { ErrorCode } from "@mini-infra/types";
+import { ValidationError } from "../../lib/errors";
+import {
+  GITHUB_API_BASE,
+  SETTING_KEYS,
+  GitHubAppContext,
+  githubApiFailure,
+} from "./github-app-constants";
 
 /**
  * Handles GitHub App JWT generation and installation token creation.
@@ -20,8 +27,13 @@ export class GitHubAppAuth {
     const key = privateKey;
 
     if (!issuer || !key) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_NOT_CONFIGURED,
         "GitHub App is not configured: missing app_id or private_key",
+        {
+          resource: { type: "githubApp" },
+          action: "Configure the GitHub App in Settings > GitHub.",
+        },
       );
     }
 
@@ -47,8 +59,13 @@ export class GitHubAppAuth {
     const privateKey = await this.ctx.getSetting(SETTING_KEYS.PRIVATE_KEY);
 
     if (!appId || !privateKey) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_NOT_CONFIGURED,
         "GitHub App is not configured: missing app_id or private_key",
+        {
+          resource: { type: "githubApp" },
+          action: "Configure the GitHub App in Settings > GitHub.",
+        },
       );
     }
 
@@ -69,8 +86,13 @@ export class GitHubAppAuth {
     const installationId = await this.ctx.getSetting(SETTING_KEYS.INSTALLATION_ID);
 
     if (!installationId) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_NOT_INSTALLED,
         "GitHub App is not configured: missing installation_id",
+        {
+          resource: { type: "githubApp" },
+          action: "Install the GitHub App on your account or organization, then refresh the installation status.",
+        },
       );
     }
 
@@ -89,9 +111,7 @@ export class GitHubAppAuth {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(
-        `Failed to generate installation token (${response.status}): ${errorBody}`,
-      );
+      throw githubApiFailure("generate installation token", response, errorBody);
     }
 
     const data = await response.json();

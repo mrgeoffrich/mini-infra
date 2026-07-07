@@ -100,8 +100,9 @@ export function QuickSetupWizard({ serverId }: QuickSetupWizardProps) {
       setResult(response.data);
       setCurrentStep(3); // Move to success step
       toast.success("Application database created successfully!");
-    } catch (error: unknown) {
-      toast.error(error instanceof Error ? error.message : "Failed to create application database");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

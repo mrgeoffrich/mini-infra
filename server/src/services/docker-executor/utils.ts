@@ -1,6 +1,8 @@
 import { getLogger } from "../../lib/logger-factory";
 import prisma from "../../lib/prisma";
 import type { ContainerExecutionOptions } from "./types";
+import { ErrorCode } from "@mini-infra/types";
+import { ValidationError } from "../../lib/errors";
 
 /**
  * Infer the task type from container execution options
@@ -62,11 +64,15 @@ export interface DockerDeviceMapping {
  */
 export function parseDeviceSpec(spec: string): DockerDeviceMapping {
   if (typeof spec !== "string" || spec.length === 0) {
-    throw new Error(`Invalid device spec: expected non-empty string, got ${JSON.stringify(spec)}`);
+    throw new ValidationError(
+      ErrorCode.DOCKER_DEVICE_SPEC_INVALID,
+      `Invalid device spec: expected non-empty string, got ${JSON.stringify(spec)}`,
+    );
   }
   const parts = spec.split(":");
   if (parts.length > 3 || parts.some((p) => p.length === 0)) {
-    throw new Error(
+    throw new ValidationError(
+      ErrorCode.DOCKER_DEVICE_SPEC_INVALID,
       `Invalid device spec "${spec}": expected "HOST", "HOST:CONTAINER", or "HOST:CONTAINER:PERMS" with no empty segments`,
     );
   }

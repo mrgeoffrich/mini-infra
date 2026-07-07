@@ -5,7 +5,8 @@ import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
 import { StorageService } from "../storage/storage-service";
 import { UserPreferencesService } from "../user-preferences";
-import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
+import { BackupConfigurationInfo, BackupFormat, ErrorCode } from "@mini-infra/types";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 import { refreshAllPgBackupTriggers } from "./backup-job-pool-materialiser";
 
 export class BackupConfigurationManager {
@@ -40,12 +41,16 @@ export class BackupConfigurationManager {
       });
 
       if (!database) {
-        throw new Error("Database not found");
+        throw new NotFoundError(
+          ErrorCode.BACKUP_DATABASE_NOT_FOUND,
+          `Database ${databaseId} not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       // Validate cron expression if provided
       if (config.schedule && !this.isValidCronExpression(config.schedule)) {
-        throw new Error("Invalid cron expression");
+        throw new ValidationError(ErrorCode.BACKUP_CONFIG_INVALID, "Invalid cron expression");
       }
 
       // Determine timezone - use provided timezone or default to UTC
@@ -53,7 +58,7 @@ export class BackupConfigurationManager {
 
       // Validate timezone
       if (!UserPreferencesService.validateTimezone(timezone)) {
-        throw new Error(`Invalid timezone: ${timezone}`);
+        throw new ValidationError(ErrorCode.BACKUP_CONFIG_INVALID, `Invalid timezone: ${timezone}`);
       }
 
       // Validate storage location through the active backend
@@ -68,8 +73,13 @@ export class BackupConfigurationManager {
       });
 
       if (existingConfig) {
-        throw new Error(
+        throw new ConflictError(
+          ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS,
           "Backup configuration already exists for this database",
+          {
+            resource: { type: "backupConfiguration", id: existingConfig.id },
+            action: "Edit the existing backup configuration instead of creating a new one.",
+          },
         );
       }
 
@@ -163,7 +173,11 @@ export class BackupConfigurationManager {
       });
 
       if (!existingConfig) {
-        throw new Error("Backup configuration not found");
+        throw new NotFoundError(
+          ErrorCode.BACKUP_CONFIG_NOT_FOUND,
+          `Backup configuration '${configId}' not found`,
+          { resource: { type: "backupConfiguration", id: configId } },
+        );
       }
 
       // Validate cron expression if provided
@@ -172,7 +186,7 @@ export class BackupConfigurationManager {
         updates.schedule !== null &&
         !this.isValidCronExpression(updates.schedule)
       ) {
-        throw new Error("Invalid cron expression");
+        throw new ValidationError(ErrorCode.BACKUP_CONFIG_INVALID, "Invalid cron expression");
       }
 
       // Validate timezone if provided
@@ -180,7 +194,10 @@ export class BackupConfigurationManager {
         updates.timezone &&
         !UserPreferencesService.validateTimezone(updates.timezone)
       ) {
-        throw new Error(`Invalid timezone: ${updates.timezone}`);
+        throw new ValidationError(
+          ErrorCode.BACKUP_CONFIG_INVALID,
+          `Invalid timezone: ${updates.timezone}`,
+        );
       }
 
       // Validate storage location through the active backend if changed
@@ -190,14 +207,20 @@ export class BackupConfigurationManager {
 
       // Validate other updates
       if (updates.retentionDays !== undefined && updates.retentionDays < 1) {
-        throw new Error("Retention days must be at least 1");
+        throw new ValidationError(
+          ErrorCode.BACKUP_CONFIG_INVALID,
+          "Retention days must be at least 1",
+        );
       }
 
       if (
         updates.compressionLevel !== undefined &&
         (updates.compressionLevel < 0 || updates.compressionLevel > 9)
       ) {
-        throw new Error("Compression level must be between 0 and 9");
+        throw new ValidationError(
+          ErrorCode.BACKUP_CONFIG_INVALID,
+          "Compression level must be between 0 and 9",
+        );
       }
 
       // Prepare update data
@@ -341,7 +364,11 @@ export class BackupConfigurationManager {
       });
 
       if (!config) {
-        throw new Error("Backup configuration not found");
+        throw new NotFoundError(
+          ErrorCode.BACKUP_CONFIG_NOT_FOUND,
+          `Backup configuration '${configId}' not found`,
+          { resource: { type: "backupConfiguration", id: configId } },
+        );
       }
 
       // Delete configuration first; the JobPool trigger refresh below picks
@@ -443,8 +470,14 @@ export class BackupConfigurationManager {
           error?: string;
           errorCode?: string;
         };
-        throw new Error(
+        // `testLocationAccess()` folds several distinct causes (missing
+        // container, bad credentials, network/timeout) into one boolean —
+        // all are the user pointing the config at a location we currently
+        // can't use, so one validation code covers the family.
+        throw new ValidationError(
+          ErrorCode.BACKUP_CONFIG_INVALID,
           `Storage location '${storageLocationId}' is not accessible: ${errMeta.error || "Unknown error"}`,
+          { resource: { type: "storageLocation", id: storageLocationId } },
         );
       }
       getLogger("backup", "backup-configuration-manager").debug(
@@ -520,7 +553,7 @@ export class BackupConfigurationManager {
     compressionLevel?: number;
   }): void {
     if (!config.storageLocationId || config.storageLocationId.trim() === "") {
-      throw new Error("Storage location id is required");
+      throw new ValidationError(ErrorCode.BACKUP_CONFIG_INVALID, "Storage location id is required");
     }
 
     // Storage path prefix can be empty (root of location).
@@ -528,25 +561,37 @@ export class BackupConfigurationManager {
     // Length sanity check (max applies to both Azure container names and Drive
     // folder ids comfortably).
     if (config.storageLocationId.length < 1 || config.storageLocationId.length > 256) {
-      throw new Error("Storage location id must be 1-256 characters");
+      throw new ValidationError(
+        ErrorCode.BACKUP_CONFIG_INVALID,
+        "Storage location id must be 1-256 characters",
+      );
     }
 
     if (config.retentionDays !== undefined && config.retentionDays < 1) {
-      throw new Error("Retention days must be at least 1");
+      throw new ValidationError(
+        ErrorCode.BACKUP_CONFIG_INVALID,
+        "Retention days must be at least 1",
+      );
     }
 
     if (
       config.compressionLevel !== undefined &&
       (config.compressionLevel < 0 || config.compressionLevel > 9)
     ) {
-      throw new Error("Compression level must be between 0 and 9");
+      throw new ValidationError(
+        ErrorCode.BACKUP_CONFIG_INVALID,
+        "Compression level must be between 0 and 9",
+      );
     }
 
     if (
       config.backupFormat &&
       !["custom", "plain", "tar"].includes(config.backupFormat)
     ) {
-      throw new Error("Backup format must be 'custom', 'plain', or 'tar'");
+      throw new ValidationError(
+        ErrorCode.BACKUP_CONFIG_INVALID,
+        "Backup format must be 'custom', 'plain', or 'tar'",
+      );
     }
   }
 

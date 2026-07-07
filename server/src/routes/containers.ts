@@ -25,10 +25,14 @@ import {
   ContainerCacheFlushResponse,
 } from "@mini-infra/types/containers";
 
-import { ApiBase, ApiRoute, ApiResponse, Channel, DEFAULT_LOG_TAIL_LINES, ServerEvent, isValidContainerId, Permission } from "@mini-infra/types";
+import { ApiBase, ApiRoute, ApiResponse, Channel, DEFAULT_LOG_TAIL_LINES, ServerEvent, isValidContainerId, Permission, ErrorCode } from "@mini-infra/types";
 import { serializeContainer, fetchAndSerializeContainers } from "../services/container-serializer";
 import { emitToChannel } from "../lib/socket";
 import { DockerStreamDemuxer } from "../lib/docker-stream";
+import { requireDockerConnected } from "../middleware/require-docker-connected";
+import { ConflictError, NotFoundError, ValidationError } from "../lib/errors";
+import { CustomError } from "../lib/error-handler";
+import { toServiceError } from "../lib/service-error-mapper";
 import {
   ContainerQuerySchema,
   ContainerListApiResponseSchema,
@@ -77,6 +81,7 @@ describe(
       { status: 504, description: "Docker API request timed out" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -108,35 +113,15 @@ describe(
         "Invalid query parameters for container list",
       );
 
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid query parameters",
-        details: queryValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid query parameters",
+        { details: queryValidation.error.issues },
+      );
     }
 
     const queryParams: ContainerQueryParams = queryValidation.data;
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Fetch containers from Docker service
     let containers = await fetchAndSerializeContainers(dockerService);
@@ -253,30 +238,10 @@ describe(
       "Failed to fetch container list",
     );
 
-    // Check if it's a Docker connectivity error
-    if (
-      error instanceof Error &&
-      (error instanceof Error ? error.message : String(error)).includes("Docker service not connected")
-    ) {
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message:
-          "Docker service is temporarily unavailable. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    // Handle timeout errors
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
-      return res.status(504).json({
-        error: "Gateway Timeout",
-        message: "Docker API request timed out. Please try again.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // Taxonomy errors (the ValidationError thrown above, or a ServiceError
+    // from `fetchAndSerializeContainers`/`DockerService.listContainers()`)
+    // carry their own status/code and are handled by the central error
+    // middleware — just forward them.
     next(error);
   }
   }) as RequestHandler,
@@ -299,6 +264,7 @@ describe(
       { status: 503, description: "Docker service is not connected" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -318,24 +284,6 @@ describe(
 
   try {
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Get detected PostgreSQL containers
     const dockerContainers = await dockerService.detectPostgresContainers();
@@ -470,6 +418,7 @@ describe(
       { status: 504, description: "Docker API request timed out" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -492,35 +441,13 @@ describe(
   try {
     // Validate container ID format
     if (!containerId || !isValidContainerId(containerId)) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid container ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid container ID format",
+      );
     }
 
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          containerId,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
     const dockerContainer = await dockerService.getContainer(containerId);
 
     if (!dockerContainer) {
@@ -533,12 +460,14 @@ describe(
         "Container not found",
       );
 
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Container with ID '${containerId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new NotFoundError(
+        ErrorCode.CONTAINER_NOT_FOUND,
+        `Container with ID '${containerId}' not found`,
+        {
+          resource: { type: "container", id: containerId },
+          action: "Check the container ID and try again.",
+        },
+      );
     }
 
     logger.debug(
@@ -565,16 +494,10 @@ describe(
       "Failed to fetch container details",
     );
 
-    // Handle specific Docker API errors
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
-      return res.status(504).json({
-        error: "Gateway Timeout",
-        message: "Docker API request timed out. Please try again.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // Taxonomy errors (the ValidationError/NotFoundError thrown above, or a
+    // ServiceError from `DockerService.getContainer()`) carry their own
+    // status/code and are handled by the central error middleware — just
+    // forward them.
     next(error);
   }
   }) as RequestHandler,
@@ -600,6 +523,7 @@ describe(
       { status: 504, description: "Docker API request timed out" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -622,34 +546,13 @@ describe(
   try {
     // Validate container ID format
     if (!containerId || !isValidContainerId(containerId)) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid container ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid container ID format",
+      );
     }
 
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          containerId,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Get environment variables
     const envVars = await dockerService.getContainerEnvironmentVariables(containerId);
@@ -664,12 +567,14 @@ describe(
         "Container not found for environment variables",
       );
 
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Container with ID '${containerId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new NotFoundError(
+        ErrorCode.CONTAINER_NOT_FOUND,
+        `Container with ID '${containerId}' not found`,
+        {
+          resource: { type: "container", id: containerId },
+          action: "Check the container ID and try again.",
+        },
+      );
     }
 
     logger.debug(
@@ -698,16 +603,8 @@ describe(
       "Failed to fetch container environment variables",
     );
 
-    // Handle specific Docker API errors
-    if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
-      return res.status(504).json({
-        error: "Gateway Timeout",
-        message: "Docker API request timed out. Please try again.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // Taxonomy errors carry their own status/code and are handled by the
+    // central error middleware — just forward them.
     next(error);
   }
   }) as RequestHandler,
@@ -827,6 +724,7 @@ describe(
       { status: 503, description: "Docker service is not connected" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -850,12 +748,10 @@ describe(
   try {
     // Validate container ID
     if (!containerId || !isValidContainerId(containerId)) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid container ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid container ID format",
+      );
     }
 
     // Validate query parameters
@@ -871,36 +767,15 @@ describe(
         "Invalid query parameters for log stream",
       );
 
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid query parameters",
-        details: queryValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid query parameters",
+        { details: queryValidation.error.issues },
+      );
     }
 
     const options: ContainerLogOptions = queryValidation.data;
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          containerId,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Verify container exists
     const container = await dockerService.getContainer(containerId);
@@ -914,12 +789,14 @@ describe(
         "Container not found for log streaming",
       );
 
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Container with ID '${containerId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new NotFoundError(
+        ErrorCode.CONTAINER_NOT_FOUND,
+        `Container with ID '${containerId}' not found`,
+        {
+          resource: { type: "container", id: containerId },
+          action: "Check the container ID and try again.",
+        },
+      );
     }
 
     // Set up Server-Sent Events headers
@@ -1057,17 +934,11 @@ describe(
       "Failed to start container log stream",
     );
 
-    // If headers haven't been sent yet, send error response
+    // If headers haven't been sent yet, forward to the central error
+    // middleware — taxonomy errors (or a ServiceError from
+    // `DockerService.getContainer()`/`getDockerInstance()`) carry their own
+    // status/code.
     if (!res.headersSent) {
-      if (error instanceof Error && (error instanceof Error ? error.message : String(error)).includes("timeout")) {
-        return res.status(504).json({
-          error: "Gateway Timeout",
-          message: "Docker API request timed out. Please try again.",
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
       next(error);
     } else {
       // Headers already sent, send error as SSE event
@@ -1103,6 +974,7 @@ describe(
       { status: 504, description: "Docker API request timed out" },
     ],
   },
+  requireDockerConnected(),
   (async (
     req: Request,
     res: Response,
@@ -1113,6 +985,9 @@ describe(
   const userId = user?.id;
   const containerId = String(req.params.id);
   const action = req.params.action as ContainerAction;
+  // Set once the container is confirmed to exist, so the catch block below
+  // can attach it to a thrown error's `resource` without re-fetching.
+  let containerName: string | undefined;
 
   logger.debug(
     {
@@ -1127,45 +1002,21 @@ describe(
   try {
     // Validate container ID
     if (!containerId || !isValidContainerId(containerId)) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid container ID format",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        "Invalid container ID format",
+      );
     }
 
     // Validate action
     if (!["start", "stop", "restart", "remove"].includes(action)) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: `Invalid action '${action}'. Must be 'start', 'stop', 'restart', or 'remove'`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.VALIDATION_FAILED,
+        `Invalid action '${action}'. Must be 'start', 'stop', 'restart', or 'remove'`,
+      );
     }
 
     const dockerService = DockerService.getInstance();
-
-    // Check Docker service connectivity
-    if (!dockerService.isConnected()) {
-      logger.error(
-        {
-          requestId,
-          userId,
-          containerId,
-          action,
-        },
-        "Docker service not connected",
-      );
-
-      return res.status(503).json({
-        error: "Service Unavailable",
-        message: "Docker service is not available. Please try again later.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
 
     // Verify container exists
     const containerInfo = await dockerService.getContainer(containerId);
@@ -1180,13 +1031,16 @@ describe(
         "Container not found for action",
       );
 
-      return res.status(404).json({
-        error: "Not Found",
-        message: `Container with ID '${containerId}' not found`,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new NotFoundError(
+        ErrorCode.CONTAINER_NOT_FOUND,
+        `Container with ID '${containerId}' not found`,
+        {
+          resource: { type: "container", id: containerId },
+          action: "Check the container ID and try again.",
+        },
+      );
     }
+    containerName = containerInfo.name;
 
     // Get Docker instance
     const docker = await dockerService.getDockerInstance();
@@ -1274,40 +1128,52 @@ describe(
       `Failed to ${action} container`,
     );
 
-    // Handle specific Docker API errors
-    if (error instanceof Error) {
-      // Container already in requested state
-      if ((error instanceof Error ? error.message : String(error)).includes("already")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: (error instanceof Error ? error.message : String(error)),
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
+    // Taxonomy errors (the ValidationError/NotFoundError thrown above)
+    // already carry their own status/code — forward them as-is. Only a raw
+    // error straight from dockerode (start/stop/restart/remove aren't
+    // wrapped by `DockerService`, per the `docker.getContainer(id)` escape
+    // hatch above) needs reclassifying here: the Docker Engine API doesn't
+    // give us a machine-readable discriminator for "already in this state"
+    // or "not running", so — like `toServiceError()` itself — we still read
+    // the SDK's own message to attribute the right domain meaning, but the
+    // result is now a typed `ConflictError`/`ValidationError` with a stable
+    // code, resource, and action instead of a bespoke JSON body.
+    if (error instanceof CustomError) {
+      next(error);
+      return;
+    }
 
-      // Timeout
-      if ((error instanceof Error ? error.message : String(error)).includes("timeout")) {
-        return res.status(504).json({
-          error: "Gateway Timeout",
-          message: "Docker API request timed out. Please try again.",
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
+    if (error instanceof Error) {
+      // Container already in requested state (Docker returns 304/409 for
+      // e.g. starting an already-running container).
+      if (/already/i.test(error.message)) {
+        next(
+          new ConflictError(
+            ErrorCode.CONTAINER_ALREADY_IN_STATE,
+            error.message,
+            {
+              resource: { type: "container", id: containerId, name: containerName },
+              action: "Refresh the container list to see its current state.",
+            },
+          ),
+        );
+        return;
       }
 
       // Not running (for stop/restart)
-      if ((error instanceof Error ? error.message : String(error)).includes("not running")) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: `Cannot ${action} container: container is not running`,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
+      if (/not running/i.test(error.message)) {
+        next(
+          new ValidationError(
+            ErrorCode.CONTAINER_NOT_RUNNING,
+            `Cannot ${action} container: container is not running`,
+            { resource: { type: "container", id: containerId } },
+          ),
+        );
+        return;
       }
     }
 
-    next(error);
+    next(toServiceError(error, "docker"));
   }
   }) as RequestHandler,
 );

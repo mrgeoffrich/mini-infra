@@ -14,13 +14,13 @@ import {
 import {
   serializeStack,
   toServiceCreateInput,
+  assertStackFound,
 } from '../../services/stacks/utils';
 import { detectNatsDrift } from '../../services/stacks/nats-drift-detector';
 import {
   encryptInputValues,
   decryptInputValues,
   mergeForUpgrade,
-  InputValuesMissingError,
 } from '../../services/stacks/stack-input-values-service';
 import type {
   StackAdoptionCandidate,
@@ -33,8 +33,8 @@ import type {
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
 import { getUserId } from '../../lib/get-user-id';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
-import { Permission } from '@mini-infra/types';
-import type { Response } from 'express';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import {
   translateUnifiedNetworkDeclarations,
   UnifiedNetworkDeclarationError,
@@ -50,9 +50,9 @@ const router = Router();
  * (+ per-service `networks[]`) declarations into the legacy shapes the rest
  * of the create/update handlers already understand (`networks[]`,
  * `resourceOutputs[]`, `containerConfig.joinResourceNetworks`). Runs
- * immediately after schema validation. Returns `null` (having already
- * written the 400 response) on ambiguous input — callers should return
- * immediately when this returns `null`.
+ * immediately after schema validation. Throws `ValidationError` (folding in
+ * `UnifiedNetworkDeclarationError`, owned by `services/networks`) on
+ * ambiguous input.
  */
 function translateStackNetworks<
   T extends {
@@ -61,7 +61,7 @@ function translateStackNetworks<
     resourceInputs?: StackResourceInput[];
     services?: StackServiceDefinition[];
   },
->(data: T, res: Response): T | null {
+>(data: T): T {
   try {
     const translated = translateUnifiedNetworkDeclarations({
       networks: data.networks,
@@ -78,8 +78,9 @@ function translateStackNetworks<
     } as T;
   } catch (err) {
     if (err instanceof UnifiedNetworkDeclarationError) {
-      res.status(400).json({ success: false, message: err.message });
-      return null;
+      throw new ValidationError(ErrorCode.STACK_NETWORK_DECLARATION_INVALID, err.message, {
+        action: 'Fix the ambiguous network declaration and try again.',
+      });
     }
     throw err;
   }
@@ -152,9 +153,11 @@ router.get(
   asyncHandler(async (req, res) => {
     const environmentId = req.query.environmentId as string | undefined;
     if (!environmentId) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'environmentId query parameter is required' });
+      throw new ValidationError(
+        ErrorCode.STACK_ENVIRONMENT_ID_REQUIRED,
+        'environmentId query parameter is required',
+        { action: 'Pass an environmentId query parameter.' },
+      );
     }
 
     const docker = DockerService.getInstance();
@@ -195,17 +198,17 @@ router.get(
   '/:stackId',
   requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
-    const stack = await prisma.stack.findUnique({
-      where: { id: String(req.params.stackId) },
-      include: {
-        services: { orderBy: { order: 'asc' } },
-        template: { select: { currentVersion: { select: { version: true } } } },
-      },
-    });
-
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stackId = String(req.params.stackId);
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        include: {
+          services: { orderBy: { order: 'asc' } },
+          template: { select: { currentVersion: { select: { version: true } } } },
+        },
+      }),
+      stackId,
+    );
 
     const natsDrift = await detectNatsDrift(prisma, {
       templateId: stack.templateId,
@@ -229,8 +232,7 @@ router.post(
         .json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const translatedData = translateStackNetworks(parsed.data, res);
-    if (!translatedData) return;
+    const translatedData = translateStackNetworks(parsed.data);
 
     const {
       name,
@@ -253,27 +255,38 @@ router.post(
     if (environmentId) {
       const environment = await prisma.environment.findUnique({ where: { id: environmentId } });
       if (!environment) {
-        return res.status(404).json({ success: false, message: 'Environment not found' });
+        throw new NotFoundError(ErrorCode.STACK_ENVIRONMENT_NOT_FOUND, 'Environment not found', {
+          resource: { type: 'environment', id: environmentId },
+          action: 'Check the environment ID or refresh the environments list.',
+        });
       }
 
       const existing = await prisma.stack.findFirst({
         where: { name, environmentId, status: { not: 'removed' } },
       });
       if (existing) {
-        return res.status(409).json({
-          success: false,
-          message: 'A stack with this name already exists in this environment',
-        });
+        throw new ConflictError(
+          ErrorCode.STACK_NAME_EXISTS,
+          'A stack with this name already exists in this environment',
+          {
+            resource: { type: 'stack', name },
+            action: 'Choose a different name, or edit the existing stack.',
+          },
+        );
       }
     } else {
       const existing = await prisma.stack.findFirst({
         where: { name, environmentId: null, status: { not: 'removed' } },
       });
       if (existing) {
-        return res.status(409).json({
-          success: false,
-          message: 'A host-level stack with this name already exists',
-        });
+        throw new ConflictError(
+          ErrorCode.STACK_NAME_EXISTS,
+          'A host-level stack with this name already exists',
+          {
+            resource: { type: 'stack', name },
+            action: 'Choose a different name, or edit the existing stack.',
+          },
+        );
       }
     }
 
@@ -332,18 +345,16 @@ router.put(
         .json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
     }
 
-    const translatedData = translateStackNetworks(parsed.data, res);
-    if (!translatedData) return;
+    const translatedData = translateStackNetworks(parsed.data);
 
     const stackId = String(req.params.stackId);
-    const existing = await prisma.stack.findUnique({
-      where: { id: stackId },
-      include: { services: true },
-    });
-
-    if (!existing) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const existing = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        include: { services: true },
+      }),
+      stackId,
+    );
 
     const {
       services,
@@ -384,23 +395,14 @@ router.put(
         }
       }
 
-      try {
-        const merged = declarations.length > 0
-          ? mergeForUpgrade(stored, inputValues, declarations)
-          : { ...stored, ...inputValues };
-        if (Object.keys(merged).length > 0) {
-          encryptedInputValues = encryptInputValues(merged);
-        }
-      } catch (err) {
-        if (err instanceof InputValuesMissingError) {
-          return res.status(400).json({
-            success: false,
-            message: err.message,
-            code: 'input_rotation_required',
-            input: err.inputName,
-          });
-        }
-        throw err;
+      // mergeForUpgrade throws InputValuesMissingError (a ValidationError
+      // subclass) when a rotateOnUpgrade input wasn't supplied — let it
+      // bubble to the central error middleware rather than catching it here.
+      const merged = declarations.length > 0
+        ? mergeForUpgrade(stored, inputValues, declarations)
+        : { ...stored, ...inputValues };
+      if (Object.keys(merged).length > 0) {
+        encryptedInputValues = encryptInputValues(merged);
       }
     }
 
@@ -485,11 +487,10 @@ router.delete(
   requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
-    const stack = await prisma.stack.findUnique({ where: { id: stackId } });
-
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    assertStackFound(
+      await prisma.stack.findUnique({ where: { id: stackId } }),
+      stackId,
+    );
 
     // Always verify there are no labelled containers before tombstoning the
     // DB row — the `status` field can lie. A partial /destroy (or any failure
@@ -499,28 +500,39 @@ router.delete(
     // back-to-back DELETEs where the second returned 200 because status was
     // `undeployed`, even though the containers from the first reject were
     // still up.
+    let containers;
     try {
       const dockerExecutor = new DockerExecutorService();
       await dockerExecutor.initialize();
       const docker = dockerExecutor.getDockerClient();
-      const containers = await docker.listContainers({
+      containers = await docker.listContainers({
         all: true,
         filters: { label: [`mini-infra.stack-id=${stackId}`] },
       });
-
-      if (containers.length > 0) {
-        return res.status(400).json({
-          success: false,
-          message:
-            'Cannot delete stack while Docker still has containers labelled with this stack ID. Run /destroy to remove them first, or remove the containers manually.',
-        });
-      }
     } catch {
-      return res.status(400).json({
-        success: false,
-        message:
-          'Cannot verify container state — Docker is unreachable. Restore Docker connectivity and retry, or remove the containers manually before deleting.',
-      });
+      throw new ValidationError(
+        ErrorCode.STACK_DOCKER_UNREACHABLE,
+        'Cannot verify container state — Docker is unreachable. Restore Docker connectivity and retry, or remove the containers manually before deleting.',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Restore Docker connectivity and retry.',
+        },
+      );
+    }
+
+    if (containers.length > 0) {
+      // Kept as a 400 (ValidationError), matching prior behaviour pinned by
+      // stacks-delete-vault-cascade.integration.test.ts — this is a
+      // regression guard for a customer-reported orphaned-container bug, so
+      // the status code is deliberately preserved rather than reclassified.
+      throw new ValidationError(
+        ErrorCode.STACK_HAS_ACTIVE_CONTAINERS,
+        'Cannot delete stack while Docker still has containers labelled with this stack ID. Run /destroy to remove them first, or remove the containers manually.',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Run POST /:stackId/destroy first, or remove the containers manually.',
+        },
+      );
     }
 
     const userId = getUserId(req);

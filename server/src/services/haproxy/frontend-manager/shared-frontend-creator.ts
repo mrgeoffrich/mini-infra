@@ -2,6 +2,8 @@ import { getLogger } from "../../../lib/logger-factory";
 import { PrismaClient } from "../../../generated/prisma/client";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { generateSharedFrontendName } from "../haproxy-naming";
+import { InternalError } from "../../../lib/errors";
+import { rethrowIfTaxonomyError } from "./error-utils";
 import { SharedFrontendDTO } from "./frontend-types";
 import {
   createSharedFrontendRecord,
@@ -134,8 +136,7 @@ export async function getOrCreateSharedFrontend(
       { error, environmentId, type },
       "Failed to get or create shared frontend"
     );
-    throw new Error(`Failed to get or create shared frontend: ${error}`, {
-      cause: error,
-    });
+    rethrowIfTaxonomyError(error);
+    throw new InternalError(`Failed to get or create shared frontend: ${error}`);
   }
 }

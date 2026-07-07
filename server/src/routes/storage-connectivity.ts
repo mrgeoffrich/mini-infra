@@ -18,7 +18,8 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission, toConnectivityStatus } from "@mini-infra/types";
+import { CONNECTIVITY_STATUS_TYPES, ConnectivityStatusListResponse, ConnectivityStatusResponse, SORT_ORDERS, Permission, ErrorCode, toConnectivityStatus } from "@mini-infra/types";
+import { NotFoundError } from "../lib/errors";
 
 const logger = getLogger("integrations", "storage-connectivity");
 const router = express.Router();
@@ -55,12 +56,11 @@ router.get("/", requirePermission(Permission.StorageRead) as RequestHandler, (as
       orderBy: { checkedAt: "desc" },
     });
     if (!latestStatus) {
-      return res.status(404).json({
-        success: false,
-        message: "No storage connectivity status found",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new NotFoundError(
+        ErrorCode.STORAGE_CONNECTIVITY_NOT_FOUND,
+        "No storage connectivity status found",
+        { resource: { type: "storageConnectivity" } },
+      );
     }
     const response: ConnectivityStatusResponse = {
       success: true,
@@ -104,18 +104,8 @@ router.get("/history", requirePermission(Permission.StorageRead) as RequestHandl
   const requestId = req.headers["x-request-id"] as string;
   const userId = getAuthenticatedUser(req)?.id;
   try {
-    const queryValidation = historyQuerySchema.safeParse(req.query);
-    if (!queryValidation.success) {
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid query parameters",
-        details: queryValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
     const { page, limit, status, startDate, endDate, sortBy, sortOrder } =
-      queryValidation.data;
+      historyQuerySchema.parse(req.query);
     const cacheKey = `storage_history_${page}_${limit}_${status ?? "all"}_${
       startDate?.toISOString() ?? "nostart"
     }_${endDate?.toISOString() ?? "noend"}_${sortBy}_${sortOrder}`;

@@ -1,9 +1,11 @@
 import { Client } from "pg";
+import { ErrorCode, PostgresServerSyncResults } from "@mini-infra/types";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError, ValidationError } from "../../lib/errors";
+import { mapPostgresOperationError } from "./pg-error-mapper";
 import databaseManagerService from "./database-manager";
 import userManagerService from "./user-manager";
-import { PostgresServerSyncResults } from "@mini-infra/types";
 
 const logger = getLogger("db", "server-manager");
 
@@ -142,7 +144,10 @@ export class PostgresServerService {
     });
 
     if (!server) {
-      throw new Error("Server not found");
+      throw new NotFoundError(ErrorCode.PG_SERVER_NOT_FOUND, "Server not found", {
+        resource: { type: "postgresServer", id: serverId },
+        action: "Check the server ID or refresh the servers list.",
+      });
     }
 
     return this.performSync(serverId, userId);
@@ -184,7 +189,10 @@ export class PostgresServerService {
     });
 
     if (!server) {
-      throw new Error("Server not found");
+      throw new NotFoundError(ErrorCode.PG_SERVER_NOT_FOUND, "Server not found", {
+        resource: { type: "postgresServer", id: serverId },
+        action: "Check the server ID or refresh the servers list.",
+      });
     }
 
     return this.transformServer(server);
@@ -224,8 +232,13 @@ export class PostgresServerService {
       if (!password) {
         const match = existingServer.connectionString.match(/postgresql:\/\/[^:]+:([^@]+)@/);
         if (!match) {
-          throw new Error(
-            "Cannot update server: stored connection string is not parseable. Provide adminPassword to re-enter credentials.",
+          throw new ValidationError(
+            ErrorCode.PG_SERVER_CONNECTION_STRING_UNPARSEABLE,
+            "Cannot update server: stored connection string is not parseable",
+            {
+              resource: { type: "postgresServer", id: serverId },
+              action: "Provide adminPassword to re-enter credentials.",
+            },
           );
         }
         password = match[1];
@@ -388,7 +401,11 @@ export class PostgresServerService {
       };
     } catch (error) {
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to get server info");
-      throw new Error(`Failed to get server info: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to get server info",
+        resource: { type: "postgresServer", id: serverId },
+        action: "Verify the server is reachable and the admin credential has query privileges.",
+      });
     }
   }
 

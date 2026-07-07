@@ -16,6 +16,7 @@
  */
 
 import type { PrismaClient } from "../../lib/prisma";
+import { InternalError } from "../../lib/errors";
 import { vaultServicesReady } from "../vault/vault-services";
 import { runStackVaultReconciler } from "./stack-vault-reconciler";
 import type { VaultServiceLoaders } from "./vault-services-loader";
@@ -109,7 +110,7 @@ export async function runStackVaultApplyPhase(
 
   if (!vaultServicesReady()) {
     if (opts.requireVaultReady) {
-      throw new Error("Vault services are not initialised; cannot run vault reconciliation phase");
+      throw new InternalError("Vault services are not initialised; cannot run vault reconciliation phase");
     }
     return { status: "skipped" };
   }

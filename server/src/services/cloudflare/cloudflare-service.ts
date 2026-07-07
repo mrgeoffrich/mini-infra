@@ -4,8 +4,10 @@ import {
   ServiceHealthStatus,
   ConnectivityStatusType,
   CloudflareTunnelConfig,
+  ErrorCode,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
+import { ValidationError } from "../../lib/errors";
 import { getLogger } from "../../lib/logger-factory";
 import Cloudflare from "cloudflare";
 import type { Zone } from "cloudflare/resources/zones/zones.js";
@@ -184,10 +186,24 @@ export class CloudflareService extends ConfigurationService {
 
   async setApiToken(apiToken: string, userId: string): Promise<void> {
     if (!apiToken || apiToken.trim().length === 0) {
-      throw new Error("API token cannot be empty");
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_API_TOKEN_INVALID,
+        "API token cannot be empty",
+        {
+          resource: { type: "cloudflareConfig" },
+          action: "Provide a valid Cloudflare API token.",
+        },
+      );
     }
     if (apiToken.length < 20) {
-      throw new Error("Invalid API token format");
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_API_TOKEN_INVALID,
+        "Invalid API token format",
+        {
+          resource: { type: "cloudflareConfig" },
+          action: "Provide a valid Cloudflare API token.",
+        },
+      );
     }
 
     await this.set(CloudflareService.API_TOKEN_KEY, apiToken, userId);
@@ -204,7 +220,14 @@ export class CloudflareService extends ConfigurationService {
 
   async setAccountId(accountId: string, userId: string): Promise<void> {
     if (!accountId || accountId.trim().length === 0) {
-      throw new Error("Account ID cannot be empty");
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_ACCOUNT_ID_INVALID,
+        "Account ID cannot be empty",
+        {
+          resource: { type: "cloudflareConfig" },
+          action: "Provide a valid Cloudflare account ID.",
+        },
+      );
     }
     await this.set(CloudflareService.ACCOUNT_ID_KEY, accountId, userId);
   }

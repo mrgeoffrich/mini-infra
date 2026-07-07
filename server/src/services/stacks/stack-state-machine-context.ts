@@ -7,6 +7,7 @@ import type {
   StackServiceRouting,
 } from '@mini-infra/types';
 import type { HAProxyDataPlaneClient } from '../haproxy';
+import { InternalError } from '../../lib/errors';
 import { EnvironmentValidationService, type HAProxyEnvironmentContext } from '../environment';
 import type { StackRoutingManager, StackRoutingContext } from './stack-routing-manager';
 import { resolveEgressEnv } from './egress-injection';
@@ -42,7 +43,7 @@ export async function buildStateMachineContext(
   const haproxyCtx = await envValidation.getHAProxyEnvironmentContext(stack.environmentId!);
 
   if (!haproxyCtx) {
-    throw new Error(`HAProxy environment context not available for environment ${stack.environmentId}`);
+    throw new InternalError(`HAProxy environment context not available for environment ${stack.environmentId}`);
   }
 
   const dockerImage = `${serviceDef.dockerImage}:${serviceDef.dockerTag}`;

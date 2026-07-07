@@ -27,17 +27,17 @@ const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 // envelope via `{ unwrap: false }` rather than letting `apiFetch` auto-
 // unwrap to the inner `data` payload.
 
+// `apiFetch` throws a typed `ApiRequestError` (carrying `.code`/`.status`/
+// `.body.resource`/`.body.action`) on any non-2xx response — the server
+// routes backing these now always return `success: true` on a 2xx, so
+// there's no remaining `{ success: false }`-on-200 case to flatten into a
+// generic Error.
+
 async function fetchAllBackends(): Promise<HAProxyBackendListResponse> {
-  const data = await apiFetch<HAProxyBackendListResponse>(ApiRoute.haproxy.backends(), {
+  return apiFetch<HAProxyBackendListResponse>(ApiRoute.haproxy.backends(), {
     correlationIdPrefix: "haproxy-backends",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error("Failed to fetch backends");
-  }
-
-  return data;
 }
 
 async function fetchBackendByName(
@@ -47,16 +47,10 @@ async function fetchBackendByName(
   const url = new URL(ApiRoute.haproxy.backend(backendName), window.location.origin);
   url.searchParams.set("environmentId", environmentId);
 
-  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+  return apiFetch<HAProxyBackendResponse>(url.toString(), {
     correlationIdPrefix: "haproxy-backend",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch backend");
-  }
-
-  return data;
 }
 
 async function fetchBackendServers(
@@ -66,16 +60,10 @@ async function fetchBackendServers(
   const url = new URL(ApiRoute.haproxy.backendServers(backendName), window.location.origin);
   url.searchParams.set("environmentId", environmentId);
 
-  const data = await apiFetch<HAProxyServerListResponse>(url.toString(), {
+  return apiFetch<HAProxyServerListResponse>(url.toString(), {
     correlationIdPrefix: "haproxy-servers",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch servers");
-  }
-
-  return data;
 }
 
 async function updateBackend(
@@ -86,18 +74,12 @@ async function updateBackend(
   const url = new URL(ApiRoute.haproxy.backend(backendName), window.location.origin);
   url.searchParams.set("environmentId", environmentId);
 
-  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+  return apiFetch<HAProxyBackendResponse>(url.toString(), {
     method: "PATCH",
     body: request,
     correlationIdPrefix: "haproxy-backend-update",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update backend");
-  }
-
-  return data;
 }
 
 async function updateServer(
@@ -112,18 +94,12 @@ async function updateServer(
   );
   url.searchParams.set("environmentId", environmentId);
 
-  const data = await apiFetch<HAProxyBackendResponse>(url.toString(), {
+  return apiFetch<HAProxyBackendResponse>(url.toString(), {
     method: "PATCH",
     body: request,
     correlationIdPrefix: "haproxy-server-update",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update server");
-  }
-
-  return data;
 }
 
 // ====================

@@ -18,7 +18,8 @@ import { requirePermission, getAuthenticatedUser } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { TlsConfigService } from "../services/tls/tls-config";
 import { StorageService } from "../services/storage/storage-service";
-import { ACME_PROVIDERS, Permission } from "@mini-infra/types";
+import { ValidationError } from "../lib/errors";
+import { ACME_PROVIDERS, ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("tls", "tls-settings");
 const router = express.Router();
@@ -205,28 +206,9 @@ router.put("/settings", requirePermission(Permission.TlsWrite), (async (
       });
     }
 
-    // Validate request body
-    const bodyValidation = updateTlsSettingsSchema.safeParse(req.body);
-    if (!bodyValidation.success) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          validationErrors: bodyValidation.error.issues,
-        },
-        "Invalid request body for TLS settings update",
-      );
-
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid request data",
-        details: bodyValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    const settingsToUpdate = bodyValidation.data;
+    // Validate request body — a thrown ZodError is handled centrally
+    // (server/src/lib/error-handler.ts maps it to VALIDATION_FAILED).
+    const settingsToUpdate = updateTlsSettingsSchema.parse(req.body);
 
     // Update each setting that was provided
     for (const [key, value] of Object.entries(settingsToUpdate)) {
@@ -328,28 +310,9 @@ router.post("/connectivity/test", requirePermission(Permission.TlsWrite), (async
       });
     }
 
-    // Validate request body
-    const bodyValidation = testConnectivitySchema.safeParse(req.body);
-    if (!bodyValidation.success) {
-      logger.warn(
-        {
-          requestId,
-          userId,
-          validationErrors: bodyValidation.error.issues,
-        },
-        "Invalid request body for TLS connectivity test",
-      );
-
-      return res.status(400).json({
-        error: "Bad Request",
-        message: "Invalid request data",
-        details: bodyValidation.error.issues,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
-    const testSettings = bodyValidation.data;
+    // Validate request body — a thrown ZodError is handled centrally
+    // (server/src/lib/error-handler.ts maps it to VALIDATION_FAILED).
+    const testSettings = testConnectivitySchema.parse(req.body);
 
     // Perform validation with optional test settings
     const validationResult = await tlsConfigService.validate(
@@ -435,12 +398,14 @@ router.get("/containers", requirePermission(Permission.TlsRead), (async (
     try {
       storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
     } catch {
-      return res.status(400).json({
-        error: "Configuration Missing",
-        message: "No storage provider configured. Configure a storage provider before listing locations.",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      throw new ValidationError(
+        ErrorCode.TLS_STORAGE_NOT_CONFIGURED,
+        "No storage provider configured. Configure a storage provider before listing locations.",
+        {
+          resource: { type: "tlsConfig" },
+          action: "Configure a storage provider before listing locations.",
+        },
+      );
     }
 
     const locations = await storageBackend.listLocations();

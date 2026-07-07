@@ -16,9 +16,10 @@ import type {
   StorageBackend,
   StorageProviderId,
 } from "@mini-infra/types";
-import { STORAGE_PROVIDER_IDS } from "@mini-infra/types";
+import { STORAGE_PROVIDER_IDS, ErrorCode } from "@mini-infra/types";
 import prismaDefault, { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { ConflictError, ValidationError } from "../../lib/errors";
 import { StorageServiceFactory } from "./storage-service-factory";
 import { AzureStorageBackend } from "./providers/azure/azure-storage-backend";
 import { GoogleDriveBackend } from "./providers/google-drive/google-drive-backend";
@@ -49,18 +50,33 @@ const log = () => getLogger("platform", "storage-service");
 const STORAGE_CATEGORY = "storage" as const;
 const ACTIVE_PROVIDER_KEY = "active_provider";
 
-export class StorageNotConfiguredError extends Error {
-  readonly code = "STORAGE_NOT_CONFIGURED";
+/**
+ * Thrown when no storage provider has been configured yet. Folded into the
+ * taxonomy (§4.2) as a 409 `ConflictError` — the operation can't proceed
+ * until an operator picks a provider, which is a state conflict rather than
+ * a bad request.
+ */
+export class StorageNotConfiguredError extends ConflictError {
   constructor(message = "No storage provider is configured") {
-    super(message);
+    super(ErrorCode.STORAGE_NOT_CONFIGURED, message, {
+      resource: { type: "storageProvider" },
+      action: "Configure a storage provider in Settings > Storage.",
+    });
     this.name = "StorageNotConfiguredError";
   }
 }
 
-export class StorageProviderUnregisteredError extends Error {
-  readonly code = "STORAGE_PROVIDER_UNREGISTERED";
+/**
+ * Thrown when the operator's chosen provider id isn't registered in this
+ * build. A 400 `ValidationError` — the provider id itself is a bad value.
+ */
+export class StorageProviderUnregisteredError extends ValidationError {
   constructor(providerId: string) {
-    super(`Storage provider '${providerId}' is not registered in this build`);
+    super(
+      ErrorCode.STORAGE_PROVIDER_UNREGISTERED,
+      `Storage provider '${providerId}' is not registered in this build`,
+      { resource: { type: "storageProvider", id: providerId } },
+    );
     this.name = "StorageProviderUnregisteredError";
   }
 }
@@ -70,14 +86,21 @@ export class StorageProviderUnregisteredError extends Error {
  * has been wiped (e.g. via `POST /api/storage/:provider/forget?force=true`).
  * Surfaced to callers so route handlers can map this to a friendly 409 with
  * a "reconnect <provider> or pick a different backup" message instead of
- * letting the underlying SDK fail with an opaque auth error.
+ * letting the underlying SDK fail with an opaque auth error. Folded into the
+ * taxonomy as a 409 `ConflictError`; `providerId` stays a direct instance
+ * field for callers that read it structurally (e.g. `self-backups.ts`,
+ * `postgres-restore.ts`).
  */
-export class ProviderNoLongerConfiguredError extends Error {
-  readonly code = "PROVIDER_NO_LONGER_CONFIGURED";
+export class ProviderNoLongerConfiguredError extends ConflictError {
   readonly providerId: StorageProviderId;
   constructor(providerId: StorageProviderId) {
     super(
+      ErrorCode.PROVIDER_NO_LONGER_CONFIGURED,
       `Original provider '${providerId}' is no longer configured. Reconnect ${providerId} or pick a different backup.`,
+      {
+        resource: { type: "storageProvider", id: providerId },
+        action: `Reconnect ${providerId} or pick a different backup.`,
+      },
     );
     this.providerId = providerId;
     this.name = "ProviderNoLongerConfiguredError";

@@ -7,7 +7,9 @@
 
 import * as acme from "@mini-infra/acme";
 import { Logger } from "pino";
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError, InternalError } from "../../lib/errors";
 import { TlsConfigService } from "./tls-config";
 import { StorageCertificateStore } from "./storage-certificate-store";
 import { AcmeCertificateResult } from "./types";
@@ -61,7 +63,7 @@ export class AcmeClientManager {
       // Get directory URL based on provider
       const directoryUrl = ACME_DIRECTORIES[acmeConfig.provider];
       if (!directoryUrl) {
-        throw new Error(`Unknown ACME provider: ${acmeConfig.provider}`);
+        throw new InternalError(`Unknown ACME provider: ${acmeConfig.provider}`);
       }
 
       // Try to get existing account key from Azure Storage
@@ -261,7 +263,14 @@ export class AcmeClientManager {
       });
 
       if (!existingCert) {
-        throw new Error(`Certificate not found: ${certificateId}`);
+        throw new NotFoundError(
+          ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+          `Certificate not found: ${certificateId}`,
+          {
+            resource: { type: "tlsCertificate", id: certificateId },
+            action: "Verify the certificate ID or check the certificates list.",
+          },
+        );
       }
 
       // Request new certificate with same domains (ensure it's an array)
@@ -295,11 +304,11 @@ export class AcmeClientManager {
       });
 
       if (!cert) {
-        throw new Error(`Certificate not found: ${certificateId}`);
+        throw new InternalError(`Certificate not found: ${certificateId}`);
       }
 
       if (!cert.blobName) {
-        throw new Error(`Certificate blob name not found for certificate: ${certificateId}`);
+        throw new InternalError(`Certificate blob name not found for certificate: ${certificateId}`);
       }
 
       // Get certificate from Azure Storage

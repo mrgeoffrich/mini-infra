@@ -31,7 +31,6 @@ import { getAuthenticatedUser, requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   StorageNotConfiguredError,
-  StorageProviderUnregisteredError,
   StorageService,
   STORAGE_LOCATION_KEYS,
 } from "../services/storage/storage-service";
@@ -41,7 +40,8 @@ import {
   GoogleDriveTokenManager,
   DRIVE_SETTING_KEYS,
 } from "../services/storage/providers/google-drive/google-drive-token-manager";
-import { AzureContainerInfo, STORAGE_PROVIDER_IDS, StorageProviderId, Permission } from "@mini-infra/types";
+import { AzureContainerInfo, STORAGE_PROVIDER_IDS, StorageProviderId, Permission, ErrorCode } from "@mini-infra/types";
+import { ConflictError, UnauthorizedError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("integrations", "storage-settings");
 const router = express.Router();
@@ -153,30 +153,17 @@ router.put("/active-provider", requirePermission(Permission.StorageWrite) as Req
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized",
-      });
+      throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
     }
-    const body = updateActiveProviderSchema.safeParse(req.body);
-    if (!body.success) {
-      return res.status(400).json({
-        success: false,
-        error: "Bad Request",
-        details: body.error.issues,
-      });
-    }
+    const body = updateActiveProviderSchema.parse(req.body);
     const storage = StorageService.getInstance(prisma);
-    await storage.setActiveProviderId(body.data.providerId, user.id);
+    await storage.setActiveProviderId(body.providerId, user.id);
     res.json({
       success: true,
-      data: { activeProviderId: body.data.providerId },
+      data: { activeProviderId: body.providerId },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    if (error instanceof StorageProviderUnregisteredError) {
-      return res.status(400).json({ success: false, error: error.message });
-    }
     next(error);
   }
 }) as RequestHandler);
@@ -217,25 +204,15 @@ router.put("/azure", requirePermission(Permission.StorageWrite) as RequestHandle
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized",
-      });
+      throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
     }
-    const body = updateAzureSettingSchema.safeParse(req.body);
-    if (!body.success) {
-      return res.status(400).json({
-        success: false,
-        error: "Bad Request",
-        details: body.error.issues,
-      });
-    }
+    const body = updateAzureSettingSchema.parse(req.body);
     const backend = new AzureStorageBackend(prisma);
-    if (body.data.connectionString) {
-      await backend.setConnectionString(body.data.connectionString, user.id);
+    if (body.connectionString) {
+      await backend.setConnectionString(body.connectionString, user.id);
     }
-    if (body.data.accountName) {
-      await backend.set("storage_account_name", body.data.accountName, user.id);
+    if (body.accountName) {
+      await backend.set("storage_account_name", body.accountName, user.id);
     }
     // Persist 'azure' as the active provider on a successful set.
     await StorageService.getInstance(prisma).setActiveProviderId(
@@ -265,10 +242,7 @@ router.delete("/azure", requirePermission(Permission.StorageWrite) as RequestHan
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized",
-      });
+      throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
     }
     const backend = new AzureStorageBackend(prisma);
     await backend.removeConfiguration(user.id);
@@ -290,23 +264,13 @@ router.post("/azure/validate", requirePermission(Permission.StorageWrite) as Req
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        error: "Unauthorized",
-      });
+      throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
     }
-    const body = validateAzureSchema.safeParse(req.body ?? {});
-    if (!body.success) {
-      return res.status(400).json({
-        success: false,
-        error: "Bad Request",
-        details: body.error.issues,
-      });
-    }
+    const body = validateAzureSchema.parse(req.body ?? {});
     const backend = new AzureStorageBackend(prisma);
     const result = await backend.validate(
-      body.data.connectionString
-        ? { connectionString: body.data.connectionString }
+      body.connectionString
+        ? { connectionString: body.connectionString }
         : undefined,
     );
     res.json({
@@ -375,16 +339,9 @@ router.post("/azure/test-location", requirePermission(Permission.StorageWrite) a
   next: NextFunction,
 ) => {
   try {
-    const body = testLocationSchema.safeParse(req.body);
-    if (!body.success) {
-      return res.status(400).json({
-        success: false,
-        error: "Bad Request",
-        details: body.error.issues,
-      });
-    }
+    const body = testLocationSchema.parse(req.body);
     const backend = new AzureStorageBackend(prisma);
-    const info = await backend.testLocationAccess({ id: body.data.locationId });
+    const info = await backend.testLocationAccess({ id: body.locationId });
     res.json({
       success: true,
       data: info,
@@ -451,28 +408,23 @@ router.put(
     try {
       const user = getAuthenticatedUser(req);
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Unauthorized" });
+        throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
       }
-      const body = updateDriveSettingSchema.safeParse(req.body);
-      if (!body.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Bad Request",
-          details: body.error.issues,
-        });
-      }
+      const body = updateDriveSettingSchema.parse(req.body);
       const tokens = new GoogleDriveTokenManager(prisma);
       // Preserve existing pieces if only one of clientId/clientSecret is sent.
       const existing = await tokens.getOAuthCredentials();
-      const clientId = body.data.clientId ?? existing?.clientId;
-      const clientSecret = body.data.clientSecret ?? existing?.clientSecret;
+      const clientId = body.clientId ?? existing?.clientId;
+      const clientSecret = body.clientSecret ?? existing?.clientSecret;
       if (!clientId || !clientSecret) {
-        return res.status(400).json({
-          success: false,
-          error: "Both clientId and clientSecret are required",
-        });
+        throw new ValidationError(
+          ErrorCode.STORAGE_GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED,
+          "Both clientId and clientSecret are required",
+          {
+            resource: { type: "storageProvider", id: "google-drive" },
+            action: "Provide both the OAuth client_id and client_secret.",
+          },
+        );
       }
       // If client credentials change, drop the existing token rows — they
       // were minted with the old credentials and will refuse to refresh.
@@ -513,9 +465,7 @@ router.delete(
     try {
       const user = getAuthenticatedUser(req);
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Unauthorized" });
+        throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
       }
       const tokens = new GoogleDriveTokenManager(prisma);
       await tokens.clearAll(user.id);
@@ -537,9 +487,7 @@ router.post(
     try {
       const user = getAuthenticatedUser(req);
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Unauthorized" });
+        throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
       }
       const tokens = new GoogleDriveTokenManager(prisma);
       await tokens.clearTokens(user.id);
@@ -617,16 +565,9 @@ router.post(
   requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const body = testLocationSchema.safeParse(req.body);
-      if (!body.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Bad Request",
-          details: body.error.issues,
-        });
-      }
+      const body = testLocationSchema.parse(req.body);
       const backend = getDriveBackend();
-      const info = await backend.testLocationAccess({ id: body.data.locationId });
+      const info = await backend.testLocationAccess({ id: body.locationId });
       res.json({
         success: true,
         data: info,
@@ -643,16 +584,9 @@ router.post(
   requirePermission(Permission.StorageWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const body = createDriveFolderSchema.safeParse(req.body);
-      if (!body.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Bad Request",
-          details: body.error.issues,
-        });
-      }
+      const body = createDriveFolderSchema.parse(req.body);
       const backend = getDriveBackend();
-      const info = await backend.createFolder(body.data.name);
+      const info = await backend.createFolder(body.name);
       res.json({
         success: true,
         data: info,
@@ -675,21 +609,18 @@ router.get("/locations/:slot", requirePermission(Permission.StorageRead) as Requ
   next: NextFunction,
 ) => {
   try {
-    const slot = slotKeySchema.safeParse(req.params.slot);
-    if (!slot.success) {
-      return res.status(400).json({ success: false, error: "Unknown slot" });
-    }
+    const slot = slotKeySchema.parse(req.params.slot);
     const setting = await prisma.systemSettings.findUnique({
       where: {
         category_key: {
           category: STORAGE_CATEGORY,
-          key: slot.data,
+          key: slot,
         },
       },
     });
     res.json({
       success: true,
-      data: { slot: slot.data, locationId: setting?.value ?? null },
+      data: { slot, locationId: setting?.value ?? null },
     });
   } catch (error) {
     next(error);
@@ -704,42 +635,32 @@ router.put("/locations/:slot", requirePermission(Permission.StorageWrite) as Req
   try {
     const user = getAuthenticatedUser(req);
     if (!user) {
-      return res.status(401).json({ success: false, error: "Unauthorized" });
+      throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
     }
-    const slot = slotKeySchema.safeParse(req.params.slot);
-    if (!slot.success) {
-      return res.status(400).json({ success: false, error: "Unknown slot" });
-    }
-    const body = updateLocationSchema.safeParse(req.body);
-    if (!body.success) {
-      return res.status(400).json({
-        success: false,
-        error: "Bad Request",
-        details: body.error.issues,
-      });
-    }
+    const slot = slotKeySchema.parse(req.params.slot);
+    const body = updateLocationSchema.parse(req.body);
     await prisma.systemSettings.upsert({
       where: {
-        category_key: { category: STORAGE_CATEGORY, key: slot.data },
+        category_key: { category: STORAGE_CATEGORY, key: slot },
       },
       create: {
         category: STORAGE_CATEGORY,
-        key: slot.data,
-        value: body.data.locationId,
+        key: slot,
+        value: body.locationId,
         isEncrypted: false,
         isActive: true,
         createdBy: user.id,
         updatedBy: user.id,
       },
       update: {
-        value: body.data.locationId,
+        value: body.locationId,
         updatedBy: user.id,
         updatedAt: new Date(),
       },
     });
     res.json({
       success: true,
-      data: { slot: slot.data, locationId: body.data.locationId },
+      data: { slot, locationId: body.locationId },
     });
   } catch (error) {
     next(error);
@@ -815,15 +736,8 @@ router.get(
   requirePermission(Permission.StorageRead) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const parsed = switchPrecheckQuerySchema.safeParse(req.query);
-      if (!parsed.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Bad Request",
-          details: parsed.error.issues,
-        });
-      }
-      const targetProvider = parsed.data.targetProvider;
+      const parsed = switchPrecheckQuerySchema.parse(req.query);
+      const targetProvider = parsed.targetProvider;
       const storage = StorageService.getInstance(prisma);
       const activeProviderId = await storage.getActiveProviderId();
 
@@ -985,38 +899,24 @@ router.post(
     try {
       const user = getAuthenticatedUser(req);
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Unauthorized" });
+        throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
       }
-      const params = forgetProviderParamsSchema.safeParse(req.params);
-      if (!params.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Unknown provider",
-          details: params.error.issues,
-        });
-      }
-      const queryParsed = forgetQuerySchema.safeParse(req.query);
-      if (!queryParsed.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Bad Request",
-          details: queryParsed.error.issues,
-        });
-      }
-      const force =
-        queryParsed.data.force === true || queryParsed.data.force === "true";
-      const provider = params.data.provider;
+      const params = forgetProviderParamsSchema.parse(req.params);
+      const queryParsed = forgetQuerySchema.parse(req.query);
+      const force = queryParsed.force === true || queryParsed.force === "true";
+      const provider = params.provider;
 
       const storage = StorageService.getInstance(prisma);
       const activeProviderId = await storage.getActiveProviderId();
       if (activeProviderId === provider) {
-        return res.status(409).json({
-          success: false,
-          error:
-            "Cannot disconnect the currently active storage provider. Switch to a different provider first.",
-        });
+        throw new ConflictError(
+          ErrorCode.STORAGE_PROVIDER_ACTIVE_CANNOT_DISCONNECT,
+          "Cannot disconnect the currently active storage provider. Switch to a different provider first.",
+          {
+            resource: { type: "storageProvider", id: provider },
+            action: "Switch to a different provider first.",
+          },
+        );
       }
 
       const [postgresRefCount, selfBackupRefCount] = await Promise.all([
@@ -1030,17 +930,20 @@ router.post(
       const referencingRowCount = postgresRefCount + selfBackupRefCount;
 
       if (referencingRowCount > 0 && !force) {
-        return res.status(409).json({
-          success: false,
-          error: "PROVIDER_HAS_REFERENCING_ROWS",
-          message: `Cannot disconnect ${provider}: ${referencingRowCount} backup history row${referencingRowCount === 1 ? "" : "s"} reference${referencingRowCount === 1 ? "s" : ""} this provider. Pass ?force=true to disconnect anyway (those rows will become unrestorable).`,
-          data: {
-            provider,
-            referencingRowCount,
-            postgresBackupHistoryCount: postgresRefCount,
-            selfBackupHistoryCount: selfBackupRefCount,
+        throw new ConflictError(
+          ErrorCode.PROVIDER_HAS_REFERENCING_ROWS,
+          `Cannot disconnect ${provider}: ${referencingRowCount} backup history row${referencingRowCount === 1 ? "" : "s"} reference${referencingRowCount === 1 ? "s" : ""} this provider. Pass ?force=true to disconnect anyway (those rows will become unrestorable).`,
+          {
+            resource: { type: "storageProvider", id: provider },
+            action: "Pass ?force=true to disconnect anyway (those rows will become unrestorable).",
+            details: {
+              provider,
+              referencingRowCount,
+              postgresBackupHistoryCount: postgresRefCount,
+              selfBackupHistoryCount: selfBackupRefCount,
+            },
           },
-        });
+        );
       }
 
       // Wipe per-provider config rows (category="storage-{provider}"). Slot

@@ -46,6 +46,7 @@ import type { Logger } from 'pino';
 import type { PrismaClient, Prisma } from '../../generated/prisma/client';
 import type { AdoptedContainerRef, StackContainerConfig } from '@mini-infra/types';
 import { KeyedMutex } from '../../lib/keyed-mutex';
+import { InternalError } from '../../lib/errors';
 
 /**
  * Serializes the find-then-write section of {@link upsertManagedNetworkByIdentity}
@@ -205,10 +206,10 @@ export async function upsertNetworkMembership(
   const stackServiceId = input.stackServiceId ?? null;
   const containerName = input.containerName ?? null;
   if (!stackServiceId && !containerName) {
-    throw new Error('upsertNetworkMembership requires exactly one of stackServiceId/containerName');
+    throw new InternalError('upsertNetworkMembership requires exactly one of stackServiceId/containerName');
   }
   if (stackServiceId && containerName) {
-    throw new Error('upsertNetworkMembership requires exactly one of stackServiceId/containerName, not both');
+    throw new InternalError('upsertNetworkMembership requires exactly one of stackServiceId/containerName, not both');
   }
 
   // Keyed on the row's intended identity — the exact tuple the compound

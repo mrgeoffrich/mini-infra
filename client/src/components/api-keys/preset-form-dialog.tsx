@@ -21,7 +21,10 @@ import {
 } from "@/components/ui/accordion";
 import { IconLoader2 } from "@tabler/icons-react";
 import { PERMISSION_GROUPS } from "@mini-infra/types";
-import type { PermissionPresetRecord, PermissionScope } from "@mini-infra/types";
+import type {
+  PermissionPresetRecord,
+  PermissionScope,
+} from "@mini-infra/types";
 
 interface PresetFormDialogProps {
   open: boolean;
@@ -31,7 +34,7 @@ interface PresetFormDialogProps {
     name: string;
     description: string;
     permissions: PermissionScope[];
-  }) => Promise<void>;
+  }) => void;
   isPending?: boolean;
 }
 
@@ -72,9 +75,9 @@ function PresetFormDialogContent({
 
   const [name, setName] = useState(preset?.name ?? "");
   const [description, setDescription] = useState(preset?.description ?? "");
-  const [selectedPermissions, setSelectedPermissions] = useState<Set<PermissionScope>>(
-    () => new Set(preset?.permissions ?? []),
-  );
+  const [selectedPermissions, setSelectedPermissions] = useState<
+    Set<PermissionScope>
+  >(() => new Set(preset?.permissions ?? []));
   const [nameError, setNameError] = useState("");
 
   const togglePermission = (scope: PermissionScope) => {
@@ -120,7 +123,7 @@ function PresetFormDialogContent({
     }
     setNameError("");
 
-    await onSubmit({
+    onSubmit({
       name: name.trim(),
       description: description.trim(),
       permissions: Array.from(selectedPermissions),
@@ -134,152 +137,159 @@ function PresetFormDialogContent({
   return (
     <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
       <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Preset" : "New Preset"}</DialogTitle>
-          <DialogDescription>
-            {isEdit
-              ? "Update the name, description, or permissions for this preset."
-              : "Create a new permission preset template."}
-          </DialogDescription>
-        </DialogHeader>
+        <DialogTitle>{isEdit ? "Edit Preset" : "New Preset"}</DialogTitle>
+        <DialogDescription>
+          {isEdit
+            ? "Update the name, description, or permissions for this preset."
+            : "Create a new permission preset template."}
+        </DialogDescription>
+      </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Name */}
-          <div className="space-y-1.5">
-            <Label htmlFor="preset-name">Name</Label>
-            <Input
-              id="preset-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Read-Only Ops"
-              disabled={isPending}
-            />
-            {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Name */}
+        <div className="space-y-1.5">
+          <Label htmlFor="preset-name">Name</Label>
+          <Input
+            id="preset-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g., Read-Only Ops"
+            disabled={isPending}
+          />
+          {nameError && <p className="text-sm text-destructive">{nameError}</p>}
+        </div>
+
+        {/* Description */}
+        <div className="space-y-1.5">
+          <Label htmlFor="preset-description">Description</Label>
+          <Textarea
+            id="preset-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Optional description for this preset"
+            rows={2}
+            disabled={isPending}
+          />
+        </div>
+
+        {/* Permissions */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Permissions</Label>
+            <span className="text-sm text-muted-foreground">
+              {permissionCount} selected
+            </span>
           </div>
+          <Accordion type="multiple" className="w-full">
+            {PERMISSION_GROUPS.map((group) => {
+              const domainScopes = group.permissions.map((p) => p.scope);
+              const allSelected =
+                !selectedPermissions.has("*") &&
+                domainScopes.every((s) => selectedPermissions.has(s));
+              const someSelected =
+                selectedPermissions.has("*") ||
+                domainScopes.some((s) => selectedPermissions.has(s));
 
-          {/* Description */}
-          <div className="space-y-1.5">
-            <Label htmlFor="preset-description">Description</Label>
-            <Textarea
-              id="preset-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description for this preset"
-              rows={2}
-              disabled={isPending}
-            />
-          </div>
-
-          {/* Permissions */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Permissions</Label>
-              <span className="text-sm text-muted-foreground">
-                {permissionCount} selected
-              </span>
-            </div>
-            <Accordion type="multiple" className="w-full">
-              {PERMISSION_GROUPS.map((group) => {
-                const domainScopes = group.permissions.map((p) => p.scope);
-                const allSelected =
-                  !selectedPermissions.has("*") &&
-                  domainScopes.every((s) => selectedPermissions.has(s));
-                const someSelected =
-                  selectedPermissions.has("*") ||
-                  domainScopes.some((s) => selectedPermissions.has(s));
-
-                return (
-                  <AccordionItem key={group.domain} value={group.domain}>
-                    <AccordionTrigger className="hover:no-underline">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{group.label}</span>
-                        {someSelected && (
-                          <Badge
-                            variant={
-                              allSelected || selectedPermissions.has("*")
-                                ? "default"
-                                : "secondary"
-                            }
-                            className="text-xs"
-                          >
-                            {selectedPermissions.has("*")
+              return (
+                <AccordionItem key={group.domain} value={group.domain}>
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{group.label}</span>
+                      {someSelected && (
+                        <Badge
+                          variant={
+                            allSelected || selectedPermissions.has("*")
+                              ? "default"
+                              : "secondary"
+                          }
+                          className="text-xs"
+                        >
+                          {selectedPermissions.has("*")
+                            ? "All"
+                            : allSelected
                               ? "All"
-                              : allSelected
-                                ? "All"
-                                : `${domainScopes.filter((s) => selectedPermissions.has(s)).length}/${domainScopes.length}`}
-                          </Badge>
-                        )}
+                              : `${domainScopes.filter((s) => selectedPermissions.has(s)).length}/${domainScopes.length}`}
+                        </Badge>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-3 pt-1">
+                      <p className="text-sm text-muted-foreground">
+                        {group.description}
+                      </p>
+                      <div className="flex items-center space-x-2 pb-1">
+                        <Checkbox
+                          id={`preset-${group.domain}-all`}
+                          checked={selectedPermissions.has("*") || allSelected}
+                          disabled={selectedPermissions.has("*") || isPending}
+                          onCheckedChange={() => toggleDomainAll(group.domain)}
+                        />
+                        <label
+                          htmlFor={`preset-${group.domain}-all`}
+                          className="text-sm font-medium cursor-pointer"
+                        >
+                          Select all
+                        </label>
                       </div>
-                    </AccordionTrigger>
-                    <AccordionContent>
-                      <div className="space-y-3 pt-1">
-                        <p className="text-sm text-muted-foreground">{group.description}</p>
-                        <div className="flex items-center space-x-2 pb-1">
+                      {group.permissions.map((perm) => (
+                        <div
+                          key={perm.scope}
+                          className="flex items-start space-x-2 ml-4"
+                        >
                           <Checkbox
-                            id={`preset-${group.domain}-all`}
-                            checked={selectedPermissions.has("*") || allSelected}
+                            id={`preset-${perm.scope}`}
+                            checked={
+                              selectedPermissions.has("*") ||
+                              selectedPermissions.has(perm.scope)
+                            }
                             disabled={selectedPermissions.has("*") || isPending}
-                            onCheckedChange={() => toggleDomainAll(group.domain)}
+                            onCheckedChange={() => togglePermission(perm.scope)}
                           />
-                          <label
-                            htmlFor={`preset-${group.domain}-all`}
-                            className="text-sm font-medium cursor-pointer"
-                          >
-                            Select all
-                          </label>
-                        </div>
-                        {group.permissions.map((perm) => (
-                          <div key={perm.scope} className="flex items-start space-x-2 ml-4">
-                            <Checkbox
-                              id={`preset-${perm.scope}`}
-                              checked={
-                                selectedPermissions.has("*") ||
-                                selectedPermissions.has(perm.scope)
-                              }
-                              disabled={selectedPermissions.has("*") || isPending}
-                              onCheckedChange={() => togglePermission(perm.scope)}
-                            />
-                            <div className="grid gap-0.5 leading-none">
-                              <label
-                                htmlFor={`preset-${perm.scope}`}
-                                className="text-sm font-medium cursor-pointer"
-                              >
-                                {perm.label}
-                              </label>
-                              <p className="text-xs text-muted-foreground">{perm.description}</p>
-                            </div>
+                          <div className="grid gap-0.5 leading-none">
+                            <label
+                              htmlFor={`preset-${perm.scope}`}
+                              className="text-sm font-medium cursor-pointer"
+                            >
+                              {perm.label}
+                            </label>
+                            <p className="text-xs text-muted-foreground">
+                              {perm.description}
+                            </p>
                           </div>
-                        ))}
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
-          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? (
-                <>
-                  <IconLoader2 className="h-4 w-4 animate-spin mr-2" />
-                  {isEdit ? "Saving..." : "Creating..."}
-                </>
-              ) : isEdit ? (
-                "Save Changes"
-              ) : (
-                "Create Preset"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isPending}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending ? (
+              <>
+                <IconLoader2 className="h-4 w-4 animate-spin mr-2" />
+                {isEdit ? "Saving..." : "Creating..."}
+              </>
+            ) : isEdit ? (
+              "Save Changes"
+            ) : (
+              "Create Preset"
+            )}
+          </Button>
+        </DialogFooter>
+      </form>
     </DialogContent>
   );
 }

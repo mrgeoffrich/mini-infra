@@ -7,9 +7,17 @@
  * parsed body. Retries are the caller's responsibility.
  */
 
+import { ErrorCode } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
+import { CustomError } from '../../lib/error-handler';
 
 const log = getLogger('stacks', 'egress-gateway-client');
+
+/** Map the gateway sidecar's raw HTTP status to what Mini Infra's own API surfaces. */
+function statusForEgressGatewayError(gatewayStatus: number): number {
+  if (gatewayStatus >= 400 && gatewayStatus < 500) return gatewayStatus;
+  return 502;
+}
 
 // ---------------------------------------------------------------------------
 // Types (mirror egress-gateway/internal/admin/server.go — only what the client sends/receives)
@@ -79,13 +87,21 @@ export interface RulesSnapshotResponse {
 // Error type
 // ---------------------------------------------------------------------------
 
-export class EgressGatewayError extends Error {
+/**
+ * Thrown by every non-2xx `EgressGatewayClient` request. Folded into the
+ * server error taxonomy (§4.2) — treated as an external-dependency failure
+ * (the egress-gateway sidecar), always operational. `status`/`body` keep
+ * carrying the raw sidecar response for callers that inspect it structurally.
+ */
+export class EgressGatewayError extends CustomError {
   constructor(
     message: string,
     public readonly status: number,
     public readonly body?: unknown,
   ) {
-    super(message);
+    super(message, statusForEgressGatewayError(status), true, ErrorCode.EGRESS_GATEWAY_ERROR, {
+      resource: { type: "egressGateway" },
+    });
     this.name = 'EgressGatewayError';
   }
 }

@@ -51,12 +51,10 @@ export function EnvironmentDeleteDialog({
       setConfirmationText("");
       setDeleteNetworks(false);
       onSuccess?.();
-    } catch (error) {
-      toast.error(
-        `Failed to delete environment: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Error toast handled globally by the mutation cache's default
+      // onError (see client/src/lib/query-client.ts) — nothing further to
+      // do here; the dialog stays open so the user can retry or cancel.
     }
   };
 

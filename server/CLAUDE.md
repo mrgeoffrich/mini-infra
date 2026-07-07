@@ -303,3 +303,12 @@ When two schemas describe the same logical entity at different layers (e.g. a se
 7. **Let orchestrators build image references** — pass registry, image, and tag as separate values
 8. **Wrap socket emissions in try/catch** — emission failures must never break the caller
 9. **Use `getLogger(component, subcomponent)`** — not the legacy category-specific factories; see the Logging section above
+
+## Error Handling
+
+All HTTP errors flow through one taxonomy and one response envelope — see [`docs/planning/not-shipped/error-handling-overhaul-plan.md`](../docs/planning/not-shipped/error-handling-overhaul-plan.md).
+
+- **Throw taxonomy errors, never a raw `Error`, in services.** Use `ConflictError` (409) / `NotFoundError` (404) / `ValidationError` (400) / `UnauthorizedError` (401) / `ForbiddenError` (403) from [`src/lib/errors.ts`](src/lib/errors.ts) for anything user-actionable: `throw new NotFoundError(ErrorCode.STACK_NOT_FOUND, "Stack not found", { resource: { type: "stack", id }, action: "Check the stack id." })`. Codes are `SCREAMING_SNAKE` constants in [`@mini-infra/types` error-codes.ts](../lib/types/error-codes.ts). A `no-restricted-syntax` ESLint rule bans `throw new Error` in `src/services`.
+- **Use `InternalError` for genuine internal invariants** ("this should never happen" — boot-order, defense-in-depth already validated upstream, an unexpected SDK failure). It's a 500 with the message hidden from clients in production — the same as a raw `Error` was, but it satisfies the lint rule and documents intent. Never use it to mask a user-actionable 4xx.
+- **Routes just `throw` / `next(error)`.** The central middleware ([`src/lib/error-handler.ts`](src/lib/error-handler.ts)) maps any taxonomy error to `{ error: <code>, message, resource?, action?, details?, requestId, timestamp }`. Don't hand-build error `res.status().json()` bodies, and don't derive status by string-matching `err.message` (a `no-restricted-syntax` rule bans `err.message.includes(...)` in `src/routes`). Wrap async handlers in `asyncHandler` so throws reach the middleware.
+- The external-SDK mapper [`toServiceError()`](src/lib/service-error-mapper.ts) is still the way to turn Cloudflare/Azure/Docker/GitHub SDK errors into a typed `ServiceError`.

@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { ConnectivityStatusType } from "@mini-infra/types";
 import type { CircuitBreaker } from "../circuit-breaker";
 import type { ConnectivityStatusRow } from "../configuration-base";
+import { InternalError } from "../../lib/errors";
 
 // ====================
 // API Configuration
@@ -10,6 +11,23 @@ import type { ConnectivityStatusRow } from "../configuration-base";
 
 export const GITHUB_API_BASE = "https://api.github.com";
 export const TIMEOUT_MS = 15000;
+
+/**
+ * Build the `InternalError` for a non-`ok` GitHub API response whose status
+ * doesn't map cleanly to any single taxonomy code (it could be a revoked
+ * installation, a rate limit, or a GitHub-side outage depending on the
+ * endpoint) — an unmapped external-API failure, not itself user-actionable.
+ * Shared by every "list X" / token-mint call site so the message shape
+ * (`Failed to <action> (<status>)[: <body>]`) stays consistent.
+ */
+export function githubApiFailure(
+  action: string,
+  response: Response,
+  body?: string,
+): InternalError {
+  const suffix = body ? `: ${body}` : "";
+  return new InternalError(`Failed to ${action} (${response.status})${suffix}`);
+}
 
 // ====================
 // Error Mappers

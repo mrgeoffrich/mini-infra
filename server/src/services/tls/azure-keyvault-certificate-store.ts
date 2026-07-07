@@ -10,6 +10,7 @@ import { SecretClient } from "@azure/keyvault-secrets";
 import { TokenCredential } from "@azure/identity";
 import { Logger } from "pino";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import {
   CertificateMetadata,
   CertificateInfo,
@@ -102,7 +103,7 @@ export class AzureKeyVaultCertificateStore {
       const secret = await this.secretClient.getSecret(name, { version });
 
       if (!secret.value) {
-        throw new Error(`Certificate secret has no value: ${name}`);
+        throw new InternalError(`Certificate secret has no value: ${name}`);
       }
 
       const combinedPem = secret.value;
@@ -181,7 +182,7 @@ export class AzureKeyVaultCertificateStore {
       const secret = await this.secretClient.getSecret(secretName);
 
       if (!secret.value) {
-        throw new Error(`ACME account key not found for email: ${email}`);
+        throw new InternalError(`ACME account key not found for email: ${email}`);
       }
 
       this.logger.info({ email }, "ACME account key retrieved successfully");
@@ -286,7 +287,7 @@ export class AzureKeyVaultCertificateStore {
     const keyMatch = combinedPem.match(/-----BEGIN (?:RSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA )?PRIVATE KEY-----/);
 
     if (!certMatch || !keyMatch) {
-      throw new Error("Invalid combined PEM format: missing certificate or private key");
+      throw new InternalError("Invalid combined PEM format: missing certificate or private key");
     }
 
     return {

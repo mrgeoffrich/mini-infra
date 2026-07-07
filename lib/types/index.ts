@@ -8,6 +8,9 @@ export * from "./auth";
 // Permission types
 export * from "./permissions";
 
+// Error codes (machine-readable, shared error taxonomy)
+export * from "./error-codes";
+
 // Container types
 export * from "./containers";
 

@@ -9,6 +9,7 @@ import type {
   StackTemplatePrerequisite,
 } from "@mini-infra/types";
 import { getLogger } from "../../../lib/logger-factory";
+import { InternalError } from "../../../lib/errors";
 import { getPredicate } from "./predicates";
 
 const log = getLogger("stacks", "template-prerequisites-evaluator");
@@ -51,7 +52,7 @@ async function loadRequiresForVersion(
     select: { requires: true },
   });
   if (!row) {
-    throw new Error(`StackTemplateVersion not found: ${templateVersionId}`);
+    throw new InternalError(`StackTemplateVersion not found: ${templateVersionId}`);
   }
   if (row.requires == null) return [];
   return row.requires as unknown as StackTemplatePrerequisite[];
@@ -79,7 +80,7 @@ async function evaluateStackRequirement(
   const { templateName, minState, scopeMatch } = req;
 
   if (scopeMatch === "same-environment" && applyingStackEnvId === null) {
-    throw new Error(
+    throw new InternalError(
       `Prerequisite on template '${templateName}' uses scopeMatch='same-environment' but the applying stack is host-scoped`,
     );
   }
@@ -264,7 +265,7 @@ export async function evaluatePrerequisites(
     },
   });
   if (!stack) {
-    throw new Error(`Stack not found: ${stackId}`);
+    throw new InternalError(`Stack not found: ${stackId}`);
   }
   if (!stack.templateId || stack.templateVersion == null) {
     return { ok: true, failures: [] };

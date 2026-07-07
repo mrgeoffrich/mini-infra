@@ -1,6 +1,7 @@
 import type { ActionContext, DrainMonitorEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "monitor-drain");
 
@@ -24,13 +25,13 @@ export class MonitorDrain {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for drain monitoring');
+                throw new InternalError('HAProxy container ID is required for drain monitoring');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend identification');
+                throw new InternalError('Application name is required for backend identification');
             }
             if (!context.oldContainerId) {
-                throw new Error('Old container ID is required for blue server identification');
+                throw new InternalError('Old container ID is required for blue server identification');
             }
 
             // Initialize HAProxy DataPlane client

@@ -79,11 +79,18 @@ vi.mock('../middleware/auth', () => ({
 
 import kvRouter from '../routes/vault/kv';
 import { VaultKVError } from '../services/vault/vault-kv-service';
+import { errorHandler } from '../lib/error-handler';
+import { ErrorCode } from '@mini-infra/types';
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/vault/kv', kvRouter);
+  // VaultKVError is now a taxonomy error (extends CustomError) — routes
+  // forward it via `next(err)` instead of building the response body
+  // themselves, so the central error middleware must be mounted for it to
+  // produce the standard envelope (see server/src/lib/error-handler.ts).
+  app.use(errorHandler);
   return app;
 }
 
@@ -112,7 +119,7 @@ describe('GET /api/vault/kv/*splat — read', () => {
   it('returns 404 when service returns null (path missing)', async () => {
     mockKvService.read.mockResolvedValue(null);
     const res = await supertest(buildApp()).get('/api/vault/kv/shared/none').expect(404);
-    expect(res.body.code).toBe('path_not_found');
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_PATH_NOT_FOUND);
   });
 
   it('rejects path containing .. anywhere in a segment', async () => {
@@ -120,13 +127,13 @@ describe('GET /api/vault/kv/*splat — read', () => {
     // attack surface for the validator is `..` embedded in a segment
     // (e.g. `sh..are`) that survives URL parsing intact.
     const res = await supertest(buildApp()).get('/api/vault/kv/sh..are/x').expect(400);
-    expect(res.body.code).toBe('invalid_path');
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_INVALID_PATH);
     expect(mockKvService.read).not.toHaveBeenCalled();
   });
 
   it('rejects forbidden characters in path', async () => {
     const res = await supertest(buildApp()).get('/api/vault/kv/shared/sl%3Aack').expect(400);
-    expect(res.body.code).toBe('invalid_path');
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_INVALID_PATH);
   });
 });
 
@@ -146,38 +153,51 @@ describe('POST /api/vault/kv/*splat — write', () => {
       .post('/api/vault/kv/shared/x')
       .send({})
       .expect(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe(ErrorCode.VALIDATION_FAILED);
   });
 
-  it('maps Vault sealed (503) to 503 with vault_sealed code', async () => {
+  // Canonical Phase 10 failure: a Vault operation attempted while Vault is
+  // sealed. Asserts the full envelope — machine code, human message, and
+  // resource/action — produced by the central error middleware, not a
+  // bespoke route-built body.
+  it('maps Vault sealed (503) to an actionable envelope with the VAULT_KV_SEALED code', async () => {
     mockKvService.write.mockRejectedValue(
-      new VaultKVError("Vault KV write failed for 'x': sealed", 'vault_sealed', 503),
+      new VaultKVError("Vault KV write failed for 'x': sealed", ErrorCode.VAULT_KV_SEALED, 503),
     );
     const res = await supertest(buildApp())
       .post('/api/vault/kv/shared/x')
       .send({ data: { k: 'v' } })
       .expect(503);
-    expect(res.body.code).toBe('vault_sealed');
+    expect(res.body).toMatchObject({
+      error: ErrorCode.VAULT_KV_SEALED,
+      message: "Vault KV write failed for 'x': sealed",
+      resource: { type: 'vaultKv' },
+      action: 'Unseal Vault, then retry.',
+    });
+    expect(res.body.requestId).toBeDefined();
+    expect(res.body.timestamp).toBeDefined();
   });
 
   it('maps Vault permission denied (403) to 403', async () => {
     mockKvService.write.mockRejectedValue(
-      new VaultKVError("permission denied", 'vault_permission_denied', 403),
+      new VaultKVError("permission denied", ErrorCode.VAULT_KV_PERMISSION_DENIED, 403),
     );
-    await supertest(buildApp())
+    const res = await supertest(buildApp())
       .post('/api/vault/kv/shared/x')
       .send({ data: { k: 'v' } })
       .expect(403);
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_PERMISSION_DENIED);
   });
 
   it('maps Vault rate-limited (429) to 429', async () => {
     mockKvService.write.mockRejectedValue(
-      new VaultKVError("rate limited", 'vault_rate_limited', 429),
+      new VaultKVError("rate limited", ErrorCode.VAULT_KV_RATE_LIMITED, 429),
     );
-    await supertest(buildApp())
+    const res = await supertest(buildApp())
       .post('/api/vault/kv/shared/x')
       .send({ data: { k: 'v' } })
       .expect(429);
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_RATE_LIMITED);
   });
 });
 
@@ -205,7 +225,7 @@ describe('DELETE /api/vault/kv/*splat — destroy gate', () => {
     const res = await supertest(buildApp())
       .delete('/api/vault/kv/shared/x?permanent=true')
       .expect(403);
-    expect(res.body.code).toBe('vault_destroy_forbidden');
+    expect(res.body.error).toBe(ErrorCode.VAULT_KV_DESTROY_FORBIDDEN);
     expect(mockKvService.delete).not.toHaveBeenCalled();
   });
 

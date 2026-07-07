@@ -80,10 +80,9 @@ export function EditBackendDialog({
       });
       toast.success("Backend updated successfully");
       onOpenChange(false);
-    } catch (error) {
-      toast.error(
-        `Failed to update backend: ${error instanceof Error ? error.message : "Unknown error"}`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

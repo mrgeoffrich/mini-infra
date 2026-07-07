@@ -133,39 +133,30 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
   const syncMutation = useSyncUsers(serverId);
 
   const handleCreateUser = async (data: CreateManagedDatabaseUserRequest) => {
-    try {
-      await createMutation.mutateAsync(data);
-      toast.success("User created successfully");
-      setIsCreateModalOpen(false);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to create user");
-      throw error;
-    }
+    // No try/catch: the global MutationCache.onError already shows an
+    // actionable toast for a real ApiRequestError, and letting the
+    // rejection propagate here is what tells the modal the save failed so
+    // it stays open.
+    await createMutation.mutateAsync(data);
+    toast.success("User created successfully");
+    setIsCreateModalOpen(false);
   };
 
   const handleUpdateUser = async (
     userId: string,
     updates: UpdateManagedDatabaseUserRequest,
   ) => {
-    try {
-      await updateMutation.mutateAsync({ userId, updates });
-      toast.success("User updated successfully");
-      setEditingUser(null);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to update user");
-      throw error;
-    }
+    // No try/catch: see handleCreateUser above.
+    await updateMutation.mutateAsync({ userId, updates });
+    toast.success("User updated successfully");
+    setEditingUser(null);
   };
 
   const handleChangePassword = async (userId: string, password: string) => {
-    try {
-      await changePasswordMutation.mutateAsync({ userId, password });
-      toast.success("Password changed successfully");
-      setChangingPasswordUser(null);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to change password");
-      throw error;
-    }
+    // No try/catch: see handleCreateUser above.
+    await changePasswordMutation.mutateAsync({ userId, password });
+    toast.success("Password changed successfully");
+    setChangingPasswordUser(null);
   };
 
   const handleDeleteUser = (
@@ -185,8 +176,9 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
       toast.success(`User "${userToDelete.username}" deleted successfully`);
       setDeleteDialogOpen(false);
       setUserToDelete(null);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to delete user");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -197,8 +189,9 @@ export function UsersTab({ serverId, availableDatabases }: UsersTabProps) {
         result.message ||
           `Synced successfully: ${result.data.created} created, ${result.data.updated} updated`,
       );
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to sync users");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

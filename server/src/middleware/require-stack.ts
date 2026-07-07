@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Prisma } from "../generated/prisma/client";
 import prisma from '../lib/prisma';
+import { ErrorCode } from '@mini-infra/types';
+import { NotFoundError } from '../lib/errors';
 
 const STACK_KEY = Symbol('stack');
 
@@ -35,8 +37,10 @@ export function requireStack(options: RequireStackOptions = {}): RequestHandler 
       } as Prisma.StackFindUniqueArgs);
 
       if (!stack) {
-        res.status(404).json({ success: false, message: 'Stack not found' });
-        return;
+        throw new NotFoundError(ErrorCode.STACK_NOT_FOUND, 'Stack not found', {
+          resource: { type: 'stack', id: stackId },
+          action: 'Check the stack ID or refresh the stacks list.',
+        });
       }
 
       (req as unknown as Record<symbol, unknown>)[STACK_KEY] = stack;

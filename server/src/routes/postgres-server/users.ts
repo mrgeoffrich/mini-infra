@@ -1,19 +1,20 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
-import { getLogger } from "../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import userManagementService from "../../services/postgres-server/user-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 import { Permission } from "@mini-infra/types";
 
-const logger = getLogger("db", "users");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId
 
 // Helper to extract userId or throw
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -41,8 +42,10 @@ const changePasswordSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/users
  * List all users on the server
  */
-router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
 
@@ -59,29 +62,17 @@ router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => 
       success: true,
       data: sanitizedUsers,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list users");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list users",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:serverId/users
  * Create a new user on the server
  */
-router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const validatedData = createUserSchema.parse(req.body);
@@ -96,37 +87,17 @@ router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) =
       success: true,
       data: sanitizedUser,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create user");
-    res.status(500).json({
-      success: false,
-      error: "Failed to create user",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:serverId/users/:userId
  * Get user details
  */
-router.get("/:userId", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:userId",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
     const managedUserId = String(req.params.userId);
@@ -141,36 +112,17 @@ router.get("/:userId", requirePermission(Permission.PostgresRead), async (req, r
       success: true,
       data: sanitizedUser,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get user details");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get user details",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * PUT /api/postgres-server/servers/:serverId/users/:userId
  * Update user attributes
  */
-router.put("/:userId", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.put(
+  "/:userId",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
     const managedUserId = String(req.params.userId);
@@ -186,44 +138,17 @@ router.put("/:userId", requirePermission(Permission.PostgresWrite), async (req, 
       success: true,
       data: sanitizedUser,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update user");
-    res.status(500).json({
-      success: false,
-      error: "Failed to update user",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * DELETE /api/postgres-server/servers/:serverId/users/:userId
  * Drop a user from the server
  */
-router.delete("/:userId", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.delete(
+  "/:userId",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
     const managedUserId = String(req.params.userId);
@@ -234,36 +159,17 @@ router.delete("/:userId", requirePermission(Permission.PostgresWrite), async (re
       success: true,
       message: "User dropped successfully",
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to drop user");
-    res.status(500).json({
-      success: false,
-      error: "Failed to drop user",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:serverId/users/:userId/password
  * Change user password
  */
-router.post("/:userId/password", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/:userId/password",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
     const managedUserId = String(req.params.userId);
@@ -275,44 +181,17 @@ router.post("/:userId/password", requirePermission(Permission.PostgresWrite), as
       success: true,
       message: "Password changed successfully",
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to change password");
-    res.status(500).json({
-      success: false,
-      error: "Failed to change password",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:serverId/users/sync
  * Sync users from the server
  */
-router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/sync",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
 
@@ -323,29 +202,17 @@ router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, re
       message: "Users synced successfully",
       data: result,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync users");
-    res.status(500).json({
-      success: false,
-      error: "Failed to sync users",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:serverId/users/:userId/grants
  * List grants for a specific user
  */
-router.get("/:userId/grants", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:userId/grants",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const authUserId = getUserId(req);
     const serverId = String(req.params.serverId);
     const managedUserId = String(req.params.userId);
@@ -356,28 +223,7 @@ router.get("/:userId/grants", requirePermission(Permission.PostgresRead), async 
       success: true,
       data: grants,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list grants for user");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list grants for user",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 export default router;

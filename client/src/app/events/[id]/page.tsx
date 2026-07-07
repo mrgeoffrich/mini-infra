@@ -50,10 +50,9 @@ export function EventDetailPage() {
       await deleteEventMutation.mutateAsync(id);
       toast.success("Event deleted successfully");
       navigate("/events");
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete event",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

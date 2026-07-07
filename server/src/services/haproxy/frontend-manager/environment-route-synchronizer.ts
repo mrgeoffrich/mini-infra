@@ -1,11 +1,13 @@
 import { getLogger } from "../../../lib/logger-factory";
 import { PrismaClient } from "../../../generated/prisma/client";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
+import { InternalError } from "../../../lib/errors";
 import {
   addHostnameRouting,
   removeACLByName,
   removeBackendSwitchingRuleByAclName,
 } from "./acl-rule-operations";
+import { rethrowIfTaxonomyError } from "./error-utils";
 import {
   DataPlaneACL,
   DataPlaneBackendSwitchingRule,
@@ -130,8 +132,7 @@ export async function syncEnvironmentRoutes(
       { error, environmentId },
       "Failed to sync environment routes"
     );
-    throw new Error(`Failed to sync environment routes: ${error}`, {
-      cause: error,
-    });
+    rethrowIfTaxonomyError(error);
+    throw new InternalError(`Failed to sync environment routes: ${error}`);
   }
 }

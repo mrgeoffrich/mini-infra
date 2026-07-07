@@ -101,11 +101,16 @@ vi.mock("../../services/storage/storage-service", () => ({
 
 // Imports happen AFTER the vi.mock calls so the route module sees the mocks.
 import storageSettingsRouter from "../storage-settings";
+import { errorHandler } from "../../lib/error-handler";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use("/api/storage", storageSettingsRouter);
+  // Routes now throw taxonomy errors (ConflictError/ValidationError/ZodError)
+  // and forward via `next(err)` — mount the real central error middleware so
+  // it produces the standard envelope instead of Express's default 500.
+  app.use(errorHandler);
   return app;
 }
 
@@ -185,7 +190,7 @@ describe("storage settings routes", () => {
       .put("/api/storage/active-provider")
       .send({ providerId: "definitely-not-a-real-provider" })
       .expect(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe("VALIDATION_FAILED");
   });
 
   it("PUT /azure stores connection string when valid", async () => {
@@ -214,7 +219,7 @@ describe("storage settings routes", () => {
       .put("/api/storage/azure")
       .send({ connectionString: "not-a-real-conn-string" })
       .expect(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe("VALIDATION_FAILED");
   });
 
   it("DELETE /azure wipes provider config", async () => {
@@ -286,7 +291,7 @@ describe("storage settings routes", () => {
       const res = await request(buildApp())
         .get("/api/storage/switch-precheck?targetProvider=not-a-thing")
         .expect(400);
-      expect(res.body.success).toBe(false);
+      expect(res.body.error).toBe("VALIDATION_FAILED");
     });
 
     it("returns canSwitch=true with empty lists when no certs/backups/in-flight", async () => {
@@ -382,8 +387,8 @@ describe("storage settings routes", () => {
         .post("/api/storage/azure/forget")
         .send({})
         .expect(409);
-      expect(res.body.success).toBe(false);
-      expect(res.body.error).toMatch(/active/i);
+      expect(res.body.error).toBe("STORAGE_PROVIDER_ACTIVE_CANNOT_DISCONNECT");
+      expect(res.body.message).toMatch(/active/i);
       expect(mockPrisma.systemSettings.deleteMany).not.toHaveBeenCalled();
     });
 
@@ -395,9 +400,8 @@ describe("storage settings routes", () => {
         .post("/api/storage/google-drive/forget")
         .send({})
         .expect(409);
-      expect(res.body.success).toBe(false);
       expect(res.body.error).toBe("PROVIDER_HAS_REFERENCING_ROWS");
-      expect(res.body.data.referencingRowCount).toBe(3);
+      expect(res.body.details.referencingRowCount).toBe(3);
       expect(mockPrisma.systemSettings.deleteMany).not.toHaveBeenCalled();
     });
 
@@ -440,7 +444,7 @@ describe("storage settings routes", () => {
         .post("/api/storage/not-a-provider/forget")
         .send({})
         .expect(400);
-      expect(res.body.success).toBe(false);
+      expect(res.body.error).toBe("VALIDATION_FAILED");
     });
   });
 });

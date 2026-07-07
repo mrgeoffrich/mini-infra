@@ -4,10 +4,12 @@ import DockerService from "../services/docker";
 import { VolumeInspectorService, VolumeFileContentService } from "../services/volume";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
-import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, NetworkAttachmentResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission } from "@mini-infra/types";
+import { DockerNetworkListResponse, DockerNetworkApiResponse, DockerNetworkDeleteResponse, NetworkAttachmentResponse, DockerVolumeListResponse, DockerVolumeApiResponse, DockerVolumeDeleteResponse, VolumeInspectionResponse, VolumeInspectionStartResponse, FetchFileContentsRequest, FetchFileContentsResponse, VolumeFileContentResponse, DockerNetworkGcResponse, NetworkMembershipBackfillResponse, NetworkReconcileResponse, NetworkConvergeResponse, SetNetworkEnforceMembershipsResponse, ManagedNetworkListResponse, Permission, ErrorCode } from "@mini-infra/types";
 import prisma from "../lib/prisma";
 import { DockerExecutorService } from "../services/docker-executor";
 import { createNetworkManager, runNetworkGc, backfillNetworkMemberships, reconcileStack, reconcileEnvironment, reconcileAll, convergeStack, convergeEnvironment, convergeAll, listManagedNetworks } from "../services/networks";
+import { requireDockerConnected } from "../middleware/require-docker-connected";
+import { NotFoundError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("docker", "docker");
 const router = express.Router();
@@ -220,15 +222,10 @@ router.delete(
 
       res.json(response);
     } catch (error) {
-      if ((error instanceof Error ? error.message : String(error))?.includes("Cannot remove network")) {
-        logger.warn({ error, networkId: req.params.id }, "Cannot remove network");
-        return res.status(400).json({
-          success: false,
-          message: (error instanceof Error ? error.message : String(error)),
-          networkId: req.params.id,
-        });
-      }
-
+      // Taxonomy errors thrown by DockerService.removeNetwork() (has-containers
+      // -> 409 DOCKER_NETWORK_IN_USE, not-found -> 404 DOCKER_NETWORK_NOT_FOUND)
+      // carry their own status/code and reach the central middleware via
+      // next(error) below — no more message-substring status mapping here.
       logger.error({ error, networkId: req.params.id }, "Failed to remove Docker network");
       next(error);
     }
@@ -621,10 +618,11 @@ router.patch(
       const { name, enforceMemberships } = parsed.data;
       const existing = await prisma.managedNetwork.findUnique({ where: { name } });
       if (!existing) {
-        return res.status(404).json({
-          success: false,
-          message: `No managed network found with name "${name}"`,
-        });
+        throw new NotFoundError(
+          ErrorCode.MANAGED_NETWORK_NOT_FOUND,
+          `No managed network found with name "${name}".`,
+          { resource: { type: 'managedNetwork', name } },
+        );
       }
 
       const updated = await prisma.managedNetwork.update({
@@ -654,18 +652,10 @@ router.patch(
 router.get(
   "/volumes",
   requirePermission(Permission.DockerRead),
+  requireDockerConnected(),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const dockerService = DockerService.getInstance();
-
-      if (!dockerService.isConnected()) {
-        logger.warn("Docker service not connected");
-        return res.status(503).json({
-          success: false,
-          message: "Docker service not connected",
-        });
-      }
-
       const volumes = await dockerService.listVolumes();
 
       const response: DockerVolumeListResponse = {
@@ -695,27 +685,16 @@ router.get(
 router.delete(
   "/volumes/:name",
   requirePermission(Permission.DockerWrite),
+  requireDockerConnected(),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
 
       if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Volume name is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Volume name is required");
       }
 
       const dockerService = DockerService.getInstance();
-
-      if (!dockerService.isConnected()) {
-        logger.warn("Docker service not connected");
-        return res.status(503).json({
-          success: false,
-          message: "Docker service not connected",
-        });
-      }
-
       await dockerService.removeVolume(name);
 
       const response: DockerVolumeDeleteResponse = {
@@ -726,15 +705,9 @@ router.delete(
 
       res.json(response);
     } catch (error) {
-      if ((error instanceof Error ? error.message : String(error))?.includes("Cannot remove volume")) {
-        logger.warn({ error, volumeName: req.params.name }, "Cannot remove volume");
-        return res.status(400).json({
-          success: false,
-          message: (error instanceof Error ? error.message : String(error)),
-          volumeName: req.params.name,
-        });
-      }
-
+      // Taxonomy errors — including the `ConflictError` `removeVolume()`
+      // throws when the volume is in use — carry their own status/code and
+      // are handled by the central error middleware; just forward them.
       logger.error({ error, volumeName: req.params.name }, "Failed to remove Docker volume");
       next(error);
     }
@@ -749,36 +722,30 @@ router.delete(
 router.post(
   "/volumes/:name/inspect",
   requirePermission(Permission.DockerRead),
+  requireDockerConnected(),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
 
       if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Volume name is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Volume name is required");
       }
 
       const dockerService = DockerService.getInstance();
-
-      if (!dockerService.isConnected()) {
-        logger.warn("Docker service not connected");
-        return res.status(503).json({
-          success: false,
-          message: "Docker service not connected",
-        });
-      }
 
       // Verify volume exists
       const volumes = await dockerService.listVolumes();
       const volumeExists = volumes.some((v) => v.name === name);
 
       if (!volumeExists) {
-        return res.status(404).json({
-          success: false,
-          message: `Volume '${name}' not found`,
-        });
+        throw new NotFoundError(
+          ErrorCode.VOLUME_NOT_FOUND,
+          `Volume '${name}' not found`,
+          {
+            resource: { type: "volume", name },
+            action: "Check the volume name and try again.",
+          },
+        );
       }
 
       // Initialize and start inspection
@@ -818,10 +785,7 @@ router.get(
       const name = String(req.params.name);
 
       if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Volume name is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Volume name is required");
       }
 
       const inspectorService = new VolumeInspectorService();
@@ -873,44 +837,38 @@ router.get(
 router.post(
   "/volumes/:name/files/fetch",
   requirePermission(Permission.DockerRead),
+  requireDockerConnected(),
   async (req: Request, res: Response, next: NextFunction) => {
     try {
       const name = String(req.params.name);
       const { filePaths } = req.body as FetchFileContentsRequest;
 
       if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Volume name is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Volume name is required");
       }
 
       if (!filePaths || !Array.isArray(filePaths) || filePaths.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: "filePaths array is required and must not be empty",
-        });
+        throw new ValidationError(
+          ErrorCode.VALIDATION_FAILED,
+          "filePaths array is required and must not be empty",
+        );
       }
 
       const dockerService = DockerService.getInstance();
-
-      if (!dockerService.isConnected()) {
-        logger.warn("Docker service not connected");
-        return res.status(503).json({
-          success: false,
-          message: "Docker service not connected",
-        });
-      }
 
       // Verify volume exists
       const volumes = await dockerService.listVolumes();
       const volumeExists = volumes.some((v) => v.name === name);
 
       if (!volumeExists) {
-        return res.status(404).json({
-          success: false,
-          message: `Volume '${name}' not found`,
-        });
+        throw new NotFoundError(
+          ErrorCode.VOLUME_NOT_FOUND,
+          `Volume '${name}' not found`,
+          {
+            resource: { type: "volume", name },
+            action: "Check the volume name and try again.",
+          },
+        );
       }
 
       // Initialize and fetch file contents
@@ -953,17 +911,11 @@ router.get(
       const { path } = req.query;
 
       if (!name) {
-        return res.status(400).json({
-          success: false,
-          message: "Volume name is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "Volume name is required");
       }
 
       if (!path || typeof path !== "string") {
-        return res.status(400).json({
-          success: false,
-          message: "path query parameter is required",
-        });
+        throw new ValidationError(ErrorCode.VALIDATION_FAILED, "path query parameter is required");
       }
 
       const fileContentService = new VolumeFileContentService();
@@ -971,10 +923,14 @@ router.get(
       const fileContent = await fileContentService.getFileContent(name, path);
 
       if (!fileContent) {
-        return res.status(404).json({
-          success: false,
-          message: `File content not found for '${path}' in volume '${name}'`,
-        });
+        throw new NotFoundError(
+          ErrorCode.VOLUME_FILE_NOT_FOUND,
+          `File content not found for '${path}' in volume '${name}'`,
+          {
+            resource: { type: "volumeFile", name: `${name}:${path}` },
+            action: "Fetch the file contents first, then try again.",
+          },
+        );
       }
 
       const response: VolumeFileContentResponse = {

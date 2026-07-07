@@ -103,11 +103,15 @@ vi.mock("../services/monitoring", () => ({
 
 import stacksApplyRoute from "../routes/stacks/stacks-apply-route";
 import { stackOperationLock } from "../services/stacks/operation-lock";
+import { errorHandler } from "../lib/error-handler";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use("/api/stacks", stacksApplyRoute);
+  // Real central error middleware — the route now throws taxonomy errors
+  // instead of writing its own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -215,15 +219,15 @@ describe("Phase 2: nats template requires gate end-to-end", () => {
 
     const res = await supertest(buildApp()).post(`/api/stacks/${stackId}/apply`).send({});
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe("PREREQUISITES_NOT_MET");
-    expect(res.body.failures).toHaveLength(2);
+    expect(res.body.error).toBe("STACK_PREREQUISITES_NOT_MET");
+    expect(res.body.details.failures).toHaveLength(2);
 
-    const stackFailure = res.body.failures.find((f: { kind: string }) => f.kind === "stack");
+    const stackFailure = res.body.details.failures.find((f: { kind: string }) => f.kind === "stack");
     expect(stackFailure).toBeDefined();
     expect(stackFailure.helpAction.type).toBe("instantiate-stack");
     expect(stackFailure.helpAction.templateName).toBe("vault");
 
-    const predicateFailure = res.body.failures.find((f: { kind: string }) => f.kind === "predicate");
+    const predicateFailure = res.body.details.failures.find((f: { kind: string }) => f.kind === "predicate");
     expect(predicateFailure).toBeDefined();
     expect(predicateFailure.helpAction.type).toBe("open-vault-bootstrap");
 
@@ -265,10 +269,10 @@ describe("Phase 2: nats template requires gate end-to-end", () => {
 
     const res = await supertest(buildApp()).post(`/api/stacks/${stackId}/apply`).send({});
     expect(res.status).toBe(409);
-    expect(res.body.code).toBe("PREREQUISITES_NOT_MET");
+    expect(res.body.error).toBe("STACK_PREREQUISITES_NOT_MET");
     // Stack-kind requirement is satisfied — only the predicate should fail.
-    expect(res.body.failures).toHaveLength(1);
-    expect(res.body.failures[0].kind).toBe("predicate");
-    expect(res.body.failures[0].helpAction.type).toBe("open-vault-bootstrap");
+    expect(res.body.details.failures).toHaveLength(1);
+    expect(res.body.details.failures[0].kind).toBe("predicate");
+    expect(res.body.details.failures[0].helpAction.type).toBe("open-vault-bootstrap");
   });
 });

@@ -5,6 +5,7 @@ import { haproxyCertificateDeployer } from './haproxy-certificate-deployer';
 import { HAProxyFrontendManager } from './haproxy-frontend-manager';
 import DockerService from '../docker';
 import type { OperationStep } from '@mini-infra/types';
+import { InternalError } from '../../lib/errors';
 
 const logger = getLogger("haproxy", "haproxy-post-apply");
 
@@ -388,7 +389,7 @@ async function getStackHAProxyClient(
   });
 
   if (!stackContainer) {
-    throw new Error('Stack-managed HAProxy container not found or not running');
+    throw new InternalError('Stack-managed HAProxy container not found or not running');
   }
 
   const maxRetries = 5;

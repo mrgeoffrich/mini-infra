@@ -2,8 +2,10 @@ import { randomBytes, createHmac } from "crypto";
 import prisma from "./prisma";
 import { getLogger } from "./logger-factory";
 import { getAuthSecret } from "./security-config";
+import { NotFoundError } from "./errors";
 
 const logger = getLogger("auth", "api-key-service");
+import { ErrorCode } from "@mini-infra/types";
 import type {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
@@ -12,6 +14,18 @@ import type {
   JWTUser,
   PermissionScope,
 } from "@mini-infra/types";
+
+/** Shared 404 for revoke/rotate/delete — the key doesn't exist, or exists but belongs to someone else. */
+function apiKeyNotFound(keyId: string): NotFoundError {
+  return new NotFoundError(
+    ErrorCode.API_KEY_NOT_FOUND,
+    "API key not found or not owned by user",
+    {
+      resource: { type: "apiKey", id: keyId },
+      action: "Check the key ID — it must belong to your account.",
+    },
+  );
+}
 
 /**
  * Generate a secure API key using cryptographically secure random bytes
@@ -50,9 +64,7 @@ export async function createApiKey(
 
     // Serialize permissions to JSON string (or null for full access)
     const permissionsJson =
-      request.permissions != null
-        ? JSON.stringify(request.permissions)
-        : null;
+      request.permissions != null ? JSON.stringify(request.permissions) : null;
 
     // Store the hashed key in the database
     const apiKey = await prisma.apiKey.create({
@@ -216,7 +228,7 @@ export async function revokeApiKey(
     });
 
     if (!apiKey) {
-      throw new Error("API key not found or not owned by user");
+      throw apiKeyNotFound(keyId);
     }
 
     await prisma.apiKey.update({
@@ -229,7 +241,9 @@ export async function revokeApiKey(
       "API key revoked successfully",
     );
   } catch (error) {
-    logger.error({ error, userId, keyId }, "Failed to revoke API key");
+    if (!(error instanceof NotFoundError)) {
+      logger.error({ error, userId, keyId }, "Failed to revoke API key");
+    }
     throw error;
   }
 }
@@ -251,7 +265,7 @@ export async function rotateApiKey(
     });
 
     if (!existingKey) {
-      throw new Error("API key not found or not owned by user");
+      throw apiKeyNotFound(keyId);
     }
 
     // Create a new key with the same name and permissions
@@ -274,7 +288,9 @@ export async function rotateApiKey(
 
     return newKey;
   } catch (error) {
-    logger.error({ error, userId, keyId }, "Failed to rotate API key");
+    if (!(error instanceof NotFoundError)) {
+      logger.error({ error, userId, keyId }, "Failed to rotate API key");
+    }
     throw error;
   }
 }
@@ -295,7 +311,7 @@ export async function deleteApiKey(
     });
 
     if (!apiKey) {
-      throw new Error("API key not found or not owned by user");
+      throw apiKeyNotFound(keyId);
     }
 
     await prisma.apiKey.delete({
@@ -307,7 +323,9 @@ export async function deleteApiKey(
       "API key deleted permanently",
     );
   } catch (error) {
-    logger.error({ error, userId, keyId }, "Failed to delete API key");
+    if (!(error instanceof NotFoundError)) {
+      logger.error({ error, userId, keyId }, "Failed to delete API key");
+    }
     throw error;
   }
 }

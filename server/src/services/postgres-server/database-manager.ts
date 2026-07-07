@@ -1,5 +1,8 @@
+import { ErrorCode } from "@mini-infra/types";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError, NotFoundError, ValidationError } from "../../lib/errors";
+import { mapPostgresOperationError } from "./pg-error-mapper";
 import postgresServerService from "./server-manager";
 
 const logger = getLogger("db", "database-manager");
@@ -65,7 +68,11 @@ export class DatabaseManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to list databases from server");
-      throw new Error(`Failed to list databases: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to list databases",
+        resource: { type: "postgresServer", id: serverId },
+        action: "Verify the server is reachable and the admin credential has list privileges.",
+      });
     }
   }
 
@@ -148,43 +155,67 @@ export class DatabaseManagementService {
   ) {
     logger.info({ serverId, databaseName: params.databaseName }, "Creating database");
 
+    // Build CREATE DATABASE statement
+    // Note: We cannot use parameterized queries for DDL statements, so we
+    // validate all inputs against allowlists to prevent SQL injection.
+    // Validated up front (before opening a connection) so a bad request
+    // never masquerades as a live-query failure below.
+    const encoding = params.encoding || "UTF8";
+    const template = params.template || "template0";
+    const owner = params.owner || "postgres";
+    const connectionLimit = params.connectionLimit !== undefined ? params.connectionLimit : -1;
+
+    const invalidDatabaseResource = { type: "postgresManagedDatabase", name: params.databaseName };
+
+    // Validate encoding against allowlist
+    if (!VALID_ENCODINGS.has(encoding.toUpperCase())) {
+      throw new ValidationError(
+        ErrorCode.PG_INVALID_DATABASE_ENCODING,
+        `Invalid encoding: ${encoding}. Must be a valid PostgreSQL encoding.`,
+        { resource: invalidDatabaseResource, action: "Choose a supported PostgreSQL encoding." },
+      );
+    }
+
+    // Validate template against allowlist
+    if (!VALID_TEMPLATES.has(template)) {
+      throw new ValidationError(
+        ErrorCode.PG_INVALID_DATABASE_TEMPLATE,
+        `Invalid template: ${template}. Must be template0 or template1.`,
+        { resource: invalidDatabaseResource, action: "Use template0 or template1." },
+      );
+    }
+
+    // Validate collation format
+    if (params.collation && !VALID_COLLATION.test(params.collation)) {
+      throw new ValidationError(
+        ErrorCode.PG_INVALID_DATABASE_COLLATION,
+        "Collation contains invalid characters",
+        { resource: invalidDatabaseResource, action: "Use a valid PostgreSQL collation identifier." },
+      );
+    }
+
+    // Validate owner (alphanumeric and underscores only, must start with letter or underscore)
+    if (!VALID_IDENTIFIER.test(owner)) {
+      throw new ValidationError(
+        ErrorCode.PG_INVALID_OWNER_NAME,
+        "Owner name contains invalid characters",
+        { resource: invalidDatabaseResource, action: "Use only letters, numbers, and underscores, starting with a letter or underscore." },
+      );
+    }
+
+    // Sanitize database name (alphanumeric, underscores, hyphens only)
+    const sanitizedDbName = params.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
+    if (sanitizedDbName !== params.databaseName) {
+      throw new ValidationError(
+        ErrorCode.PG_INVALID_DATABASE_NAME,
+        "Database name contains invalid characters",
+        { resource: invalidDatabaseResource, action: "Use only letters, numbers, underscores, and hyphens." },
+      );
+    }
+
     const client = await postgresServerService.getClient(serverId, userId);
 
     try {
-      // Build CREATE DATABASE statement
-      // Note: We cannot use parameterized queries for DDL statements,
-      // so we validate all inputs against allowlists to prevent SQL injection
-      const encoding = params.encoding || "UTF8";
-      const template = params.template || "template0";
-      const owner = params.owner || "postgres";
-      const connectionLimit = params.connectionLimit !== undefined ? params.connectionLimit : -1;
-
-      // Validate encoding against allowlist
-      if (!VALID_ENCODINGS.has(encoding.toUpperCase())) {
-        throw new Error(`Invalid encoding: ${encoding}. Must be a valid PostgreSQL encoding.`);
-      }
-
-      // Validate template against allowlist
-      if (!VALID_TEMPLATES.has(template)) {
-        throw new Error(`Invalid template: ${template}. Must be template0 or template1.`);
-      }
-
-      // Validate collation format
-      if (params.collation && !VALID_COLLATION.test(params.collation)) {
-        throw new Error("Collation contains invalid characters");
-      }
-
-      // Validate owner (alphanumeric and underscores only, must start with letter or underscore)
-      if (!VALID_IDENTIFIER.test(owner)) {
-        throw new Error("Owner name contains invalid characters");
-      }
-
-      // Sanitize database name (alphanumeric, underscores, hyphens only)
-      const sanitizedDbName = params.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
-      if (sanitizedDbName !== params.databaseName) {
-        throw new Error("Database name contains invalid characters");
-      }
-
       let createQuery = `CREATE DATABASE ${escapeIdentifier(sanitizedDbName)} ENCODING '${encoding}' TEMPLATE ${template}`;
 
       if (params.collation) {
@@ -228,7 +259,11 @@ export class DatabaseManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseName: params.databaseName }, "Failed to create database");
-      throw new Error(`Failed to create database: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to create database",
+        resource: invalidDatabaseResource,
+        action: "Choose a different name or check server permissions.",
+      });
     }
   }
 
@@ -247,7 +282,10 @@ export class DatabaseManagementService {
     });
 
     if (!managedDatabase) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
@@ -274,7 +312,11 @@ export class DatabaseManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId }, "Failed to drop database");
-      throw new Error(`Failed to drop database: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to drop database",
+        resource: { type: "postgresManagedDatabase", id: databaseId, name: managedDatabase.databaseName },
+        action: "Ensure no other sessions are using the database, then retry.",
+      });
     }
   }
 
@@ -298,24 +340,36 @@ export class DatabaseManagementService {
     });
 
     if (!managedDatabase) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
+    }
+
+    // Sanitize inputs (prevent SQL injection)
+    const sanitizedDbName = managedDatabase.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
+    const sanitizedOwner = newOwner.replace(/[^a-zA-Z0-9_-]/g, "");
+
+    // The stored database name was already validated when the database was
+    // created — if it fails sanitization now, the stored record itself is
+    // corrupt/inconsistent, not something the caller can fix. That's a
+    // genuine internal invariant, not a validation error on this request.
+    if (sanitizedDbName !== managedDatabase.databaseName) {
+      throw new InternalError(
+        `Stored database name "${managedDatabase.databaseName}" contains invalid characters`,
+      );
+    }
+
+    if (sanitizedOwner !== newOwner) {
+      throw new ValidationError(ErrorCode.PG_INVALID_OWNER_NAME, "Owner name contains invalid characters", {
+        resource: { type: "postgresManagedDatabase", id: databaseId, name: managedDatabase.databaseName },
+        action: "Use only letters, numbers, underscores, and hyphens.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
 
     try {
-      // Sanitize inputs (prevent SQL injection)
-      const sanitizedDbName = managedDatabase.databaseName.replace(/[^a-zA-Z0-9_-]/g, "");
-      const sanitizedOwner = newOwner.replace(/[^a-zA-Z0-9_-]/g, "");
-
-      if (sanitizedDbName !== managedDatabase.databaseName) {
-        throw new Error("Database name contains invalid characters");
-      }
-
-      if (sanitizedOwner !== newOwner) {
-        throw new Error("Owner name contains invalid characters");
-      }
-
       // Change the database owner
       await client.query(`ALTER DATABASE ${escapeIdentifier(sanitizedDbName)} OWNER TO ${escapeIdentifier(sanitizedOwner)}`);
 
@@ -340,7 +394,11 @@ export class DatabaseManagementService {
         { error: (error instanceof Error ? error.message : String(error)), serverId, databaseId, newOwner },
         "Failed to change database owner"
       );
-      throw new Error(`Failed to change database owner: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to change database owner",
+        resource: { type: "postgresManagedDatabase", id: databaseId, name: managedDatabase.databaseName },
+        action: "Verify the new owner role exists and the admin credential has privileges to reassign ownership.",
+      });
     }
   }
 
@@ -368,7 +426,10 @@ export class DatabaseManagementService {
     });
 
     if (!managedDatabase) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     return managedDatabase;
@@ -391,7 +452,11 @@ export class DatabaseManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseName }, "Failed to get database size");
-      throw new Error(`Failed to get database size: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to get database size",
+        resource: { type: "postgresManagedDatabase", name: databaseName },
+        action: "Verify the database still exists and the admin credential has query privileges.",
+      });
     }
   }
 

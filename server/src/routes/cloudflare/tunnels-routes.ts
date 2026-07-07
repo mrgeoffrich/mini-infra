@@ -4,13 +4,14 @@ import type { TunnelListResponse } from "cloudflare/resources/zero-trust/tunnels
 import { getLogger } from "../../lib/logger-factory";
 import { asyncHandler } from "../../lib/async-handler";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
+import { NotFoundError } from "../../lib/errors";
 import {
   CloudflareService,
   cloudflareDNSService,
 } from "../../services/cloudflare";
 import { tunnelCache } from "../../services/cloudflare/tunnel-cache";
 import { requireCloudflareCredentials } from "./require-credentials";
-import { CloudflareTunnelListResponse, CloudflareTunnelDetailsResponse, CloudflareTunnelConfigResponse, CloudflareTunnelInfo, Permission } from "@mini-infra/types";
+import { CloudflareTunnelListResponse, CloudflareTunnelDetailsResponse, CloudflareTunnelConfigResponse, CloudflareTunnelInfo, ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "tunnels-routes");
 
@@ -171,11 +172,14 @@ export function createCloudflareTunnelsRouter(
 
       const tunnel = tunnels.find((t: TunnelListResponse) => t.id === tunnelId);
       if (!tunnel) {
-        return res.status(404).json({
-          success: false,
-          error: "Tunnel not found",
-          details: `Tunnel with ID ${tunnelId} was not found`,
-        });
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_TUNNEL_NOT_FOUND,
+          `Tunnel with ID ${tunnelId} was not found`,
+          {
+            resource: { type: "cloudflareTunnel", id: tunnelId },
+            action: "Check the tunnel list for a valid tunnel ID.",
+          },
+        );
       }
 
       const transformed = toTunnelInfo(tunnel, true);
@@ -209,11 +213,14 @@ export function createCloudflareTunnelsRouter(
         await cloudflareConfigService.getTunnelConfig(String(tunnelId));
 
       if (!tunnelConfig) {
-        return res.status(404).json({
-          success: false,
-          error: "Tunnel configuration not found",
-          details: `Configuration for tunnel ${tunnelId} was not found or could not be retrieved`,
-        });
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_TUNNEL_CONFIG_UNAVAILABLE,
+          `Configuration for tunnel ${tunnelId} was not found or could not be retrieved`,
+          {
+            resource: { type: "cloudflareTunnelConfig", id: tunnelId },
+            action: "Verify the tunnel exists and Cloudflare credentials are configured.",
+          },
+        );
       }
 
       tunnelCache.setConfig(tunnelId, tunnelConfig);
@@ -232,29 +239,15 @@ export function createCloudflareTunnelsRouter(
     requireCreds,
     asyncHandler(async (req, res) => {
       const requestId = req.headers["x-request-id"] as string;
-      const userId = getUserId(req);
       const tunnelId = String(req.params.id);
 
-      const validation = addHostnameSchema.safeParse(req.body);
-      if (!validation.success) {
-        logger.warn(
-          {
-            requestId,
-            userId,
-            tunnelId,
-            errors: validation.error.flatten(),
-          },
-          "Invalid add hostname request",
-        );
-        return res.status(400).json({
-          success: false,
-          error: "Invalid request parameters",
-          details: validation.error.flatten(),
-        });
-      }
+      // A thrown ZodError is handled centrally (server/src/lib/error-handler.ts
+      // maps it to VALIDATION_FAILED).
+      const { hostname, service, path } = addHostnameSchema.parse(req.body);
 
-      const { hostname, service, path } = validation.data;
-
+      // Throws ConflictError (CLOUDFLARE_TUNNEL_HOSTNAME_EXISTS) or
+      // NotFoundError (CLOUDFLARE_TUNNEL_CONFIG_UNAVAILABLE) on failure —
+      // the return value is never falsy on success.
       const updatedConfig = await cloudflareConfigService.addHostname(
         String(tunnelId),
         hostname,
@@ -263,11 +256,7 @@ export function createCloudflareTunnelsRouter(
       );
 
       if (!updatedConfig) {
-        return res.status(500).json({
-          success: false,
-          error: "Failed to update tunnel configuration",
-          details: "Unable to add hostname to tunnel",
-        });
+        throw new Error("Unable to add hostname to tunnel");
       }
 
       // Best-effort DNS CNAME — the ingress rule is the source of truth,
@@ -323,6 +312,9 @@ export function createCloudflareTunnelsRouter(
       // decode so we compare against the stored form.
       const decodedHostname = decodeURIComponent(rawHostname);
 
+      // Throws NotFoundError (CLOUDFLARE_TUNNEL_HOSTNAME_NOT_FOUND or
+      // CLOUDFLARE_TUNNEL_CONFIG_UNAVAILABLE) on failure — the return value
+      // is never falsy on success.
       const updatedConfig = await cloudflareConfigService.removeHostname(
         String(tunnelId),
         decodedHostname,
@@ -330,11 +322,7 @@ export function createCloudflareTunnelsRouter(
       );
 
       if (!updatedConfig) {
-        return res.status(500).json({
-          success: false,
-          error: "Failed to update tunnel configuration",
-          details: "Unable to remove hostname from tunnel",
-        });
+        throw new Error("Unable to remove hostname from tunnel");
       }
 
       try {

@@ -4,9 +4,11 @@ import {
   ServiceHealthStatus,
   ConnectivityStatusType,
   AcmeProvider,
+  ErrorCode,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { getLogger } from "../../lib/logger-factory";
+import { ValidationError } from "../../lib/errors";
 import { StorageService } from "../storage/storage-service";
 
 /**
@@ -204,7 +206,14 @@ export class TlsConfigService extends ConfigurationService {
       TLS_SETTINGS_KEYS.CERTIFICATE_BLOB_CONTAINER,
     );
     if (!containerName) {
-      throw new Error("Certificate storage location not configured");
+      throw new ValidationError(
+        ErrorCode.TLS_STORAGE_NOT_CONFIGURED,
+        "Certificate storage location not configured",
+        {
+          resource: { type: "tlsConfig" },
+          action: "Configure a certificate storage location in TLS Settings.",
+        },
+      );
     }
     return containerName;
   }
@@ -222,7 +231,14 @@ export class TlsConfigService extends ConfigurationService {
     const providerStr = await this.get(TLS_SETTINGS_KEYS.DEFAULT_ACME_PROVIDER);
 
     if (!email) {
-      throw new Error("ACME email not configured");
+      throw new ValidationError(
+        ErrorCode.TLS_ACME_EMAIL_NOT_CONFIGURED,
+        "ACME email not configured",
+        {
+          resource: { type: "tlsConfig" },
+          action: "Configure a default ACME email in TLS Settings.",
+        },
+      );
     }
 
     const provider =

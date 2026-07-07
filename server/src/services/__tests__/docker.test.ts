@@ -1,5 +1,7 @@
 import { DockerContainerInfo } from "@mini-infra/types/containers";
+import { ErrorCode } from "@mini-infra/types";
 import NodeCache from "node-cache";
+import { ConflictError } from "../../lib/errors";
 
 const { mockDocker, mockCache, mockLogger, mockDockerConfigService, mockPrisma, MockDockerConstructor } = vi.hoisted(() => {
   const _mockDocker = {
@@ -7,6 +9,8 @@ const { mockDocker, mockCache, mockLogger, mockDockerConfigService, mockPrisma, 
     listContainers: vi.fn(),
     getContainer: vi.fn(),
     getEvents: vi.fn(),
+    listVolumes: vi.fn(),
+    getVolume: vi.fn(),
   };
   const _MockDockerConstructor = vi.fn().mockImplementation(function() { return _mockDocker; });
   return {
@@ -15,6 +19,7 @@ const { mockDocker, mockCache, mockLogger, mockDockerConfigService, mockPrisma, 
     mockCache: {
       get: vi.fn(),
       set: vi.fn(),
+      del: vi.fn(),
       flushAll: vi.fn(),
       keys: vi.fn().mockReturnValue([]),
       getStats: vi
@@ -39,7 +44,12 @@ const mockContainer = {
   inspect: vi.fn(),
 };
 
+const mockVolume = {
+  remove: vi.fn(),
+};
+
 mockDocker.getContainer.mockReturnValue(mockContainer);
+mockDocker.getVolume.mockReturnValue(mockVolume);
 
 // Mock dockerode before importing the service
 vi.mock("dockerode", () => ({
@@ -500,6 +510,47 @@ describe("DockerService", () => {
     });
   });
 
+  describe("removeNetwork", () => {
+    beforeEach(async () => {
+      dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+    });
+
+    it("throws a typed ConflictError (DOCKER_NETWORK_IN_USE) when containers are attached", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: false, reason: "has-containers" }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).rejects.toMatchObject({
+        statusCode: 409,
+        isOperational: true,
+        code: "DOCKER_NETWORK_IN_USE",
+        resource: { type: "dockerNetwork", id: "net-1" },
+      });
+    });
+
+    it("throws a typed NotFoundError (DOCKER_NETWORK_NOT_FOUND) when the network doesn't exist", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: false, reason: "not-found" }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).rejects.toMatchObject({
+        statusCode: 404,
+        isOperational: true,
+        code: "DOCKER_NETWORK_NOT_FOUND",
+        resource: { type: "dockerNetwork", id: "net-1" },
+      });
+    });
+
+    it("resolves when the network is removed successfully", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: true }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).resolves.toBeUndefined();
+    });
+  });
+
   describe("getContainer", () => {
     beforeEach(async () => {
       dockerService = DockerService.getInstance();
@@ -628,6 +679,52 @@ describe("DockerService", () => {
 
       await expect(dockerService.getContainer("test-id")).rejects.toThrow(
         "Docker API timeout",
+      );
+    });
+  });
+
+  describe("removeVolume", () => {
+    beforeEach(async () => {
+      dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+    });
+
+    // Canonical Phase 7 conflict case (docs/planning/not-shipped/error-handling-overhaul-plan.md):
+    // Docker returns 409 when a volume is still attached to a container.
+    it("throws a ConflictError (VOLUME_IN_USE) when the volume is in use", async () => {
+      const dockerError = Object.assign(new Error("volume is in use"), {
+        statusCode: 409,
+      });
+      mockVolume.remove.mockRejectedValue(dockerError);
+
+      const error = await dockerService
+        .removeVolume("my-volume")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).code).toBe(ErrorCode.VOLUME_IN_USE);
+      expect((error as ConflictError).statusCode).toBe(409);
+      expect((error as ConflictError).resource).toEqual({
+        type: "volume",
+        name: "my-volume",
+      });
+      expect((error as ConflictError).message).toContain("my-volume");
+    });
+
+    it("removes the volume and invalidates the cache on success", async () => {
+      mockVolume.remove.mockResolvedValue(undefined);
+
+      await dockerService.removeVolume("my-volume");
+
+      expect(mockDocker.getVolume).toHaveBeenCalledWith("my-volume");
+      expect(mockCache.del).toHaveBeenCalledWith("volumes");
+    });
+
+    it("throws when not connected", async () => {
+      (dockerService as any).connected = false;
+
+      await expect(dockerService.removeVolume("my-volume")).rejects.toThrow(
+        "Docker service not connected",
       );
     });
   });

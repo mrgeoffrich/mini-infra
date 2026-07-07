@@ -167,12 +167,9 @@ export function EgressRuleDialog({
       }
       onOpenChange(false);
       onSuccess?.();
-    } catch (error) {
-      toast.error(
-        `Failed to ${isEdit ? "update" : "create"} rule: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

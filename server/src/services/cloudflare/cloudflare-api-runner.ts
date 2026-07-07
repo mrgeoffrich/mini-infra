@@ -2,6 +2,8 @@ import Cloudflare from "cloudflare";
 import { CircuitBreaker } from "../circuit-breaker";
 import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
+import { CustomError } from "../../lib/error-handler";
+import { InternalError } from "../../lib/errors";
 
 export const CLOUDFLARE_TIMEOUT_MS = 10_000;
 
@@ -131,7 +133,10 @@ export class CloudflareApiRunner {
     const { label, logContext = {}, requireAccountId, timeoutMs } = ctx;
 
     if (this.circuitBreaker.isOpen()) {
-      throw new Error(`Circuit breaker is open, cannot execute ${label}`);
+      // Fail-fast defense against a repeatedly-failing upstream — an
+      // operational safeguard, not a request the caller can fix by retrying
+      // immediately.
+      throw new InternalError(`Circuit breaker is open, cannot execute ${label}`);
     }
 
     try {
@@ -145,6 +150,15 @@ export class CloudflareApiRunner {
       return result;
     } catch (error) {
       if (error instanceof MissingCredentialsError) {
+        throw error;
+      }
+      // A taxonomy error (ConflictError/NotFoundError/etc. — see
+      // server/src/lib/errors.ts) thrown by the callback already carries its
+      // own status/code/resource/action; pass it through untouched instead
+      // of laundering it into a generic ServiceError via toServiceError,
+      // which would collapse e.g. a 404 "zone not found" into a 502.
+      if (error instanceof CustomError && error.code) {
+        this.handleFailure(error, label, logContext);
         throw error;
       }
       this.handleFailure(error, label, logContext);

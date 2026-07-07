@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
 import { getLogger } from "../lib/logger-factory";
@@ -214,7 +214,7 @@ export default function createRegistryCredentialsRouter(
     }
   });
 
-  router.post("/:id/test", requirePermission(Permission.RegistryWrite), async (req, res) => {
+  router.post("/:id/test", requirePermission(Permission.RegistryWrite), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const testImage = req.body?.testImage;
 
@@ -231,9 +231,7 @@ export default function createRegistryCredentialsRouter(
       res.json({ success: true, data: result });
     } catch (error) {
       logger.error({ error, id: req.params.id }, "Failed to test credential");
-      res
-        .status(500)
-        .json({ success: false, error: "Failed to test credential" });
+      next(error);
     }
   });
 

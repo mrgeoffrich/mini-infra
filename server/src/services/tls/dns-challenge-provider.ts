@@ -8,6 +8,7 @@
 import { Logger } from "pino";
 import NodeCache from "node-cache";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import { CloudflareService } from "../cloudflare";
 
 // Small delay between TXT creation and telling Let's Encrypt to validate.
@@ -40,7 +41,7 @@ export class DnsChallenge01Provider {
    */
   async createChallenge(authz: { identifier: { value: string } }, challenge: { type: string; token: string }, keyAuthorization: string): Promise<void> {
     if (challenge.type !== "dns-01") {
-      throw new Error(`Unsupported challenge type: ${challenge.type}`);
+      throw new InternalError(`Unsupported challenge type: ${challenge.type}`);
     }
 
     const domain = authz.identifier.value;

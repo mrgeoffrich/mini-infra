@@ -6,6 +6,7 @@ import { EnvironmentValidationService, HAProxyEnvironmentContext } from '../envi
 import { cloudflareDNSService } from '../cloudflare';
 import { networkUtils } from '../network-utils';
 import { getLogger } from '../../lib/logger-factory';
+import { InternalError } from '../../lib/errors';
 
 const logger = getLogger("stacks", "stack-routing-manager");
 
@@ -30,7 +31,7 @@ export class StackRoutingManager {
   async getHAProxyContext(environmentId: string): Promise<HAProxyEnvironmentContext> {
     const ctx = await this.envValidation.getHAProxyEnvironmentContext(environmentId);
     if (!ctx) {
-      throw new Error(`HAProxy environment context not available for environment ${environmentId}`);
+      throw new InternalError(`HAProxy environment context not available for environment ${environmentId}`);
     }
     return ctx;
   }

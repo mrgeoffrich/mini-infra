@@ -552,11 +552,20 @@ async function fetchStorageSwitchPrecheck(
   return raw.data;
 }
 
+type ForgetProviderDetails = ForgetProviderResult & { referencingRowCount?: number };
+
 type ForgetProviderEnvelope = {
   success?: boolean;
   error?: string;
   message?: string;
-  data?: ForgetProviderResult & { referencingRowCount?: number };
+  /** Success-path payload — `{ success: true, data: {...} }`. */
+  data?: ForgetProviderDetails;
+  /**
+   * Error-path payload from the central error middleware's envelope
+   * (`server/src/lib/error-handler.ts`) — `409 PROVIDER_HAS_REFERENCING_ROWS`
+   * carries the referencing-row breakdown here, not in `data`.
+   */
+  details?: ForgetProviderDetails;
 };
 
 /** Throws an `Error` shaped exactly like the pre-migration `postForgetProvider`
@@ -566,11 +575,11 @@ function throwForgetError(
   status: number,
   code: string | undefined,
   message: string,
-  data: ForgetProviderEnvelope["data"],
+  data: ForgetProviderDetails | undefined,
 ): never {
   const err = new Error(message) as Error & {
     status?: number;
-    data?: ForgetProviderEnvelope["data"];
+    data?: ForgetProviderDetails;
     code?: string;
   };
   err.status = status;
@@ -601,7 +610,7 @@ async function postForgetProvider(
         err.status,
         body?.error ?? err.code,
         body?.message || body?.error || err.message,
-        body?.data,
+        body?.details,
       );
     }
     throw err;
@@ -651,6 +660,11 @@ export function useForgetStorageProvider() {
       queryClient.invalidateQueries({ queryKey: queryKeys.storage.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
+    // StorageForgetProviderButton.tsx always renders this mutation's errors
+    // itself — the initial probe's 409 drives the "needs-ack" warning card,
+    // and the force-confirm failure shows its own toast — so opt out of the
+    // global default to avoid a redundant second toast.
+    meta: { skipErrorToast: true },
   });
 }
 
@@ -773,6 +787,12 @@ export function useTestStorageLocationAccess(provider: StorageProviderId) {
       }
       return postTestGoogleDriveLocation(locationId);
     },
+    // Both callers (container-list.tsx's per-row test, GoogleDriveFolderInput's
+    // validate action) render this mutation's errors inline themselves (a
+    // tooltip / banner) as well as their own toast — opt out of the global
+    // default to avoid a redundant second toast (mirrors
+    // useForgetStorageProvider above).
+    meta: { skipErrorToast: true },
   });
 }
 

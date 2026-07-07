@@ -45,6 +45,7 @@ import {
   useUpdateAzureProviderConfig,
   useValidateAzureConnection,
 } from "@/hooks/use-storage-settings";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 
 const azureSettingsSchema = z.object({
   connectionString: z
@@ -136,13 +137,13 @@ export const AzureProviderConfig = React.memo(function AzureProviderConfig({
         "Azure Storage connection validated and saved successfully",
       );
     } catch (error) {
-      const errorMessage = (error as Error).message;
+      const errorMessage = getUserFacingError(error).description;
       setValidationState({
         isValidating: false,
         isSuccess: false,
         error: errorMessage,
       });
-      toast.error(`Failed to validate and save: ${errorMessage}`);
+      toastApiError(error, { title: "Failed to validate and save" });
     }
   };
 

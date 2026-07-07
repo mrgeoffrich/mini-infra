@@ -3,6 +3,7 @@ import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 import DockerService from '../../docker';
 import prisma from '../../../lib/prisma';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("haproxy", "remove-container-from-lb");
 
@@ -56,10 +57,10 @@ export class RemoveContainerFromLB {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for load balancer configuration');
+                throw new InternalError('HAProxy container ID is required for load balancer configuration');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend configuration');
+                throw new InternalError('Application name is required for backend configuration');
             }
 
             // Initialize HAProxy DataPlane client

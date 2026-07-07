@@ -52,12 +52,9 @@ function EnvFirewallToggle({
           ? "Egress firewall enabled — applying to running stacks"
           : "Egress firewall disabled",
       );
-    } catch (err) {
-      toast.error(
-        `Failed to update egress firewall: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Error toast handled globally by the mutation cache's default
+      // onError (see client/src/lib/query-client.ts).
     }
   };
 

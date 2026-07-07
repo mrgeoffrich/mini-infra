@@ -147,12 +147,10 @@ export function useDeleteVolume(options: UseDeleteVolumeOptions = {}) {
       }
     },
     onError: (error: Error, volumeName) => {
-      // Show error toast
-      toast.error("Failed to delete volume", {
-        description: error.message,
-      });
-
-      // Call optional error callback
+      // No local toast — the global `MutationCache.onError` (see
+      // `client/src/lib/query-client.ts`) shows an actionable toast for
+      // every mutation error by default (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md).
       if (onError) {
         onError(volumeName, error);
       }
@@ -210,12 +208,10 @@ export function useInspectVolume(options: UseInspectVolumeOptions = {}) {
       }
     },
     onError: (error: Error, volumeName) => {
-      // Show error toast
-      toast.error("Failed to start inspection", {
-        description: error.message,
-      });
-
-      // Call optional error callback
+      // No local toast — the global `MutationCache.onError` (see
+      // `client/src/lib/query-client.ts`) shows an actionable toast for
+      // every mutation error by default (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md).
       if (onError) {
         onError(volumeName, error);
       }
@@ -363,12 +359,10 @@ export function useFetchFileContents(volumeName: string, options: UseFetchFileCo
       }
     },
     onError: (error: Error) => {
-      // Show error toast
-      toast.error("Failed to fetch file contents", {
-        description: error.message,
-      });
-
-      // Call optional error callback
+      // No local toast — the global `MutationCache.onError` (see
+      // `client/src/lib/query-client.ts`) shows an actionable toast for
+      // every mutation error by default (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md).
       if (onError) {
         onError(volumeName, error);
       }

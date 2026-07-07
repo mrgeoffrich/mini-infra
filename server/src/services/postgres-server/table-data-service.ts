@@ -1,12 +1,15 @@
 import { Client } from "pg";
-import prisma from "../../lib/prisma";
-import { getLogger } from "../../lib/logger-factory";
-import postgresServerService from "./server-manager";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   DatabaseTableInfo,
   TableColumnInfo,
   TableDataRequest,
 } from "@mini-infra/types";
+import prisma from "../../lib/prisma";
+import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError, ValidationError } from "../../lib/errors";
+import { mapPostgresOperationError } from "./pg-error-mapper";
+import postgresServerService from "./server-manager";
 
 const logger = getLogger("db", "table-data-service");
 
@@ -40,7 +43,10 @@ export class TableDataService {
     });
 
     if (!database) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     // Get a client connection to the specific database
@@ -87,7 +93,11 @@ export class TableDataService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId }, "Failed to get table list");
-      throw new Error(`Failed to get table list: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to get table list",
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Verify the database is reachable and the admin credential has query privileges.",
+      });
     }
   }
 
@@ -111,7 +121,10 @@ export class TableDataService {
     });
 
     if (!database) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     const client = await this.getDatabaseClient(serverId, userId, database.databaseName);
@@ -152,7 +165,10 @@ export class TableDataService {
       await client.end();
 
       if (result.rows.length === 0) {
-        throw new Error("Table not found");
+        throw new NotFoundError(ErrorCode.PG_TABLE_NOT_FOUND, "Table not found", {
+          resource: { type: "postgresTable", name: tableName },
+          action: "Check the table name or refresh the tables list.",
+        });
       }
 
       const columns: TableColumnInfo[] = result.rows.map((row) => ({
@@ -195,65 +211,76 @@ export class TableDataService {
     });
 
     if (!database) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     // Get columns first
     const columns = await this.getTableColumns(serverId, userId, databaseId, tableName);
 
+    const { schema, table } = this.parseTableName(tableName);
+    const page = params.page || 1;
+    const pageSize = params.pageSize || 100;
+    const offset = (page - 1) * pageSize;
+
+    // Build the query with proper SQL injection prevention using escaped identifiers
+    const fullTableName = `${escapeIdentifier(schema)}.${escapeIdentifier(table)}`;
+
+    // Build a set of valid column names for validation
+    const validColumnNames = new Set(columns.map((col) => col.name));
+
+    // Build WHERE clause from filters. Validated up front (before opening a
+    // connection) so a bad filter/sort column never masquerades as a
+    // live-query failure below.
+    let whereClause = "";
+    const whereParams: unknown[] = [];
+    let paramCounter = 1;
+
+    if (params.filters && params.filters.length > 0) {
+      const filterClauses = params.filters.map((filter) => {
+        // Validate filter column exists in the table
+        if (!validColumnNames.has(filter.column)) {
+          throw new ValidationError(ErrorCode.PG_INVALID_COLUMN_NAME, `Invalid filter column: ${filter.column}`, {
+            resource: { type: "postgresTable", name: tableName },
+            action: "Filter on a column that exists on this table.",
+          });
+        }
+        const columnName = escapeIdentifier(filter.column);
+
+        if (filter.operator === "IS NULL") {
+          return `${columnName} IS NULL`;
+        } else if (filter.operator === "IS NOT NULL") {
+          return `${columnName} IS NOT NULL`;
+        } else {
+          whereParams.push(filter.value);
+          const placeholder = `$${paramCounter++}`;
+          return `${columnName} ${filter.operator} ${placeholder}`;
+        }
+      });
+
+      whereClause = `WHERE ${filterClauses.join(" AND ")}`;
+    }
+
+    // Build ORDER BY clause
+    let orderByClause = "";
+    if (params.sortColumn) {
+      // Validate sort column exists in the table
+      if (!validColumnNames.has(params.sortColumn)) {
+        throw new ValidationError(ErrorCode.PG_INVALID_COLUMN_NAME, `Invalid sort column: ${params.sortColumn}`, {
+          resource: { type: "postgresTable", name: tableName },
+          action: "Sort on a column that exists on this table.",
+        });
+      }
+      const sortColumn = escapeIdentifier(params.sortColumn);
+      const sortDirection = params.sortDirection === "desc" ? "DESC" : "ASC";
+      orderByClause = `ORDER BY ${sortColumn} ${sortDirection}`;
+    }
+
     const client = await this.getDatabaseClient(serverId, userId, database.databaseName);
 
     try {
-      const { schema, table } = this.parseTableName(tableName);
-      const page = params.page || 1;
-      const pageSize = params.pageSize || 100;
-      const offset = (page - 1) * pageSize;
-
-      // Build the query with proper SQL injection prevention using escaped identifiers
-      const fullTableName = `${escapeIdentifier(schema)}.${escapeIdentifier(table)}`;
-
-      // Build a set of valid column names for validation
-      const validColumnNames = new Set(columns.map((col) => col.name));
-
-      // Build WHERE clause from filters
-      let whereClause = "";
-      const whereParams: unknown[] = [];
-      let paramCounter = 1;
-
-      if (params.filters && params.filters.length > 0) {
-        const filterClauses = params.filters.map((filter) => {
-          // Validate filter column exists in the table
-          if (!validColumnNames.has(filter.column)) {
-            throw new Error(`Invalid filter column: ${filter.column}`);
-          }
-          const columnName = escapeIdentifier(filter.column);
-
-          if (filter.operator === "IS NULL") {
-            return `${columnName} IS NULL`;
-          } else if (filter.operator === "IS NOT NULL") {
-            return `${columnName} IS NOT NULL`;
-          } else {
-            whereParams.push(filter.value);
-            const placeholder = `$${paramCounter++}`;
-            return `${columnName} ${filter.operator} ${placeholder}`;
-          }
-        });
-
-        whereClause = `WHERE ${filterClauses.join(" AND ")}`;
-      }
-
-      // Build ORDER BY clause
-      let orderByClause = "";
-      if (params.sortColumn) {
-        // Validate sort column exists in the table
-        if (!validColumnNames.has(params.sortColumn)) {
-          throw new Error(`Invalid sort column: ${params.sortColumn}`);
-        }
-        const sortColumn = escapeIdentifier(params.sortColumn);
-        const sortDirection = params.sortDirection === "desc" ? "DESC" : "ASC";
-        orderByClause = `ORDER BY ${sortColumn} ${sortDirection}`;
-      }
-
       // Get total count
       const countQuery = `SELECT COUNT(*) as total FROM ${fullTableName} ${whereClause}`;
       const countResult = await client.query(countQuery, whereParams);
@@ -288,7 +315,11 @@ export class TableDataService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, databaseId, tableName }, "Failed to get table data");
-      throw new Error(`Failed to get table data: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to get table data",
+        resource: { type: "postgresTable", name: tableName },
+        action: "Verify the table is reachable and the admin credential has query privileges.",
+      });
     }
   }
 

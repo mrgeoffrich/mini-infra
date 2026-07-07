@@ -54,10 +54,6 @@ router.post(
       const settings = await updateSettings(parsed.data);
       res.json(settings);
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Invalid model")) {
-        res.status(400).json({ error: error.message });
-        return;
-      }
       next(error);
     }
   },

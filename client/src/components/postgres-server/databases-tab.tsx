@@ -120,13 +120,12 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
   const syncMutation = useSyncDatabases(serverId);
 
   const handleCreateDatabase = async (data: CreateManagedDatabaseRequest) => {
-    try {
-      await createMutation.mutateAsync(data);
-      toast.success("Database created successfully");
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to create database");
-      throw error;
-    }
+    // No try/catch: the global MutationCache.onError already shows an
+    // actionable toast for a real ApiRequestError, and letting the
+    // rejection propagate here is what tells the modal the save failed so
+    // it stays open.
+    await createMutation.mutateAsync(data);
+    toast.success("Database created successfully");
   };
 
   const handleDeleteDatabase = (databaseId: string, databaseName: string) => {
@@ -142,8 +141,9 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
       toast.success(`Database "${databaseToDelete.name}" deleted successfully`);
       setDeleteDialogOpen(false);
       setDatabaseToDelete(null);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to delete database");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -155,20 +155,19 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
   const handleChangeOwnerSubmit = async (data: ChangeDatabaseOwnerRequest) => {
     if (!databaseToChangeOwner) return;
 
-    try {
-      await changeOwnerMutation.mutateAsync({
-        databaseId: databaseToChangeOwner.id,
-        ownerData: data,
-      });
-      toast.success(
-        `Database owner changed to "${data.newOwner}" successfully`
-      );
-      setChangeOwnerDialogOpen(false);
-      setDatabaseToChangeOwner(null);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to change database owner");
-      throw error;
-    }
+    // No try/catch: the global MutationCache.onError already shows an
+    // actionable toast for a real ApiRequestError, and letting the
+    // rejection propagate here is what tells the modal the save failed so
+    // it stays open.
+    await changeOwnerMutation.mutateAsync({
+      databaseId: databaseToChangeOwner.id,
+      ownerData: data,
+    });
+    toast.success(
+      `Database owner changed to "${data.newOwner}" successfully`
+    );
+    setChangeOwnerDialogOpen(false);
+    setDatabaseToChangeOwner(null);
   };
 
   const handleSyncDatabases = async () => {
@@ -178,8 +177,9 @@ export function DatabasesTab({ serverId, serverName, availableUsers, serverHost,
         result.message ||
           `Synced successfully: ${result.data.created} created, ${result.data.updated} updated`,
       );
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to sync databases");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

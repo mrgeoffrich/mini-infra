@@ -6,6 +6,8 @@ import { getLogger } from '../../lib/logger-factory';
 import { DockerExecutorService } from '../../services/docker-executor';
 import { runJobPool } from '../../services/stacks/job-pool-spawner';
 import { jobPoolTriggerRequestSchema } from '../../services/nats/payload-schemas';
+import { ErrorCode } from '@mini-infra/types';
+import { ConflictError, NotFoundError } from '../../lib/errors';
 
 const log = getLogger('stacks', 'stacks-job-pool-routes');
 const router = Router();
@@ -83,22 +85,22 @@ router.post(
     }
 
     if (result.reason === 'service_not_found' || result.reason === 'stack_not_found') {
-      return res.status(404).json({
-        success: false,
-        code: result.reason.toUpperCase(),
-        message: result.message,
+      throw new NotFoundError(ErrorCode.STACK_JOB_POOL_NOT_FOUND, result.message, {
+        resource: { type: 'stackJobPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
       });
     }
 
     if (result.reason === 'stack_in_error') {
-      return res.status(409).json({
-        success: false,
-        code: 'STACK_IN_ERROR',
-        message: result.message,
+      throw new ConflictError(ErrorCode.STACK_JOB_POOL_STACK_IN_ERROR, result.message, {
+        resource: { type: 'stack', id: stackId },
+        action: 'Resolve the stack error (or re-apply) before triggering this job pool.',
       });
     }
 
-    // `spawn_failed` — only branch left
+    // `spawn_failed` — only branch left. A genuine internal/infra failure,
+    // not a user-actionable 4xx — a plain Error still reaches the central
+    // middleware's generic 500 path instead of a bespoke body here.
     log.error(
       {
         stackId,
@@ -108,11 +110,7 @@ router.post(
       },
       'Manual JobPool trigger spawn failed',
     );
-    return res.status(500).json({
-      success: false,
-      code: 'SPAWN_FAILED',
-      message: result.message,
-    });
+    throw new Error(result.message);
   }),
 );
 

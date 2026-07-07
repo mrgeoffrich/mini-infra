@@ -64,8 +64,9 @@ export default function VaultPolicyDetailPage() {
         },
       });
       toast.success("Draft saved");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Save failed");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -73,8 +74,9 @@ export default function VaultPolicyDetailPage() {
     try {
       await save();
       await publish.mutateAsync(policy.id);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Publish failed");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

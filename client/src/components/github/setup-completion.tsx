@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { IconCircleX, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useGitHubAppSetupComplete } from "@/hooks/use-github-app";
+import { getUserFacingError } from "@/lib/errors";
 
 interface SetupCompletionProps {
   code: string;
@@ -28,9 +29,9 @@ export function SetupCompletion({ code, onComplete }: SetupCompletionProps) {
             );
             onComplete();
           },
-          onError: (error) => {
-            toast.error(`Setup failed: ${error.message}`);
-          },
+          // No onError — the failure is rendered inline below instead of a
+          // toast (the mutation opts out of the global toast via
+          // meta.skipErrorToast in useGitHubAppSetupComplete).
         },
       );
     }
@@ -38,11 +39,12 @@ export function SetupCompletion({ code, onComplete }: SetupCompletionProps) {
   }, [code]);
 
   if (setupComplete.isError) {
+    const { description } = getUserFacingError(setupComplete.error);
     return (
       <Alert variant="destructive">
         <IconCircleX className="h-4 w-4" />
         <AlertDescription>
-          Failed to complete GitHub App setup: {setupComplete.error.message}
+          Failed to complete GitHub App setup: {description}
         </AlertDescription>
       </Alert>
     );

@@ -1,4 +1,6 @@
 import request from 'supertest';
+import { ErrorCode } from '@mini-infra/types';
+import { ConflictError } from '../lib/errors';
 
 const { mockEnvironmentManager, mockPrisma } = vi.hoisted(() => ({
   mockEnvironmentManager: {
@@ -232,8 +234,18 @@ describe('Environment API', () => {
     });
 
     it('should handle duplicate environment name', async () => {
-      const duplicateError = new Error('Unique constraint failed');
-      duplicateError.message = 'Unique constraint failed on the constraint: `environments_name_key`';
+      // The service (environment-manager.ts) is responsible for attributing
+      // a Prisma unique-constraint violation to a typed ConflictError — the
+      // route no longer string-matches "Unique constraint" itself, so the
+      // mock rejects with the same taxonomy error the real service throws.
+      const duplicateError = new ConflictError(
+        ErrorCode.ENVIRONMENT_NAME_EXISTS,
+        'An environment named "existing-environment" already exists.',
+        {
+          resource: { type: 'environment', name: 'existing-environment' },
+          action: 'Choose a different name, or edit the existing environment instead.',
+        },
+      );
 
       mockEnvironmentManager.createEnvironment.mockRejectedValue(duplicateError);
 
@@ -247,7 +259,9 @@ describe('Environment API', () => {
         .send(createRequest)
         .expect(409);
 
-      expect(response.body.error).toBe('Environment name already exists');
+      expect(response.body.error).toBe('ENVIRONMENT_NAME_EXISTS');
+      expect(response.body.message).toBe('An environment named "existing-environment" already exists.');
+      expect(response.body.resource).toEqual({ type: 'environment', name: 'existing-environment' });
     });
 
     it('should create environment with default local network type', async () => {
@@ -331,7 +345,7 @@ describe('Environment API', () => {
         .get('/api/environments/non-existent')
         .expect(404);
 
-      expect(response.body.error).toBe('Environment not found');
+      expect(response.body.error).toBe('ENVIRONMENT_NOT_FOUND');
     });
   });
 

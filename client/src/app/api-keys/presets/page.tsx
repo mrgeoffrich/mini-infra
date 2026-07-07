@@ -11,7 +11,13 @@ import {
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -41,47 +47,53 @@ export function PermissionPresetsPage() {
   const deleteMutation = useDeletePermissionPreset();
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<PermissionPresetRecord | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<PermissionPresetRecord | null>(null);
+  const [editTarget, setEditTarget] = useState<PermissionPresetRecord | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] =
+    useState<PermissionPresetRecord | null>(null);
 
-  const handleCreate = async (data: {
+  // Errors from these mutations are surfaced by the global mutation-error
+  // toast (client/src/lib/query-client.ts) — only the success path needs
+  // handling here, so the dialogs simply stay open on failure.
+  const handleCreate = (data: {
     name: string;
     description: string;
     permissions: string[];
   }) => {
-    try {
-      await createMutation.mutateAsync(data);
-      toast.success("Preset created successfully");
-      setCreateOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create preset");
-    }
+    createMutation.mutate(data, {
+      onSuccess: () => {
+        toast.success("Preset created successfully");
+        setCreateOpen(false);
+      },
+    });
   };
 
-  const handleEdit = async (data: {
+  const handleEdit = (data: {
     name: string;
     description: string;
     permissions: string[];
   }) => {
     if (!editTarget) return;
-    try {
-      await updateMutation.mutateAsync({ id: editTarget.id, ...data });
-      toast.success("Preset updated successfully");
-      setEditTarget(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to update preset");
-    }
+    updateMutation.mutate(
+      { id: editTarget.id, ...data },
+      {
+        onSuccess: () => {
+          toast.success("Preset updated successfully");
+          setEditTarget(null);
+        },
+      },
+    );
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (!deleteTarget) return;
-    try {
-      await deleteMutation.mutateAsync(deleteTarget.id);
-      toast.success("Preset deleted");
-      setDeleteTarget(null);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete preset");
-    }
+    deleteMutation.mutate(deleteTarget.id, {
+      onSuccess: () => {
+        toast.success("Preset deleted");
+        setDeleteTarget(null);
+      },
+    });
   };
 
   return (
@@ -110,7 +122,10 @@ export function PermissionPresetsPage() {
             </div>
           </div>
 
-          <Button onClick={() => setCreateOpen(true)} className="flex items-center gap-2">
+          <Button
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2"
+          >
             <IconPlus className="h-4 w-4" />
             New Preset
           </Button>
@@ -155,9 +170,13 @@ export function PermissionPresetsPage() {
               <IconKey className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium mb-1">No presets yet</h3>
               <p className="text-muted-foreground mb-4">
-                Create a preset to quickly apply permission sets when generating API keys.
+                Create a preset to quickly apply permission sets when generating
+                API keys.
               </p>
-              <Button onClick={() => setCreateOpen(true)} className="flex items-center gap-2">
+              <Button
+                onClick={() => setCreateOpen(true)}
+                className="flex items-center gap-2"
+              >
                 <IconPlus className="h-4 w-4" />
                 New Preset
               </Button>
@@ -201,17 +220,22 @@ export function PermissionPresetsPage() {
                     <CardDescription>{preset.description}</CardDescription>
                   )}
                 </CardHeader>
-                {!preset.permissions.includes("*") && preset.permissions.length > 0 && (
-                  <CardContent>
-                    <div className="flex flex-wrap gap-1">
-                      {preset.permissions.map((scope) => (
-                        <Badge key={scope} variant="outline" className="text-xs font-mono">
-                          {scope}
-                        </Badge>
-                      ))}
-                    </div>
-                  </CardContent>
-                )}
+                {!preset.permissions.includes("*") &&
+                  preset.permissions.length > 0 && (
+                    <CardContent>
+                      <div className="flex flex-wrap gap-1">
+                        {preset.permissions.map((scope) => (
+                          <Badge
+                            key={scope}
+                            variant="outline"
+                            className="text-xs font-mono"
+                          >
+                            {scope}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  )}
               </Card>
             ))}
           </div>
@@ -229,19 +253,27 @@ export function PermissionPresetsPage() {
       {/* Edit dialog */}
       <PresetFormDialog
         open={!!editTarget}
-        onOpenChange={(open) => { if (!open) setEditTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) setEditTarget(null);
+        }}
         preset={editTarget ?? undefined}
         onSubmit={handleEdit}
         isPending={updateMutation.isPending}
       />
 
       {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete preset?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{deleteTarget?.name}</strong>? This cannot be undone.
+              Are you sure you want to delete{" "}
+              <strong>{deleteTarget?.name}</strong>? This cannot be undone.
               Existing API keys using this preset won't be affected.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import supertest from 'supertest';
+import { errorHandler } from '../../lib/error-handler';
 
 const findUnique = vi.fn();
 
@@ -13,6 +14,9 @@ import { requireStack, getLoadedStack } from '../require-stack';
 function makeApp(mw: express.RequestHandler, handler: express.RequestHandler) {
   const app = express();
   app.get('/stacks/:stackId', mw, handler);
+  // The real central error middleware — requireStack() now throws a
+  // taxonomy NotFoundError instead of writing its own response body.
+  app.use(errorHandler);
   return app;
 }
 
@@ -25,7 +29,11 @@ describe('requireStack middleware', () => {
     findUnique.mockResolvedValue(null);
     const app = makeApp(requireStack(), (_req, res) => res.json({ ok: true }));
     const res = await supertest(app).get('/stacks/missing').expect(404);
-    expect(res.body).toEqual({ success: false, message: 'Stack not found' });
+    expect(res.body).toMatchObject({
+      error: 'STACK_NOT_FOUND',
+      message: 'Stack not found',
+      resource: { type: 'stack', id: 'missing' },
+    });
   });
 
   it('attaches the loaded stack for downstream handlers on hit', async () => {

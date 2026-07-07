@@ -89,3 +89,12 @@ Returns `{ phase, steps, totalSteps, errors, completedCount }`.
 | `refetchOnReconnect: true` | Manual reconnect handling | Catches any events missed during disconnection |
 
 Reference pattern: `src/hooks/useContainers.ts`
+
+## Error Handling
+
+API errors are presented through one helper — see [`src/lib/errors.ts`](src/lib/errors.ts).
+
+- **`toastApiError(err, { title? })`** turns any caught error (usually an `ApiRequestError`) into an actionable sonner toast via `getUserFacingError(err) → { title, description, action? }`. It reconciles the server's machine `code` vs. human `message` and falls back by HTTP status class.
+- **Mutation errors toast automatically.** A global `MutationCache.onError` on the app `QueryClient` ([`src/lib/query-client.ts`](src/lib/query-client.ts)) calls `toastApiError` by default (a 401 still redirects instead). So a `useMutation` usually needs **no** `onError` toast — delete hand-rolled ones.
+- **Opt out with `useMutation({ meta: { skipErrorToast: true } })`** when a site renders the error inline (a form field / banner) rather than a toast; use `getUserFacingError(err).description` for the inline text.
+- **Never `toast.error(err.message)`** (a bare server sentence). A `no-restricted-syntax` ESLint rule bans it — route it through `toastApiError` / `getUserFacingError`.

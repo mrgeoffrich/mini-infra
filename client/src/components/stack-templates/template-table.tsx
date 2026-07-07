@@ -87,10 +87,10 @@ export function TemplateTable({ templates }: TemplateTableProps) {
     try {
       await deleteMutation.mutateAsync(archiveTarget.id);
       toast.success(`Template "${archiveTarget.displayName}" deleted`);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to archive template",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (query-client.ts)
+      // already shows an actionable toast for this mutation's real
+      // ApiRequestError.
     } finally {
       setArchiveTarget(null);
     }

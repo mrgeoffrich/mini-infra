@@ -177,7 +177,8 @@ function CredentialsView() {
               navigator.clipboard.writeText(data.creds).catch(() => undefined);
               toast.success("Credentials minted and copied");
             },
-            onError: (err) => toast.error(err instanceof Error ? err.message : "Mint failed"),
+            // Failure is toasted by the global `MutationCache.onError` default
+            // (see `client/src/lib/query-client.ts`).
           });
         }}
         actionLabel="Mint"
@@ -286,8 +287,9 @@ function CreateAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       });
       onOpenChange(false);
       reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create account failed");
+    } catch {
+      // Failure is toasted by the global `MutationCache.onError` default
+      // (see `client/src/lib/query-client.ts`); just leave the dialog open.
     }
   };
 
@@ -359,8 +361,9 @@ function CreateCredentialDialog({ open, onOpenChange }: { open: boolean; onOpenC
       });
       onOpenChange(false);
       reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create credential failed");
+    } catch {
+      // Failure is toasted by the global `MutationCache.onError` default
+      // (see `client/src/lib/query-client.ts`); just leave the dialog open.
     }
   };
 
@@ -438,8 +441,9 @@ function CreateStreamDialog({ open, onOpenChange }: { open: boolean; onOpenChang
       });
       onOpenChange(false);
       reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create stream failed");
+    } catch {
+      // Failure is toasted by the global `MutationCache.onError` default
+      // (see `client/src/lib/query-client.ts`); just leave the dialog open.
     }
   };
 
@@ -537,8 +541,9 @@ function CreateConsumerDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       });
       onOpenChange(false);
       reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Create consumer failed");
+    } catch {
+      // Failure is toasted by the global `MutationCache.onError` default
+      // (see `client/src/lib/query-client.ts`); just leave the dialog open.
     }
   };
 

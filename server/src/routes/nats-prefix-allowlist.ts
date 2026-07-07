@@ -25,10 +25,10 @@ import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import {
   NatsPrefixAllowlistService,
-  NatsPrefixAllowlistError,
   toEntryInfo,
 } from "../services/nats/nats-prefix-allowlist-service";
-import { Permission } from "@mini-infra/types";
+import { NotFoundError } from "../lib/errors";
+import { ErrorCode, Permission } from "@mini-infra/types";
 
 const router = Router();
 
@@ -47,13 +47,10 @@ const updateBodySchema = z.object({
   allowedTemplateIds: z.array(z.string().min(1)).min(1),
 });
 
-function handleError(err: unknown, res: import("express").Response, next: import("express").NextFunction): void {
-  if (err instanceof NatsPrefixAllowlistError) {
-    res.status(err.statusCode).json({ success: false, error: err.message });
-    return;
-  }
-  next(err);
-}
+// `schema.parse()` throws the native `ZodError` on failure, which the central
+// middleware (`server/src/lib/error-handler.ts`) already maps to the standard
+// `VALIDATION_FAILED` 400 envelope with per-field `details` — no bespoke
+// parsing/response code needed here.
 
 // ─── GET / ────────────────────────────────────────────────────────────────
 
@@ -71,22 +68,17 @@ router.get(
 router.get(
   "/:prefix",
   requirePermission(Permission.NatsRead),
-  asyncHandler(async (req, res, next) => {
-    const parsed = prefixParamSchema.safeParse(req.params.prefix);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: "Invalid prefix parameter" });
-      return;
+  asyncHandler(async (req, res) => {
+    const prefix = prefixParamSchema.parse(req.params.prefix);
+    const entry = await allowlistService.get(prefix);
+    if (!entry) {
+      throw new NotFoundError(
+        ErrorCode.NATS_PREFIX_ALLOWLIST_NOT_FOUND,
+        `Allowlist entry for prefix '${prefix}' not found`,
+        { resource: { type: "natsPrefixAllowlistEntry", name: prefix } },
+      );
     }
-    try {
-      const entry = await allowlistService.get(parsed.data);
-      if (!entry) {
-        res.status(404).json({ success: false, error: `Prefix '${parsed.data}' not found in allowlist` });
-        return;
-      }
-      res.json({ success: true, data: toEntryInfo(entry) });
-    } catch (err) {
-      handleError(err, res, next);
-    }
+    res.json({ success: true, data: toEntryInfo(entry) });
   }),
 );
 
@@ -95,19 +87,11 @@ router.get(
 router.post(
   "/",
   requirePermission(Permission.NatsAdmin),
-  asyncHandler(async (req, res, next) => {
-    const parsed = upsertBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: "Validation error", issues: parsed.error.issues });
-      return;
-    }
+  asyncHandler(async (req, res) => {
+    const input = upsertBodySchema.parse(req.body);
     const userId = getUserId(req) ?? "unknown";
-    try {
-      const created = await allowlistService.create(parsed.data, userId);
-      res.status(201).json({ success: true, data: toEntryInfo(created) });
-    } catch (err) {
-      handleError(err, res, next);
-    }
+    const created = await allowlistService.create(input, userId);
+    res.status(201).json({ success: true, data: toEntryInfo(created) });
   }),
 );
 
@@ -116,24 +100,12 @@ router.post(
 router.put(
   "/:prefix",
   requirePermission(Permission.NatsAdmin),
-  asyncHandler(async (req, res, next) => {
-    const paramParsed = prefixParamSchema.safeParse(req.params.prefix);
-    if (!paramParsed.success) {
-      res.status(400).json({ success: false, error: "Invalid prefix parameter" });
-      return;
-    }
-    const bodyParsed = updateBodySchema.safeParse(req.body);
-    if (!bodyParsed.success) {
-      res.status(400).json({ success: false, error: "Validation error", issues: bodyParsed.error.issues });
-      return;
-    }
+  asyncHandler(async (req, res) => {
+    const prefix = prefixParamSchema.parse(req.params.prefix);
+    const input = updateBodySchema.parse(req.body);
     const userId = getUserId(req) ?? "unknown";
-    try {
-      const updated = await allowlistService.update(paramParsed.data, bodyParsed.data, userId);
-      res.json({ success: true, data: toEntryInfo(updated) });
-    } catch (err) {
-      handleError(err, res, next);
-    }
+    const updated = await allowlistService.update(prefix, input, userId);
+    res.json({ success: true, data: toEntryInfo(updated) });
   }),
 );
 
@@ -142,19 +114,11 @@ router.put(
 router.delete(
   "/:prefix",
   requirePermission(Permission.NatsAdmin),
-  asyncHandler(async (req, res, next) => {
-    const parsed = prefixParamSchema.safeParse(req.params.prefix);
-    if (!parsed.success) {
-      res.status(400).json({ success: false, error: "Invalid prefix parameter" });
-      return;
-    }
+  asyncHandler(async (req, res) => {
+    const prefix = prefixParamSchema.parse(req.params.prefix);
     const userId = getUserId(req) ?? "unknown";
-    try {
-      await allowlistService.remove(parsed.data, userId);
-      res.json({ success: true });
-    } catch (err) {
-      handleError(err, res, next);
-    }
+    await allowlistService.remove(prefix, userId);
+    res.json({ success: true });
   }),
 );
 

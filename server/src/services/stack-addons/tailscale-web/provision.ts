@@ -8,6 +8,7 @@ import {
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
 import { getLogger } from '../../../lib/logger-factory';
+import { InternalError } from '../../../lib/errors';
 import {
   TAILSCALE_SERVE_CONFIG_PATH,
   buildServeConfigArtifacts,
@@ -45,7 +46,7 @@ export async function provisionTailscaleWeb(
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;
   if (!tailscale) {
-    throw new Error(
+    throw new InternalError(
       'tailscale-web addon requires the Tailscale connected service to be configured',
     );
   }

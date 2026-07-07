@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import type { StackContainerConfig } from "@mini-infra/types";
+import { InternalError } from "../../lib/errors";
 import { getNatsControlPlaneService } from "./nats-control-plane-service";
 import { getVaultKVService } from "../vault/vault-kv-service";
 import {
@@ -74,25 +75,32 @@ export class NatsCredentialInjector {
     const hasNatsCreds = Object.values(dynamicEnv).some(
       (src) => src.kind === "nats-creds" || src.kind === "nats-creds-file",
     );
+    // Every guard below is a template/apply-pipeline contract violation: the
+    // stack-template layer is responsible for validating that a service
+    // declaring one of these dynamicEnv kinds has the matching binding
+    // (credential profile / stackId) before the injector ever runs. Reaching
+    // here without it means an earlier validation step was skipped — a
+    // genuine internal invariant, not something the caller can fix by
+    // retrying the same request.
     if (hasNatsCreds && !credentialId) {
-      throw new Error("Service declares nats-creds but no NATS credential profile is bound");
+      throw new InternalError("Service declares nats-creds but no NATS credential profile is bound");
     }
     // Only the file variant needs the stackId — it names the per-stack creds
     // file (`<stackId>.creds`). Plain `nats-creds` keeps working with no stackId
     // (generic app roles, JobPool runners) so its contract is unchanged.
     const hasNatsCredsFile = Object.values(dynamicEnv).some((src) => src.kind === "nats-creds-file");
     if (hasNatsCredsFile && !ctx.stackId) {
-      throw new Error("Service declares nats-creds-file but no stackId was provided to the injector");
+      throw new InternalError("Service declares nats-creds-file but no stackId was provided to the injector");
     }
 
     const hasSigner = Object.values(dynamicEnv).some((src) => src.kind === "nats-signer-seed");
     if (hasSigner && !ctx.stackId) {
-      throw new Error("Service declares nats-signer-seed but no stackId was provided to the injector");
+      throw new InternalError("Service declares nats-signer-seed but no stackId was provided to the injector");
     }
 
     const hasAccountPublic = Object.values(dynamicEnv).some((src) => src.kind === "nats-account-public");
     if (hasAccountPublic && !ctx.stackId) {
-      throw new Error("Service declares nats-account-public but no stackId was provided to the injector");
+      throw new InternalError("Service declares nats-account-public but no stackId was provided to the injector");
     }
 
     const service = getNatsControlPlaneService(this.prisma);
@@ -174,7 +182,7 @@ export class NatsCredentialInjector {
       select: { seedKvPath: true, publicKey: true },
     });
     if (!row) {
-      throw new Error(
+      throw new InternalError(
         `Service declares nats-signer-seed for signer '${signer}' but no NatsSigningKey row exists for stackId=${stackId} — has the apply phase materialized signers yet?`,
       );
     }
@@ -188,7 +196,7 @@ export class NatsCredentialInjector {
     const blob = await getVaultKVService().read(row.seedKvPath);
     const seed = blob && typeof blob.seed === "string" ? blob.seed : null;
     if (!seed) {
-      throw new Error(
+      throw new InternalError(
         `Vault KV at ${row.seedKvPath} does not contain a 'seed' field for signer '${signer}'`,
       );
     }
@@ -228,12 +236,12 @@ export class NatsCredentialInjector {
       },
     });
     if (!row) {
-      throw new Error(
+      throw new InternalError(
         `Service declares nats-account-public for signer '${signer}' but no NatsSigningKey row exists for stackId=${stackId} — has the apply phase materialized signers yet?`,
       );
     }
     if (!row.account.publicKey) {
-      throw new Error(
+      throw new InternalError(
         `NatsSigningKey for signer '${signer}' (stackId=${stackId}) is bound to an account with no publicKey set — has the account been applied?`,
       );
     }

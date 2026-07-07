@@ -1,6 +1,5 @@
 import express, {
   Request,
-  Response,
   RequestHandler,
 } from "express";
 import { z } from "zod";
@@ -45,17 +44,6 @@ const validateCloudflareConnectionSchema = z.object({
   api_token: z.string().optional(),
 });
 
-function respondValidationError(
-  res: Response,
-  error: z.ZodError,
-): Response {
-  return res.status(400).json({
-    success: false,
-    error: "Invalid request parameters",
-    details: error.flatten(),
-  });
-}
-
 function getUserId(req: Request): string {
   return getAuthenticatedUser(req)?.id || "system";
 }
@@ -98,19 +86,11 @@ export function createCloudflareSettingsRouter(
     "/",
     requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res) => {
-      const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
 
-      const validation = createCloudflareSettingSchema.safeParse(req.body);
-      if (!validation.success) {
-        logger.warn(
-          { requestId, userId, errors: validation.error.flatten() },
-          "Invalid Cloudflare settings request",
-        );
-        return respondValidationError(res, validation.error);
-      }
-
-      const { api_token, account_id } = validation.data;
+      // A thrown ZodError is handled centrally (server/src/lib/error-handler.ts
+      // maps it to VALIDATION_FAILED).
+      const { api_token, account_id } = createCloudflareSettingSchema.parse(req.body);
       await cloudflareConfigService.setApiToken(api_token, userId);
       await cloudflareConfigService.setAccountId(account_id, userId);
 
@@ -154,16 +134,9 @@ export function createCloudflareSettingsRouter(
       const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
 
-      const validation = updateCloudflareSettingSchema.safeParse(req.body);
-      if (!validation.success) {
-        logger.warn(
-          { requestId, userId, errors: validation.error.flatten() },
-          "Invalid Cloudflare settings update request",
-        );
-        return respondValidationError(res, validation.error);
-      }
-
-      const { api_token, account_id } = validation.data;
+      // A thrown ZodError is handled centrally (server/src/lib/error-handler.ts
+      // maps it to VALIDATION_FAILED).
+      const { api_token, account_id } = updateCloudflareSettingSchema.parse(req.body);
 
       if (api_token) {
         await cloudflareConfigService.setApiToken(api_token, userId);
@@ -219,19 +192,11 @@ export function createCloudflareSettingsRouter(
     "/test",
     requirePermission(Permission.SettingsWrite) as RequestHandler,
     asyncHandler(async (req, res, next) => {
-      const requestId = req.headers["x-request-id"] as string;
       const userId = getUserId(req);
 
-      const validation = validateCloudflareConnectionSchema.safeParse(req.body);
-      if (!validation.success) {
-        logger.warn(
-          { requestId, userId, errors: validation.error.flatten() },
-          "Invalid Cloudflare validation request",
-        );
-        return respondValidationError(res, validation.error);
-      }
-
-      const { api_token } = validation.data;
+      // A thrown ZodError is handled centrally (server/src/lib/error-handler.ts
+      // maps it to VALIDATION_FAILED).
+      const { api_token } = validateCloudflareConnectionSchema.parse(req.body);
 
       // When an api_token is supplied, we temporarily swap it in so that
       // `validate()` exercises the incoming token, then restore the

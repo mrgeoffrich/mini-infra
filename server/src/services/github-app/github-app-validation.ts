@@ -5,7 +5,12 @@ import {
   GitHubAppSettingResponse,
   GitHubAgentAccessStatus,
 } from "@mini-infra/types";
-import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppValidationContext } from "./github-app-constants";
+import {
+  GITHUB_API_BASE,
+  SETTING_KEYS,
+  GitHubAppValidationContext,
+  githubApiFailure,
+} from "./github-app-constants";
 import { GitHubAppAuth } from "./github-app-auth";
 import { GitHubAppOAuth } from "./github-app-oauth";
 
@@ -111,9 +116,10 @@ export class GitHubAppValidation {
 
       if (!repoResponse.ok) {
         const errorBody = await repoResponse.text();
-        throw new Error(
-          `GitHub App API test failed (${repoResponse.status}): ${errorBody}`,
-        );
+        // Caught by this method's own try/catch below and folded into a
+        // `ValidationResult` (never re-thrown to a caller) — the class here
+        // only matters for the eslint ban on raw `throw new Error`.
+        throw githubApiFailure("run GitHub App API test", repoResponse, errorBody);
       }
 
       const repoData = await repoResponse.json();

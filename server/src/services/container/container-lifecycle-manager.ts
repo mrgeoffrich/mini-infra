@@ -4,6 +4,7 @@ import DockerService from "../docker";
 import ContainerLabelManager from "./container-label-manager";
 import { DockerExecutorService } from "../docker-executor";
 import prisma from "../../lib/prisma";
+import { InternalError } from "../../lib/errors";
 import {
   ContainerConfig,
   DeploymentPort,
@@ -131,7 +132,7 @@ export class ContainerLifecycleManager {
   async createContainer(options: ContainerCreateOptions): Promise<string> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       getLogger("docker", "container-lifecycle-manager").info(
@@ -252,7 +253,7 @@ export class ContainerLifecycleManager {
   async startContainer(containerId: string): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       getLogger("docker", "container-lifecycle-manager").info({ containerId }, "Starting container");
@@ -283,7 +284,7 @@ export class ContainerLifecycleManager {
   ): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       getLogger("docker", "container-lifecycle-manager").info({ containerId, timeout }, "Stopping container");
@@ -324,7 +325,7 @@ export class ContainerLifecycleManager {
   ): Promise<void> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       getLogger("docker", "container-lifecycle-manager").info({ containerId, force }, "Removing container");
@@ -394,7 +395,7 @@ export class ContainerLifecycleManager {
   ): Promise<ContainerStatusInfo | null> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       const docker = ((this.dockerService as unknown as { docker: Docker }).docker);
@@ -555,7 +556,7 @@ export class ContainerLifecycleManager {
   ): Promise<OrphanedContainer[]> {
     try {
       if (!this.dockerService.isConnected()) {
-        throw new Error("Docker service is not connected");
+        throw new InternalError("Docker service is not connected");
       }
 
       getLogger("docker", "container-lifecycle-manager").info(

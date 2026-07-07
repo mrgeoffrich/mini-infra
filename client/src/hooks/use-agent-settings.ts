@@ -5,7 +5,6 @@ import {
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   AgentSettingsResponse,
@@ -160,9 +159,6 @@ export function useStartAgentSidecar(): UseMutationResult<
         method: "POST",
         correlationIdPrefix: "agent-sidecar-restart",
       }),
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
   });
 }
 

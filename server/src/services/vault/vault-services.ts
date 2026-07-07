@@ -3,6 +3,7 @@ import {
   getOperatorPassphraseService,
   OperatorPassphraseService,
 } from "../../lib/operator-passphrase-service";
+import { InternalError } from "../../lib/errors";
 import { VaultStateService } from "./vault-state-service";
 import { VaultAdminService } from "./vault-admin-service";
 import { VaultHealthWatcher } from "./vault-health-watcher";
@@ -34,7 +35,7 @@ export function initVaultServices(prisma: PrismaClient): VaultServices {
 
 export function getVaultServices(): VaultServices {
   if (!services) {
-    throw new Error(
+    throw new InternalError(
       "Vault services have not been initialised — call initVaultServices(prisma) first",
     );
   }

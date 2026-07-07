@@ -207,12 +207,9 @@ export function ModeToggle({ policy, onOpenPromoteWizard }: ModeToggleProps) {
       });
       toast.success("Policy switched to Detect mode");
       setConfirmDetectOpen(false);
-    } catch (err) {
-      toast.error(
-        `Failed to switch mode: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
@@ -302,12 +299,9 @@ export function DefaultActionToggle({ policy }: DefaultActionToggleProps) {
       );
       setConfirmOpen(false);
       setPendingAction(null);
-    } catch (err) {
-      toast.error(
-        `Failed to update default action: ${
-          err instanceof Error ? err.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

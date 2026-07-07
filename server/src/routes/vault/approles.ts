@@ -10,7 +10,8 @@ import { getLogger } from "../../lib/logger-factory";
 import { VaultAppRoleService } from "../../services/vault/vault-approle-service";
 import { getVaultServices } from "../../services/vault/vault-services";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent, Permission } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission, ErrorCode } from "@mini-infra/types";
+import { NotFoundError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-approles-routes");
 
@@ -56,17 +57,10 @@ router.post(
   "/",
   requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid AppRole payload",
-        details: parsed.error.issues,
-      });
-    }
     try {
+      const parsed = createSchema.parse(req.body);
       const user = getAuthenticatedUser(req);
-      const approle = await getService().create(parsed.data, user?.id ?? "system");
+      const approle = await getService().create(parsed, user?.id ?? "system");
       res.status(201).json({ success: true, data: approle });
     } catch (err) {
       next(err);
@@ -81,7 +75,11 @@ router.get(
     try {
       const approle = await getService().get(String(req.params.id));
       if (!approle) {
-        return res.status(404).json({ success: false, message: "Not found" });
+        throw new NotFoundError(
+          ErrorCode.VAULT_APPROLE_NOT_FOUND,
+          `Vault AppRole ${req.params.id} not found`,
+          { resource: { type: "vaultAppRole", id: String(req.params.id) } },
+        );
       }
       res.json({ success: true, data: approle });
     } catch (err) {
@@ -107,16 +105,9 @@ router.put(
   "/:id",
   requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = updateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid AppRole update",
-        details: parsed.error.issues,
-      });
-    }
     try {
-      const approle = await getService().update(String(req.params.id), parsed.data);
+      const parsed = updateSchema.parse(req.body);
+      const approle = await getService().update(String(req.params.id), parsed);
       res.json({ success: true, data: approle });
     } catch (err) {
       next(err);

@@ -22,7 +22,9 @@ import { CloudflareService } from "../services/cloudflare";
 import { StorageService } from "../services/storage/storage-service";
 import { HAProxyService } from "../services/haproxy/haproxy-service";
 import { DockerExecutorService } from "../services/docker-executor";
-import { EligibleContainersResponse, CreateManualFrontendRequest, UpdateManualFrontendRequest, ManualFrontendResponse, DeleteManualFrontendResponse, HAProxyFrontendInfo, Channel, ServerEvent, Permission } from "@mini-infra/types";
+import { EligibleContainersResponse, CreateManualFrontendRequest, UpdateManualFrontendRequest, ManualFrontendResponse, DeleteManualFrontendResponse, HAProxyFrontendInfo, Channel, ServerEvent, Permission, ErrorCode } from "@mini-infra/types";
+import { asyncHandler } from "../lib/async-handler";
+import { ConflictError, NotFoundError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("haproxy", "manual-haproxy-frontends");
 const router = express.Router();
@@ -123,7 +125,10 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   });
 
   if (!environment) {
-    throw new Error(`Environment not found: ${environmentId}`);
+    throw new NotFoundError(ErrorCode.HAPROXY_ENVIRONMENT_NOT_FOUND, `Environment not found: ${environmentId}`, {
+      resource: { type: "environment", id: environmentId },
+      action: "Choose an existing environment.",
+    });
   }
 
   const haproxyStack = await prisma.stack.findFirst({
@@ -131,7 +136,14 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   });
 
   if (!haproxyStack) {
-    throw new Error(`HAProxy stack not found for environment: ${environmentId}`);
+    throw new NotFoundError(
+      ErrorCode.HAPROXY_STACK_NOT_FOUND,
+      `HAProxy stack not found for environment: ${environmentId}`,
+      {
+        resource: { type: "environment", id: environmentId },
+        action: "Deploy the HAProxy stack for this environment first.",
+      },
+    );
   }
 
   // Find HAProxy container using Docker
@@ -150,9 +162,13 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
   });
 
   if (!haproxyContainer) {
-    throw new Error(
-      `No running HAProxy container found for environment: ${environment.name}. ` +
-      `Ensure HAProxy is deployed and running.`
+    throw new NotFoundError(
+      ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE,
+      `No running HAProxy container found for environment: ${environment.name}. Ensure HAProxy is deployed and running.`,
+      {
+        resource: { type: "haproxyContainer", id: environmentId, name: environment.name },
+        action: "Ensure HAProxy is deployed and running for this environment.",
+      },
     );
   }
 
@@ -183,45 +199,36 @@ async function getHAProxyClient(environmentId: string): Promise<{ client: HAProx
 router.get(
   "/containers",
   requirePermission(Permission.HaproxyRead) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const { environmentId } = req.query;
+  asyncHandler(async (req: Request, res: Response) => {
+    const { environmentId } = req.query;
 
-      if (!environmentId || typeof environmentId !== "string") {
-        return res.status(400).json({
-          success: false,
-          error: "environmentId query parameter is required",
-        });
-      }
-
-      // Validate CUID format
-      if (!z.string().cuid().safeParse(environmentId).success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid environment ID format",
-        });
-      }
-
-      const result = await manualFrontendManager.getEligibleContainers(
-        environmentId,
-        prisma
-      );
-
-      const response: EligibleContainersResponse = {
-        success: true,
-        data: result,
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get eligible containers");
-      res.status(500).json({
+    if (!environmentId || typeof environmentId !== "string") {
+      return res.status(400).json({
         success: false,
-        error: "Failed to get eligible containers",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "environmentId query parameter is required",
       });
     }
-  }
+
+    // Validate CUID format
+    if (!z.string().cuid().safeParse(environmentId).success) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid environment ID format",
+      });
+    }
+
+    const result = await manualFrontendManager.getEligibleContainers(
+      environmentId,
+      prisma
+    );
+
+    const response: EligibleContainersResponse = {
+      success: true,
+      data: result,
+    };
+
+    res.json(response);
+  })
 );
 
 /**
@@ -231,7 +238,7 @@ router.get(
 router.post(
   "/",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
     let guardedEnvironmentId: string | null = null;
     try {
       // Validate request body
@@ -252,10 +259,14 @@ router.post(
 
       // Concurrency guard — set BEFORE any await to prevent race conditions
       if (settingUpFrontends.has(request.environmentId)) {
-        return res.status(409).json({
-          success: false,
-          message: "Manual frontend setup already in progress for this environment",
-        });
+        throw new ConflictError(
+          ErrorCode.HAPROXY_SETUP_IN_PROGRESS,
+          "Manual frontend setup already in progress for this environment",
+          {
+            resource: { type: "environment", id: request.environmentId },
+            action: "Wait for the in-progress setup to finish before retrying.",
+          },
+        );
       }
       guardedEnvironmentId = request.environmentId;
       settingUpFrontends.add(guardedEnvironmentId);
@@ -325,18 +336,9 @@ router.post(
     } catch (error) {
       if (guardedEnvironmentId) settingUpFrontends.delete(guardedEnvironmentId);
       logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to start manual frontend setup");
-
-      let statusCode = 500;
-      if ((error instanceof Error ? error.message : String(error)).includes("not found")) statusCode = 404;
-      else if ((error instanceof Error ? error.message : String(error)).includes("Invalid")) statusCode = 400;
-
-      res.status(statusCode).json({
-        success: false,
-        error: "Failed to start manual frontend setup",
-        message: (error instanceof Error ? error.message : String(error)),
-      });
+      throw error;
     }
-  }
+  })
 );
 
 /**
@@ -346,47 +348,35 @@ router.post(
 router.get(
   "/:frontendName",
   requirePermission(Permission.HaproxyRead) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (frontend.frontendType !== "manual") {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend is not a manual frontend",
-        });
-      }
-
-      const response: ManualFrontendResponse = {
-        success: true,
-        data: serializeFrontend(frontend),
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to fetch manual frontend"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch manual frontend",
-        message: (error instanceof Error ? error.message : String(error)),
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
       });
     }
-  }
+
+    if (frontend.frontendType !== "manual") {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Frontend is not a manual frontend",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    const response: ManualFrontendResponse = {
+      success: true,
+      data: serializeFrontend(frontend),
+    };
+
+    res.json(response);
+  })
 );
 
 /**
@@ -396,87 +386,72 @@ router.get(
 router.put(
   "/:frontendName",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Validate request body
-      const validationResult = updateManualFrontendSchema.safeParse(req.body);
+    // Validate request body
+    const validationResult = updateManualFrontendSchema.safeParse(req.body);
 
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: validationResult.error.issues,
-        });
-      }
-
-      const updates: UpdateManualFrontendRequest = validationResult.data;
-
-      // Get frontend to determine environment
-      const existingFrontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
-
-      if (!existingFrontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (existingFrontend.frontendType !== "manual") {
-        return res.status(400).json({
-          success: false,
-          error: "Cannot update deployment frontend via manual frontend API",
-        });
-      }
-
-      if (!existingFrontend.environmentId) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend has no environment ID",
-        });
-      }
-
-      // Get HAProxy client
-      const { client: haproxyClient } = await getHAProxyClient(existingFrontend.environmentId);
-
-      // Update manual frontend
-      const frontend = await manualFrontendManager.updateManualFrontend(
-        frontendName,
-        updates,
-        haproxyClient,
-        prisma
-      );
-
-      const response: ManualFrontendResponse = {
-        success: true,
-        data: serializeFrontend(frontend as SerializableFrontend),
-        message: "Manual frontend updated successfully",
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to update manual frontend"
-      );
-
-      let statusCode = 500;
-      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
-        statusCode = 404;
-      } else if ((error instanceof Error ? error.message : String(error)).includes("already in use")) {
-        statusCode = 409;
-      }
-
-      res.status(statusCode).json({
+    if (!validationResult.success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to update manual frontend",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Validation failed",
+        details: validationResult.error.issues,
       });
     }
-  }
+
+    const updates: UpdateManualFrontendRequest = validationResult.data;
+
+    // Get frontend to determine environment
+    const existingFrontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
+
+    if (!existingFrontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+        action: "Refresh the page — the frontend may have already been removed.",
+      });
+    }
+
+    if (existingFrontend.frontendType !== "manual") {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Cannot update deployment frontend via manual frontend API",
+        {
+          resource: { type: "haproxyFrontend", name: frontendName },
+          action: "Deployment-managed frontends are updated by redeploying the application/stack.",
+        },
+      );
+    }
+
+    if (!existingFrontend.environmentId) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Frontend has no environment ID",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Get HAProxy client
+    const { client: haproxyClient } = await getHAProxyClient(existingFrontend.environmentId);
+
+    // Update manual frontend
+    const frontend = await manualFrontendManager.updateManualFrontend(
+      frontendName,
+      updates,
+      haproxyClient,
+      prisma
+    );
+
+    const response: ManualFrontendResponse = {
+      success: true,
+      data: serializeFrontend(frontend as SerializableFrontend),
+      message: "Manual frontend updated successfully",
+    };
+
+    res.json(response);
+  })
 );
 
 /**
@@ -486,72 +461,57 @@ router.put(
 router.delete(
   "/:frontendName",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Get frontend to determine environment
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
+    // Get frontend to determine environment
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (frontend.frontendType !== "manual") {
-        return res.status(403).json({
-          success: false,
-          error: "Cannot delete deployment frontend via manual frontend API",
-        });
-      }
-
-      if (!frontend.environmentId) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend has no environment ID",
-        });
-      }
-
-      // Get HAProxy client
-      const { client: haproxyClient } = await getHAProxyClient(frontend.environmentId);
-
-      // Delete manual frontend
-      await manualFrontendManager.deleteManualFrontend(
-        frontendName,
-        haproxyClient,
-        prisma
-      );
-
-      const response: DeleteManualFrontendResponse = {
-        success: true,
-        message: "Manual frontend deleted successfully",
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to delete manual frontend"
-      );
-
-      let statusCode = 500;
-      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
-        statusCode = 404;
-      } else if ((error instanceof Error ? error.message : String(error)).includes("Cannot delete deployment frontend")) {
-        statusCode = 403;
-      }
-
-      res.status(statusCode).json({
-        success: false,
-        error: "Failed to delete manual frontend",
-        message: (error instanceof Error ? error.message : String(error)),
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+        action: "Refresh the page — the frontend may have already been removed.",
       });
     }
-  }
+
+    if (frontend.frontendType !== "manual") {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Cannot delete deployment frontend via manual frontend API",
+        {
+          resource: { type: "haproxyFrontend", name: frontendName },
+          action: "Deployment-managed frontends are removed by stopping or removing the application/stack.",
+        },
+      );
+    }
+
+    if (!frontend.environmentId) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Frontend has no environment ID",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Get HAProxy client
+    const { client: haproxyClient } = await getHAProxyClient(frontend.environmentId);
+
+    // Delete manual frontend
+    await manualFrontendManager.deleteManualFrontend(
+      frontendName,
+      haproxyClient,
+      prisma
+    );
+
+    const response: DeleteManualFrontendResponse = {
+      success: true,
+      message: "Manual frontend deleted successfully",
+    };
+
+    res.json(response);
+  })
 );
 
 export default router;

@@ -392,12 +392,21 @@ describe('NetworkManager', () => {
       await expect(manager.connect('container-1', 'net1')).rejects.toThrow('internal error');
     });
 
-    it('rethrows when the network itself does not exist (404 on inspect)', async () => {
+    it('throws a typed NotFoundError (DOCKER_NETWORK_NOT_FOUND) when the network itself does not exist (404 on inspect)', async () => {
+      // Phase 4 of the error-handling overhaul: this used to rethrow the raw
+      // dockerode error, which isn't `isOperational` — the central
+      // middleware mapped it to an unclassified 500 instead of a 404, even
+      // though the network's absence is unambiguous at this point.
       const handle = makeNetworkHandle({ inspect: vi.fn().mockRejectedValue(dockerError(404)) });
       const docker = makeMockDocker({ net1: handle });
       const manager = makeManager(docker);
 
-      await expect(manager.connect('container-1', 'net1')).rejects.toMatchObject({ statusCode: 404 });
+      await expect(manager.connect('container-1', 'net1')).rejects.toMatchObject({
+        statusCode: 404,
+        isOperational: true,
+        code: 'DOCKER_NETWORK_NOT_FOUND',
+        resource: { type: 'dockerNetwork', id: 'net1' },
+      });
     });
   });
 

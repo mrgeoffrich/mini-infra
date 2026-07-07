@@ -18,7 +18,8 @@ import {
   IconArrowLeft,
 } from "@tabler/icons-react";
 import { ApiRoute } from "@mini-infra/types";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
+import { getUserFacingError } from "@/lib/errors";
 
 export function PasswordRecoveryPage() {
   const navigate = useNavigate();
@@ -46,12 +47,7 @@ export function PasswordRecoveryPage() {
       setTokenRequested(true);
       setPhase("reset");
     } catch (err) {
-      // /auth/recover/* responds with `{ error: "<human message>" }` (no
-      // `.message` field) — the human-readable text lands in
-      // ApiRequestError.code, not `.message`.
-      setError(
-        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
-      );
+      setError(getUserFacingError(err).description);
     } finally {
       setIsSubmitting(false);
     }
@@ -76,9 +72,7 @@ export function PasswordRecoveryPage() {
 
       navigate("/login");
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError ? err.code : "An unexpected error occurred",
-      );
+      setError(getUserFacingError(err).description);
     } finally {
       setIsSubmitting(false);
     }

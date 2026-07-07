@@ -8,9 +8,11 @@
 
 import * as cron from "node-cron";
 import { Logger } from "pino";
+import { ErrorCode } from "@mini-infra/types";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
 import { withOperation } from "../../lib/logging-context";
+import { ValidationError } from "../../lib/errors";
 import { CertificateLifecycleManager } from "./certificate-lifecycle-manager";
 
 interface RenewalCheckResult {
@@ -50,7 +52,14 @@ export class CertificateRenewalScheduler {
     const schedule = cronExpression || "0 2 * * *";
 
     if (!cron.validate(schedule)) {
-      throw new Error(`Invalid cron expression: ${schedule}`);
+      throw new ValidationError(
+        ErrorCode.TLS_INVALID_RENEWAL_CRON,
+        `Invalid cron expression: ${schedule}`,
+        {
+          resource: { type: "tlsRenewalSchedule" },
+          action: "Enter a valid 5-field cron expression (e.g. \"0 2 * * *\").",
+        },
+      );
     }
 
     if (this.cronJob) {

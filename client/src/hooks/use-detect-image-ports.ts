@@ -47,8 +47,13 @@ async function validateImage({
     return { status: "error", message: data.error ?? "Failed to inspect image" };
   } catch (err) {
     if (err instanceof ApiRequestError) {
-      const body = err.body as DetectPortsResponse | undefined;
-      const message = body?.error ?? `Failed to inspect image (${err.status})`;
+      // The route now throws taxonomy errors (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md), so the
+      // envelope's `message` is the human string (and `err.code`, which
+      // reads `body.error`, is now a stable machine code rather than human
+      // text) — `apiFetch`'s `extractMessage` already resolves `err.message`
+      // to `body.message`, falling back to the HTTP status text.
+      const message = err.message || `Failed to inspect image (${err.status})`;
       if (err.status === 404) {
         return { status: "not-found", message };
       }

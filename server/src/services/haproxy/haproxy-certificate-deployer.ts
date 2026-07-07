@@ -1,5 +1,7 @@
 import { getLogger } from "../../lib/logger-factory";
 import { PrismaClient } from "../../generated/prisma/client";
+import { ErrorCode } from "@mini-infra/types";
+import { NotFoundError, ValidationError } from "../../lib/errors";
 import { StorageCertificateStore } from "../tls/storage-certificate-store";
 import { TlsConfigService } from "../tls/tls-config";
 import { StorageService } from "../storage/storage-service";
@@ -72,12 +74,24 @@ export class HaproxyCertificateDeployer {
         logger.warn({ certId }, "Certificate not found, skipping");
         return null;
       }
-      throw new Error(`Certificate not found: ${certId}`);
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_CERTIFICATE_NOT_FOUND,
+        `Certificate not found: ${certId}`,
+        {
+          resource: { type: "tlsCertificate", id: certId },
+          action: "Choose an existing certificate or issue a new one.",
+        },
+      );
     }
 
     if (requireActive && certificate.status !== "ACTIVE") {
-      throw new Error(
-        `Certificate is not active: ${certificate.status}`
+      throw new ValidationError(
+        ErrorCode.HAPROXY_CERTIFICATE_NOT_READY,
+        `Certificate is not active: ${certificate.status}`,
+        {
+          resource: { type: "tlsCertificate", id: certId },
+          action: "Wait for the certificate to finish issuing before deploying it.",
+        },
       );
     }
 
@@ -86,8 +100,13 @@ export class HaproxyCertificateDeployer {
         logger.warn({ certId }, "Certificate blob name not found, skipping");
         return null;
       }
-      throw new Error(
-        `Certificate blob name not found for certificate: ${certId}`
+      throw new ValidationError(
+        ErrorCode.HAPROXY_CERTIFICATE_NOT_READY,
+        `Certificate blob name not found for certificate: ${certId}`,
+        {
+          resource: { type: "tlsCertificate", id: certId },
+          action: "Wait for the certificate to finish provisioning before deploying it.",
+        },
       );
     }
 
@@ -104,9 +123,14 @@ export class HaproxyCertificateDeployer {
     try {
       storageBackend = await StorageService.getInstance(prisma).getActiveBackend();
     } catch (err) {
-      throw new Error(
-        `No storage provider configured (${err instanceof Error ? err.message : "unknown"}). Configure a provider before deploying certificates.`,
-        { cause: err },
+      throw new ValidationError(
+        ErrorCode.HAPROXY_STORAGE_NOT_CONFIGURED,
+        `No storage provider configured (${err instanceof Error ? err.message : "unknown"}).`,
+        {
+          resource: { type: "storageProvider" },
+          action: "Configure a storage provider before deploying certificates.",
+          details: err instanceof Error ? err.message : String(err),
+        },
       );
     }
 

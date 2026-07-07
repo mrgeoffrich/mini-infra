@@ -208,12 +208,9 @@ export default function PostgresRestorePage() {
       setRestoreDestination("overwrite");
       setNewDatabaseName("");
       setActiveTab("history"); // Switch to history tab to show progress
-    } catch (error) {
-      toast.error(
-        `Failed to start restore operation: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

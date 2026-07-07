@@ -4,6 +4,7 @@ import type {
   AddonManifest,
   AddonMergeStrategy,
 } from '@mini-infra/types';
+import { InternalError } from '../../lib/errors';
 
 /**
  * Manifest paired with the zod schema used to validate user-supplied addon
@@ -33,14 +34,14 @@ export class AddonRegistry {
 
   register(addon: RegisteredAddon): void {
     if (this.addons.has(addon.manifest.id)) {
-      throw new Error(`Addon "${addon.manifest.id}" is already registered`);
+      throw new InternalError(`Addon "${addon.manifest.id}" is already registered`);
     }
     this.addons.set(addon.manifest.id, addon);
   }
 
   registerMergeStrategy(strategy: AddonMergeStrategy): void {
     if (this.mergeStrategies.has(strategy.kind)) {
-      throw new Error(
+      throw new InternalError(
         `Merge strategy for kind "${strategy.kind}" is already registered`,
       );
     }

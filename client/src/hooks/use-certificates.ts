@@ -84,9 +84,7 @@ export function useCreateCertificate() {
       queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificates });
       toast.success(`Certificate issued for ${data.primaryDomain}`);
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to issue certificate");
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 
@@ -101,9 +99,7 @@ export function useRenewCertificate(id: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.tls.renewals(id) });
       toast.success(`Certificate renewal initiated for ${data.primaryDomain}`);
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to renew certificate");
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 
@@ -116,9 +112,7 @@ export function useRevokeCertificate(id: string) {
       queryClient.invalidateQueries({ queryKey: queryKeys.tls.certificates });
       toast.success("Certificate revoked successfully");
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to revoke certificate");
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 

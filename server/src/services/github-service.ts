@@ -5,12 +5,15 @@ import {
   ConnectivityStatusType,
   CreateGitHubIssueRequest,
   GitHubIssue,
+  ErrorCode,
 } from "@mini-infra/types";
 import { ConfigurationService } from "./configuration-base";
 import { toServiceError } from "../lib/service-error-mapper";
 import { getLogger } from "../lib/logger-factory";
 import { Octokit } from "@octokit/rest";
 import { CircuitBreaker, ErrorMapper } from "./circuit-breaker";
+import { CustomError } from "../lib/error-handler";
+import { ValidationError } from "../lib/errors";
 
 /**
  * GitHub-specific error mappers for the circuit breaker.
@@ -305,7 +308,14 @@ export class GitHubService extends ConfigurationService {
       );
 
       if (!personalAccessToken || !repoOwner || !repoName) {
-        throw new Error("GitHub not configured. Please configure settings first.");
+        throw new ValidationError(
+          ErrorCode.GITHUB_NOT_CONFIGURED,
+          "GitHub not configured. Please configure settings first.",
+          {
+            resource: { type: "githubConfig" },
+            action: "Configure GitHub settings before submitting bug reports.",
+          },
+        );
       }
 
       // Create GitHub client
@@ -372,6 +382,14 @@ export class GitHubService extends ConfigurationService {
         }),
         "Failed to create GitHub issue",
       );
+
+      // A taxonomy error (e.g. the GITHUB_NOT_CONFIGURED check above) already
+      // carries its own status/code/resource/action — pass it through
+      // untouched instead of laundering it into a generic ServiceError via
+      // toServiceError (mirrors CloudflareApiRunner.run()).
+      if (error instanceof CustomError && error.code) {
+        throw error;
+      }
 
       throw toServiceError(error, "github");
     }

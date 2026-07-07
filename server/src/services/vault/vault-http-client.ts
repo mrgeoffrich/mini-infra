@@ -1,6 +1,20 @@
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { CustomError } from "../../lib/error-handler";
 
 const log = getLogger("platform", "vault-http-client");
+
+/**
+ * Map the raw upstream Vault HTTP status to the status Mini Infra's own API
+ * surfaces. Valid 4xx statuses pass through unchanged (Vault's client-error
+ * semantics generally line up with ours); anything else (5xx, or `0` for a
+ * network-level failure / circuit-breaker trip) becomes a 502 — Vault is
+ * being treated as an external upstream dependency.
+ */
+function statusForVaultHttpError(vaultStatus: number): number {
+  if (vaultStatus >= 400 && vaultStatus < 500) return vaultStatus;
+  return 502;
+}
 
 export interface VaultHealthResponse {
   initialized?: boolean;
@@ -59,13 +73,23 @@ export interface VaultAuthResponse {
   };
 }
 
-export class VaultHttpError extends Error {
+/**
+ * Thrown by every non-2xx `VaultHttpClient.request()` call. Folded into the
+ * server error taxonomy (§4.2) — `status`/`errors` keep carrying the raw
+ * upstream Vault HTTP status/error list (read structurally by callers like
+ * `stack-vault-deleter.ts`'s `isNotFoundError()` and this module's own
+ * KV-error classifier), while `statusCode`/`code` (from `CustomError`) are
+ * what Mini Infra's own API responds with.
+ */
+export class VaultHttpError extends CustomError {
   constructor(
     message: string,
     readonly status: number,
     readonly errors: string[] = [],
   ) {
-    super(message);
+    super(message, statusForVaultHttpError(status), true, ErrorCode.VAULT_HTTP_ERROR, {
+      resource: { type: "vault" },
+    });
     this.name = "VaultHttpError";
   }
 }

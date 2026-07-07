@@ -38,12 +38,14 @@ import {
   ProviderMetadata,
   RetentionEnforcementResult,
   RetentionPolicy,
+  ErrorCode,
 } from "@mini-infra/types";
 import { ConfigurationService } from "../../../configuration-base";
 import { PrismaClient } from "../../../../lib/prisma";
 import { toServiceError } from "../../../../lib/service-error-mapper";
 import { getLogger } from "../../../../lib/logger-factory";
 import { azureConfig } from "../../../../lib/config-new";
+import { ConflictError, ValidationError, InternalError } from "../../../../lib/errors";
 
 const log = () => getLogger("platform", "azure-storage-backend");
 
@@ -128,7 +130,11 @@ export class AzureStorageBackend
     userId: string,
   ): Promise<void> {
     if (!connectionString || connectionString.trim().length === 0) {
-      throw new Error("Connection string cannot be empty");
+      throw new ValidationError(
+        ErrorCode.STORAGE_AZURE_CONNECTION_STRING_EMPTY,
+        "Connection string cannot be empty",
+        { resource: { type: "storageProvider", id: "azure" } },
+      );
     }
 
     const requiredKeys = [
@@ -140,8 +146,10 @@ export class AzureStorageBackend
       (key) => !connectionString.includes(`${key}=`),
     );
     if (missingKeys.length > 0) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.STORAGE_AZURE_CONNECTION_STRING_INVALID,
         `Invalid connection string format. Missing: ${missingKeys.join(", ")}`,
+        { resource: { type: "storageProvider", id: "azure" } },
       );
     }
 
@@ -188,7 +196,14 @@ export class AzureStorageBackend
     const connectionString =
       connectionStringOverride ?? (await this.getConnectionString());
     if (!connectionString) {
-      throw new Error("Azure Storage connection string not configured");
+      throw new ConflictError(
+        ErrorCode.STORAGE_NOT_CONFIGURED,
+        "Azure Storage connection string not configured",
+        {
+          resource: { type: "storageProvider", id: "azure" },
+          action: "Configure the Azure Storage connection string in Settings > Storage.",
+        },
+      );
     }
     return BlobServiceClient.fromConnectionString(connectionString);
   }
@@ -199,8 +214,10 @@ export class AzureStorageBackend
     const accountNameMatch = connectionString.match(/AccountName=([^;]+)/);
     const accountKeyMatch = connectionString.match(/AccountKey=([^;]+)/);
     if (!accountNameMatch || !accountKeyMatch) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.STORAGE_AZURE_CONNECTION_STRING_INVALID,
         "Invalid connection string: missing AccountName or AccountKey",
+        { resource: { type: "storageProvider", id: "azure" } },
       );
     }
     return { accountName: accountNameMatch[1], accountKey: accountKeyMatch[1] };
@@ -747,7 +764,7 @@ export class AzureStorageBackend
       const props = await blockBlobClient.getProperties();
       const downloadResponse = await blockBlobClient.download(0);
       if (!downloadResponse.readableStreamBody) {
-        throw new Error("Failed to get download stream");
+        throw new InternalError("Failed to get download stream");
       }
       return {
         stream: downloadResponse.readableStreamBody,
@@ -958,7 +975,14 @@ export class AzureStorageBackend
   ): Promise<string> {
     const connectionString = await this.getConnectionString();
     if (!connectionString) {
-      throw new Error("Azure Storage connection string not configured");
+      throw new ConflictError(
+        ErrorCode.STORAGE_NOT_CONFIGURED,
+        "Azure Storage connection string not configured",
+        {
+          resource: { type: "storageProvider", id: "azure" },
+          action: "Configure the Azure Storage connection string in Settings > Storage.",
+        },
+      );
     }
     const { accountName, accountKey } =
       this.parseConnectionStringParts(connectionString);

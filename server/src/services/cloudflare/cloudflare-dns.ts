@@ -6,6 +6,7 @@ import type {
   RecordUpdateParams,
 } from "cloudflare/resources/dns/records.js";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError, NotFoundError } from "../../lib/errors";
 import { CloudflareService } from "./cloudflare-service";
 import {
   CloudflareApiRunner,
@@ -17,6 +18,7 @@ import {
   CloudflareDNSRecord,
   CreateCloudflareDNSRecordRequest,
   UpdateCloudflareDNSRecordRequest,
+  ErrorCode,
 } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "cloudflare-dns");
@@ -111,7 +113,11 @@ export class CloudflareDNSService {
       return zones;
     } catch (error) {
       logger.error({ error }, "Failed to list Cloudflare DNS zones");
-      throw new Error(`Failed to list DNS zones: ${error}`, { cause: error });
+      // Bypasses CloudflareApiRunner.run()'s auto-mapping to ServiceError (this
+      // method drives the SDK directly for its own timeout/auth handling) —
+      // an unmapped SDK failure here is treated as a genuine internal/SDK-wrap
+      // failure rather than laundered into a user-actionable code.
+      throw new InternalError(`Failed to list DNS zones: ${error}`);
     }
   }
 
@@ -205,7 +211,7 @@ export class CloudflareDNSService {
       }
 
       logger.error({ error, zoneId, record }, "Failed to create DNS record");
-      throw new Error(`Failed to create DNS record: ${error}`, { cause: error });
+      throw new InternalError(`Failed to create DNS record: ${error}`);
     }
   }
 
@@ -239,7 +245,7 @@ export class CloudflareDNSService {
         { error, zoneId, recordId, updates },
         "Failed to update DNS record",
       );
-      throw new Error(`Failed to update DNS record: ${error}`, { cause: error });
+      throw new InternalError(`Failed to update DNS record: ${error}`);
     }
   }
 
@@ -269,7 +275,7 @@ export class CloudflareDNSService {
         { error, zoneId, recordId },
         "Failed to delete DNS record",
       );
-      throw new Error(`Failed to delete DNS record: ${error}`, { cause: error });
+      throw new InternalError(`Failed to delete DNS record: ${error}`);
     }
   }
 
@@ -300,7 +306,7 @@ export class CloudflareDNSService {
         return null;
       }
       logger.error({ error, zoneId, recordId }, "Failed to get DNS record");
-      throw new Error(`Failed to get DNS record: ${error}`, { cause: error });
+      throw new InternalError(`Failed to get DNS record: ${error}`);
     }
   }
 
@@ -338,7 +344,7 @@ export class CloudflareDNSService {
         { error, zoneId, hostname },
         "Failed to list DNS records",
       );
-      throw new Error(`Failed to list DNS records: ${error}`, { cause: error });
+      throw new InternalError(`Failed to list DNS records: ${error}`);
     }
   }
 
@@ -380,8 +386,13 @@ export class CloudflareDNSService {
     try {
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
-        throw new Error(
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND,
           `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
+          {
+            resource: { type: "cloudflareZone", name: hostname },
+            action: "Add the domain as a zone in your Cloudflare account.",
+          },
         );
       }
 
@@ -435,8 +446,13 @@ export class CloudflareDNSService {
     try {
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
-        throw new Error(
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND,
           `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
+          {
+            resource: { type: "cloudflareZone", name: hostname },
+            action: "Add the domain as a zone in your Cloudflare account.",
+          },
         );
       }
 

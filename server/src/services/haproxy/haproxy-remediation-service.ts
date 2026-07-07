@@ -2,6 +2,7 @@ import { getLogger } from "../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "./haproxy-dataplane-client";
 import { PrismaClient } from "../../generated/prisma/client";
 import { generateSharedFrontendName } from "./haproxy-naming";
+import { InternalError } from "../../lib/errors";
 
 const logger = getLogger("haproxy", "haproxy-remediation-service");
 
@@ -174,7 +175,7 @@ export class HAProxyRemediationService {
         { error, environmentId },
         "Failed to get remediation preview"
       );
-      throw new Error(`Failed to get remediation preview: ${error}`, { cause: error });
+      throw new InternalError(`Failed to get remediation preview: ${error}`);
     }
   }
 }

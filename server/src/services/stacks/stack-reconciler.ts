@@ -19,6 +19,7 @@ import {
   ResourceResult,
 } from '@mini-infra/types';
 import { DockerExecutorService } from '../docker-executor';
+import { InternalError } from '../../lib/errors';
 import { StackContainerManager } from './stack-container-manager';
 import { StackRoutingManager } from './stack-routing-manager';
 import { StackResourceReconciler } from './stack-resource-reconciler';
@@ -280,7 +281,7 @@ export class StackReconciler {
         allResourceResults.push(...dnsResults);
         if (dnsResults.some((r) => !r.success)) {
           const failed = dnsResults.find((r) => !r.success);
-          throw new Error(`DNS reconciliation failed: ${failed?.error}`);
+          throw new InternalError(`DNS reconciliation failed: ${failed?.error}`);
         }
 
         // TLS second
@@ -291,7 +292,7 @@ export class StackReconciler {
         allResourceResults.push(...tlsResults);
         if (tlsResults.some((r) => !r.success)) {
           const failed = tlsResults.find((r) => !r.success);
-          throw new Error(`TLS reconciliation failed: ${failed?.error}`);
+          throw new InternalError(`TLS reconciliation failed: ${failed?.error}`);
         }
 
         // Tunnel third
@@ -301,7 +302,7 @@ export class StackReconciler {
         allResourceResults.push(...tunnelResults);
         if (tunnelResults.some((r) => !r.success)) {
           const failed = tunnelResults.find((r) => !r.success);
-          throw new Error(`Tunnel reconciliation failed: ${failed?.error}`);
+          throw new InternalError(`Tunnel reconciliation failed: ${failed?.error}`);
         }
       }
 
@@ -377,7 +378,7 @@ export class StackReconciler {
         const isAdoptedWeb = svc?.serviceType === 'AdoptedWeb';
 
         if ((isStatelessWeb || isAdoptedWeb) && !this.routingManager) {
-          throw new Error(`StackRoutingManager is required for ${svc?.serviceType} service "${action.serviceName}"`);
+          throw new InternalError(`StackRoutingManager is required for ${svc?.serviceType} service "${action.serviceName}"`);
         }
 
         const handlerCtx: ServiceHandlerContext = {
@@ -884,10 +885,11 @@ export class StackReconciler {
             { service: serviceName, err: msg },
             'Cloudflare tunnel token resolution failed',
           );
-          throw new Error(
+          const wrapped = new InternalError(
             `Cloudflare tunnel token injection failed for service "${serviceName}": ${msg}`,
-            { cause: err },
           );
+          wrapped.cause = err;
+          throw wrapped;
         }
       }
 
@@ -910,10 +912,11 @@ export class StackReconciler {
             { service: serviceName, err: msg },
             'Tailscale authkey resolution failed',
           );
-          throw new Error(
+          const wrapped = new InternalError(
             `Tailscale authkey injection failed for service "${serviceName}": ${msg}`,
-            { cause: err },
           );
+          wrapped.cause = err;
+          throw wrapped;
         }
       }
 
@@ -958,7 +961,9 @@ export class StackReconciler {
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           log.error({ service: serviceName, err: msg }, 'NATS dynamic env resolution failed');
-          throw new Error(`NATS credential injection failed for service "${serviceName}": ${msg}`, { cause: err });
+          const wrapped = new InternalError(`NATS credential injection failed for service "${serviceName}": ${msg}`);
+          wrapped.cause = err;
+          throw wrapped;
         }
       }
 
@@ -973,7 +978,7 @@ export class StackReconciler {
       if (hasAppRoleEntries && !binding.appRoleId) {
         // Be loud rather than silent — the apply would otherwise leave the
         // service running without the env vars it asked for.
-        throw new Error(
+        throw new InternalError(
           `Service "${serviceName}" declares vault-role-id or vault-wrapped-secret-id but no AppRole is bound on the service or stack`,
         );
       }
@@ -1000,10 +1005,11 @@ export class StackReconciler {
           { service: serviceName, err: msg },
           'Vault dynamic env resolution failed',
         );
-        throw new Error(
+        const wrapped = new InternalError(
           `Vault credential injection failed for service "${serviceName}": ${msg}`,
-          { cause: err },
         );
+        wrapped.cause = err;
+        throw wrapped;
       }
     }
     return { overrides, serviceBindingsToRecord, credsFiles: [...credsFilesByName.values()] };

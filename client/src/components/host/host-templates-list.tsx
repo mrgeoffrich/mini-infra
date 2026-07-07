@@ -46,8 +46,10 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
       toast.success(`Stack created from ${template.displayName}`);
       // Expand to show the plan
       setExpandedTemplateId(template.id);
-    } catch (err) {
-      toast.error(`Failed to deploy: ${(err as Error).message}`);
+    } catch {
+      // Swallow: the global MutationCache.onError (query-client.ts)
+      // already shows an actionable toast for this mutation's real
+      // ApiRequestError.
     }
   };
 

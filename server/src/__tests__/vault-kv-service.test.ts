@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { ErrorCode } from '@mini-infra/types';
 import {
   validateKvPath,
   validateKvFieldName,
@@ -45,12 +46,13 @@ describe('validateKvPath', () => {
     expect(() => validateKvPath('a'.repeat(257))).toThrow(/exceeds 256/);
   });
 
-  it('attaches code "invalid_path" to the error', () => {
+  it('attaches ErrorCode.VAULT_KV_INVALID_PATH to the error, mapped to HTTP 400', () => {
     try {
       validateKvPath('/bad');
     } catch (err) {
       expect(err).toBeInstanceOf(VaultKVError);
-      expect((err as VaultKVError).code).toBe('invalid_path');
+      expect((err as VaultKVError).code).toBe(ErrorCode.VAULT_KV_INVALID_PATH);
+      expect((err as VaultKVError).statusCode).toBe(400);
     }
   });
 });

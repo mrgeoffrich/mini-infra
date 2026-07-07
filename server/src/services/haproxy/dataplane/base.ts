@@ -1,10 +1,38 @@
 import { HttpClient, createHttpClient, isHttpError, type HttpRequestConfig } from '../../../lib/http-client';
 import { getLogger } from '../../../lib/logger-factory';
+import { ErrorCode } from '@mini-infra/types';
+import { ConflictError, NotFoundError, InternalError } from '../../../lib/errors';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
 import { HAProxyEndpointInfo, ServerConfig } from './types';
 
 const logger = getLogger("haproxy", "base");
+
+/**
+ * Best-effort mapping from a DataPlane `operation` label (e.g. "delete
+ * backend switching rule", "add ACL") to a domain resource type, used to
+ * enrich the 404 taxonomy error's `resource.type`. Order matters — more
+ * specific multi-word operations must be checked before their substrings.
+ */
+function inferHaproxyResourceType(operation: string): string {
+  const op = operation.toLowerCase();
+  if (op.includes('switching rule')) return 'haproxySwitchingRule';
+  if (op.includes('ssl certificate')) return 'haproxyCertificate';
+  if (op.includes('http request rule')) return 'haproxyHttpRequestRule';
+  if (op.includes('frontend')) return 'haproxyFrontend';
+  if (op.includes('backend')) return 'haproxyBackend';
+  if (op.includes('server')) return 'haproxyServer';
+  if (op.includes('acl')) return 'haproxyAcl';
+  return 'haproxyResource';
+}
+
+/** Picks the first name-like identifier out of a `handleApiError` context bag. */
+function inferHaproxyResourceName(context?: Record<string, unknown>): string | undefined {
+  if (!context) return undefined;
+  const candidate =
+    context.frontendName ?? context.backendName ?? context.serverName ?? context.aclName ?? context.filename;
+  return typeof candidate === 'string' ? candidate : undefined;
+}
 
 // ====================
 // HAProxy DataPlane API Client — Base
@@ -91,7 +119,7 @@ export class HAProxyDataPlaneClientBase {
       const containerInfo = await container.inspect();
 
       if (!containerInfo) {
-        throw new Error('HAProxy container not found or not accessible');
+        throw new InternalError('HAProxy container not found or not accessible');
       }
 
       // Get container name (remove leading slash)
@@ -124,13 +152,13 @@ export class HAProxyDataPlaneClientBase {
     const networkEntries = Object.entries(networks);
 
     if (networkEntries.length === 0) {
-      throw new Error('HAProxy container has no network connections');
+      throw new InternalError('HAProxy container has no network connections');
     }
 
     // Determine our own container ID using the same robust detection as self-update
     const selfId = getOwnContainerId();
     if (!selfId) {
-      throw new Error(
+      throw new InternalError(
         'DataPlane API port 5555 is not bound to a host port and container network fallback ' +
         'is unavailable (mini-infra does not appear to be running in Docker)'
       );
@@ -155,7 +183,7 @@ export class HAProxyDataPlaneClientBase {
       }
     }
 
-    throw new Error(
+    throw new InternalError(
       'No shared network between mini-infra and HAProxy. ' +
       'Apply the dataplane-network stack and re-apply the HAProxy stack to establish connectivity.'
     );
@@ -169,7 +197,7 @@ export class HAProxyDataPlaneClientBase {
       const response = await this.httpClient.get('/info');
 
       if (response.status !== 200) {
-        throw new Error(`DataPlane API health check failed with status ${response.status}`);
+        throw new InternalError(`DataPlane API health check failed with status ${response.status}`);
       }
 
       logger.debug(
@@ -183,7 +211,7 @@ export class HAProxyDataPlaneClientBase {
     } catch (error) {
       if (isHttpError(error)) {
         const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
-        throw new Error(`DataPlane API connection failed: ${message}`, { cause: error });
+        throw new InternalError(`DataPlane API connection failed: ${message}`);
       }
       throw error;
     }
@@ -377,18 +405,45 @@ export class HAProxyDataPlaneClientBase {
 
       logger.error(errorDetails, `HAProxy DataPlane API ${operation} failed`);
 
-      // Handle specific error codes as per specification
+      // Handle specific error codes as per specification. 409 (concurrent
+      // config change) and 404 (acting on a resource that doesn't exist in
+      // HAProxy) are the two cases with clear, actionable domain meaning —
+      // promoted to the taxonomy so every dataplane call site gets a
+      // correctly-attributed 409/404 for free. 401 is deliberately NOT
+      // mapped to `UnauthorizedError`: it means the DataPlane API's own
+      // admin/adminpwd basic-auth failed (an infra/config problem), not that
+      // the calling mini-infra user is unauthenticated — throwing our
+      // `UnauthorizedError` here would incorrectly trip the client's global
+      // 401-session-expiry handler. 400 usually reflects a malformed
+      // request WE built rather than something the user can fix, so it also
+      // stays a plain (500) error — a genuine internal invariant.
       switch (status) {
         case 409:
-          throw new Error(`Version conflict: ${message}. Please retry with the latest version.`);
+          throw new ConflictError(
+            ErrorCode.HAPROXY_DATAPLANE_VERSION_CONFLICT,
+            `Version conflict: ${message}. Please retry with the latest version.`,
+            { action: "HAProxy's configuration changed concurrently — retry the operation." },
+          );
         case 404:
-          throw new Error(`Resource not found: ${message}`);
+          throw new NotFoundError(
+            ErrorCode.HAPROXY_DATAPLANE_RESOURCE_NOT_FOUND,
+            `Resource not found: ${message}`,
+            {
+              resource: {
+                type: inferHaproxyResourceType(operation),
+                ...(inferHaproxyResourceName(context) !== undefined && {
+                  name: inferHaproxyResourceName(context),
+                }),
+              },
+              action: "Refresh and verify the HAProxy resource still exists.",
+            },
+          );
         case 401:
-          throw new Error(`Authentication failed: ${message}`);
+          throw new InternalError(`Authentication failed: ${message}`);
         case 400:
-          throw new Error(`Bad request: ${message}`);
+          throw new InternalError(`Bad request: ${message}`);
         default:
-          throw new Error(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
+          throw new InternalError(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
       }
     } else {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -397,7 +452,7 @@ export class HAProxyDataPlaneClientBase {
         `HAProxy DataPlane API ${operation} failed with unexpected error`
       );
 
-      throw new Error(`HAProxy ${operation} failed: ${errorMessage}`);
+      throw new InternalError(`HAProxy ${operation} failed: ${errorMessage}`);
     }
   }
 

@@ -33,12 +33,9 @@ export function DeleteDatabaseDialog({
       await deleteMutation.mutateAsync(database.id);
       toast.success("Database deleted successfully");
       onClose();
-    } catch (error) {
-      toast.error(
-        `Failed to delete database: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

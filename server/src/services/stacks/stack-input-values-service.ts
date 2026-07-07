@@ -19,10 +19,25 @@ import crypto from "crypto";
 import { encryptString, decryptString, CryptoError, zeroise } from "../../lib/crypto";
 import { getAuthSecret } from "../../lib/security-config";
 import type { TemplateInputDeclaration } from "@mini-infra/types";
+import { ErrorCode } from "@mini-infra/types";
+import { ValidationError } from "../../lib/errors";
 
-export class InputValuesMissingError extends Error {
+/**
+ * 400 — a `rotateOnUpgrade` input declaration wasn't supplied on this
+ * upgrade. Extends `ValidationError` (rather than plain `Error`) so it
+ * reaches the central error middleware directly without a route-level
+ * catch-and-convert — the route only needs to let it bubble.
+ */
+export class InputValuesMissingError extends ValidationError {
   constructor(readonly inputName: string) {
-    super(`Input '${inputName}' has rotateOnUpgrade=true and must be supplied on every upgrade`);
+    super(
+      ErrorCode.STACK_INPUT_ROTATION_REQUIRED,
+      `Input '${inputName}' has rotateOnUpgrade=true and must be supplied on every upgrade`,
+      {
+        resource: { type: "stackInput", name: inputName },
+        action: "Supply a new value for this input before upgrading.",
+      },
+    );
     this.name = "InputValuesMissingError";
   }
 }

@@ -91,10 +91,10 @@ export function CreateTemplateDialog({
       onOpenChange(false);
       form.reset();
       navigate(`/stack-templates/${result.id}`);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to create template",
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (query-client.ts)
+      // already shows an actionable toast — keeping the dialog open so the
+      // operator can fix the form and retry.
     }
   }
 

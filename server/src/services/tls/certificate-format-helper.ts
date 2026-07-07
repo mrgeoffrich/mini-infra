@@ -6,6 +6,7 @@
  */
 
 import forge from "node-forge";
+import { InternalError } from "../../lib/errors";
 import { CertificateParseResult } from "./types";
 
 /**
@@ -42,7 +43,7 @@ export async function parseCertificate(certificatePem: string): Promise<Certific
       fingerprint,
     };
   } catch (error) {
-    throw new Error(`Failed to parse certificate: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new InternalError(`Failed to parse certificate: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -131,7 +132,7 @@ export function extractDomainsFromCertificate(certificatePem: string): string[] 
 
     return domains;
   } catch (error) {
-    throw new Error(`Failed to extract domains from certificate: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new InternalError(`Failed to extract domains from certificate: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -196,6 +197,6 @@ Days Until Expiry: ${days}
 Fingerprint (SHA-256): ${certInfo.fingerprint}
     `.trim();
   } catch (error) {
-    throw new Error(`Failed to format certificate info: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    throw new InternalError(`Failed to format certificate info: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

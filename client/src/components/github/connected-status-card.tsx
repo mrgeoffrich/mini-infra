@@ -71,12 +71,17 @@ export function ConnectedStatusCard({
             `Connection successful${data.authenticatedAs ? ` as ${data.authenticatedAs}` : ""} (${data.responseTimeMs}ms)`,
           );
         } else {
-          toast.error(`Connection test failed: ${data.message}`);
+          // `data.message` is the server's own human-readable validation
+          // summary (not a raw error message) — shown directly rather than
+          // through toastApiError, which is only for caught exceptions.
+          const resultMessage = data.message;
+          toast.error(`Connection test failed: ${resultMessage}`);
         }
       },
-      onError: (error) => {
-        toast.error(`Connection test failed: ${error.message}`);
-      },
+      // No onError — a genuine request failure (network/5xx) is already
+      // toasted by the global MutationCache.onError
+      // (client/src/lib/query-client.ts). This handler only needs to cover
+      // the "successful response, but isValid: false" case above.
     });
   };
 
@@ -85,9 +90,7 @@ export function ConnectedStatusCard({
       onSuccess: () => {
         toast.success("GitHub App disconnected successfully");
       },
-      onError: (error) => {
-        toast.error(`Failed to disconnect: ${error.message}`);
-      },
+      // No onError — handled globally, see above.
     });
   };
 

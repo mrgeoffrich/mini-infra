@@ -94,7 +94,8 @@ export function IssueCertificateDialog({
       });
       setOperationId(result.data.operationId);
     } catch {
-      // Error handled by mutation's onError toast
+      // Error handled by the global MutationCache.onError toast
+      // (client/src/lib/query-client.ts).
     }
   };
 

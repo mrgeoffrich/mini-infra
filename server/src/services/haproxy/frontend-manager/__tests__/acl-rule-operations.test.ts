@@ -7,6 +7,7 @@ import {
   removeBackendSwitchingRuleByAclName,
 } from "../acl-rule-operations";
 import type { HAProxyDataPlaneClient } from "../../haproxy-dataplane-client";
+import { InternalError } from "../../../../lib/errors";
 
 type MockClient = {
   addACL: ReturnType<typeof vi.fn>;
@@ -72,15 +73,16 @@ describe("acl-rule-operations", () => {
       ).resolves.toBeUndefined();
     });
 
-    it("rethrows other errors wrapped with cause", async () => {
+    it("rethrows other errors wrapped in an InternalError", async () => {
       const boom = new Error("boom");
       client.addACL.mockRejectedValue(boom);
 
-      await expect(
-        addACL("fe_app", "acl_host", "hdr(host) -i x.com", asClient(client))
-      ).rejects.toMatchObject({
+      const promise = addACL("fe_app", "acl_host", "hdr(host) -i x.com", asClient(client));
+      await expect(promise).rejects.toBeInstanceOf(InternalError);
+      await expect(promise).rejects.toMatchObject({
         message: expect.stringContaining("Failed to add ACL"),
-        cause: boom,
+        statusCode: 500,
+        isOperational: false,
       });
     });
   });
@@ -105,15 +107,16 @@ describe("acl-rule-operations", () => {
       ).resolves.toBeUndefined();
     });
 
-    it("rethrows other errors wrapped with cause", async () => {
+    it("rethrows other errors wrapped in an InternalError", async () => {
       const boom = new Error("network down");
       client.addBackendSwitchingRule.mockRejectedValue(boom);
 
-      await expect(
-        addBackendSwitchingRule("fe_app", "acl_host", "be_api", asClient(client))
-      ).rejects.toMatchObject({
+      const promise = addBackendSwitchingRule("fe_app", "acl_host", "be_api", asClient(client));
+      await expect(promise).rejects.toBeInstanceOf(InternalError);
+      await expect(promise).rejects.toMatchObject({
         message: expect.stringContaining("Failed to add backend switching rule"),
-        cause: boom,
+        statusCode: 500,
+        isOperational: false,
       });
     });
   });

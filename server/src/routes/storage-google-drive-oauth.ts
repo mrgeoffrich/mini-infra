@@ -29,7 +29,6 @@ import { GoogleDriveTokenManager } from "../services/storage/providers/google-dr
 import {
   buildGoogleDriveRedirectUri,
   resolveGoogleDriveRedirectUri,
-  GoogleDrivePublicUrlNotConfiguredError,
 } from "../services/storage/providers/google-drive/google-drive-redirect";
 import { requestOrigin } from "../lib/request-origin";
 import {
@@ -39,7 +38,8 @@ import {
 } from "../services/storage/providers/google-drive/google-drive-oauth-state";
 import { google } from "googleapis";
 import { StorageService } from "../services/storage/storage-service";
-import { Permission } from "@mini-infra/types";
+import { Permission, ErrorCode } from "@mini-infra/types";
+import { UnauthorizedError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("integrations", "storage-google-drive-oauth");
 const router = express.Router();
@@ -83,40 +83,28 @@ router.get(
     try {
       const user = getAuthenticatedUser(req);
       if (!user) {
-        return res
-          .status(401)
-          .json({ success: false, error: "Unauthorized" });
+        throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
       }
       const tokens = new GoogleDriveTokenManager(prisma);
       const credentials = await tokens.getOAuthCredentials();
       if (!credentials) {
-        return res.status(400).json({
-          success: false,
-          error: "Google Drive client credentials are not configured",
-          errorCode: "CLIENT_CREDENTIALS_MISSING",
-        });
+        throw new ValidationError(
+          ErrorCode.CLIENT_CREDENTIALS_MISSING,
+          "Google Drive client credentials are not configured",
+          {
+            resource: { type: "storageProvider", id: "google-drive" },
+            action: "Configure Google Drive OAuth client credentials in Settings > Storage.",
+          },
+        );
       }
-      let redirectUri: string;
-      try {
-        redirectUri = await buildGoogleDriveRedirectUri();
-      } catch (error) {
-        if (error instanceof GoogleDrivePublicUrlNotConfiguredError) {
-          return res.status(400).json({
-            success: false,
-            error: error.message,
-            errorCode: error.code,
-          });
-        }
-        throw error;
-      }
+      const redirectUri = await buildGoogleDriveRedirectUri();
       const oauthClient = await tokens.buildOAuthClient(redirectUri);
       if (!oauthClient) {
-        // Shouldn't happen — credentials exist by the time we reach this — but
-        // keep the type guard.
-        return res.status(500).json({
-          success: false,
-          error: "Failed to build Drive OAuth client",
-        });
+        // Shouldn't happen — credentials exist by the time we reach this —
+        // but keep the type guard. A genuine internal invariant, not a
+        // user-actionable failure, so it falls through to the central
+        // middleware's generic 500 INTERNAL path.
+        throw new Error("Failed to build Drive OAuth client");
       }
       const state = buildOAuthState();
       const authorizeUrl = oauthClient.generateAuthUrl(state);

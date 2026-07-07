@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import crypto from "crypto";
+import { ErrorCode } from "@mini-infra/types";
 import { PrismaClient } from "./prisma";
 import {
   deriveKey,
@@ -11,6 +12,7 @@ import {
   CryptoError,
 } from "./crypto";
 import { getLogger } from "./logger-factory";
+import { ConflictError, UnauthorizedError } from "./errors";
 
 /**
  * Operator passphrase state.
@@ -121,8 +123,13 @@ export class OperatorPassphraseService extends EventEmitter {
       where: { kind: VAULT_STATE_KIND },
     });
     if (row?.passphraseSalt) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.VAULT_PASSPHRASE_ALREADY_SET,
         "Passphrase already set; use the change-passphrase flow to rotate",
+        {
+          resource: { type: "vault" },
+          action: "Use the change-passphrase flow to rotate the existing passphrase.",
+        },
       );
     }
 
@@ -160,15 +167,25 @@ export class OperatorPassphraseService extends EventEmitter {
     const now = Date.now();
     if (now < this.nextAttemptAt) {
       const waitMs = this.nextAttemptAt - now;
-      throw new Error(
-        `Too many failed attempts — wait ${Math.ceil(waitMs / 1000)}s before retrying`,
+      const waitSecs = Math.ceil(waitMs / 1000);
+      throw new ConflictError(
+        ErrorCode.VAULT_UNLOCK_RATE_LIMITED,
+        `Too many failed attempts — wait ${waitSecs}s before retrying`,
+        {
+          resource: { type: "vault" },
+          action: `Wait ${waitSecs}s before retrying.`,
+        },
       );
     }
     const row = await this.prisma.vaultState.findUnique({
       where: { kind: VAULT_STATE_KIND },
     });
     if (!row?.passphraseSalt || !row.passphraseProbe) {
-      throw new Error("Passphrase has not been set; run bootstrap first");
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "Passphrase has not been set; run bootstrap first",
+        { resource: { type: "vault" }, action: "Bootstrap Vault first." },
+      );
     }
     const salt = Buffer.from(row.passphraseSalt);
     const probe = Buffer.from(row.passphraseProbe);
@@ -179,13 +196,27 @@ export class OperatorPassphraseService extends EventEmitter {
       if (!crypto.timingSafeEqual(decoded, PROBE_PLAINTEXT)) {
         zeroise(candidate);
         this.recordFailure();
-        throw new Error("Invalid passphrase");
+        throw new UnauthorizedError(
+          ErrorCode.VAULT_INVALID_PASSPHRASE,
+          "Invalid passphrase",
+          {
+            resource: { type: "vault" },
+            action: "Re-enter the correct operator passphrase.",
+          },
+        );
       }
     } catch (err) {
       zeroise(candidate);
       if (err instanceof CryptoError) {
         this.recordFailure();
-        throw new Error("Invalid passphrase", { cause: err });
+        throw new UnauthorizedError(
+          ErrorCode.VAULT_INVALID_PASSPHRASE,
+          "Invalid passphrase",
+          {
+            resource: { type: "vault" },
+            action: "Re-enter the correct operator passphrase.",
+          },
+        );
       }
       throw err;
     }
@@ -264,7 +295,14 @@ export class OperatorPassphraseService extends EventEmitter {
 
   private requireKey(): Buffer {
     if (!this.key || this.state !== "unlocked") {
-      throw new Error("Operator passphrase is locked");
+      throw new ConflictError(
+        ErrorCode.VAULT_LOCKED,
+        "Operator passphrase is locked",
+        {
+          resource: { type: "vault" },
+          action: "Unlock the Vault operator passphrase, then retry.",
+        },
+      );
     }
     return this.key;
   }

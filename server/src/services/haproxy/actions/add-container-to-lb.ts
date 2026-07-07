@@ -2,6 +2,7 @@ import type { ActionContext, LBConfigEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient, BackendConfig, ServerConfig } from '../haproxy-dataplane-client';
 import prisma from '../../../lib/prisma';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("haproxy", "add-container-to-lb");
 
@@ -29,20 +30,20 @@ export class AddContainerToLB {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for load balancer configuration');
+                throw new InternalError('HAProxy container ID is required for load balancer configuration');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend configuration');
+                throw new InternalError('Application name is required for backend configuration');
             }
             const serverAddress = context.containerName ?? context.containerIpAddress;
             if (!serverAddress) {
-                throw new Error('Container name or IP address is required for server configuration');
+                throw new InternalError('Container name or IP address is required for server configuration');
             }
             if (!context.containerPort) {
-                throw new Error('Container port is required for server configuration');
+                throw new InternalError('Container port is required for server configuration');
             }
             if (!context.containerId) {
-                throw new Error('Container ID is required for server configuration');
+                throw new InternalError('Container ID is required for server configuration');
             }
             if (!context.healthCheckEndpoint) {
                 logger.info({

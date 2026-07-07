@@ -1,7 +1,9 @@
+import { ErrorCode } from "@mini-infra/types";
 import { PrismaClient } from "../../lib/prisma";
 import { OperatorPassphraseService } from "../../lib/operator-passphrase-service";
 import { toPrismaBytes } from "../../lib/crypto";
 import { getLogger } from "../../lib/logger-factory";
+import { ConflictError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-state-service");
 
@@ -119,7 +121,14 @@ export class VaultStateService {
       select: { encryptedUnsealKeys: true },
     });
     if (!row?.encryptedUnsealKeys) {
-      throw new Error("VaultState has no unseal keys stored");
+      throw new ConflictError(
+        ErrorCode.VAULT_STATE_INCOMPLETE,
+        "VaultState has no unseal keys stored",
+        {
+          resource: { type: "vaultState", name: "unsealKeys" },
+          action: "Re-run the Vault bootstrap flow.",
+        },
+      );
     }
     const plain = this.passphrase.unwrap(Buffer.from(row.encryptedUnsealKeys));
     return JSON.parse(plain.toString("utf8")) as string[];
@@ -131,7 +140,14 @@ export class VaultStateService {
       select: { encryptedRootToken: true },
     });
     if (!row?.encryptedRootToken) {
-      throw new Error("VaultState has no root token stored");
+      throw new ConflictError(
+        ErrorCode.VAULT_STATE_INCOMPLETE,
+        "VaultState has no root token stored",
+        {
+          resource: { type: "vaultState", name: "rootToken" },
+          action: "Re-run the Vault bootstrap flow.",
+        },
+      );
     }
     return this.passphrase.unwrap(Buffer.from(row.encryptedRootToken)).toString("utf8");
   }
@@ -168,7 +184,14 @@ export class VaultStateService {
       select: { encryptedAdminRoleId: true },
     });
     if (!row?.encryptedAdminRoleId) {
-      throw new Error("VaultState has no admin role_id stored");
+      throw new ConflictError(
+        ErrorCode.VAULT_STATE_INCOMPLETE,
+        "VaultState has no admin role_id stored",
+        {
+          resource: { type: "vaultState", name: "adminRoleId" },
+          action: "Re-run the Vault bootstrap flow.",
+        },
+      );
     }
     return this.passphrase.unwrap(Buffer.from(row.encryptedAdminRoleId)).toString("utf8");
   }
@@ -179,7 +202,14 @@ export class VaultStateService {
       select: { encryptedAdminSecretId: true },
     });
     if (!row?.encryptedAdminSecretId) {
-      throw new Error("VaultState has no admin secret_id stored");
+      throw new ConflictError(
+        ErrorCode.VAULT_STATE_INCOMPLETE,
+        "VaultState has no admin secret_id stored",
+        {
+          resource: { type: "vaultState", name: "adminSecretId" },
+          action: "Re-run the Vault bootstrap flow.",
+        },
+      );
     }
     return this.passphrase.unwrap(Buffer.from(row.encryptedAdminSecretId)).toString("utf8");
   }

@@ -9,11 +9,13 @@ import {
   setApiKeyConfigured,
 } from "./agent-service";
 import { initializeAgentApiKey } from "./agent-api-key";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   AgentSettingsResponse,
   AgentConfigSource,
   AgentApiKeyValidationResponse,
 } from "@mini-infra/types";
+import { ValidationError } from "../lib/errors";
 
 const logger = getLogger("agent", "agent-settings-service");
 
@@ -226,7 +228,14 @@ export async function updateSettings(data: {
   if (data.model !== undefined) {
     const validIds = AVAILABLE_MODELS.map((m) => m.id);
     if (!validIds.includes(data.model)) {
-      throw new Error(`Invalid model: ${data.model}`);
+      throw new ValidationError(
+        ErrorCode.AGENT_INVALID_MODEL,
+        `Invalid model: ${data.model}`,
+        {
+          resource: { type: "agentModel", name: data.model },
+          action: `Choose one of: ${validIds.join(", ")}.`,
+        },
+      );
     }
     await setDbSetting(MODEL_KEY, data.model);
     logger.info({ model: data.model }, "Agent model saved to database");

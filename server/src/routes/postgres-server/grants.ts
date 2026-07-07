@@ -1,18 +1,19 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
-import { getLogger } from "../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 import { Permission } from "@mini-infra/types";
 
-const logger = getLogger("db", "grants");
 const router = express.Router();
 
 // Helper to extract userId or throw
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -49,8 +50,10 @@ const updateGrantSchema = z.object({
  * POST /api/postgres-server/grants
  * Create a new grant
  */
-router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const validatedData = createGrantSchema.parse(req.body);
 
@@ -64,51 +67,17 @@ router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) =
       success: true,
       data: grant,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "User not found") {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create grant");
-    res.status(500).json({
-      success: false,
-      error: "Failed to create grant",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/grants/:grantId
  * Get grant details
  */
-router.get("/:grantId", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:grantId",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const grantId = String(req.params.grantId);
 
@@ -118,29 +87,17 @@ router.get("/:grantId", requirePermission(Permission.PostgresRead), async (req, 
       success: true,
       data: grant,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Grant not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get grant details");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get grant details",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * PUT /api/postgres-server/grants/:grantId
  * Update grant permissions
  */
-router.put("/:grantId", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.put(
+  "/:grantId",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const grantId = String(req.params.grantId);
     const validatedData = updateGrantSchema.parse(req.body);
@@ -151,37 +108,17 @@ router.put("/:grantId", requirePermission(Permission.PostgresWrite), async (req,
       success: true,
       data: grant,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Grant not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update grant");
-    res.status(500).json({
-      success: false,
-      error: "Failed to update grant",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * DELETE /api/postgres-server/grants/:grantId
  * Revoke a grant
  */
-router.delete("/:grantId", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.delete(
+  "/:grantId",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const grantId = String(req.params.grantId);
 
@@ -191,21 +128,7 @@ router.delete("/:grantId", requirePermission(Permission.PostgresWrite), async (r
       success: true,
       message: "Grant revoked successfully",
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Grant not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Grant not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to delete grant");
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete grant",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 export default router;

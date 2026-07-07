@@ -42,6 +42,8 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { queryKeys, SystemSettingsInfo } from "@mini-infra/types";
+import { ApiRequestError } from "@/lib/api-client";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 
 // Cloudflare settings schema
 const cloudflareSettingsSchema = z.object({
@@ -202,9 +204,17 @@ export default function CloudflareSettingsPage() {
       }, 5000);
 
     } catch (error) {
-      const errorMessage = (error as Error).message;
+      const errorMessage = getUserFacingError(error).description;
       setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
-      toast.error(`Failed to validate and save: ${errorMessage}`);
+      // Real ApiRequestError failures (the validate/create/update settings
+      // mutations above) are already toasted by the global
+      // MutationCache.onError (client/src/lib/query-client.ts). Only show a
+      // local toast for the synthetic "isValid: false" business failure
+      // thrown above, which isn't a mutation rejection and so never reaches
+      // the global handler.
+      if (!(error instanceof ApiRequestError)) {
+        toastApiError(error, { title: "Failed to validate and save" });
+      }
     }
   };
 

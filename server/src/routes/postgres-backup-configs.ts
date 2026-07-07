@@ -14,7 +14,8 @@ import { BackupConfigurationManager } from "../services/backup";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
 import { PostgresDatabaseManager } from "../services/postgres";
 import { UserPreferencesService } from "../services/user-preferences";
-import { CreateBackupConfigurationRequest, UpdateBackupConfigurationRequest, BackupConfigurationResponse, BackupConfigurationDeleteResponse, BackupFormat, QuickBackupSetupRequest, BACKUP_FORMATS, Permission } from "@mini-infra/types";
+import { ConflictError } from "../lib/errors";
+import { CreateBackupConfigurationRequest, UpdateBackupConfigurationRequest, BackupConfigurationResponse, BackupConfigurationDeleteResponse, BackupFormat, QuickBackupSetupRequest, BACKUP_FORMATS, Permission, ErrorCode } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -180,6 +181,37 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
     // Create PostgresDatabase entry with server's admin credentials
     // Note: name field can only contain alphanumeric, hyphens, and underscores
     const safeName = `${server.name}_${setupRequest.databaseName}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // Pre-check for an existing backup config BEFORE creating anything.
+    // Quick setup deterministically maps server+databaseName -> safeName, so
+    // a re-run of the exact same quick-setup hits the same PostgresDatabase
+    // row. From the user's POV they ran a *backup* action, so if that row
+    // already has a backup config attached, the conflict is a backup-config
+    // conflict — not the "database configuration already exists" error
+    // createDatabase() would otherwise throw (the incident's misattribution;
+    // see docs/planning/not-shipped/error-handling-overhaul-plan.md §1).
+    const existingDatabase = await prisma.postgresDatabase.findUnique({
+      where: { name: safeName },
+    });
+    if (existingDatabase) {
+      const existingBackupConfig =
+        await backupConfigService.getBackupConfigByDatabaseId(existingDatabase.id);
+      if (existingBackupConfig) {
+        throw new ConflictError(
+          ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS,
+          `${setupRequest.databaseName} already has a backup configuration.`,
+          {
+            resource: { type: "postgresBackupConfig", name: setupRequest.databaseName },
+            action: "Edit the existing backup config instead of creating a new one.",
+          },
+        );
+      }
+      // Else: the database row exists but has no backup config — a leftover
+      // from a prior quick-setup attempt that failed between the two
+      // creates below. Fall through; createDatabase() will correctly report
+      // a POSTGRES_DB_CONFIG_EXISTS conflict for this genuinely DB-level case.
+    }
+
     const databaseEntry = await databaseConfigService.createDatabase({
       name: safeName,
       host: server.host,
@@ -253,38 +285,9 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
       "Failed to create quick backup setup",
     );
 
-    if (error instanceof Error) {
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("Server not found")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (error.message.includes("Invalid")) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // Every failure mode below now throws a taxonomy error (or InternalError)
+    // that carries its own status/code and is rendered by the central error
+    // middleware — just forward it.
     next(error);
   }
 }) as RequestHandler);
@@ -470,42 +473,11 @@ router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, 
       "Failed to create backup configuration",
     );
 
-    if (error instanceof Error) {
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("access denied")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Invalid") ||
-        error.message.includes("not accessible") ||
-        error.message.includes("cron")
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `backupConfigService.createBackupConfig()` is the only substantive
+    // call in this handler, and it now throws taxonomy errors (ConflictError/
+    // NotFoundError/ValidationError) for every case the string-matches below
+    // used to cover — forward straight to the central middleware so `code`/
+    // `resource`/`action` reach the client instead of the flattened body.
     next(error);
   }
 }) as RequestHandler);
@@ -614,33 +586,9 @@ router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler
       "Failed to update backup configuration",
     );
 
-    if (error instanceof Error) {
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("Access denied")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Invalid") ||
-        error.message.includes("not accessible") ||
-        error.message.includes("cron")
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `backupConfigService.updateBackupConfig()` is the only substantive
+    // call here and now throws taxonomy errors for every case above —
+    // forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);
@@ -714,19 +662,9 @@ router.delete("/:id", requirePermission(Permission.PostgresWrite) as RequestHand
       "Failed to delete backup configuration",
     );
 
-    if (
-      error instanceof Error &&
-      (error.message.includes("not found") ||
-        error.message.includes("Access denied"))
-    ) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // `backupConfigService.deleteBackupConfig()` is the only substantive
+    // call here and now throws a NotFoundError for the "not found" case —
+    // forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);
