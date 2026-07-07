@@ -14,7 +14,8 @@ import { BackupConfigurationManager } from "../services/backup";
 import { PostgresServerService } from "../services/postgres-server/server-manager";
 import { PostgresDatabaseManager } from "../services/postgres";
 import { UserPreferencesService } from "../services/user-preferences";
-import { CreateBackupConfigurationRequest, UpdateBackupConfigurationRequest, BackupConfigurationResponse, BackupConfigurationDeleteResponse, BackupFormat, QuickBackupSetupRequest, BACKUP_FORMATS, Permission } from "@mini-infra/types";
+import { ConflictError } from "../lib/errors";
+import { CreateBackupConfigurationRequest, UpdateBackupConfigurationRequest, BackupConfigurationResponse, BackupConfigurationDeleteResponse, BackupFormat, QuickBackupSetupRequest, BACKUP_FORMATS, Permission, ErrorCode } from "@mini-infra/types";
 
 const router = express.Router();
 
@@ -180,6 +181,37 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
     // Create PostgresDatabase entry with server's admin credentials
     // Note: name field can only contain alphanumeric, hyphens, and underscores
     const safeName = `${server.name}_${setupRequest.databaseName}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // Pre-check for an existing backup config BEFORE creating anything.
+    // Quick setup deterministically maps server+databaseName -> safeName, so
+    // a re-run of the exact same quick-setup hits the same PostgresDatabase
+    // row. From the user's POV they ran a *backup* action, so if that row
+    // already has a backup config attached, the conflict is a backup-config
+    // conflict — not the "database configuration already exists" error
+    // createDatabase() would otherwise throw (the incident's misattribution;
+    // see docs/planning/not-shipped/error-handling-overhaul-plan.md §1).
+    const existingDatabase = await prisma.postgresDatabase.findUnique({
+      where: { name: safeName },
+    });
+    if (existingDatabase) {
+      const existingBackupConfig =
+        await backupConfigService.getBackupConfigByDatabaseId(existingDatabase.id);
+      if (existingBackupConfig) {
+        throw new ConflictError(
+          ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS,
+          `${setupRequest.databaseName} already has a backup configuration.`,
+          {
+            resource: { type: "postgresBackupConfig", name: setupRequest.databaseName },
+            action: "Edit the existing backup config instead of creating a new one.",
+          },
+        );
+      }
+      // Else: the database row exists but has no backup config — a leftover
+      // from a prior quick-setup attempt that failed between the two
+      // creates below. Fall through; createDatabase() will correctly report
+      // a POSTGRES_DB_CONFIG_EXISTS conflict for this genuinely DB-level case.
+    }
+
     const databaseEntry = await databaseConfigService.createDatabase({
       name: safeName,
       host: server.host,
@@ -253,16 +285,12 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
       "Failed to create quick backup setup",
     );
 
+    // Taxonomy errors (e.g. the ConflictError thrown above, or the
+    // ConflictError createDatabase()/createBackupConfig() throw for their
+    // own conflict cases) carry their own status/code and are handled by
+    // the central error middleware — just forward them. Only the remaining
+    // ad-hoc string-matches below are legacy, un-migrated failure modes.
     if (error instanceof Error) {
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
       if (
         error.message.includes("not found") ||
         error.message.includes("Server not found")

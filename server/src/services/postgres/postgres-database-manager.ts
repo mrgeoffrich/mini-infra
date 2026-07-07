@@ -2,6 +2,8 @@ import { PrismaClient } from "../../lib/prisma";
 import { Prisma } from "../../generated/prisma/client";
 import { Client as PostgresClient } from "pg";
 import { getLogger } from "../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError } from "../../lib/errors";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -102,8 +104,13 @@ export class PostgresDatabaseManager {
       });
 
       if (existingDb) {
-        throw new Error(
+        throw new ConflictError(
+          ErrorCode.POSTGRES_DB_CONFIG_EXISTS,
           `Database configuration with name '${request.name}' already exists`,
+          {
+            resource: { type: "postgresDatabase", name: request.name },
+            action: "Use the existing database configuration instead of creating a new one.",
+          },
         );
       }
 
@@ -262,8 +269,13 @@ export class PostgresDatabaseManager {
         });
 
         if (existingWithName && existingWithName.id !== databaseId) {
-          throw new Error(
+          throw new ConflictError(
+            ErrorCode.POSTGRES_DB_CONFIG_EXISTS,
             `Database configuration with name '${request.name}' already exists`,
+            {
+              resource: { type: "postgresDatabase", name: request.name },
+              action: "Use the existing database configuration instead of creating a new one.",
+            },
           );
         }
 

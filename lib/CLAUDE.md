@@ -14,6 +14,7 @@ lib/
 │   ├── query-keys.ts       # queryKeys TanStack Query key factory (runtime)
 │   ├── auth.ts            # Auth, sessions, API keys
 │   ├── permissions.ts     # Permission scopes, presets, and the Permission const map (runtime)
+│   ├── error-codes.ts     # ErrorCode const map — machine-readable error taxonomy (runtime)
 │   ├── containers.ts      # Container, ContainerStatus
 │   ├── docker.ts          # Networks, volumes
 │   ├── stacks.ts          # Stack, StackDefinition, plan/apply types
