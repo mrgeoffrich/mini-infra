@@ -102,7 +102,13 @@ export function ServiceEditDrawer({
   function onSubmit(values: ServiceFormValues) {
     try {
       const definition = formValuesToService(values);
-      onSave(definition);
+      // The form doesn't model every service field — `addons`, `poolConfig`,
+      // `jobPoolConfig`, and the vault/nats binding refs live outside the
+      // drawer's tabs. When editing an existing service, spread the incoming
+      // `service` UNDER the form-derived definition so those unmodeled fields
+      // survive the save (the form-edited fields still win). On add there's
+      // nothing to preserve.
+      onSave(service ? { ...service, ...definition } : definition);
       onOpenChange(false);
     } catch (err) {
       toastApiError(err, { title: "Invalid service config" });
