@@ -13,7 +13,7 @@ import { ensureEgressGatewaySeeded } from "../nats/system-nats-bootstrap";
 import { generateScopedSigningKey } from "../nats/nats-key-manager";
 import { getVaultKVService } from "../vault/vault-kv-service";
 import { getLogger } from "../../lib/logger-factory";
-import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 import {
   ErrorCode,
   type EnvironmentNetworkType,
@@ -441,7 +441,7 @@ async function runStackNatsApplyPhaseUnlocked(
           if (!declaredRoleNames.has(r)) {
             // Phase 1 validator should have caught this; fail loud at apply
             // if a corrupt template made it through.
-            throw new Error(`NATS apply: imports[].forRoles references undeclared role '${r}'`);
+            throw new InternalError(`NATS apply: imports[].forRoles references undeclared role '${r}'`);
           }
         }
         const resolved = await resolveImport({
@@ -501,7 +501,7 @@ async function runStackNatsApplyPhaseUnlocked(
           if (!streamId) {
             // Validator catches this at publish time; defense-in-depth at
             // apply for corrupt JSON columns or a future schema-drift bug.
-            throw new Error(
+            throw new InternalError(
               `NATS apply: role '${role.name}' consumer '${consumer.name}' references unknown stream '${consumer.stream}'`,
             );
           }
@@ -747,7 +747,7 @@ async function resolveAndValidateSubjectPrefix(args: {
   // column (e.g. via a future direct-Prisma write) would otherwise reach the
   // permission renderer with a wildcard and shadow the prefix tree.
   if (!resolved || /[>*]/.test(resolved) || resolved.startsWith(".") || resolved.endsWith(".") || resolved === "$SYS" || resolved.startsWith("$SYS.")) {
-    throw new Error(
+    throw new InternalError(
       `NATS apply: invalid subjectPrefix '${resolved}' (must be non-empty, no wildcards, no leading/trailing dot, not $SYS)`,
     );
   }
@@ -823,16 +823,16 @@ async function materializeRole(args: {
   // renderer. Keep the rules in sync with the static schema.
   const validateRelative = (s: string): void => {
     if (!s || s.startsWith(">") || s.startsWith("*")) {
-      throw new Error(`NATS apply: role '${role.name}' has subject '${s}' that escapes the prefix`);
+      throw new InternalError(`NATS apply: role '${role.name}' has subject '${s}' that escapes the prefix`);
     }
     if (s.startsWith("_INBOX.")) {
-      throw new Error(`NATS apply: role '${role.name}' subject '${s}' uses _INBOX.> directly — use inboxAuto`);
+      throw new InternalError(`NATS apply: role '${role.name}' subject '${s}' uses _INBOX.> directly — use inboxAuto`);
     }
     if (s.startsWith("$SYS.") || s === "$SYS") {
-      throw new Error(`NATS apply: role '${role.name}' subject '${s}' targets the $SYS namespace`);
+      throw new InternalError(`NATS apply: role '${role.name}' subject '${s}' targets the $SYS namespace`);
     }
     if (s.includes("..") || s.split(".").some((tok) => tok.length === 0)) {
-      throw new Error(`NATS apply: role '${role.name}' subject '${s}' has empty tokens (leading/trailing dot or '..')`);
+      throw new InternalError(`NATS apply: role '${role.name}' subject '${s}' has empty tokens (leading/trailing dot or '..')`);
     }
   };
 
@@ -867,7 +867,7 @@ async function materializeRole(args: {
   // renderer.
   for (const bucket of role.kvBuckets ?? []) {
     if (!/^[a-zA-Z0-9_-]+$/.test(bucket) || bucket.length === 0 || bucket.length > 100) {
-      throw new Error(`NATS apply: role '${role.name}' kvBuckets entry '${bucket}' is invalid`);
+      throw new InternalError(`NATS apply: role '${role.name}' kvBuckets entry '${bucket}' is invalid`);
     }
     const subj = `$KV.${bucket}.>`;
     publishAllow.push(subj);
@@ -967,7 +967,7 @@ async function materializeSigner(args: {
   const { signer, subjectPrefix, stackId } = args;
 
   if (!SIGNER_NAME_RE.test(signer.name)) {
-    throw new Error(
+    throw new InternalError(
       `NATS apply: signer name '${signer.name}' must be lowercase alphanumeric with optional '-' or '_' (max 100 chars)`,
     );
   }
@@ -981,7 +981,7 @@ async function materializeSigner(args: {
     scope.startsWith("$SYS.") || scope === "$SYS" || scope.startsWith("_INBOX.") ||
     scope.includes("..") || scope.split(".").some((tok) => tok.length === 0)
   ) {
-    throw new Error(`NATS apply: signer '${signer.name}' has invalid subjectScope '${scope}'`);
+    throw new InternalError(`NATS apply: signer '${signer.name}' has invalid subjectScope '${scope}'`);
   }
 
   const scopedSubject = `${subjectPrefix}.${scope}.>`;
@@ -1132,16 +1132,16 @@ async function materializeRoleStream(args: {
   // corrupt natsRoles JSON column that bypasses publish-time validation.
   const validateRelative = (s: string): void => {
     if (!s || s.startsWith(">") || s.startsWith("*")) {
-      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' escapes the prefix`);
+      throw new InternalError(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' escapes the prefix`);
     }
     if (s.startsWith("_INBOX.")) {
-      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets _INBOX directly`);
+      throw new InternalError(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets _INBOX directly`);
     }
     if (s.startsWith("$SYS.") || s === "$SYS") {
-      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets the $SYS namespace`);
+      throw new InternalError(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' targets the $SYS namespace`);
     }
     if (s.includes("..") || s.split(".").some((tok) => tok.length === 0)) {
-      throw new Error(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' has empty tokens`);
+      throw new InternalError(`NATS apply: role '${args.roleName}' stream '${stream.name}' subject '${s}' has empty tokens`);
     }
   };
   const absoluteSubjects: string[] = [];
@@ -1200,17 +1200,17 @@ async function materializeRoleConsumer(args: {
   if (consumer.filterSubject) {
     const fs = consumer.filterSubject;
     if (fs.startsWith(">") || fs.startsWith("*")) {
-      throw new Error(
+      throw new InternalError(
         `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' escapes the prefix`,
       );
     }
     if (fs.startsWith("_INBOX.") || fs.startsWith("$SYS.") || fs === "$SYS") {
-      throw new Error(
+      throw new InternalError(
         `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' targets a reserved namespace`,
       );
     }
     if (fs.includes("..") || fs.split(".").some((tok) => tok.length === 0)) {
-      throw new Error(
+      throw new InternalError(
         `NATS apply: role '${args.roleName}' consumer '${consumer.name}' filterSubject '${fs}' has empty tokens`,
       );
     }

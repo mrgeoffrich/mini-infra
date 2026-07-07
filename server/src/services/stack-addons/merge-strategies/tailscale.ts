@@ -12,6 +12,7 @@ import {
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
 import { getLogger } from '../../../lib/logger-factory';
+import { InternalError } from '../../../lib/errors';
 import { buildTailscaleSidecarDefinition } from '../shared/tailscale-sidecar';
 import {
   TAILSCALE_SERVE_CONFIG_PATH,
@@ -56,7 +57,7 @@ function resolveMembers(
       // Future Tailscale-kind addons land here; for now refuse to merge an
       // unknown member rather than silently dropping it from the rendered
       // sidecar.
-      throw new Error(
+      throw new InternalError(
         `Unknown member "${m.addonId}" for kind:"tailscale" merge group`,
       );
     }
@@ -87,7 +88,7 @@ async function provisionTailscaleMerged(
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;
   if (!tailscale) {
-    throw new Error(
+    throw new InternalError(
       'kind:"tailscale" merge requires the Tailscale connected service to be configured',
     );
   }

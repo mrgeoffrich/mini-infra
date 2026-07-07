@@ -7,6 +7,7 @@ import {
 } from '@mini-infra/types';
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
+import { InternalError } from '../../../lib/errors';
 import type { TailscaleSshConfig } from './manifest';
 
 /**
@@ -47,7 +48,7 @@ export async function provisionTailscaleSsh(
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;
   if (!tailscale) {
-    throw new Error(
+    throw new InternalError(
       'tailscale-ssh addon requires the Tailscale connected service to be configured',
     );
   }

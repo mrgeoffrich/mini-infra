@@ -9,6 +9,7 @@ import type {
   SyntheticServiceInfo,
   TargetIntegration,
 } from '@mini-infra/types';
+import { InternalError } from '../../lib/errors';
 import type { AddonRegistry, RegisteredAddon } from './registry';
 
 /**
@@ -423,7 +424,7 @@ async function applyGroup(
   // collision means the render output is ambiguous and the reconciler will
   // misbehave.
   if (rendered.has(renderedSidecar.serviceName)) {
-    throw new Error(
+    throw new InternalError(
       `Synthetic service name "${renderedSidecar.serviceName}" collides with an existing service in the rendered stack`,
     );
   }
@@ -471,7 +472,7 @@ async function applyEnvInjectionGroup(
   const addonId = application.addonId;
   const renderedTarget = rendered.get(target.serviceName);
   if (!renderedTarget) {
-    throw new Error(
+    throw new InternalError(
       `Target service "${target.serviceName}" missing from rendered map`,
     );
   }
@@ -567,7 +568,7 @@ async function applyEnvInjectionGroup(
   if (provisioned.envForTarget) {
     for (const [key, value] of Object.entries(provisioned.envForTarget)) {
       if (key in mergedEnv) {
-        throw new Error(
+        throw new InternalError(
           `Addon "${addonId}" cannot inject env var "${key}" into target service "${target.serviceName}": key already set`,
         );
       }
@@ -683,7 +684,7 @@ function applyTargetIntegration(
   if (!target) {
     // Defensive: the target was authored, so it must be in the rendered
     // map. If it isn't, something is structurally wrong with the caller.
-    throw new Error(`Target service "${targetName}" missing from rendered map`);
+    throw new InternalError(`Target service "${targetName}" missing from rendered map`);
   }
 
   // Merge env-for-target from both the static integration declaration and
