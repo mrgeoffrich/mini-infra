@@ -50,3 +50,19 @@ export class ForbiddenError extends CustomError {
     super(message, 403, true, code, opts);
   }
 }
+
+/**
+ * 500 — a genuine internal invariant or programmer error that is NOT
+ * user-actionable. The sanctioned escape hatch for the `no-restricted-syntax`
+ * ban on raw `throw new Error` in `src/services` (see server/eslint.config.js):
+ * reach for this only when the failure means "this should never happen"
+ * (boot-order, defense-in-depth, an unexpected SDK failure) — never to mask a
+ * user-actionable 4xx. `isOperational = false`, so the central middleware logs
+ * it with a stack trace and hides the message from clients in production, the
+ * same as it always has for a raw `Error`.
+ */
+export class InternalError extends CustomError {
+  constructor(message: string, opts?: AppErrorOptions) {
+    super(message, 500, false, ErrorCode.INTERNAL, opts);
+  }
+}
