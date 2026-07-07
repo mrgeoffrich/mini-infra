@@ -285,34 +285,9 @@ router.post("/quick-setup", requirePermission(Permission.PostgresWrite) as Reque
       "Failed to create quick backup setup",
     );
 
-    // Taxonomy errors (e.g. the ConflictError thrown above, or the
-    // ConflictError createDatabase()/createBackupConfig() throw for their
-    // own conflict cases) carry their own status/code and are handled by
-    // the central error middleware — just forward them. Only the remaining
-    // ad-hoc string-matches below are legacy, un-migrated failure modes.
-    if (error instanceof Error) {
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("Server not found")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (error.message.includes("Invalid")) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // Every failure mode below now throws a taxonomy error (or InternalError)
+    // that carries its own status/code and is rendered by the central error
+    // middleware — just forward it.
     next(error);
   }
 }) as RequestHandler);

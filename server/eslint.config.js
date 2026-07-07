@@ -96,4 +96,39 @@ module.exports = tseslint.config([
       ],
     },
   },
+  // Phase 11 — error-handling conventions (see docs/planning/not-shipped/
+  // error-handling-overhaul-plan.md). Services must not throw a raw `new
+  // Error`: use a taxonomy error from `src/lib/errors.ts` for a user-actionable
+  // failure, or `new InternalError(...)` for a genuine internal invariant.
+  {
+    files: ["src/services/**/*.ts"],
+    ignores: ["src/services/**/*.test.ts", "src/services/**/__tests__/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ThrowStatement > NewExpression[callee.name='Error']",
+          message:
+            "Do not throw a raw `new Error` in services. Throw a taxonomy error from '../lib/errors' (ConflictError/NotFoundError/ValidationError/UnauthorizedError/ForbiddenError) for a user-actionable failure, or `new InternalError(...)` for a genuine internal invariant that should stay a 500.",
+        },
+      ],
+    },
+  },
+  // Routes must not derive HTTP status by string-matching an error message —
+  // throw a taxonomy error from the service and let the central middleware map it.
+  {
+    files: ["src/routes/**/*.ts"],
+    ignores: ["src/routes/**/*.test.ts", "src/routes/**/__tests__/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name='includes'][callee.object.property.name='message']",
+          message:
+            "Do not derive HTTP status by string-matching an error message (`err.message.includes(...)`). Throw a taxonomy error from the service and let the central error middleware map the status.",
+        },
+      ],
+    },
+  },
 ]);
