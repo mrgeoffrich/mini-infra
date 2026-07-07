@@ -1,0 +1,48 @@
+# Mirrors .github/workflows/docker-build.yml, adapted for Buildkite.
+#
+# Build-only: every image is built to validate it compiles on each commit. Nothing is
+# pushed to a registry, so the agents need no ghcr.io credentials (matches the "build
+# only" choice; the GitHub Action additionally logs in and pushes to ghcr.io).
+#
+# The main image does NOT derive FROM the ancillary images. Their refs are baked in
+# purely as ENV strings via build-args (used at runtime for self-update wiring), so all
+# seven builds are independent and run in parallel -- no ordering or image sharing.
+#
+# $$VAR is escaped so the agent's shell expands it at run time (Buildkite turns $$ -> $
+# at upload). Build numbers/commit come from the agent environment.
+
+steps:
+  - group: ":docker: Build images"
+    steps:
+      - label: ":docker: sidecar"
+        command: docker build --platform linux/amd64 -t ghcr.io/mrgeoffrich/mini-infra-sidecar:build-$$BUILDKITE_BUILD_NUMBER ./update-sidecar
+
+      - label: ":docker: agent-sidecar"
+        command: docker build --platform linux/amd64 -f agent-sidecar/Dockerfile -t ghcr.io/mrgeoffrich/mini-infra-agent-sidecar:build-$$BUILDKITE_BUILD_NUMBER .
+
+      - label: ":docker: claude-shell"
+        command: docker build --platform linux/amd64 -t ghcr.io/mrgeoffrich/mini-infra-claude-shell:build-$$BUILDKITE_BUILD_NUMBER ./claude-shell
+
+      - label: ":docker: egress-gateway"
+        command: docker build --platform linux/amd64 -f egress-gateway/Dockerfile -t ghcr.io/mrgeoffrich/mini-infra-egress-gateway:build-$$BUILDKITE_BUILD_NUMBER .
+
+      - label: ":docker: egress-fw-agent"
+        command: docker build --platform linux/amd64 -f egress-fw-agent/Dockerfile -t ghcr.io/mrgeoffrich/mini-infra-egress-fw-agent:build-$$BUILDKITE_BUILD_NUMBER .
+
+      - label: ":docker: pg-backup"
+        command: docker build --platform linux/amd64 -t ghcr.io/mrgeoffrich/mini-infra-pg-backup:build-$$BUILDKITE_BUILD_NUMBER ./pg-az-backup
+
+      - label: ":docker: main"
+        command: |
+          SHORT_SHA=$$(echo "$$BUILDKITE_COMMIT" | cut -c1-7)
+          docker build --platform linux/amd64 \
+            --build-arg SIDECAR_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-sidecar:main-$$SHORT_SHA \
+            --build-arg AGENT_SIDECAR_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-agent-sidecar:main-$$SHORT_SHA \
+            --build-arg EGRESS_GATEWAY_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-gateway \
+            --build-arg EGRESS_FW_AGENT_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-egress-fw-agent \
+            --build-arg PG_BACKUP_IMAGE_TAG=ghcr.io/mrgeoffrich/mini-infra-pg-backup:dev \
+            --build-arg PG_BACKUP_TEMPLATE_IMAGE=ghcr.io/mrgeoffrich/mini-infra-pg-backup \
+            --build-arg PG_BACKUP_TEMPLATE_TAG=dev \
+            --build-arg BUILD_VERSION=$$BUILDKITE_COMMIT \
+            -t ghcr.io/mrgeoffrich/mini-infra:build-$$BUILDKITE_BUILD_NUMBER \
+            .
