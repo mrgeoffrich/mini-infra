@@ -8,6 +8,7 @@ import {
   StackServiceDefinition,
   StackVolume,
 } from '@mini-infra/types';
+import { InternalError } from '../../lib/errors';
 
 export interface TemplateContextStack {
   id?: string;
@@ -137,15 +138,15 @@ export function resolveTemplate(template: string, context: TemplateContext): str
     let current: unknown = context;
     for (const part of parts) {
       if (current === null || current === undefined || typeof current !== 'object') {
-        throw new Error(`Unresolved template variable: ${match}`);
+        throw new InternalError(`Unresolved template variable: ${match}`);
       }
       current = (current as Record<string, unknown>)[part];
     }
     if (current === undefined || current === null) {
-      throw new Error(`Unresolved template variable: ${match}`);
+      throw new InternalError(`Unresolved template variable: ${match}`);
     }
     if (typeof current === 'object') {
-      throw new Error(`Unresolved template variable: ${match}`);
+      throw new InternalError(`Unresolved template variable: ${match}`);
     }
     return String(current);
   });
@@ -195,7 +196,7 @@ function deepResolve(obj: unknown, context: TemplateContext): unknown {
 function toFiniteNumber(value: unknown, field: string, serviceName: string): number {
   const n = Number(value);
   if (!Number.isFinite(n)) {
-    throw new Error(
+    throw new InternalError(
       `Service "${serviceName}" field "${field}" did not resolve to a finite number (got ${JSON.stringify(value)})`
     );
   }

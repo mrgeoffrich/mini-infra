@@ -1,4 +1,5 @@
 import prisma from '../../lib/prisma';
+import { InternalError } from '../../lib/errors';
 import { StackResourceReconciler } from './stack-resource-reconciler';
 import { CertificateLifecycleManager } from '../tls/certificate-lifecycle-manager';
 import { AcmeClientManager } from '../tls/acme-client-manager';
@@ -60,9 +61,9 @@ export async function createResourceReconciler(): Promise<StackResourceReconcile
   }
 
   const effectiveCertManager: CertificateLifecycleManager = certLifecycleManager ?? ({
-    issueCertificate: () => { throw new Error('TLS provisioning requires a configured storage provider'); },
-    renewCertificate: () => { throw new Error('TLS provisioning requires a configured storage provider'); },
-    revokeCertificate: () => { throw new Error('TLS provisioning requires a configured storage provider'); },
+    issueCertificate: () => { throw new InternalError('TLS provisioning requires a configured storage provider'); },
+    renewCertificate: () => { throw new InternalError('TLS provisioning requires a configured storage provider'); },
+    revokeCertificate: () => { throw new InternalError('TLS provisioning requires a configured storage provider'); },
   } as unknown as CertificateLifecycleManager);
 
   return new StackResourceReconciler(

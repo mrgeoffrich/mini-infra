@@ -5,6 +5,7 @@ import {
   StackServiceDefinition,
 } from '@mini-infra/types';
 import { getLogger } from '../../lib/logger-factory';
+import { InternalError } from '../../lib/errors';
 import { groupByProperty } from './utils';
 import { resolveEgressEnv } from './egress-injection';
 import { resolveStackMountSource } from './stack-mounts';
@@ -46,7 +47,7 @@ export class StackContainerManager {
       const allCommands = commands.flatMap((c) => c.commands);
       const mountPath = commands[0].mountPath;
       if (!/^\/[a-zA-Z0-9_./-]*$/.test(mountPath)) {
-        throw new Error(`Invalid mountPath: ${mountPath}`);
+        throw new InternalError(`Invalid mountPath: ${mountPath}`);
       }
       const shellCmd = allCommands.join(' && ');
       const containerName = `${projectName}-init-${volumeName}-${Date.now()}`;
@@ -80,7 +81,7 @@ export class StackContainerManager {
         parts.push(`echo '${escapedContent}' > ${dest}`);
         if (file.permissions) {
           if (!/^[0-7]{3,4}$/.test(file.permissions)) {
-            throw new Error(`Invalid permissions value: ${file.permissions}`);
+            throw new InternalError(`Invalid permissions value: ${file.permissions}`);
           }
           parts.push(`chmod ${file.permissions} ${dest}`);
         }

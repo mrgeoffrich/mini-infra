@@ -9,6 +9,7 @@ import { vaultServicesReady } from '../vault/vault-services';
 import { NatsCredentialInjector } from '../nats/nats-credential-injector';
 import { resolveEffectiveVaultBinding } from './vault-binding-resolver';
 import { getLogger } from '../../lib/logger-factory';
+import { InternalError } from '../../lib/errors';
 import {
   buildStackTemplateContext,
   mergeParameterValues,
@@ -95,7 +96,7 @@ export async function dryRunJobPoolCredentials(
 
     if (hasVaultEntries) {
       if (!vaultInjector) {
-        throw new Error(
+        throw new InternalError(
           `JobPool service "${svc.serviceName}" declares Vault dynamicEnv but Vault is not ready — refusing to apply (would silently spawn without credentials)`,
         );
       }
@@ -104,7 +105,7 @@ export async function dryRunJobPoolCredentials(
         (src) => src.kind === 'vault-role-id' || src.kind === 'vault-wrapped-secret-id',
       );
       if (hasAppRoleEntries && !binding.appRoleId) {
-        throw new Error(
+        throw new InternalError(
           `JobPool service "${svc.serviceName}" declares vault-role-id or vault-wrapped-secret-id but no AppRole is bound on the service or stack`,
         );
       }
@@ -124,10 +125,11 @@ export async function dryRunJobPoolCredentials(
           { stackId, serviceName: svc.serviceName, err: msg },
           'JobPool Vault credential dry-run failed',
         );
-        throw new Error(
+        const wrapped = new InternalError(
           `Vault credential dry-run failed for JobPool service "${svc.serviceName}": ${msg}`,
-          { cause: err },
         );
+        wrapped.cause = err;
+        throw wrapped;
       }
     }
 
@@ -144,10 +146,11 @@ export async function dryRunJobPoolCredentials(
           { stackId, serviceName: svc.serviceName, err: msg },
           'JobPool NATS credential dry-run failed',
         );
-        throw new Error(
+        const wrapped = new InternalError(
           `NATS credential dry-run failed for JobPool service "${svc.serviceName}": ${msg}`,
-          { cause: err },
         );
+        wrapped.cause = err;
+        throw wrapped;
       }
     }
   }

@@ -9,6 +9,7 @@ import {
 import { TailscaleAuthkeyMinter } from '../../tailscale/tailscale-authkey-minter';
 import { TailscaleService } from '../../tailscale/tailscale-service';
 import { getLogger } from '../../../lib/logger-factory';
+import { InternalError } from '../../../lib/errors';
 import {
   getVaultKVService,
   VaultKVError,
@@ -136,7 +137,7 @@ export async function provisionClaudeShell(
   const lookup = asLookup(ctx.connectedServices);
   const tailscale = lookup.tailscale;
   if (!tailscale) {
-    throw new Error(
+    throw new InternalError(
       'claude-shell addon requires the Tailscale connected service to be configured',
     );
   }

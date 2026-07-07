@@ -1,6 +1,7 @@
 import Docker from 'dockerode';
 import type { Logger } from 'pino';
 import { Prisma, PrismaClient } from "../../generated/prisma/client";
+import { InternalError } from '../../lib/errors';
 import type {
   ServiceAction,
   ServiceApplyResult,
@@ -103,7 +104,7 @@ export class StackServiceHandlers {
 
     switch (action.action) {
       case 'create': {
-        if (!effectiveServiceDef) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef) throw new InternalError(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Creating service');
 
         await removeConflictingContainer(
@@ -158,7 +159,7 @@ export class StackServiceHandlers {
       }
 
       case 'recreate': {
-        if (!effectiveServiceDef) throw new Error(`Service ${action.serviceName} not found`);
+        if (!effectiveServiceDef) throw new InternalError(`Service ${action.serviceName} not found`);
         log.info({ service: action.serviceName }, 'Recreating service');
 
         const oldContainer = containerByService.get(action.serviceName);
@@ -230,21 +231,21 @@ export class StackServiceHandlers {
       }
 
       default:
-        throw new Error(`Unknown action: ${action.action}`);
+        throw new InternalError(`Unknown action: ${action.action}`);
     }
   }
 
   async applyAdoptedWeb(ctx: ServiceHandlerContext): Promise<ServiceApplyResult> {
     const { action, serviceDef, stackId, stack, infraNetworkMap, actionStart, log } = ctx;
-    if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
+    if (!serviceDef) throw new InternalError(`Service ${action.serviceName} not found`);
 
     const routing = serviceDef.routing;
     if (!routing) {
-      throw new Error(`AdoptedWeb service "${action.serviceName}" requires routing configuration`);
+      throw new InternalError(`AdoptedWeb service "${action.serviceName}" requires routing configuration`);
     }
     const adopted = serviceDef.adoptedContainer;
     if (!adopted) {
-      throw new Error(`AdoptedWeb service "${action.serviceName}" requires adoptedContainer configuration`);
+      throw new InternalError(`AdoptedWeb service "${action.serviceName}" requires adoptedContainer configuration`);
     }
 
     switch (action.action) {
@@ -381,9 +382,9 @@ export class StackServiceHandlers {
     const { action, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
       resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
-    if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
+    if (!serviceDef) throw new InternalError(`Service ${action.serviceName} not found`);
     if (!serviceDef.routing) {
-      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
+      throw new InternalError(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
     }
 
     const effectiveServiceDef = mergeDynamicEnv(
@@ -517,7 +518,7 @@ export class StackServiceHandlers {
       }
 
       default:
-        throw new Error(`Unknown action: ${action.action}`);
+        throw new InternalError(`Unknown action: ${action.action}`);
     }
   }
 
@@ -525,9 +526,9 @@ export class StackServiceHandlers {
     const { action, serviceDef, projectName, stackId, stack, networkNames, serviceHashes,
       resolvedConfigsMap, containerByService, infraNetworkMap, resolvedEnvOverrides, actionStart, log } = ctx;
 
-    if (!serviceDef) throw new Error(`Service ${action.serviceName} not found`);
+    if (!serviceDef) throw new InternalError(`Service ${action.serviceName} not found`);
     if (!serviceDef.routing) {
-      throw new Error(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
+      throw new InternalError(`StatelessWeb service "${action.serviceName}" requires routing configuration`);
     }
 
     log.info({ service: action.serviceName }, 'Updating StatelessWeb service via blue-green update state machine');
