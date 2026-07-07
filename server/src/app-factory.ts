@@ -63,6 +63,7 @@ import haproxyBackendsRoutes from "./routes/haproxy-backends";
 import githubAppSettingsRoutes from "./routes/github-app-settings";
 import githubAppResourcesRoutes from "./routes/github-app-resources";
 import agentRoutes from "./routes/agent";
+import addonsRoutes from "./routes/addons";
 import monitoringRoutes from "./routes/monitoring";
 import permissionPresetsRoutes from "./routes/permission-presets";
 import stacksRoutes from "./routes/stacks/index";
@@ -235,6 +236,7 @@ function getRouteDefinitions(): RouteDefinition[] {
     { id: "apiRoutes", path: ApiBase.apiRoutes, name: "apiRoutesRoutes", getRouter: () => apiRoutesRoutes },
     { id: "openapi", path: ApiBase.openapi, name: "openapiRoutes", getRouter: () => openapiRoutes },
     { id: "agent", path: ApiBase.agent, name: "agentRoutes", getRouter: () => agentRoutes },
+    { id: "addons", path: ApiBase.addons, name: "addonsRoutes", getRouter: () => addonsRoutes },
     { id: "diagnostics", path: ApiBase.diagnostics, name: "diagnosticsRoutes", getRouter: () => diagnosticsRoutes },
     { id: "onboarding", path: ApiBase.onboarding, name: "onboardingRoutes", getRouter: () => onboardingRoutes },
     { id: "vaultPolicies", path: ApiBase.vaultPolicies, name: "vaultPolicyRoutes", getRouter: () => vaultPolicyRoutes },

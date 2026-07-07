@@ -46,6 +46,40 @@ export type AddonRequiredConnectedService = string;
 export type AddonMode = 'sidecar' | 'env-injection';
 
 /**
+ * Serialisable description of a single config field an addon accepts,
+ * projected from that addon's zod `configSchema` so the client can render a
+ * form without the zod schema crossing the `@mini-infra/types` boundary
+ * (`lib/` is zero-runtime-deps, per `lib/CLAUDE.md`). Authored alongside each
+ * addon's schema and served by `GET /api/addons` (§4.1 of the
+ * addon-authoring-ui plan).
+ *
+ * The descriptor list is the source of truth for **form rendering**; the zod
+ * schema stays the source of truth for **validation**. The advisory hints
+ * (`pattern` / `min` / `max`) mirror the schema so the form can pre-validate,
+ * but the server always re-validates authoritatively against the schema.
+ */
+export interface AddonConfigFieldDescriptor {
+  /** Config key, e.g. `"port"` — matches a key the zod `configSchema` accepts. */
+  name: string;
+  /** Human-readable label for the form control. */
+  label: string;
+  /** Field shape driving the form control kind. */
+  type: 'string' | 'number' | 'boolean' | 'string[]';
+  /** Whether the zod schema requires this key (i.e. it is not `.optional()`). */
+  required: boolean;
+  /** Optional placeholder text for the form control. */
+  placeholder?: string;
+  /** Optional helper text explaining the field. */
+  help?: string;
+  /** Advisory regex pattern mirrored from the zod schema (server re-validates). */
+  pattern?: string;
+  /** Advisory numeric minimum mirrored from the zod schema (server re-validates). */
+  min?: number;
+  /** Advisory numeric maximum mirrored from the zod schema (server re-validates). */
+  max?: number;
+}
+
+/**
  * Identity, applicability, and config-shape declaration for an addon.
  *
  * The runtime consumes `id` for registry lookup, `appliesTo` to gate
@@ -83,6 +117,52 @@ export interface AddonManifest {
    * the matching `ProvisionedValues` shape from `provision()`.
    */
   mode?: AddonMode;
+  /**
+   * Serialisable projection of this addon's zod `configSchema`, authored
+   * alongside the schema on each production manifest. Drives the per-addon
+   * config form the catalog endpoint (`GET /api/addons`) exposes to the
+   * client — the zod schema itself can't cross into `lib/`. Its field
+   * `name`s must exactly cover the keys the schema accepts; a drift test
+   * pins the two together (see the addon-authoring-ui plan §4.1). Omitted
+   * when the addon takes no config (e.g. the no-op test addon).
+   */
+  configFields?: AddonConfigFieldDescriptor[];
+}
+
+/**
+ * One registered addon projected into the shape the catalog endpoint
+ * (`GET /api/addons`) serves — enough metadata to render a picker row and a
+ * per-addon config form without the server's zod schema crossing into
+ * `lib/`. See §4.1 of the addon-authoring-ui plan.
+ *
+ * Distinct from `AddonManifest`: the manifest is the server-side registration
+ * record (with `mode`/`configFields` optional for authoring ergonomics); this
+ * is the fully-resolved client contract (`mode` defaulted to `'sidecar'`,
+ * `configFields` defaulted to `[]`).
+ */
+export interface AddonCatalogEntry {
+  /** Registry id, e.g. `"tailscale-ssh"`. */
+  id: string;
+  description: string;
+  /** Merge-group label (addons sharing a `kind` collapse into one sidecar). */
+  kind?: string;
+  /** Attachment shape, resolved from the manifest (`'sidecar'` when omitted). */
+  mode: AddonMode;
+  /** Service types this addon supports — gates the picker per service type. */
+  appliesTo: StackServiceType[];
+  /** Connected-service prerequisite (e.g. `"tailscale"`), if any. */
+  requiresConnectedService?: AddonRequiredConnectedService;
+  /** Field descriptors driving the per-addon config form (`[]` when none). */
+  configFields: AddonConfigFieldDescriptor[];
+}
+
+/**
+ * Response body of `GET /api/addons` — the full registry-driven catalog.
+ * Mirrors the sibling `TailscaleAddonEndpointsResponse` envelope shape
+ * (a single named array field) served by the addon-endpoints route.
+ */
+export interface AddonCatalogResponse {
+  addons: AddonCatalogEntry[];
 }
 
 /**

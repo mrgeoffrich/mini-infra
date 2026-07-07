@@ -93,4 +93,26 @@ export const claudeShellManifest = {
     'Inject Tailscale-SSH bootstrap env (authkey + hostname + --ssh) into a Claude Shell workload container. The image bakes tailscaled in-process; the addon does not materialise a sidecar. Requires the Tailscale connected service.',
   appliesTo: ['Stateful', 'StatelessWeb'],
   requiresConnectedService: 'tailscale',
+  // Mirrors `claudeShellConfigSchema` above — the drift test in
+  // `addon-catalog-schema-drift.test.ts` pins these field names to the
+  // schema's keys.
+  configFields: [
+    {
+      name: 'gitRepo',
+      label: 'Git Repository',
+      type: 'string',
+      required: false,
+      placeholder: 'https://github.com/owner/repo.git',
+      help: 'Optional git repo URL cloned into the workspace volume on first start. Only anonymously-cloneable URLs are supported until deploy keys land.',
+    },
+    {
+      name: 'extraTags',
+      label: 'Extra Tags',
+      type: 'string[]',
+      required: false,
+      placeholder: 'tag:dev-team',
+      help: 'Additional Tailscale tags to apply to the device. Each must match tag:[a-z0-9-]+ and already exist in your ACL tagOwners.',
+      pattern: '^tag:[a-z0-9-]+$',
+    },
+  ],
 } as const satisfies AddonManifest;

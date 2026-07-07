@@ -58,6 +58,13 @@ export const queryKeys = {
     config: ["agent-sidecar", "config"] as const,
   },
 
+  addons: {
+    /** Root key for the addon resource — prefix-matches every narrower addons key. */
+    all: ["addons"] as const,
+    /** Registry-driven addon catalog (GET /api/addons). */
+    catalog: ["addons", "catalog"] as const,
+  },
+
   authSettings: {
     all: ["auth-settings"] as const,
   },

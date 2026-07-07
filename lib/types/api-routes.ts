@@ -92,6 +92,7 @@ export const ApiBase = {
   apiRoutes: "/api/routes",
   openapi: "/api/openapi.json",
   agent: "/api/agent",
+  addons: "/api/addons",
   diagnostics: "/api/diagnostics",
   onboarding: "/api/onboarding",
   vaultPolicies: "/api/vault/policies",
@@ -132,6 +133,11 @@ export const ApiRoute = {
     /** POST /api/containers/:id/:action — start/stop/restart/remove */
     action: (id: string, action: ContainerAction): string =>
       `${ApiBase.containers}/${id}/${action}`,
+  },
+
+  addons: {
+    /** GET /api/addons — registry-driven addon catalog (picker + config-form metadata) */
+    catalog: (): string => `${ApiBase.addons}`,
   },
 
   agentSidecar: {
