@@ -168,12 +168,26 @@ export function TemplateServicesSection({
             );
 
             return (
-              <button
-                type="button"
+              // A clickable card that also hosts action buttons (edit / delete /
+              // add-ons). It must NOT be a <button> — nesting the action
+              // <button>s inside another <button> is invalid HTML and makes
+              // real clicks on them resolve unreliably (the add-ons button would
+              // sometimes open the edit drawer instead). A div with role=button
+              // keeps the whole-card "click to edit" affordance while letting the
+              // nested buttons behave normally.
+              <div
                 key={svc.id}
+                role={readOnly ? undefined : "button"}
+                tabIndex={readOnly ? undefined : 0}
                 onClick={() => !readOnly && setEditingIndex(index)}
-                disabled={readOnly}
-                className={`w-full text-left rounded-md border border-l-4 ${TYPE_BORDER_CLASSES[svc.serviceType]} bg-card p-3 transition-colors hover:bg-muted/30 disabled:cursor-default disabled:hover:bg-card`}
+                onKeyDown={(e) => {
+                  if (readOnly) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setEditingIndex(index);
+                  }
+                }}
+                className={`w-full text-left rounded-md border border-l-4 ${TYPE_BORDER_CLASSES[svc.serviceType]} bg-card p-3 transition-colors ${readOnly ? "cursor-default" : "cursor-pointer hover:bg-muted/30"}`}
               >
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-sm">{svc.serviceName}</span>
@@ -271,7 +285,7 @@ export function TemplateServicesSection({
                     </span>
                   )}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
