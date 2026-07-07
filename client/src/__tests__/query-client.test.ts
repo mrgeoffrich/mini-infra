@@ -4,6 +4,9 @@
  *   - the typed default retry policy (`defaultQueryRetry` / `defaultQueryRetryDelay`)
  *   - the global 401 handler wired onto the `QueryCache`/`MutationCache`,
  *     including the exactly-once redirect latch under concurrent 401s
+ *   - Phase 2 of docs/planning/not-shipped/error-handling-overhaul-plan.md
+ *     (§4.4): the `MutationCache.onError` default-toasts non-401 mutation
+ *     errors via `toastApiError`, with a `meta.skipErrorToast` opt-out
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -18,6 +21,13 @@ import {
   defaultQueryRetryDelay,
   resetAuthRedirectLatch,
 } from "@/lib/query-client";
+
+const toastErrorMock = vi.fn();
+vi.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => toastErrorMock(...args),
+  },
+}));
 
 describe("defaultQueryRetry", () => {
   it("never retries a 4xx ApiRequestError", () => {
@@ -199,6 +209,82 @@ describe("createQueryClient 401 handling", () => {
     await client
       .fetchQuery({ queryKey: ["test-widget-e"], queryFn: unauthorized, retry: false })
       .catch(() => {});
+    expect(client.getQueryData(queryKeys.auth.status)).toEqual({
+      isAuthenticated: false,
+      user: null,
+    });
+
+    client.clear();
+  });
+});
+
+describe("createQueryClient mutation error toasting (error-handling-overhaul Phase 2)", () => {
+  beforeEach(() => {
+    resetAuthRedirectLatch();
+    toastErrorMock.mockClear();
+  });
+
+  function wrapperFor(client: ReturnType<typeof createQueryClient>) {
+    return ({ children }: { children: React.ReactNode }) =>
+      React.createElement(QueryClientProvider, { client }, children);
+  }
+
+  it("toasts a non-401 mutation error via the default MutationCache.onError", async () => {
+    const client = createQueryClient();
+    const conflict = new ApiRequestError(409, "CONFLICT", "already exists");
+
+    const { result } = renderHook(
+      () => useMutation({ mutationFn: () => Promise.reject(conflict) }),
+      { wrapper: wrapperFor(client) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined).catch(() => {});
+    });
+
+    expect(toastErrorMock).toHaveBeenCalledOnce();
+    client.clear();
+  });
+
+  it("does NOT toast when the mutation opts out via meta.skipErrorToast", async () => {
+    const client = createQueryClient();
+    const conflict = new ApiRequestError(409, "CONFLICT", "already exists");
+
+    const { result } = renderHook(
+      () =>
+        useMutation({
+          mutationFn: () => Promise.reject(conflict),
+          meta: { skipErrorToast: true },
+        }),
+      { wrapper: wrapperFor(client) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined).catch(() => {});
+    });
+
+    expect(toastErrorMock).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it("does NOT toast a 401 — it still only redirects via handleUnauthorized", async () => {
+    const client = createQueryClient();
+    client.setQueryData(queryKeys.auth.status, {
+      isAuthenticated: true,
+      user: { id: "1", email: "a@b.com" },
+    });
+    const unauthorized = new ApiRequestError(401, "UNAUTHORIZED", "session expired");
+
+    const { result } = renderHook(
+      () => useMutation({ mutationFn: () => Promise.reject(unauthorized) }),
+      { wrapper: wrapperFor(client) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync(undefined).catch(() => {});
+    });
+
+    expect(toastErrorMock).not.toHaveBeenCalled();
     expect(client.getQueryData(queryKeys.auth.status)).toEqual({
       isAuthenticated: false,
       user: null,

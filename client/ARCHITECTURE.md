@@ -274,9 +274,18 @@ The most useful tests are around resource hooks — they exercise the TanStack Q
 
 Three principles, in order:
 
-1. **Network failures surface to the user.** TanStack Query's `error` state propagates to the component, which renders an error UI. We use sonner toasts ([@/components/ui/sonner](src/components/ui/sonner.tsx)) for transient errors and inline error states for in-page failures.
+1. **Network failures surface to the user.** TanStack Query's `error` state propagates to the component, which renders an error UI. Mutation errors default to a sonner toast (see "Actionable error toasts" below); inline error states are used for in-page failures.
 2. **Auth errors redirect.** [src/components/auth-error-boundary.tsx](src/components/auth-error-boundary.tsx) wraps every route and catches auth-shaped errors anywhere in the tree, forcing a clean redirect to `/login`. Don't catch 401s manually — let them bubble.
 3. **Operation failures appear in the task tracker.** Long-running ops emit `*_COMPLETED` with `success: false` and `errors[]`. The tracker surfaces them in the popover and the detail dialog. Local progress dialogs (via `useOperationProgress`) get the same data and can render their own error UI.
+
+#### Actionable error toasts — `getUserFacingError` / `toastApiError`
+
+Phase 2 of [docs/planning/not-shipped/error-handling-overhaul-plan.md](../docs/planning/not-shipped/error-handling-overhaul-plan.md) (§4.4) adds one presentation layer for turning a caught error into an actionable message, and wires it in as the **global default** for mutations:
+
+- [src/lib/errors.ts](src/lib/errors.ts) exports `getUserFacingError(err): { title, description, action? }`. It reads `ApiRequestError.code` / `.status` / `.body.resource` / `.body.action` (see [src/lib/api-client.ts](src/lib/api-client.ts)) and reconciles the two response shapes a route can still send while its domain migrates onto the server's Phase 1 envelope: a migrated route's `code` is a stable machine `ErrorCode` with the human text in `message`; a not-yet-migrated legacy route (e.g. the auth pages, until Phase 9) sends `{ error: "<human text>" }` with no `message` at all. The disambiguation is a simple heuristic — a real code matches `/^[A-Z0-9_]+$/`, anything else is treated as human prose. When there's no useful message or code, it falls back by status class (409 → "Already exists", 404 → "Not found", etc).
+- `toastApiError(err, { title? })` calls `getUserFacingError` and renders a sonner error toast (`toast.error(title, { description })`). `action` (a human next-step hint like "Edit the existing backup config instead") is folded into the description rather than a clickable sonner action button — the server doesn't expose a structured navigation target yet.
+- **Global wiring — default + opt-out.** The app `QueryClient`'s `MutationCache.onError` ([src/lib/query-client.ts](src/lib/query-client.ts)) calls `toastApiError(error)` for every mutation failure by default, *except* a 401 (which still only triggers the existing auth redirect — never both) and any mutation declaring `useMutation({ meta: { skipErrorToast: true } })`. Use the opt-out when a site renders the error inline or needs bespoke handling (e.g. keeping a dialog open with a field-level message) instead of a toast — see [src/components/postgres-server/quick-backup-setup-modal.tsx](src/components/postgres-server/quick-backup-setup-modal.tsx) for the reference migration (it relies on the global default rather than opting out, and just swallows the caught error to keep the dialog open for a retry).
+- Consequence for new mutations: don't hand-roll `onError: () => toast.error(...)`. Either rely on the global default, or opt out with `meta.skipErrorToast` and call `toastApiError` (or render inline) yourself.
 
 ### Observability
 

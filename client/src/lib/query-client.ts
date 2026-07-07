@@ -23,6 +23,15 @@
  *     cached value is enough to trigger a normal SPA redirect. No
  *     `window.location` reload, no second auth mechanism.
  *
+ *  3. Phase 2 of docs/planning/not-shipped/error-handling-overhaul-plan.md
+ *     (§4.4 "Global wiring") extends the `MutationCache.onError` above with
+ *     a global default: any mutation error that isn't a 401 gets an
+ *     actionable toast via `toastApiError()` (`client/src/lib/errors.ts`).
+ *     A call site opts out with `useMutation({ meta: { skipErrorToast: true } })`
+ *     when it renders the error inline or handles it bespoke — see
+ *     `client/ARCHITECTURE.md`'s error-handling section. `QueryCache` is
+ *     deliberately left alone; only mutations get the default toast.
+ *
  * Exported as a factory (rather than a singleton instance) so tests can
  * construct an isolated client per test case; `auth-context.tsx` calls this
  * once at module scope for the real app, exactly as it constructed its own
@@ -33,6 +42,7 @@ import { QueryCache, QueryClient, MutationCache } from "@tanstack/react-query";
 import { queryKeys } from "@mini-infra/types";
 import type { AuthStatus } from "./auth-types";
 import { ApiRequestError } from "./api-client";
+import { toastApiError } from "./errors";
 
 // ====================
 // Retry policy
@@ -121,10 +131,19 @@ export function createQueryClient(): QueryClient {
       },
     }),
     mutationCache: new MutationCache({
-      onError: (error) => {
+      onError: (error, _variables, _context, mutation) => {
         if (isUnauthorizedError(error)) {
           handleUnauthorized(client);
+          return;
         }
+        // Opt-out for sites that render the error inline or handle it
+        // bespoke (e.g. keeping a dialog open with a field-level message)
+        // instead of the default toast — see §4.4 of the error-handling
+        // overhaul plan.
+        if (mutation.meta?.skipErrorToast === true) {
+          return;
+        }
+        toastApiError(error);
       },
     }),
     defaultOptions: {

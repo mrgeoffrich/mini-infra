@@ -106,22 +106,23 @@ async function deletePostgresBackupConfig(
 async function quickSetupPostgresBackup(
   request: QuickBackupSetupRequest,
 ): Promise<BackupConfigurationResponse> {
-  try {
-    return await apiFetch<BackupConfigurationResponse>(
-      ApiRoute.postgres.backupConfigsQuickSetup(),
-      {
-        method: "POST",
-        body: request,
-        correlationIdPrefix: "postgres-backup-config",
-        unwrap: false,
-      },
-    );
-  } catch (error) {
-    if (error instanceof ApiRequestError) {
-      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
-    }
-    throw error;
-  }
+  // Unlike createPostgresBackupConfig/updatePostgresBackupConfig above, this
+  // does NOT catch-and-flatten ApiRequestError into a generic Error — the
+  // real error (with its `code`/`resource`/`action`) needs to reach the
+  // global MutationCache.onError (client/src/lib/query-client.ts), which
+  // renders it via getUserFacingError/toastApiError (client/src/lib/errors.ts).
+  // That helper already reads Zod `details` for VALIDATION_FAILED, so the
+  // validationErrorMessage behavior isn't lost — it just lives in one place
+  // now instead of being duplicated per-hook.
+  return apiFetch<BackupConfigurationResponse>(
+    ApiRoute.postgres.backupConfigsQuickSetup(),
+    {
+      method: "POST",
+      body: request,
+      correlationIdPrefix: "postgres-backup-config",
+      unwrap: false,
+    },
+  );
 }
 
 // ====================

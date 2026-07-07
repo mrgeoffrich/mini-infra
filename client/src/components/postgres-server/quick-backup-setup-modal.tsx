@@ -117,11 +117,13 @@ export function QuickBackupSetupModal({
 
       reset();
       onOpenChange(false);
-    } catch (error) {
-      console.error("Failed to setup backup:", error);
-      toast.error("Failed to setup backup", {
-        description: error instanceof Error ? error.message : "An unknown error occurred",
-      });
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError. We only need to catch here so
+      // mutateAsync's rejection doesn't become an unhandled promise
+      // rejection — not calling reset()/onOpenChange(false) below leaves
+      // the dialog open so the user can fix the form and retry.
     } finally {
       setIsSubmitting(false);
     }
