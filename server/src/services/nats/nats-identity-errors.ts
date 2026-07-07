@@ -1,3 +1,7 @@
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError } from "../../lib/errors";
+import type { AppErrorOptions } from "../../lib/error-handler";
+
 /**
  * Typed failures raised by the Phase 1 NATS identity re-key guard.
  *
@@ -12,11 +16,20 @@
  * regeneration here would orphan every credential already issued against the
  * recorded identity (e.g. the egress agents' baked-in `NATS_CREDS`), which is
  * exactly the production incident Phase 1 prevents.
+ *
+ * Folded onto the shared error taxonomy (`ConflictError`, 409 — the DB's
+ * recorded identity conflicts with what Vault can currently back) so the
+ * central middleware (`server/src/lib/error-handler.ts`) maps status + emits
+ * the standard envelope instead of routes hand-rolling a mapping. The
+ * `identityLabel` / `kvPath` / `recordedPublicKey` fields are kept for
+ * existing callers (`raiseIdentityAlarm`'s audit-log metadata) and tests
+ * (`instanceof NatsIdentityMissing` / `NatsIdentityMismatch` still holds).
  */
 
 /** Base class so callers can `instanceof NatsIdentityError` to catch both. */
-export class NatsIdentityError extends Error {
+export class NatsIdentityError extends ConflictError {
   constructor(
+    code: ErrorCode,
     message: string,
     /** Human-readable identity label, e.g. `operator mini-infra-operator`. */
     readonly identityLabel: string,
@@ -24,8 +37,9 @@ export class NatsIdentityError extends Error {
     readonly kvPath: string,
     /** The public key the DB records for this identity. */
     readonly recordedPublicKey: string,
+    opts?: AppErrorOptions,
   ) {
-    super(message);
+    super(code, message, opts);
     // `new.target` resolves to the concrete subclass being constructed.
     this.name = new.target.name;
   }
@@ -39,12 +53,18 @@ export class NatsIdentityError extends Error {
 export class NatsIdentityMissing extends NatsIdentityError {
   constructor(identityLabel: string, kvPath: string, recordedPublicKey: string) {
     super(
+      ErrorCode.NATS_IDENTITY_SEED_MISSING,
       `NATS identity seed missing from Vault for ${identityLabel} ` +
         `(recorded public key ${recordedPublicKey}, expected seed at '${kvPath}') — ` +
         `refusing to regenerate to avoid orphaning credentials`,
       identityLabel,
       kvPath,
       recordedPublicKey,
+      {
+        resource: { type: "natsIdentity", name: identityLabel },
+        action:
+          "Restore the identity seeds from a self-backup (POST /api/nats/identity-seeds/restore) before re-running apply.",
+      },
     );
   }
 }
@@ -64,12 +84,18 @@ export class NatsIdentityMismatch extends NatsIdentityError {
     readonly derivedPublicKey: string,
   ) {
     super(
+      ErrorCode.NATS_IDENTITY_SEED_MISMATCH,
       `NATS identity seed at '${kvPath}' for ${identityLabel} derives public key ` +
         `${derivedPublicKey}, which does not match the recorded ${recordedPublicKey} — ` +
         `refusing to proceed to avoid orphaning credentials`,
       identityLabel,
       kvPath,
       recordedPublicKey,
+      {
+        resource: { type: "natsIdentity", name: identityLabel },
+        action:
+          "Restore the identity seeds from a self-backup (POST /api/nats/identity-seeds/restore) before re-running apply.",
+      },
     );
   }
 }

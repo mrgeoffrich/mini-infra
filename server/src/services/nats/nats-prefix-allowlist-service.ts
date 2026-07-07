@@ -29,6 +29,8 @@
 
 import { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import { ErrorCode } from "@mini-infra/types";
 
 export interface NatsPrefixAllowlistEntry {
   prefix: string;
@@ -53,13 +55,6 @@ export interface UpsertNatsPrefixAllowlistEntryInput {
   allowedTemplateIds: string[];
 }
 
-export class NatsPrefixAllowlistError extends Error {
-  constructor(message: string, public statusCode: number) {
-    super(message);
-    this.name = "NatsPrefixAllowlistError";
-  }
-}
-
 const CATEGORY = "nats-prefix-allowlist";
 const log = getLogger("integrations", "nats-prefix-allowlist");
 
@@ -68,26 +63,33 @@ const log = getLogger("integrations", "nats-prefix-allowlist");
 // `stack-template-schemas.ts` — keep them in sync.
 const PREFIX_REGEX = /^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)*$/;
 
+/** 400 — the allowlist write request itself is malformed (prefix or templateIds shape). */
+function invalidAllowlistRequest(message: string, prefix?: string): ValidationError {
+  return new ValidationError(ErrorCode.NATS_PREFIX_ALLOWLIST_INVALID, message, {
+    resource: prefix ? { type: "natsPrefixAllowlistEntry", name: prefix } : undefined,
+  });
+}
+
 function validatePrefixSyntax(prefix: string): void {
   if (!prefix || prefix.length === 0) {
-    throw new NatsPrefixAllowlistError("prefix must be non-empty", 400);
+    throw invalidAllowlistRequest("prefix must be non-empty");
   }
   if (prefix.length > 120) {
-    throw new NatsPrefixAllowlistError("prefix must be ≤120 characters", 400);
+    throw invalidAllowlistRequest("prefix must be ≤120 characters", prefix);
   }
   if (/[>*]/.test(prefix)) {
-    throw new NatsPrefixAllowlistError("prefix must not contain wildcards ('>' or '*')", 400);
+    throw invalidAllowlistRequest("prefix must not contain wildcards ('>' or '*')", prefix);
   }
   if (prefix.startsWith(".") || prefix.endsWith(".")) {
-    throw new NatsPrefixAllowlistError("prefix must not start or end with '.'", 400);
+    throw invalidAllowlistRequest("prefix must not start or end with '.'", prefix);
   }
   if (prefix === "$SYS" || prefix.startsWith("$SYS.")) {
-    throw new NatsPrefixAllowlistError("prefix must not target the '$SYS' system-account namespace", 400);
+    throw invalidAllowlistRequest("prefix must not target the '$SYS' system-account namespace", prefix);
   }
   if (!PREFIX_REGEX.test(prefix)) {
-    throw new NatsPrefixAllowlistError(
+    throw invalidAllowlistRequest(
       "prefix must be dotted segments of [a-zA-Z0-9_-] (e.g. 'navi' or 'events.platform')",
-      400,
+      prefix,
     );
   }
 }
@@ -189,7 +191,10 @@ export class NatsPrefixAllowlistService {
     });
     log.info({ prefix: input.prefix, userId, count: input.allowedTemplateIds.length }, "nats-prefix-allowlist entry created");
     const created = await this.get(input.prefix);
-    if (!created) throw new NatsPrefixAllowlistError("failed to load created entry", 500);
+    // Genuine internal invariant — the write above just succeeded, so a
+    // missing read-back means the DB round-trip itself is broken, not a bad
+    // request. Stays a plain 500, not laundered into the taxonomy.
+    if (!created) throw new Error("failed to load created NATS prefix-allowlist entry");
     return created;
   }
 
@@ -198,10 +203,7 @@ export class NatsPrefixAllowlistService {
    * the immutable key — to rename, delete + create.
    */
   async update(prefix: string, input: { allowedTemplateIds: string[] }, userId: string): Promise<NatsPrefixAllowlistEntry> {
-    const existing = await this.get(prefix);
-    if (!existing) {
-      throw new NatsPrefixAllowlistError(`allowlist entry for prefix '${prefix}' not found`, 404);
-    }
+    await this.requireEntry(prefix);
     // Re-validate the new template IDs (overlap rules don't apply on update —
     // the prefix string isn't changing — but we do re-check that every
     // templateId references a real template).
@@ -216,19 +218,29 @@ export class NatsPrefixAllowlistService {
     });
     log.info({ prefix, userId, count: input.allowedTemplateIds.length }, "nats-prefix-allowlist entry updated");
     const updated = await this.get(prefix);
-    if (!updated) throw new NatsPrefixAllowlistError("failed to load updated entry", 500);
+    if (!updated) throw new Error("failed to load updated NATS prefix-allowlist entry");
     return updated;
   }
 
   async remove(prefix: string, userId: string): Promise<void> {
-    const existing = await this.get(prefix);
-    if (!existing) {
-      throw new NatsPrefixAllowlistError(`allowlist entry for prefix '${prefix}' not found`, 404);
-    }
+    await this.requireEntry(prefix);
     await this.prisma.systemSettings.delete({
       where: { category_key: { category: CATEGORY, key: prefix } },
     });
     log.info({ prefix, userId }, "nats-prefix-allowlist entry deleted");
+  }
+
+  /** Look up an allowlist entry by prefix, throwing a taxonomy 404 if it doesn't exist. */
+  private async requireEntry(prefix: string): Promise<NatsPrefixAllowlistEntry> {
+    const existing = await this.get(prefix);
+    if (!existing) {
+      throw new NotFoundError(
+        ErrorCode.NATS_PREFIX_ALLOWLIST_NOT_FOUND,
+        `Allowlist entry for prefix '${prefix}' not found`,
+        { resource: { type: "natsPrefixAllowlistEntry", name: prefix } },
+      );
+    }
+    return existing;
   }
 
   // ─── Validation helpers ────────────────────────────────────────────────────
@@ -244,15 +256,15 @@ export class NatsPrefixAllowlistService {
     validatePrefixSyntax(input.prefix);
 
     if (!Array.isArray(input.allowedTemplateIds) || input.allowedTemplateIds.length === 0) {
-      throw new NatsPrefixAllowlistError("allowedTemplateIds must be a non-empty array", 400);
+      throw invalidAllowlistRequest("allowedTemplateIds must be a non-empty array", input.prefix);
     }
     const seen = new Set<string>();
     for (const id of input.allowedTemplateIds) {
       if (typeof id !== "string" || id.length === 0) {
-        throw new NatsPrefixAllowlistError("allowedTemplateIds entries must be non-empty strings", 400);
+        throw invalidAllowlistRequest("allowedTemplateIds entries must be non-empty strings", input.prefix);
       }
       if (seen.has(id)) {
-        throw new NatsPrefixAllowlistError(`duplicate templateId in allowedTemplateIds: '${id}'`, 400);
+        throw invalidAllowlistRequest(`duplicate templateId in allowedTemplateIds: '${id}'`, input.prefix);
       }
       seen.add(id);
     }
@@ -265,9 +277,9 @@ export class NatsPrefixAllowlistService {
     const realIds = new Set(templates.map((t) => t.id));
     const missing = input.allowedTemplateIds.filter((id) => !realIds.has(id));
     if (missing.length > 0) {
-      throw new NatsPrefixAllowlistError(
+      throw invalidAllowlistRequest(
         `allowedTemplateIds references unknown template${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}`,
-        400,
+        input.prefix,
       );
     }
 
@@ -277,9 +289,13 @@ export class NatsPrefixAllowlistService {
       const existing = await this.list();
       for (const e of existing) {
         if (isSubjectTreeOverlap(e.prefix, input.prefix)) {
-          throw new NatsPrefixAllowlistError(
-            `prefix '${input.prefix}' overlaps existing allowlist entry '${e.prefix}' (one is a subject-tree ancestor or duplicate of the other)`,
-            409,
+          throw new ConflictError(
+            ErrorCode.NATS_PREFIX_ALLOWLIST_OVERLAP,
+            `Prefix '${input.prefix}' overlaps existing allowlist entry '${e.prefix}' (one is a subject-tree ancestor or duplicate of the other)`,
+            {
+              resource: { type: "natsPrefixAllowlistEntry", name: input.prefix },
+              action: `Choose a prefix that doesn't overlap '${e.prefix}', or edit the existing entry instead.`,
+            },
           );
         }
       }

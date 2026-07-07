@@ -25,25 +25,27 @@ import {
 } from "./nats-identity-errors";
 import { getIdentitySeedBackupStatus } from "./nats-identity-seed-backup";
 import { UserEventService } from "../user-events/user-event-service";
-import type {
-  CreateNatsAccountRequest,
-  CreateNatsConsumerRequest,
-  CreateNatsCredentialProfileRequest,
-  CreateNatsStreamRequest,
-  MintNatsCredentialResponse,
-  NatsAccountInfo,
-  NatsAckPolicy,
-  NatsConsumerInfo,
-  NatsCredentialProfileInfo,
-  NatsDeliverPolicy,
-  NatsRetentionPolicy,
-  NatsStatus,
-  NatsStorageType,
-  UpdateNatsAccountRequest,
-  UpdateNatsConsumerRequest,
-  UpdateNatsCredentialProfileRequest,
-  UpdateNatsStreamRequest,
-  NatsStreamInfo,
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import {
+  ErrorCode,
+  type CreateNatsAccountRequest,
+  type CreateNatsConsumerRequest,
+  type CreateNatsCredentialProfileRequest,
+  type CreateNatsStreamRequest,
+  type MintNatsCredentialResponse,
+  type NatsAccountInfo,
+  type NatsAckPolicy,
+  type NatsConsumerInfo,
+  type NatsCredentialProfileInfo,
+  type NatsDeliverPolicy,
+  type NatsRetentionPolicy,
+  type NatsStatus,
+  type NatsStorageType,
+  type UpdateNatsAccountRequest,
+  type UpdateNatsConsumerRequest,
+  type UpdateNatsCredentialProfileRequest,
+  type UpdateNatsStreamRequest,
+  type NatsStreamInfo,
 } from "@mini-infra/types";
 
 const log = getLogger("platform", "nats-control-plane");
@@ -325,6 +327,17 @@ export class NatsControlPlaneService {
 
   async createAccount(input: CreateNatsAccountRequest, userId?: string): Promise<NatsAccountInfo> {
     validateName(input.name, "account name");
+    const existing = await this.db.natsAccount.findUnique({ where: { name: input.name } });
+    if (existing) {
+      throw new ConflictError(
+        ErrorCode.NATS_ACCOUNT_EXISTS,
+        `NATS account '${input.name}' already exists`,
+        {
+          resource: { type: "natsAccount", name: input.name },
+          action: "Use the existing account instead of creating a new one.",
+        },
+      );
+    }
     const account = await this.db.natsAccount.create({
       data: {
         name: input.name,
@@ -339,6 +352,7 @@ export class NatsControlPlaneService {
   }
 
   async updateAccount(id: string, input: UpdateNatsAccountRequest, userId?: string): Promise<NatsAccountInfo> {
+    await this.requireAccount(id);
     const account = await this.db.natsAccount.update({
       where: { id },
       data: {
@@ -354,9 +368,28 @@ export class NatsControlPlaneService {
     const account = await this.db.natsAccount.findUnique({ where: { id } });
     if (!account) return;
     if (account.isSystem) {
-      throw new Error("System NATS account cannot be deleted");
+      throw new ValidationError(
+        ErrorCode.NATS_SYSTEM_ACCOUNT_PROTECTED,
+        "The system NATS account cannot be deleted",
+        {
+          resource: { type: "natsAccount", id: account.id, name: account.name },
+          action: "The system account is required for NATS administration and can't be removed.",
+        },
+      );
     }
     await this.db.natsAccount.delete({ where: { id } });
+  }
+
+  /** Look up an account by id, throwing a taxonomy 404 if it doesn't exist. */
+  private async requireAccount(id: string): Promise<Prisma.NatsAccountGetPayload<true>> {
+    const account = await this.db.natsAccount.findUnique({ where: { id } });
+    if (!account) {
+      throw new NotFoundError(ErrorCode.NATS_ACCOUNT_NOT_FOUND, `NATS account '${id}' not found`, {
+        resource: { type: "natsAccount", id },
+        action: "Choose an existing account or create it first.",
+      });
+    }
+    return account;
   }
 
   async listCredentialProfiles(): Promise<NatsCredentialProfileInfo[]> {
@@ -371,6 +404,18 @@ export class NatsControlPlaneService {
     validateName(input.name, "credential profile name");
     validateSubjects(input.publishAllow, "publishAllow");
     validateSubjects(input.subscribeAllow, "subscribeAllow");
+    await this.requireAccount(input.accountId);
+    const existing = await this.db.natsCredentialProfile.findUnique({ where: { name: input.name } });
+    if (existing) {
+      throw new ConflictError(
+        ErrorCode.NATS_CREDENTIAL_PROFILE_EXISTS,
+        `NATS credential profile '${input.name}' already exists`,
+        {
+          resource: { type: "natsCredentialProfile", name: input.name },
+          action: "Use the existing credential profile instead of creating a new one.",
+        },
+      );
+    }
     const row = await this.db.natsCredentialProfile.create({
       data: {
         name: input.name,
@@ -389,6 +434,8 @@ export class NatsControlPlaneService {
   }
 
   async updateCredentialProfile(id: string, input: UpdateNatsCredentialProfileRequest, userId?: string): Promise<NatsCredentialProfileInfo> {
+    await this.requireCredentialProfile(id);
+    if (input.accountId !== undefined) await this.requireAccount(input.accountId);
     if (input.publishAllow) validateSubjects(input.publishAllow, "publishAllow");
     if (input.subscribeAllow) validateSubjects(input.subscribeAllow, "subscribeAllow");
     const row = await this.db.natsCredentialProfile.update({
@@ -408,14 +455,39 @@ export class NatsControlPlaneService {
   }
 
   async deleteCredentialProfile(id: string): Promise<void> {
+    const existing = await this.db.natsCredentialProfile.findUnique({ where: { id } });
+    if (!existing) return;
     await this.db.natsCredentialProfile.delete({ where: { id } });
   }
 
+  /** Look up a credential profile by id, throwing a taxonomy 404 if it doesn't exist. */
+  private async requireCredentialProfile(id: string): Promise<Prisma.NatsCredentialProfileGetPayload<true>> {
+    const profile = await this.db.natsCredentialProfile.findUnique({ where: { id } });
+    if (!profile) {
+      throw new NotFoundError(
+        ErrorCode.NATS_CREDENTIAL_PROFILE_NOT_FOUND,
+        `NATS credential profile '${id}' not found`,
+        {
+          resource: { type: "natsCredentialProfile", id },
+          action: "Choose an existing credential profile or create it first.",
+        },
+      );
+    }
+    return profile;
+  }
+
   async mintCredentialsForProfile(profileId: string, ttlOverrideSeconds?: number): Promise<MintNatsCredentialResponse> {
-    const profile = await this.db.natsCredentialProfile.findUniqueOrThrow({
+    const profile = await this.db.natsCredentialProfile.findUnique({
       where: { id: profileId },
       include: { account: true },
     });
+    if (!profile) {
+      throw new NotFoundError(
+        ErrorCode.NATS_CREDENTIAL_PROFILE_NOT_FOUND,
+        `NATS credential profile '${profileId}' not found`,
+        { resource: { type: "natsCredentialProfile", id: profileId } },
+      );
+    }
     const creds = await this.mintCredentials(profile, ttlOverrideSeconds);
     const ttl = ttlOverrideSeconds ?? profile.ttlSeconds;
     return {
@@ -976,6 +1048,18 @@ export class NatsControlPlaneService {
   async createStream(input: CreateNatsStreamRequest, userId?: string): Promise<NatsStreamInfo> {
     validateName(input.name, "stream name");
     validateSubjects(input.subjects, "subjects");
+    await this.requireAccount(input.accountId);
+    const existing = await this.db.natsStream.findUnique({ where: { name: input.name } });
+    if (existing) {
+      throw new ConflictError(
+        ErrorCode.NATS_STREAM_EXISTS,
+        `NATS stream '${input.name}' already exists`,
+        {
+          resource: { type: "natsStream", name: input.name },
+          action: "Use the existing stream instead of creating a new one.",
+        },
+      );
+    }
     const row = await this.db.natsStream.create({
       data: streamData(input, userId),
       include: { account: true },
@@ -984,6 +1068,8 @@ export class NatsControlPlaneService {
   }
 
   async updateStream(id: string, input: UpdateNatsStreamRequest, userId?: string): Promise<NatsStreamInfo> {
+    await this.requireStream(id);
+    if (input.accountId !== undefined) await this.requireAccount(input.accountId);
     if (input.subjects) validateSubjects(input.subjects, "subjects");
     const row = await this.db.natsStream.update({
       where: { id },
@@ -1004,7 +1090,21 @@ export class NatsControlPlaneService {
   }
 
   async deleteStream(id: string): Promise<void> {
+    const existing = await this.db.natsStream.findUnique({ where: { id } });
+    if (!existing) return;
     await this.db.natsStream.delete({ where: { id } });
+  }
+
+  /** Look up a stream by id, throwing a taxonomy 404 if it doesn't exist. */
+  private async requireStream(id: string): Promise<Prisma.NatsStreamGetPayload<true>> {
+    const stream = await this.db.natsStream.findUnique({ where: { id } });
+    if (!stream) {
+      throw new NotFoundError(ErrorCode.NATS_STREAM_NOT_FOUND, `NATS stream '${id}' not found`, {
+        resource: { type: "natsStream", id },
+        action: "Choose an existing stream or create it first.",
+      });
+    }
+    return stream;
   }
 
   async listConsumers(): Promise<NatsConsumerInfo[]> {
@@ -1014,6 +1114,20 @@ export class NatsControlPlaneService {
 
   async createConsumer(input: CreateNatsConsumerRequest, userId?: string): Promise<NatsConsumerInfo> {
     validateName(input.name, "consumer name");
+    await this.requireStream(input.streamId);
+    const existing = await this.db.natsConsumer.findFirst({
+      where: { streamId: input.streamId, name: input.name },
+    });
+    if (existing) {
+      throw new ConflictError(
+        ErrorCode.NATS_CONSUMER_EXISTS,
+        `NATS consumer '${input.name}' already exists on this stream`,
+        {
+          resource: { type: "natsConsumer", name: input.name },
+          action: "Use the existing consumer instead of creating a new one.",
+        },
+      );
+    }
     const row = await this.db.natsConsumer.create({
       data: consumerData(input, userId),
       include: { stream: true },
@@ -1022,6 +1136,8 @@ export class NatsControlPlaneService {
   }
 
   async updateConsumer(id: string, input: UpdateNatsConsumerRequest, userId?: string): Promise<NatsConsumerInfo> {
+    await this.requireConsumer(id);
+    if (input.streamId !== undefined) await this.requireStream(input.streamId);
     const row = await this.db.natsConsumer.update({
       where: { id },
       data: {
@@ -1041,7 +1157,21 @@ export class NatsControlPlaneService {
   }
 
   async deleteConsumer(id: string): Promise<void> {
+    const existing = await this.db.natsConsumer.findUnique({ where: { id } });
+    if (!existing) return;
     await this.db.natsConsumer.delete({ where: { id } });
+  }
+
+  /** Look up a consumer by id, throwing a taxonomy 404 if it doesn't exist. */
+  private async requireConsumer(id: string): Promise<Prisma.NatsConsumerGetPayload<true>> {
+    const consumer = await this.db.natsConsumer.findUnique({ where: { id } });
+    if (!consumer) {
+      throw new NotFoundError(ErrorCode.NATS_CONSUMER_NOT_FOUND, `NATS consumer '${id}' not found`, {
+        resource: { type: "natsConsumer", id },
+        action: "Choose an existing consumer or create it first.",
+      });
+    }
+    return consumer;
   }
 
   async applyJetStreamResources(): Promise<void> {
@@ -1248,13 +1378,25 @@ export function __resetNatsControlPlaneServiceForTests(): void {
 }
 
 function validateName(name: string, label: string): void {
-  if (!NAME_RE.test(name)) throw new Error(`${label} must be lowercase alphanumeric with optional '-' or '_'`);
+  if (!NAME_RE.test(name)) {
+    throw new ValidationError(
+      ErrorCode.NATS_INVALID_NAME,
+      `${label} must be lowercase alphanumeric with optional '-' or '_'`,
+    );
+  }
 }
 
 function validateSubjects(subjects: string[], label: string): void {
-  if (subjects.length === 0) throw new Error(`${label} must contain at least one subject`);
+  if (subjects.length === 0) {
+    throw new ValidationError(ErrorCode.NATS_INVALID_SUBJECT, `${label} must contain at least one subject`);
+  }
   for (const subject of subjects) {
-    if (!SUBJECT_RE.test(subject)) throw new Error(`${label} contains invalid subject '${subject}'`);
+    if (!SUBJECT_RE.test(subject)) {
+      throw new ValidationError(
+        ErrorCode.NATS_INVALID_SUBJECT,
+        `${label} contains invalid subject '${subject}'`,
+      );
+    }
   }
 }
 

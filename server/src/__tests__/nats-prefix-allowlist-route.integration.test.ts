@@ -12,6 +12,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createId } from '@paralleldrive/cuid2';
 import { testPrisma } from './integration-test-helpers';
+import { errorHandler } from '../lib/error-handler';
 
 vi.mock('../middleware/auth', () => ({
   requirePermission: () => (req: Request, _res: Response, next: NextFunction) => {
@@ -24,10 +25,14 @@ vi.mock('../lib/prisma', () => ({ default: testPrisma }));
 
 import natsPrefixAllowlistRoutes from '../routes/nats-prefix-allowlist';
 
+// Mounts the real central error middleware (server/src/lib/error-handler.ts)
+// after the router so taxonomy errors thrown by the route/service reach the
+// standard envelope, same as they would in the full app.
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/nats/prefix-allowlist', natsPrefixAllowlistRoutes);
+  app.use(errorHandler);
   return app;
 }
 
@@ -163,7 +168,8 @@ describe('NATS prefix allowlist route — validation rejection', () => {
       .post('/api/nats/prefix-allowlist')
       .send({ prefix: 'navi', allowedTemplateIds: ['does-not-exist'] });
     expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/unknown template/);
+    expect(res.body.error).toBe('NATS_PREFIX_ALLOWLIST_INVALID');
+    expect(res.body.message).toMatch(/unknown template/);
   });
 
   it('rejects an entry whose prefix is a strict ancestor of an existing entry', async () => {
@@ -177,7 +183,8 @@ describe('NATS prefix allowlist route — validation rejection', () => {
       .post('/api/nats/prefix-allowlist')
       .send({ prefix: 'events', allowedTemplateIds: [tpl] });
     expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/overlap/);
+    expect(res.body.error).toBe('NATS_PREFIX_ALLOWLIST_OVERLAP');
+    expect(res.body.message).toMatch(/overlap/);
   });
 
   it('rejects an entry whose prefix is a strict descendant of an existing entry', async () => {
