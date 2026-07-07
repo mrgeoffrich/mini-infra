@@ -4,6 +4,7 @@ import { ContainerLifecycleManager, ContainerCreateOptions } from '../../contain
 import { ContainerConfig, ContainerEnvVar } from '@mini-infra/types';
 import { UserEventService } from '../../user-events';
 import prisma from '../../../lib/prisma';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "deploy-application-containers");
 
@@ -30,7 +31,7 @@ export class DeployApplicationContainers {
         try {
             // Validate required context
             if (!context.applicationName || !context.dockerImage || !context.haproxyNetworkName) {
-                throw new Error('Missing required deployment context: applicationName, dockerImage, or haproxyNetworkName');
+                throw new InternalError('Missing required deployment context: applicationName, dockerImage, or haproxyNetworkName');
             }
 
             // Use context-provided name (stacks), fall back to generated name (deployments)

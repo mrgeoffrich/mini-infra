@@ -1,6 +1,7 @@
 import type { ActionContext, TrafficEnableEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "enable-traffic");
 
@@ -25,13 +26,13 @@ export class EnableTraffic {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for traffic enablement');
+                throw new InternalError('HAProxy container ID is required for traffic enablement');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend identification');
+                throw new InternalError('Application name is required for backend identification');
             }
             if (!context.containerId) {
-                throw new Error('Container ID is required for server identification');
+                throw new InternalError('Container ID is required for server identification');
             }
 
             // Initialize HAProxy DataPlane client
@@ -70,7 +71,7 @@ export class EnableTraffic {
             const serverStats = await this.haproxyClient.getServerStats(backendName, serverName);
 
             if (!serverStats) {
-                throw new Error(`Server ${serverName} not found in backend ${backendName} after enabling traffic`);
+                throw new InternalError(`Server ${serverName} not found in backend ${backendName} after enabling traffic`);
             }
 
             // Log the current status for debugging
@@ -100,7 +101,7 @@ export class EnableTraffic {
                     type: 'TRAFFIC_ENABLED'
                 });
             } else if (serverStats.status === 'MAINT') {
-                throw new Error(`Server is in maintenance mode after enable attempt. Status: ${serverStats.status}`);
+                throw new InternalError(`Server is in maintenance mode after enable attempt. Status: ${serverStats.status}`);
             } else {
                 // Server might still be coming up, but traffic enablement was successful
                 logger.warn({

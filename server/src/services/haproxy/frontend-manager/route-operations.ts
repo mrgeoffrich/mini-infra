@@ -1,8 +1,7 @@
 import { getLogger } from "../../../lib/logger-factory";
 import { PrismaClient } from "../../../generated/prisma/client";
 import { ErrorCode } from "@mini-infra/types";
-import { CustomError } from "../../../lib/error-handler";
-import { NotFoundError, ValidationError } from "../../../lib/errors";
+import { InternalError, NotFoundError, ValidationError } from "../../../lib/errors";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { generateACLName } from "../haproxy-naming";
 import {
@@ -10,6 +9,7 @@ import {
   removeACLByName,
   removeBackendSwitchingRuleByAclName,
 } from "./acl-rule-operations";
+import { rethrowIfTaxonomyError } from "./error-utils";
 import { HAProxyRouteDTO, UpdatedHAProxyRouteDTO } from "./frontend-types";
 import {
   createRouteRecord,
@@ -20,19 +20,6 @@ import {
 import { uploadCertificateForSNI } from "./ssl-binding-deployer";
 
 const logger = getLogger("haproxy", "route-operations");
-
-/**
- * Re-throws taxonomy errors (`ConflictError`/`NotFoundError`/etc.) unchanged
- * instead of letting the caller's catch-all wrap them into a generic 500
- * `Error` — the wrap is only meant for genuinely-opaque DataPlane/unexpected
- * failures, not for domain errors raised a few lines up in the same
- * try-block.
- */
-function rethrowIfTaxonomyError(error: unknown): void {
-  if (error instanceof CustomError) {
-    throw error;
-  }
-}
 
 /**
  * Update an existing frontend's backend switching rule for a given hostname.
@@ -181,9 +168,7 @@ export async function addRouteToSharedFrontend(
       "Failed to add route to shared frontend"
     );
     rethrowIfTaxonomyError(error);
-    throw new Error(`Failed to add route to shared frontend: ${error}`, {
-      cause: error,
-    });
+    throw new InternalError(`Failed to add route to shared frontend: ${error}`);
   }
 }
 
@@ -244,9 +229,7 @@ export async function removeRouteFromSharedFrontend(
       "Failed to remove route from shared frontend"
     );
     rethrowIfTaxonomyError(error);
-    throw new Error(`Failed to remove route from shared frontend: ${error}`, {
-      cause: error,
-    });
+    throw new InternalError(`Failed to remove route from shared frontend: ${error}`);
   }
 }
 
@@ -342,6 +325,6 @@ export async function updateRoute(
   } catch (error) {
     logger.error({ error, routeId, updates }, "Failed to update route");
     rethrowIfTaxonomyError(error);
-    throw new Error(`Failed to update route: ${error}`, { cause: error });
+    throw new InternalError(`Failed to update route: ${error}`);
   }
 }

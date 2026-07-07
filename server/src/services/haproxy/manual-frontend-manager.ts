@@ -11,7 +11,7 @@ import {
   UpdateManualFrontendRequest,
   ErrorCode,
 } from "@mini-infra/types";
-import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 
 /** Internal extended request that includes the server-resolved certificate ID */
 interface InternalCreateRequest extends CreateManualFrontendRequest {
@@ -454,7 +454,7 @@ export class ManualFrontendManager {
       const containerIpAddress = containerInfo.NetworkSettings.Networks[haproxyNetworkName]?.IPAddress;
 
       if (!containerIpAddress) {
-        throw new Error(`Could not determine container IP address on network ${haproxyNetworkName}`);
+        throw new InternalError(`Could not determine container IP address on network ${haproxyNetworkName}`);
       }
 
       // Generate backend name

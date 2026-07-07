@@ -2,6 +2,7 @@ import type { ActionContext, AppStopEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "stop-application");
 
@@ -24,7 +25,7 @@ export class StopApplication {
         try {
             // Validate required context
             if (!context.applicationName) {
-                throw new Error('Application name is required to identify containers to stop');
+                throw new InternalError('Application name is required to identify containers to stop');
             }
 
             // Initialize Docker service if not already done
@@ -126,7 +127,7 @@ export class StopApplication {
 
                 // If more than half failed, consider this a failure
                 if (failedStops.length > successfulStops.length) {
-                    throw new Error(`Failed to stop ${failedStops.length} out of ${containersToStop.length} containers`);
+                    throw new InternalError(`Failed to stop ${failedStops.length} out of ${containersToStop.length} containers`);
                 }
             }
 

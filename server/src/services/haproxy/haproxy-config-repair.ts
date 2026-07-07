@@ -1,6 +1,7 @@
 import DockerService from "../docker";
 import { getLogger } from "../../lib/logger-factory";
 import { DockerStreamDemuxer } from "../../lib/docker-stream";
+import { InternalError } from "../../lib/errors";
 
 const logger = getLogger("haproxy", "haproxy-config-repair");
 
@@ -142,7 +143,7 @@ export async function repairHAProxyConfig(
     await writeContainer.start();
     const writeResult = await writeContainer.wait();
     if (writeResult.StatusCode !== 0) {
-      throw new Error(`Config write failed with exit code ${writeResult.StatusCode}`);
+      throw new InternalError(`Config write failed with exit code ${writeResult.StatusCode}`);
     }
   } finally {
     try {

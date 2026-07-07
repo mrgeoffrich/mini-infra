@@ -1,6 +1,8 @@
 import { getLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { generateACLName } from "../haproxy-naming";
+import { InternalError } from "../../../lib/errors";
+import { rethrowIfTaxonomyError } from "./error-utils";
 import {
   DataPlaneACL,
   DataPlaneBackendSwitchingRule,
@@ -31,7 +33,10 @@ export async function addACL(
 
   const firstSpaceIndex = fullCriterion.indexOf(" ");
   if (firstSpaceIndex === -1) {
-    throw new Error(`Invalid ACL criterion format: ${fullCriterion}`);
+    // Defense-in-depth: the only caller (`addHostnameRouting` below) always
+    // constructs `fullCriterion` internally as `hdr(host) -i <hostname>`,
+    // which is guaranteed to contain a space — this should never trip.
+    throw new InternalError(`Invalid ACL criterion format: ${fullCriterion}`);
   }
   const criterion = fullCriterion.substring(0, firstSpaceIndex).trim();
   const value = fullCriterion.substring(firstSpaceIndex + 1).trim();
@@ -45,7 +50,8 @@ export async function addACL(
       return;
     }
     logger.error({ error, frontendName, aclName }, "Failed to add ACL");
-    throw new Error(`Failed to add ACL: ${error}`, { cause: error });
+    rethrowIfTaxonomyError(error);
+    throw new InternalError(`Failed to add ACL: ${error}`);
   }
 }
 
@@ -87,9 +93,8 @@ export async function addBackendSwitchingRule(
       { error, frontendName, backendName },
       "Failed to add backend switching rule"
     );
-    throw new Error(`Failed to add backend switching rule: ${error}`, {
-      cause: error,
-    });
+    rethrowIfTaxonomyError(error);
+    throw new InternalError(`Failed to add backend switching rule: ${error}`);
   }
 }
 

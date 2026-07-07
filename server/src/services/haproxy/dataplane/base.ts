@@ -1,7 +1,7 @@
 import { HttpClient, createHttpClient, isHttpError, type HttpRequestConfig } from '../../../lib/http-client';
 import { getLogger } from '../../../lib/logger-factory';
 import { ErrorCode } from '@mini-infra/types';
-import { ConflictError, NotFoundError } from '../../../lib/errors';
+import { ConflictError, NotFoundError, InternalError } from '../../../lib/errors';
 import DockerService from '../../docker';
 import { getOwnContainerId } from '../../self-update';
 import { HAProxyEndpointInfo, ServerConfig } from './types';
@@ -119,7 +119,7 @@ export class HAProxyDataPlaneClientBase {
       const containerInfo = await container.inspect();
 
       if (!containerInfo) {
-        throw new Error('HAProxy container not found or not accessible');
+        throw new InternalError('HAProxy container not found or not accessible');
       }
 
       // Get container name (remove leading slash)
@@ -152,13 +152,13 @@ export class HAProxyDataPlaneClientBase {
     const networkEntries = Object.entries(networks);
 
     if (networkEntries.length === 0) {
-      throw new Error('HAProxy container has no network connections');
+      throw new InternalError('HAProxy container has no network connections');
     }
 
     // Determine our own container ID using the same robust detection as self-update
     const selfId = getOwnContainerId();
     if (!selfId) {
-      throw new Error(
+      throw new InternalError(
         'DataPlane API port 5555 is not bound to a host port and container network fallback ' +
         'is unavailable (mini-infra does not appear to be running in Docker)'
       );
@@ -183,7 +183,7 @@ export class HAProxyDataPlaneClientBase {
       }
     }
 
-    throw new Error(
+    throw new InternalError(
       'No shared network between mini-infra and HAProxy. ' +
       'Apply the dataplane-network stack and re-apply the HAProxy stack to establish connectivity.'
     );
@@ -197,7 +197,7 @@ export class HAProxyDataPlaneClientBase {
       const response = await this.httpClient.get('/info');
 
       if (response.status !== 200) {
-        throw new Error(`DataPlane API health check failed with status ${response.status}`);
+        throw new InternalError(`DataPlane API health check failed with status ${response.status}`);
       }
 
       logger.debug(
@@ -211,7 +211,7 @@ export class HAProxyDataPlaneClientBase {
     } catch (error) {
       if (isHttpError(error)) {
         const message = error.response?.data?.message || (error instanceof Error ? error.message : String(error));
-        throw new Error(`DataPlane API connection failed: ${message}`, { cause: error });
+        throw new InternalError(`DataPlane API connection failed: ${message}`);
       }
       throw error;
     }
@@ -439,11 +439,11 @@ export class HAProxyDataPlaneClientBase {
             },
           );
         case 401:
-          throw new Error(`Authentication failed: ${message}`);
+          throw new InternalError(`Authentication failed: ${message}`);
         case 400:
-          throw new Error(`Bad request: ${message}`);
+          throw new InternalError(`Bad request: ${message}`);
         default:
-          throw new Error(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
+          throw new InternalError(`HAProxy ${operation} failed: ${message} (Status: ${status})`);
       }
     } else {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -452,7 +452,7 @@ export class HAProxyDataPlaneClientBase {
         `HAProxy DataPlane API ${operation} failed with unexpected error`
       );
 
-      throw new Error(`HAProxy ${operation} failed: ${errorMessage}`);
+      throw new InternalError(`HAProxy ${operation} failed: ${errorMessage}`);
     }
   }
 

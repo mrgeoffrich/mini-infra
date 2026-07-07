@@ -2,6 +2,7 @@ import type { ActionContext, AppRemovalEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import DockerService from '../../docker';
 import { ContainerLifecycleManager } from '../../container';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "remove-application");
 
@@ -25,7 +26,7 @@ export class RemoveApplication {
         try {
             // Validate required context
             if (!context.applicationName) {
-                throw new Error('Application name is required to identify containers to remove');
+                throw new InternalError('Application name is required to identify containers to remove');
             }
 
             // Initialize Docker service if not already done
@@ -149,7 +150,7 @@ export class RemoveApplication {
 
                 // If more than half failed, consider this a failure
                 if (failedRemovals.length > successfulRemovals.length) {
-                    throw new Error(`Failed to remove ${failedRemovals.length} out of ${containersToRemove.length} containers`);
+                    throw new InternalError(`Failed to remove ${failedRemovals.length} out of ${containersToRemove.length} containers`);
                 }
             }
 

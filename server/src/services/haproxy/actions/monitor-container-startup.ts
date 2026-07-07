@@ -2,6 +2,7 @@ import type { ActionContext, ContainerStartupEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { ContainerLifecycleManager } from '../../container';
 import DockerService from '../../docker';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "monitor-container-startup");
 
@@ -29,7 +30,7 @@ export class MonitorContainerStartup {
             // Validate required context - check for newContainerId (green container) or containerId (fallback)
             const containerId = context.newContainerId || context.containerId;
             if (!containerId) {
-                throw new Error('Container ID is required for startup monitoring (newContainerId or containerId)');
+                throw new InternalError('Container ID is required for startup monitoring (newContainerId or containerId)');
             }
             const timeoutMs = 120000; // 2 minutes as defined in state machine
             const pollIntervalMs = 2000; // Poll every 2 seconds
@@ -80,7 +81,7 @@ export class MonitorContainerStartup {
             const networkInfo = await this.getContainerNetworkInfo(containerId, context.haproxyNetworkName);
 
             if (!networkInfo.ipAddress) {
-                throw new Error(`Container is not connected to HAProxy network: ${context.haproxyNetworkName}`);
+                throw new InternalError(`Container is not connected to HAProxy network: ${context.haproxyNetworkName}`);
             }
 
             logger.info({
@@ -200,7 +201,7 @@ export class MonitorContainerStartup {
                 error: error instanceof Error ? error.message : 'Unknown error'
             }, 'Failed to get container network information');
 
-            throw new Error(`Failed to get container network info: ${error instanceof Error ? error.message : 'Unknown error'}`, { cause: error });
+            throw new InternalError(`Failed to get container network info: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 }

@@ -3,6 +3,7 @@ import { getLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyFrontendManager } from "../haproxy-frontend-manager";
 import prisma from "../../../lib/prisma";
+import { InternalError } from "../../../lib/errors";
 
 const logger = getLogger("haproxy", "configure-frontend");
 
@@ -31,17 +32,17 @@ export class ConfigureFrontend {
     try {
       // Validate required context
       if (!context.haproxyContainerId) {
-        throw new Error(
+        throw new InternalError(
           "HAProxy container ID is required for frontend configuration"
         );
       }
       if (!context.applicationName) {
-        throw new Error(
+        throw new InternalError(
           "Application name is required for frontend configuration"
         );
       }
       if (!context.environmentId) {
-        throw new Error(
+        throw new InternalError(
           "Environment ID is required for frontend configuration"
         );
       }
@@ -79,7 +80,7 @@ export class ConfigureFrontend {
       const existingBackend =
         await this.haproxyClient.getBackend(backendName);
       if (!existingBackend) {
-        throw new Error(
+        throw new InternalError(
           `Backend not found: ${backendName}. Backend must be created before frontend configuration.`
         );
       }
