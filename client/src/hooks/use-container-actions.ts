@@ -67,12 +67,10 @@ export function useContainerActions(options: UseContainerActionsOptions): UseCon
       }
     },
     onError: (error: Error) => {
-      // Show error toast
-      toast.error(`Failed to ${action} container`, {
-        description: error.message,
-      });
-
-      // Call optional error callback
+      // No local toast — the global `MutationCache.onError` (see
+      // `client/src/lib/query-client.ts`) shows an actionable toast for
+      // every mutation error by default (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md).
       if (onError) {
         onError(action, error);
       }

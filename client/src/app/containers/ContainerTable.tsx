@@ -27,8 +27,8 @@ import {
 } from "@/components/ui/tooltip";
 import { ServerModal } from "@/components/postgres-server/server-modal";
 import { AddonBadge } from "@/components/stacks/addon-badge";
-import { toast } from "sonner";
 import { apiFetch } from "@/lib/api-client";
+import { toastApiError } from "@/lib/errors";
 
 interface ContainerTableProps {
   containers: ContainerInfo[];
@@ -268,8 +268,12 @@ export const ContainerTable = React.memo(function ContainerTable({
       setInitialServerValues(initialValues);
       setIsServerModalOpen(true);
     } catch (error) {
-      console.error('Failed to fetch container data:', error);
-      toast.error('Failed to load container details. Please try again.');
+      // Surface the real error (e.g. "Container with ID '...' not found")
+      // instead of a generic string that discarded it — this call sits
+      // outside TanStack Query, so the global `MutationCache.onError`
+      // toast doesn't apply here; call `toastApiError` directly (Phase 7 of
+      // docs/planning/not-shipped/error-handling-overhaul-plan.md).
+      toastApiError(error, { title: "Failed to load container details" });
     }
   }, []);
 

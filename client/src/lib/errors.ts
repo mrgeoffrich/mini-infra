@@ -96,6 +96,12 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+  // Containers / images / volumes (Phase 7)
+  [ErrorCode.CONTAINER_ALREADY_IN_STATE]: "Container already in this state",
+  [ErrorCode.CONTAINER_NOT_RUNNING]: "Container not running",
+  [ErrorCode.VOLUME_IN_USE]: "Volume in use",
+  [ErrorCode.IMAGE_AUTH_FAILED]: "Registry authentication failed",
+  [ErrorCode.DOCKER_NOT_CONNECTED]: "Docker unavailable",
 };
 
 function statusClassFallback(status: number): string {

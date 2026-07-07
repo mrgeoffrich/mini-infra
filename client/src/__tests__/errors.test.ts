@@ -66,6 +66,42 @@ describe("getUserFacingError", () => {
     expect(result.description).toBe("This stack has already been deployed.");
   });
 
+  it("resolves a Phase 7 CONTAINER_NOT_FOUND 404 to a resource-derived title (no curated title needed)", () => {
+    // Mirrors the containers.ts NotFoundError envelope (Phase 7 of
+    // docs/planning/not-shipped/error-handling-overhaul-plan.md).
+    const body = {
+      error: ErrorCode.CONTAINER_NOT_FOUND,
+      message: "Container with ID 'abcdef123456' not found",
+      resource: { type: "container", id: "abcdef123456" },
+      action: "Check the container ID and try again.",
+    };
+    const err = new ApiRequestError(404, ErrorCode.CONTAINER_NOT_FOUND, body.message, body);
+
+    const result = getUserFacingError(err);
+
+    expect(result.title).toBe("Container not found");
+    expect(result.description).toBe("Container with ID 'abcdef123456' not found");
+    expect(result.action).toBe("Check the container ID and try again.");
+  });
+
+  it("resolves a Phase 7 VOLUME_IN_USE 409 to its curated title (default status-class fallback would be misleading)", () => {
+    const body = {
+      error: ErrorCode.VOLUME_IN_USE,
+      message: "Cannot remove volume 'pgdata': volume is in use by one or more containers",
+      resource: { type: "volume", name: "pgdata" },
+      action: "Stop and remove the containers using this volume, then try again.",
+    };
+    const err = new ApiRequestError(409, ErrorCode.VOLUME_IN_USE, body.message, body);
+
+    const result = getUserFacingError(err);
+
+    // Without the curated title, the generic resource-derived fallback
+    // would read "Volume already exists" — misleading for an in-use
+    // conflict, which is exactly why this code has a CODE_TITLES entry.
+    expect(result.title).toBe("Volume in use");
+    expect(result.description).toBe(body.message);
+  });
+
   it("surfaces the human text from a legacy `{ error: <human text> }` response (no `message` field), not the HTTP status text", () => {
     // Mirrors client/src/app/change-password/page.tsx's documented shape:
     // the server responds `{ error: "<human message>" }` with no `message`

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ImageInspectService } from "../services/image-inspect";
+import { NotFoundError, UnauthorizedError } from "../lib/errors";
+import { ErrorCode } from "@mini-infra/types";
 
 // Mock global fetch
 const mockFetch = vi.fn();
@@ -214,7 +216,7 @@ describe("ImageInspectService", () => {
       expect(ports).toEqual([]);
     });
 
-    it("throws on image not found (404)", async () => {
+    it("throws a NotFoundError (IMAGE_NOT_FOUND) on image not found (404)", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ token: "test-token" }),
@@ -224,12 +226,21 @@ describe("ImageInspectService", () => {
         status: 404,
       });
 
-      await expect(
-        service.getExposedPorts("nonexistent/image", "latest"),
-      ).rejects.toThrow("Image not found");
+      const error = await service
+        .getExposedPorts("nonexistent/image", "latest")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(NotFoundError);
+      expect((error as NotFoundError).code).toBe(ErrorCode.IMAGE_NOT_FOUND);
+      expect((error as NotFoundError).statusCode).toBe(404);
+      expect((error as NotFoundError).resource).toEqual({
+        type: "image",
+        name: "nonexistent/image:latest",
+      });
+      expect((error as NotFoundError).message).toContain("not found in registry");
     });
 
-    it("throws on auth failure (401)", async () => {
+    it("throws an UnauthorizedError (IMAGE_AUTH_FAILED) on auth failure (401)", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: async () => ({ token: "test-token" }),
@@ -239,9 +250,14 @@ describe("ImageInspectService", () => {
         status: 401,
       });
 
-      await expect(
-        service.getExposedPorts("private/image", "latest"),
-      ).rejects.toThrow("Authentication failed");
+      const error = await service
+        .getExposedPorts("private/image", "latest")
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(UnauthorizedError);
+      expect((error as UnauthorizedError).code).toBe(ErrorCode.IMAGE_AUTH_FAILED);
+      expect((error as UnauthorizedError).statusCode).toBe(401);
+      expect((error as UnauthorizedError).action).toMatch(/registry credentials/i);
     });
 
     it("throws on timeout", async () => {

@@ -2,6 +2,8 @@ import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
+import { ErrorCode } from "@mini-infra/types";
+import { toServiceError } from "../../lib/service-error-mapper";
 
 // Hoist mock variables that are used inside vi.mock() factory functions
 const {
@@ -122,6 +124,7 @@ vi.mock("../../lib/auth-middleware", () => ({
 }));
 
 import containerRoutes from "../containers";
+import { errorHandler } from "../../lib/error-handler";
 
 describe("Container Routes", () => {
   let app: express.Application;
@@ -139,15 +142,12 @@ describe("Container Routes", () => {
 
     app.use("/api/containers", containerRoutes);
 
-    // Add error handler for testing
-    app.use((error: any, req: any, res: any, next: any) => {
-      res.status(500).json({
-        error: "Internal Server Error",
-        message: error.message || "An unexpected error occurred",
-        timestamp: new Date().toISOString(),
-        requestId: req.headers["x-request-id"],
-      });
-    });
+    // Use the real central error middleware (server/src/lib/error-handler.ts)
+    // rather than a hand-rolled always-500 stand-in, so these tests exercise
+    // the actual taxonomy-error envelope (Phase 7 of
+    // docs/planning/not-shipped/error-handling-overhaul-plan.md) the routes
+    // now throw instead of building `res.status().json()` bodies themselves.
+    app.use(errorHandler);
 
     // Set up Docker service mock
     mockDockerInstance = {
@@ -350,7 +350,7 @@ describe("Container Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        error: "Bad Request",
+        error: ErrorCode.VALIDATION_FAILED,
         message: "Invalid query parameters",
         details: expect.any(Array),
       });
@@ -363,48 +363,49 @@ describe("Container Routes", () => {
       );
     });
 
-    it("should return 503 when Docker service is not connected", async () => {
+    it("should return 503 (DOCKER_NOT_CONNECTED) when Docker service is not connected", async () => {
       mockDockerInstance.isConnected.mockReturnValue(false);
 
       const response = await request(app).get("/api/containers").expect(503);
 
+      // Now short-circuited by the `requireDockerConnected()` middleware
+      // (server/src/middleware/require-docker-connected.ts) rather than an
+      // in-handler check, so the envelope carries a stable taxonomy code.
       expect(response.body).toMatchObject({
-        error: "Service Unavailable",
+        error: ErrorCode.DOCKER_NOT_CONNECTED,
         message: "Docker service is not available. Please try again later.",
       });
-
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: "test-user-id",
-        }),
-        "Docker service not connected",
-      );
     });
 
-    it("should handle Docker API timeout errors", async () => {
+    it("should handle Docker API timeout errors surfaced as a ServiceError from DockerService", async () => {
+      // `DockerService.listContainers()` now wraps a Docker API timeout into
+      // a `ServiceError` (via `toServiceError()`) itself — simulate that
+      // here since this test mocks the whole `DockerService` module.
       mockDockerInstance.listContainers.mockRejectedValue(
-        new Error("Docker API timeout"),
+        toServiceError(new Error("Docker API timeout"), "docker"),
       );
 
-      const response = await request(app).get("/api/containers").expect(504);
+      const response = await request(app).get("/api/containers").expect(502);
 
-      expect(response.body).toMatchObject({
-        error: "Gateway Timeout",
-        message: "Docker API request timed out. Please try again.",
-      });
+      expect(response.body.message).toContain("Docker API timeout");
     });
 
-    it("should handle Docker service connection errors", async () => {
+    it("should handle a stale Docker-disconnected error as an unexpected 500", async () => {
+      // A plain (non-taxonomy) Error straight from `DockerService` — e.g. the
+      // defensive `if (!this.connected)` guard racing after
+      // `requireDockerConnected()` passed — is a genuine internal invariant,
+      // so it still falls back to the central middleware's generic 500
+      // rather than being laundered into a 4xx by route-level string
+      // matching.
       mockDockerInstance.listContainers.mockRejectedValue(
         new Error("Docker service not connected"),
       );
 
-      const response = await request(app).get("/api/containers").expect(503);
+      const response = await request(app).get("/api/containers").expect(500);
 
       expect(response.body).toMatchObject({
-        error: "Service Unavailable",
-        message:
-          "Docker service is temporarily unavailable. Please try again later.",
+        error: ErrorCode.INTERNAL,
+        message: "Docker service not connected",
       });
     });
 
@@ -470,18 +471,18 @@ describe("Container Routes", () => {
       );
     });
 
-    it("should return 400 for invalid container ID", async () => {
+    it("should return 400 (VALIDATION_FAILED) for invalid container ID", async () => {
       const response = await request(app)
         .get("/api/containers/short-id")
         .expect(400);
 
       expect(response.body).toMatchObject({
-        error: "Bad Request",
+        error: ErrorCode.VALIDATION_FAILED,
         message: "Invalid container ID format",
       });
     });
 
-    it("should return 404 for non-existent container", async () => {
+    it("should return 404 (CONTAINER_NOT_FOUND) for non-existent container", async () => {
       mockDockerInstance.getContainer.mockResolvedValue(null);
 
       const response = await request(app)
@@ -489,8 +490,10 @@ describe("Container Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.CONTAINER_NOT_FOUND,
         message: "Container with ID 'abcdef789012' not found",
+        resource: { type: "container", id: "abcdef789012" },
+        action: expect.any(String),
       });
 
       expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -501,7 +504,7 @@ describe("Container Routes", () => {
       );
     });
 
-    it("should return 503 when Docker service is not connected", async () => {
+    it("should return 503 (DOCKER_NOT_CONNECTED) when Docker service is not connected", async () => {
       mockDockerInstance.isConnected.mockReturnValue(false);
 
       const response = await request(app)
@@ -509,24 +512,24 @@ describe("Container Routes", () => {
         .expect(503);
 
       expect(response.body).toMatchObject({
-        error: "Service Unavailable",
+        error: ErrorCode.DOCKER_NOT_CONNECTED,
         message: "Docker service is not available. Please try again later.",
       });
     });
 
-    it("should handle Docker API timeout errors", async () => {
+    it("should handle Docker API timeout errors surfaced as a ServiceError from DockerService", async () => {
+      // `DockerService.getContainer()` already wraps non-404 errors via
+      // `toServiceError()` in production — simulate that here since this
+      // test mocks the whole `DockerService` module.
       mockDockerInstance.getContainer.mockRejectedValue(
-        new Error("Docker API timeout"),
+        toServiceError(new Error("Docker API timeout"), "docker"),
       );
 
       const response = await request(app)
         .get("/api/containers/abcdef123456")
-        .expect(504);
+        .expect(502);
 
-      expect(response.body).toMatchObject({
-        error: "Gateway Timeout",
-        message: "Docker API request timed out. Please try again.",
-      });
+      expect(response.body.message).toContain("Docker API timeout");
     });
   });
 
@@ -667,7 +670,7 @@ describe("Container Routes", () => {
           .get(`/api/containers${queryParams}`)
           .expect(400);
 
-        expect(response.body.error).toBe("Bad Request");
+        expect(response.body.error).toBe(ErrorCode.VALIDATION_FAILED);
         expect(response.body.message).toBe("Invalid query parameters");
       }
     });
