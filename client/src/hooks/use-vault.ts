@@ -40,9 +40,9 @@ export function useUnlockPassphrase() {
       toast.success("Passphrase unlocked");
       qc.invalidateQueries({ queryKey: queryKeys.vault.all });
     },
-    onError: (err: Error) => {
-      toast.error(`Unlock failed: ${err.message}`);
-    },
+    // PassphraseUnlockDialog.tsx renders the failure inline (next to the
+    // passphrase input) instead of a toast — see getUserFacingError().
+    meta: { skipErrorToast: true },
   });
 }
 
@@ -85,6 +85,9 @@ export function useBootstrapVault() {
         body: input,
         correlationIdPrefix: "vault-bootstrap",
       }),
+    // BootstrapDialog.tsx renders the failure inline (its "failed" phase)
+    // instead of a toast.
+    meta: { skipErrorToast: true },
   });
 }
 

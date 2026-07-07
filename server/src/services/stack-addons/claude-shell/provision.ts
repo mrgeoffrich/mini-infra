@@ -2,6 +2,7 @@ import {
   TAILSCALE_CONTROL_PLANE_HOSTNAMES,
   buildTailscaleTagSet,
   sanitizeTailscaleHostname,
+  ErrorCode,
   type EnvInjectionProvisionedValues,
   type ProvisionContext,
 } from '@mini-infra/types';
@@ -66,7 +67,7 @@ async function readGitDeployKey(
     log.info({ stackId, serviceName }, 'git-deploy-key: present (injecting GIT_SSH_KEY)');
     return raw;
   } catch (err) {
-    if (err instanceof VaultKVError && err.code === 'path_not_found') {
+    if (err instanceof VaultKVError && err.code === ErrorCode.VAULT_KV_PATH_NOT_FOUND) {
       log.debug({ stackId, serviceName }, 'git-deploy-key: absent (path_not_found)');
       return null;
     }

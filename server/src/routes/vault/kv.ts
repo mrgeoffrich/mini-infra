@@ -7,13 +7,13 @@ import express, {
 import { z } from "zod";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { getLogger } from "../../lib/logger-factory";
-import { hasPermission, type UserEventType, Permission } from "@mini-infra/types";
+import { hasPermission, type UserEventType, Permission, ErrorCode } from "@mini-infra/types";
 import {
   getVaultKVService,
-  VaultKVError,
   validateKvPath,
 } from "../../services/vault/vault-kv-service";
 import { UserEventService } from "../../services/user-events/user-event-service";
+import { ForbiddenError, NotFoundError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-kv-routes");
 
@@ -62,66 +62,18 @@ async function recordKvAuditEvent(
  * `secret/data/shared/slack` is addressed as `GET /api/vault/kv/shared/slack`.
  *
  * `req.params.splat` is an array of segments under path-to-regexp v8; join
- * them back with `/` before handing to the validator.
+ * them back with `/` before handing to the validator. `validateKvPath`
+ * throws a `VaultKVError` (a taxonomy error — see `vault-kv-paths.ts`) on an
+ * invalid path; callers let it propagate to the central error middleware.
  */
-function parsePath(req: Request, res: Response): string | null {
+function parsePath(req: Request): string {
   const splat = (req.params as Record<string, unknown>).splat;
   const raw = Array.isArray(splat)
     ? (splat as string[]).join("/")
     : typeof splat === "string"
       ? splat
       : "";
-  try {
-    return validateKvPath(raw);
-  } catch (err) {
-    if (err instanceof VaultKVError) {
-      res.status(400).json({ success: false, message: err.message, code: err.code });
-    } else {
-      res.status(400).json({ success: false, message: "Invalid KV path" });
-    }
-    return null;
-  }
-}
-
-/**
- * Translate a `VaultKVError` code into the HTTP status the broker should
- * surface. Transient/upstream issues become 5xx so clients retry; client
- * errors (bad path, bad data) stay 4xx so they don't.
- */
-function statusForKvErrorCode(code: string, fallback: number | undefined): number {
-  switch (code) {
-    case "invalid_path":
-    case "invalid_field":
-    case "invalid_data":
-      return 400;
-    case "vault_permission_denied":
-      return 403;
-    case "path_not_found":
-    case "field_not_found":
-      return 404;
-    case "vault_rate_limited":
-      return 429;
-    case "vault_not_ready":
-    case "vault_unavailable":
-    case "vault_sealed":
-    case "vault_standby":
-      return 503;
-    case "vault_error":
-    default:
-      return fallback ?? 500;
-  }
-}
-
-function handleVaultKvError(res: Response, err: unknown, action: string): void {
-  if (err instanceof VaultKVError) {
-    const status = statusForKvErrorCode(err.code, err.status);
-    log.warn({ err: err.message, code: err.code, action }, "Vault KV operation failed");
-    res.status(status).json({ success: false, message: err.message, code: err.code });
-    return;
-  }
-  const msg = err instanceof Error ? err.message : String(err);
-  log.error({ err: msg, action }, "Vault KV operation failed unexpectedly");
-  res.status(500).json({ success: false, message: msg });
+  return validateKvPath(raw);
 }
 
 const writeBodySchema = z.object({
@@ -137,13 +89,16 @@ const writeBodySchema = z.object({
 router.get(
   "/*splat",
   requirePermission(Permission.VaultKvRead) as RequestHandler,
-  (async (req: Request, res: Response, _next: NextFunction) => {
-    const path = parsePath(req, res);
-    if (path === null) return;
+  (async (req: Request, res: Response, next: NextFunction) => {
     try {
+      const path = parsePath(req);
       const data = await getVaultKVService().read(path);
       if (data === null) {
-        return res.status(404).json({ success: false, message: `KV path '${path}' not found`, code: "path_not_found" });
+        throw new NotFoundError(
+          ErrorCode.VAULT_KV_PATH_NOT_FOUND,
+          `KV path '${path}' not found`,
+          { resource: { type: "vaultKv", name: path } },
+        );
       }
       // Broker-route reads are explicit operator/installer actions (not the
       // per-apply dynamicEnv resolver path), so log at info for an audit
@@ -151,7 +106,7 @@ router.get(
       log.info({ path, userId: getAuthenticatedUser(req)?.id ?? null }, "KV read via broker");
       res.json({ success: true, data: { path, data } });
     } catch (err) {
-      handleVaultKvError(res, err, "read");
+      next(err);
     }
   }) as RequestHandler,
 );
@@ -163,20 +118,14 @@ router.get(
 router.post(
   "/*splat",
   requirePermission(Permission.VaultKvWrite) as RequestHandler,
-  (async (req: Request, res: Response, _next: NextFunction) => {
-    const path = parsePath(req, res);
-    if (path === null) return;
-    const parsed = writeBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid body — expected { data: { ... } }",
-        details: parsed.error.issues,
-      });
-    }
-    const fields = Object.keys(parsed.data.data);
+  (async (req: Request, res: Response, next: NextFunction) => {
+    let path: string | undefined;
+    let fields: string[] = [];
     try {
-      await getVaultKVService().write(path, parsed.data.data);
+      path = parsePath(req);
+      const parsed = writeBodySchema.parse(req.body);
+      fields = Object.keys(parsed.data);
+      await getVaultKVService().write(path, parsed.data);
       log.info(
         { path, userId: getAuthenticatedUser(req)?.id ?? null, fields },
         "KV write",
@@ -184,9 +133,11 @@ router.post(
       await recordKvAuditEvent(req, "vault_kv_write", path, "completed", { fields });
       res.json({ success: true, data: { path } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await recordKvAuditEvent(req, "vault_kv_write", path, "failed", { fields }, msg);
-      handleVaultKvError(res, err, "write");
+      if (path !== undefined) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await recordKvAuditEvent(req, "vault_kv_write", path, "failed", { fields }, msg);
+      }
+      next(err);
     }
   }) as RequestHandler,
 );
@@ -198,20 +149,14 @@ router.post(
 router.patch(
   "/*splat",
   requirePermission(Permission.VaultKvWrite) as RequestHandler,
-  (async (req: Request, res: Response, _next: NextFunction) => {
-    const path = parsePath(req, res);
-    if (path === null) return;
-    const parsed = writeBodySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid body — expected { data: { ... } }",
-        details: parsed.error.issues,
-      });
-    }
-    const fields = Object.keys(parsed.data.data);
+  (async (req: Request, res: Response, next: NextFunction) => {
+    let path: string | undefined;
+    let fields: string[] = [];
     try {
-      await getVaultKVService().patch(path, parsed.data.data);
+      path = parsePath(req);
+      const parsed = writeBodySchema.parse(req.body);
+      fields = Object.keys(parsed.data);
+      await getVaultKVService().patch(path, parsed.data);
       log.info(
         { path, userId: getAuthenticatedUser(req)?.id ?? null, fields },
         "KV patch",
@@ -219,9 +164,11 @@ router.patch(
       await recordKvAuditEvent(req, "vault_kv_patch", path, "completed", { fields });
       res.json({ success: true, data: { path } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await recordKvAuditEvent(req, "vault_kv_patch", path, "failed", { fields }, msg);
-      handleVaultKvError(res, err, "patch");
+      if (path !== undefined) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await recordKvAuditEvent(req, "vault_kv_patch", path, "failed", { fields }, msg);
+      }
+      next(err);
     }
   }) as RequestHandler,
 );
@@ -238,23 +185,26 @@ router.patch(
 router.delete(
   "/*splat",
   requirePermission(Permission.VaultKvWrite) as RequestHandler,
-  (async (req: Request, res: Response, _next: NextFunction) => {
-    const path = parsePath(req, res);
-    if (path === null) return;
+  (async (req: Request, res: Response, next: NextFunction) => {
+    let path: string | undefined;
     const permanent = req.query.permanent === "true" || req.query.permanent === "1";
-    if (permanent && req.apiKey && !hasPermission(req.apiKey.permissions, Permission.VaultKvDestroy)) {
-      log.warn(
-        { keyId: req.apiKey.id, path },
-        "API key permission denied for vault-kv:destroy",
-      );
-      return res.status(403).json({
-        success: false,
-        message: "?permanent=true requires the vault-kv:destroy scope",
-        code: "vault_destroy_forbidden",
-        requiredPermissions: [Permission.VaultKvDestroy],
-      });
-    }
     try {
+      path = parsePath(req);
+      if (permanent && req.apiKey && !hasPermission(req.apiKey.permissions, Permission.VaultKvDestroy)) {
+        log.warn(
+          { keyId: req.apiKey.id, path },
+          "API key permission denied for vault-kv:destroy",
+        );
+        throw new ForbiddenError(
+          ErrorCode.VAULT_KV_DESTROY_FORBIDDEN,
+          "?permanent=true requires the vault-kv:destroy scope",
+          {
+            resource: { type: "vaultKv", name: path },
+            action: "Request the vault-kv:destroy scope for this API key.",
+            details: { requiredPermissions: [Permission.VaultKvDestroy] },
+          },
+        );
+      }
       await getVaultKVService().delete(path, { permanent });
       log.info(
         { path, permanent, userId: getAuthenticatedUser(req)?.id ?? null },
@@ -263,9 +213,11 @@ router.delete(
       await recordKvAuditEvent(req, "vault_kv_delete", path, "completed", { permanent });
       res.json({ success: true, data: { path, permanent } });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await recordKvAuditEvent(req, "vault_kv_delete", path, "failed", { permanent }, msg);
-      handleVaultKvError(res, err, "delete");
+      if (path !== undefined) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await recordKvAuditEvent(req, "vault_kv_delete", path, "failed", { permanent }, msg);
+      }
+      next(err);
     }
   }) as RequestHandler,
 );

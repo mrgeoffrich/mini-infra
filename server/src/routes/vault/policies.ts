@@ -7,14 +7,11 @@ import express, {
 import { z } from "zod";
 import { requirePermission, getAuthenticatedUser } from "../../middleware/auth";
 import { getLogger } from "../../lib/logger-factory";
-import {
-  VaultPolicyService,
-  PolicyInUseError,
-  SystemPolicyError,
-} from "../../services/vault/vault-policy-service";
+import { VaultPolicyService } from "../../services/vault/vault-policy-service";
 import { getVaultServices } from "../../services/vault/vault-services";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent, Permission } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission, ErrorCode } from "@mini-infra/types";
+import { NotFoundError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-policies-routes");
 
@@ -55,15 +52,10 @@ router.post(
   "/",
   requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = createSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid policy payload", details: parsed.error.issues });
-    }
     try {
+      const parsed = createSchema.parse(req.body);
       const user = getAuthenticatedUser(req);
-      const policy = await getService().create(parsed.data, user?.id ?? "system");
+      const policy = await getService().create(parsed, user?.id ?? "system");
       res.status(201).json({ success: true, data: policy });
     } catch (err) {
       next(err);
@@ -78,7 +70,11 @@ router.get(
     try {
       const policy = await getService().get(String(req.params.id));
       if (!policy) {
-        return res.status(404).json({ success: false, message: "Not found" });
+        throw new NotFoundError(
+          ErrorCode.VAULT_POLICY_NOT_FOUND,
+          `Vault policy ${req.params.id} not found`,
+          { resource: { type: "vaultPolicy", id: String(req.params.id) } },
+        );
       }
       res.json({ success: true, data: policy });
     } catch (err) {
@@ -91,24 +87,16 @@ router.put(
   "/:id",
   requirePermission(Permission.VaultWrite) as RequestHandler,
   (async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = updateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid policy update", details: parsed.error.issues });
-    }
     try {
+      const parsed = updateSchema.parse(req.body);
       const user = getAuthenticatedUser(req);
       const policy = await getService().update(
         String(req.params.id),
-        parsed.data,
+        parsed,
         user?.id ?? "system",
       );
       res.json({ success: true, data: policy });
     } catch (err) {
-      if (err instanceof SystemPolicyError) {
-        return res.status(409).json({ success: false, message: err.message });
-      }
       next(err);
     }
   }) as RequestHandler,
@@ -144,16 +132,6 @@ router.delete(
       await getService().delete(String(req.params.id));
       res.json({ success: true });
     } catch (err) {
-      if (err instanceof PolicyInUseError) {
-        return res.status(409).json({
-          success: false,
-          message: err.message,
-          details: { appRoles: err.appRoleNames },
-        });
-      }
-      if (err instanceof SystemPolicyError) {
-        return res.status(409).json({ success: false, message: err.message });
-      }
       next(err);
     }
   }) as RequestHandler,

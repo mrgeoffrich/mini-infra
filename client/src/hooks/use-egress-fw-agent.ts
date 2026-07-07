@@ -5,7 +5,6 @@ import {
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type {
   EgressFwAgentStatus,
@@ -84,9 +83,6 @@ export function useRestartEgressFwAgent(): UseMutationResult<
         method: "POST",
         correlationIdPrefix: "egress-fw-agent-restart",
       }),
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
   });
 }
 
@@ -101,9 +97,6 @@ export function useStartEgressFwAgent(): UseMutationResult<
         method: "POST",
         correlationIdPrefix: "egress-fw-agent-start",
       }),
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
   });
 }
 

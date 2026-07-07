@@ -96,6 +96,25 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+
+  // Vault / secrets / egress / self-update / monitoring (Phase 10)
+  [ErrorCode.VAULT_LOCKED]: "Vault is locked",
+  [ErrorCode.VAULT_NOT_CONFIGURED]: "Vault not configured",
+  [ErrorCode.VAULT_INVALID_PASSPHRASE]: "Incorrect passphrase",
+  [ErrorCode.VAULT_UNLOCK_RATE_LIMITED]: "Too many attempts",
+  [ErrorCode.VAULT_KV_SEALED]: "Vault is sealed",
+  [ErrorCode.VAULT_KV_STANDBY]: "Vault is on standby",
+  [ErrorCode.VAULT_KV_UNAVAILABLE]: "Vault unavailable",
+  [ErrorCode.VAULT_KV_PATH_NOT_FOUND]: "Secret not found",
+  [ErrorCode.VAULT_POLICY_IN_USE]: "Policy in use",
+  [ErrorCode.VAULT_APPROLE_BOUND_TO_STACKS]: "AppRole in use",
+  [ErrorCode.STORAGE_NOT_CONFIGURED]: "Storage not configured",
+  [ErrorCode.PROVIDER_NO_LONGER_CONFIGURED]: "Storage provider disconnected",
+  [ErrorCode.BACKUP_STACK_NOT_DEPLOYED]: "Backup stack not deployed",
+  [ErrorCode.BACKUP_CONCURRENCY_CAP_REACHED]: "Backup already running",
+  [ErrorCode.SELF_UPDATE_IN_PROGRESS]: "Update already in progress",
+  [ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN]: "Self-update unavailable",
+  [ErrorCode.MONITORING_SERVICE_UNAVAILABLE]: "Monitoring unavailable",
 };
 
 function statusClassFallback(status: number): string {

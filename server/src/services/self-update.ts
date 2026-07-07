@@ -5,7 +5,9 @@ import DockerService from "./docker";
 import prisma from "../lib/prisma";
 import { RegistryCredentialService } from "./registry-credential";
 import { RegistryManager } from "./docker-executor/registry-manager";
+import { ErrorCode } from "@mini-infra/types";
 import type { SelfUpdateState, SelfUpdateStatus, OperationStep } from "@mini-infra/types";
+import { ConflictError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("platform", "self-update");
 
@@ -180,8 +182,13 @@ export async function launchSidecar(
     const containerId = getOwnContainerId();
 
     if (!containerId) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN,
         "Cannot determine own container ID. Are you running inside Docker?",
+        {
+          resource: { type: "selfUpdate" },
+          action: "Self-update requires running inside a Docker container.",
+        },
       );
     }
 
@@ -189,14 +196,26 @@ export async function launchSidecar(
     const fullImageRef = options.fullImageRef;
 
     if (!validateTargetImage(fullImageRef, options.allowedRegistryPattern)) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.SELF_UPDATE_IMAGE_NOT_ALLOWED,
         `Target image "${fullImageRef}" does not match allowed registry pattern "${options.allowedRegistryPattern}"`,
+        {
+          resource: { type: "selfUpdateImage", name: fullImageRef },
+          action: "Choose an image matching the configured registry pattern.",
+        },
       );
     }
 
     const inProgress = await isUpdateInProgress();
     if (inProgress) {
-      throw new Error("An update is already in progress");
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_IN_PROGRESS,
+        "An update is already in progress",
+        {
+          resource: { type: "selfUpdate" },
+          action: "Wait for the current update to finish before starting another.",
+        },
+      );
     }
 
     // Use the current-version sidecar image for running (known-good),
@@ -232,7 +251,14 @@ export async function launchSidecar(
     } catch (pullErr) {
       logger.error({ err: pullErr, sidecarImage: options.sidecarImage, sidecarRunImage }, "Failed to pull sidecar image");
       reportStep("Pull sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(`Failed to pull sidecar image: ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_IMAGE_PULL_FAILED,
+        `Failed to pull sidecar image: ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+        {
+          resource: { type: "selfUpdateImage", name: sidecarRunImage },
+          action: "Check the image reference and registry credentials, then retry the update.",
+        },
+      );
     }
 
     // Step 2: Pull the target image (server has working registry credentials)
@@ -244,7 +270,14 @@ export async function launchSidecar(
     } catch (pullErr) {
       logger.error({ err: pullErr, targetImage: fullImageRef }, "Failed to pull target image");
       reportStep("Pull target image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-      throw new Error(`Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_IMAGE_PULL_FAILED,
+        `Failed to pull target image "${fullImageRef}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+        {
+          resource: { type: "selfUpdateImage", name: fullImageRef },
+          action: "Check the image reference and registry credentials, then retry the update.",
+        },
+      );
     }
 
     // Step 3: Pull the agent sidecar image (pre-pull so it's available after update)
@@ -257,7 +290,14 @@ export async function launchSidecar(
       } catch (pullErr) {
         logger.error({ err: pullErr, agentSidecarImage: options.agentSidecarImage }, "Failed to pull agent sidecar image");
         reportStep("Pull agent sidecar image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-        throw new Error(`Failed to pull agent sidecar image "${options.agentSidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
+        throw new ConflictError(
+          ErrorCode.SELF_UPDATE_IMAGE_PULL_FAILED,
+          `Failed to pull agent sidecar image "${options.agentSidecarImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+          {
+            resource: { type: "selfUpdateImage", name: options.agentSidecarImage },
+            action: "Check the image reference and registry credentials, then retry the update.",
+          },
+        );
       }
     } else {
       reportStep("Pull agent sidecar image", "skipped", "No agent sidecar image configured");
@@ -273,7 +313,14 @@ export async function launchSidecar(
       } catch (pullErr) {
         logger.error({ err: pullErr, egressFwAgentImage: options.egressFwAgentImage }, "Failed to pull egress fw-agent image");
         reportStep("Pull egress fw-agent image", "failed", pullErr instanceof Error ? pullErr.message : String(pullErr));
-        throw new Error(`Failed to pull egress fw-agent image "${options.egressFwAgentImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`, { cause: pullErr });
+        throw new ConflictError(
+          ErrorCode.SELF_UPDATE_IMAGE_PULL_FAILED,
+          `Failed to pull egress fw-agent image "${options.egressFwAgentImage}": ${pullErr instanceof Error ? pullErr.message : pullErr}`,
+          {
+            resource: { type: "selfUpdateImage", name: options.egressFwAgentImage },
+            action: "Check the image reference and registry credentials, then retry the update.",
+          },
+        );
       }
     } else {
       reportStep("Pull egress fw-agent image", "skipped", "No egress fw-agent image configured");

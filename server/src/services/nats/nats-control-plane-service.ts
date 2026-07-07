@@ -45,6 +45,7 @@ import type {
   UpdateNatsStreamRequest,
   NatsStreamInfo,
 } from "@mini-infra/types";
+import { ErrorCode } from "@mini-infra/types";
 
 const log = getLogger("platform", "nats-control-plane");
 
@@ -1227,7 +1228,11 @@ export class NatsControlPlaneService {
     try {
       return await getVaultKVService().readField(path, field);
     } catch (err) {
-      if (err instanceof VaultKVError && (err.code === "path_not_found" || err.code === "field_not_found")) {
+      if (
+        err instanceof VaultKVError &&
+        (err.code === ErrorCode.VAULT_KV_PATH_NOT_FOUND ||
+          err.code === ErrorCode.VAULT_KV_FIELD_NOT_FOUND)
+      ) {
         return null;
       }
       throw err;

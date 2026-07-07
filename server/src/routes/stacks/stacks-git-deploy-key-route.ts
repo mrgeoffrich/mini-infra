@@ -131,27 +131,12 @@ async function ensureStackServiceExists(
   return service !== null;
 }
 
+// `VaultKVError` (server/src/services/vault/vault-kv-paths.ts) is a taxonomy
+// error (extends `CustomError`) — it already carries the right HTTP status
+// on `statusCode`, derived from its `ErrorCode`. This helper just exposes
+// that as a plain number for the bespoke `res.status().json()` bodies below.
 function vaultKvErrorStatus(err: VaultKVError): number {
-  switch (err.code) {
-    case "invalid_path":
-    case "invalid_field":
-    case "invalid_data":
-      return 400;
-    case "vault_permission_denied":
-      return 403;
-    case "path_not_found":
-    case "field_not_found":
-      return 404;
-    case "vault_rate_limited":
-      return 429;
-    case "vault_not_ready":
-    case "vault_unavailable":
-    case "vault_sealed":
-    case "vault_standby":
-      return 503;
-    default:
-      return err.status ?? 500;
-  }
+  return err.statusCode;
 }
 
 /**

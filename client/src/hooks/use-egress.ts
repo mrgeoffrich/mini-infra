@@ -99,16 +99,6 @@ export function useEgressPolicies(options: UseEgressPoliciesOptions = {}) {
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
     refetchOnReconnect: true,
-    retry: (failureCount, error) => {
-      if (
-        error.message.includes("401") ||
-        error.message.includes("Unauthorized")
-      ) {
-        return false;
-      }
-      return failureCount < 3;
-    },
-    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
 }
 

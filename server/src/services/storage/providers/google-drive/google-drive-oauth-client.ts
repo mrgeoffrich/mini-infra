@@ -14,6 +14,8 @@
  */
 
 import { google } from "googleapis";
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError } from "../../../../lib/errors";
 
 /** Minimum scope needed for app-created Drive folders/files. */
 export const GOOGLE_DRIVE_OAUTH_SCOPES = [
@@ -66,7 +68,14 @@ export class GoogleDriveOAuthClient {
   async exchangeCodeForTokens(code: string): Promise<GoogleDriveTokenSet> {
     const { tokens } = await this.oauth2.getToken(code);
     if (!tokens.access_token) {
-      throw new Error("Google OAuth response missing access_token");
+      throw new ConflictError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_AUTH_FAILED,
+        "Google OAuth response missing access_token",
+        {
+          resource: { type: "storageProvider", id: "google-drive" },
+          action: "Reconnect Google Drive in Settings > Storage.",
+        },
+      );
     }
     const expiryDate = tokens.expiry_date
       ? new Date(tokens.expiry_date)
@@ -87,7 +96,14 @@ export class GoogleDriveOAuthClient {
     this.oauth2.setCredentials({ refresh_token: refreshToken });
     const { credentials } = await this.oauth2.refreshAccessToken();
     if (!credentials.access_token) {
-      throw new Error("Google OAuth refresh response missing access_token");
+      throw new ConflictError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_AUTH_FAILED,
+        "Google OAuth refresh response missing access_token",
+        {
+          resource: { type: "storageProvider", id: "google-drive" },
+          action: "Reconnect Google Drive in Settings > Storage.",
+        },
+      );
     }
     const expiryDate = credentials.expiry_date
       ? new Date(credentials.expiry_date)

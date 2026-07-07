@@ -1,6 +1,7 @@
 import request from 'supertest';
 import express from 'express';
 import { createId } from '@paralleldrive/cuid2';
+import { errorHandler } from '../lib/error-handler';
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks — must be declared before any vi.mock() calls that use them
@@ -178,9 +179,10 @@ describe('Egress Routes', () => {
       next();
     });
     app.use('/api/egress', egressRoutes);
-    app.use((err: any, _req: any, res: any, _next: any) => {
-      res.status(500).json({ error: 'Internal Server Error', message: err.message });
-    });
+    // Routes now throw taxonomy errors (ConflictError/NotFoundError/ZodError)
+    // and forward via `next(err)` — mount the real central error middleware
+    // so it produces the standard envelope instead of a bespoke 500.
+    app.use(errorHandler);
   });
 
   beforeEach(() => {
@@ -298,7 +300,7 @@ describe('Egress Routes', () => {
       const res = await request(app).get(`/api/egress/policies/${createId()}`);
 
       expect(res.status).toBe(404);
-      expect(res.body.error).toBe('Not Found');
+      expect(res.body.error).toBe('EGRESS_POLICY_NOT_FOUND');
     });
   });
 
@@ -432,7 +434,7 @@ describe('Egress Routes', () => {
         .send({ pattern: 'not-a-valid-pattern!!', action: 'allow' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Bad Request');
+      expect(res.body.error).toBe('VALIDATION_FAILED');
     });
 
     it('returns 400 for invalid action value', async () => {
@@ -516,7 +518,7 @@ describe('Egress Routes', () => {
         .send({ pattern: 'INVALID PATTERN!!!' });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Bad Request');
+      expect(res.body.error).toBe('VALIDATION_FAILED');
     });
   });
 

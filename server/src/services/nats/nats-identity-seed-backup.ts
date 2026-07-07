@@ -38,6 +38,7 @@ import {
   FIELD_ACCOUNT_SEED,
 } from "./nats-control-plane-service";
 import { UserEventService } from "../user-events/user-event-service";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   NatsIdentitySeedRestoreEntry,
   NatsIdentitySeedRestoreResult,
@@ -105,7 +106,8 @@ async function tryReadSeedField(path: string, field: string): Promise<string | n
   } catch (err) {
     if (
       err instanceof VaultKVError &&
-      (err.code === "path_not_found" || err.code === "field_not_found")
+      (err.code === ErrorCode.VAULT_KV_PATH_NOT_FOUND ||
+        err.code === ErrorCode.VAULT_KV_FIELD_NOT_FOUND)
     ) {
       return null;
     }

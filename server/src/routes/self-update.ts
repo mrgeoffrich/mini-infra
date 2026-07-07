@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
+import { asyncHandler } from "../lib/async-handler";
 import prisma from "../lib/prisma";
 import {
   launchSidecar,
@@ -18,7 +19,14 @@ import {
   type SelfUpdateStatus,
 } from "../services/self-update";
 import { emitToChannel } from "../lib/socket";
-import { Channel, ServerEvent, type OperationStep, Permission } from "@mini-infra/types";
+import {
+  Channel,
+  ServerEvent,
+  type OperationStep,
+  Permission,
+  ErrorCode,
+} from "@mini-infra/types";
+import { ConflictError, UnauthorizedError } from "../lib/errors";
 
 const logger = getLogger("platform", "self-update");
 const router = express.Router();
@@ -51,8 +59,10 @@ const triggerSchema = z.object({
  * 2. Most recent DB record (persists across restarts)
  * 3. Idle
  */
-router.get("/status", requirePermission(Permission.SettingsRead), async (req, res) => {
-  try {
+router.get(
+  "/status",
+  requirePermission(Permission.SettingsRead),
+  asyncHandler(async (req, res) => {
     // Recover stale updates where sidecar crashed and auto-removed
     await recoverStaleUpdate();
 
@@ -62,7 +72,10 @@ router.get("/status", requirePermission(Permission.SettingsRead), async (req, re
     if (inProgress) {
       // Sidecar is running — check DB record for details
       const dbRecord = await getLatestUpdateRecord();
-      if (dbRecord && !["complete", "rollback-complete", "failed"].includes(dbRecord.state)) {
+      if (
+        dbRecord &&
+        !["complete", "rollback-complete", "failed"].includes(dbRecord.state)
+      ) {
         return res.json({
           success: true,
           status: {
@@ -98,22 +111,16 @@ router.get("/status", requirePermission(Permission.SettingsRead), async (req, re
     }
 
     res.json({ success: true, status: { state: "idle" } as SelfUpdateStatus });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logger.error({ error: errorMessage }, "Failed to get self-update status");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get update status",
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /check - Check if we're running in Docker and can self-update
  */
-router.post("/check", requirePermission(Permission.SettingsRead), async (req, res) => {
-  try {
+router.post(
+  "/check",
+  requirePermission(Permission.SettingsRead),
+  asyncHandler(async (req, res) => {
     const containerId = getOwnContainerId();
 
     if (!containerId) {
@@ -129,16 +136,8 @@ router.post("/check", requirePermission(Permission.SettingsRead), async (req, re
       available: true,
       containerId,
     });
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    logger.error({ error: errorMessage }, "Failed to check update availability");
-    res.status(500).json({
-      success: false,
-      error: "Failed to check update availability",
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /trigger - Trigger a self-update to the specified tag
@@ -149,207 +148,209 @@ router.post("/check", requirePermission(Permission.SettingsRead), async (req, re
 router.post(
   "/trigger",
   requirePermission(Permission.SettingsWrite),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
+    // Validate request body
+    const { targetTag } = triggerSchema.parse(req.body);
+
+    const userId = getCurrentUserId(req);
+    if (!userId) {
+      throw new UnauthorizedError(
+        ErrorCode.USER_NOT_AUTHENTICATED,
+        "User not authenticated",
+      );
+    }
+
+    // Verify we're running in Docker
+    const containerId = getOwnContainerId();
+    if (!containerId) {
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN,
+        "Self-update is only available when running inside Docker",
+        {
+          resource: { type: "selfUpdate" },
+          action: "Self-update requires running inside a Docker container.",
+        },
+      );
+    }
+
+    // Acquire the launch mutex BEFORE any async work to close the
+    // TOCTOU race window between concurrent trigger requests.
+    if (!acquireLaunchLock()) {
+      throw new ConflictError(
+        ErrorCode.SELF_UPDATE_IN_PROGRESS,
+        "An update is already in progress",
+        {
+          resource: { type: "selfUpdate" },
+          action:
+            "Wait for the current update to finish before starting another.",
+        },
+      );
+    }
+
+    let iifeSpawned = false;
     try {
-      // Validate request body
-      const { targetTag } = triggerSchema.parse(req.body);
-
-      const userId = getCurrentUserId(req);
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: "User not authenticated",
-        });
-      }
-
-      // Verify we're running in Docker
-      const containerId = getOwnContainerId();
-      if (!containerId) {
-        return res.status(400).json({
-          success: false,
-          error: "Self-update is only available when running inside Docker",
-        });
-      }
-
-      // Acquire the launch mutex BEFORE any async work to close the
-      // TOCTOU race window between concurrent trigger requests.
-      if (!acquireLaunchLock()) {
-        return res.status(409).json({
-          success: false,
-          error: "An update is already in progress",
-        });
-      }
-
-      let iifeSpawned = false;
-      try {
-        // Double-check via Docker that no sidecar container is running
-        const inProgress = await isUpdateInProgress();
-        if (inProgress) {
-          return res.status(409).json({
-            success: false,
-            error: "An update is already in progress",
-          });
-        }
-
-        const fullImageRef = `${IMAGE_BASE}:${targetTag}`;
-        const sidecarImage = `${IMAGE_BASE}-sidecar:${targetTag}`;
-        const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
-        const egressFwAgentImage = `${IMAGE_BASE}-egress-fw-agent:${targetTag}`;
-
-        // Run the sidecar using the current (known-good) version rather than
-        // the target version, so a broken sidecar in a new release can't
-        // brick the update process. Falls back to target tag in dev mode.
-        // BUILD_VERSION includes the "v" prefix (e.g. "v1.4.5") but image
-        // tags do not (e.g. "1.4.5"), so strip it.
-        const currentVersion = process.env.BUILD_VERSION?.replace(/^v/, "");
-        const sidecarRunImage =
-          currentVersion && currentVersion !== "dev"
-            ? `${IMAGE_BASE}-sidecar:${currentVersion}`
-            : undefined;
-
-        logger.info(
+      // Double-check via Docker that no sidecar container is running
+      const inProgress = await isUpdateInProgress();
+      if (inProgress) {
+        throw new ConflictError(
+          ErrorCode.SELF_UPDATE_IN_PROGRESS,
+          "An update is already in progress",
           {
-            targetTag,
-            fullImageRef,
-            sidecarImage,
-            sidecarRunImage: sidecarRunImage ?? sidecarImage,
-            agentSidecarImage,
-            egressFwAgentImage,
-            containerId,
+            resource: { type: "selfUpdate" },
+            action:
+              "Wait for the current update to finish before starting another.",
           },
-          "Self-update triggered",
         );
+      }
 
-        // Persist to DB BEFORE launching the sidecar so the record exists
-        // even if the process crashes between launch and the response.
-        const updateId = await createUpdateRecord({
+      const fullImageRef = `${IMAGE_BASE}:${targetTag}`;
+      const sidecarImage = `${IMAGE_BASE}-sidecar:${targetTag}`;
+      const agentSidecarImage = `${IMAGE_BASE}-agent-sidecar:${targetTag}`;
+      const egressFwAgentImage = `${IMAGE_BASE}-egress-fw-agent:${targetTag}`;
+
+      // Run the sidecar using the current (known-good) version rather than
+      // the target version, so a broken sidecar in a new release can't
+      // brick the update process. Falls back to target tag in dev mode.
+      // BUILD_VERSION includes the "v" prefix (e.g. "v1.4.5") but image
+      // tags do not (e.g. "1.4.5"), so strip it.
+      const currentVersion = process.env.BUILD_VERSION?.replace(/^v/, "");
+      const sidecarRunImage =
+        currentVersion && currentVersion !== "dev"
+          ? `${IMAGE_BASE}-sidecar:${currentVersion}`
+          : undefined;
+
+      logger.info(
+        {
           targetTag,
           fullImageRef,
-          triggeredBy: userId,
-        });
+          sidecarImage,
+          sidecarRunImage: sidecarRunImage ?? sidecarImage,
+          agentSidecarImage,
+          egressFwAgentImage,
+          containerId,
+        },
+        "Self-update triggered",
+      );
 
-        const operationId = randomUUID();
-        const stepNames = [...SELF_UPDATE_LAUNCH_STEPS];
-        const totalSteps = stepNames.length;
+      // Persist to DB BEFORE launching the sidecar so the record exists
+      // even if the process crashes between launch and the response.
+      const updateId = await createUpdateRecord({
+        targetTag,
+        fullImageRef,
+        triggeredBy: userId,
+      });
 
-        // Return immediately with operationId
-        res.status(202).json({
-          success: true,
-          message: "Update initiated. The server will restart shortly.",
-          updateId,
-          operationId,
-          targetTag,
-        });
+      const operationId = randomUUID();
+      const stepNames = [...SELF_UPDATE_LAUNCH_STEPS];
+      const totalSteps = stepNames.length;
 
-        // Run sidecar launch in background with Socket.IO progress.
-        // launchSidecar() releases the lock in its own finally block.
-        iifeSpawned = true;
-        const launchStartTime = Date.now();
-        (async () => {
-          const steps: OperationStep[] = [];
+      // Return immediately with operationId
+      res.status(202).json({
+        success: true,
+        message: "Update initiated. The server will restart shortly.",
+        updateId,
+        operationId,
+        targetTag,
+      });
 
-          try {
-            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_STARTED, {
+      // Run sidecar launch in background with Socket.IO progress.
+      // launchSidecar() releases the lock in its own finally block.
+      iifeSpawned = true;
+      const launchStartTime = Date.now();
+      (async () => {
+        const steps: OperationStep[] = [];
+
+        try {
+          emitToChannel(
+            Channel.SELF_UPDATE,
+            ServerEvent.SELF_UPDATE_LAUNCH_STARTED,
+            {
               operationId,
               totalSteps,
               stepNames: [...stepNames],
               targetTag,
-            });
+            },
+          );
 
-            const sidecarId = await launchSidecar({
-              fullImageRef,
-              allowedRegistryPattern: ALLOWED_REGISTRY_PATTERN,
-              sidecarImage,
-              sidecarRunImage,
-              agentSidecarImage,
-              egressFwAgentImage,
-              gracefulStopSeconds: GRACEFUL_STOP_SECONDS,
-              onProgress: (step, completedCount, total) => {
-                steps.push(step);
-                try {
-                  emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_STEP, {
+          const sidecarId = await launchSidecar({
+            fullImageRef,
+            allowedRegistryPattern: ALLOWED_REGISTRY_PATTERN,
+            sidecarImage,
+            sidecarRunImage,
+            agentSidecarImage,
+            egressFwAgentImage,
+            gracefulStopSeconds: GRACEFUL_STOP_SECONDS,
+            onProgress: (step, completedCount, total) => {
+              steps.push(step);
+              try {
+                emitToChannel(
+                  Channel.SELF_UPDATE,
+                  ServerEvent.SELF_UPDATE_LAUNCH_STEP,
+                  {
                     operationId,
                     step,
                     completedCount,
                     totalSteps: total,
-                  });
-                } catch { /* never break launch */ }
-              },
-            });
+                  },
+                );
+              } catch {
+                /* never break launch */
+              }
+            },
+          });
 
-            // Update the record with the sidecar container ID
-            await updateUpdateRecordSidecarId(updateId, sidecarId);
+          // Update the record with the sidecar container ID
+          await updateUpdateRecordSidecarId(updateId, sidecarId);
 
-            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED, {
+          emitToChannel(
+            Channel.SELF_UPDATE,
+            ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED,
+            {
               operationId,
               success: true,
               steps,
               errors: [],
+            },
+          );
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.error({ err }, "Self-update sidecar launch failed");
+
+          // Mark the DB record as failed so the UI doesn't spin forever
+          try {
+            await prisma.selfUpdate.update({
+              where: { id: updateId },
+              data: {
+                state: "failed",
+                errorMessage: message,
+                completedAt: new Date(),
+                durationMs: Date.now() - launchStartTime,
+              },
             });
-          } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.error({ err }, "Self-update sidecar launch failed");
+          } catch {
+            /* best-effort DB update */
+          }
 
-            // Mark the DB record as failed so the UI doesn't spin forever
-            try {
-              await prisma.selfUpdate.update({
-                where: { id: updateId },
-                data: {
-                  state: "failed",
-                  errorMessage: message,
-                  completedAt: new Date(),
-                  durationMs: Date.now() - launchStartTime,
-                },
-              });
-            } catch { /* best-effort DB update */ }
-
-            emitToChannel(Channel.SELF_UPDATE, ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED, {
+          emitToChannel(
+            Channel.SELF_UPDATE,
+            ServerEvent.SELF_UPDATE_LAUNCH_COMPLETED,
+            {
               operationId,
               success: false,
               steps,
               errors: [message],
-            });
-          }
-        })();
-      } finally {
-        // Release the lock only if the background IIFE was never spawned
-        // (early return / validation error). If it WAS spawned, launchSidecar()
-        // releases the lock in its own finally block.
-        if (!iifeSpawned) releaseLaunchLock();
-      }
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: error.issues,
-        });
-      }
-
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-
-      // Client errors: image validation failures, not-in-Docker, already in progress
-      const isClientError =
-        errorMessage.includes("does not match allowed registry") ||
-        errorMessage.includes("only available when running inside Docker") ||
-        errorMessage.includes("already in progress") ||
-        errorMessage.includes("Cannot determine own container ID");
-
-      if (isClientError) {
-        return res.status(400).json({
-          success: false,
-          error: errorMessage,
-        });
-      }
-
-      logger.error({ error: errorMessage }, "Failed to trigger self-update");
-      res.status(500).json({
-        success: false,
-        error: errorMessage,
-      });
+            },
+          );
+        }
+      })();
+    } finally {
+      // Release the lock only if the background IIFE was never spawned
+      // (early return / validation error, including the taxonomy errors
+      // thrown above). If it WAS spawned, launchSidecar() releases the lock
+      // in its own finally block.
+      if (!iifeSpawned) releaseLaunchLock();
     }
-  },
+  }),
 );
 
 export default router;

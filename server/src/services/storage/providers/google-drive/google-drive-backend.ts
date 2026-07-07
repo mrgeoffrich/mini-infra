@@ -24,6 +24,7 @@ import { google, drive_v3 } from "googleapis";
 import { Readable } from "stream";
 import type { PrismaClient } from "../../../../lib/prisma";
 import { getLogger } from "../../../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   ConnectivityStatusType,
   ServiceHealthStatus,
@@ -41,6 +42,7 @@ import type {
   RetentionEnforcementResult,
   RetentionPolicy,
 } from "@mini-infra/types";
+import { NotFoundError } from "../../../../lib/errors";
 import { GoogleDriveTokenManager } from "./google-drive-token-manager";
 
 const log = () => getLogger("integrations", "google-drive-backend");
@@ -558,7 +560,11 @@ export class GoogleDriveBackend implements StorageBackend {
   ): Promise<DownloadStream> {
     const fileId = await this.findFileIdByName(ref.id, name);
     if (!fileId) {
-      throw new Error(`Drive file '${name}' not found in folder '${ref.id}'`);
+      throw new NotFoundError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_FILE_NOT_FOUND,
+        `Drive file '${name}' not found in folder '${ref.id}'`,
+        { resource: { type: "storageObject", name } },
+      );
     }
     const drive = await this.requireDriveClient();
     const meta = await drive.files.get({
