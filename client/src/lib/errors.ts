@@ -96,6 +96,21 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+
+  // HAProxy (Phase 8) — curated over the auto-generated `resourceTitle()`
+  // fallback mainly to keep "HAProxy" capitalized correctly (the generic
+  // path would render the `haproxyFrontend` resource type as "Haproxy
+  // Frontend").
+  [ErrorCode.HAPROXY_FRONTEND_NOT_FOUND]: "Frontend not found",
+  [ErrorCode.HAPROXY_ROUTE_NOT_FOUND]: "Route not found",
+  [ErrorCode.HAPROXY_BACKEND_NOT_FOUND]: "Backend not found",
+  [ErrorCode.HAPROXY_SERVER_NOT_FOUND]: "Server not found",
+  [ErrorCode.HAPROXY_HOSTNAME_IN_USE]: "Hostname already in use",
+  [ErrorCode.HAPROXY_CERTIFICATE_NOT_FOUND]: "Certificate not found",
+  [ErrorCode.HAPROXY_CERTIFICATE_NOT_READY]: "Certificate not ready",
+  [ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE]: "HAProxy unavailable",
+  [ErrorCode.HAPROXY_SETUP_IN_PROGRESS]: "Setup already in progress",
+  [ErrorCode.HAPROXY_DATAPLANE_VERSION_CONFLICT]: "Configuration changed",
 };
 
 function statusClassFallback(status: number): string {

@@ -25,30 +25,25 @@ const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 // envelope via `{ unwrap: false }` rather than letting `apiFetch` auto-
 // unwrap to the inner `data` payload.
 
+// `apiFetch` throws a typed `ApiRequestError` (carrying `.code`/`.status`/
+// `.body.resource`/`.body.action`) on any non-2xx response — the server
+// routes backing these now always return `success: true` on a 2xx, so
+// there's no remaining `{ success: false }`-on-200 case to flatten into a
+// generic Error (which would have discarded the structured error info the
+// retry logic below and the global toast rely on).
+
 async function fetchAllFrontends(): Promise<HAProxyFrontendListResponse> {
-  const data = await apiFetch<HAProxyFrontendListResponse>(ApiRoute.haproxy.frontends(), {
+  return apiFetch<HAProxyFrontendListResponse>(ApiRoute.haproxy.frontends(), {
     correlationIdPrefix: "haproxy-frontends",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch HAProxy frontends");
-  }
-
-  return data;
 }
 
 async function fetchFrontendByName(frontendName: string): Promise<HAProxyFrontendResponse> {
-  const data = await apiFetch<HAProxyFrontendResponse>(ApiRoute.haproxy.frontend(frontendName), {
+  return apiFetch<HAProxyFrontendResponse>(ApiRoute.haproxy.frontend(frontendName), {
     correlationIdPrefix: "haproxy-frontend",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch HAProxy frontend");
-  }
-
-  return data;
 }
 
 // ====================

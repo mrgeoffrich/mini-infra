@@ -1,5 +1,8 @@
 import { getLogger } from "../../../lib/logger-factory";
 import { PrismaClient } from "../../../generated/prisma/client";
+import { ErrorCode } from "@mini-infra/types";
+import { CustomError } from "../../../lib/error-handler";
+import { NotFoundError, ValidationError } from "../../../lib/errors";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { generateACLName } from "../haproxy-naming";
 import {
@@ -17,6 +20,19 @@ import {
 import { uploadCertificateForSNI } from "./ssl-binding-deployer";
 
 const logger = getLogger("haproxy", "route-operations");
+
+/**
+ * Re-throws taxonomy errors (`ConflictError`/`NotFoundError`/etc.) unchanged
+ * instead of letting the caller's catch-all wrap them into a generic 500
+ * `Error` — the wrap is only meant for genuinely-opaque DataPlane/unexpected
+ * failures, not for domain errors raised a few lines up in the same
+ * try-block.
+ */
+function rethrowIfTaxonomyError(error: unknown): void {
+  if (error instanceof CustomError) {
+    throw error;
+  }
+}
 
 /**
  * Update an existing frontend's backend switching rule for a given hostname.
@@ -96,10 +112,24 @@ export async function addRouteToSharedFrontend(
   try {
     const sharedFrontend = await findSharedFrontendById(sharedFrontendId, prisma);
     if (!sharedFrontend) {
-      throw new Error(`Shared frontend not found: ${sharedFrontendId}`);
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_FRONTEND_NOT_FOUND,
+        `Shared frontend not found: ${sharedFrontendId}`,
+        {
+          resource: { type: "haproxySharedFrontend", id: sharedFrontendId },
+          action: "Refresh the page — the frontend may have been removed.",
+        },
+      );
     }
     if (!sharedFrontend.isSharedFrontend) {
-      throw new Error(`Frontend ${sharedFrontendId} is not a shared frontend`);
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        `Frontend ${sharedFrontendId} is not a shared frontend`,
+        {
+          resource: { type: "haproxySharedFrontend", id: sharedFrontendId },
+          action: "Routes can only be added to shared frontends.",
+        },
+      );
     }
 
     const frontendName = sharedFrontend.frontendName;
@@ -150,6 +180,7 @@ export async function addRouteToSharedFrontend(
       { error, sharedFrontendId, hostname, backendName },
       "Failed to add route to shared frontend"
     );
+    rethrowIfTaxonomyError(error);
     throw new Error(`Failed to add route to shared frontend: ${error}`, {
       cause: error,
     });
@@ -175,7 +206,14 @@ export async function removeRouteFromSharedFrontend(
   try {
     const sharedFrontend = await findSharedFrontendById(sharedFrontendId, prisma);
     if (!sharedFrontend) {
-      throw new Error(`Shared frontend not found: ${sharedFrontendId}`);
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_FRONTEND_NOT_FOUND,
+        `Shared frontend not found: ${sharedFrontendId}`,
+        {
+          resource: { type: "haproxySharedFrontend", id: sharedFrontendId },
+          action: "Refresh the page — the frontend may have been removed.",
+        },
+      );
     }
 
     const frontendName = sharedFrontend.frontendName;
@@ -205,6 +243,7 @@ export async function removeRouteFromSharedFrontend(
       { error, sharedFrontendId, hostname },
       "Failed to remove route from shared frontend"
     );
+    rethrowIfTaxonomyError(error);
     throw new Error(`Failed to remove route from shared frontend: ${error}`, {
       cause: error,
     });
@@ -240,7 +279,10 @@ export async function updateRoute(
     });
 
     if (!existingRoute) {
-      throw new Error(`Route not found: ${routeId}`);
+      throw new NotFoundError(ErrorCode.HAPROXY_ROUTE_NOT_FOUND, `Route not found: ${routeId}`, {
+        resource: { type: "haproxyRoute", id: routeId },
+        action: "Refresh the page — the route may have been removed.",
+      });
     }
 
     const frontendName = existingRoute.sharedFrontend.frontendName;
@@ -299,6 +341,7 @@ export async function updateRoute(
     };
   } catch (error) {
     logger.error({ error, routeId, updates }, "Failed to update route");
+    rethrowIfTaxonomyError(error);
     throw new Error(`Failed to update route: ${error}`, { cause: error });
   }
 }

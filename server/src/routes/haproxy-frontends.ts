@@ -4,11 +4,13 @@ import { getLogger } from "../lib/logger-factory";
 import { requirePermission } from "../middleware/auth";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
-import { HAProxyFrontendInfo, HAProxyFrontendListResponse, HAProxyFrontendResponse, ForceDeleteFrontendResponse, Permission } from "@mini-infra/types";
+import { HAProxyFrontendInfo, HAProxyFrontendListResponse, HAProxyFrontendResponse, ForceDeleteFrontendResponse, Permission, ErrorCode } from "@mini-infra/types";
 import { haproxyFrontendManager, HAProxyDataPlaneClient } from "../services/haproxy";
 import { haproxyCertificateDeployer } from "../services/haproxy/haproxy-certificate-deployer";
 import DockerService from "../services/docker";
 import { emitHAProxyUpdate } from "../services/haproxy-socket-emitter";
+import { asyncHandler } from "../lib/async-handler";
+import { ConflictError, NotFoundError, ValidationError } from "../lib/errors";
 
 const logger = getLogger("haproxy", "haproxy-frontends");
 const router = express.Router();
@@ -72,61 +74,52 @@ function serializeFrontend(
 router.get(
   "/",
   requirePermission(Permission.HaproxyRead) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const { status, hostname } = req.query;
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status, hostname } = req.query;
 
-      // Build filter
-      const where: Prisma.HAProxyFrontendWhereInput = {};
+    // Build filter
+    const where: Prisma.HAProxyFrontendWhereInput = {};
 
-      if (status && typeof status === "string") {
-        where.status = status;
-      }
-
-      if (hostname && typeof hostname === "string") {
-        where.hostname = {
-          contains: hostname,
-        };
-      }
-
-      // Fetch frontends
-      const frontends = await prisma.hAProxyFrontend.findMany({
-        where,
-        include: {
-          routes: {
-            select: {
-              hostname: true,
-            },
-            orderBy: { createdAt: "asc" },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      });
-
-      // Build lookup map for shared frontend names (so manual frontends
-      // can display which shared frontend they route through)
-      const sharedFrontendNameLookup = new Map<string, string>();
-      for (const f of frontends) {
-        if (f.isSharedFrontend) {
-          sharedFrontendNameLookup.set(f.id, f.frontendName);
-        }
-      }
-
-      const response: HAProxyFrontendListResponse = {
-        success: true,
-        data: frontends.map((f) => serializeFrontend(f, sharedFrontendNameLookup)),
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to fetch HAProxy frontends");
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch HAProxy frontends",
-        message: (error instanceof Error ? error.message : String(error)),
-      });
+    if (status && typeof status === "string") {
+      where.status = status;
     }
-  }
+
+    if (hostname && typeof hostname === "string") {
+      where.hostname = {
+        contains: hostname,
+      };
+    }
+
+    // Fetch frontends
+    const frontends = await prisma.hAProxyFrontend.findMany({
+      where,
+      include: {
+        routes: {
+          select: {
+            hostname: true,
+          },
+          orderBy: { createdAt: "asc" },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Build lookup map for shared frontend names (so manual frontends
+    // can display which shared frontend they route through)
+    const sharedFrontendNameLookup = new Map<string, string>();
+    for (const f of frontends) {
+      if (f.isSharedFrontend) {
+        sharedFrontendNameLookup.set(f.id, f.frontendName);
+      }
+    }
+
+    const response: HAProxyFrontendListResponse = {
+      success: true,
+      data: frontends.map((f) => serializeFrontend(f, sharedFrontendNameLookup)),
+    };
+
+    res.json(response);
+  })
 );
 
 // Validation schema for creating a shared frontend
@@ -144,133 +137,140 @@ const createSharedFrontendSchema = z.object({
 router.post(
   "/shared",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const validationResult = createSharedFrontendSchema.safeParse(req.body);
+  asyncHandler(async (req: Request, res: Response) => {
+    const validationResult = createSharedFrontendSchema.safeParse(req.body);
 
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: validationResult.error.issues,
-        });
-      }
-
-      const { environmentId, type, bindPort, tlsCertificateId } = validationResult.data;
-
-      // If HTTPS with certificate, validate the certificate exists
-      if (type === "https" && tlsCertificateId) {
-        const certificate = await prisma.tlsCertificate.findUnique({
-          where: { id: tlsCertificateId },
-        });
-        if (!certificate) {
-          return res.status(404).json({
-            success: false,
-            error: "Certificate not found",
-          });
-        }
-        if (!certificate.blobName) {
-          return res.status(400).json({
-            success: false,
-            error: "Certificate has no blob name - not yet provisioned",
-          });
-        }
-      }
-
-      // Get environment details
-      const environment = await prisma.environment.findUnique({
-        where: { id: environmentId },
-      });
-
-      if (!environment) {
-        return res.status(404).json({
-          success: false,
-          error: "Environment not found",
-        });
-      }
-
-      const haproxyStack = await prisma.stack.findFirst({
-        where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
-      });
-
-      if (!haproxyStack) {
-        return res.status(400).json({
-          success: false,
-          error: "Environment does not have HAProxy stack",
-        });
-      }
-
-      // Find HAProxy container
-      const dockerService = DockerService.getInstance();
-      await dockerService.initialize();
-      const containers = await dockerService.listContainers();
-
-      const haproxyContainer = containers.find((container) => {
-        const labels = container.labels || {};
-        return (
-          labels["mini-infra.service"] === "haproxy" &&
-          labels["mini-infra.environment"] === environmentId &&
-          container.status === "running"
-        );
-      });
-
-      if (!haproxyContainer) {
-        return res.status(503).json({
-          success: false,
-          error: "HAProxy container not found or not running",
-        });
-      }
-
-      // Initialize HAProxy client
-      const haproxyClient = new HAProxyDataPlaneClient();
-      await haproxyClient.initialize(haproxyContainer.id);
-
-      // Create the shared frontend
-      const defaultPort = type === "https" ? 443 : 80;
-      const sharedFrontend = await haproxyFrontendManager.getOrCreateSharedFrontend(
-        environmentId,
-        type,
-        haproxyClient,
-        prisma,
-        {
-          bindPort: bindPort ?? defaultPort,
-          bindAddress: "*",
-          tlsCertificateId,
-        }
-      );
-
-      logger.info(
-        { environmentId, type, frontendName: sharedFrontend.frontendName },
-        "Created shared frontend via API"
-      );
-
-      emitHAProxyUpdate();
-      res.status(201).json({
-        success: true,
-        data: {
-          id: sharedFrontend.id,
-          frontendName: sharedFrontend.frontendName,
-          environmentId: sharedFrontend.environmentId,
-          isSharedFrontend: sharedFrontend.isSharedFrontend,
-          bindPort: sharedFrontend.bindPort,
-          bindAddress: sharedFrontend.bindAddress,
-          useSSL: sharedFrontend.useSSL,
-          tlsCertificateId: sharedFrontend.tlsCertificateId,
-          type,
-        },
-        message: sharedFrontend.useSSL
-          ? `Shared ${type.toUpperCase()} frontend created with SSL configured`
-          : `Shared ${type.toUpperCase()} frontend created successfully`,
-      });
-    } catch (error) {
-      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create shared frontend");
-      res.status(500).json({
+    if (!validationResult.success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to create shared frontend",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Validation failed",
+        details: validationResult.error.issues,
       });
     }
-  }
+
+    const { environmentId, type, bindPort, tlsCertificateId } = validationResult.data;
+
+    // If HTTPS with certificate, validate the certificate exists
+    if (type === "https" && tlsCertificateId) {
+      const certificate = await prisma.tlsCertificate.findUnique({
+        where: { id: tlsCertificateId },
+      });
+      if (!certificate) {
+        throw new NotFoundError(
+          ErrorCode.HAPROXY_CERTIFICATE_NOT_FOUND,
+          `Certificate not found: ${tlsCertificateId}`,
+          {
+            resource: { type: "tlsCertificate", id: tlsCertificateId },
+            action: "Choose an existing certificate or issue a new one.",
+          },
+        );
+      }
+      if (!certificate.blobName) {
+        throw new ValidationError(
+          ErrorCode.HAPROXY_CERTIFICATE_NOT_READY,
+          "Certificate has no blob name - not yet provisioned",
+          {
+            resource: { type: "tlsCertificate", id: tlsCertificateId },
+            action: "Wait for the certificate to finish provisioning before deploying it.",
+          },
+        );
+      }
+    }
+
+    // Get environment details
+    const environment = await prisma.environment.findUnique({
+      where: { id: environmentId },
+    });
+
+    if (!environment) {
+      throw new NotFoundError(ErrorCode.HAPROXY_ENVIRONMENT_NOT_FOUND, `Environment not found: ${environmentId}`, {
+        resource: { type: "environment", id: environmentId },
+        action: "Choose an existing environment.",
+      });
+    }
+
+    const haproxyStack = await prisma.stack.findFirst({
+      where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+    });
+
+    if (!haproxyStack) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_STACK_NOT_FOUND,
+        "Environment does not have HAProxy stack",
+        {
+          resource: { type: "environment", id: environmentId },
+          action: "Deploy the HAProxy stack for this environment first.",
+        },
+      );
+    }
+
+    // Find HAProxy container
+    const dockerService = DockerService.getInstance();
+    await dockerService.initialize();
+    const containers = await dockerService.listContainers();
+
+    const haproxyContainer = containers.find((container) => {
+      const labels = container.labels || {};
+      return (
+        labels["mini-infra.service"] === "haproxy" &&
+        labels["mini-infra.environment"] === environmentId &&
+        container.status === "running"
+      );
+    });
+
+    if (!haproxyContainer) {
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE,
+        "HAProxy container not found or not running",
+        {
+          resource: { type: "haproxyContainer", id: environmentId },
+          action: "Ensure HAProxy is deployed and running for this environment.",
+        },
+      );
+    }
+
+    // Initialize HAProxy client
+    const haproxyClient = new HAProxyDataPlaneClient();
+    await haproxyClient.initialize(haproxyContainer.id);
+
+    // Create the shared frontend
+    const defaultPort = type === "https" ? 443 : 80;
+    const sharedFrontend = await haproxyFrontendManager.getOrCreateSharedFrontend(
+      environmentId,
+      type,
+      haproxyClient,
+      prisma,
+      {
+        bindPort: bindPort ?? defaultPort,
+        bindAddress: "*",
+        tlsCertificateId,
+      }
+    );
+
+    logger.info(
+      { environmentId, type, frontendName: sharedFrontend.frontendName },
+      "Created shared frontend via API"
+    );
+
+    emitHAProxyUpdate();
+    res.status(201).json({
+      success: true,
+      data: {
+        id: sharedFrontend.id,
+        frontendName: sharedFrontend.frontendName,
+        environmentId: sharedFrontend.environmentId,
+        isSharedFrontend: sharedFrontend.isSharedFrontend,
+        bindPort: sharedFrontend.bindPort,
+        bindAddress: sharedFrontend.bindAddress,
+        useSSL: sharedFrontend.useSSL,
+        tlsCertificateId: sharedFrontend.tlsCertificateId,
+        type,
+      },
+      message: sharedFrontend.useSSL
+        ? `Shared ${type.toUpperCase()} frontend created with SSL configured`
+        : `Shared ${type.toUpperCase()} frontend created successfully`,
+    });
+  })
 );
 
 // Validation schema for configuring SSL on a frontend
@@ -285,135 +285,135 @@ const configureSSLSchema = z.object({
 router.post(
   "/:frontendName/ssl",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
-      const validationResult = configureSSLSchema.safeParse(req.body);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
+    const validationResult = configureSSLSchema.safeParse(req.body);
 
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: validationResult.error.issues,
-        });
-      }
-
-      const { tlsCertificateId } = validationResult.data;
-
-      // Get frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
-
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (!frontend.environmentId) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend has no environment ID",
-        });
-      }
-
-      // Get HAProxy client
-      const dockerService = DockerService.getInstance();
-      await dockerService.initialize();
-      const containers = await dockerService.listContainers();
-
-      const haproxyContainer = containers.find((container) => {
-        const labels = container.labels || {};
-        return (
-          labels["mini-infra.service"] === "haproxy" &&
-          labels["mini-infra.environment"] === frontend.environmentId &&
-          container.status === "running"
-        );
-      });
-
-      if (!haproxyContainer) {
-        return res.status(503).json({
-          success: false,
-          error: "HAProxy container not found or not running",
-        });
-      }
-
-      const haproxyClient = new HAProxyDataPlaneClient();
-      await haproxyClient.initialize(haproxyContainer.id);
-
-      // Deploy certificate to HAProxy via the certificate deployer
-      const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
-        tlsCertificateId,
-        prisma,
-        haproxyClient,
-      );
-
-      if (!certFileName) {
-        return res.status(404).json({
-          success: false,
-          error: "Certificate not found or not ready for deployment",
-        });
-      }
-
-      // Delete existing bind if present (created without SSL when shared frontend was made)
-      // The bind name follows the pattern bind_${port}
-      try {
-        await haproxyClient.deleteFrontendBind(frontendName, "bind_443");
-        logger.info({ frontendName }, "Deleted existing bind_443 to replace with SSL-enabled bind");
-      } catch (deleteError) {
-        // If bind doesn't exist, that's fine - we'll just create it
-        if (!(deleteError instanceof Error ? deleteError.message : String(deleteError))?.includes("not found")) {
-          throw deleteError;
-        }
-        logger.debug({ frontendName }, "No existing bind_443 to delete");
-      }
-
-      // Add SSL binding to frontend
-      await haproxyClient.addFrontendBind(
-        frontendName,
-        "*",
-        443,
-        {
-          ssl: true,
-          ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
-        }
-      );
-
-      // Update frontend record
-      await prisma.hAProxyFrontend.update({
-        where: { frontendName },
-        data: {
-          useSSL: true,
-          tlsCertificateId,
-        },
-      });
-
-      logger.info(
-        { frontendName, tlsCertificateId, certFileName },
-        "Configured SSL on frontend via API"
-      );
-
-      emitHAProxyUpdate();
-      res.json({
-        success: true,
-        message: "SSL configured successfully",
-        data: {
-          frontendName,
-          tlsCertificateId,
-          certFileName,
-        },
-      });
-    } catch (error) {
-      logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to configure SSL on frontend");
-      res.status(500).json({
+    if (!validationResult.success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to configure SSL",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Validation failed",
+        details: validationResult.error.issues,
       });
     }
-  }
+
+    const { tlsCertificateId } = validationResult.data;
+
+    // Get frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
+
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+        action: "Refresh the page — the frontend may have been removed.",
+      });
+    }
+
+    if (!frontend.environmentId) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        `Frontend has no environment ID: ${frontendName}`,
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Get HAProxy client
+    const dockerService = DockerService.getInstance();
+    await dockerService.initialize();
+    const containers = await dockerService.listContainers();
+
+    const haproxyContainer = containers.find((container) => {
+      const labels = container.labels || {};
+      return (
+        labels["mini-infra.service"] === "haproxy" &&
+        labels["mini-infra.environment"] === frontend.environmentId &&
+        container.status === "running"
+      );
+    });
+
+    if (!haproxyContainer) {
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE,
+        "HAProxy container not found or not running",
+        {
+          resource: { type: "haproxyContainer", id: frontend.environmentId },
+          action: "Ensure HAProxy is deployed and running for this environment.",
+        },
+      );
+    }
+
+    const haproxyClient = new HAProxyDataPlaneClient();
+    await haproxyClient.initialize(haproxyContainer.id);
+
+    // Deploy certificate to HAProxy via the certificate deployer
+    const certFileName = await haproxyCertificateDeployer.fetchAndDeployCertificate(
+      tlsCertificateId,
+      prisma,
+      haproxyClient,
+    );
+
+    if (!certFileName) {
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_CERTIFICATE_NOT_FOUND,
+        "Certificate not found or not ready for deployment",
+        {
+          resource: { type: "tlsCertificate", id: tlsCertificateId },
+          action: "Choose an existing, active certificate.",
+        },
+      );
+    }
+
+    // Delete existing bind if present (created without SSL when shared frontend was made)
+    // The bind name follows the pattern bind_${port}
+    try {
+      await haproxyClient.deleteFrontendBind(frontendName, "bind_443");
+      logger.info({ frontendName }, "Deleted existing bind_443 to replace with SSL-enabled bind");
+    } catch (deleteError) {
+      // If bind doesn't exist, that's fine - we'll just create it
+      if (!(deleteError instanceof NotFoundError)) {
+        throw deleteError;
+      }
+      logger.debug({ frontendName }, "No existing bind_443 to delete");
+    }
+
+    // Add SSL binding to frontend
+    await haproxyClient.addFrontendBind(
+      frontendName,
+      "*",
+      443,
+      {
+        ssl: true,
+        ssl_certificate: `/etc/haproxy/ssl/${certFileName}`,
+      }
+    );
+
+    // Update frontend record
+    await prisma.hAProxyFrontend.update({
+      where: { frontendName },
+      data: {
+        useSSL: true,
+        tlsCertificateId,
+      },
+    });
+
+    logger.info(
+      { frontendName, tlsCertificateId, certFileName },
+      "Configured SSL on frontend via API"
+    );
+
+    emitHAProxyUpdate();
+    res.json({
+      success: true,
+      message: "SSL configured successfully",
+      data: {
+        frontendName,
+        tlsCertificateId,
+        certFileName,
+      },
+    });
+  })
 );
 
 /**
@@ -423,59 +423,46 @@ router.post(
 router.get(
   "/:frontendName",
   requirePermission(Permission.HaproxyRead) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-        include: {
-          _count: {
-            select: {
-              routes: true,
-            },
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+      include: {
+        _count: {
+          select: {
+            routes: true,
           },
         },
-      });
+      },
+    });
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "HAProxy frontend not found",
-        });
-      }
-
-      // Look up shared frontend name if this is a manual frontend
-      const sharedFrontendNameLookup = new Map<string, string>();
-      if (frontend.sharedFrontendId) {
-        const sharedFrontend = await prisma.hAProxyFrontend.findUnique({
-          where: { id: frontend.sharedFrontendId },
-          select: { id: true, frontendName: true },
-        });
-        if (sharedFrontend) {
-          sharedFrontendNameLookup.set(sharedFrontend.id, sharedFrontend.frontendName);
-        }
-      }
-
-      const response: HAProxyFrontendResponse = {
-        success: true,
-        data: serializeFrontend(frontend, sharedFrontendNameLookup),
-      };
-
-      res.json(response);
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to fetch HAProxy frontend"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch HAProxy frontend",
-        message: (error instanceof Error ? error.message : String(error)),
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
       });
     }
-  }
+
+    // Look up shared frontend name if this is a manual frontend
+    const sharedFrontendNameLookup = new Map<string, string>();
+    if (frontend.sharedFrontendId) {
+      const sharedFrontend = await prisma.hAProxyFrontend.findUnique({
+        where: { id: frontend.sharedFrontendId },
+        select: { id: true, frontendName: true },
+      });
+      if (sharedFrontend) {
+        sharedFrontendNameLookup.set(sharedFrontend.id, sharedFrontend.frontendName);
+      }
+    }
+
+    const response: HAProxyFrontendResponse = {
+      success: true,
+      data: serializeFrontend(frontend, sharedFrontendNameLookup),
+    };
+
+    res.json(response);
+  })
 );
 
 // ====================
@@ -492,11 +479,18 @@ async function getHAProxyClientForFrontend(frontendName: string): Promise<HAProx
   });
 
   if (!frontend) {
-    throw new Error(`Frontend not found: ${frontendName}`);
+    throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+      resource: { type: "haproxyFrontend", name: frontendName },
+      action: "Refresh the page — the frontend may have been removed.",
+    });
   }
 
   if (!frontend.environmentId) {
-    throw new Error(`Frontend has no environment ID: ${frontendName}`);
+    throw new ValidationError(
+      ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+      `Frontend has no environment ID: ${frontendName}`,
+      { resource: { type: "haproxyFrontend", name: frontendName } },
+    );
   }
 
   // Get environment details
@@ -505,7 +499,11 @@ async function getHAProxyClientForFrontend(frontendName: string): Promise<HAProx
   });
 
   if (!environment) {
-    throw new Error(`Environment not found: ${frontend.environmentId}`);
+    throw new NotFoundError(
+      ErrorCode.HAPROXY_ENVIRONMENT_NOT_FOUND,
+      `Environment not found: ${frontend.environmentId}`,
+      { resource: { type: "environment", id: frontend.environmentId } },
+    );
   }
 
   // Find HAProxy container using Docker
@@ -523,8 +521,13 @@ async function getHAProxyClientForFrontend(frontendName: string): Promise<HAProx
   });
 
   if (!haproxyContainer) {
-    throw new Error(
-      `No running HAProxy container found for environment: ${environment.name}`
+    throw new NotFoundError(
+      ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE,
+      `No running HAProxy container found for environment: ${environment.name}`,
+      {
+        resource: { type: "haproxyContainer", id: frontend.environmentId, name: environment.name },
+        action: "Ensure HAProxy is deployed and running for this environment.",
+      },
     );
   }
 
@@ -549,68 +552,55 @@ const createRouteSchema = z.object({
 router.get(
   "/:frontendName/routes",
   requirePermission(Permission.HaproxyRead) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-        include: {
-          routes: {
-            orderBy: { createdAt: "asc" },
-          },
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+      include: {
+        routes: {
+          orderBy: { createdAt: "asc" },
         },
-      });
+      },
+    });
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (!frontend.isSharedFrontend) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend is not a shared frontend",
-          message: "Routes are only available for shared frontends",
-        });
-      }
-
-      res.json({
-        success: true,
-        data: {
-          frontendId: frontend.id,
-          frontendName: frontend.frontendName,
-          routes: frontend.routes.map((route) => ({
-            id: route.id,
-            hostname: route.hostname,
-            aclName: route.aclName,
-            backendName: route.backendName,
-            sourceType: route.sourceType,
-            manualFrontendId: route.manualFrontendId,
-            useSSL: route.useSSL,
-            tlsCertificateId: route.tlsCertificateId,
-            status: route.status,
-            priority: route.priority,
-            createdAt: route.createdAt.toISOString(),
-            updatedAt: route.updatedAt.toISOString(),
-          })),
-        },
-      });
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to fetch routes for frontend"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to fetch routes",
-        message: (error instanceof Error ? error.message : String(error)),
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
       });
     }
-  }
+
+    if (!frontend.isSharedFrontend) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Routes are only available for shared frontends",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    res.json({
+      success: true,
+      data: {
+        frontendId: frontend.id,
+        frontendName: frontend.frontendName,
+        routes: frontend.routes.map((route) => ({
+          id: route.id,
+          hostname: route.hostname,
+          aclName: route.aclName,
+          backendName: route.backendName,
+          sourceType: route.sourceType,
+          manualFrontendId: route.manualFrontendId,
+          useSSL: route.useSSL,
+          tlsCertificateId: route.tlsCertificateId,
+          status: route.status,
+          priority: route.priority,
+          createdAt: route.createdAt.toISOString(),
+          updatedAt: route.updatedAt.toISOString(),
+        })),
+      },
+    });
+  })
 );
 
 /**
@@ -620,97 +610,67 @@ router.get(
 router.post(
   "/:frontendName/routes",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Validate request body
-      const validationResult = createRouteSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: validationResult.error.issues,
-        });
-      }
-
-      const { hostname, backendName, useSSL, tlsCertificateId } = validationResult.data;
-
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
-
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (!frontend.isSharedFrontend) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend is not a shared frontend",
-          message: "Routes can only be added to shared frontends",
-        });
-      }
-
-      // Get HAProxy client
-      let haproxyClient: HAProxyDataPlaneClient;
-      try {
-        haproxyClient = await getHAProxyClientForFrontend(frontendName);
-      } catch (error) {
-        return res.status(503).json({
-          success: false,
-          error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
-        });
-      }
-
-      // Add route
-      const route = await haproxyFrontendManager.addRouteToSharedFrontend(
-        frontend.id,
-        hostname,
-        backendName,
-        "manual",
-        frontend.id, // For manual routes, source ID is the frontend itself
-        haproxyClient,
-        prisma,
-        { useSSL, tlsCertificateId }
-      );
-
-      logger.info(
-        { frontendName, hostname, backendName },
-        "Route added to shared frontend via API"
-      );
-
-      emitHAProxyUpdate();
-      res.status(201).json({
-        success: true,
-        data: route,
-        message: "Route added successfully",
-      });
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to add route to frontend"
-      );
-
-      let statusCode = 500;
-      if ((error instanceof Error ? error.message : String(error)).includes("already exists")) {
-        statusCode = 409;
-      } else if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
-        statusCode = 404;
-      }
-
-      res.status(statusCode).json({
+    // Validate request body
+    const validationResult = createRouteSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to add route",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Validation failed",
+        details: validationResult.error.issues,
       });
     }
-  }
+
+    const { hostname, backendName, useSSL, tlsCertificateId } = validationResult.data;
+
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
+
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+      });
+    }
+
+    if (!frontend.isSharedFrontend) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Routes can only be added to shared frontends",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Get HAProxy client
+    const haproxyClient = await getHAProxyClientForFrontend(frontendName);
+
+    // Add route
+    const route = await haproxyFrontendManager.addRouteToSharedFrontend(
+      frontend.id,
+      hostname,
+      backendName,
+      "manual",
+      frontend.id, // For manual routes, source ID is the frontend itself
+      haproxyClient,
+      prisma,
+      { useSSL, tlsCertificateId }
+    );
+
+    logger.info(
+      { frontendName, hostname, backendName },
+      "Route added to shared frontend via API"
+    );
+
+    emitHAProxyUpdate();
+    res.status(201).json({
+      success: true,
+      data: route,
+      message: "Route added successfully",
+    });
+  })
 );
 
 // Validation schema for patching a route
@@ -732,152 +692,128 @@ const patchRouteSchema = z.object({
 router.patch(
   "/:frontendName/routes/:routeId",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
 
-      // Validate route ID
-      if (!z.string().cuid().safeParse(routeId).success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid route ID format",
-        });
-      }
-
-      // Validate request body
-      const validationResult = patchRouteSchema.safeParse(req.body);
-      if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: "Validation failed",
-          details: validationResult.error.issues,
-        });
-      }
-
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
-
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (!frontend.isSharedFrontend) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend is not a shared frontend",
-          message: "Routes can only be updated on shared frontends",
-        });
-      }
-
-      // Fetch route and verify it belongs to this frontend
-      const route = await prisma.hAProxyRoute.findUnique({
-        where: { id: routeId },
-      });
-
-      if (!route) {
-        return res.status(404).json({
-          success: false,
-          error: "Route not found",
-        });
-      }
-
-      if (route.sharedFrontendId !== frontend.id) {
-        return res.status(400).json({
-          success: false,
-          error: "Route does not belong to this frontend",
-        });
-      }
-
-      // Check for hostname uniqueness if hostname is being changed
-      if (validationResult.data.hostname && validationResult.data.hostname !== route.hostname) {
-        const existingRoute = await prisma.hAProxyRoute.findFirst({
-          where: {
-            sharedFrontendId: frontend.id,
-            hostname: validationResult.data.hostname,
-            id: { not: routeId },
-          },
-        });
-
-        if (existingRoute) {
-          return res.status(409).json({
-            success: false,
-            error: "A route with this hostname already exists on this frontend",
-          });
-        }
-      }
-
-      // Get HAProxy client
-      let haproxyClient: HAProxyDataPlaneClient;
-      try {
-        haproxyClient = await getHAProxyClientForFrontend(frontendName);
-      } catch (error) {
-        return res.status(503).json({
-          success: false,
-          error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
-        });
-      }
-
-      // Update route (propagates to HAProxy)
-      await haproxyFrontendManager.updateRoute(
-        routeId,
-        validationResult.data,
-        haproxyClient,
-        prisma
-      );
-
-      // Fetch full updated record for response
-      const updatedRoute = await prisma.hAProxyRoute.findUnique({
-        where: { id: routeId },
-      });
-
-      logger.info(
-        { frontendName, routeId, updates: validationResult.data },
-        "Route updated on shared frontend via API"
-      );
-
-      emitHAProxyUpdate();
-      res.json({
-        success: true,
-        data: updatedRoute ? {
-          id: updatedRoute.id,
-          hostname: updatedRoute.hostname,
-          aclName: updatedRoute.aclName,
-          backendName: updatedRoute.backendName,
-          sourceType: updatedRoute.sourceType,
-          manualFrontendId: updatedRoute.manualFrontendId,
-          useSSL: updatedRoute.useSSL,
-          tlsCertificateId: updatedRoute.tlsCertificateId,
-          status: updatedRoute.status,
-          priority: updatedRoute.priority,
-          createdAt: updatedRoute.createdAt.toISOString(),
-          updatedAt: updatedRoute.updatedAt.toISOString(),
-        } : null,
-        message: "Route updated successfully",
-      });
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName, routeId: req.params.routeId },
-        "Failed to update route on frontend"
-      );
-
-      let statusCode = 500;
-      if ((error instanceof Error ? error.message : String(error)).includes("not found")) {
-        statusCode = 404;
-      }
-
-      res.status(statusCode).json({
+    // Validate route ID
+    if (!z.string().cuid().safeParse(routeId).success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to update route",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Invalid route ID format",
       });
     }
-  }
+
+    // Validate request body
+    const validationResult = patchRouteSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: "Validation failed",
+        details: validationResult.error.issues,
+      });
+    }
+
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
+
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+      });
+    }
+
+    if (!frontend.isSharedFrontend) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Routes can only be updated on shared frontends",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Fetch route and verify it belongs to this frontend
+    const route = await prisma.hAProxyRoute.findUnique({
+      where: { id: routeId },
+    });
+
+    if (!route) {
+      throw new NotFoundError(ErrorCode.HAPROXY_ROUTE_NOT_FOUND, `Route not found: ${routeId}`, {
+        resource: { type: "haproxyRoute", id: routeId },
+      });
+    }
+
+    if (route.sharedFrontendId !== frontend.id) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_ROUTE_FRONTEND_MISMATCH,
+        "Route does not belong to this frontend",
+        { resource: { type: "haproxyRoute", id: routeId } },
+      );
+    }
+
+    // Check for hostname uniqueness if hostname is being changed
+    if (validationResult.data.hostname && validationResult.data.hostname !== route.hostname) {
+      const existingRoute = await prisma.hAProxyRoute.findFirst({
+        where: {
+          sharedFrontendId: frontend.id,
+          hostname: validationResult.data.hostname,
+          id: { not: routeId },
+        },
+      });
+
+      if (existingRoute) {
+        throw new ConflictError(
+          ErrorCode.HAPROXY_HOSTNAME_IN_USE,
+          "A route with this hostname already exists on this frontend",
+          {
+            resource: { type: "haproxyRoute", name: validationResult.data.hostname },
+            action: "Choose a different hostname.",
+          },
+        );
+      }
+    }
+
+    // Get HAProxy client
+    const haproxyClient = await getHAProxyClientForFrontend(frontendName);
+
+    // Update route (propagates to HAProxy)
+    await haproxyFrontendManager.updateRoute(
+      routeId,
+      validationResult.data,
+      haproxyClient,
+      prisma
+    );
+
+    // Fetch full updated record for response
+    const updatedRoute = await prisma.hAProxyRoute.findUnique({
+      where: { id: routeId },
+    });
+
+    logger.info(
+      { frontendName, routeId, updates: validationResult.data },
+      "Route updated on shared frontend via API"
+    );
+
+    emitHAProxyUpdate();
+    res.json({
+      success: true,
+      data: updatedRoute ? {
+        id: updatedRoute.id,
+        hostname: updatedRoute.hostname,
+        aclName: updatedRoute.aclName,
+        backendName: updatedRoute.backendName,
+        sourceType: updatedRoute.sourceType,
+        manualFrontendId: updatedRoute.manualFrontendId,
+        useSSL: updatedRoute.useSSL,
+        tlsCertificateId: updatedRoute.tlsCertificateId,
+        status: updatedRoute.status,
+        priority: updatedRoute.priority,
+        createdAt: updatedRoute.createdAt.toISOString(),
+        updatedAt: updatedRoute.updatedAt.toISOString(),
+      } : null,
+      message: "Route updated successfully",
+    });
+  })
 );
 
 /**
@@ -887,99 +823,77 @@ router.patch(
 router.delete(
   "/:frontendName/routes/:routeId",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName); const routeId = String(req.params.routeId);
 
-      // Validate route ID
-      if (!z.string().cuid().safeParse(routeId).success) {
-        return res.status(400).json({
-          success: false,
-          error: "Invalid route ID format",
-        });
-      }
-
-      // Fetch frontend
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-      });
-
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
-
-      if (!frontend.isSharedFrontend) {
-        return res.status(400).json({
-          success: false,
-          error: "Frontend is not a shared frontend",
-          message: "Routes can only be removed from shared frontends",
-        });
-      }
-
-      // Fetch route
-      const route = await prisma.hAProxyRoute.findUnique({
-        where: { id: routeId },
-      });
-
-      if (!route) {
-        return res.status(404).json({
-          success: false,
-          error: "Route not found",
-        });
-      }
-
-      if (route.sharedFrontendId !== frontend.id) {
-        return res.status(400).json({
-          success: false,
-          error: "Route does not belong to this frontend",
-        });
-      }
-
-      // Get HAProxy client
-      let haproxyClient: HAProxyDataPlaneClient;
-      try {
-        haproxyClient = await getHAProxyClientForFrontend(frontendName);
-      } catch (error) {
-        return res.status(503).json({
-          success: false,
-          error: "HAProxy unavailable",
-          message: error instanceof Error ? error.message : "Failed to connect to HAProxy",
-        });
-      }
-
-      // Remove route
-      await haproxyFrontendManager.removeRouteFromSharedFrontend(
-        frontend.id,
-        route.hostname,
-        haproxyClient,
-        prisma
-      );
-
-      logger.info(
-        { frontendName, routeId, hostname: route.hostname },
-        "Route removed from shared frontend via API"
-      );
-
-      emitHAProxyUpdate();
-      res.json({
-        success: true,
-        message: "Route removed successfully",
-      });
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName, routeId: req.params.routeId },
-        "Failed to remove route from frontend"
-      );
-      res.status(500).json({
+    // Validate route ID
+    if (!z.string().cuid().safeParse(routeId).success) {
+      return res.status(400).json({
         success: false,
-        error: "Failed to remove route",
-        message: (error instanceof Error ? error.message : String(error)),
+        error: "Invalid route ID format",
       });
     }
-  }
+
+    // Fetch frontend
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+    });
+
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
+      });
+    }
+
+    if (!frontend.isSharedFrontend) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+        "Routes can only be removed from shared frontends",
+        { resource: { type: "haproxyFrontend", name: frontendName } },
+      );
+    }
+
+    // Fetch route
+    const route = await prisma.hAProxyRoute.findUnique({
+      where: { id: routeId },
+    });
+
+    if (!route) {
+      throw new NotFoundError(ErrorCode.HAPROXY_ROUTE_NOT_FOUND, `Route not found: ${routeId}`, {
+        resource: { type: "haproxyRoute", id: routeId },
+      });
+    }
+
+    if (route.sharedFrontendId !== frontend.id) {
+      throw new ValidationError(
+        ErrorCode.HAPROXY_ROUTE_FRONTEND_MISMATCH,
+        "Route does not belong to this frontend",
+        { resource: { type: "haproxyRoute", id: routeId } },
+      );
+    }
+
+    // Get HAProxy client
+    const haproxyClient = await getHAProxyClientForFrontend(frontendName);
+
+    // Remove route
+    await haproxyFrontendManager.removeRouteFromSharedFrontend(
+      frontend.id,
+      route.hostname,
+      haproxyClient,
+      prisma
+    );
+
+    logger.info(
+      { frontendName, routeId, hostname: route.hostname },
+      "Route removed from shared frontend via API"
+    );
+
+    emitHAProxyUpdate();
+    res.json({
+      success: true,
+      message: "Route removed successfully",
+    });
+  })
 );
 
 /**
@@ -989,103 +903,90 @@ router.delete(
 router.delete(
   "/:frontendName",
   requirePermission(Permission.HaproxyWrite) as RequestHandler,
-  async (req: Request, res: Response) => {
-    try {
-      const frontendName = String(req.params.frontendName);
+  asyncHandler(async (req: Request, res: Response) => {
+    const frontendName = String(req.params.frontendName);
 
-      // Fetch frontend with routes
-      const frontend = await prisma.hAProxyFrontend.findUnique({
-        where: { frontendName },
-        include: { routes: true },
+    // Fetch frontend with routes
+    const frontend = await prisma.hAProxyFrontend.findUnique({
+      where: { frontendName },
+      include: { routes: true },
+    });
+
+    if (!frontend) {
+      throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+        resource: { type: "haproxyFrontend", name: frontendName },
       });
+    }
 
-      if (!frontend) {
-        return res.status(404).json({
-          success: false,
-          error: "Frontend not found",
-        });
-      }
+    // Try to clean up HAProxy config — but don't fail if HAProxy is unavailable
+    let haproxyCleanedUp = false;
+    try {
+      const haproxyClient = await getHAProxyClientForFrontend(frontendName);
 
-      // Try to clean up HAProxy config — but don't fail if HAProxy is unavailable
-      let haproxyCleanedUp = false;
-      try {
-        const haproxyClient = await getHAProxyClientForFrontend(frontendName);
-
-        // Remove all routes from HAProxy (ACLs and switching rules)
-        for (const route of frontend.routes) {
-          try {
-            await haproxyFrontendManager.removeRouteFromSharedFrontend(
-              frontend.id,
-              route.hostname,
-              haproxyClient,
-              prisma
-            );
-          } catch (routeError) {
-            logger.warn(
-              { error: (routeError instanceof Error ? routeError.message : String(routeError)), hostname: route.hostname, frontendName },
-              "Failed to remove route from HAProxy during force-delete, continuing"
-            );
-          }
-        }
-
-        // Remove the frontend itself from HAProxy
+      // Remove all routes from HAProxy (ACLs and switching rules)
+      for (const route of frontend.routes) {
         try {
-          await haproxyFrontendManager.removeFrontend(frontendName, haproxyClient);
-        } catch (frontendError) {
+          await haproxyFrontendManager.removeRouteFromSharedFrontend(
+            frontend.id,
+            route.hostname,
+            haproxyClient,
+            prisma
+          );
+        } catch (routeError) {
           logger.warn(
-            { error: (frontendError instanceof Error ? frontendError.message : String(frontendError)), frontendName },
-            "Failed to remove frontend from HAProxy during force-delete, continuing"
+            { error: (routeError instanceof Error ? routeError.message : String(routeError)), hostname: route.hostname, frontendName },
+            "Failed to remove route from HAProxy during force-delete, continuing"
           );
         }
+      }
 
-        haproxyCleanedUp = true;
-      } catch (haproxyError) {
+      // Remove the frontend itself from HAProxy
+      try {
+        await haproxyFrontendManager.removeFrontend(frontendName, haproxyClient);
+      } catch (frontendError) {
         logger.warn(
-          { error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)), frontendName },
-          "HAProxy unavailable during force-delete, cleaning up database only"
+          { error: (frontendError instanceof Error ? frontendError.message : String(frontendError)), frontendName },
+          "Failed to remove frontend from HAProxy during force-delete, continuing"
         );
       }
 
-      // Delete remaining routes from database (some may have been deleted by removeRouteFromSharedFrontend)
-      await prisma.hAProxyRoute.deleteMany({
-        where: { sharedFrontendId: frontend.id },
-      });
-
-      // Delete the frontend record
-      await prisma.hAProxyFrontend.delete({
-        where: { id: frontend.id },
-      });
-
-      const totalDeletedRoutes = frontend.routes.length;
-
-      logger.info(
-        { frontendName, deletedRoutes: totalDeletedRoutes, haproxyCleanedUp },
-        "Force-deleted frontend and all routes"
+      haproxyCleanedUp = true;
+    } catch (haproxyError) {
+      logger.warn(
+        { error: (haproxyError instanceof Error ? haproxyError.message : String(haproxyError)), frontendName },
+        "HAProxy unavailable during force-delete, cleaning up database only"
       );
-
-      emitHAProxyUpdate();
-
-      const response: ForceDeleteFrontendResponse = {
-        success: true,
-        message: haproxyCleanedUp
-          ? `Frontend and ${totalDeletedRoutes} route(s) removed from HAProxy and database`
-          : `Frontend and ${totalDeletedRoutes} route(s) removed from database only (HAProxy was unavailable)`,
-        deletedRoutes: totalDeletedRoutes,
-        frontendName,
-      };
-      res.json(response);
-    } catch (error) {
-      logger.error(
-        { error: (error instanceof Error ? error.message : String(error)), frontendName: req.params.frontendName },
-        "Failed to force-delete frontend"
-      );
-      res.status(500).json({
-        success: false,
-        error: "Failed to force-delete frontend",
-        message: (error instanceof Error ? error.message : String(error)),
-      });
     }
-  }
+
+    // Delete remaining routes from database (some may have been deleted by removeRouteFromSharedFrontend)
+    await prisma.hAProxyRoute.deleteMany({
+      where: { sharedFrontendId: frontend.id },
+    });
+
+    // Delete the frontend record
+    await prisma.hAProxyFrontend.delete({
+      where: { id: frontend.id },
+    });
+
+    const totalDeletedRoutes = frontend.routes.length;
+
+    logger.info(
+      { frontendName, deletedRoutes: totalDeletedRoutes, haproxyCleanedUp },
+      "Force-deleted frontend and all routes"
+    );
+
+    emitHAProxyUpdate();
+
+    const response: ForceDeleteFrontendResponse = {
+      success: true,
+      message: haproxyCleanedUp
+        ? `Frontend and ${totalDeletedRoutes} route(s) removed from HAProxy and database`
+        : `Frontend and ${totalDeletedRoutes} route(s) removed from database only (HAProxy was unavailable)`,
+      deletedRoutes: totalDeletedRoutes,
+      frontendName,
+    };
+    res.json(response);
+  })
 );
 
 export default router;

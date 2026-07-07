@@ -9,7 +9,9 @@ import {
   EligibleContainer,
   CreateManualFrontendRequest,
   UpdateManualFrontendRequest,
+  ErrorCode,
 } from "@mini-infra/types";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 
 /** Internal extended request that includes the server-resolved certificate ID */
 interface InternalCreateRequest extends CreateManualFrontendRequest {
@@ -84,14 +86,28 @@ export class ManualFrontendManager {
       });
 
       if (!environment) {
-        throw new Error(`Environment not found: ${environmentId}`);
+        throw new NotFoundError(
+          ErrorCode.HAPROXY_ENVIRONMENT_NOT_FOUND,
+          `Environment not found: ${environmentId}`,
+          {
+            resource: { type: "environment", id: environmentId },
+            action: "Choose an existing environment.",
+          },
+        );
       }
 
       // Find HAProxy network via purpose lookup (see getApplicationsNetworkName).
       const haproxyNetworkName = await this.getApplicationsNetworkName(environmentId, prisma);
 
       if (!haproxyNetworkName) {
-        throw new Error(`No HAProxy network found for environment: ${environmentId}`);
+        throw new NotFoundError(
+          ErrorCode.HAPROXY_NETWORK_NOT_FOUND,
+          `No HAProxy network found for environment: ${environmentId}`,
+          {
+            resource: { type: "dockerNetwork", id: environmentId },
+            action: "Apply the environment's networking stack before connecting containers.",
+          },
+        );
       }
 
       // Initialize docker executor
@@ -242,7 +258,14 @@ export class ManualFrontendManager {
     const haproxyNetworkName = await this.getApplicationsNetworkName(environmentId, prisma);
 
     if (!haproxyNetworkName) {
-      throw new Error(`No HAProxy network found for environment: ${environmentId}`);
+      throw new NotFoundError(
+        ErrorCode.HAPROXY_NETWORK_NOT_FOUND,
+        `No HAProxy network found for environment: ${environmentId}`,
+        {
+          resource: { type: "dockerNetwork", id: environmentId },
+          action: "Apply the environment's networking stack before connecting containers.",
+        },
+      );
     }
 
     await this.networkManager.connect(containerId, haproxyNetworkName);
@@ -337,7 +360,15 @@ export class ManualFrontendManager {
       );
 
       if (!validation.isValid) {
-        throw new Error(`Container validation failed: ${validation.errors.join(", ")}`);
+        throw new ValidationError(
+          ErrorCode.HAPROXY_CONTAINER_VALIDATION_FAILED,
+          `Container validation failed: ${validation.errors.join(", ")}`,
+          {
+            resource: { type: "container", id: request.containerId },
+            action: "Choose a different container or resolve the listed issues.",
+            details: validation.errors,
+          },
+        );
       }
 
       // Validate hostname uniqueness - check both HAProxyFrontend and HAProxyRoute tables
@@ -352,8 +383,13 @@ export class ManualFrontendManager {
       });
 
       if (existingFrontend) {
-        throw new Error(
-          `Hostname ${request.hostname} is already in use by frontend: ${existingFrontend.frontendName}`
+        throw new ConflictError(
+          ErrorCode.HAPROXY_HOSTNAME_IN_USE,
+          `Hostname ${request.hostname} is already in use by frontend: ${existingFrontend.frontendName}`,
+          {
+            resource: { type: "haproxyFrontend", name: request.hostname },
+            action: "Choose a different hostname, or edit the existing frontend instead.",
+          },
         );
       }
 
@@ -369,8 +405,13 @@ export class ManualFrontendManager {
       });
 
       if (existingRoute) {
-        throw new Error(
-          `Hostname ${request.hostname} is already in use by an existing route`
+        throw new ConflictError(
+          ErrorCode.HAPROXY_HOSTNAME_IN_USE,
+          `Hostname ${request.hostname} is already in use by an existing route`,
+          {
+            resource: { type: "haproxyRoute", name: request.hostname },
+            action: "Choose a different hostname, or edit the existing route instead.",
+          },
         );
       }
 
@@ -385,7 +426,14 @@ export class ManualFrontendManager {
       const targetContainer = containers.find((c) => c.id === request.containerId);
 
       if (!targetContainer) {
-        throw new Error("Container not found in eligible list");
+        throw new NotFoundError(
+          ErrorCode.HAPROXY_CONTAINER_NOT_ELIGIBLE,
+          "Container not found in eligible list",
+          {
+            resource: { type: "container", id: request.containerId },
+            action: "Refresh the eligible-containers list and try again.",
+          },
+        );
       }
 
       // Confirm the container is actually attached to the resolved HAProxy
@@ -393,7 +441,14 @@ export class ManualFrontendManager {
       // HAProxy one via a substring match — `haproxyNetworkName` above is
       // already the definitive purpose-resolved name).
       if (!targetContainer.networks.includes(haproxyNetworkName)) {
-        throw new Error("Container is not on HAProxy network");
+        throw new ValidationError(
+          ErrorCode.HAPROXY_CONTAINER_NOT_ELIGIBLE,
+          "Container is not on HAProxy network",
+          {
+            resource: { type: "container", id: request.containerId },
+            action: "Join the container to the HAProxy network before connecting it.",
+          },
+        );
       }
 
       const containerIpAddress = containerInfo.NetworkSettings.Networks[haproxyNetworkName]?.IPAddress;
@@ -624,12 +679,20 @@ export class ManualFrontendManager {
       });
 
       if (!frontend) {
-        throw new Error(`Frontend not found: ${frontendName}`);
+        throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+          resource: { type: "haproxyFrontend", name: frontendName },
+          action: "Refresh the page — the frontend may have already been removed.",
+        });
       }
 
       if (frontend.frontendType !== "manual") {
-        throw new Error(
-          `Cannot delete deployment frontend via manual frontend API. Frontend type: ${frontend.frontendType}`
+        throw new ValidationError(
+          ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+          `Cannot delete deployment frontend via manual frontend API. Frontend type: ${frontend.frontendType}`,
+          {
+            resource: { type: "haproxyFrontend", name: frontendName },
+            action: "Deployment-managed frontends are removed by stopping or removing the application/stack.",
+          },
         );
       }
 
@@ -737,12 +800,20 @@ export class ManualFrontendManager {
       });
 
       if (!frontend) {
-        throw new Error(`Frontend not found: ${frontendName}`);
+        throw new NotFoundError(ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, `Frontend not found: ${frontendName}`, {
+          resource: { type: "haproxyFrontend", name: frontendName },
+          action: "Refresh the page — the frontend may have already been removed.",
+        });
       }
 
       if (frontend.frontendType !== "manual") {
-        throw new Error(
-          `Cannot update deployment frontend via manual frontend API. Frontend type: ${frontend.frontendType}`
+        throw new ValidationError(
+          ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH,
+          `Cannot update deployment frontend via manual frontend API. Frontend type: ${frontend.frontendType}`,
+          {
+            resource: { type: "haproxyFrontend", name: frontendName },
+            action: "Deployment-managed frontends are updated by redeploying the application/stack.",
+          },
         );
       }
 
@@ -759,8 +830,13 @@ export class ManualFrontendManager {
         });
 
         if (existingFrontend) {
-          throw new Error(
-            `Hostname ${updates.hostname} is already in use by frontend: ${existingFrontend.frontendName}`
+          throw new ConflictError(
+            ErrorCode.HAPROXY_HOSTNAME_IN_USE,
+            `Hostname ${updates.hostname} is already in use by frontend: ${existingFrontend.frontendName}`,
+            {
+              resource: { type: "haproxyFrontend", name: updates.hostname },
+              action: "Choose a different hostname, or edit the existing frontend instead.",
+            },
           );
         }
 

@@ -8,6 +8,7 @@ import {
   Channel,
   ServerEvent,
   ApiRoute,
+  ErrorCode,
   queryKeys,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
@@ -27,51 +28,39 @@ const POLL_INTERVAL_DISCONNECTED = 30000; // 30s when socket is not connected
 // `{ unwrap: false }` rather than letting `apiFetch` auto-unwrap to the
 // inner `data` payload.
 
+// `apiFetch` throws a typed `ApiRequestError` (carrying `.code`/`.status`/
+// `.body.resource`/`.body.action`) on any non-2xx response — the server
+// routes backing these now always return `success: true` on a 2xx, so
+// there's no remaining `{ success: false }`-on-200 case to flatten into a
+// generic Error.
+
 async function fetchFrontendRoutes(frontendName: string): Promise<HAProxyRoutesListResponse> {
-  const data = await apiFetch<HAProxyRoutesListResponse>(
+  return apiFetch<HAProxyRoutesListResponse>(
     ApiRoute.haproxy.frontendRoutes(frontendName),
     { correlationIdPrefix: "haproxy-route", unwrap: false },
   );
-
-  if (!data.success) {
-    throw new Error("Failed to fetch routes");
-  }
-
-  return data;
 }
 
 async function createRoute(
   frontendName: string,
   request: CreateRouteRequest,
 ): Promise<CreateRouteResponse> {
-  const data = await apiFetch<CreateRouteResponse>(ApiRoute.haproxy.frontendRoutes(frontendName), {
+  return apiFetch<CreateRouteResponse>(ApiRoute.haproxy.frontendRoutes(frontendName), {
     method: "POST",
     body: request,
     correlationIdPrefix: "haproxy-route",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create route");
-  }
-
-  return data;
 }
 
 async function deleteRoute(
   frontendName: string,
   routeId: string,
 ): Promise<DeleteRouteResponse> {
-  const data = await apiFetch<DeleteRouteResponse>(
+  return apiFetch<DeleteRouteResponse>(
     ApiRoute.haproxy.frontendRoute(frontendName, routeId),
     { method: "DELETE", correlationIdPrefix: "haproxy-route", unwrap: false },
   );
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to delete route");
-  }
-
-  return data;
 }
 
 interface UpdateRouteResponse {
@@ -85,16 +74,10 @@ async function updateRoute(
   routeId: string,
   request: Partial<Pick<HAProxyRouteInfo, "hostname" | "backendName" | "useSSL" | "tlsCertificateId" | "priority">>,
 ): Promise<UpdateRouteResponse> {
-  const data = await apiFetch<UpdateRouteResponse>(
+  return apiFetch<UpdateRouteResponse>(
     ApiRoute.haproxy.frontendRoute(frontendName, routeId),
     { method: "PATCH", body: request, correlationIdPrefix: "haproxy-route", unwrap: false },
   );
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update route");
-  }
-
-  return data;
 }
 
 // ====================
@@ -137,11 +120,15 @@ export function useFrontendRoutes(
     refetchInterval,
     retry: (failureCount: number, error: Error) => {
       // Don't retry on certain errors
-      if (error instanceof ApiRequestError && (error.isAuth || error.status === 404)) {
-        return false;
-      }
-      if (error.message.includes("not a shared frontend")) {
-        return false;
+      if (error instanceof ApiRequestError) {
+        if (error.isAuth || error.status === 404) {
+          return false;
+        }
+        // The frontend exists but isn't a shared frontend — retrying won't
+        // change that.
+        if (error.code === ErrorCode.HAPROXY_FRONTEND_TYPE_MISMATCH) {
+          return false;
+        }
       }
       return failureCount < 3;
     },
