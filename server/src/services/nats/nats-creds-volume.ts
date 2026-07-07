@@ -1,5 +1,6 @@
 import type { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
+import { InternalError } from '../../lib/errors';
 
 const log = getLogger('stacks', 'nats-creds-volume');
 
@@ -133,7 +134,9 @@ export async function writeNatsCredsFiles(
   });
 
   if (result.exitCode !== 0) {
-    throw new Error(
+    // A one-shot internal helper container misbehaving — not a condition the
+    // caller (apply/spawn) or an end user can act on beyond retrying the apply.
+    throw new InternalError(
       `Failed to write NATS creds into volume ${volumeName} (exit ${result.exitCode}): ${result.stderr.trim()}`,
     );
   }

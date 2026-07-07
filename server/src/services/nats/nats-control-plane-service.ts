@@ -25,7 +25,7 @@ import {
 } from "./nats-identity-errors";
 import { getIdentitySeedBackupStatus } from "./nats-identity-seed-backup";
 import { UserEventService } from "../user-events/user-event-service";
-import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 import {
   ErrorCode,
   type CreateNatsAccountRequest,
@@ -1011,20 +1011,23 @@ export class NatsControlPlaneService {
     try {
       parsed = JSON.parse(body) as typeof parsed;
     } catch {
-      throw new Error(`Account claim update for ${publicKey} returned non-JSON reply: ${body.slice(0, 200)}`);
+      throw new InternalError(`Account claim update for ${publicKey} returned non-JSON reply: ${body.slice(0, 200)}`);
     }
     if (parsed.error) {
-      throw new Error(`Account claim update for ${publicKey} rejected: ${parsed.error.description ?? body}`);
+      throw new InternalError(`Account claim update for ${publicKey} rejected: ${parsed.error.description ?? body}`);
     }
     if (parsed.data?.code !== undefined && parsed.data.code !== 200) {
-      throw new Error(`Account claim update for ${publicKey} rejected with code ${parsed.data.code}`);
+      throw new InternalError(`Account claim update for ${publicKey} rejected with code ${parsed.data.code}`);
     }
   }
 
   private async withSystemNats<T>(fn: (nc: NatsConnection) => Promise<T>): Promise<T> {
     const creds = await this.tryReadField(NATS_SYSTEM_CREDS_KV_PATH, FIELD_SYSTEM_CREDS);
     if (!creds) {
-      throw new Error("System NATS creds not yet provisioned in Vault KV");
+      // System NATS bootstrap hasn't completed yet — an internal boot-order
+      // invariant, surfaced to whichever internal caller invoked
+      // updateAccountClaim (e.g. the destroy path), not an end-user request.
+      throw new InternalError("System NATS creds not yet provisioned in Vault KV");
     }
     const url = await this.getInternalUrl();
     const nc = await connect({

@@ -74,9 +74,10 @@ export function ConnectedStatusCard({
           toast.error(`Connection test failed: ${data.message}`);
         }
       },
-      onError: (error) => {
-        toast.error(`Connection test failed: ${error.message}`);
-      },
+      // No onError — a genuine request failure (network/5xx) is already
+      // toasted by the global MutationCache.onError
+      // (client/src/lib/query-client.ts). This handler only needs to cover
+      // the "successful response, but isValid: false" case above.
     });
   };
 
@@ -85,9 +86,7 @@ export function ConnectedStatusCard({
       onSuccess: () => {
         toast.success("GitHub App disconnected successfully");
       },
-      onError: (error) => {
-        toast.error(`Failed to disconnect: ${error.message}`);
-      },
+      // No onError — handled globally, see above.
     });
   };
 

@@ -1,5 +1,6 @@
 import crypto from "crypto";
-import { GitHubAppOAuthStatus } from "@mini-infra/types";
+import { ErrorCode, GitHubAppOAuthStatus } from "@mini-infra/types";
+import { InternalError, ValidationError } from "../../lib/errors";
 import { SETTING_KEYS, GitHubAppContext } from "./github-app-constants";
 
 /**
@@ -22,7 +23,14 @@ export class GitHubAppOAuth {
   async generateOAuthAuthorizeUrl(): Promise<{ authorizeUrl: string; state: string }> {
     const clientId = await this.ctx.getSetting(SETTING_KEYS.CLIENT_ID);
     if (!clientId) {
-      throw new Error("GitHub App client_id not configured");
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_NOT_CONFIGURED,
+        "GitHub App client_id not configured",
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Configure the GitHub App OAuth client ID in Settings > GitHub.",
+        },
+      );
     }
 
     const state = crypto.randomBytes(20).toString("hex");
@@ -50,7 +58,14 @@ export class GitHubAppOAuth {
     const clientSecret = await this.ctx.getSetting(SETTING_KEYS.CLIENT_SECRET);
 
     if (!clientId || !clientSecret) {
-      throw new Error("GitHub App OAuth credentials not configured");
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_NOT_CONFIGURED,
+        "GitHub App OAuth credentials not configured",
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Configure the GitHub App OAuth client ID and secret in Settings > GitHub.",
+        },
+      );
     }
 
     const response = await this.ctx.fetchGitHub(
@@ -71,17 +86,36 @@ export class GitHubAppOAuth {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(`OAuth token exchange failed (${response.status}): ${errorBody}`);
+      // In practice the only way this fixed-credential request fails is a
+      // bad/expired/already-used authorization `code` — user-actionable
+      // (restart the authorize flow), not an internal invariant.
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_EXCHANGE_FAILED,
+        `OAuth token exchange failed (${response.status}): ${errorBody}`,
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Restart the GitHub authorization flow.",
+        },
+      );
     }
 
     const data = await response.json();
 
     if (data.error) {
-      throw new Error(`OAuth error: ${data.error_description || data.error}`);
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_EXCHANGE_FAILED,
+        `OAuth error: ${data.error_description || data.error}`,
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Restart the GitHub authorization flow.",
+        },
+      );
     }
 
     if (!data.access_token) {
-      throw new Error("OAuth response missing access_token");
+      // GitHub responded 200 with no error field but also no token — an
+      // unexpected response shape, not something the user caused.
+      throw new InternalError("OAuth response missing access_token");
     }
 
     const expiresAt = data.expires_in
@@ -113,11 +147,25 @@ export class GitHubAppOAuth {
     const refreshToken = await this.ctx.getSetting(SETTING_KEYS.OAUTH_REFRESH_TOKEN);
 
     if (!clientId || !clientSecret) {
-      throw new Error("GitHub App OAuth credentials not configured");
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_NOT_CONFIGURED,
+        "GitHub App OAuth credentials not configured",
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Configure the GitHub App OAuth client ID and secret in Settings > GitHub.",
+        },
+      );
     }
 
     if (!refreshToken) {
-      throw new Error("No OAuth refresh token available — user must re-authorize");
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_REAUTHORIZE_REQUIRED,
+        "No OAuth refresh token available — user must re-authorize",
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Re-authorize GitHub OAuth in Settings > GitHub.",
+        },
+      );
     }
 
     const response = await this.ctx.fetchGitHub(
@@ -139,7 +187,16 @@ export class GitHubAppOAuth {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(`OAuth token refresh failed (${response.status}): ${errorBody}`);
+      // Refresh failures here mean the stored refresh token is no longer
+      // usable (revoked/expired) — the only recourse is re-authorizing.
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_REAUTHORIZE_REQUIRED,
+        `OAuth token refresh failed (${response.status}): ${errorBody}`,
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Re-authorize GitHub OAuth in Settings > GitHub.",
+        },
+      );
     }
 
     const data = await response.json();
@@ -153,7 +210,14 @@ export class GitHubAppOAuth {
           this.ctx.deleteSetting(SETTING_KEYS.OAUTH_EXPIRES_AT, userId),
         ]);
       }
-      throw new Error(`OAuth refresh error: ${data.error_description || data.error}`);
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_OAUTH_REAUTHORIZE_REQUIRED,
+        `OAuth refresh error: ${data.error_description || data.error}`,
+        {
+          resource: { type: "githubAppOAuth" },
+          action: "Re-authorize GitHub OAuth in Settings > GitHub.",
+        },
+      );
     }
 
     const expiresAt = data.expires_in

@@ -29,7 +29,7 @@
 
 import { PrismaClient } from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
-import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 import { ErrorCode } from "@mini-infra/types";
 
 export interface NatsPrefixAllowlistEntry {
@@ -194,7 +194,7 @@ export class NatsPrefixAllowlistService {
     // Genuine internal invariant — the write above just succeeded, so a
     // missing read-back means the DB round-trip itself is broken, not a bad
     // request. Stays a plain 500, not laundered into the taxonomy.
-    if (!created) throw new Error("failed to load created NATS prefix-allowlist entry");
+    if (!created) throw new InternalError("failed to load created NATS prefix-allowlist entry");
     return created;
   }
 
@@ -218,7 +218,7 @@ export class NatsPrefixAllowlistService {
     });
     log.info({ prefix, userId, count: input.allowedTemplateIds.length }, "nats-prefix-allowlist entry updated");
     const updated = await this.get(prefix);
-    if (!updated) throw new Error("failed to load updated NATS prefix-allowlist entry");
+    if (!updated) throw new InternalError("failed to load updated NATS prefix-allowlist entry");
     return updated;
   }
 

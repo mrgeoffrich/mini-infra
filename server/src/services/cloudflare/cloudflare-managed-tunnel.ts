@@ -1,7 +1,7 @@
 import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
-import { ConflictError, NotFoundError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError } from "../../lib/errors";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 import { CloudflareTunnelApi } from "./cloudflare-tunnel-api";
 import {
@@ -61,7 +61,11 @@ export class CloudflareManagedTunnels {
           });
           const newTunnelId = tunnelResponse.id;
           if (!newTunnelId) {
-            throw new Error("Tunnel creation returned no ID");
+            // Cloudflare's SDK responded success but omitted the id — an
+            // unexpected shape from the upstream SDK, not a condition the
+            // caller can address (the retry/rollback below already handles
+            // cleanup).
+            throw new InternalError("Tunnel creation returned no ID");
           }
           createdTunnelId = newTunnelId;
 
@@ -70,7 +74,7 @@ export class CloudflareManagedTunnels {
             { account_id: accountId },
           )) as unknown as string;
           if (!token) {
-            throw new Error("Token retrieval returned empty token");
+            throw new InternalError("Token retrieval returned empty token");
           }
           return { tunnelId: newTunnelId, token };
         },

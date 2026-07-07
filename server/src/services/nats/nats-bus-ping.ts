@@ -20,6 +20,7 @@
 import { randomUUID } from "node:crypto";
 import { SystemSubject } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import { NatsBus } from "./nats-bus";
 import type {
   SystemPingReply,
@@ -80,7 +81,10 @@ export async function pingSelf(timeoutMs = 2_000): Promise<PingResult> {
   );
   const latencyMs = Date.now() - sentAtMs;
   if (reply.nonce !== nonce) {
-    throw new Error(
+    // Protocol-level invariant — the bus guarantees a reply correlates to its
+    // request; a mismatch means something is badly wrong with the transport,
+    // never a user-actionable condition.
+    throw new InternalError(
       `ping reply nonce mismatch (expected ${nonce}, got ${reply.nonce})`,
     );
   }

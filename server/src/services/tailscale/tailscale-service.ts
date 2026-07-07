@@ -1,5 +1,6 @@
 import { PrismaClient } from "../../lib/prisma";
 import {
+  ErrorCode,
   ValidationResult,
   ServiceHealthStatus,
   ConnectivityStatusType,
@@ -11,6 +12,7 @@ import {
 } from "@mini-infra/types";
 import { ConfigurationService } from "../configuration-base";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError, ValidationError } from "../../lib/errors";
 
 const TAILSCALE_API_BASE = "https://api.tailscale.com/api/v2";
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000; // refresh 5 minutes before expiry
@@ -47,7 +49,14 @@ export class TailscaleService extends ConfigurationService {
 
   async setClientId(clientId: string, userId: string): Promise<void> {
     if (!clientId || clientId.trim().length === 0) {
-      throw new Error("Tailscale OAuth client_id cannot be empty");
+      throw new ValidationError(
+        ErrorCode.TAILSCALE_CLIENT_ID_INVALID,
+        "Tailscale OAuth client_id cannot be empty",
+        {
+          resource: { type: "tailscaleConfig" },
+          action: "Provide a non-empty OAuth client ID.",
+        },
+      );
     }
     await this.set(TAILSCALE_SETTING_KEYS.CLIENT_ID, clientId.trim(), userId);
     this.cachedToken = null;
@@ -55,7 +64,14 @@ export class TailscaleService extends ConfigurationService {
 
   async setClientSecret(clientSecret: string, userId: string): Promise<void> {
     if (!clientSecret || clientSecret.trim().length === 0) {
-      throw new Error("Tailscale OAuth client_secret cannot be empty");
+      throw new ValidationError(
+        ErrorCode.TAILSCALE_CLIENT_SECRET_INVALID,
+        "Tailscale OAuth client_secret cannot be empty",
+        {
+          resource: { type: "tailscaleConfig" },
+          action: "Provide a non-empty OAuth client secret.",
+        },
+      );
     }
     await this.setSecure(
       TAILSCALE_SETTING_KEYS.CLIENT_SECRET,
@@ -72,7 +88,14 @@ export class TailscaleService extends ConfigurationService {
       .filter((t) => t !== TAILSCALE_DEFAULT_TAG);
     for (const tag of normalized) {
       if (!/^tag:[a-z0-9-]+$/.test(tag)) {
-        throw new Error(`Invalid tag '${tag}' — must match tag:[a-z0-9-]+`);
+        throw new ValidationError(
+          ErrorCode.TAILSCALE_TAG_INVALID,
+          `Invalid tag '${tag}' — must match tag:[a-z0-9-]+`,
+          {
+            resource: { type: "tailscaleConfig" },
+            action: "Use lowercase letters, digits, and hyphens only (e.g. tag:my-tag).",
+          },
+        );
       }
     }
     await this.set(
@@ -572,7 +595,11 @@ export class TailscaleService extends ConfigurationService {
    */
   async deleteDevice(deviceId: string): Promise<void> {
     if (!deviceId || deviceId.length === 0) {
-      throw new Error("deviceId is required");
+      // Internal-only call path (`purgeStaleManagedDevicesByHostname`, no
+      // direct route) which already filters out devices with no id before
+      // ever calling this — reaching here is a contract violation, not a
+      // user-supplied request.
+      throw new InternalError("deviceId is required");
     }
     const accessToken = await this.getAccessToken();
     const controller = new AbortController();

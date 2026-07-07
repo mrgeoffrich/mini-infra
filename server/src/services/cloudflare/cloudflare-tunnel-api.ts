@@ -4,7 +4,7 @@ import {
   CloudflareTunnelIngressRule,
   ErrorCode,
 } from "@mini-infra/types";
-import { ConflictError, NotFoundError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError } from "../../lib/errors";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 
 /**
@@ -34,7 +34,9 @@ export class CloudflareTunnelApi {
           "tunnel config fetch",
         );
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          // Swallowed by `tryRun()`'s catch-all into the `null` fallback below
+          // — never reaches a caller as a thrown error.
+          throw new InternalError(`HTTP ${response.status}: ${response.statusText}`);
         }
         const body = (await response.json()) as {
           success: boolean;
@@ -89,7 +91,10 @@ export class CloudflareTunnelApi {
         );
         if (!response.ok) {
           const errorText = await response.text();
-          throw new Error(`HTTP ${response.status}: ${errorText}`);
+          // An unmapped HTTP failure from the raw cfdFetch call (no SDK
+          // status/body shape to key a taxonomy error off of) — genuinely
+          // internal/SDK-wrap, not a user-actionable condition on its own.
+          throw new InternalError(`HTTP ${response.status}: ${errorText}`);
         }
         const body = (await response.json()) as {
           success: boolean;
