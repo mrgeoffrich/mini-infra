@@ -1,7 +1,13 @@
-import { PrismaClient } from "../generated/prisma/client";
+import { PrismaClient, Prisma } from "../generated/prisma/client";
 import { EnvironmentManager } from '../services/environment';
 import { DockerExecutorService } from '../services/docker-executor';
 import DockerService from '../services/docker';
+import { ConflictError, NotFoundError } from '../lib/errors';
+
+/** Constructs a real Prisma error the same way the client would, for a given error code. */
+function prismaKnownRequestError(code: string, message: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(message, { code, clientVersion: 'test' });
+}
 
 // Mock prisma module so docker-executor/index.ts doesn't try to resolve DATABASE_URL at import time
 vi.mock('../lib/prisma', () => ({ default: {} }));
@@ -361,6 +367,42 @@ describe('EnvironmentManager', () => {
         expect.stringContaining('Egress gateway provisioning failed'),
       );
     });
+
+    it('should throw a ConflictError (ENVIRONMENT_NAME_EXISTS) when the name is already taken (Prisma P2002)', async () => {
+      // `Environment.name` is `@unique` — a real duplicate-name create hits
+      // this Prisma error code. The service must attribute it directly
+      // instead of letting the raw Prisma error (and its English message)
+      // bubble up for the route to string-match.
+      mockPrisma.environment.create.mockRejectedValue(
+        prismaKnownRequestError('P2002', 'Unique constraint failed on the fields: (`name`)'),
+      );
+
+      const request = { name: 'existing-env', type: 'nonproduction' as const };
+
+      let caught: unknown;
+      try {
+        await environmentManager.createEnvironment(request);
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(ConflictError);
+      expect(caught).toMatchObject({
+        statusCode: 409,
+        code: 'ENVIRONMENT_NAME_EXISTS',
+        resource: { type: 'environment', name: 'existing-env' },
+        message: expect.stringContaining('existing-env'),
+      });
+    });
+
+    it('should rethrow non-P2002 Prisma errors from create() unchanged', async () => {
+      const dbError = prismaKnownRequestError('P2003', 'Foreign key constraint failed');
+      mockPrisma.environment.create.mockRejectedValue(dbError);
+
+      const request = { name: 'test-env', type: 'nonproduction' as const };
+
+      await expect(environmentManager.createEnvironment(request)).rejects.toBe(dbError);
+    });
   });
 
   describe('getEnvironmentById', () => {
@@ -529,6 +571,43 @@ describe('EnvironmentManager', () => {
   });
 
   describe('updateEnvironment', () => {
+    it('should throw a NotFoundError (ENVIRONMENT_NOT_FOUND) when the id does not exist (Prisma P2025)', async () => {
+      // Prisma's update() throws P2025 rather than returning null when the
+      // `where` doesn't match a row — this method's `| null` return type
+      // suggested a null-return path existed, but it was actually
+      // unreachable. Pin the real behaviour: the service now attributes the
+      // P2025 to a typed 404 instead of letting a raw Prisma error surface
+      // as a generic 500.
+      mockPrisma.environment.findUnique.mockResolvedValue(null);
+      mockPrisma.environment.update.mockRejectedValue(
+        prismaKnownRequestError('P2025', 'An operation failed because it depends on one or more records that were required but not found.'),
+      );
+
+      let caught: unknown;
+      try {
+        await environmentManager.updateEnvironment('missing-env', { description: 'x' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(NotFoundError);
+      expect(caught).toMatchObject({
+        statusCode: 404,
+        code: 'ENVIRONMENT_NOT_FOUND',
+        resource: { type: 'environment', id: 'missing-env' },
+      });
+    });
+
+    it('should rethrow non-P2025 Prisma errors from update() unchanged', async () => {
+      mockPrisma.environment.findUnique.mockResolvedValue({ egressFirewallEnabled: false, name: 'env-1' } as any);
+      const dbError = prismaKnownRequestError('P2003', 'Foreign key constraint failed');
+      mockPrisma.environment.update.mockRejectedValue(dbError);
+
+      await expect(
+        environmentManager.updateEnvironment('env-1', { description: 'x' }),
+      ).rejects.toBe(dbError);
+    });
+
     it('should update environment successfully', async () => {
       const mockUpdatedEnvironment = {
         id: 'env-1',

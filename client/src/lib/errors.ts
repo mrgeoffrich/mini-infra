@@ -96,6 +96,12 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+  // Environments / networks (Phase 4) — the generic 409 "already exists"
+  // status-class fallback is actively misleading for these three: none of
+  // them are about the target resource already existing.
+  [ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT]: "Network type already in use",
+  [ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS]: "Migration already in progress",
+  [ErrorCode.DOCKER_NETWORK_IN_USE]: "Network still in use",
 };
 
 function statusClassFallback(status: number): string {

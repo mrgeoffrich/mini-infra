@@ -500,6 +500,47 @@ describe("DockerService", () => {
     });
   });
 
+  describe("removeNetwork", () => {
+    beforeEach(async () => {
+      dockerService = DockerService.getInstance();
+      await dockerService.initialize();
+    });
+
+    it("throws a typed ConflictError (DOCKER_NETWORK_IN_USE) when containers are attached", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: false, reason: "has-containers" }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).rejects.toMatchObject({
+        statusCode: 409,
+        isOperational: true,
+        code: "DOCKER_NETWORK_IN_USE",
+        resource: { type: "dockerNetwork", id: "net-1" },
+      });
+    });
+
+    it("throws a typed NotFoundError (DOCKER_NETWORK_NOT_FOUND) when the network doesn't exist", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: false, reason: "not-found" }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).rejects.toMatchObject({
+        statusCode: 404,
+        isOperational: true,
+        code: "DOCKER_NETWORK_NOT_FOUND",
+        resource: { type: "dockerNetwork", id: "net-1" },
+      });
+    });
+
+    it("resolves when the network is removed successfully", async () => {
+      (dockerService as any).networkManager = {
+        remove: vi.fn().mockResolvedValue({ name: "net-1", removed: true }),
+      };
+
+      await expect(dockerService.removeNetwork("net-1")).resolves.toBeUndefined();
+    });
+  });
+
   describe("getContainer", () => {
     beforeEach(async () => {
       dockerService = DockerService.getInstance();

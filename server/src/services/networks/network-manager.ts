@@ -1,5 +1,6 @@
 import type Docker from 'dockerode';
-import type { NetworkSpecMismatch } from '@mini-infra/types';
+import { ErrorCode, type NetworkSpecMismatch } from '@mini-infra/types';
+import { NotFoundError } from '../../lib/errors';
 import { getLogger } from '../../lib/logger-factory';
 import type { DockerExecutorService } from '../docker-executor';
 
@@ -465,7 +466,19 @@ export class NetworkManager {
       }
     } catch (err) {
       const statusCode = statusCodeOf(err);
-      if (statusCode === 404) throw err;
+      if (statusCode === 404) {
+        // Unlike the fallthrough below (used when the pre-check itself is
+        // inconclusive), a 404 here is unambiguous: the network genuinely
+        // doesn't exist. Attribute it so route callers (docker.ts's
+        // POST /networks/:id/connect) get a 404 instead of an unclassified
+        // 500 — this raw dockerode error previously wasn't `isOperational`,
+        // so it fell through the central middleware's generic-error branch.
+        throw new NotFoundError(
+          ErrorCode.DOCKER_NETWORK_NOT_FOUND,
+          `Docker network "${networkName}" not found.`,
+          { resource: { type: 'dockerNetwork', id: networkName } },
+        );
+      }
       // Otherwise fall through — the connect attempt below is authoritative.
     }
 

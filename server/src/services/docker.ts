@@ -5,6 +5,8 @@ import { getLogger } from "../lib/logger-factory";
 import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError, NotFoundError } from "../lib/errors";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 import type { DockerContainerEvent } from "../lib/docker-event-pattern-detector";
@@ -1076,11 +1078,22 @@ class DockerService {
     }
 
     if (result.reason === "has-containers") {
-      throw new Error(`Cannot remove network ${id}: one or more containers are connected`);
+      throw new ConflictError(
+        ErrorCode.DOCKER_NETWORK_IN_USE,
+        `Cannot remove network "${id}": one or more containers are connected.`,
+        {
+          resource: { type: 'dockerNetwork', id },
+          action: 'Disconnect the attached containers first, then try again.',
+        },
+      );
     }
 
     if (result.reason === "not-found") {
-      throw new Error(`Network not found: ${id}`);
+      throw new NotFoundError(
+        ErrorCode.DOCKER_NETWORK_NOT_FOUND,
+        `Docker network "${id}" not found.`,
+        { resource: { type: 'dockerNetwork', id } },
+      );
     }
 
     throw new Error(`Failed to remove network ${id}`);
