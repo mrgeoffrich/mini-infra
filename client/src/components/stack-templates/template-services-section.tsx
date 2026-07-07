@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { IconPlus, IconEdit, IconTrash } from "@tabler/icons-react";
+import { IconPlus, IconEdit, IconTrash, IconPuzzle } from "@tabler/icons-react";
 import type {
   StackTemplateServiceInfo,
   StackServiceDefinition,
   StackServiceType,
 } from "@mini-infra/types";
 import { ServiceEditDrawer } from "./service-drawer/service-edit-drawer";
+import { mapServiceInfoToDefinition } from "@/lib/application-draft";
+import { AddonBadge } from "@/components/stacks/addon-badge";
+import { AttachAddonDialog } from "@/components/stacks/attach-addon-dialog";
 
 interface TemplateServicesSectionProps {
   services: StackTemplateServiceInfo[];
@@ -32,23 +35,6 @@ const TYPE_BORDER_CLASSES: Record<StackServiceType, string> = {
   JobPool: "border-l-rose-500",
 };
 
-function toServiceDefinition(
-  info: StackTemplateServiceInfo,
-): StackServiceDefinition {
-  return {
-    serviceName: info.serviceName,
-    serviceType: info.serviceType,
-    dockerImage: info.dockerImage,
-    dockerTag: info.dockerTag,
-    containerConfig: info.containerConfig,
-    initCommands: info.initCommands ?? undefined,
-    dependsOn: info.dependsOn,
-    order: info.order,
-    routing: info.routing ?? undefined,
-    adoptedContainer: info.adoptedContainer ?? undefined,
-  };
-}
-
 export function TemplateServicesSection({
   services,
   readOnly = false,
@@ -56,19 +42,33 @@ export function TemplateServicesSection({
 }: TemplateServicesSectionProps) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  // The service whose Add-ons dialog is open (index into `sortedServices`), or
+  // null when closed. Attach/remove is order-preserving, so the index stays
+  // valid across a save/refetch.
+  const [addonServiceIndex, setAddonServiceIndex] = useState<number | null>(
+    null,
+  );
 
   const sortedServices = [...services].sort((a, b) => a.order - b.order);
 
   const editingService =
     editingIndex !== null
-      ? toServiceDefinition(sortedServices[editingIndex]!)
+      ? mapServiceInfoToDefinition(sortedServices[editingIndex]!)
       : null;
 
   const drawerOpen = isAdding || editingIndex !== null;
   const drawerService = isAdding ? null : editingService;
 
+  const addonService =
+    addonServiceIndex !== null ? sortedServices[addonServiceIndex] ?? null : null;
+  const addonServiceAttached = (addonService?.addons ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const addonServiceAttachedIds = Object.keys(addonServiceAttached);
+
   function handleSave(updated: StackServiceDefinition) {
-    const definitions = sortedServices.map(toServiceDefinition);
+    const definitions = sortedServices.map(mapServiceInfoToDefinition);
 
     if (isAdding) {
       onServicesChange([...definitions, updated]);
@@ -85,7 +85,7 @@ export function TemplateServicesSection({
   function handleDelete(index: number) {
     const definitions = sortedServices
       .filter((_, i) => i !== index)
-      .map((svc, i) => ({ ...toServiceDefinition(svc), order: i + 1 }));
+      .map((svc, i) => ({ ...mapServiceInfoToDefinition(svc), order: i + 1 }));
     onServicesChange(definitions);
   }
 
@@ -94,6 +94,44 @@ export function TemplateServicesSection({
       setIsAdding(false);
       setEditingIndex(null);
     }
+  }
+
+  // Persist a change to one service's `addons` block through the same
+  // `onServicesChange` → draft-save path every other edit uses. Rebuilding the
+  // whole list via the canonical mapper keeps every OTHER service's per-service
+  // fields intact (Part A). An empty map is written as `undefined` so the addon
+  // block disappears rather than persisting as `{}`.
+  function persistServiceAddons(
+    index: number,
+    nextAddons: Record<string, unknown>,
+  ) {
+    const definitions = sortedServices.map(mapServiceInfoToDefinition);
+    const svc = definitions[index];
+    if (!svc) return;
+    definitions[index] = {
+      ...svc,
+      addons:
+        Object.keys(nextAddons).length > 0 ? nextAddons : undefined,
+    };
+    onServicesChange(definitions);
+  }
+
+  function handleAddonAttach(
+    addonId: string,
+    config: Record<string, unknown>,
+  ) {
+    if (addonServiceIndex === null) return;
+    persistServiceAddons(addonServiceIndex, {
+      ...addonServiceAttached,
+      [addonId]: config,
+    });
+  }
+
+  function handleAddonRemove(addonId: string) {
+    if (addonServiceIndex === null) return;
+    const next = { ...addonServiceAttached };
+    delete next[addonId];
+    persistServiceAddons(addonServiceIndex, next);
   }
 
   return (
@@ -125,6 +163,9 @@ export function TemplateServicesSection({
             const portCount = svc.containerConfig.ports?.length ?? 0;
             const envCount = Object.keys(svc.containerConfig.env ?? {}).length;
             const mountCount = svc.containerConfig.mounts?.length ?? 0;
+            const addonIds = Object.keys(
+              (svc.addons ?? {}) as Record<string, unknown>,
+            );
 
             return (
               <button
@@ -157,7 +198,19 @@ export function TemplateServicesSection({
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7"
+                        onClick={() => setAddonServiceIndex(index)}
+                        aria-label={`Add-ons for ${svc.serviceName}`}
+                        title="Add-ons"
+                      >
+                        <IconPuzzle className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
                         onClick={() => setEditingIndex(index)}
+                        aria-label={`Edit ${svc.serviceName}`}
                       >
                         <IconEdit className="h-4 w-4" />
                       </Button>
@@ -167,6 +220,7 @@ export function TemplateServicesSection({
                         variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive"
                         onClick={() => handleDelete(index)}
+                        aria-label={`Delete ${svc.serviceName}`}
                       >
                         <IconTrash className="h-4 w-4" />
                       </Button>
@@ -206,6 +260,16 @@ export function TemplateServicesSection({
                       {svc.adoptedContainer.listeningPort}
                     </span>
                   )}
+                  {addonIds.length > 0 && (
+                    <span className="col-span-2 flex flex-wrap items-center gap-1">
+                      <span className="font-medium text-foreground">
+                        Add-ons:
+                      </span>{" "}
+                      {addonIds.map((id) => (
+                        <AddonBadge key={id} addonName={id} />
+                      ))}
+                    </span>
+                  )}
                 </div>
               </button>
             );
@@ -219,6 +283,24 @@ export function TemplateServicesSection({
         service={drawerService}
         onSave={handleSave}
       />
+
+      {/* Per-service Add-ons authoring. Only mounted while editing the draft
+          (the affordance button is gated on `!readOnly`); attaching/removing
+          writes the service's `addons` block through `onServicesChange`. The
+          dialog itself gates each addon by service type + connectivity. */}
+      {addonService && (
+        <AttachAddonDialog
+          open={addonServiceIndex !== null}
+          onOpenChange={(open) => {
+            if (!open) setAddonServiceIndex(null);
+          }}
+          serviceName={addonService.serviceName}
+          serviceType={addonService.serviceType}
+          attachedAddonIds={addonServiceAttachedIds}
+          onAttach={handleAddonAttach}
+          onRemove={handleAddonRemove}
+        />
+      )}
     </div>
   );
 }

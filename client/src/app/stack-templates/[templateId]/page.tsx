@@ -31,6 +31,7 @@ import { TemplateConfigFilesSection } from "@/components/stack-templates/config-
 import { TemplateResourceIOSection } from "@/components/stack-templates/template-resource-io-section";
 import { VersionSidebar } from "@/components/stack-templates/version-sidebar";
 import { CodeView } from "@/components/stack-templates/code-view/code-view";
+import { buildDraftFromVersion } from "@/lib/application-draft";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import type {
@@ -75,49 +76,32 @@ export default function StackTemplateDetailPage() {
     displayVersion.status !== "draft";
   const readOnly = !isViewingDraft;
 
-  // Build draft input from displayVersion with optional overrides. Preserves
-  // every optional field so saving one section (e.g. services) doesn't wipe
-  // others (config files, resource I/O, network type defaults, notes).
+  // Build draft input from displayVersion with optional overrides. Delegates to
+  // the canonical LOSSLESS mapper (`buildDraftFromVersion`) so saving one
+  // section (e.g. services) carries every other field through untouched —
+  // config files, resource I/O, network type defaults, notes, inputs, vault,
+  // nats, requires, AND every per-service field (`addons`, `poolConfig`,
+  // `jobPoolConfig`, vault/nats binding refs). A hand-rolled partial map here
+  // used to silently strip those, so editing/deleting any one service wiped
+  // addons off every service (and dropping the version-level nats/vault section
+  // while keeping a service's `natsRole`/`vaultAppRoleRef` would then fail
+  // validation). `buildDraftFromVersion` also strips read-model `null`s.
   const buildDraftInput = useCallback(
     (overrides: Partial<DraftVersionInput> = {}): DraftVersionInput => {
-      const v = displayVersion;
-      return {
-        parameters: v?.parameters ?? [],
-        defaultParameterValues: v?.defaultParameterValues ?? {},
-        networkTypeDefaults: v?.networkTypeDefaults ?? {},
-        resourceOutputs: v?.resourceOutputs ?? [],
-        resourceInputs: v?.resourceInputs ?? [],
-        networks: v?.networks ?? [],
-        volumes: v?.volumes ?? [],
-        services:
-          v?.services?.map((s) => ({
-            serviceName: s.serviceName,
-            serviceType: s.serviceType,
-            dockerImage: s.dockerImage,
-            dockerTag: s.dockerTag,
-            containerConfig: s.containerConfig,
-            initCommands: s.initCommands ?? undefined,
-            dependsOn: s.dependsOn,
-            order: s.order,
-            routing: s.routing ?? undefined,
-            adoptedContainer: s.adoptedContainer ?? undefined,
-          })) ?? [],
-        configFiles:
-          v?.configFiles?.map((cf) => ({
-            serviceName: cf.serviceName,
-            fileName: cf.fileName,
-            volumeName: cf.volumeName,
-            mountPath: cf.mountPath,
-            content: cf.content,
-            permissions: cf.permissions ?? undefined,
-            owner: cf.owner ?? undefined,
-          })) ?? [],
-        // Draft notes round-trip through the code view; carry them through
-        // graphical saves too so editing one section doesn't clobber notes.
-        // Omit entirely when undefined so we don't send `notes: null`.
-        ...(v?.notes != null ? { notes: v.notes } : {}),
-        ...overrides,
-      };
+      const base: DraftVersionInput = displayVersion
+        ? buildDraftFromVersion(displayVersion)
+        : {
+            parameters: [],
+            defaultParameterValues: {},
+            networkTypeDefaults: {},
+            resourceOutputs: [],
+            resourceInputs: [],
+            networks: [],
+            volumes: [],
+            services: [],
+            configFiles: [],
+          };
+      return { ...base, ...overrides };
     },
     [displayVersion],
   );

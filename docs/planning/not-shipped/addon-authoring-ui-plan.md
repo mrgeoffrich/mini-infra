@@ -71,7 +71,7 @@ A single client component renders the catalog-driven picker, the per-addon confi
 
 ## 5. Phased rollout
 
-Four phases, strictly sequential. Phase 1 is a safety fix that removes a data-loss footgun before the feature makes addons easy to attach; Phase 2 lands the backend catalog; Phase 3 is the primary operator-facing outcome; Phase 4 generalises to multi-service stacks and is optional.
+Four phases, strictly sequential. Phase 1 is a safety fix that removes a data-loss footgun before the feature makes addons easy to attach; Phase 2 lands the backend catalog; Phase 3 is the primary operator-facing outcome; Phase 4 generalises addon authoring to a chosen service on multi-service stack templates (and carries a sibling data-loss fix in the template editor).
 
 ### Phase 1 — Config-tab addon-safety fix
 
@@ -138,25 +138,27 @@ Done when: an operator can attach `tailscale-ssh` (or `tailscale-web` with a por
 
 Verify in prod: an operator attaches an addon via the card and, after deploy, the resulting SSH/HTTPS endpoint appears on that app's Connect card.
 
-### Phase 4 — Per-service addon authoring on the Services tab (optional, deferred)
+### Phase 4 — Per-service addon authoring in the stack-templates editor
 
-**Goal:** addon authoring generalises to a chosen service on multi-service stacks via the Services tab.
+**Goal:** addon authoring generalises to any chosen service on a multi-service stack template.
+
+Re-homing note (from implementation-time exploration): applications are single-service, so Phase 3's Overview card already covers them — the applications Services tab (this phase's originally-proposed home) would be redundant. The genuine multi-service authoring surface is the stack-templates **draft editor** (`client/src/app/stack-templates/[templateId]/page.tsx` → `TemplateServicesSection` / `ServiceEditDrawer`), where `handleServicesChange` already round-trips the whole services list. Phase 4 targets that surface.
 
 Deliverables:
-- A per-row "Add-ons" affordance on the Services tab that mounts the shared attach-add-on component (§4.3) against the selected service.
-- The currently read-only Services table row gains an actionable addon control while preserving its existing runtime-detail disclosure.
+- A per-service "Add-ons" affordance in the stack-templates draft editor that mounts the shared attach-add-on component (§4.3) against the selected service, editable only while viewing the draft (`readOnly` respected). Attach/remove writes that service's `addons` and saves via the existing `onServicesChange` → draft-save path.
+- A prerequisite lossless-mapping fix: the editor's two service round-trips — `buildDraftInput` (page) and `toServiceDefinition` (`TemplateServicesSection`) — currently drop per-service `addons` (and `poolConfig`/`jobPoolConfig`/`vault*`/`nats*`), so editing or deleting ANY service strips those from every service. Reuse the canonical `mapServiceInfoToDefinition` (`client/src/lib/application-draft.ts`) in both places so every per-service field survives an edit. Confirm the `ServiceEditDrawer`'s save preserves fields it doesn't model.
 
-Reversibility: safe — an additive client surface.
+Reversibility: safe — an additive client surface plus a data-loss fix.
 
 UI changes:
-- Services-tab rows gain a per-service add/remove-addon affordance. [design needed]
+- Each service in the stack-templates draft editor gains an add/remove-addon affordance. [design needed]
 
 Schema changes:
 - none.
 
-Done when: an operator can attach an addon to a specific service on a multi-service stack from the Services tab and it persists on that service's definition.
+Done when: an operator can attach an addon to a chosen service on a multi-service stack template from the draft editor, it persists on that service's definition, and editing a sibling service no longer strips it.
 
-Verify in prod: a multi-service stack shows an addon attached to a chosen (non-first) service via the Services tab.
+Verify in prod: a multi-service stack template shows an addon attached to a chosen (non-first) service, surviving edits to sibling services.
 
 ## 6. Risks & open questions
 
@@ -173,4 +175,4 @@ Manual checklist — check a box when that phase's PR merges. Phases are strictl
 - [ ] Phase 1: Config-tab addon-safety fix
 - [ ] Phase 2: Addon catalog endpoint + manifest metadata
 - [ ] Phase 3: Add-ons card on application Overview tab
-- [ ] Phase 4: Per-service addon authoring on Services tab (optional, deferred)
+- [ ] Phase 4: Per-service addon authoring in the stack-templates editor
