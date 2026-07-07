@@ -421,30 +421,10 @@ router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, 
       "Failed to create PostgreSQL database configuration",
     );
 
-    if (error instanceof Error) {
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Encryption failed") ||
-        error.message.includes("Invalid") ||
-        (error.message.includes("Environment") && error.message.includes("not found"))
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `databaseConfigService.createDatabase()` is the only substantive call
+    // here and now throws taxonomy errors (ConflictError/NotFoundError/
+    // ValidationError) for every case above — forward to the central
+    // middleware instead of flattening into an ad-hoc body.
     next(error);
   }
 }) as RequestHandler);
@@ -550,50 +530,9 @@ router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler
       "Failed to update PostgreSQL database configuration",
     );
 
-    if (error instanceof Error) {
-      if (error.message.includes("Environment") && error.message.includes("not found")) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("Access denied")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Invalid") ||
-        error.message.includes("Encryption failed")
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `databaseConfigService.updateDatabase()` is the only substantive call
+    // here and now throws taxonomy errors for every case above — forward to
+    // the central middleware.
     next(error);
   }
 }) as RequestHandler);
@@ -684,19 +623,9 @@ router.delete("/:id", requirePermission(Permission.PostgresWrite) as RequestHand
       "Failed to delete PostgreSQL database configuration",
     );
 
-    if (
-      error instanceof Error &&
-      (error.message.includes("not found") ||
-        error.message.includes("access denied"))
-    ) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // `databaseConfigService.deleteDatabase()` is the only substantive call
+    // here and now throws a NotFoundError for the "not found" case —
+    // forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);
@@ -789,19 +718,9 @@ router.post("/:id/test", requirePermission(Permission.PostgresWrite) as RequestH
       "Failed to test PostgreSQL database connection",
     );
 
-    if (
-      error instanceof Error &&
-      (error.message.includes("not found") ||
-        error.message.includes("access denied"))
-    ) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // `databaseConfigService.testDatabaseConnection()` is the only
+    // substantive call here and now throws a NotFoundError for the "not
+    // found" case — forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);

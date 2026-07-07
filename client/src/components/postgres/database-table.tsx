@@ -174,7 +174,9 @@ function ManualBackupButton({
       await manualBackupMutation.mutateAsync(database.id);
       toast.success("Manual backup started successfully");
     } catch {
-      toast.error("Failed to start manual backup");
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError
+      // (backup-executor.ts's taxonomy errors now carry code/resource/action).
     }
   };
 

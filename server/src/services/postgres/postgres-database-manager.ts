@@ -3,7 +3,7 @@ import { Prisma } from "../../generated/prisma/client";
 import { Client as PostgresClient } from "pg";
 import { getLogger } from "../../lib/logger-factory";
 import { ErrorCode } from "@mini-infra/types";
-import { ConflictError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError, ValidationError } from "../../lib/errors";
 import {
   PostgresDatabase,
   PostgresDatabaseInfo,
@@ -64,7 +64,14 @@ export class PostgresDatabaseManager {
         },
         "Failed to parse connection string",
       );
-      throw new Error("Invalid connection string format", { cause: error });
+      // The connection string being parsed here was itself built by
+      // `buildConnectionString()` and stored by us (createDatabase/
+      // updateDatabase) — a parse failure means our own encode/decode round
+      // trip disagrees, a genuine internal invariant rather than a bad user
+      // input (the user-facing connection *fields* are validated separately
+      // by `validateDatabaseRequest`/the route's Zod schema). The original
+      // error is already captured in the log call above.
+      throw new InternalError("Invalid connection string format");
     }
   }
 
@@ -118,7 +125,11 @@ export class PostgresDatabaseManager {
         where: { id: request.environmentId },
       });
       if (!environment) {
-        throw new Error(`Environment '${request.environmentId}' not found`);
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
+          `Environment '${request.environmentId}' not found`,
+          { resource: { type: "environment", id: request.environmentId } },
+        );
       }
 
       // Create database configuration
@@ -212,7 +223,11 @@ export class PostgresDatabaseManager {
       });
 
       if (!existingDb) {
-        throw new Error("Database configuration not found");
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          `Database configuration '${databaseId}' not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       // Prepare update data
@@ -292,7 +307,11 @@ export class PostgresDatabaseManager {
             where: { id: request.environmentId },
           });
           if (!environment) {
-            throw new Error(`Environment '${request.environmentId}' not found`);
+            throw new NotFoundError(
+              ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
+              `Environment '${request.environmentId}' not found`,
+              { resource: { type: "environment", id: request.environmentId } },
+            );
           }
         }
         updateData.environment = request.environmentId
@@ -486,7 +505,11 @@ export class PostgresDatabaseManager {
       });
 
       if (!database) {
-        throw new Error("Database configuration not found");
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          `Database configuration '${databaseId}' not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       // Delete database configuration (cascade will handle related records)
@@ -643,7 +666,11 @@ export class PostgresDatabaseManager {
       });
 
       if (!database) {
-        throw new Error("Database configuration not found");
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          `Database configuration '${databaseId}' not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       const config = this.parseConnectionString(database.connectionString);
@@ -681,7 +708,11 @@ export class PostgresDatabaseManager {
       });
 
       if (!database) {
-        throw new Error("Database configuration not found");
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          `Database configuration '${databaseId}' not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       const config = this.parseConnectionString(database.connectionString);
@@ -755,7 +786,11 @@ export class PostgresDatabaseManager {
       });
 
       if (!database) {
-        throw new Error("Database not found");
+        throw new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          `Database configuration '${databaseId}' not found`,
+          { resource: { type: "postgresDatabase", id: databaseId } },
+        );
       }
 
       return this.parseConnectionString(database.connectionString);
@@ -950,43 +985,58 @@ export class PostgresDatabaseManager {
   private validateDatabaseRequest(
     request: CreatePostgresDatabaseRequest,
   ): void {
+    // These duplicate (and, for the name format/length checks, go beyond)
+    // the route's Zod schema — kept as defense-in-depth since this manager
+    // is also reachable from the quick-setup flow, which builds its own
+    // request object rather than going through `createDatabaseSchema`. One
+    // shared code covers the whole family; the message carries the specifics.
     if (!request.name || request.name.trim().length === 0) {
-      throw new Error("Database name is required");
+      throw new ValidationError(ErrorCode.POSTGRES_DATABASE_INVALID, "Database name is required");
     }
 
     if (!request.host || request.host.trim().length === 0) {
-      throw new Error("Host is required");
+      throw new ValidationError(ErrorCode.POSTGRES_DATABASE_INVALID, "Host is required");
     }
 
     if (!request.port || request.port < 1 || request.port > 65535) {
-      throw new Error("Port must be between 1 and 65535");
+      throw new ValidationError(
+        ErrorCode.POSTGRES_DATABASE_INVALID,
+        "Port must be between 1 and 65535",
+      );
     }
 
     if (!request.database || request.database.trim().length === 0) {
-      throw new Error("Database name is required");
+      throw new ValidationError(ErrorCode.POSTGRES_DATABASE_INVALID, "Database name is required");
     }
 
     if (!request.username || request.username.trim().length === 0) {
-      throw new Error("Username is required");
+      throw new ValidationError(ErrorCode.POSTGRES_DATABASE_INVALID, "Username is required");
     }
 
     if (!request.password || request.password.trim().length === 0) {
-      throw new Error("Password is required");
+      throw new ValidationError(ErrorCode.POSTGRES_DATABASE_INVALID, "Password is required");
     }
 
     if (!["require", "disable", "prefer"].includes(request.sslMode)) {
-      throw new Error("SSL mode must be 'require', 'disable', or 'prefer'");
+      throw new ValidationError(
+        ErrorCode.POSTGRES_DATABASE_INVALID,
+        "SSL mode must be 'require', 'disable', or 'prefer'",
+      );
     }
 
     // Validate name format (alphanumeric, hyphens, underscores only)
     if (!/^[a-zA-Z0-9_-]+$/.test(request.name)) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.POSTGRES_DATABASE_INVALID,
         "Database name can only contain letters, numbers, hyphens, and underscores",
       );
     }
 
     if (request.name.length > 100) {
-      throw new Error("Database name must be 100 characters or less");
+      throw new ValidationError(
+        ErrorCode.POSTGRES_DATABASE_INVALID,
+        "Database name must be 100 characters or less",
+      );
     }
   }
 }

@@ -15,20 +15,6 @@ import { apiFetch, ApiRequestError } from "@/lib/api-client";
 // PostgreSQL Backup Configuration API Functions
 // ====================
 
-/** Extracts a Zod-validation-details message from an ApiRequestError body, if present. */
-function validationErrorMessage(error: ApiRequestError): string | undefined {
-  const body = error.body as
-    | { details?: Array<{ path?: (string | number)[]; message: string }> }
-    | undefined;
-  if (body?.details && Array.isArray(body.details)) {
-    const validationErrors = body.details
-      .map((detail) => `${detail.path?.join(".")}: ${detail.message}`)
-      .join(", ");
-    return `Validation failed: ${validationErrors}`;
-  }
-  return undefined;
-}
-
 async function fetchPostgresBackupConfig(
   databaseId: string,
 ): Promise<BackupConfigurationResponse> {
@@ -51,47 +37,34 @@ async function fetchPostgresBackupConfig(
   }
 }
 
+// Phase 11: no longer catch-and-flatten `ApiRequestError` into a generic
+// `Error` here — the postgres-backup-configs routes now throw taxonomy
+// errors (ConflictError/NotFoundError/ValidationError) with a real
+// `code`/`resource`/`action`, and flattening threw that away before it
+// could reach `getUserFacingError`/`toastApiError` (client/src/lib/errors.ts)
+// or a component reading `mutation.error` directly. Mirrors
+// `quickSetupPostgresBackup()` below, which never did this flattening.
 async function createPostgresBackupConfig(
   request: CreateBackupConfigurationRequest,
 ): Promise<BackupConfigurationResponse> {
-  try {
-    return await apiFetch<BackupConfigurationResponse>(
-      ApiRoute.postgres.backupConfigs(),
-      {
-        method: "POST",
-        body: request,
-        correlationIdPrefix: "postgres-backup-config",
-        unwrap: false,
-      },
-    );
-  } catch (error) {
-    if (error instanceof ApiRequestError) {
-      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
-    }
-    throw error;
-  }
+  return apiFetch<BackupConfigurationResponse>(ApiRoute.postgres.backupConfigs(), {
+    method: "POST",
+    body: request,
+    correlationIdPrefix: "postgres-backup-config",
+    unwrap: false,
+  });
 }
 
 async function updatePostgresBackupConfig(
   id: string,
   request: UpdateBackupConfigurationRequest,
 ): Promise<BackupConfigurationResponse> {
-  try {
-    return await apiFetch<BackupConfigurationResponse>(
-      ApiRoute.postgres.backupConfig(id),
-      {
-        method: "PUT",
-        body: request,
-        correlationIdPrefix: "postgres-backup-config",
-        unwrap: false,
-      },
-    );
-  } catch (error) {
-    if (error instanceof ApiRequestError) {
-      throw new Error(validationErrorMessage(error) ?? error.message, { cause: error });
-    }
-    throw error;
-  }
+  return apiFetch<BackupConfigurationResponse>(ApiRoute.postgres.backupConfig(id), {
+    method: "PUT",
+    body: request,
+    correlationIdPrefix: "postgres-backup-config",
+    unwrap: false,
+  });
 }
 
 async function deletePostgresBackupConfig(

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { NextFunction, Router } from "express";
 import prisma from "../lib/prisma";
 import { Prisma } from "../generated/prisma/client";
 import { z } from "zod";
@@ -211,7 +211,7 @@ router.get("/backups/:databaseId", requirePermission(Permission.PostgresRead), a
 router.post(
   "/backups/:databaseId/manual",
   requirePermission(Permission.PostgresWrite),
-  async (req, res) => {
+  async (req, res, next: NextFunction) => {
     const requestId = req.headers["x-request-id"] as string;
     const user = getAuthenticatedUser(req);
     const databaseId = String(req.params.databaseId);
@@ -326,13 +326,11 @@ router.post(
         "Failed to trigger manual backup",
       );
 
-      res.status(500).json({
-        success: false,
-        error: "Internal server error",
-        message: "Failed to trigger backup operation",
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
+      // `backupExecutorService.queueBackup()` now throws taxonomy errors
+      // (NotFoundError/ConflictError) and InternalError for genuine spawn
+      // failures — forward to the central middleware instead of flattening
+      // every failure into a generic 500.
+      next(error);
     }
   },
 );
