@@ -10,7 +10,7 @@ import {
   ErrorCode,
 } from "@mini-infra/types";
 import type { BackupOperation } from "../../generated/prisma/client";
-import { ConflictError, NotFoundError } from "../../lib/errors";
+import { ConflictError, InternalError, NotFoundError } from "../../lib/errors";
 
 const log = getLogger("backup", "backup-executor");
 
@@ -135,7 +135,26 @@ export class BackupExecutorService {
           },
         );
       }
-      throw new Error(
+      // Mirrors the manual JobPool trigger route's branching
+      // (stacks-job-pool-routes.ts) — `findPgBackupStackForDatabase` already
+      // checked the stack exists just above, so `service_not_found`/
+      // `stack_not_found` here means it was removed in the race window; still
+      // user-actionable (re-deploy the template), unlike a genuine spawn failure.
+      if (result.reason === "service_not_found" || result.reason === "stack_not_found") {
+        throw new NotFoundError(ErrorCode.STACK_JOB_POOL_NOT_FOUND, result.message, {
+          resource: { type: "stackJobPool", name: PG_AZ_BACKUP_SERVICE_NAME, id: stack.id },
+          action: "Deploy the pg-az-backup template from the template catalog.",
+        });
+      }
+      if (result.reason === "stack_in_error") {
+        throw new ConflictError(ErrorCode.STACK_JOB_POOL_STACK_IN_ERROR, result.message, {
+          resource: { type: "stack", id: stack.id },
+          action: "Resolve the stack error (or re-apply) before triggering a backup.",
+        });
+      }
+      // `spawn_failed` — only branch left. A genuine internal/infra failure
+      // (docker/spawn), not a user-actionable 4xx.
+      throw new InternalError(
         "message" in result && result.message
           ? `${result.reason}: ${result.message}`
           : `pg-az-backup JobPool spawn failed (${result.reason})`,
@@ -149,7 +168,10 @@ export class BackupExecutorService {
       where: { id: result.runId },
     });
     if (!operation) {
-      throw new Error(
+      // The framework guarantees the resolver creates this row before
+      // returning `ok: true` — its absence means the resolver/spawner
+      // contract was violated, a genuine internal invariant.
+      throw new InternalError(
         `pg-az-backup JobPool spawn produced runId ${result.runId} but no BackupOperation row exists`,
       );
     }

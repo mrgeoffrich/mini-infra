@@ -237,6 +237,12 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.TAILSCALE_CLIENT_ID_INVALID]: "Invalid OAuth client ID",
   [ErrorCode.TAILSCALE_CLIENT_SECRET_INVALID]: "Invalid OAuth client secret",
   [ErrorCode.TAILSCALE_TAG_INVALID]: "Invalid tag format",
+  // Postgres / backup (Phase 11) — the generic 400 "Invalid request"
+  // fallback (or the resourceTitle() "X invalid" phrasing) reads worse than
+  // a plain, curated "Invalid ..." noun phrase for these.
+  [ErrorCode.POSTGRES_DATABASE_INVALID]: "Invalid database configuration",
+  [ErrorCode.BACKUP_CONFIG_INVALID]: "Invalid backup configuration",
+  [ErrorCode.SELF_BACKUP_INVALID_CRON]: "Invalid backup schedule",
 };
 
 function statusClassFallback(status: number): string {

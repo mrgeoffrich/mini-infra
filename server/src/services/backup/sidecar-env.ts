@@ -38,6 +38,7 @@ import type {
   AzureSasUploadPayload,
   GoogleDriveUploadPayload,
 } from "@mini-infra/types";
+import { InternalError } from "../../lib/errors";
 
 /**
  * Public env shape consumed by `pg-az-backup`. Fields are optional because
@@ -83,7 +84,7 @@ export function buildSidecarUploadEnv(handle: UploadHandle): SidecarStorageEnv {
   }
   // Exhaustive switch — TypeScript surfaces missing branches.
   const _never: never = handle.kind;
-  throw new Error(`Unsupported upload handle kind: ${String(_never)}`);
+  throw new InternalError(`Unsupported upload handle kind: ${String(_never)}`);
 }
 
 export function redactSidecarEnv(

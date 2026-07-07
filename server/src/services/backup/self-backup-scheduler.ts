@@ -3,6 +3,8 @@ import * as cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { getLogger } from "../../lib/logger-factory";
 import { withOperation } from "../../lib/logging-context";
+import { ErrorCode } from "@mini-infra/types";
+import { InternalError, ValidationError } from "../../lib/errors";
 import { SelfBackupExecutor } from "./self-backup-executor";
 
 /**
@@ -165,7 +167,11 @@ export class SelfBackupScheduler {
     try {
       // Validate cron expression
       if (!cron.validate(schedule)) {
-        throw new Error(`Invalid cron expression: ${schedule}`);
+        throw new ValidationError(
+          ErrorCode.SELF_BACKUP_INVALID_CRON,
+          `Invalid cron expression: ${schedule}`,
+          { resource: { type: "selfBackupSchedule" } },
+        );
       }
 
       // Remove existing schedule if it exists
@@ -224,7 +230,12 @@ export class SelfBackupScheduler {
   public async enableSchedule(): Promise<void> {
     try {
       if (!this.scheduledJob) {
-        throw new Error("No schedule registered");
+        // The only caller that can reach `enableSchedule()` without having
+        // just registered a schedule is `initialize()` — and it only calls
+        // this after a successful `registerSchedule()` above. Reaching here
+        // means that invariant was violated (e.g. a concurrent
+        // `unregisterSchedule()` raced this call), not a user mistake.
+        throw new InternalError("No schedule registered");
       }
 
       if (this.scheduledJob.isEnabled) {

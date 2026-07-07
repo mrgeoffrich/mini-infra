@@ -261,12 +261,12 @@ export default function SelfBackupSettingsPage() {
     try {
       await updateConfig.mutateAsync(data);
       toast.success("Self-backup configuration updated successfully");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Failed to update configuration"
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError (self-backup-scheduler.ts's
+      // ValidationError for an invalid cron expression now carries a real
+      // code/message).
     }
   };
 
@@ -280,12 +280,9 @@ export default function SelfBackupSettingsPage() {
         await disableBackup.mutateAsync();
         toast.success("Self-backup schedule disabled");
       }
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : `Failed to ${enabled ? "enable" : "disable"} self-backup`
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

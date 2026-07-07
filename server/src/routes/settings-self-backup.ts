@@ -1,4 +1,4 @@
-import express from "express";
+import express, { NextFunction } from "express";
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
 import { requirePermission, getCurrentUserId } from "../middleware/auth";
@@ -84,7 +84,7 @@ router.get("/", requirePermission(Permission.BackupsRead), async (req, res) => {
 /**
  * PUT / - Update configuration (schedule, container, timezone)
  */
-router.put("/", requirePermission(Permission.BackupsWrite), async (req, res) => {
+router.put("/", requirePermission(Permission.BackupsWrite), async (req, res, next: NextFunction) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -165,17 +165,17 @@ router.put("/", requirePermission(Permission.BackupsWrite), async (req, res) => 
       error: errorMessage,
     }, "Failed to update self-backup configuration");
 
-    res.status(500).json({
-      success: false,
-      error: "Failed to update configuration",
-    });
+    // `scheduler.updateSchedule()` now throws a ValidationError for an
+    // invalid cron expression — forward to the central middleware instead
+    // of flattening it into a generic 500.
+    next(error);
   }
 });
 
 /**
  * POST /enable - Enable scheduled backups
  */
-router.post("/enable", requirePermission(Permission.BackupsWrite), async (req, res) => {
+router.post("/enable", requirePermission(Permission.BackupsWrite), async (req, res, next: NextFunction) => {
   try {
     const userId = getCurrentUserId(req);
     if (!userId) {
@@ -258,10 +258,10 @@ router.post("/enable", requirePermission(Permission.BackupsWrite), async (req, r
       error: errorMessage,
     }, "Failed to enable backup schedule");
 
-    res.status(500).json({
-      success: false,
-      error: "Failed to enable backup schedule",
-    });
+    // `scheduler.registerSchedule()`/`enableSchedule()` now throw a
+    // ValidationError/InternalError respectively — forward to the central
+    // middleware instead of flattening it into a generic 500.
+    next(error);
   }
 });
 

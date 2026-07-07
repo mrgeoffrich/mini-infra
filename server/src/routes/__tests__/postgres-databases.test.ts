@@ -5,7 +5,9 @@ import {
   PostgresDatabase,
   CreatePostgresDatabaseRequest,
   UpdatePostgresDatabaseRequest,
+  ErrorCode,
 } from "@mini-infra/types";
+import { ConflictError, NotFoundError } from "../../lib/errors";
 
 // Hoist mock variables that are used inside vi.mock() factory functions
 const {
@@ -90,6 +92,7 @@ vi.mock("../../lib/auth-middleware", () => ({
 }));
 
 import postgresDatabasesRouter from "../postgres-databases";
+import { errorHandler } from "../../lib/error-handler";
 
 describe("PostgreSQL Databases API Routes", () => {
   let app: express.Application;
@@ -149,15 +152,11 @@ describe("PostgreSQL Databases API Routes", () => {
 
     app.use("/api/postgres/databases", postgresDatabasesRouter);
 
-    // Add error handler for testing
-    app.use((error: any, req: any, res: any, next: any) => {
-      res.status(500).json({
-        error: "Internal Server Error",
-        message: error.message || "An unexpected error occurred",
-        timestamp: new Date().toISOString(),
-        requestId: req.headers["x-request-id"],
-      });
-    });
+    // Use the real central error-handling middleware — taxonomy errors
+    // (ConflictError/NotFoundError/ValidationError) now reach it via
+    // `next(error)` from the router, so the fake message-only handler this
+    // test used pre-taxonomy would mask every mapped status behind a flat 500.
+    app.use(errorHandler);
   });
 
   beforeEach(() => {
@@ -258,7 +257,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        error: "Internal Server Error",
+        error: ErrorCode.INTERNAL,
         message: "Database service error",
       });
 
@@ -386,7 +385,10 @@ describe("PostgreSQL Databases API Routes", () => {
 
     it("should handle duplicate database name", async () => {
       mockPostgresDatabaseManager.createDatabase.mockRejectedValue(
-        new Error("Database configuration with name 'new-db' already exists"),
+        new ConflictError(
+          ErrorCode.POSTGRES_DB_CONFIG_EXISTS,
+          "Database configuration with name 'new-db' already exists",
+        ),
       );
 
       const response = await request(app)
@@ -395,7 +397,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(409);
 
       expect(response.body).toMatchObject({
-        error: "Conflict",
+        error: ErrorCode.POSTGRES_DB_CONFIG_EXISTS,
         message: "Database configuration with name 'new-db' already exists",
       });
     });
@@ -442,18 +444,24 @@ describe("PostgreSQL Databases API Routes", () => {
       );
     });
 
-    it("should map an unknown environment to 400", async () => {
+    it("should map an unknown environment to 404", async () => {
+      // POSTGRES_ENVIRONMENT_NOT_FOUND is a NotFoundError (404) — consistent
+      // with every other domain's "referenced environment doesn't exist"
+      // check (STACK_ENVIRONMENT_NOT_FOUND, HAPROXY_ENVIRONMENT_NOT_FOUND, etc).
       mockPostgresDatabaseManager.createDatabase.mockRejectedValue(
-        new Error("Environment 'env-1' not found"),
+        new NotFoundError(
+          ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
+          "Environment 'env-1' not found",
+        ),
       );
 
       const response = await request(app)
         .post("/api/postgres/databases")
         .send(validCreateRequest)
-        .expect(400);
+        .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Bad Request",
+        error: ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
         message: "Environment 'env-1' not found",
       });
     });
@@ -508,7 +516,10 @@ describe("PostgreSQL Databases API Routes", () => {
 
     it("should return 404 for non-existent database", async () => {
       mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
-        new Error("Database configuration not found"),
+        new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          "Database configuration 'nonexistent' not found",
+        ),
       );
 
       const response = await request(app)
@@ -517,14 +528,15 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
-        message: "Database configuration not found",
+        error: ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+        message: "Database configuration 'nonexistent' not found",
       });
     });
 
     it("should handle unauthorized access", async () => {
       mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
-        new Error(
+        new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
           "Access denied: You can only update your own database configurations",
         ),
       );
@@ -535,7 +547,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
       });
     });
 
@@ -556,18 +568,26 @@ describe("PostgreSQL Databases API Routes", () => {
       );
     });
 
-    it("should map an unknown environment to 400, not 404", async () => {
+    it("should map an unknown environment to its own 404 code (distinct from database-not-found)", async () => {
+      // POSTGRES_ENVIRONMENT_NOT_FOUND is a distinct code from
+      // POSTGRES_DATABASE_NOT_FOUND (both 404) — the structured `error`
+      // code (and `resource.type`) disambiguate which reference failed, so
+      // there's no need to force this into 400 to avoid confusion with a
+      // missing database the way the pre-taxonomy string-matched route did.
       mockPostgresDatabaseManager.updateDatabase.mockRejectedValue(
-        new Error("Environment 'bad-env' not found"),
+        new NotFoundError(
+          ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
+          "Environment 'bad-env' not found",
+        ),
       );
 
       const response = await request(app)
         .put("/api/postgres/databases/db-1")
         .send({ environmentId: "bad-env" })
-        .expect(400);
+        .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Bad Request",
+        error: ErrorCode.POSTGRES_ENVIRONMENT_NOT_FOUND,
         message: "Environment 'bad-env' not found",
       });
     });
@@ -673,7 +693,10 @@ describe("PostgreSQL Databases API Routes", () => {
 
     it("should handle test errors", async () => {
       mockPostgresDatabaseManager.testDatabaseConnection.mockRejectedValue(
-        new Error("Database configuration not found or access denied"),
+        new NotFoundError(
+          ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
+          "Database configuration not found or access denied",
+        ),
       );
 
       const response = await request(app)
@@ -681,7 +704,7 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.POSTGRES_DATABASE_NOT_FOUND,
       });
     });
   });
@@ -822,12 +845,12 @@ describe("PostgreSQL Databases API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        error: "Internal Server Error",
+        error: ErrorCode.INTERNAL,
         message: "Unexpected error",
       });
     });
 
-    it("should provide request correlation IDs in error responses", async () => {
+    it("should include a request correlation ID in error responses", async () => {
       mockPostgresDatabaseManager.listDatabases.mockRejectedValue(
         new Error("Service error"),
       );
@@ -837,7 +860,13 @@ describe("PostgreSQL Databases API Routes", () => {
         .set("X-Request-ID", "test-request-123")
         .expect(500);
 
-      expect(response.body.requestId).toBe("test-request-123");
+      // The real `errorHandler` reads requestId from the AsyncLocalStorage
+      // logging context, not from `req.headers` — and `setup-unit.ts` mocks
+      // `lib/logging-context` to a no-op for the whole "unit" project, so
+      // there's no context to read here. This only resolves to the real
+      // header value end-to-end (via `requestContextMiddleware`) in the full
+      // app / integration tests.
+      expect(response.body.requestId).toBe("unknown");
     });
   });
 

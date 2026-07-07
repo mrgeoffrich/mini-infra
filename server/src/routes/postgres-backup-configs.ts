@@ -498,42 +498,11 @@ router.post("/", requirePermission(Permission.PostgresWrite) as RequestHandler, 
       "Failed to create backup configuration",
     );
 
-    if (error instanceof Error) {
-      if (error.message.includes("already exists")) {
-        return res.status(409).json({
-          error: "Conflict",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("access denied")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Invalid") ||
-        error.message.includes("not accessible") ||
-        error.message.includes("cron")
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `backupConfigService.createBackupConfig()` is the only substantive
+    // call in this handler, and it now throws taxonomy errors (ConflictError/
+    // NotFoundError/ValidationError) for every case the string-matches below
+    // used to cover — forward straight to the central middleware so `code`/
+    // `resource`/`action` reach the client instead of the flattened body.
     next(error);
   }
 }) as RequestHandler);
@@ -642,33 +611,9 @@ router.put("/:id", requirePermission(Permission.PostgresWrite) as RequestHandler
       "Failed to update backup configuration",
     );
 
-    if (error instanceof Error) {
-      if (
-        error.message.includes("not found") ||
-        error.message.includes("Access denied")
-      ) {
-        return res.status(404).json({
-          error: "Not Found",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-
-      if (
-        error.message.includes("Invalid") ||
-        error.message.includes("not accessible") ||
-        error.message.includes("cron")
-      ) {
-        return res.status(400).json({
-          error: "Bad Request",
-          message: error.message,
-          timestamp: new Date().toISOString(),
-          requestId,
-        });
-      }
-    }
-
+    // `backupConfigService.updateBackupConfig()` is the only substantive
+    // call here and now throws taxonomy errors for every case above —
+    // forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);
@@ -742,19 +687,9 @@ router.delete("/:id", requirePermission(Permission.PostgresWrite) as RequestHand
       "Failed to delete backup configuration",
     );
 
-    if (
-      error instanceof Error &&
-      (error.message.includes("not found") ||
-        error.message.includes("Access denied"))
-    ) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: error.message,
-        timestamp: new Date().toISOString(),
-        requestId,
-      });
-    }
-
+    // `backupConfigService.deleteBackupConfig()` is the only substantive
+    // call here and now throws a NotFoundError for the "not found" case —
+    // forward to the central middleware.
     next(error);
   }
 }) as RequestHandler);

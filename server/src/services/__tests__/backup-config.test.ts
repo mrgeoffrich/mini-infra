@@ -193,7 +193,7 @@ describe("BackupConfigurationManager", () => {
           validConfig,
           "user-123",
         ),
-      ).rejects.toThrow("Database not found");
+      ).rejects.toThrow("nonexistent not found");
     });
 
     it("should throw error for existing backup configuration", async () => {
@@ -455,7 +455,7 @@ describe("BackupConfigurationManager", () => {
           updateData,
           "user-123",
         ),
-      ).rejects.toThrow("Backup configuration not found");
+      ).rejects.toThrow("Backup configuration 'nonexistent' not found");
     });
 
     it("should validate cron expression on update", async () => {
@@ -645,7 +645,7 @@ describe("BackupConfigurationManager", () => {
 
       await expect(
         backupConfigService.deleteBackupConfig("nonexistent"),
-      ).rejects.toThrow("Backup configuration not found");
+      ).rejects.toThrow("Backup configuration 'nonexistent' not found");
     });
   });
 

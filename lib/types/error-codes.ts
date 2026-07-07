@@ -310,6 +310,16 @@ export const ErrorCode = {
   TAILSCALE_CLIENT_ID_INVALID: "TAILSCALE_CLIENT_ID_INVALID",
   TAILSCALE_CLIENT_SECRET_INVALID: "TAILSCALE_CLIENT_SECRET_INVALID",
   TAILSCALE_TAG_INVALID: "TAILSCALE_TAG_INVALID",
+  // Phase 11 — postgres/backup
+  // — postgres-database-manager.ts CRUD (postgresDatabase resource)
+  POSTGRES_DATABASE_NOT_FOUND: "POSTGRES_DATABASE_NOT_FOUND",
+  POSTGRES_DATABASE_INVALID: "POSTGRES_DATABASE_INVALID",
+  POSTGRES_ENVIRONMENT_NOT_FOUND: "POSTGRES_ENVIRONMENT_NOT_FOUND",
+  // — backup-configuration-manager.ts CRUD (backupConfiguration resource)
+  BACKUP_CONFIG_NOT_FOUND: "BACKUP_CONFIG_NOT_FOUND",
+  BACKUP_CONFIG_INVALID: "BACKUP_CONFIG_INVALID",
+  // — self-backup-scheduler.ts
+  SELF_BACKUP_INVALID_CRON: "SELF_BACKUP_INVALID_CRON",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

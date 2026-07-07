@@ -3,6 +3,8 @@ import express from "express";
 import { PrismaClient } from "../../generated/prisma/client";
 import router from "../postgres-backups";
 import { BackupExecutorService } from "../../services/backup";
+import { errorHandler } from "../../lib/error-handler";
+import { ErrorCode } from "@mini-infra/types";
 
 const { mockPrismaDefault, mockBackupExecutorService } = vi.hoisted(() => ({
   mockPrismaDefault: {
@@ -138,6 +140,12 @@ vi.mock("../../middleware/auth", () => ({
 const app = express();
 app.use(express.json());
 app.use("/api/postgres", router);
+// The manual-backup route now forwards taxonomy/InternalError instances via
+// `next(error)` instead of hand-rolling every 500 body itself — mount the
+// real central middleware so those reach a response. Every other route in
+// this file still self-handles its own `res.status(500).json(...)` and
+// never calls `next()`, so this is a no-op for them.
+app.use(errorHandler);
 
 describe("PostgreSQL Backups API", () => {
   beforeEach(() => {
@@ -478,9 +486,14 @@ describe("PostgreSQL Backups API", () => {
         .post("/api/postgres/backups/test-db-id/manual")
         .expect(500);
 
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe("Internal server error");
-      expect(response.body.message).toBe("Failed to trigger backup operation");
+      // The route now forwards to the central middleware via `next(error)`
+      // instead of hand-rolling a `{success, error, message}` body — a plain
+      // (non-taxonomy) Error is a genuine internal invariant, so it gets the
+      // middleware's generic ErrorCode.INTERNAL envelope.
+      expect(response.body).toMatchObject({
+        error: ErrorCode.INTERNAL,
+        message: "Queue service unavailable",
+      });
     });
 
     it("should handle database errors", async () => {
@@ -492,8 +505,10 @@ describe("PostgreSQL Backups API", () => {
         .post("/api/postgres/backups/test-db-id/manual")
         .expect(500);
 
-      expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe("Internal server error");
+      expect(response.body).toMatchObject({
+        error: ErrorCode.INTERNAL,
+        message: "Database connection failed",
+      });
     });
   });
 

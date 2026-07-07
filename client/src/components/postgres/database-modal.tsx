@@ -250,12 +250,14 @@ export function DatabaseModal({
         toast.success("Database created successfully");
       }
       onClose();
-    } catch (error) {
-      toast.error(
-        `Failed to ${isEditing ? "update" : "create"} database: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      );
+    } catch {
+      // Swallow: the global MutationCache.onError (client/src/lib/query-client.ts)
+      // already shows an actionable toast via toastApiError() for this
+      // mutation's real ApiRequestError (code/resource/action now flow
+      // through from postgres-database-manager.ts's taxonomy errors). We
+      // only need to catch here so mutateAsync's rejection doesn't become
+      // an unhandled promise rejection — not calling onClose() below leaves
+      // the dialog open so the user can fix the form and retry.
     }
   };
 

@@ -1,7 +1,8 @@
 import request from "supertest";
 import express from "express";
 import { createId } from "@paralleldrive/cuid2";
-import { BackupConfigurationInfo, BackupFormat } from "@mini-infra/types";
+import { BackupConfigurationInfo, BackupFormat, ErrorCode } from "@mini-infra/types";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 
 // Hoist mock variables that are used inside vi.mock() factory functions
 const {
@@ -82,6 +83,7 @@ vi.mock("../../lib/auth-middleware", () => ({
 }));
 
 import postgresBackupConfigsRouter from "../postgres-backup-configs";
+import { errorHandler } from "../../lib/error-handler";
 
 describe("PostgreSQL Backup Configs API Routes", () => {
   let app: express.Application;
@@ -103,15 +105,11 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
     app.use("/api/postgres/backup-configs", postgresBackupConfigsRouter);
 
-    // Add error handler for testing
-    app.use((error: any, req: any, res: any, next: any) => {
-      res.status(500).json({
-        error: "Internal Server Error",
-        message: error.message || "An unexpected error occurred",
-        timestamp: new Date().toISOString(),
-        requestId: req.headers["x-request-id"],
-      });
-    });
+    // Use the real central error-handling middleware — taxonomy errors
+    // (ConflictError/NotFoundError/ValidationError) now reach it via
+    // `next(error)` from the router, so the fake message-only handler this
+    // test used pre-taxonomy would mask every mapped status behind a flat 500.
+    app.use(errorHandler);
   });
 
   beforeEach(() => {
@@ -180,7 +178,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        error: "Internal Server Error",
+        error: ErrorCode.INTERNAL,
         message: "Database error",
       });
 
@@ -262,7 +260,10 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
     it("should handle duplicate configuration", async () => {
       mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
-        new Error("Backup configuration already exists for this database"),
+        new ConflictError(
+          ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS,
+          "Backup configuration already exists for this database",
+        ),
       );
 
       const response = await request(app)
@@ -271,14 +272,17 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(409);
 
       expect(response.body).toMatchObject({
-        error: "Conflict",
+        error: ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS,
         message: "Backup configuration already exists for this database",
       });
     });
 
     it("should handle database not found", async () => {
       mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
-        new Error("Database not found or access denied"),
+        new NotFoundError(
+          ErrorCode.BACKUP_DATABASE_NOT_FOUND,
+          "Database not found or access denied",
+        ),
       );
 
       const response = await request(app)
@@ -287,14 +291,14 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.BACKUP_DATABASE_NOT_FOUND,
         message: "Database not found or access denied",
       });
     });
 
     it("should handle invalid cron expression", async () => {
       mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
-        new Error("Invalid cron expression"),
+        new ValidationError(ErrorCode.BACKUP_CONFIG_INVALID, "Invalid cron expression"),
       );
 
       const invalidCronRequest = {
@@ -308,14 +312,17 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(400);
 
       expect(response.body).toMatchObject({
-        error: "Bad Request",
+        error: ErrorCode.BACKUP_CONFIG_INVALID,
         message: "Invalid cron expression",
       });
     });
 
     it("should handle Azure container validation failure", async () => {
       mockBackupConfigurationManager.createBackupConfig.mockRejectedValue(
-        new Error("Database not found or access denied"),
+        new NotFoundError(
+          ErrorCode.BACKUP_DATABASE_NOT_FOUND,
+          "Database not found or access denied",
+        ),
       );
 
       const response = await request(app)
@@ -324,7 +331,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.BACKUP_DATABASE_NOT_FOUND,
       });
     });
 
@@ -375,7 +382,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
 
     it("should return 404 for non-existent configuration", async () => {
       mockBackupConfigurationManager.deleteBackupConfig.mockRejectedValue(
-        new Error("Backup configuration not found"),
+        new NotFoundError(ErrorCode.BACKUP_CONFIG_NOT_FOUND, "Backup configuration not found"),
       );
 
       const response = await request(app)
@@ -383,14 +390,14 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.BACKUP_CONFIG_NOT_FOUND,
         message: "Backup configuration not found",
       });
     });
 
     it("should handle unauthorized access", async () => {
       mockBackupConfigurationManager.deleteBackupConfig.mockRejectedValue(
-        new Error("Access denied"),
+        new NotFoundError(ErrorCode.BACKUP_CONFIG_NOT_FOUND, "Access denied"),
       );
 
       const response = await request(app)
@@ -398,7 +405,7 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(404);
 
       expect(response.body).toMatchObject({
-        error: "Not Found",
+        error: ErrorCode.BACKUP_CONFIG_NOT_FOUND,
         message: "Access denied",
       });
     });
@@ -606,12 +613,12 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .expect(500);
 
       expect(response.body).toMatchObject({
-        error: "Internal Server Error",
+        error: ErrorCode.INTERNAL,
         message: "Unexpected error",
       });
     });
 
-    it("should provide request correlation IDs in error responses", async () => {
+    it("should include a request correlation ID in error responses", async () => {
       mockBackupConfigurationManager.getBackupConfigByDatabaseId.mockRejectedValue(
         new Error("Service error"),
       );
@@ -621,7 +628,13 @@ describe("PostgreSQL Backup Configs API Routes", () => {
         .set("X-Request-ID", "test-request-456")
         .expect(500);
 
-      expect(response.body.requestId).toBe("test-request-456");
+      // The real `errorHandler` reads requestId from the AsyncLocalStorage
+      // logging context, not from `req.headers` — and `setup-unit.ts` mocks
+      // `lib/logging-context` to a no-op for the whole "unit" project, so
+      // there's no context to read here. This only resolves to the real
+      // header value end-to-end (via `requestContextMiddleware`) in the full
+      // app / integration tests.
+      expect(response.body.requestId).toBe("unknown");
     });
   });
 
