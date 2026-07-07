@@ -3,8 +3,9 @@ import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { DockerExecutorService } from '../../services/docker-executor';
-import { serializeStack, mapContainerStatus } from '../../services/stacks/utils';
-import { Permission } from '@mini-infra/types';
+import { serializeStack, mapContainerStatus, assertStackFound } from '../../services/stacks/utils';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { NotFoundError } from '../../lib/errors';
 
 const router = Router();
 
@@ -14,17 +15,16 @@ router.get(
   requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      include: {
-        services: { orderBy: { order: 'asc' } },
-        template: { select: { currentVersion: { select: { version: true } } } },
-      },
-    });
-
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        include: {
+          services: { orderBy: { order: 'asc' } },
+          template: { select: { currentVersion: { select: { version: true } } } },
+        },
+      }),
+      stackId,
+    );
 
     let containerStatus: Array<ReturnType<typeof mapContainerStatus> & { health: string }> = [];
     try {
@@ -60,13 +60,10 @@ router.get(
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
     const offset = parseInt(req.query.offset as string) || 0;
 
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { id: true },
-    });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    assertStackFound(
+      await prisma.stack.findUnique({ where: { id: stackId }, select: { id: true } }),
+      stackId,
+    );
 
     const [data, total] = await Promise.all([
       prisma.stackDeployment.findMany({
@@ -95,7 +92,10 @@ router.get(
     });
 
     if (!deployment) {
-      return res.status(404).json({ success: false, message: 'Deployment not found' });
+      throw new NotFoundError(ErrorCode.STACK_DEPLOYMENT_NOT_FOUND, 'Deployment not found', {
+        resource: { type: 'stackDeployment', id: String(req.params.deploymentId) },
+        action: 'Check the deployment ID or refresh the history list.',
+      });
     }
 
     res.json({ success: true, data: deployment });

@@ -97,11 +97,15 @@ vi.mock("../services/monitoring", () => ({
 
 import stacksApplyRoute from "../routes/stacks/stacks-apply-route";
 import { stackOperationLock } from "../services/stacks/operation-lock";
+import { errorHandler } from "../lib/error-handler";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use("/api/stacks", stacksApplyRoute);
+  // Real central error middleware — the route now throws taxonomy errors
+  // instead of writing its own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -168,12 +172,11 @@ describe("POST /api/stacks/:id/apply — cross-stack prerequisites gate", () => 
 
     const res = await supertest(buildApp()).post(`/api/stacks/${stackId}/apply`).send({});
     expect(res.status).toBe(409);
-    expect(res.body.success).toBe(false);
-    expect(res.body.code).toBe("PREREQUISITES_NOT_MET");
-    expect(Array.isArray(res.body.failures)).toBe(true);
-    expect(res.body.failures[0].kind).toBe("stack");
-    expect(res.body.failures[0].helpAction.type).toBe("instantiate-stack");
-    expect(res.body.failures[0].helpAction.templateName).toBe("missing-prereq");
+    expect(res.body.error).toBe("STACK_PREREQUISITES_NOT_MET");
+    expect(Array.isArray(res.body.details.failures)).toBe(true);
+    expect(res.body.details.failures[0].kind).toBe("stack");
+    expect(res.body.details.failures[0].helpAction.type).toBe("instantiate-stack");
+    expect(res.body.details.failures[0].helpAction.templateName).toBe("missing-prereq");
 
     // 409 must NOT pollute the audit trail.
     const events = await testPrisma.userEvent.findMany({ where: { resourceId: stackId } });

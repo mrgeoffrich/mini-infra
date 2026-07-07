@@ -27,7 +27,7 @@ import type {
   PrerequisiteEvaluation,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
-import { apiFetch, ApiRequestError } from "@/lib/api-client";
+import { apiFetch } from "@/lib/api-client";
 
 // ====================
 // Stack API Functions
@@ -94,20 +94,18 @@ async function applyStack(
   stackId: string,
   options: ApplyStackRequest,
 ): Promise<{ started: true; stackId: string }> {
-  try {
-    return await apiFetch<{ started: true; stackId: string }>(
-      ApiRoute.stacks.apply(stackId),
-      { method: "POST", body: options, correlationIdPrefix: "stacks" },
-    );
-  } catch (err) {
-    if (err instanceof ApiRequestError) {
-      if (err.status === 503) throw new Error("Docker is unavailable", { cause: err });
-      if (err.status === 409) {
-        throw new Error("Stack apply already in progress", { cause: err });
-      }
-    }
-    throw err;
-  }
+  // Does NOT catch-and-flatten ApiRequestError into a generic Error — the
+  // real error (with its `code`/`resource`/`action`) needs to reach the
+  // global MutationCache.onError (client/src/lib/query-client.ts), which
+  // renders it via getUserFacingError/toastApiError. Previously this
+  // collapsed every 409 into "Stack apply already in progress" even when
+  // the real cause was a different conflict (e.g. unmet prerequisites) —
+  // the server's actual message is more accurate and no longer needs
+  // flattening here.
+  return apiFetch<{ started: true; stackId: string }>(
+    ApiRoute.stacks.apply(stackId),
+    { method: "POST", body: options, correlationIdPrefix: "stacks" },
+  );
 }
 
 async function fetchStackStatus(
@@ -163,22 +161,12 @@ async function deleteStack(
 async function destroyStack(
   stackId: string,
 ): Promise<{ started: true; stackId: string }> {
-  try {
-    return await apiFetch<{ started: true; stackId: string }>(
-      ApiRoute.stacks.destroy(stackId),
-      { method: "POST", correlationIdPrefix: "stacks" },
-    );
-  } catch (err) {
-    if (err instanceof ApiRequestError) {
-      if (err.status === 503) throw new Error("Docker is unavailable", { cause: err });
-      if (err.status === 409) {
-        throw new Error("An operation is already in progress for this stack", {
-          cause: err,
-        });
-      }
-    }
-    throw err;
-  }
+  // See applyStack() above — no catch-and-flatten, so the real
+  // ApiRequestError (code/resource/action) reaches the global handler.
+  return apiFetch<{ started: true; stackId: string }>(
+    ApiRoute.stacks.destroy(stackId),
+    { method: "POST", correlationIdPrefix: "stacks" },
+  );
 }
 
 async function updateStackParameterValues(
@@ -277,9 +265,8 @@ export function useStackApply() {
       // The HTTP response just confirms the apply started.
       // Final results come via Socket.IO events.
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to apply stack: ${(error instanceof Error ? error.message : String(error))}`);
-    },
+    // No onError — the global MutationCache.onError (query-client.ts)
+    // toasts the real ApiRequestError (code/resource/action) by default.
   });
 }
 
@@ -425,9 +412,7 @@ export function useDeleteStack() {
       toast.success("Stack deleted successfully");
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to delete stack: ${(error instanceof Error ? error.message : String(error))}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -438,9 +423,7 @@ export function useStackDestroy() {
       // HTTP response just confirms the destroy started.
       // Final results come via Socket.IO events.
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to destroy stack: ${(error instanceof Error ? error.message : String(error))}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -511,9 +494,7 @@ export function useUpdateStackParameterValues() {
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.plan(stackId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.validation(stackId) });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to save parameters: ${(error instanceof Error ? error.message : String(error))}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 

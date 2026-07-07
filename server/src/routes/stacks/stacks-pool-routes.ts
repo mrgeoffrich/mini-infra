@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import type { PoolConfig, PoolInstanceInfo, PoolInstance as PoolInstanceDb } from '@mini-infra/types';
-import { hasAnyPermission, POOL_ADDON_LABELS, Permission } from '@mini-infra/types';
+import { hasAnyPermission, POOL_ADDON_LABELS, ErrorCode, Permission } from '@mini-infra/types';
 import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requireSessionOrApiKey } from '../../middleware/auth';
@@ -15,6 +15,14 @@ import {
   emitPoolInstanceFailed,
   emitPoolInstanceStopped,
 } from '../../services/stacks/pool-socket-emitter';
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError,
+} from '../../lib/errors';
+import { assertStackFound } from '../../services/stacks/utils';
 
 /**
  * Build an initialised DockerExecutorService for a single request. Mirrors
@@ -46,7 +54,7 @@ const ensureInstanceSchema = z.object({
  * to one of those two — anonymous requests get a 401.
  */
 function requirePoolAccess(requiredScope: 'pools:read' | 'pools:write') {
-  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
 
@@ -74,8 +82,9 @@ function requirePoolAccess(requiredScope: 'pools:read' | 'pools:write') {
       // Bearer present but didn't match any token for this pool — do NOT
       // fall through to session/API-key auth. An in-stack caller passing a
       // bad token is a genuine auth failure.
-      res.status(401).json({ success: false, message: 'Invalid pool management token' });
-      return;
+      throw new UnauthorizedError(ErrorCode.STACK_POOL_TOKEN_INVALID, 'Invalid pool management token', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+      });
     }
 
     // Path 2 — session or API key with the right permission.
@@ -105,18 +114,18 @@ function requirePoolAccess(requiredScope: 'pools:read' | 'pools:write') {
 
     if (req.apiKey) {
       if (!hasAnyPermission(req.apiKey.permissions, [requiredScope])) {
-        res.status(403).json({
-          success: false,
-          message: `Missing required permission: ${requiredScope}`,
-        });
-        return;
+        throw new ForbiddenError(
+          ErrorCode.STACK_POOL_PERMISSION_DENIED,
+          `Missing required permission: ${requiredScope}`,
+          { action: `Use an API key with the ${requiredScope} scope.` },
+        );
       }
       next();
       return;
     }
 
-    res.status(401).json({ success: false, message: 'Authentication required' });
-  };
+    throw new UnauthorizedError(ErrorCode.STACK_POOL_AUTH_REQUIRED, 'Authentication required');
+  });
 }
 
 /**
@@ -168,11 +177,16 @@ router.post(
 
     const resolved = await resolvePoolService(stackId, serviceName);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Pool service not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_SERVICE_NOT_FOUND, 'Pool service not found', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
     const { service, poolConfig } = resolved;
     if (!poolConfig) {
-      return res.status(400).json({ success: false, message: 'Pool service missing poolConfig' });
+      throw new ValidationError(ErrorCode.STACK_POOL_CONFIG_MISSING, 'Pool service missing poolConfig', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+      });
     }
 
     const { instanceId, env, idleTimeoutMinutes } = parsed.data;
@@ -180,17 +194,22 @@ router.post(
 
     // Fetch stack for naming context — cheap, doesn't need to be inside the
     // reservation transaction.
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      include: { environment: true },
-    });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        include: { environment: true },
+      }),
+      stackId,
+    );
     if (stack.status === 'error') {
-      return res
-        .status(409)
-        .json({ success: false, message: 'Cannot spawn into a stack in error state' });
+      throw new ConflictError(
+        ErrorCode.STACK_POOL_STACK_IN_ERROR,
+        'Cannot spawn into a stack in error state',
+        {
+          resource: { type: 'stack', id: stackId, name: stack.name },
+          action: 'Resolve the stack error (or re-apply) before spawning a pool instance.',
+        },
+      );
     }
 
     // Reserve the slot atomically: idempotency check, maxInstances cap, and
@@ -231,10 +250,14 @@ router.post(
       });
     } catch (err) {
       if (err === MAX_REACHED) {
-        return res.status(409).json({
-          success: false,
-          message: `Pool has reached maxInstances=${poolConfig.maxInstances}`,
-        });
+        throw new ConflictError(
+          ErrorCode.STACK_POOL_MAX_INSTANCES,
+          `Pool has reached maxInstances=${poolConfig.maxInstances}`,
+          {
+            resource: { type: 'stackPool', name: serviceName, id: stackId },
+            action: 'Stop an existing instance before starting another, or raise maxInstances.',
+          },
+        );
       }
       // Partial unique index violation — another writer won the race between
       // the existence check and the create. Re-read and return if an active
@@ -245,8 +268,11 @@ router.post(
       if (existingAfter) {
         return res.json({ success: true, data: serializeInstance(existingAfter as unknown as PoolInstanceDb) });
       }
+      // Genuine internal failure (DB write race lost with no recoverable
+      // existing row) — not a user-actionable 4xx, so a plain Error still
+      // reaches the central middleware's generic 500 path.
       log.error({ stackId, serviceName, instanceId, err }, 'Failed to reserve pool instance');
-      return res.status(500).json({ success: false, message: 'Failed to reserve pool instance' });
+      throw new Error('Failed to reserve pool instance', { cause: err });
     }
 
     if (txResult.existing) {
@@ -367,7 +393,10 @@ router.get(
 
     const resolved = await resolvePoolService(stackId, serviceName);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Pool service not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_SERVICE_NOT_FOUND, 'Pool service not found', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
 
     const rows = await prisma.poolInstance.findMany({
@@ -397,7 +426,10 @@ router.get(
 
     const resolved = await resolvePoolService(stackId, serviceName);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Pool service not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_SERVICE_NOT_FOUND, 'Pool service not found', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
 
     const row = await prisma.poolInstance.findFirst({
@@ -405,7 +437,10 @@ router.get(
       orderBy: { createdAt: 'desc' },
     });
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Instance not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_INSTANCE_NOT_FOUND, 'Instance not found', {
+        resource: { type: 'stackPoolInstance', name: instanceId, id: stackId },
+        action: 'Check the instance ID or refresh the instances list.',
+      });
     }
     res.json({ success: true, data: serializeInstance(row as unknown as PoolInstanceDb) });
   }),
@@ -422,14 +457,20 @@ router.delete(
 
     const resolved = await resolvePoolService(stackId, serviceName);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Pool service not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_SERVICE_NOT_FOUND, 'Pool service not found', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
 
     const row = await prisma.poolInstance.findFirst({
       where: { stackId, serviceName, instanceId, status: { in: ['starting', 'running', 'stopping'] } },
     });
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Active instance not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_INSTANCE_NOT_FOUND, 'Active instance not found', {
+        resource: { type: 'stackPoolInstance', name: instanceId, id: stackId },
+        action: 'Check the instance ID or refresh the instances list.',
+      });
     }
 
     await prisma.poolInstance.update({
@@ -529,7 +570,10 @@ router.post(
 
     const resolved = await resolvePoolService(stackId, serviceName);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Pool service not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_SERVICE_NOT_FOUND, 'Pool service not found', {
+        resource: { type: 'stackPool', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
 
     const row = await prisma.poolInstance.findFirst({
@@ -541,7 +585,10 @@ router.post(
       },
     });
     if (!row) {
-      return res.status(404).json({ success: false, message: 'Active instance not found' });
+      throw new NotFoundError(ErrorCode.STACK_POOL_INSTANCE_NOT_FOUND, 'Active instance not found', {
+        resource: { type: 'stackPoolInstance', name: instanceId, id: stackId },
+        action: 'Check the instance ID or refresh the instances list.',
+      });
     }
 
     const now = new Date();

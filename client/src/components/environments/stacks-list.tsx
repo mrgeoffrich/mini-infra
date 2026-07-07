@@ -115,11 +115,9 @@ export function StacksList({ environmentId, scope, className }: StacksListProps)
           toast.success(`Added ${template.displayName} to environment`);
           refetch();
         },
-        onError: (err) => {
-          toast.error(
-            `Failed to add template: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        },
+        // No onError — the global MutationCache.onError (query-client.ts)
+        // already shows an actionable toast for this mutation's real
+        // ApiRequestError.
       },
     );
   };

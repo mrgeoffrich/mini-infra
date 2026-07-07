@@ -29,12 +29,16 @@ vi.mock("../services/vault/vault-services", () => ({
 
 import stackTemplateRouter from "../routes/stack-templates";
 import stacksApplyRoute from "../routes/stacks/stacks-apply-route";
+import { errorHandler } from "../lib/error-handler";
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use("/api/stacks", stacksApplyRoute);
   app.use("/api/stack-templates", stackTemplateRouter);
+  // Real central error middleware — both routers now throw taxonomy errors
+  // instead of writing their own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -161,7 +165,7 @@ describe("GET /api/stack-templates/:templateId/prerequisites", () => {
       `/api/stack-templates/${templateId}/prerequisites`,
     );
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe("ENVIRONMENT_ID_REQUIRED");
+    expect(res.body.error).toBe("STACK_ENVIRONMENT_ID_REQUIRED");
   });
 
   it("returns 400 NO_PUBLISHED_VERSION when template has no current version", async () => {
@@ -174,7 +178,7 @@ describe("GET /api/stack-templates/:templateId/prerequisites", () => {
       `/api/stack-templates/${templateId}/prerequisites`,
     );
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe("NO_PUBLISHED_VERSION");
+    expect(res.body.error).toBe("STACK_TEMPLATE_NOT_PUBLISHED");
   });
 
   it("evaluates against the supplied environmentId", async () => {

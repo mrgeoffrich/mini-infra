@@ -41,7 +41,9 @@ import type {
   ResourceType,
   ServiceApplyResult,
 } from '@mini-infra/types';
-import { Permission } from '@mini-infra/types';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { ConflictError, ValidationError } from '../../lib/errors';
+import { assertStackFound } from '../../services/stacks/utils';
 
 const logger = getLogger("stacks", "stacks-apply-route");
 const router = Router();
@@ -54,13 +56,10 @@ router.get(
   requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
-    const exists = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { id: true },
-    });
-    if (!exists) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    assertStackFound(
+      await prisma.stack.findUnique({ where: { id: stackId }, select: { id: true } }),
+      stackId,
+    );
     try {
       const result = await evaluatePrerequisites(prisma, stackId);
       return res.json({ success: true, ...result });
@@ -90,27 +89,31 @@ router.post(
     }
 
     if (stackOperationLock.has(stackId)) {
-      return res.status(409).json({
-        success: false,
-        message: 'Stack apply already in progress',
+      throw new ConflictError(ErrorCode.STACK_OPERATION_IN_PROGRESS, 'Stack apply already in progress', {
+        resource: { type: 'stack', id: stackId },
+        action: 'Wait for the in-flight operation to finish before retrying.',
       });
     }
 
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { parameters: true, parameterValues: true },
-    });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: { parameters: true, parameterValues: true },
+      }),
+      stackId,
+    );
 
     const emptyParams = findEmptyStackParameters(stack.parameters, stack.parameterValues);
     if (emptyParams.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Stack has parameters that are not configured',
-        parameters: emptyParams.map((p) => ({ name: p.name, description: p.description })),
-      });
+      throw new ValidationError(
+        ErrorCode.STACK_PARAMETERS_NOT_CONFIGURED,
+        'Stack has parameters that are not configured',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Configure the missing parameters before applying.',
+          details: { parameters: emptyParams.map((p) => ({ name: p.name, description: p.description })) },
+        },
+      );
     }
 
     // Cross-stack prerequisites gate (Phase 1 of split-vault-nats). Runs
@@ -123,7 +126,8 @@ router.post(
     } catch (err) {
       // Authoring errors (e.g. same-environment requirement on a
       // host-scoped stack) surface here. 422 keeps it distinct from
-      // both 400 (bad client input) and 409 (state conflict).
+      // both 400 (bad client input) and 409 (state conflict) — kept as a
+      // locally-built response since the 4xx taxonomy has no 422 member.
       logger.warn(
         { stackId, error: err instanceof Error ? err.message : String(err) },
         'Prerequisite evaluation threw — refusing to apply',
@@ -135,11 +139,15 @@ router.post(
       });
     }
     if (!prereqs.ok) {
-      return res.status(409).json({
-        success: false,
-        code: 'PREREQUISITES_NOT_MET',
-        failures: prereqs.failures,
-      });
+      throw new ConflictError(
+        ErrorCode.STACK_PREREQUISITES_NOT_MET,
+        'One or more cross-stack prerequisites are not met',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Resolve the listed prerequisites before applying.',
+          details: { failures: prereqs.failures },
+        },
+      );
     }
 
     stackOperationLock.tryAcquire(stackId);
