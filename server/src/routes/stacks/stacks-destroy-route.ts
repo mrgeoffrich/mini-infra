@@ -32,9 +32,10 @@ import { JobPoolCronRegistry } from '../../services/stacks/job-pool-cron-registr
 import { JobPoolNatsRegistry } from '../../services/stacks/job-pool-nats-registry';
 import type { StackNetwork, StackVolume } from '@mini-infra/types';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
-import { Permission } from '@mini-infra/types';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { ConflictError } from '../../lib/errors';
 import { getStackProjectName } from '../../services/stacks/template-engine';
-import { synthesiseDefaultNetworkIfNeeded } from '../../services/stacks/utils';
+import { synthesiseDefaultNetworkIfNeeded, assertStackFound } from '../../services/stacks/utils';
 
 const logger = getLogger("stacks", "stacks-destroy-route");
 const router = Router();
@@ -46,16 +47,20 @@ router.post(
   requirePermission(Permission.StacksWrite),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
-    const stack = await prisma.stack.findUnique({ where: { id: stackId } });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({ where: { id: stackId } }),
+      stackId,
+    );
 
     if (stackOperationLock.has(stackId)) {
-      return res.status(409).json({
-        success: false,
-        message: 'An operation is already in progress for this stack',
-      });
+      throw new ConflictError(
+        ErrorCode.STACK_OPERATION_IN_PROGRESS,
+        'An operation is already in progress for this stack',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Wait for the in-flight operation to finish before retrying.',
+        },
+      );
     }
     stackOperationLock.tryAcquire(stackId);
 

@@ -34,6 +34,8 @@ import {
   validateTemplateSubstitutions,
 } from "./template-substitution-validator";
 import { encryptInputValues } from "./stack-input-values-service";
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors";
 
 // Input shape for upserting system templates from builtin definitions
 export interface UpsertSystemTemplateInput {
@@ -145,6 +147,34 @@ function isVersionDetailPayload(v: SerializableVersion): v is VersionDetailPaylo
 
 export class StackTemplateService {
   constructor(private prisma: PrismaClient) {}
+
+  /** Throws `NotFoundError` when a template lookup came back null. Shared by every method that loads-then-mutates a template. */
+  private assertTemplateFound<T>(template: T | null, templateId: string): T {
+    if (!template) {
+      throw new NotFoundError(ErrorCode.STACK_TEMPLATE_NOT_FOUND, "Template not found", {
+        resource: { type: "stackTemplate", id: templateId },
+        action: "Check the template ID or refresh the templates list.",
+      });
+    }
+    return template;
+  }
+
+  /** Throws `ForbiddenError` when a mutation targets a system (built-in) template. */
+  private assertUserTemplate(
+    template: { source: string },
+    verb: "modify" | "delete" | "publish",
+  ): void {
+    if (template.source === "system") {
+      throw new ForbiddenError(
+        ErrorCode.STACK_TEMPLATE_SYSTEM_IMMUTABLE,
+        verb === "publish" ? "Cannot publish system templates via API" : `Cannot ${verb} system templates`,
+        {
+          resource: { type: "stackTemplate" },
+          action: "System templates are managed by Mini Infra and can't be changed via the API.",
+        },
+      );
+    }
+  }
 
   // =====================
   // Query Methods
@@ -279,9 +309,13 @@ export class StackTemplateService {
       where: { name_source: { name: input.name, source: "user" } },
     });
     if (existing && !existing.isArchived) {
-      throw new TemplateError(
+      throw new ConflictError(
+        ErrorCode.STACK_TEMPLATE_NAME_EXISTS,
         `A user template named "${input.name}" already exists`,
-        409
+        {
+          resource: { type: "stackTemplate", name: input.name },
+          action: "Use a different name or edit the existing template.",
+        },
       );
     }
 
@@ -316,9 +350,10 @@ export class StackTemplateService {
         .map((i) => `${i.path}: ${i.message}`)
         .join('; ');
       const suffix = issues.length > 5 ? ` (+${issues.length - 5} more)` : '';
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_SUBSTITUTION_INVALID,
         `Template substitution validation failed: ${summary}${suffix}`,
-        400,
+        { action: "Fix the referenced parameter, input, or resource name and try again." },
       );
     }
 
@@ -410,15 +445,11 @@ export class StackTemplateService {
     templateId: string,
     input: UpdateStackTemplateRequest
   ): Promise<StackTemplateInfo> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: templateId },
-    });
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
-    if (template.source === "system") {
-      throw new TemplateError("Cannot modify system templates", 403);
-    }
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "modify");
 
     const updated = await this.prisma.stackTemplate.update({
       where: { id: templateId },
@@ -437,16 +468,14 @@ export class StackTemplateService {
   }
 
   async deleteTemplate(templateId: string): Promise<void> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: templateId },
-      include: { stacks: { select: { id: true, name: true, status: true, removedAt: true } } },
-    });
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
-    if (template.source === "system") {
-      throw new TemplateError("Cannot delete system templates", 403);
-    }
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({
+        where: { id: templateId },
+        include: { stacks: { select: { id: true, name: true, status: true, removedAt: true } } },
+      }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "delete");
 
     // A deployed stack has real Docker containers/networks/volumes that this
     // delete only removes DB rows for — destroying the template out from
@@ -457,9 +486,13 @@ export class StackTemplateService {
       (stack) => stack.removedAt === null && stack.status !== "undeployed",
     );
     if (deployedStack) {
-      throw new TemplateError(
+      throw new ConflictError(
+        ErrorCode.STACK_TEMPLATE_HAS_DEPLOYED_STACK,
         `Cannot delete: stack "${deployedStack.name}" is still deployed. Stop it first.`,
-        409
+        {
+          resource: { type: "stack", name: deployedStack.name, id: deployedStack.id },
+          action: "Destroy the stack (POST /stacks/:id/destroy) before deleting its template.",
+        },
       );
     }
 
@@ -485,15 +518,11 @@ export class StackTemplateService {
     input: DraftVersionInput,
     createdById?: string
   ): Promise<StackTemplateVersionInfo> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: templateId },
-    });
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
-    if (template.source === "system") {
-      throw new TemplateError("Cannot modify system templates", 403);
-    }
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "modify");
 
     // Catch substitution typos (e.g. {{stak.id}}, {{environment.foo}}) at
     // draft-save time so the operator sees them immediately instead of
@@ -524,9 +553,10 @@ export class StackTemplateService {
         .map((i) => `${i.path}: ${i.message}`)
         .join('; ');
       const suffix = issues.length > 5 ? ` (+${issues.length - 5} more)` : '';
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_SUBSTITUTION_INVALID,
         `Template substitution validation failed: ${summary}${suffix}`,
-        400,
+        { action: "Fix the referenced parameter, input, or resource name and try again." },
       );
     }
 
@@ -589,19 +619,19 @@ export class StackTemplateService {
     templateId: string,
     input?: PublishDraftRequest
   ): Promise<StackTemplateVersionInfo> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: templateId },
-    });
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
-    if (template.source === "system") {
-      throw new TemplateError("Cannot publish system templates via API", 403);
-    }
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "publish");
     if (!template.draftVersionId) {
-      throw new TemplateError(
+      throw new NotFoundError(
+        ErrorCode.STACK_TEMPLATE_DRAFT_NOT_FOUND,
         "No draft version exists for this template",
-        404
+        {
+          resource: { type: "stackTemplateDraft", id: templateId },
+          action: "Create a draft (POST /:templateId/draft) before publishing.",
+        },
       );
     }
 
@@ -614,9 +644,13 @@ export class StackTemplateService {
         where: { versionId: template.draftVersionId! },
       });
       if (serviceCount < 1) {
-        throw new TemplateError(
+        throw new ValidationError(
+          ErrorCode.STACK_TEMPLATE_DRAFT_EMPTY,
           "Cannot publish: the draft has no services defined",
-          400
+          {
+            resource: { type: "stackTemplateDraft", id: templateId },
+            action: "Add at least one service to the draft before publishing.",
+          },
         );
       }
 
@@ -661,19 +695,19 @@ export class StackTemplateService {
   }
 
   async discardDraft(templateId: string): Promise<void> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: templateId },
-    });
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
-    if (template.source === "system") {
-      throw new TemplateError("Cannot modify system templates", 403);
-    }
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "modify");
     if (!template.draftVersionId) {
-      throw new TemplateError(
+      throw new NotFoundError(
+        ErrorCode.STACK_TEMPLATE_DRAFT_NOT_FOUND,
         "No draft version exists for this template",
-        404
+        {
+          resource: { type: "stackTemplateDraft", id: templateId },
+          action: "There is no draft to discard.",
+        },
       );
     }
 
@@ -868,28 +902,35 @@ export class StackTemplateService {
     input: CreateStackFromTemplateRequest,
     _createdById?: string
   ): Promise<StackInfo> {
-    const template = await this.prisma.stackTemplate.findUnique({
-      where: { id: input.templateId },
-      include: {
-        currentVersion: {
-          include: versionWithDetails,
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({
+        where: { id: input.templateId },
+        include: {
+          currentVersion: {
+            include: versionWithDetails,
+          },
         },
-      },
-    });
-
-    if (!template) {
-      throw new TemplateError("Template not found", 404);
-    }
+      }),
+      input.templateId,
+    );
     if (!template.currentVersion) {
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_NOT_PUBLISHED,
         "Template has no published version",
-        400
+        {
+          resource: { type: "stackTemplate", id: input.templateId, name: template.name },
+          action: "Publish a draft version of this template before creating a stack from it.",
+        },
       );
     }
     if (template.isArchived) {
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_ARCHIVED,
         "Cannot create stack from archived template",
-        400
+        {
+          resource: { type: "stackTemplate", id: input.templateId, name: template.name },
+          action: "Restore the template before creating a stack from it.",
+        },
       );
     }
 
@@ -910,9 +951,13 @@ export class StackTemplateService {
       if (env) {
         if (template.networkType && template.networkType !== env.networkType) {
           const article = template.networkType === "internet" ? "an" : "a";
-          throw new TemplateError(
+          throw new ValidationError(
+            ErrorCode.STACK_TEMPLATE_NETWORK_TYPE_MISMATCH,
             `Template "${template.name}" requires ${article} ${template.networkType} environment (target is ${env.networkType})`,
-            400
+            {
+              resource: { type: "stackTemplate", id: input.templateId, name: template.name },
+              action: `Choose a ${template.networkType} environment for this template.`,
+            },
           );
         }
         const ntDefaults = version.networkTypeDefaults as unknown as Record<string, Record<string, StackParameterValue>> | null;
@@ -932,15 +977,17 @@ export class StackTemplateService {
     // Validate scope. For `any`-scoped templates the presence of environmentId
     // determines the effective scope — either direction is allowed.
     if (template.scope === "host" && input.environmentId) {
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_SCOPE_MISMATCH,
         "Host-scoped template cannot be assigned to an environment",
-        400
+        { action: "Create this stack at the host scope (omit environmentId)." },
       );
     }
     if (template.scope === "environment" && !input.environmentId) {
-      throw new TemplateError(
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_SCOPE_MISMATCH,
         "Environment-scoped template requires an environmentId",
-        400
+        { action: "Choose an environment to create this stack in." },
       );
     }
 
@@ -1005,9 +1052,13 @@ export class StackTemplateService {
         }
 
         if (!tunnelServiceUrl) {
-          throw new TemplateError(
+          throw new ValidationError(
+            ErrorCode.STACK_TEMPLATE_TUNNEL_URL_UNRESOLVED,
             "Could not resolve tunnel service URL. Ensure the environment has an HAProxy stack deployed or configure the tunnel service URL in the environment settings.",
-            400,
+            {
+              resource: { type: "environment", id: input.environmentId },
+              action: "Deploy an HAProxy stack in this environment, or set the tunnel service URL in environment settings.",
+            },
           );
         }
 
@@ -1195,20 +1246,6 @@ export class StackTemplateService {
       serviceCount: version._count.services,
       serviceTypes: version.services.map((svc) => svc.serviceType as StackServiceType),
     };
-  }
-}
-
-// =====================
-// Error class
-// =====================
-
-export class TemplateError extends Error {
-  constructor(
-    message: string,
-    public statusCode: number
-  ) {
-    super(message);
-    this.name = "TemplateError";
   }
 }
 

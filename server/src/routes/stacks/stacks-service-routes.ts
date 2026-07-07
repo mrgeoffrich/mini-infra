@@ -4,8 +4,9 @@ import prisma from '../../lib/prisma';
 import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { updateStackServiceSchema } from '../../services/stacks/schemas';
-import { serializeStack } from '../../services/stacks/utils';
-import { Permission } from '@mini-infra/types';
+import { serializeStack, assertStackFound } from '../../services/stacks/utils';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { NotFoundError } from '../../lib/errors';
 
 const router = Router();
 
@@ -31,7 +32,10 @@ router.put(
     });
 
     if (!service) {
-      return res.status(404).json({ success: false, message: 'Stack service not found' });
+      throw new NotFoundError(ErrorCode.STACK_SERVICE_NOT_FOUND, 'Stack service not found', {
+        resource: { type: 'stackService', name: serviceName, id: stackId },
+        action: 'Check the stack ID and service name.',
+      });
     }
 
     const updateData: Prisma.StackServiceUpdateInput = {};
@@ -82,14 +86,13 @@ router.put(
       }),
     ]);
 
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      include: { services: { orderBy: { order: 'asc' } } },
-    });
-
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        include: { services: { orderBy: { order: 'asc' } } },
+      }),
+      stackId,
+    );
 
     res.json({ success: true, data: serializeStack(stack) });
   }),

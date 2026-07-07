@@ -11,6 +11,8 @@ import type {
   StackInfo,
   StackServiceInfo,
 } from '@mini-infra/types';
+import { ErrorCode } from '@mini-infra/types';
+import { NotFoundError } from '../../lib/errors';
 import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
 import { computeDefinitionHash, computeSyntheticDefinitionHash } from './definition-hash';
 import { StackContainerManager } from './stack-container-manager';
@@ -21,6 +23,23 @@ import {
   type AddonRegistry,
   type ExpansionProgress,
 } from '../stack-addons';
+
+/**
+ * Throws `NotFoundError` (STACK_NOT_FOUND) when a stack lookup came back
+ * null, otherwise narrows and returns the found row. Callers still perform
+ * their own tailored `prisma.stack.findUnique(...)` (selects/includes vary
+ * per route) — this only centralises the not-found check + error shape so
+ * every stacks route reports the same code/resource/action.
+ */
+export function assertStackFound<T>(stack: T | null, stackId: string): T {
+  if (!stack) {
+    throw new NotFoundError(ErrorCode.STACK_NOT_FOUND, 'Stack not found', {
+      resource: { type: 'stack', id: stackId },
+      action: 'Check the stack ID or refresh the stacks list.',
+    });
+  }
+  return stack;
+}
 
 /**
  * Loose shape of a Prisma stack record extended with optional relations.

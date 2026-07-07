@@ -1,13 +1,12 @@
-import { Router, type Request, type Response } from 'express';
+import { Router, type Request } from 'express';
 import type { StackTemplateSource, StackTemplateScope, CreateStackTemplateRequest, DraftVersionInput } from '@mini-infra/types';
-import { hasPermission, Permission } from '@mini-infra/types';
+import { hasPermission, Permission, ErrorCode } from '@mini-infra/types';
 import prisma from '../lib/prisma';
 import { getLogger } from '../lib/logger-factory';
+import { asyncHandler } from '../lib/async-handler';
 import { requirePermission } from '../middleware/auth';
-import {
-  StackTemplateService,
-  TemplateError,
-} from '../services/stacks/stack-template-service';
+import { NotFoundError, ValidationError, ForbiddenError } from '../lib/errors';
+import { StackTemplateService } from '../services/stacks/stack-template-service';
 import { evaluatePrerequisitesForTemplateVersion } from '../services/stacks/template-prerequisites';
 import {
   createTemplateSchema,
@@ -27,25 +26,35 @@ import {
  * shapes `StackTemplateService`/`createUserTemplate`/`createOrUpdateDraft`
  * already understand. Runs immediately after schema validation, before the
  * payload reaches the template service, so the service layer never sees a
- * unified entry. Throws `UnifiedNetworkDeclarationError` on ambiguous input
- * — callers should catch it and return 400.
+ * unified entry. Throws `ValidationError` (folding in `UnifiedNetworkDeclarationError`
+ * from `services/networks`, which owns the unified-declaration parsing) on
+ * ambiguous input — the central error middleware turns that into a 400.
  */
 function translateTemplateNetworks<
   T extends Pick<CreateStackTemplateRequest, 'networks' | 'resourceOutputs' | 'resourceInputs' | 'services'>,
 >(data: T): T {
-  const translated = translateUnifiedNetworkDeclarations({
-    networks: data.networks,
-    resourceOutputs: data.resourceOutputs,
-    resourceInputs: data.resourceInputs,
-    services: data.services,
-  });
-  return {
-    ...data,
-    networks: translated.networks ?? [],
-    resourceOutputs: translated.resourceOutputs,
-    resourceInputs: translated.resourceInputs,
-    services: translated.services ?? data.services,
-  } as T;
+  try {
+    const translated = translateUnifiedNetworkDeclarations({
+      networks: data.networks,
+      resourceOutputs: data.resourceOutputs,
+      resourceInputs: data.resourceInputs,
+      services: data.services,
+    });
+    return {
+      ...data,
+      networks: translated.networks ?? [],
+      resourceOutputs: translated.resourceOutputs,
+      resourceInputs: translated.resourceInputs,
+      services: translated.services ?? data.services,
+    } as T;
+  } catch (err) {
+    if (err instanceof UnifiedNetworkDeclarationError) {
+      throw new ValidationError(ErrorCode.STACK_NETWORK_DECLARATION_INVALID, err.message, {
+        action: 'Fix the ambiguous network declaration and try again.',
+      });
+    }
+    throw err;
+  }
 }
 
 const router = Router();
@@ -55,149 +64,120 @@ function getTemplateService() {
   return new StackTemplateService(prisma);
 }
 
-function handleTemplateError(error: unknown, res: Response, fallbackMessage: string) {
-  if (error instanceof TemplateError) {
-    return res.status(error.statusCode).json({ success: false, message: (error instanceof Error ? error.message : String(error)) });
-  }
-  logger.error({ error }, fallbackMessage);
-  return res.status(500).json({ success: false, message: fallbackMessage });
-}
-
 // GET / — List templates
-router.get('/', requirePermission(Permission.StacksRead), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    const { source, scope, environmentId, includeArchived, includeLinkedStacks } = req.query;
+router.get('/', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  const { source, scope, environmentId, includeArchived, includeLinkedStacks } = req.query;
 
-    const templates = await service.listTemplates({
-      source: source as StackTemplateSource,
-      scope: scope as StackTemplateScope,
-      environmentId: typeof environmentId === 'string' && environmentId.length > 0 ? environmentId : undefined,
-      includeArchived: includeArchived === 'true',
-      includeLinkedStacks: includeLinkedStacks === 'true',
-    });
+  const templates = await service.listTemplates({
+    source: source as StackTemplateSource,
+    scope: scope as StackTemplateScope,
+    environmentId: typeof environmentId === 'string' && environmentId.length > 0 ? environmentId : undefined,
+    includeArchived: includeArchived === 'true',
+    includeLinkedStacks: includeLinkedStacks === 'true',
+  });
 
-    res.json({ success: true, data: templates });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to list templates');
-  }
-});
+  res.json({ success: true, data: templates });
+}));
 
 // GET /:templateId — Get template with current version
-router.get('/:templateId', requirePermission(Permission.StacksRead), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    const template = await service.getTemplate(String(req.params.templateId));
+router.get('/:templateId', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  const templateId = String(req.params.templateId);
+  const template = await service.getTemplate(templateId);
 
-    if (!template) {
-      return res.status(404).json({ success: false, message: 'Template not found' });
-    }
-
-    res.json({ success: true, data: template });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to get template');
+  if (!template) {
+    throw new NotFoundError(ErrorCode.STACK_TEMPLATE_NOT_FOUND, 'Template not found', {
+      resource: { type: 'stackTemplate', id: templateId },
+      action: 'Check the template ID or refresh the templates list.',
+    });
   }
-});
+
+  res.json({ success: true, data: template });
+}));
 
 // GET /:templateId/versions — List all versions
-router.get('/:templateId/versions', requirePermission(Permission.StacksRead), async (req, res) => {
-  try {
-    const service = getTemplateService();
+router.get('/:templateId/versions', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  const templateId = String(req.params.templateId);
 
-    // Verify template exists
-    const template = await service.getTemplate(String(req.params.templateId));
-    if (!template) {
-      return res.status(404).json({ success: false, message: 'Template not found' });
-    }
-
-    const versions = await service.listVersions(String(req.params.templateId));
-    res.json({ success: true, data: versions });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to list template versions');
+  // Verify template exists
+  const template = await service.getTemplate(templateId);
+  if (!template) {
+    throw new NotFoundError(ErrorCode.STACK_TEMPLATE_NOT_FOUND, 'Template not found', {
+      resource: { type: 'stackTemplate', id: templateId },
+      action: 'Check the template ID or refresh the templates list.',
+    });
   }
-});
+
+  const versions = await service.listVersions(templateId);
+  res.json({ success: true, data: versions });
+}));
 
 // GET /:templateId/versions/:versionId — Get specific version with services + config files
-router.get('/:templateId/versions/:versionId', requirePermission(Permission.StacksRead), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    const version = await service.getTemplateVersion(String(req.params.versionId));
+router.get('/:templateId/versions/:versionId', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  const version = await service.getTemplateVersion(String(req.params.versionId));
 
-    if (!version || version.templateId !== String(req.params.templateId)) {
-      return res.status(404).json({ success: false, message: 'Version not found' });
-    }
-
-    res.json({ success: true, data: version });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to get template version');
+  if (!version || version.templateId !== String(req.params.templateId)) {
+    throw new NotFoundError(ErrorCode.STACK_TEMPLATE_VERSION_NOT_FOUND, 'Version not found', {
+      resource: { type: 'stackTemplateVersion', id: String(req.params.versionId) },
+      action: 'Check the version ID or refresh the template.',
+    });
   }
-});
+
+  res.json({ success: true, data: version });
+}));
 
 // POST / — Create user template (with initial draft)
-router.post('/', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    // Same gate as POST /:templateId/draft: a vault section in the body
-    // requires the elevated template-vault:write scope on top of stacks:write.
-    // Session users always pass.
-    if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
-      return res.status(403).json({
-        success: false,
-        message: 'The vault section requires the template-vault:write scope',
-        code: 'template_vault_scope_required',
-      });
-    }
-    if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
-      return res.status(403).json({
-        success: false,
-        message: 'The nats section requires the template-nats:write scope',
-        code: 'template_nats_scope_required',
-      });
-    }
-
-    const parsed = createTemplateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
-    }
-
-    let templateInput: CreateStackTemplateRequest;
-    try {
-      templateInput = translateTemplateNetworks(parsed.data as CreateStackTemplateRequest);
-    } catch (err) {
-      if (err instanceof UnifiedNetworkDeclarationError) {
-        return res.status(400).json({ success: false, message: err.message });
-      }
-      throw err;
-    }
-
-    const service = getTemplateService();
-    const template = await service.createUserTemplate(
-      templateInput,
-      (req as { user?: { id?: string } }).user?.id
+router.post('/', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  // Same gate as POST /:templateId/draft: a vault section in the body
+  // requires the elevated template-vault:write scope on top of stacks:write.
+  // Session users always pass.
+  if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
+    throw new ForbiddenError(
+      ErrorCode.STACK_TEMPLATE_VAULT_SCOPE_REQUIRED,
+      'The vault section requires the template-vault:write scope',
+      { action: 'Use an API key with the template-vault:write scope, or remove the vault section.' },
     );
-
-    logger.info({ templateId: template.id, templateName: template.name }, 'Template created');
-    res.status(201).json({ success: true, data: template });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to create template');
   }
-});
+  if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
+    throw new ForbiddenError(
+      ErrorCode.STACK_TEMPLATE_NATS_SCOPE_REQUIRED,
+      'The nats section requires the template-nats:write scope',
+      { action: 'Use an API key with the template-nats:write scope, or remove the nats section.' },
+    );
+  }
+
+  const parsed = createTemplateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
+  }
+
+  const templateInput = translateTemplateNetworks(parsed.data as CreateStackTemplateRequest);
+
+  const service = getTemplateService();
+  const template = await service.createUserTemplate(
+    templateInput,
+    (req as { user?: { id?: string } }).user?.id
+  );
+
+  logger.info({ templateId: template.id, templateName: template.name }, 'Template created');
+  res.status(201).json({ success: true, data: template });
+}));
 
 // PATCH /:templateId — Update template metadata
-router.patch('/:templateId', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    const parsed = updateTemplateMetaSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
-    }
-
-    const service = getTemplateService();
-    const template = await service.updateTemplateMeta(String(req.params.templateId), parsed.data);
-
-    res.json({ success: true, data: template });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to update template');
+router.patch('/:templateId', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const parsed = updateTemplateMetaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
   }
-});
+
+  const service = getTemplateService();
+  const template = await service.updateTemplateMeta(String(req.params.templateId), parsed.data);
+
+  res.json({ success: true, data: template });
+}));
 
 /**
  * Check if a draft input contains a non-empty vault section.
@@ -239,96 +219,72 @@ function callerHasScope(req: Request, scope: string): boolean {
 }
 
 // POST /:templateId/draft — Create or replace draft version
-router.post('/:templateId/draft', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    // Vault sections require an additional elevated scope on top of stacks:write.
-    if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
-      return res.status(403).json({
-        success: false,
-        message: 'The vault section requires the template-vault:write scope',
-        code: 'template_vault_scope_required',
-      });
-    }
-    if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
-      return res.status(403).json({
-        success: false,
-        message: 'The nats section requires the template-nats:write scope',
-        code: 'template_nats_scope_required',
-      });
-    }
-
-    const parsed = draftVersionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
-    }
-
-    let draftInput: DraftVersionInput;
-    try {
-      draftInput = translateTemplateNetworks(parsed.data as DraftVersionInput);
-    } catch (err) {
-      if (err instanceof UnifiedNetworkDeclarationError) {
-        return res.status(400).json({ success: false, message: err.message });
-      }
-      throw err;
-    }
-
-    const service = getTemplateService();
-    const version = await service.createOrUpdateDraft(
-      String(req.params.templateId),
-      draftInput,
-      (req as { user?: { id?: string } }).user?.id
+router.post('/:templateId/draft', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  // Vault sections require an additional elevated scope on top of stacks:write.
+  if (draftHasVaultSection(req.body) && !callerHasScope(req, Permission.TemplateVaultWrite)) {
+    throw new ForbiddenError(
+      ErrorCode.STACK_TEMPLATE_VAULT_SCOPE_REQUIRED,
+      'The vault section requires the template-vault:write scope',
+      { action: 'Use an API key with the template-vault:write scope, or remove the vault section.' },
     );
-
-    res.json({ success: true, data: version });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to create/update draft');
   }
-});
+  if (draftHasNatsSection(req.body) && !callerHasScope(req, Permission.TemplateNatsWrite)) {
+    throw new ForbiddenError(
+      ErrorCode.STACK_TEMPLATE_NATS_SCOPE_REQUIRED,
+      'The nats section requires the template-nats:write scope',
+      { action: 'Use an API key with the template-nats:write scope, or remove the nats section.' },
+    );
+  }
+
+  const parsed = draftVersionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
+  }
+
+  const draftInput = translateTemplateNetworks(parsed.data as DraftVersionInput);
+
+  const service = getTemplateService();
+  const version = await service.createOrUpdateDraft(
+    String(req.params.templateId),
+    draftInput,
+    (req as { user?: { id?: string } }).user?.id
+  );
+
+  res.json({ success: true, data: version });
+}));
 
 // POST /:templateId/publish — Publish draft
-router.post('/:templateId/publish', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    const parsed = publishDraftSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
-    }
-
-    const service = getTemplateService();
-    const version = await service.publishDraft(String(req.params.templateId), parsed.data);
-
-    logger.info(
-      { templateId: req.params.templateId, version: version.version },
-      'Template version published'
-    );
-    res.json({ success: true, data: version });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to publish draft');
+router.post('/:templateId/publish', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const parsed = publishDraftSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
   }
-});
+
+  const service = getTemplateService();
+  const version = await service.publishDraft(String(req.params.templateId), parsed.data);
+
+  logger.info(
+    { templateId: req.params.templateId, version: version.version },
+    'Template version published'
+  );
+  res.json({ success: true, data: version });
+}));
 
 // DELETE /:templateId/draft — Discard draft
-router.delete('/:templateId/draft', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    await service.discardDraft(String(req.params.templateId));
+router.delete('/:templateId/draft', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  await service.discardDraft(String(req.params.templateId));
 
-    res.json({ success: true, message: 'Draft discarded' });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to discard draft');
-  }
-});
+  res.json({ success: true, message: 'Draft discarded' });
+}));
 
 // DELETE /:templateId — Delete template and all linked stacks
-router.delete('/:templateId', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    await service.deleteTemplate(String(req.params.templateId));
+router.delete('/:templateId', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  await service.deleteTemplate(String(req.params.templateId));
 
-    res.json({ success: true, message: 'Template deleted' });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to delete template');
-  }
-});
+  res.json({ success: true, message: 'Template deleted' });
+}));
 
 // GET /:templateId/prerequisites — Precheck cross-stack prereqs for what
 // would happen if this template were instantiated into the given scope.
@@ -338,92 +294,94 @@ router.delete('/:templateId', requirePermission(Permission.StacksWrite), async (
 // (or `any`-scoped and the caller intends to instantiate into an env).
 // Host-scoped templates don't need it; the route falls back to host
 // scope when the template scope is `host` and no env is given.
-router.get('/:templateId/prerequisites', requirePermission(Permission.StacksRead), async (req, res) => {
-  try {
-    const service = getTemplateService();
-    const template = await service.getTemplate(String(req.params.templateId));
-    if (!template) {
-      return res.status(404).json({ success: false, message: 'Template not found' });
-    }
-    if (!template.currentVersionId || !template.currentVersion) {
-      return res.status(400).json({
-        success: false,
-        message: 'Template has no published version',
-        code: 'NO_PUBLISHED_VERSION',
-      });
-    }
-
-    const envQuery = req.query.environmentId;
-    const environmentId =
-      typeof envQuery === 'string' && envQuery.length > 0 ? envQuery : undefined;
-
-    // Determine the scope under which prereqs should be evaluated.
-    // - host-scoped template: always host scope (env query ignored).
-    // - environment-scoped template: env query required.
-    // - any-scoped template: env query optional; presence picks the scope.
-    let scope: { kind: 'host' } | { kind: 'environment'; environmentId: string };
-    if (template.scope === 'host') {
-      scope = { kind: 'host' };
-    } else if (template.scope === 'environment') {
-      if (!environmentId) {
-        return res.status(400).json({
-          success: false,
-          message: 'environmentId query parameter is required for environment-scoped templates',
-          code: 'ENVIRONMENT_ID_REQUIRED',
-        });
-      }
-      scope = { kind: 'environment', environmentId };
-    } else {
-      // 'any'
-      scope = environmentId
-        ? { kind: 'environment', environmentId }
-        : { kind: 'host' };
-    }
-
-    try {
-      const result = await evaluatePrerequisitesForTemplateVersion(
-        prisma,
-        template.currentVersionId,
-        scope,
-      );
-      return res.json({ success: true, ...result });
-    } catch (err) {
-      return res.status(422).json({
-        success: false,
-        message: err instanceof Error ? err.message : 'Prerequisite evaluation failed',
-        code: 'PREREQUISITES_INVALID',
-      });
-    }
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to evaluate template prerequisites');
+router.get('/:templateId/prerequisites', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
+  const service = getTemplateService();
+  const templateId = String(req.params.templateId);
+  const template = await service.getTemplate(templateId);
+  if (!template) {
+    throw new NotFoundError(ErrorCode.STACK_TEMPLATE_NOT_FOUND, 'Template not found', {
+      resource: { type: 'stackTemplate', id: templateId },
+      action: 'Check the template ID or refresh the templates list.',
+    });
   }
-});
+  if (!template.currentVersionId || !template.currentVersion) {
+    throw new ValidationError(
+      ErrorCode.STACK_TEMPLATE_NOT_PUBLISHED,
+      'Template has no published version',
+      {
+        resource: { type: 'stackTemplate', id: templateId, name: template.name },
+        action: 'Publish a draft version of this template first.',
+      },
+    );
+  }
+
+  const envQuery = req.query.environmentId;
+  const environmentId =
+    typeof envQuery === 'string' && envQuery.length > 0 ? envQuery : undefined;
+
+  // Determine the scope under which prereqs should be evaluated.
+  // - host-scoped template: always host scope (env query ignored).
+  // - environment-scoped template: env query required.
+  // - any-scoped template: env query optional; presence picks the scope.
+  let scope: { kind: 'host' } | { kind: 'environment'; environmentId: string };
+  if (template.scope === 'host') {
+    scope = { kind: 'host' };
+  } else if (template.scope === 'environment') {
+    if (!environmentId) {
+      throw new ValidationError(
+        ErrorCode.STACK_ENVIRONMENT_ID_REQUIRED,
+        'environmentId query parameter is required for environment-scoped templates',
+        { action: 'Pass an environmentId query parameter.' },
+      );
+    }
+    scope = { kind: 'environment', environmentId };
+  } else {
+    // 'any'
+    scope = environmentId
+      ? { kind: 'environment', environmentId }
+      : { kind: 'host' };
+  }
+
+  // Prerequisite-authoring errors are a distinct 422 zone (neither a bad
+  // request shape nor a state conflict) — kept as a locally-built response
+  // rather than the 4xx taxonomy, which has no 422 member.
+  try {
+    const result = await evaluatePrerequisitesForTemplateVersion(
+      prisma,
+      template.currentVersionId,
+      scope,
+    );
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    return res.status(422).json({
+      success: false,
+      message: err instanceof Error ? err.message : 'Prerequisite evaluation failed',
+      code: 'PREREQUISITES_INVALID',
+    });
+  }
+}));
 
 // POST /:templateId/instantiate — Create stack from template
-router.post('/:templateId/instantiate', requirePermission(Permission.StacksWrite), async (req, res) => {
-  try {
-    const parsed = instantiateTemplateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
-    }
-
-    const service = getTemplateService();
-    const stack = await service.createStackFromTemplate(
-      {
-        templateId: String(req.params.templateId),
-        ...parsed.data,
-      },
-      (req as { user?: { id?: string } }).user?.id
-    );
-
-    logger.info(
-      { templateId: req.params.templateId, stackId: stack.id, stackName: stack.name },
-      'Stack created from template'
-    );
-    res.status(201).json({ success: true, data: stack });
-  } catch (error) {
-    handleTemplateError(error, res, 'Failed to create stack from template');
+router.post('/:templateId/instantiate', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const parsed = instantiateTemplateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ success: false, message: 'Validation failed', issues: parsed.error.issues });
   }
-});
+
+  const service = getTemplateService();
+  const stack = await service.createStackFromTemplate(
+    {
+      templateId: String(req.params.templateId),
+      ...parsed.data,
+    },
+    (req as { user?: { id?: string } }).user?.id
+  );
+
+  logger.info(
+    { templateId: req.params.templateId, stackId: stack.id, stackName: stack.name },
+    'Stack created from template'
+  );
+  res.status(201).json({ success: true, data: stack });
+}));
 
 export default router;

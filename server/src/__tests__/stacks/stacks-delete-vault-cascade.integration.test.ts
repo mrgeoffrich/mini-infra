@@ -110,6 +110,7 @@ vi.mock('../../lib/prisma', () => ({
 }));
 
 import stacksRouter from '../../routes/stacks/stacks-crud-routes';
+import { errorHandler } from '../../lib/error-handler';
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,9 @@ function makeApp(): express.Application {
   const app = express();
   app.use(express.json());
   app.use('/api/stacks', stacksRouter);
+  // Real central error middleware — the route now throws taxonomy errors
+  // instead of writing its own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -251,7 +255,7 @@ describe('DELETE /api/stacks/:stackId — Vault cascade', () => {
     mockDockerClient.listContainers.mockResolvedValue([{ Id: 'ctr-1' }]);
     const res = await supertest(makeApp()).delete(`/api/stacks/${stackId}`);
     expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('STACK_HAS_ACTIVE_CONTAINERS');
   });
 
   it('F. Vault cascade failure is non-fatal — stack row still removed', async () => {
@@ -287,7 +291,7 @@ describe('DELETE /api/stacks/:stackId — Vault cascade', () => {
     const res = await supertest(makeApp()).delete(`/api/stacks/${stackId}`);
 
     expect(res.status).toBe(400);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('STACK_HAS_ACTIVE_CONTAINERS');
     expect(res.body.message).toMatch(/labelled with this stack ID|containers/i);
     // The stack row must still exist — silent partial delete was the bug.
     const still = await testPrisma.stack.findUnique({ where: { id: stackId } });

@@ -96,6 +96,26 @@ function resourceTitle(resource: ErrorResource | undefined, status: number): str
 const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.POSTGRES_BACKUP_CONFIG_EXISTS]: "Backup already configured",
   [ErrorCode.POSTGRES_DB_CONFIG_EXISTS]: "Database already configured",
+
+  // Stacks / applications / deployments (Phase 3) — every one of these is a
+  // 409/400 whose resource-type-derived fallback (`resourceTitle()` above,
+  // e.g. "Stack already exists" for any 409 on a `stack` resource) would be
+  // actively misleading for a lock/state conflict rather than a duplicate,
+  // or a 401 with no verb-phrase fallback at all.
+  [ErrorCode.STACK_OPERATION_IN_PROGRESS]: "Operation in progress",
+  [ErrorCode.STACK_PREREQUISITES_NOT_MET]: "Prerequisites not met",
+  [ErrorCode.STACK_POOL_MAX_INSTANCES]: "Pool at capacity",
+  [ErrorCode.STACK_POOL_STACK_IN_ERROR]: "Stack in error state",
+  [ErrorCode.STACK_JOB_POOL_STACK_IN_ERROR]: "Stack in error state",
+  [ErrorCode.STACK_TEMPLATE_HAS_DEPLOYED_STACK]: "Template still in use",
+  [ErrorCode.STACK_NOT_DEPLOYED]: "Stack not deployed",
+  [ErrorCode.STACK_HAS_ACTIVE_CONTAINERS]: "Stack has active containers",
+  [ErrorCode.STACK_DOCKER_UNREACHABLE]: "Docker unreachable",
+  [ErrorCode.STACK_TEMPLATE_NOT_PUBLISHED]: "Template not published",
+  [ErrorCode.STACK_TEMPLATE_ARCHIVED]: "Template archived",
+  [ErrorCode.STACK_TEMPLATE_SYSTEM_IMMUTABLE]: "System template",
+  [ErrorCode.STACK_POOL_TOKEN_INVALID]: "Invalid pool token",
+  [ErrorCode.STACK_POOL_AUTH_REQUIRED]: "Authentication required",
 };
 
 function statusClassFallback(status: number): string {

@@ -8,7 +8,7 @@ import { createResourceReconciler } from '../../services/stacks/resource-reconci
 import { findEmptyStackParameters } from '../../services/stacks/parameter-validation';
 import { checkStackConfigurationRequirements } from '../../services/stacks/stack-config-requirements';
 import type { StackValidationResult, StackValidationWarning, StackNetwork } from '@mini-infra/types';
-import { DEFAULT_STACK_NETWORK_NAME } from '../../services/stacks/utils';
+import { DEFAULT_STACK_NETWORK_NAME, assertStackFound } from '../../services/stacks/utils';
 import { Permission } from '@mini-infra/types';
 
 const router = Router();
@@ -19,13 +19,10 @@ router.get(
   requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
     const stackId = String(req.params.stackId);
-    const exists = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { id: true },
-    });
-    if (!exists) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    assertStackFound(
+      await prisma.stack.findUnique({ where: { id: stackId }, select: { id: true } }),
+      stackId,
+    );
 
     const missingConfig = await checkStackConfigurationRequirements(prisma, stackId);
     if (missingConfig) {
@@ -52,18 +49,19 @@ router.get(
   '/:stackId/validate',
   requirePermission(Permission.StacksRead),
   asyncHandler(async (req, res) => {
-    const stack = await prisma.stack.findUnique({
-      where: { id: String(req.params.stackId) },
-      select: {
-        parameters: true,
-        parameterValues: true,
-        networks: true,
-        services: { select: { serviceName: true, serviceType: true, containerConfig: true } },
-      },
-    });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stackId = String(req.params.stackId);
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: {
+          parameters: true,
+          parameterValues: true,
+          networks: true,
+          services: { select: { serviceName: true, serviceType: true, containerConfig: true } },
+        },
+      }),
+      stackId,
+    );
 
     const errors = findEmptyStackParameters(stack.parameters, stack.parameterValues);
     const warnings: StackValidationWarning[] = [];

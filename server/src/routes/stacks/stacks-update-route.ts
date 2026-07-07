@@ -17,7 +17,9 @@ import {
   formatPlanStep,
   formatServiceStep,
 } from '../../services/stacks/stack-event-log-formatter';
-import { Permission } from '@mini-infra/types';
+import { ErrorCode, Permission } from '@mini-infra/types';
+import { ConflictError, ValidationError } from '../../lib/errors';
+import { assertStackFound } from '../../services/stacks/utils';
 
 const logger = getLogger("stacks", "stacks-update-route");
 const router = Router();
@@ -30,24 +32,28 @@ router.post(
     const stackId = String(req.params.stackId);
 
     if (stackOperationLock.has(stackId)) {
-      return res.status(409).json({
-        success: false,
-        message: 'Stack operation already in progress',
+      throw new ConflictError(ErrorCode.STACK_OPERATION_IN_PROGRESS, 'Stack operation already in progress', {
+        resource: { type: 'stack', id: stackId },
+        action: 'Wait for the in-flight operation to finish before retrying.',
       });
     }
 
-    const stack = await prisma.stack.findUnique({
-      where: { id: stackId },
-      select: { id: true, name: true, status: true },
-    });
-    if (!stack) {
-      return res.status(404).json({ success: false, message: 'Stack not found' });
-    }
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: { id: true, name: true, status: true },
+      }),
+      stackId,
+    );
     if (stack.status !== 'synced' && stack.status !== 'drifted') {
-      return res.status(400).json({
-        success: false,
-        message: `Stack must be deployed to update (current status: ${stack.status})`,
-      });
+      throw new ValidationError(
+        ErrorCode.STACK_NOT_DEPLOYED,
+        `Stack must be deployed to update (current status: ${stack.status})`,
+        {
+          resource: { type: 'stack', id: stackId, name: stack.name },
+          action: 'Apply the stack first, then retry the update.',
+        },
+      );
     }
 
     stackOperationLock.tryAcquire(stackId);

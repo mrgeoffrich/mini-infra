@@ -26,11 +26,15 @@ vi.mock('../middleware/auth', () => ({
 vi.mock('../lib/prisma', () => ({ default: testPrisma }));
 
 import stackTemplateRouter from '../routes/stack-templates';
+import { errorHandler } from '../lib/error-handler';
 
 function buildApp() {
   const app = express();
   app.use(express.json());
   app.use('/api/stack-templates', stackTemplateRouter);
+  // Real central error middleware — the route now throws taxonomy errors
+  // instead of writing its own response bodies.
+  app.use(errorHandler);
   return app;
 }
 
@@ -73,7 +77,7 @@ describe('DELETE /api/stack-templates/:templateId — deployed-stack guard', () 
     const res = await supertest(buildApp()).delete(`/api/stack-templates/${templateId}`);
 
     expect(res.status).toBe(409);
-    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('STACK_TEMPLATE_HAS_DEPLOYED_STACK');
     expect(res.body.message).toMatch(/still deployed/i);
 
     const stillThere = await testPrisma.stackTemplate.findUnique({ where: { id: templateId } });

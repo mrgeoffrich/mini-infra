@@ -128,8 +128,11 @@ export default function StackTemplateDetailPage() {
       if (!templateId) return;
       try {
         await saveDraftMutation.mutateAsync({ templateId, request: input });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to save draft");
+      } catch {
+        // Swallow: the global MutationCache.onError (query-client.ts)
+        // already shows an actionable toast for this mutation's real
+        // ApiRequestError. We only need to catch here so mutateAsync's
+        // rejection doesn't become an unhandled promise rejection.
       }
     },
     [templateId, saveDraftMutation],
@@ -201,8 +204,10 @@ export default function StackTemplateDetailPage() {
       setPublishNotes("");
       setSelectedVersionId(null);
       toast.success("Draft published successfully");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to publish draft");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast — keeping the dialog open so the operator can
+      // retry (see handleSaveDraft above).
     }
   };
 
@@ -212,8 +217,9 @@ export default function StackTemplateDetailPage() {
       await discardDraftMutation.mutateAsync(templateId);
       setConfirmDiscard(false);
       toast.success("Draft discarded");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to discard draft");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast.
     }
   };
 

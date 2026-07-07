@@ -13,6 +13,7 @@ import type {
   StackResponse,
 } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
+import { toastApiError } from "@/lib/errors";
 
 // ====================
 // Application API Functions
@@ -264,12 +265,10 @@ export function useCreateApplication() {
           // Template was created + instantiated successfully, but the
           // apply trigger itself failed (network blip, server-side
           // validation, etc.). The stack is durable — toast the partial
-          // success and let the operator retry from the applications list.
-          toast.error(
-            err instanceof Error
-              ? `Application created but deployment failed: ${err.message}`
-              : "Application created but deployment failed. You can retry from the applications list.",
-          );
+          // success (via the shared presentation layer, so the real
+          // code/resource/action still renders) and let the operator retry
+          // from the applications list.
+          toastApiError(err, { title: "Application created but deployment failed" });
           return result; // Return success for the create
         }
       }
@@ -287,9 +286,8 @@ export function useCreateApplication() {
         queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       }
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to create application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError (query-client.ts)
+    // toasts the real ApiRequestError (code/resource/action) by default.
   });
 }
 
@@ -323,9 +321,7 @@ export function useUpdateApplication() {
       // stack's next apply, but this keeps the declared-vs-live delta current.
       queryClient.invalidateQueries({ queryKey: queryKeys.docker.managedNetworksAll });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to update application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -342,9 +338,7 @@ export function useDeleteApplication() {
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to delete application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -380,9 +374,7 @@ export function useDeployApplication() {
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to deploy application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -391,9 +383,7 @@ export function useStopApplication() {
     mutationFn: async (stackId: string) => {
       await destroyStack(stackId);
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to stop application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -410,9 +400,7 @@ export function useRedeployApplication() {
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to update application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 
@@ -443,9 +431,7 @@ export function useDeployApplicationUpdate() {
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
-    onError: (error: Error) => {
-      toast.error(`Failed to update application: ${error.message}`);
-    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 

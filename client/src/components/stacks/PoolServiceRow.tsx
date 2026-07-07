@@ -140,11 +140,9 @@ export function PoolServiceRow({
         onSuccess: () => {
           toast.success(`Stopped ${target.instanceId}`);
         },
-        onError: (err) => {
-          toast.error(
-            `Failed to stop ${target.instanceId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        },
+        // No onError — the global MutationCache.onError (query-client.ts)
+        // already shows an actionable toast for this mutation's real
+        // ApiRequestError.
       },
     );
   };

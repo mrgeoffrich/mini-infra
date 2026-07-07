@@ -68,8 +68,9 @@ export function TemplateMetadataCard({
       });
       toast.success("Template metadata saved");
       form.reset(values);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save template metadata");
+    } catch {
+      // Swallow: the global MutationCache.onError (query-client.ts)
+      // already shows an actionable toast.
     }
   }
 
