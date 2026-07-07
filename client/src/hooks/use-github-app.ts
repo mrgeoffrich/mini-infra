@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiRoute, queryKeys } from "@mini-infra/types";
+import { ApiRoute, ErrorCode, queryKeys } from "@mini-infra/types";
 import type {
   GitHubAppSettingResponse,
   GitHubAppValidationResponse,
@@ -14,6 +14,20 @@ import { apiFetch, ApiRequestError } from "@/lib/api-client";
 
 function isAuthError(error: unknown): boolean {
   return error instanceof ApiRequestError && (error.isAuth || error.status === 403);
+}
+
+/** True when the GitHub App itself isn't configured yet — not worth retrying. */
+function isNotConfiguredError(error: unknown): boolean {
+  return error instanceof ApiRequestError && error.code === ErrorCode.GITHUB_APP_NOT_CONFIGURED;
+}
+
+/** True when the specific requested resource (package/repo) doesn't exist — not worth retrying. */
+function isResourceNotFoundError(error: unknown): boolean {
+  return (
+    error instanceof ApiRequestError &&
+    (error.code === ErrorCode.GITHUB_APP_PACKAGE_NOT_FOUND ||
+      error.code === ErrorCode.GITHUB_APP_REPOSITORY_NOT_FOUND)
+  );
 }
 
 // Hook for retrieving current GitHub App settings
@@ -52,6 +66,9 @@ export function useGitHubAppSetupComplete() {
       queryClient.invalidateQueries({ queryKey: queryKeys.githubAppSettings.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.connectivity.status });
     },
+    // SetupCompletion renders the failure inline (isError / error.message) —
+    // opt out of the global mutation-error toast so it isn't shown twice.
+    meta: { skipErrorToast: true },
   });
 }
 
@@ -116,10 +133,7 @@ export function useGitHubAppPackages(enabled?: boolean) {
     enabled: enabled === undefined ? true : enabled,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (isAuthError(error)) {
-        return false;
-      }
-      if (error instanceof Error && error.message.toLowerCase().includes("not configured")) {
+      if (isAuthError(error) || isNotConfiguredError(error)) {
         return false;
       }
       return failureCount < 3;
@@ -142,10 +156,7 @@ export function useGitHubAppPackageVersions(
     enabled: (enabled === undefined ? true : enabled) && !!packageName,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (isAuthError(error)) {
-        return false;
-      }
-      if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+      if (isAuthError(error) || isResourceNotFoundError(error)) {
         return false;
       }
       return failureCount < 3;
@@ -164,10 +175,7 @@ export function useGitHubAppRepositories(enabled?: boolean) {
     enabled: enabled === undefined ? true : enabled,
     staleTime: 60000,
     retry: (failureCount, error) => {
-      if (isAuthError(error)) {
-        return false;
-      }
-      if (error instanceof Error && error.message.toLowerCase().includes("not configured")) {
+      if (isAuthError(error) || isNotConfiguredError(error)) {
         return false;
       }
       return failureCount < 3;
@@ -191,10 +199,7 @@ export function useGitHubAppActionRuns(
     enabled: (enabled === undefined ? true : enabled) && !!owner && !!repo,
     staleTime: 30000,
     retry: (failureCount, error) => {
-      if (isAuthError(error)) {
-        return false;
-      }
-      if (error instanceof Error && error.message.toLowerCase().includes("not found")) {
+      if (isAuthError(error) || isResourceNotFoundError(error)) {
         return false;
       }
       return failureCount < 3;

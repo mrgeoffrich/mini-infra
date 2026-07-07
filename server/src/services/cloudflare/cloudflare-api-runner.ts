@@ -3,6 +3,7 @@ import { CircuitBreaker } from "../circuit-breaker";
 import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
 import { CustomError } from "../../lib/error-handler";
+import { InternalError } from "../../lib/errors";
 
 export const CLOUDFLARE_TIMEOUT_MS = 10_000;
 
@@ -132,7 +133,10 @@ export class CloudflareApiRunner {
     const { label, logContext = {}, requireAccountId, timeoutMs } = ctx;
 
     if (this.circuitBreaker.isOpen()) {
-      throw new Error(`Circuit breaker is open, cannot execute ${label}`);
+      // Fail-fast defense against a repeatedly-failing upstream — an
+      // operational safeguard, not a request the caller can fix by retrying
+      // immediately.
+      throw new InternalError(`Circuit breaker is open, cannot execute ${label}`);
     }
 
     try {

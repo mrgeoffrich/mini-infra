@@ -43,9 +43,9 @@ export function AgentAccessSection({
           setAgentTokenInput("");
           setShowAgentTokenInput(false);
         },
-        onError: (error) => {
-          toast.error(`Failed to save token: ${error.message}`);
-        },
+        // No onError — the global MutationCache.onError
+        // (client/src/lib/query-client.ts) already shows an actionable
+        // toast via toastApiError() for any mutation failure.
       },
     );
   };
@@ -55,9 +55,7 @@ export function AgentAccessSection({
       onSuccess: () => {
         toast.success("Assistant GitHub token removed");
       },
-      onError: (error) => {
-        toast.error(`Failed to revoke: ${error.message}`);
-      },
+      // No onError — handled globally, see above.
     });
   };
 

@@ -18,9 +18,9 @@ import {
   IconPlayerPlay,
   IconPlugConnected,
 } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { ApiRoute } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
+import { toastApiError } from "@/lib/errors";
 
 export function SetupCard() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -53,9 +53,13 @@ export function SetupCard() {
         form.submit();
       }
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start setup";
-      toast.error(message);
+      // Manual apiFetch call, not a useMutation — the global
+      // MutationCache.onError (client/src/lib/query-client.ts) never sees
+      // it, so this is the one place responsible for surfacing the error.
+      // Use the shared presentation layer instead of raw error.message so
+      // the toast benefits from the same code/resource-aware titling as
+      // every mutation-driven toast.
+      toastApiError(error, { title: "Failed to start setup" });
       setIsRedirecting(false);
     }
   };

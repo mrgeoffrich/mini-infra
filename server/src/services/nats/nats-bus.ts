@@ -35,6 +35,7 @@ import {
 } from "nats";
 import { z, type ZodType } from "zod";
 import { getLogger } from "../../lib/logger-factory";
+import { InternalError } from "../../lib/errors";
 import { getVaultKVService } from "../vault/vault-kv-service";
 import {
   FIELD_SERVER_BUS_CREDS,
@@ -860,7 +861,10 @@ export class NatsBus {
 
   private requireConnected(): NatsConnection {
     if (this.state !== "connected" || !this.nc) {
-      throw new Error(`NatsBus not connected (state=${this.state})`);
+      // Internal chokepoint invariant — callers are expected to check
+      // `ready()`/health before publish/request/subscribe; this is
+      // defense-in-depth, not a condition a user can act on directly.
+      throw new InternalError(`NatsBus not connected (state=${this.state})`);
     }
     return this.nc;
   }
@@ -1016,7 +1020,9 @@ export class NatsBus {
       // wrong field) instead of the boot-time-friendly fallback message.
       // Without this you can't tell apart "applyConfig hasn't run yet" from
       // "applyConfig wrote the blob but Vault auth has rotated underneath us".
-      throw new Error(
+      // Caught by the reconnect loop's own try/catch — never reaches an HTTP
+      // caller — so this is a genuine internal invariant, not user-actionable.
+      throw new InternalError(
         `server bus creds not usable at ${NATS_SERVER_BUS_CREDS_KV_PATH}: ` +
           (readError ?? "KV read returned null or missing field"),
       );
@@ -1118,7 +1124,9 @@ function validateOrThrow<T>(
       .slice(0, 3)
       .map((i: z.ZodIssue) => `${i.path.join(".")}: ${i.message}`)
       .join("; ");
-    throw new Error(`nats payload validation failed [${subject} ${kind}]: ${issues}`);
+    // Schema/wire-contract violation between two of our own processes — an
+    // internal invariant, not a client-facing request that can be retried.
+    throw new InternalError(`nats payload validation failed [${subject} ${kind}]: ${issues}`);
   }
   return result.data;
 }

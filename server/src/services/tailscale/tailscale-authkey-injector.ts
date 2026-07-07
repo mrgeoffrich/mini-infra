@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import type { StackContainerConfig } from "@mini-infra/types";
+import { InternalError } from "../../lib/errors";
 import { TailscaleService } from "./tailscale-service";
 import { TailscaleAuthkeyMinter } from "./tailscale-authkey-minter";
 
@@ -49,7 +50,10 @@ export class TailscaleAuthkeyInjector {
     // exactly one (`TS_AUTHKEY`), but minting per key would waste tailnet keys.
     const authkey = await this.minter.mintAuthkey();
     if (!authkey.key) {
-      throw new Error(
+      // The minter is expected to throw on a real failure (missing config,
+      // API error) — an empty key on a "successful" mint is an unexpected
+      // shape from the minter, not something the apply caller can fix.
+      throw new InternalError(
         "Tailscale authkey mint returned an empty key — check the tailscale connected service configuration",
       );
     }

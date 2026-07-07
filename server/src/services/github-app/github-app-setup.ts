@@ -1,4 +1,11 @@
-import { GITHUB_API_BASE, SETTING_KEYS, GitHubAppContext } from "./github-app-constants";
+import { ErrorCode } from "@mini-infra/types";
+import { ValidationError } from "../../lib/errors";
+import {
+  GITHUB_API_BASE,
+  SETTING_KEYS,
+  GitHubAppContext,
+  githubApiFailure,
+} from "./github-app-constants";
 import { GitHubAppAuth } from "./github-app-auth";
 
 /**
@@ -64,8 +71,16 @@ export class GitHubAppSetup {
 
     if (!conversionResponse.ok) {
       const errorBody = await conversionResponse.text();
-      throw new Error(
+      // The manifest `code` is single-use and short-lived — a conversion
+      // failure almost always means it was already used, expired, or the
+      // manifest flow was restarted; user-actionable (redo the flow).
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_MANIFEST_CONVERSION_FAILED,
         `GitHub App manifest conversion failed (${conversionResponse.status}): ${errorBody}`,
+        {
+          resource: { type: "githubAppManifest" },
+          action: "Restart the GitHub App setup flow.",
+        },
       );
     }
 
@@ -169,7 +184,14 @@ export class GitHubAppSetup {
     const privateKey = await this.ctx.getSetting(SETTING_KEYS.PRIVATE_KEY);
 
     if (!appId || !privateKey) {
-      throw new Error("GitHub App not configured - missing app ID or private key");
+      throw new ValidationError(
+        ErrorCode.GITHUB_APP_NOT_CONFIGURED,
+        "GitHub App not configured - missing app ID or private key",
+        {
+          resource: { type: "githubApp" },
+          action: "Configure the GitHub App in Settings > GitHub.",
+        },
+      );
     }
 
     const appJwt = this.auth.generateJWT(appId, privateKey);
@@ -186,7 +208,7 @@ export class GitHubAppSetup {
     );
 
     if (!installationsResponse.ok) {
-      throw new Error(`Failed to fetch installations (${installationsResponse.status})`);
+      throw githubApiFailure("fetch installations", installationsResponse);
     }
 
     const installations = await installationsResponse.json();

@@ -189,6 +189,24 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.SELF_UPDATE_IN_PROGRESS]: "Update already in progress",
   [ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN]: "Self-update unavailable",
   [ErrorCode.MONITORING_SERVICE_UNAVAILABLE]: "Monitoring unavailable",
+
+  // Phase 11 — integrations (nats/github-app/cloudflare/tailscale enforcement
+  // sweep). All curated here because the generic 400 "invalid" / 404 "not
+  // found" status-class fallback either misdescribes the failure (these
+  // aren't malformed requests, they're missing config or an expired
+  // credential) or renders the resource-type label with the wrong
+  // capitalization ("Github" instead of "GitHub").
+  [ErrorCode.GITHUB_APP_NOT_CONFIGURED]: "GitHub App not configured",
+  [ErrorCode.GITHUB_APP_NOT_INSTALLED]: "GitHub App not installed",
+  [ErrorCode.GITHUB_APP_OAUTH_NOT_CONFIGURED]: "GitHub OAuth not configured",
+  [ErrorCode.GITHUB_APP_OAUTH_EXCHANGE_FAILED]: "GitHub authorization failed",
+  [ErrorCode.GITHUB_APP_OAUTH_REAUTHORIZE_REQUIRED]: "Re-authorization required",
+  [ErrorCode.GITHUB_APP_MANIFEST_CONVERSION_FAILED]: "GitHub App setup failed",
+  [ErrorCode.GITHUB_APP_PACKAGE_NOT_FOUND]: "Package not found",
+  [ErrorCode.GITHUB_APP_REPOSITORY_NOT_FOUND]: "Repository not found",
+  [ErrorCode.TAILSCALE_CLIENT_ID_INVALID]: "Invalid OAuth client ID",
+  [ErrorCode.TAILSCALE_CLIENT_SECRET_INVALID]: "Invalid OAuth client secret",
+  [ErrorCode.TAILSCALE_TAG_INVALID]: "Invalid tag format",
 };
 
 function statusClassFallback(status: number): string {

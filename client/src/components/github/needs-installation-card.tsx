@@ -88,9 +88,9 @@ export function NeedsInstallationCard({
                   );
                 }
               },
-              onError: (error) => {
-                toast.error(`Failed to check: ${error.message}`);
-              },
+              // No onError here — the global MutationCache.onError
+              // (client/src/lib/query-client.ts) already shows an actionable
+              // toast via toastApiError() for any mutation failure.
             })
           }
           disabled={refreshInstallation.isPending}
@@ -124,7 +124,7 @@ export function NeedsInstallationCard({
                 onClick={() =>
                   deleteApp.mutate(undefined, {
                     onSuccess: () => toast.success("GitHub App removed"),
-                    onError: (e) => toast.error(`Failed: ${e.message}`),
+                    // No onError — handled globally, see above.
                   })
                 }
               >

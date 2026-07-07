@@ -1,3 +1,4 @@
+import { InternalError } from "../../lib/errors";
 import { TIMEOUT_MS } from "./github-app-constants";
 
 /**
@@ -28,9 +29,9 @@ export async function fetchGitHub(
     return response;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error(`GitHub API request timeout after ${TIMEOUT_MS}ms`, {
-        cause: error,
-      });
+      // Low-level fetch-timeout plumbing shared by every GitHub App call site
+      // — an unexpected external-SDK failure, not itself user-actionable.
+      throw new InternalError(`GitHub API request timeout after ${TIMEOUT_MS}ms`);
     }
     throw error;
   } finally {
