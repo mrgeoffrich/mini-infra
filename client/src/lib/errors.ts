@@ -122,6 +122,20 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.ENVIRONMENT_NETWORK_TYPE_CONFLICT]: "Network type already in use",
   [ErrorCode.ENVIRONMENT_HAPROXY_MIGRATION_IN_PROGRESS]: "Migration already in progress",
   [ErrorCode.DOCKER_NETWORK_IN_USE]: "Network still in use",
+  // HAProxy (Phase 8) — curated over the auto-generated `resourceTitle()`
+  // fallback mainly to keep "HAProxy" capitalized correctly (the generic
+  // path would render the `haproxyFrontend` resource type as "Haproxy
+  // Frontend").
+  [ErrorCode.HAPROXY_FRONTEND_NOT_FOUND]: "Frontend not found",
+  [ErrorCode.HAPROXY_ROUTE_NOT_FOUND]: "Route not found",
+  [ErrorCode.HAPROXY_BACKEND_NOT_FOUND]: "Backend not found",
+  [ErrorCode.HAPROXY_SERVER_NOT_FOUND]: "Server not found",
+  [ErrorCode.HAPROXY_HOSTNAME_IN_USE]: "Hostname already in use",
+  [ErrorCode.HAPROXY_CERTIFICATE_NOT_FOUND]: "Certificate not found",
+  [ErrorCode.HAPROXY_CERTIFICATE_NOT_READY]: "Certificate not ready",
+  [ErrorCode.HAPROXY_CONTAINER_UNAVAILABLE]: "HAProxy unavailable",
+  [ErrorCode.HAPROXY_SETUP_IN_PROGRESS]: "Setup already in progress",
+  [ErrorCode.HAPROXY_DATAPLANE_VERSION_CONFLICT]: "Configuration changed",
 };
 
 function statusClassFallback(status: number): string {

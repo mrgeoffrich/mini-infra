@@ -223,6 +223,61 @@ describe("getUserFacingError", () => {
 
     expect(result.title).toBe("Account locked");
     expect(result.description).toBe("Account locked. Try again in 42 minute(s).");
+  describe("HAProxy domain (Phase 8)", () => {
+    it("turns a missing-frontend 404 (curated CODE_TITLES entry) into an actionable title/description/action", () => {
+      // Mirrors PUT/DELETE /api/haproxy/manual-frontends/:frontendName
+      // acting on a frontend that doesn't exist (the domain's canonical
+      // not-found action).
+      const body = {
+        error: ErrorCode.HAPROXY_FRONTEND_NOT_FOUND,
+        message: "Frontend not found: manual_missing_abc123",
+        resource: { type: "haproxyFrontend", name: "manual_missing_abc123" },
+        action: "Refresh the page — the frontend may have already been removed.",
+      };
+      const err = new ApiRequestError(404, ErrorCode.HAPROXY_FRONTEND_NOT_FOUND, body.message, body);
+
+      const result = getUserFacingError(err);
+
+      expect(result.title).toBe("Frontend not found");
+      expect(result.description).toBe("Frontend not found: manual_missing_abc123");
+      expect(result.action).toBe(body.action);
+    });
+
+    it("turns a duplicate-hostname 409 (curated CODE_TITLES entry) into an actionable title/description", () => {
+      // Mirrors PATCH /api/haproxy/frontends/:frontendName/routes/:routeId
+      // colliding with an existing route's hostname on the same shared
+      // frontend (the domain's canonical conflict action).
+      const body = {
+        error: ErrorCode.HAPROXY_HOSTNAME_IN_USE,
+        message: "A route with this hostname already exists on this frontend",
+        resource: { type: "haproxyRoute", name: "existing.example.com" },
+        action: "Choose a different hostname.",
+      };
+      const err = new ApiRequestError(409, ErrorCode.HAPROXY_HOSTNAME_IN_USE, body.message, body);
+
+      const result = getUserFacingError(err);
+
+      expect(result.title).toBe("Hostname already in use");
+      expect(result.description).toBe(body.message);
+      expect(result.action).toBe("Choose a different hostname.");
+    });
+
+    it("sharpens the title from body.resource for a HAProxy code with no curated CODE_TITLES entry", () => {
+      // HAPROXY_ROUTE_FRONTEND_MISMATCH intentionally has no curated title —
+      // the resourceTitle() fallback (§4.4) should still produce a sensible
+      // "HAProxy Route invalid" from the 400 status class + resource type.
+      const body = {
+        error: ErrorCode.HAPROXY_ROUTE_FRONTEND_MISMATCH,
+        message: "Route does not belong to this frontend",
+        resource: { type: "haproxyRoute", id: "route-1" },
+      };
+      const err = new ApiRequestError(400, ErrorCode.HAPROXY_ROUTE_FRONTEND_MISMATCH, body.message, body);
+
+      const result = getUserFacingError(err);
+
+      expect(result.title).toBe("Haproxy Route invalid");
+      expect(result.description).toBe("Route does not belong to this frontend");
+    });
   });
 });
 

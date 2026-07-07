@@ -204,9 +204,9 @@ export function useMigrationPreview(
 export function useMigrateHAProxy() {
   return useMutation({
     mutationFn: (environmentId: string) => migrateHAProxy(environmentId),
-    onError: (error: Error) => {
-      toast.error(`Failed to start migration: ${error.message}`);
-    },
+    // Errors are toasted by the global `MutationCache.onError` default
+    // (client/src/lib/query-client.ts) via `toastApiError` — no hand-rolled
+    // onError needed here.
   });
 }
 

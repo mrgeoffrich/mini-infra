@@ -32,40 +32,32 @@ async function fetchEligibleContainers(
   const url = new URL(ApiRoute.haproxy.manualFrontendContainers(), window.location.origin);
   url.searchParams.set("environmentId", environmentId);
 
-  const data = await apiFetch<EligibleContainersResponse>(url.toString(), {
+  // `apiFetch` throws a typed `ApiRequestError` (carrying `.code`/`.status`/
+  // `.body.resource`/`.body.action`) on any non-2xx response — the server
+  // route now always returns `success: true` on a 2xx, so there's no
+  // remaining `{ success: false }`-on-200 case to flatten into a generic Error.
+  return apiFetch<EligibleContainersResponse>(url.toString(), {
     correlationIdPrefix: "manual-haproxy-frontend",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to fetch eligible containers");
-  }
-
-  return data;
 }
 
 async function createManualFrontend(
   request: CreateManualFrontendRequest,
 ): Promise<ManualFrontendResponse> {
-  const data = await apiFetch<ManualFrontendResponse>(ApiRoute.haproxy.manualFrontends(), {
+  return apiFetch<ManualFrontendResponse>(ApiRoute.haproxy.manualFrontends(), {
     method: "POST",
     body: request,
     correlationIdPrefix: "manual-haproxy-frontend",
     unwrap: false,
   });
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to create manual frontend");
-  }
-
-  return data;
 }
 
 async function updateManualFrontend(
   frontendName: string,
   request: UpdateManualFrontendRequest,
 ): Promise<ManualFrontendResponse> {
-  const data = await apiFetch<ManualFrontendResponse>(
+  return apiFetch<ManualFrontendResponse>(
     ApiRoute.haproxy.manualFrontend(frontendName),
     {
       method: "PUT",
@@ -74,12 +66,6 @@ async function updateManualFrontend(
       unwrap: false,
     },
   );
-
-  if (!data.success) {
-    throw new Error(data.message || "Failed to update manual frontend");
-  }
-
-  return data;
 }
 
 async function deleteManualFrontend(
@@ -160,11 +146,9 @@ export function useCreateManualFrontend() {
         description: data.message || "Manual frontend created successfully",
       });
     },
-    onError: (error: Error) => {
-      toast.error("Failed to create frontend", {
-        description: error.message || "Failed to create manual frontend",
-      });
-    },
+    // Errors are toasted by the global `MutationCache.onError` default
+    // (client/src/lib/query-client.ts) via `toastApiError` — no hand-rolled
+    // onError needed here.
   });
 }
 
@@ -193,11 +177,7 @@ export function useUpdateManualFrontend() {
         description: data.message || "Manual frontend updated successfully",
       });
     },
-    onError: (error: Error) => {
-      toast.error("Failed to update frontend", {
-        description: error.message || "Failed to update manual frontend",
-      });
-    },
+    // Errors are toasted by the global `MutationCache.onError` default.
   });
 }
 
@@ -219,12 +199,7 @@ export function useDeleteManualFrontend() {
         description: `Manual frontend "${frontendName}" has been deleted successfully.`,
       });
     },
-    onError: (error: Error, frontendName) => {
-      // Show error toast
-      toast.error("Failed to delete frontend", {
-        description: error.message || `Could not delete manual frontend "${frontendName}".`,
-      });
-    },
+    // Errors are toasted by the global `MutationCache.onError` default.
   });
 }
 
