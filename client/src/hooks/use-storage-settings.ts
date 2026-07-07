@@ -787,6 +787,12 @@ export function useTestStorageLocationAccess(provider: StorageProviderId) {
       }
       return postTestGoogleDriveLocation(locationId);
     },
+    // Both callers (container-list.tsx's per-row test, GoogleDriveFolderInput's
+    // validate action) render this mutation's errors inline themselves (a
+    // tooltip / banner) as well as their own toast — opt out of the global
+    // default to avoid a redundant second toast (mirrors
+    // useForgetStorageProvider above).
+    meta: { skipErrorToast: true },
   });
 }
 

@@ -6,7 +6,6 @@
  */
 
 import { useMutation } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { CreateManualFrontendRequest, StartConnectContainerResponse } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
@@ -37,9 +36,7 @@ async function startConnectContainer(
 export function useStartConnectContainer() {
   return useMutation({
     mutationFn: startConnectContainer,
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
+    // Error toast handled by the global MutationCache.onError.
   });
 }
 

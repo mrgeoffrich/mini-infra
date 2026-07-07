@@ -45,6 +45,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { queryKeys, SystemSettingsInfo } from "@mini-infra/types";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 
 // Docker settings schema
 const dockerSettingsSchema = z.object({
@@ -252,9 +253,9 @@ export default function DockerSettingsPage() {
       }, 5000);
 
     } catch (error) {
-      const errorMessage = (error as Error).message;
+      const errorMessage = getUserFacingError(error).description;
       setValidationState({ isValidating: false, isSuccess: false, error: errorMessage });
-      toast.error(`Failed to validate and save: ${errorMessage}`);
+      toastApiError(error, { title: "Failed to validate and save" });
     }
   };
 

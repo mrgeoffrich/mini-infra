@@ -21,6 +21,7 @@ import {
   useTestStorageLocationAccess,
 } from "@/hooks/use-storage-settings";
 import { toast } from "sonner";
+import { getUserFacingError } from "@/lib/errors";
 import type {
   StorageLocationListProps,
   LocationAccessTest,
@@ -120,8 +121,7 @@ export const StorageLocationList = React.memo(function StorageLocationList({
           });
         }, 10000);
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Access test failed";
+        const errorMessage = getUserFacingError(err).description;
 
         setLocationTests((prev) =>
           new Map(prev).set(locationId, {

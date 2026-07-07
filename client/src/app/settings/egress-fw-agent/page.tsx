@@ -147,7 +147,7 @@ export default function EgressFwAgentSettingsPage() {
         setAutoRemediationEdit(null);
         toast.success("Egress fw-agent settings saved");
       },
-      onError: (err) => toast.error(err.message),
+      // Error toast handled by the global MutationCache.onError.
     });
   };
 

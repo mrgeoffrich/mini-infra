@@ -132,12 +132,9 @@ export const GoogleDriveProviderConfig = React.memo(
         toast.success("Google Drive credentials saved");
         // Reset just the secret so the operator doesn't see their old value.
         form.reset({ clientId: data.clientId, clientSecret: "" });
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to save Drive credentials",
-        );
+      } catch {
+        // Swallow: the global MutationCache.onError already shows an
+        // actionable toast for this mutation's real ApiRequestError.
       }
     };
 
@@ -150,12 +147,9 @@ export const GoogleDriveProviderConfig = React.memo(
       try {
         await disconnect.mutateAsync();
         toast.success("Google Drive disconnected");
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to disconnect Google Drive",
-        );
+      } catch {
+        // Swallow: the global MutationCache.onError already shows an
+        // actionable toast for this mutation's real ApiRequestError.
       }
     };
 

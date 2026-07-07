@@ -24,6 +24,7 @@ import {
   useGoogleDriveProviderConfig,
   useTestStorageLocationAccess,
 } from "@/hooks/use-storage-settings";
+import { getUserFacingError, toastApiError } from "@/lib/errors";
 import { extractGoogleDriveFolderId } from "./folder-id-utils";
 
 export interface GoogleDriveFolderInputProps {
@@ -102,11 +103,10 @@ export const GoogleDriveFolderInput = React.memo(
           toast.error(errorText);
         }
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Unknown error";
+        const message = getUserFacingError(error).description;
         setValidationError(message);
         setInternallyValidated(null);
-        toast.error(`Validation failed: ${message}`);
+        toastApiError(error, { title: "Validation failed" });
       }
     };
 
@@ -200,9 +200,9 @@ function CreateFolderDialog({ disabled, onCreated }: CreateFolderDialogProps) {
       toast.success(`Created folder "${info.displayName}" in your Drive`);
       setName("");
       setOpen(false);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown error";
-      toast.error(`Failed to create folder: ${message}`);
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 

@@ -13,6 +13,7 @@ import {
   IconLoader2,
   IconRefresh,
 } from "@tabler/icons-react";
+import { getUserFacingError } from "@/lib/errors";
 import { useDiagnostics } from "./use-diagnostics";
 import { formatBytes, downloadFromResponse } from "./diagnostics-utils";
 import {
@@ -61,10 +62,14 @@ export default function SystemDiagnosticsPage() {
       const size = await downloadFromResponse(res, `heap-${Date.now()}.heapsnapshot`);
       toast.success(`Heap snapshot downloaded (${formatBytes(size)})`, { id: toastId });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to capture heap snapshot",
-        { id: toastId },
-      );
+      // Direct toast.error (not toastApiError) to keep the `id` link to the
+      // "Capturing..." loading toast above — toastApiError always creates a
+      // fresh toast — while still routing the message through the shared
+      // presentation layer instead of a raw `error.message`.
+      toast.error("Failed to capture heap snapshot", {
+        description: getUserFacingError(error).description,
+        id: toastId,
+      });
     } finally {
       setDownloadingHeap(false);
     }
@@ -86,10 +91,12 @@ export default function SystemDiagnosticsPage() {
       const size = await downloadFromResponse(res, `diagnostic-report-${Date.now()}.json`);
       toast.success(`Diagnostic report downloaded (${formatBytes(size)})`, { id: toastId });
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to generate diagnostic report",
-        { id: toastId },
-      );
+      // See handleDownloadSnapshot above for why this stays a direct
+      // toast.error rather than toastApiError.
+      toast.error("Failed to generate diagnostic report", {
+        description: getUserFacingError(error).description,
+        id: toastId,
+      });
     } finally {
       setDownloadingReport(false);
     }

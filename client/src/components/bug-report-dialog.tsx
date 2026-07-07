@@ -110,13 +110,7 @@ export function BugReportDialog({
         setIsSubmitted(true);
         toast.success("Bug report submitted successfully");
       },
-      onError: (error) => {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Failed to submit bug report",
-        );
-      },
+      // Error toast handled by the global MutationCache.onError.
     });
   };
 

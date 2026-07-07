@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiRoute, queryKeys } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
+import { toastApiError } from "@/lib/errors";
 import type {
   MemoryDiagnostics,
   SmapsTopResponse,
@@ -89,7 +90,7 @@ export function useDiagnostics() {
       });
       setInspectPeek(data);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to peek region");
+      toastApiError(error, { title: "Failed to peek region" });
     } finally {
       setPeekingStart(null);
     }

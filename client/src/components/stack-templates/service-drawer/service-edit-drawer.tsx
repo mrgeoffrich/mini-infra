@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toastApiError } from "@/lib/errors";
 import type { StackServiceDefinition } from "@mini-infra/types";
 import {
   emptyFormValues,
@@ -105,7 +105,7 @@ export function ServiceEditDrawer({
       onSave(definition);
       onOpenChange(false);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Invalid service config");
+      toastApiError(err, { title: "Invalid service config" });
     }
   }
 

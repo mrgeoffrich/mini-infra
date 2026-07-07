@@ -293,8 +293,9 @@ export function ServerModal({ open, onOpenChange, mode, serverId, serverData, in
       reset();
       setTestResult(null);
       onOpenChange(false);
-    } catch (error) {
-      toast.error((error instanceof Error ? error.message : String(error)) || "Failed to save server");
+    } catch {
+      // Swallow: the global MutationCache.onError already shows an
+      // actionable toast for this mutation's real ApiRequestError.
     }
   };
 
