@@ -213,6 +213,13 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.PG_RESOURCE_ALREADY_EXISTS]: "Already exists",
   [ErrorCode.PG_PERMISSION_DENIED]: "Permission denied",
   [ErrorCode.PG_RESOURCE_IN_USE]: "Still in use",
+  // Docker / storage (Phase 11) — the 409s here are state-conflict-shaped
+  // ("operator needs to configure/connect something"), not literal
+  // duplicates, so the generic "Already exists" fallback would mislead.
+  [ErrorCode.DOCKER_HOST_IP_NOT_CONFIGURED]: "Docker host IP not configured",
+  [ErrorCode.STORAGE_GOOGLE_DRIVE_NOT_CONNECTED]: "Google Drive not connected",
+  [ErrorCode.DOCKER_DEVICE_SPEC_INVALID]: "Invalid device spec",
+  [ErrorCode.DOCKER_HOST_IP_INVALID_FORMAT]: "Invalid IP address",
 };
 
 function statusClassFallback(status: number): string {

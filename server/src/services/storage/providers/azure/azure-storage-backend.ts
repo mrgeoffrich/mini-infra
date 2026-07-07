@@ -45,7 +45,7 @@ import { PrismaClient } from "../../../../lib/prisma";
 import { toServiceError } from "../../../../lib/service-error-mapper";
 import { getLogger } from "../../../../lib/logger-factory";
 import { azureConfig } from "../../../../lib/config-new";
-import { ConflictError, ValidationError } from "../../../../lib/errors";
+import { ConflictError, ValidationError, InternalError } from "../../../../lib/errors";
 
 const log = () => getLogger("platform", "azure-storage-backend");
 
@@ -764,7 +764,7 @@ export class AzureStorageBackend
       const props = await blockBlobClient.getProperties();
       const downloadResponse = await blockBlobClient.download(0);
       if (!downloadResponse.readableStreamBody) {
-        throw new Error("Failed to get download stream");
+        throw new InternalError("Failed to get download stream");
       }
       return {
         stream: downloadResponse.readableStreamBody,

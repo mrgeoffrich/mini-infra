@@ -1,6 +1,7 @@
 import Docker, { Container } from "dockerode";
 import { getLogger } from "../../lib/logger-factory";
 import prisma from "../../lib/prisma";
+import { InternalError } from "../../lib/errors";
 import { DockerConfigService } from "../docker-config";
 import ContainerLabelManager from "../container/container-label-manager";
 import { RegistryCredentialService } from "../registry-credential";
@@ -107,7 +108,7 @@ export class DockerExecutorService {
       const apiVersion = await this.dockerConfigService.get("apiVersion");
 
       if (!dockerHost) {
-        throw new Error("Docker host not configured in database settings");
+        throw new InternalError("Docker host not configured in database settings");
       }
 
       this.docker = this.createDockerClient(dockerHost, apiVersion);

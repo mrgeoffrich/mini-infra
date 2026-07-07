@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import { getLogger } from "../../lib/logger-factory";
 import { DockerConfigService } from "../docker-config";
+import { InternalError } from "../../lib/errors";
 
 /**
  * DockerClientFactory - Creates and initializes Docker client connections
@@ -23,7 +24,7 @@ export class DockerClientFactory {
       const apiVersion = await this.dockerConfigService.get("apiVersion");
 
       if (!dockerHost) {
-        throw new Error("Docker host not configured in database settings");
+        throw new InternalError("Docker host not configured in database settings");
       }
 
       const docker = this.createDockerClient(dockerHost, apiVersion);

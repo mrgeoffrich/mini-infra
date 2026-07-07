@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../generated/prisma/client';
 import DockerService from '../docker';
 import { getLogger } from '../../lib/logger-factory';
+import { InternalError } from '../../lib/errors';
 
 const log = getLogger('stacks', 'egress-network-allocator');
 
@@ -79,12 +80,12 @@ export class EgressNetworkAllocator {
     }
 
     if (!subnet) {
-      throw new Error(`Cannot allocate gateway IP: no subnet found for network "${networkName}"`);
+      throw new InternalError(`Cannot allocate gateway IP: no subnet found for network "${networkName}"`);
     }
 
     const baseOctets = parseCidrNetworkAddress(subnet);
     if (!baseOctets) {
-      throw new Error(`Cannot allocate gateway IP: subnet "${subnet}" is not a valid IPv4 CIDR`);
+      throw new InternalError(`Cannot allocate gateway IP: subnet "${subnet}" is not a valid IPv4 CIDR`);
     }
 
     // Try .2, .3, .4, ... up to .254
@@ -96,7 +97,7 @@ export class EgressNetworkAllocator {
       }
     }
 
-    throw new Error(
+    throw new InternalError(
       `Egress gateway IP pool exhausted for network "${networkName}" subnet "${subnet}": all host addresses are in use`
     );
   }
