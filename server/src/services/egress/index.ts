@@ -29,6 +29,7 @@
  */
 
 import type { PrismaClient } from '../../generated/prisma/client';
+import { InternalError } from '../../lib/errors';
 import { EgressContainerMapPusher } from './egress-container-map-pusher';
 import { EgressLogIngester } from './egress-log-ingester';
 import { EgressEventPruner } from './egress-event-pruner';
@@ -98,7 +99,7 @@ export function getEnvFirewallManager(): EnvFirewallManager | null {
  */
 export function getEgressRulePusher(): EgressRulePusher {
   if (!_rulePusher) {
-    throw new Error(
+    throw new InternalError(
       'getEgressRulePusher() called before startEgressBackgroundServices() — ensure egress services are started at boot',
     );
   }

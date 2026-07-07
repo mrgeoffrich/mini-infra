@@ -254,6 +254,16 @@ export const ErrorCode = {
   MONITORING_STACK_NOT_FOUND: "MONITORING_STACK_NOT_FOUND",
   MONITORING_SERVICE_UNAVAILABLE: "MONITORING_SERVICE_UNAVAILABLE",
   MONITORING_QUERY_PARAM_MISSING: "MONITORING_QUERY_PARAM_MISSING",
+
+  // Phase 11 — docker/storage (enforcement sweep: raw `throw new Error`
+  // cleanup in docker/docker-executor/container/networks/storage/egress
+  // services). Most leftovers in these paths were genuine internal
+  // invariants (`InternalError`, no code needed) — these four are the
+  // user-actionable exceptions.
+  DOCKER_DEVICE_SPEC_INVALID: "DOCKER_DEVICE_SPEC_INVALID",
+  DOCKER_HOST_IP_NOT_CONFIGURED: "DOCKER_HOST_IP_NOT_CONFIGURED",
+  DOCKER_HOST_IP_INVALID_FORMAT: "DOCKER_HOST_IP_INVALID_FORMAT",
+  STORAGE_GOOGLE_DRIVE_NOT_CONNECTED: "STORAGE_GOOGLE_DRIVE_NOT_CONNECTED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

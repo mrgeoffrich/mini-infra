@@ -1,5 +1,7 @@
 import prisma from "../lib/prisma";
 import { getLogger } from "../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { ConflictError, NotFoundError, ValidationError, InternalError } from "../lib/errors";
 
 const logger = getLogger("docker", "network-utils");
 
@@ -43,14 +45,17 @@ export class NetworkUtils {
       const errorMsg =
         "Docker host IP not configured. Please set the 'docker_host_ip' in system settings.";
       logger.error(errorMsg);
-      throw new Error(errorMsg);
+      throw new ConflictError(ErrorCode.DOCKER_HOST_IP_NOT_CONFIGURED, errorMsg, {
+        resource: { type: "systemSetting", name: NetworkUtils.DOCKER_HOST_IP_KEY },
+        action: "Set the Docker host IP in Settings > System.",
+      });
     } catch (error) {
       if (error instanceof Error && error.message.includes("not configured")) {
         throw error;
       }
       logger.error({ error }, "Failed to retrieve Docker host IP");
-      throw new Error(`Failed to retrieve Docker host IP: ${error}`, {
-        cause: error,
+      throw new InternalError(`Failed to retrieve Docker host IP: ${error}`, {
+        details: { cause: error instanceof Error ? error.message : String(error) },
       });
     }
   }
@@ -79,7 +84,11 @@ export class NetworkUtils {
       });
 
       if (!environment) {
-        throw new Error(`Environment not found: ${environmentId}`);
+        throw new NotFoundError(
+          ErrorCode.ENVIRONMENT_NOT_FOUND,
+          `Environment not found: ${environmentId}`,
+          { resource: { type: "environment", id: environmentId } },
+        );
       }
 
       logger.info(
@@ -126,7 +135,10 @@ export class NetworkUtils {
     try {
       // Validate IP address format
       if (!this.isValidIPAddress(ipAddress)) {
-        throw new Error(`Invalid IP address format: ${ipAddress}`);
+        throw new ValidationError(
+          ErrorCode.DOCKER_HOST_IP_INVALID_FORMAT,
+          `Invalid IP address format: ${ipAddress}`,
+        );
       }
 
       // Check if setting already exists

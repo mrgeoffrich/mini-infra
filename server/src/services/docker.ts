@@ -6,7 +6,7 @@ import { dockerConfig } from "../lib/config-new";
 import { DockerContainerInfo } from "@mini-infra/types/containers";
 import type { DockerNetwork, DockerVolume } from "@mini-infra/types";
 import { ErrorCode } from "@mini-infra/types";
-import { ConflictError, NotFoundError } from "../lib/errors";
+import { ConflictError, NotFoundError, InternalError } from "../lib/errors";
 import { DockerConfigService } from "./docker-config";
 import prisma from "../lib/prisma";
 import type { DockerContainerEvent } from "../lib/docker-event-pattern-detector";
@@ -139,9 +139,9 @@ class DockerService {
     try {
       // Ensure dockerConfigService is initialized
       if (!this.dockerConfigService || typeof this.dockerConfigService.get !== 'function') {
-        throw new Error("Docker configuration service not initialized");
+        throw new InternalError("Docker configuration service not initialized");
       }
-      
+
       // Try to get settings from database first
       const dockerHost = await this.dockerConfigService.get("host");
       const apiVersion = await this.dockerConfigService.get("apiVersion");
@@ -157,7 +157,7 @@ class DockerService {
         );
       } else {
         getLogger("docker", "docker").warn("Docker host not configured in database settings - Docker functionality will be unavailable");
-        throw new Error("Docker host not configured in database settings");
+        throw new InternalError("Docker host not configured in database settings");
       }
 
       if (apiVersion) {
@@ -190,7 +190,7 @@ class DockerService {
   ): Promise<void> {
     try {
       if (!this.docker || typeof this.docker.ping !== "function") {
-        throw new Error("Docker client not initialized");
+        throw new InternalError("Docker client not initialized");
       }
 
       const startTime = Date.now();
@@ -514,7 +514,7 @@ class DockerService {
 
   public async listContainers(all = true): Promise<DockerContainerInfo[]> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     const cacheKey = `containers_${all}`;
@@ -553,7 +553,7 @@ class DockerService {
 
   public async getContainer(id: string): Promise<DockerContainerInfo | null> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     return (async () => {
@@ -595,7 +595,7 @@ class DockerService {
    */
   public async detectPostgresContainers(): Promise<DockerContainerInfo[]> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     const allContainers = await this.listContainers(true);
@@ -623,7 +623,7 @@ class DockerService {
    */
   public async getContainerEnvironmentVariables(id: string): Promise<Record<string, string> | null> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     return (async () => {
@@ -932,13 +932,13 @@ class DockerService {
    */
   public async getDockerInstance(): Promise<Docker> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
-    
+
     if (!this.docker || typeof this.docker.ping !== "function") {
-      throw new Error("Docker client not initialized");
+      throw new InternalError("Docker client not initialized");
     }
-    
+
     return this.docker;
   }
 
@@ -993,7 +993,7 @@ class DockerService {
    */
   public async listNetworks(): Promise<DockerNetwork[]> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     const cacheKey = "networks";
@@ -1030,7 +1030,7 @@ class DockerService {
    */
   public async listVolumes(): Promise<DockerVolume[]> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     const cacheKey = "volumes";
@@ -1080,7 +1080,7 @@ class DockerService {
    */
   public async removeNetwork(id: string): Promise<void> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     const result = await this.networkManager.remove(id);
@@ -1112,7 +1112,7 @@ class DockerService {
       );
     }
 
-    throw new Error(`Failed to remove network ${id}`);
+    throw new InternalError(`Failed to remove network ${id}`);
   }
 
   /**
@@ -1121,7 +1121,7 @@ class DockerService {
    */
   public async removeVolume(name: string): Promise<void> {
     if (!this.connected) {
-      throw new Error("Docker service not connected");
+      throw new InternalError("Docker service not connected");
     }
 
     // Get the volume

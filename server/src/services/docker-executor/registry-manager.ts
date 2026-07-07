@@ -3,6 +3,9 @@ import { getLogger } from "../../lib/logger-factory";
 import { RegistryCredentialService } from "../registry-credential";
 import { getRegistryAuthHeader } from "../registry-auth";
 import type { DockerRegistryTestOptions, DockerRegistryTestResult } from "./types";
+import { ErrorCode } from "@mini-infra/types";
+import { NotFoundError, UnauthorizedError, InternalError } from "../../lib/errors";
+import { ServiceError } from "../../lib/error-handler";
 
 /**
  * RegistryManager - Handles Docker image pulling and registry authentication
@@ -92,42 +95,63 @@ export class RegistryManager {
         "Failed to pull Docker image",
       );
 
-      // Enhance error message for better debugging
+      // Enhance error message for better debugging. Auth/not-found are
+      // user-actionable (bad credentials or a wrong image reference) so they
+      // go through the taxonomy — reusing the same ErrorCode the
+      // image-inspect metadata path already uses for the same underlying
+      // condition (server/src/services/image-inspect.ts). Timeout/network/
+      // anything else is a genuine external-dependency failure rather than
+      // bad input, so it becomes a `ServiceError` (the sanctioned "external
+      // service misbehaved" taxonomy type — see `toServiceError()`'s docker
+      // mappings in `service-error-mapper.ts` for the sibling pattern).
       if (
         errorMessage.includes("authentication required") ||
         errorMessage.includes("unauthorized") ||
         errorMessage.includes("401")
       ) {
-        throw new Error(
+        throw new UnauthorizedError(
+          ErrorCode.IMAGE_AUTH_FAILED,
           `Authentication required for image '${image}' - please provide valid registry credentials`,
-          { cause: error },
+          {
+            resource: { type: "image", name: image },
+            action: "Check the registry credentials for this image in Settings.",
+          },
         );
       } else if (
         errorMessage.includes("repository does not exist") ||
         errorMessage.includes("not found") ||
         errorMessage.includes("404")
       ) {
-        throw new Error(`Docker image '${image}' not found in registry`, {
-          cause: error,
-        });
+        throw new NotFoundError(
+          ErrorCode.IMAGE_NOT_FOUND,
+          `Docker image '${image}' not found in registry`,
+          {
+            resource: { type: "image", name: image },
+            action: "Check the image name and tag, then try again.",
+          },
+        );
       } else if (errorMessage.includes("timeout")) {
-        throw new Error(
+        throw new ServiceError(
           `Timeout pulling image '${image}' - registry may be unreachable`,
-          { cause: error },
+          504,
+          "docker",
         );
       } else if (
         errorMessage.includes("network") ||
         errorMessage.includes("connection refused")
       ) {
-        throw new Error(
+        throw new ServiceError(
           `Network error pulling image '${image}' - cannot reach Docker registry`,
-          { cause: error },
+          502,
+          "docker",
         );
       }
 
-      throw new Error(`Failed to pull image '${image}': ${errorMessage}`, {
-        cause: error,
-      });
+      throw new ServiceError(
+        `Failed to pull image '${image}': ${errorMessage}`,
+        502,
+        "docker",
+      );
     }
   }
 
@@ -376,15 +400,20 @@ export class RegistryManager {
           },
         };
       } else if (response.status === 401 || response.status === 403) {
-        throw new Error(
+        // These three throws are pure local control flow — always caught by
+        // this same function's `catch` below and turned into a
+        // `DockerRegistryTestResult` return value, never rethrown. `InternalError`
+        // is just the sanctioned non-`Error` throw shape; only `.message` is
+        // ever read from it.
+        throw new InternalError(
           `Authentication failed: ${response.status} ${response.statusText}`,
         );
       } else if (response.status === 404) {
-        throw new Error(
+        throw new InternalError(
           `Image not found: ${response.status} ${response.statusText}`,
         );
       } else {
-        throw new Error(
+        throw new InternalError(
           `Registry error: ${response.status} ${response.statusText}`,
         );
       }
