@@ -1,6 +1,7 @@
 import type { ActionContext, DrainInitiateEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "initiate-drain");
 
@@ -25,13 +26,13 @@ export class InitiateDrain {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for drain initiation');
+                throw new InternalError('HAProxy container ID is required for drain initiation');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend identification');
+                throw new InternalError('Application name is required for backend identification');
             }
             if (!context.oldContainerId) {
-                throw new Error('Old container ID is required for blue server identification');
+                throw new InternalError('Old container ID is required for blue server identification');
             }
 
             // Initialize HAProxy DataPlane client
@@ -70,7 +71,7 @@ export class InitiateDrain {
             const serverStats = await this.haproxyClient.getServerStats(backendName, serverName);
 
             if (!serverStats) {
-                throw new Error(`Server ${serverName} not found in backend ${backendName} after drain initiation`);
+                throw new InternalError(`Server ${serverName} not found in backend ${backendName} after drain initiation`);
             }
 
             // Log the current status for debugging

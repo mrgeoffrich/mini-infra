@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { syncEnvironmentRoutes } from "../environment-route-synchronizer";
 import type { HAProxyDataPlaneClient } from "../../haproxy-dataplane-client";
 import type { PrismaClient } from "../../../../generated/prisma/client";
+import { InternalError } from "../../../../lib/errors";
 
 vi.mock("../shared-frontend-repository", () => ({
   findSharedFrontendsWithRoutes: vi.fn(),
@@ -169,15 +170,16 @@ describe("syncEnvironmentRoutes", () => {
     expect(result.errors[0]).toContain("bad.example.com");
   });
 
-  it("throws with the cause preserved when the frontend lookup fails", async () => {
+  it("throws an InternalError when the frontend lookup fails", async () => {
     const boom = new Error("db down");
     vi.mocked(findSharedFrontendsWithRoutes).mockRejectedValue(boom);
 
-    await expect(
-      syncEnvironmentRoutes("env_1", asClient(client), asPrisma())
-    ).rejects.toMatchObject({
+    const promise = syncEnvironmentRoutes("env_1", asClient(client), asPrisma());
+    await expect(promise).rejects.toBeInstanceOf(InternalError);
+    await expect(promise).rejects.toMatchObject({
       message: expect.stringContaining("Failed to sync environment routes"),
-      cause: boom,
+      statusCode: 500,
+      isOperational: false,
     });
   });
 

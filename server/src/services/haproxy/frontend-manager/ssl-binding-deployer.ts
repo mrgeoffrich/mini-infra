@@ -2,6 +2,7 @@ import { getLogger } from "../../../lib/logger-factory";
 import { PrismaClient } from "../../../generated/prisma/client";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyCertificateDeployer } from "../haproxy-certificate-deployer";
+import { InternalError } from "../../../lib/errors";
 
 const logger = getLogger("haproxy", "ssl-binding-deployer");
 
@@ -35,7 +36,7 @@ export async function configurePerDeploymentSSL(
     );
 
     if (!certFileName) {
-      throw new Error(`Failed to deploy certificate: ${tlsCertificateId}`);
+      throw new InternalError(`Failed to deploy certificate: ${tlsCertificateId}`);
     }
 
     logger.info(
@@ -90,7 +91,7 @@ export async function configureSharedSSL(
   );
 
   if (!certFileName) {
-    throw new Error(`Failed to deploy certificate: ${tlsCertificateId}`);
+    throw new InternalError(`Failed to deploy certificate: ${tlsCertificateId}`);
   }
 
   logger.info(

@@ -2,6 +2,7 @@ import type { ActionContext, HealthCheckEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
 import { DEFAULT_HEALTH_CHECK_TIMEOUT_MS } from '../health-check-timeout';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "perform-health-checks");
 
@@ -26,13 +27,13 @@ export class PerformHealthChecks {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for health check monitoring');
+                throw new InternalError('HAProxy container ID is required for health check monitoring');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend identification');
+                throw new InternalError('Application name is required for backend identification');
             }
             if (!context.containerId) {
-                throw new Error('Container ID is required for server identification');
+                throw new InternalError('Container ID is required for server identification');
             }
 
             // Initialize HAProxy DataPlane client

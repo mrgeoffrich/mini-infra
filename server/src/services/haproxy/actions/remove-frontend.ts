@@ -3,6 +3,7 @@ import { getLogger } from "../../../lib/logger-factory";
 import { HAProxyDataPlaneClient } from "../haproxy-dataplane-client";
 import { haproxyFrontendManager } from "../haproxy-frontend-manager";
 import prisma from "../../../lib/prisma";
+import { InternalError } from "../../../lib/errors";
 
 const logger = getLogger("haproxy", "remove-frontend");
 
@@ -31,7 +32,7 @@ export class RemoveFrontend {
 
     try {
       if (!context.applicationName) {
-        throw new Error(
+        throw new InternalError(
           "Application name is required for frontend removal"
         );
       }

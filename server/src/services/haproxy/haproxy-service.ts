@@ -1,6 +1,7 @@
 import { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import Dockerode from 'dockerode';
+import { InternalError } from '../../lib/errors';
 import {
   IApplicationService,
   ServiceStatus,
@@ -327,7 +328,7 @@ export class HAProxyService implements IApplicationService {
       );
 
       if (!haproxyContainer || !haproxyContainer.Id) {
-        throw new Error('HAProxy container not found or not running');
+        throw new InternalError('HAProxy container not found or not running');
       }
 
       const docker = this.dockerExecutor.getDockerClient();

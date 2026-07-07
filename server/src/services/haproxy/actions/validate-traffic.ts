@@ -1,6 +1,7 @@
 import type { ActionContext, TrafficValidationEmit } from './types';
 import { getLogger } from '../../../lib/logger-factory';
 import { HAProxyDataPlaneClient } from '../haproxy-dataplane-client';
+import { InternalError } from '../../../lib/errors';
 
 const logger = getLogger("deploy", "validate-traffic");
 
@@ -34,13 +35,13 @@ export class ValidateTraffic {
         try {
             // Validate required context
             if (!context.haproxyContainerId) {
-                throw new Error('HAProxy container ID is required for traffic validation');
+                throw new InternalError('HAProxy container ID is required for traffic validation');
             }
             if (!context.applicationName) {
-                throw new Error('Application name is required for backend identification');
+                throw new InternalError('Application name is required for backend identification');
             }
             if (!context.containerId) {
-                throw new Error('Container ID is required for server identification');
+                throw new InternalError('Container ID is required for server identification');
             }
 
             // Initialize HAProxy DataPlane client
