@@ -1,11 +1,13 @@
+import { useCallback } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useUpdateApplication } from "@/hooks/use-applications";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
   Card,
   CardContent,
@@ -28,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { StackServiceType } from "@mini-infra/types";
 import {
   editApplicationFormSchema,
@@ -35,9 +38,23 @@ import {
   applicationsNetworkDeclaration,
   type EditApplicationFormData,
 } from "@/lib/application-schemas";
-import { ConfigurationCard } from "../../components/configuration-card";
-import { RoutingCard } from "../../components/routing-card";
+import {
+  EnvVarsSection,
+  HealthCheckSection,
+  PortsSection,
+  RestartPolicySection,
+  VolumesSection,
+} from "../../components/config-sections";
+import { RoutingSection } from "../../components/routing-section";
 import type { ApplicationDetailContext } from "../layout";
+import {
+  EDIT_SECTIONS,
+  computeSectionErrors,
+  firstErroredSectionId,
+  sectionAnchorId,
+} from "./section-meta";
+import { SectionRail } from "./section-rail";
+import { useActiveSection } from "./use-active-section";
 
 type ApplicationData = ApplicationDetailContext["template"];
 
@@ -110,6 +127,157 @@ function buildDefaultValues(
   };
 }
 
+/** Image + tag — the most frequently edited fields, so they lead the form. */
+function ImageFields() {
+  const form = useFormContext<EditApplicationFormData>();
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <FormField
+        control={form.control}
+        name="dockerImage"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Docker image</FormLabel>
+            <FormControl>
+              <Input placeholder="nginx" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="dockerTag"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tag</FormLabel>
+            <FormControl>
+              <Input placeholder="latest" {...field} />
+            </FormControl>
+            <FormDescription>Bump this to deploy a new version.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
+/** Service type select — resets routing so a leftover flag can't smuggle a
+ *  routing config onto a Stateful service (mirrors the create wizard). */
+function ServiceTypeField() {
+  const form = useFormContext<EditApplicationFormData>();
+  return (
+    <FormField
+      control={form.control}
+      name="serviceType"
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>Service type</FormLabel>
+          <Select
+            onValueChange={(value) => {
+              field.onChange(value);
+              form.setValue("enableRouting", value === "StatelessWeb", {
+                shouldValidate: true,
+              });
+            }}
+            value={field.value}
+          >
+            <FormControl>
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+            </FormControl>
+            <SelectContent>
+              <SelectItem value="Stateful">
+                Stateful (database, cache, etc.)
+              </SelectItem>
+              <SelectItem value="StatelessWeb">
+                Stateless Web (web server, API, etc.)
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <FormDescription>
+            Stateless Web enables zero-downtime blue-green deploys via HAProxy.
+          </FormDescription>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Name, description, and container-name prefix — identity, rarely changed. */
+function IdentityFields() {
+  const form = useFormContext<EditApplicationFormData>();
+  return (
+    <div className="space-y-4">
+      <FormField
+        control={form.control}
+        name="displayName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Application name</FormLabel>
+            <FormControl>
+              <Input placeholder="My Application" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Description</FormLabel>
+            <FormControl>
+              <Textarea placeholder="Optional description..." {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name="serviceName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Service name</FormLabel>
+            <FormControl>
+              <Input placeholder="my-service" {...field} />
+            </FormControl>
+            <FormDescription>Used as the container name prefix.</FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
+/** Card wrapper that anchors a section so the rail can scroll to it. */
+function SectionCard({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card id={sectionAnchorId(id)} data-section-id={id} className="scroll-mt-4">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
+  );
+}
+
+const SECTION_IDS = EDIT_SECTIONS.map((s) => s.id);
+
 export default function ApplicationConfigurationTab() {
   const navigate = useNavigate();
   const { templateId, template, environment } =
@@ -127,6 +295,29 @@ export default function ApplicationConfigurationTab() {
     control: form.control,
     name: "enableRouting",
   });
+  const envVars = useWatch({ control: form.control, name: "envVars" });
+  const volumeMounts = useWatch({ control: form.control, name: "volumeMounts" });
+
+  const showRouting = serviceType === "StatelessWeb" || enableRouting;
+
+  const activeId = useActiveSection(SECTION_IDS);
+  const errorKeys = Object.keys(form.formState.errors);
+  const erroredIds = computeSectionErrors(errorKeys);
+  const badges: Record<string, number | undefined> = {
+    environment: envVars?.length,
+    storage: volumeMounts?.length,
+  };
+
+  const scrollToSection = useCallback((id: string) => {
+    document
+      .getElementById(sectionAnchorId(id))
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  const onInvalid = useCallback(() => {
+    const firstId = firstErroredSectionId(Object.keys(form.formState.errors));
+    if (firstId) scrollToSection(firstId);
+  }, [form, scrollToSection]);
 
   const onSubmit = async (formData: EditApplicationFormData) => {
     const templateName = template.name;
@@ -261,161 +452,97 @@ export default function ApplicationConfigurationTab() {
   };
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Basic Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="displayName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Application Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="My Application" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+        <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
+          <div className="bg-background sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 border-b py-3">
+            <p className="text-muted-foreground text-sm">
+              Changes are saved as a new draft version.
+            </p>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/applications")}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={updateApplication.isPending}>
+                {updateApplication.isPending && (
+                  <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-              />
+                Save changes
+              </Button>
+            </div>
+          </div>
 
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Optional description..."
-                        {...field}
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[190px_minmax(0,1fr)] md:items-start">
+            <SectionRail
+              activeId={activeId}
+              erroredIds={erroredIds}
+              badges={badges}
+              onNavigate={scrollToSection}
+            />
+
+            <div className="space-y-4">
+              <SectionCard id="image" title="Image & version">
+                <ImageFields />
+              </SectionCard>
+
+              <SectionCard id="environment" title="Environment variables">
+                <EnvVarsSection />
+              </SectionCard>
+
+              <SectionCard id="networking" title="Networking">
+                <div className="space-y-4">
+                  {showRouting && (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="enableRouting"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center gap-3">
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                              />
+                            </FormControl>
+                            <FormLabel className="!mt-0">
+                              Enable public routing
+                            </FormLabel>
+                          </FormItem>
+                        )}
                       />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Service Configuration</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="serviceName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="my-service" {...field} />
-                    </FormControl>
-                    <FormDescription>
-                      Used as the container name prefix.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="serviceType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Service Type</FormLabel>
-                    <Select
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        // Routing (HAProxy zero-downtime blue-green) only applies to
-                        // StatelessWeb — mirrors ServiceTypeStep's reset in the create
-                        // wizard so a leftover "enabled" flag can't smuggle a routing
-                        // config onto a Stateful service.
-                        form.setValue(
-                          "enableRouting",
-                          value === "StatelessWeb",
-                          { shouldValidate: true },
-                        );
-                      }}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Stateful">
-                          Stateful (database, cache, etc.)
-                        </SelectItem>
-                        <SelectItem value="StatelessWeb">
-                          Stateless Web (web server, API, etc.)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="dockerImage"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Docker Image</FormLabel>
-                      <FormControl>
-                        <Input placeholder="nginx" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+                      {enableRouting && (
+                        <RoutingSection networkType={networkType} />
+                      )}
+                      <Separator />
+                    </>
                   )}
-                />
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Host port mappings</p>
+                    <PortsSection />
+                  </div>
+                </div>
+              </SectionCard>
 
-                <FormField
-                  control={form.control}
-                  name="dockerTag"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tag</FormLabel>
-                      <FormControl>
-                        <Input placeholder="latest" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </CardContent>
-          </Card>
+              <SectionCard id="storage" title="Storage">
+                <VolumesSection />
+              </SectionCard>
 
-          <ConfigurationCard />
+              <SectionCard id="runtime" title="Runtime & advanced">
+                <div className="space-y-6">
+                  <ServiceTypeField />
+                  <RestartPolicySection />
+                  <HealthCheckSection />
+                </div>
+              </SectionCard>
 
-          {(serviceType === "StatelessWeb" || enableRouting) && (
-            <RoutingCard networkType={networkType} showEnableToggle />
-          )}
-
-          <div className="flex gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => navigate("/applications")}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={updateApplication.isPending}>
-              {updateApplication.isPending && (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              )}
-              Save Changes
-            </Button>
+              <SectionCard id="identity" title="Identity">
+                <IdentityFields />
+              </SectionCard>
+            </div>
           </div>
         </form>
       </Form>
