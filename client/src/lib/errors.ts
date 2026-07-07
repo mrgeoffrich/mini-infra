@@ -189,6 +189,26 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.SELF_UPDATE_IN_PROGRESS]: "Update already in progress",
   [ErrorCode.SELF_UPDATE_CONTAINER_ID_UNKNOWN]: "Self-update unavailable",
   [ErrorCode.MONITORING_SERVICE_UNAVAILABLE]: "Monitoring unavailable",
+
+  // Postgres server management (Phase 11) — curated over the auto-generated
+  // `resourceTitle()` fallback, which would otherwise render e.g.
+  // "Postgres Managed Database" verbatim from the resource type.
+  [ErrorCode.PG_SERVER_NOT_FOUND]: "Server not found",
+  [ErrorCode.PG_DATABASE_NOT_FOUND]: "Database not found",
+  [ErrorCode.PG_USER_NOT_FOUND]: "User not found",
+  [ErrorCode.PG_GRANT_NOT_FOUND]: "Grant not found",
+  [ErrorCode.PG_TABLE_NOT_FOUND]: "Table not found",
+  [ErrorCode.PG_INVALID_DATABASE_NAME]: "Invalid database name",
+  [ErrorCode.PG_INVALID_DATABASE_ENCODING]: "Invalid encoding",
+  [ErrorCode.PG_INVALID_DATABASE_TEMPLATE]: "Invalid template",
+  [ErrorCode.PG_INVALID_DATABASE_COLLATION]: "Invalid collation",
+  [ErrorCode.PG_INVALID_OWNER_NAME]: "Invalid owner name",
+  [ErrorCode.PG_INVALID_USERNAME]: "Invalid username",
+  [ErrorCode.PG_INVALID_COLUMN_NAME]: "Invalid column",
+  [ErrorCode.PG_SERVER_CONNECTION_STRING_UNPARSEABLE]: "Credentials required",
+  [ErrorCode.PG_RESOURCE_ALREADY_EXISTS]: "Already exists",
+  [ErrorCode.PG_PERMISSION_DENIED]: "Permission denied",
+  [ErrorCode.PG_RESOURCE_IN_USE]: "Still in use",
 };
 
 function statusClassFallback(status: number): string {

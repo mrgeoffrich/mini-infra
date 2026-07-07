@@ -1,6 +1,9 @@
 import { Client } from "pg";
+import { ErrorCode } from "@mini-infra/types";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError } from "../../lib/errors";
+import { mapPostgresOperationError } from "./pg-error-mapper";
 import postgresServerService from "./server-manager";
 
 const logger = getLogger("db", "grant-manager");
@@ -56,7 +59,10 @@ export class GrantManagementService {
     });
 
     if (!database) {
-      throw new Error("Database not found");
+      throw new NotFoundError(ErrorCode.PG_DATABASE_NOT_FOUND, "Database not found", {
+        resource: { type: "postgresManagedDatabase", id: params.databaseId },
+        action: "Check the database ID or refresh the databases list.",
+      });
     }
 
     const user = await prisma.managedDatabaseUser.findFirst({
@@ -64,7 +70,10 @@ export class GrantManagementService {
     });
 
     if (!user) {
-      throw new Error("User not found");
+      throw new NotFoundError(ErrorCode.PG_USER_NOT_FOUND, "User not found", {
+        resource: { type: "postgresManagedUser", id: params.managedUserId },
+        action: "Check the user ID or refresh the users list.",
+      });
     }
 
     // Create grant in database first
@@ -108,7 +117,10 @@ export class GrantManagementService {
     });
 
     if (!grant) {
-      throw new Error("Grant not found");
+      throw new NotFoundError(ErrorCode.PG_GRANT_NOT_FOUND, "Grant not found", {
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Check the grant ID or refresh the grants list.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
@@ -183,7 +195,11 @@ export class GrantManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, grantId }, "Failed to apply grant");
-      throw new Error(`Failed to apply grant: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to apply grant",
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Verify the database and user still exist and the admin credential has grant privileges.",
+      });
     }
   }
 
@@ -218,7 +234,10 @@ export class GrantManagementService {
     });
 
     if (!grant) {
-      throw new Error("Grant not found");
+      throw new NotFoundError(ErrorCode.PG_GRANT_NOT_FOUND, "Grant not found", {
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Check the grant ID or refresh the grants list.",
+      });
     }
 
     const serverId = grant.database.serverId;
@@ -261,7 +280,10 @@ export class GrantManagementService {
     });
 
     if (!grant) {
-      throw new Error("Grant not found");
+      throw new NotFoundError(ErrorCode.PG_GRANT_NOT_FOUND, "Grant not found", {
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Check the grant ID or refresh the grants list.",
+      });
     }
 
     try {
@@ -306,7 +328,11 @@ export class GrantManagementService {
       logger.info({ serverId, grantId, database: dbName, user: username }, "Grant revoked from server");
     } catch (error) {
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, grantId }, "Failed to revoke grant");
-      throw new Error(`Failed to revoke grant: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to revoke grant",
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Verify the database and user still exist and the admin credential has revoke privileges.",
+      });
     }
   }
 
@@ -326,7 +352,10 @@ export class GrantManagementService {
     });
 
     if (!grant) {
-      throw new Error("Grant not found");
+      throw new NotFoundError(ErrorCode.PG_GRANT_NOT_FOUND, "Grant not found", {
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Check the grant ID or refresh the grants list.",
+      });
     }
 
     const serverId = grant.database.serverId;
@@ -406,7 +435,10 @@ export class GrantManagementService {
     });
 
     if (!grant) {
-      throw new Error("Grant not found");
+      throw new NotFoundError(ErrorCode.PG_GRANT_NOT_FOUND, "Grant not found", {
+        resource: { type: "postgresDatabaseGrant", id: grantId },
+        action: "Check the grant ID or refresh the grants list.",
+      });
     }
 
     // Verify server ownership

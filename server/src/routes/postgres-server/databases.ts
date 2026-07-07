@@ -1,19 +1,20 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
-import { getLogger } from "../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import databaseManagementService from "../../services/postgres-server/database-manager";
 import grantManagementService from "../../services/postgres-server/grant-manager";
 import { Permission } from "@mini-infra/types";
 
-const logger = getLogger("db", "databases");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId
 
 // Helper to extract userId or throw
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -36,8 +37,10 @@ const changeDatabaseOwnerSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/databases
  * List all databases on the server
  */
-router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
 
@@ -53,29 +56,17 @@ router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => 
       success: true,
       data: sanitizedDatabases,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list databases");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list databases",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:serverId/databases
  * Create a new database on the server
  */
-router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const validatedData = createDatabaseSchema.parse(req.body);
@@ -92,37 +83,17 @@ router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) =
       success: true,
       data: sanitizedDatabase,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create database");
-    res.status(500).json({
-      success: false,
-      error: "Failed to create database",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:serverId/databases/:dbId
  * Get database details
  */
-router.get("/:dbId", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:dbId",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -139,36 +110,17 @@ router.get("/:dbId", requirePermission(Permission.PostgresRead), async (req, res
       success: true,
       data: sanitizedDatabase,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get database details");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get database details",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * DELETE /api/postgres-server/servers/:serverId/databases/:dbId
  * Drop a database from the server
  */
-router.delete("/:dbId", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.delete(
+  "/:dbId",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -179,36 +131,17 @@ router.delete("/:dbId", requirePermission(Permission.PostgresWrite), async (req,
       success: true,
       message: "Database dropped successfully",
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to drop database");
-    res.status(500).json({
-      success: false,
-      error: "Failed to drop database",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * PUT /api/postgres-server/servers/:serverId/databases/:dbId/owner
  * Change the owner of a database
  */
-router.put("/:dbId/owner", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.put(
+  "/:dbId/owner",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -232,44 +165,17 @@ router.put("/:dbId/owner", requirePermission(Permission.PostgresWrite), async (r
       data: sanitizedDatabase,
       message: "Database owner changed successfully",
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to change database owner");
-    res.status(500).json({
-      success: false,
-      error: "Failed to change database owner",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:serverId/databases/sync
  * Sync databases from the server
  */
-router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/sync",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
 
@@ -280,29 +186,17 @@ router.post("/sync", requirePermission(Permission.PostgresWrite), async (req, re
       message: "Databases synced successfully",
       data: result,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync databases");
-    res.status(500).json({
-      success: false,
-      error: "Failed to sync databases",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/grants
  * List grants for a specific database
  */
-router.get("/:dbId/grants", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:dbId/grants",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -313,29 +207,8 @@ router.get("/:dbId/grants", requirePermission(Permission.PostgresRead), async (r
       success: true,
       data: grants,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list grants for database");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list grants for database",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 // Import and mount sub-router for table data
 import tableDataRoutes from './table-data';

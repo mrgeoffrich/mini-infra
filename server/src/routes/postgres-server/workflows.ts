@@ -1,6 +1,9 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import databaseManagementService from "../../services/postgres-server/database-manager";
 import userManagementService from "../../services/postgres-server/user-manager";
@@ -15,7 +18,7 @@ const router = express.Router();
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -33,12 +36,14 @@ const createAppDatabaseSchema = z.object({
  * Quick workflow: Create database + user + grant all permissions
  * Returns connection string for application use
  */
-router.post("/create-app-database", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  let createdDatabase: Awaited<ReturnType<typeof databaseManagementService.createDatabase>> | null = null;
-  let createdUser: Awaited<ReturnType<typeof userManagementService.createUser>> | null = null;
-  let createdGrant: Awaited<ReturnType<typeof grantManagementService.createGrant>> | null = null;
+router.post(
+  "/create-app-database",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
+    let createdDatabase: Awaited<ReturnType<typeof databaseManagementService.createDatabase>> | null = null;
+    let createdUser: Awaited<ReturnType<typeof userManagementService.createUser>> | null = null;
+    let createdGrant: Awaited<ReturnType<typeof grantManagementService.createGrant>> | null = null;
 
-  try {
     const userId = getUserId(req);
     const validatedData = createAppDatabaseSchema.parse(req.body);
 
@@ -139,32 +144,11 @@ router.post("/create-app-database", requirePermission(Permission.PostgresWrite),
         );
       }
 
-      // Re-throw the original error
+      // Re-throw the original error so the central error middleware maps it
+      // (a taxonomy error from one of the steps above, or an InternalError).
       throw workflowError;
     }
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create application database");
-    res.status(500).json({
-      success: false,
-      error: "Failed to create application database",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 export default router;
