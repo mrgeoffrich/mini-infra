@@ -1,18 +1,19 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
-import { getLogger } from "../../lib/logger-factory";
+import { ErrorCode } from "@mini-infra/types";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import tableDataService from "../../services/postgres-server/table-data-service";
 import { SORT_ORDERS, Permission } from "@mini-infra/types";
 
-const logger = getLogger("db", "table-data");
 const router = express.Router({ mergeParams: true }); // mergeParams to access :serverId and :dbId
 
 // Helper to extract userId or throw
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -34,8 +35,10 @@ const tableDataRequestSchema = z.object({
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables
  * List all tables in the database with metadata
  */
-router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -46,37 +49,17 @@ router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => 
       success: true,
       data: tables,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId: req.params.serverId, databaseId: req.params.dbId },
-      "Failed to list tables");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list tables",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:serverId/databases/:dbId/tables/:tableName/data
  * Get paginated data from a specific table with optional filtering and sorting
  */
-router.get("/:tableName/data", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:tableName/data",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.serverId);
     const databaseId = String(req.params.dbId);
@@ -103,51 +86,7 @@ router.get("/:tableName/data", requirePermission(Permission.PostgresRead), async
       success: true,
       data: tableData,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Database not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Database not found",
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Table not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Table not found",
-      });
-    }
-
-    logger.error(
-      {
-        error: (error instanceof Error ? error.message : String(error)),
-        serverId: req.params.serverId,
-        databaseId: req.params.dbId,
-        tableName: req.params.tableName
-      },
-      "Failed to get table data"
-    );
-    res.status(500).json({
-      success: false,
-      error: "Failed to get table data",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 export default router;

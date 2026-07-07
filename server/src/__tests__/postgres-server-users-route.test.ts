@@ -46,6 +46,7 @@ vi.mock("../services/postgres-server/grant-manager", () => ({
 
 // Import the router AFTER the mocks are set up.
 import usersRouter from "../routes/postgres-server/users";
+import { errorHandler } from "../lib/error-handler";
 
 // ---------------------------------------------------------------------------
 // Test app
@@ -62,6 +63,7 @@ describe("Postgres-server user password route", () => {
     app.use(express.json());
     // mergeParams:true on the router exposes :serverId to the handlers.
     app.use("/api/postgres-server/servers/:serverId/users", usersRouter);
+    app.use(errorHandler);
   });
 
   beforeEach(() => {

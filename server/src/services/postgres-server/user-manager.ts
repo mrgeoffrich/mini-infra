@@ -1,5 +1,8 @@
+import { ErrorCode } from "@mini-infra/types";
 import prisma from "../../lib/prisma";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError, ValidationError } from "../../lib/errors";
+import { mapPostgresOperationError } from "./pg-error-mapper";
 import postgresServerService from "./server-manager";
 
 const logger = getLogger("db", "user-manager");
@@ -44,7 +47,11 @@ export class UserManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId }, "Failed to list users from server");
-      throw new Error(`Failed to list users: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to list users",
+        resource: { type: "postgresServer", id: serverId },
+        action: "Verify the server is reachable and the admin credential has list privileges.",
+      });
     }
   }
 
@@ -122,15 +129,20 @@ export class UserManagementService {
   ) {
     logger.info({ serverId, username: params.username }, "Creating user");
 
+    // Sanitize username (alphanumeric and underscores only) up front, before
+    // opening a connection, so a bad request never masquerades as a
+    // live-query failure below.
+    const sanitizedUsername = params.username.replace(/[^a-zA-Z0-9_]/g, "");
+    if (sanitizedUsername !== params.username) {
+      throw new ValidationError(ErrorCode.PG_INVALID_USERNAME, "Username contains invalid characters", {
+        resource: { type: "postgresManagedUser", name: params.username },
+        action: "Use only letters, numbers, and underscores.",
+      });
+    }
+
     const client = await postgresServerService.getClient(serverId, userId);
 
     try {
-      // Sanitize username (alphanumeric and underscores only)
-      const sanitizedUsername = params.username.replace(/[^a-zA-Z0-9_]/g, "");
-      if (sanitizedUsername !== params.username) {
-        throw new Error("Username contains invalid characters");
-      }
-
       // Build CREATE USER statement
       const canLogin = params.canLogin !== false;
       const isSuperuser = params.isSuperuser || false;
@@ -180,7 +192,11 @@ export class UserManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, username: params.username }, "Failed to create user");
-      throw new Error(`Failed to create user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to create user",
+        resource: { type: "postgresManagedUser", name: sanitizedUsername },
+        action: "Choose a different username or check server permissions.",
+      });
     }
   }
 
@@ -199,7 +215,10 @@ export class UserManagementService {
     });
 
     if (!managedUser) {
-      throw new Error("User not found");
+      throw new NotFoundError(ErrorCode.PG_USER_NOT_FOUND, "User not found", {
+        resource: { type: "postgresManagedUser", id: managedUserId },
+        action: "Check the user ID or refresh the users list.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
@@ -225,7 +244,11 @@ export class UserManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to drop user");
-      throw new Error(`Failed to drop user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to drop user",
+        resource: { type: "postgresManagedUser", id: managedUserId, name: managedUser.username },
+        action: "Reassign or drop objects still owned by this user, then retry.",
+      });
     }
   }
 
@@ -244,7 +267,10 @@ export class UserManagementService {
     });
 
     if (!managedUser) {
-      throw new Error("User not found");
+      throw new NotFoundError(ErrorCode.PG_USER_NOT_FOUND, "User not found", {
+        resource: { type: "postgresManagedUser", id: managedUserId },
+        action: "Check the user ID or refresh the users list.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
@@ -269,7 +295,11 @@ export class UserManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to change user password");
-      throw new Error(`Failed to change password: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to change password",
+        resource: { type: "postgresManagedUser", id: managedUserId, name: managedUser.username },
+        action: "Verify the user still exists and the admin credential has privileges to alter it.",
+      });
     }
   }
 
@@ -297,7 +327,10 @@ export class UserManagementService {
     });
 
     if (!managedUser) {
-      throw new Error("User not found");
+      throw new NotFoundError(ErrorCode.PG_USER_NOT_FOUND, "User not found", {
+        resource: { type: "postgresManagedUser", id: managedUserId },
+        action: "Check the user ID or refresh the users list.",
+      });
     }
 
     const client = await postgresServerService.getClient(serverId, userId);
@@ -339,7 +372,11 @@ export class UserManagementService {
     } catch (error) {
       await client.end();
       logger.error({ error: (error instanceof Error ? error.message : String(error)), serverId, managedUserId }, "Failed to update user");
-      throw new Error(`Failed to update user: ${(error instanceof Error ? error.message : String(error))}`, { cause: error });
+      throw mapPostgresOperationError(error, {
+        fallbackMessage: "Failed to update user",
+        resource: { type: "postgresManagedUser", id: managedUserId, name: managedUser.username },
+        action: "Verify the user still exists and the admin credential has privileges to alter it.",
+      });
     }
   }
 
@@ -367,7 +404,10 @@ export class UserManagementService {
     });
 
     if (!managedUser) {
-      throw new Error("User not found");
+      throw new NotFoundError(ErrorCode.PG_USER_NOT_FOUND, "User not found", {
+        resource: { type: "postgresManagedUser", id: managedUserId },
+        action: "Check the user ID or refresh the users list.",
+      });
     }
 
     return managedUser;

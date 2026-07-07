@@ -1,6 +1,9 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { z } from "zod";
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
+import { asyncHandler } from "../../lib/async-handler";
+import { UnauthorizedError } from "../../lib/errors";
 import { requirePermission, getCurrentUserId } from "../../middleware/auth";
 import postgresServerService from "../../services/postgres-server/server-manager";
 import serverHealthScheduler from "../../services/postgres-server/health-scheduler";
@@ -13,7 +16,7 @@ const router = express.Router();
 function getUserId(req: express.Request): string {
   const userId = getCurrentUserId(req);
   if (!userId) {
-    throw new Error("Unauthorized");
+    throw new UnauthorizedError(ErrorCode.USER_NOT_AUTHENTICATED, "User not authenticated");
   }
   return userId;
 }
@@ -55,8 +58,10 @@ const testConnectionSchema = z.object({
  * GET /api/postgres-server/servers
  * List all servers for the authenticated user
  */
-router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const servers = await postgresServerService.listServers(userId);
 
@@ -71,22 +76,17 @@ router.get("/", requirePermission(Permission.PostgresRead), async (req, res) => 
       success: true,
       data: sanitizedServers,
     });
-  } catch (error) {
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to list servers");
-    res.status(500).json({
-      success: false,
-      error: "Failed to list servers",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers
  * Create a new server connection
  */
-router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const validatedData = createServerSchema.parse(req.body);
 
@@ -118,30 +118,17 @@ router.post("/", requirePermission(Permission.PostgresWrite), async (req, res) =
         syncResults,
       },
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to create server");
-    res.status(500).json({
-      success: false,
-      error: "Failed to create server",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:id
  * Get server details
  */
-router.get("/:id", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:id",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
 
@@ -155,29 +142,17 @@ router.get("/:id", requirePermission(Permission.PostgresRead), async (req, res) 
       success: true,
       data: sanitizedServer,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get server");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get server",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * PUT /api/postgres-server/servers/:id
  * Update server
  */
-router.put("/:id", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.put(
+  "/:id",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
     const validatedData = updateServerSchema.parse(req.body);
@@ -192,37 +167,17 @@ router.put("/:id", requirePermission(Permission.PostgresWrite), async (req, res)
       success: true,
       data: sanitizedServer,
     });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to update server");
-    res.status(500).json({
-      success: false,
-      error: "Failed to update server",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * DELETE /api/postgres-server/servers/:id
  * Delete server
  */
-router.delete("/:id", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.delete(
+  "/:id",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
 
@@ -232,29 +187,17 @@ router.delete("/:id", requirePermission(Permission.PostgresWrite), async (req, r
       success: true,
       message: "Server deleted successfully",
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to delete server");
-    res.status(500).json({
-      success: false,
-      error: "Failed to delete server",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:id/sync
  * Sync databases and users for an existing server from the live PostgreSQL instance
  */
-router.post("/:id/sync", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/:id/sync",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
 
@@ -265,29 +208,17 @@ router.post("/:id/sync", requirePermission(Permission.PostgresWrite), async (req
       data: syncResults,
       message: "Server synced successfully",
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to sync server");
-    res.status(500).json({
-      success: false,
-      error: "Failed to sync server",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/test-connection
  * Test connection to a PostgreSQL server (without creating a server record)
  */
-router.post("/test-connection", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/test-connection",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const validatedData = testConnectionSchema.parse(req.body);
 
     const result = await postgresServerService.testConnection(validatedData);
@@ -305,30 +236,17 @@ router.post("/test-connection", requirePermission(Permission.PostgresWrite), asy
         message: result.error,
       });
     }
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        success: false,
-        error: "Validation failed",
-        details: error.issues,
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to test connection");
-    res.status(500).json({
-      success: false,
-      error: "Failed to test connection",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * POST /api/postgres-server/servers/:id/test
  * Test connection for an existing server
  */
-router.post("/:id/test", requirePermission(Permission.PostgresWrite), async (req, res) => {
-  try {
+router.post(
+  "/:id/test",
+  requirePermission(Permission.PostgresWrite) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
 
@@ -347,29 +265,17 @@ router.post("/:id/test", requirePermission(Permission.PostgresWrite), async (req
         message: result.error,
       });
     }
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to test server connection");
-    res.status(500).json({
-      success: false,
-      error: "Failed to test server connection",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 /**
  * GET /api/postgres-server/servers/:id/info
  * Get server information (version, uptime, database count, etc.)
  */
-router.get("/:id/info", requirePermission(Permission.PostgresRead), async (req, res) => {
-  try {
+router.get(
+  "/:id/info",
+  requirePermission(Permission.PostgresRead) as RequestHandler,
+  asyncHandler(async (req, res) => {
     const userId = getUserId(req);
     const serverId = String(req.params.id);
 
@@ -379,22 +285,8 @@ router.get("/:id/info", requirePermission(Permission.PostgresRead), async (req, 
       success: true,
       data: info,
     });
-  } catch (error) {
-    if ((error instanceof Error ? error.message : String(error)) === "Server not found") {
-      return res.status(404).json({
-        success: false,
-        error: "Server not found",
-      });
-    }
-
-    logger.error({ error: (error instanceof Error ? error.message : String(error)) }, "Failed to get server info");
-    res.status(500).json({
-      success: false,
-      error: "Failed to get server info",
-      message: (error instanceof Error ? error.message : String(error)),
-    });
-  }
-});
+  }),
+);
 
 // Import and mount sub-routers for databases and users
 import postgresServerDatabasesRoutes from './databases';
