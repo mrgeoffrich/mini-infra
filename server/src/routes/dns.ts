@@ -1,8 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { requirePermission } from "../middleware/auth";
 import { getLogger } from "../lib/logger-factory";
+import { NotFoundError } from "../lib/errors";
 import { DnsCacheService } from "../services/dns";
-import { Permission } from "@mini-infra/types";
+import { ErrorCode, Permission } from "@mini-infra/types";
 
 const logger = getLogger("platform", "dns");
 const router = Router();
@@ -62,10 +63,14 @@ router.get(
       const zone = await dnsCacheService.getZone(zoneId);
 
       if (!zone) {
-        return res.status(404).json({
-          success: false,
-          message: "Zone not found",
-        });
+        throw new NotFoundError(
+          ErrorCode.DNS_ZONE_NOT_FOUND,
+          `Zone with ID '${zoneId}' not found`,
+          {
+            resource: { type: "dnsZone", id: zoneId },
+            action: "Refresh the DNS cache or check the zone ID.",
+          },
+        );
       }
 
       const records = await dnsCacheService.getRecordsForZone(zoneId);

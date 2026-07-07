@@ -9,13 +9,14 @@ import { Logger } from "pino";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { getLogger } from "../../lib/logger-factory";
 import { withOperation } from "../../lib/logging-context";
+import { NotFoundError } from "../../lib/errors";
 import { AcmeClientManager } from "./acme-client-manager";
 import { StorageCertificateStore } from "./storage-certificate-store";
 import { DnsChallenge01Provider } from "./dns-challenge-provider";
 import { CertificateDistributor } from "./certificate-distributor";
 import { parseCertificate } from "./certificate-format-helper";
 import { CertificateRequest } from "./types";
-import type { OperationStep, StepStatus } from '@mini-infra/types';
+import { ErrorCode, type OperationStep, type StepStatus } from '@mini-infra/types';
 
 export type IssuanceStepCallback = (
   step: OperationStep,
@@ -209,7 +210,14 @@ export class CertificateLifecycleManager {
     });
 
     if (!existingCert) {
-      throw new Error(`Certificate not found: ${certificateId}`);
+      throw new NotFoundError(
+        ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+        `Certificate not found: ${certificateId}`,
+        {
+          resource: { type: "tlsCertificate", id: certificateId },
+          action: "Verify the certificate ID or check the certificates list.",
+        },
+      );
     }
 
     this.logger.info(

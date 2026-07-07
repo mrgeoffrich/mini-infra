@@ -72,9 +72,7 @@ export function useUpdateTlsSettings() {
       queryClient.invalidateQueries({ queryKey: queryKeys.settings.tlsSettings });
       toast.success("TLS settings saved successfully");
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to save settings");
-    },
+    // Error toast handled by the global MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 
@@ -82,15 +80,18 @@ export function useTestTlsConnectivity() {
   return useMutation({
     mutationFn: testTlsConnectivity,
     onSuccess: (data) => {
+      // `data.success: false` here is a business-level "the connection test
+      // failed" result (a 2xx response), not a thrown ApiRequestError — it
+      // never reaches the global MutationCache.onError, so it still needs
+      // its own toast.
       if (data.success) {
         toast.success("Connection successful! Azure Storage container is accessible.");
       } else {
         toast.error(data.error || "Connection failed");
       }
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to test connection");
-    },
+    // A real request failure (network/4xx/5xx) is toasted by the global
+    // MutationCache.onError (client/src/lib/query-client.ts).
   });
 }
 

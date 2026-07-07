@@ -1,4 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from "express";
+import { ErrorCode } from "@mini-infra/types";
+import { ValidationError } from "../../lib/errors";
+import { asyncHandler } from "../../lib/async-handler";
 import { CloudflareService } from "../../services/cloudflare";
 
 /**
@@ -13,23 +16,29 @@ import { CloudflareService } from "../../services/cloudflare";
 export function requireCloudflareCredentials(
   cloudflareConfigService: CloudflareService,
 ): RequestHandler {
-  return async (req: Request, res: Response, next: NextFunction) => {
+  return asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
     const apiToken = await cloudflareConfigService.getApiToken();
     if (!apiToken) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare API token not configured",
-        details: "Please configure your Cloudflare API token first",
-      });
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_API_TOKEN_NOT_CONFIGURED,
+        "Cloudflare API token not configured",
+        {
+          resource: { type: "cloudflareConfig" },
+          action: "Configure your Cloudflare API token in Settings > Cloudflare.",
+        },
+      );
     }
     const accountId = await cloudflareConfigService.getAccountId();
     if (!accountId) {
-      return res.status(400).json({
-        success: false,
-        error: "Cloudflare account ID not configured",
-        details: "Please configure your Cloudflare account ID first",
-      });
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_ACCOUNT_ID_NOT_CONFIGURED,
+        "Cloudflare account ID not configured",
+        {
+          resource: { type: "cloudflareConfig" },
+          action: "Configure your Cloudflare account ID in Settings > Cloudflare.",
+        },
+      );
     }
     next();
-  };
+  });
 }

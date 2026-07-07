@@ -2,6 +2,8 @@ import type {
   RecordCreateParams,
   RecordResponse,
 } from "cloudflare/resources/dns/records.js";
+import { ErrorCode } from "@mini-infra/types";
+import { NotFoundError } from "../../lib/errors";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 
 /**
@@ -28,7 +30,14 @@ export class CloudflareZoneApi {
         const response = await cf.zones.list({ name: domain });
         const zones = response.result ?? [];
         if (zones.length === 0) {
-          throw new Error(`No Cloudflare zone found for domain: ${domain}`);
+          throw new NotFoundError(
+            ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND,
+            `No Cloudflare zone found for domain: ${domain}`,
+            {
+              resource: { type: "cloudflareZone", name: domain },
+              action: "Add the domain as a zone in your Cloudflare account.",
+            },
+          );
         }
         return zones[0].id;
       },

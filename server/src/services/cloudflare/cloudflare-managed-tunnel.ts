@@ -1,5 +1,7 @@
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { toServiceError } from "../../lib/service-error-mapper";
+import { ConflictError, NotFoundError } from "../../lib/errors";
 import { CloudflareApiRunner } from "./cloudflare-api-runner";
 import { CloudflareTunnelApi } from "./cloudflare-tunnel-api";
 import {
@@ -33,8 +35,13 @@ export class CloudflareManagedTunnels {
   ): Promise<{ tunnelId: string; tunnelName: string }> {
     const existingId = await this.store.getTunnelId(environmentId);
     if (existingId) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_EXISTS,
         `A managed tunnel already exists for this environment (ID: ${existingId})`,
+        {
+          resource: { type: "cloudflareManagedTunnel", id: existingId },
+          action: "Delete the existing managed tunnel before creating a new one.",
+        },
       );
     }
 
@@ -127,7 +134,14 @@ export class CloudflareManagedTunnels {
   async delete(environmentId: string, userId: string): Promise<void> {
     const tunnelId = await this.store.getTunnelId(environmentId);
     if (!tunnelId) {
-      throw new Error("No managed tunnel exists for this environment");
+      throw new NotFoundError(
+        ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_NOT_FOUND,
+        "No managed tunnel exists for this environment",
+        {
+          resource: { type: "cloudflareManagedTunnel", id: environmentId },
+          action: "Create a managed tunnel for this environment first.",
+        },
+      );
     }
 
     // Best-effort remote delete — local settings are cleared either way

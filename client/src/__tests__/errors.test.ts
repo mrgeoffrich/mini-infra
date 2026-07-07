@@ -135,6 +135,31 @@ describe("getUserFacingError", () => {
     expect(result.description).toBe("Request to /api/x timed out after 30000ms");
   });
 
+  it("turns a Phase 5 TLS_CERTIFICATE_NOT_FOUND 404 into its curated title", () => {
+    // Mirrors the certificate domain's canonical envelope (DELETE/GET/renew
+    // against a missing certificate ID) — server/src/routes/tls-certificates.ts.
+    const body = {
+      error: ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+      message: "Certificate not found: cert-123",
+      resource: { type: "tlsCertificate", id: "cert-123" },
+      action: "Verify the certificate ID or check the certificates list.",
+    };
+    const err = new ApiRequestError(
+      404,
+      ErrorCode.TLS_CERTIFICATE_NOT_FOUND,
+      body.message,
+      body,
+    );
+
+    const result = getUserFacingError(err);
+
+    expect(result.title).toBe("Certificate not found");
+    expect(result.description).toBe("Certificate not found: cert-123");
+    expect(result.action).toBe(
+      "Verify the certificate ID or check the certificates list.",
+    );
+  });
+
   it("handles a plain Error gracefully", () => {
     const result = getUserFacingError(new Error("boom"));
 

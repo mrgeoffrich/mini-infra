@@ -6,6 +6,7 @@ import type {
   RecordUpdateParams,
 } from "cloudflare/resources/dns/records.js";
 import { getLogger } from "../../lib/logger-factory";
+import { NotFoundError } from "../../lib/errors";
 import { CloudflareService } from "./cloudflare-service";
 import {
   CloudflareApiRunner,
@@ -17,6 +18,7 @@ import {
   CloudflareDNSRecord,
   CreateCloudflareDNSRecordRequest,
   UpdateCloudflareDNSRecordRequest,
+  ErrorCode,
 } from "@mini-infra/types";
 
 const logger = getLogger("integrations", "cloudflare-dns");
@@ -380,8 +382,13 @@ export class CloudflareDNSService {
     try {
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
-        throw new Error(
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND,
           `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
+          {
+            resource: { type: "cloudflareZone", name: hostname },
+            action: "Add the domain as a zone in your Cloudflare account.",
+          },
         );
       }
 
@@ -435,8 +442,13 @@ export class CloudflareDNSService {
     try {
       const zone = await this.findZoneForHostname(hostname);
       if (!zone) {
-        throw new Error(
+        throw new NotFoundError(
+          ErrorCode.CLOUDFLARE_ZONE_NOT_FOUND,
           `No Cloudflare zone found for hostname: ${hostname}. Please ensure the zone is configured in Cloudflare.`,
+          {
+            resource: { type: "cloudflareZone", name: hostname },
+            action: "Add the domain as a zone in your Cloudflare account.",
+          },
         );
       }
 

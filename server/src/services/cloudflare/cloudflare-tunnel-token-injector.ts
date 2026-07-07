@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
-import type { StackContainerConfig } from "@mini-infra/types";
+import { ErrorCode, type StackContainerConfig } from "@mini-infra/types";
+import { NotFoundError, ValidationError } from "../../lib/errors";
 import { CloudflareService } from "./cloudflare-service";
 
 /**
@@ -32,16 +33,26 @@ export class CloudflareTunnelTokenInjector {
     if (keys.length === 0) return null;
 
     if (!environmentId) {
-      throw new Error(
+      throw new ValidationError(
+        ErrorCode.CLOUDFLARE_TUNNEL_TOKEN_ENVIRONMENT_REQUIRED,
         "Service declares cloudflare-tunnel-token but the stack has no environment — the cloudflare-tunnel connector must be environment-scoped",
+        {
+          resource: { type: "stackService" },
+          action: "Scope the stack to an environment before deploying this service.",
+        },
       );
     }
 
     const cloudflare = new CloudflareService(this.prisma);
     const token = await cloudflare.getManagedTunnelToken(environmentId);
     if (!token) {
-      throw new Error(
+      throw new NotFoundError(
+        ErrorCode.CLOUDFLARE_MANAGED_TUNNEL_NOT_FOUND,
         `Service declares cloudflare-tunnel-token but no managed tunnel exists for environment ${environmentId} — create the managed tunnel before deploying the connector`,
+        {
+          resource: { type: "cloudflareManagedTunnel", id: environmentId },
+          action: "Create a managed tunnel for this environment before deploying the connector.",
+        },
       );
     }
 
