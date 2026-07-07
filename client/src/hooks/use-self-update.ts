@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { toast } from "sonner";
 import { Channel, ServerEvent, ApiRoute, queryKeys } from "@mini-infra/types";
 import type { SelfUpdateStatus, SelfUpdateCheckResult } from "@mini-infra/types";
 import { useOperationProgress } from "./use-operation-progress";
@@ -148,9 +147,6 @@ export function useTriggerUpdate() {
         updateId: data.updateId,
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.selfUpdate.status });
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
     },
   });
 }

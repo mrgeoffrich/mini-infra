@@ -8,16 +8,29 @@
  * accept wildcards). Worktree dev needs each worktree URL added separately.
  */
 
+import { ErrorCode } from "@mini-infra/types";
 import { getPublicUrl } from "../../../../lib/public-url-service";
+import { ValidationError } from "../../../../lib/errors";
 
 export const GOOGLE_DRIVE_OAUTH_CALLBACK_PATH =
   "/api/storage/google-drive/oauth/callback";
 
-export class GoogleDrivePublicUrlNotConfiguredError extends Error {
-  readonly code = "PUBLIC_URL_NOT_CONFIGURED";
+/**
+ * Thrown when `system.public_url` isn't set yet. Folded into the taxonomy
+ * (§4.2) as a 400 `ValidationError` — `.code` keeps its pre-migration value
+ * (`"PUBLIC_URL_NOT_CONFIGURED"`, documented in
+ * `client/src/user-docs/connectivity/health-monitoring.md`) via
+ * `ErrorCode.PUBLIC_URL_NOT_CONFIGURED`.
+ */
+export class GoogleDrivePublicUrlNotConfiguredError extends ValidationError {
   constructor() {
     super(
+      ErrorCode.PUBLIC_URL_NOT_CONFIGURED,
       "Mini Infra public URL is not configured — set system.public_url before running the Google Drive OAuth flow",
+      {
+        resource: { type: "systemSettings", name: "public_url" },
+        action: "Set the Mini Infra public URL in Settings > System.",
+      },
     );
     this.name = "GoogleDrivePublicUrlNotConfiguredError";
   }

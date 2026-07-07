@@ -1,3 +1,4 @@
+import { ErrorCode } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultServices, vaultServicesReady } from "./vault-services";
 import { VaultHttpError } from "./vault-http-client";
@@ -27,7 +28,7 @@ export { KV_MOUNT, VaultKVError, validateKvPath, validateKvFieldName };
 export class VaultKVService {
   private async client() {
     if (!vaultServicesReady()) {
-      throw new VaultKVError("Vault services not initialised", "vault_not_ready");
+      throw new VaultKVError("Vault services not initialised", ErrorCode.VAULT_KV_UNAVAILABLE);
     }
     try {
       return await getVaultServices().admin.getAuthenticatedClient();
@@ -35,7 +36,7 @@ export class VaultKVService {
       const msg = err instanceof Error ? err.message : String(err);
       throw new VaultKVError(
         `Vault admin client unavailable: ${msg}`,
-        "vault_unavailable",
+        ErrorCode.VAULT_KV_UNAVAILABLE,
       );
     }
   }
@@ -66,21 +67,19 @@ export class VaultKVService {
       throw wrapVaultError(err, "read", path);
     }
     if (data == null) {
-      throw new VaultKVError(`KV path '${path}' not found`, "path_not_found", 404);
+      throw new VaultKVError(`KV path '${path}' not found`, ErrorCode.VAULT_KV_PATH_NOT_FOUND);
     }
     if (!(field in data)) {
       throw new VaultKVError(
         `KV path '${path}' has no field '${field}'`,
-        "field_not_found",
-        404,
+        ErrorCode.VAULT_KV_FIELD_NOT_FOUND,
       );
     }
     const value = data[field];
     if (value === null || value === undefined) {
       throw new VaultKVError(
         `KV path '${path}' field '${field}' is null/undefined`,
-        "field_not_found",
-        404,
+        ErrorCode.VAULT_KV_FIELD_NOT_FOUND,
       );
     }
     return typeof value === "string" ? value : JSON.stringify(value);
@@ -89,7 +88,7 @@ export class VaultKVService {
   async write(path: string, data: Record<string, unknown>): Promise<void> {
     validateKvPath(path);
     if (!data || typeof data !== "object" || Array.isArray(data)) {
-      throw new VaultKVError("KV data must be an object", "invalid_data");
+      throw new VaultKVError("KV data must be an object", ErrorCode.VAULT_KV_INVALID_DATA);
     }
     try {
       const c = await this.client();
@@ -104,7 +103,7 @@ export class VaultKVService {
   async patch(path: string, data: Record<string, unknown>): Promise<void> {
     validateKvPath(path);
     if (!data || typeof data !== "object" || Array.isArray(data)) {
-      throw new VaultKVError("KV data must be an object", "invalid_data");
+      throw new VaultKVError("KV data must be an object", ErrorCode.VAULT_KV_INVALID_DATA);
     }
     try {
       const c = await this.client();
@@ -153,22 +152,22 @@ function wrapVaultError(err: unknown, op: string, path: string): VaultKVError {
     );
   }
   const msg = err instanceof Error ? err.message : String(err);
-  return new VaultKVError(`Vault KV ${op} failed for '${path}': ${msg}`, "vault_error");
+  return new VaultKVError(`Vault KV ${op} failed for '${path}': ${msg}`, ErrorCode.VAULT_KV_ERROR);
 }
 
-function classifyVaultHttpError(err: VaultHttpError): string {
+function classifyVaultHttpError(err: VaultHttpError): ErrorCode {
   // 503 from Vault means sealed or standby — both are transient and the
   // caller should retry once Mini Infra reconnects.
   if (err.status === 503) {
-    if (err.errors.some((e) => /sealed/i.test(e))) return "vault_sealed";
-    if (err.errors.some((e) => /standby/i.test(e))) return "vault_standby";
-    return "vault_unavailable";
+    if (err.errors.some((e) => /sealed/i.test(e))) return ErrorCode.VAULT_KV_SEALED;
+    if (err.errors.some((e) => /standby/i.test(e))) return ErrorCode.VAULT_KV_STANDBY;
+    return ErrorCode.VAULT_KV_UNAVAILABLE;
   }
-  if (err.status === 429) return "vault_rate_limited";
-  if (err.status === 412) return "vault_standby"; // Vault sends 412 for read-after-write on a standby node
-  if (err.status === 403) return "vault_permission_denied";
-  if (err.status === 0) return "vault_unavailable"; // network-level failure
-  return "vault_error";
+  if (err.status === 429) return ErrorCode.VAULT_KV_RATE_LIMITED;
+  if (err.status === 412) return ErrorCode.VAULT_KV_STANDBY; // Vault sends 412 for read-after-write on a standby node
+  if (err.status === 403) return ErrorCode.VAULT_KV_PERMISSION_DENIED;
+  if (err.status === 0) return ErrorCode.VAULT_KV_UNAVAILABLE; // network-level failure
+  return ErrorCode.VAULT_KV_ERROR;
 }
 
 let kvServiceSingleton: VaultKVService | null = null;

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../lib/prisma";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   CreateVaultAppRoleRequest,
   UpdateVaultAppRoleRequest,
@@ -6,6 +7,7 @@ import type {
 } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { VaultAdminService } from "./vault-admin-service";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-approle-service");
 
@@ -50,7 +52,11 @@ export class VaultAppRoleService {
       where: { id: input.policyId },
     });
     if (!policy) {
-      throw new Error(`Vault policy ${input.policyId} not found`);
+      throw new NotFoundError(
+        ErrorCode.VAULT_POLICY_NOT_FOUND,
+        `Vault policy ${input.policyId} not found`,
+        { resource: { type: "vaultPolicy", id: input.policyId } },
+      );
     }
     const row = await this.prisma.vaultAppRole.create({
       data: {
@@ -76,7 +82,11 @@ export class VaultAppRoleService {
         where: { id: input.policyId },
       });
       if (!policy) {
-        throw new Error(`Vault policy ${input.policyId} not found`);
+        throw new NotFoundError(
+          ErrorCode.VAULT_POLICY_NOT_FOUND,
+          `Vault policy ${input.policyId} not found`,
+          { resource: { type: "vaultPolicy", id: input.policyId } },
+        );
       }
     }
     const row = await this.prisma.vaultAppRole.update({
@@ -100,8 +110,13 @@ export class VaultAppRoleService {
       where: { vaultAppRoleId: id },
     });
     if (stacks > 0) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.VAULT_APPROLE_BOUND_TO_STACKS,
         `Cannot delete AppRole: ${stacks} stack(s) are bound to it. Unbind them first.`,
+        {
+          resource: { type: "vaultAppRole", id },
+          action: "Unbind the AppRole from all stacks, then retry.",
+        },
       );
     }
     const row = await this.prisma.vaultAppRole.findUnique({ where: { id } });
@@ -128,10 +143,19 @@ export class VaultAppRoleService {
       where: { id },
       include: { policy: { select: { name: true } } },
     });
-    if (!row) throw new Error(`Vault AppRole ${id} not found`);
+    if (!row)
+      throw new NotFoundError(
+        ErrorCode.VAULT_APPROLE_NOT_FOUND,
+        `Vault AppRole ${id} not found`,
+        { resource: { type: "vaultAppRole", id } },
+      );
     const client = this.admin.getClient();
     if (!client) {
-      throw new Error("Vault client is not configured; bootstrap required");
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "Vault client is not configured; bootstrap required",
+        { resource: { type: "vault" }, action: "Bootstrap Vault first." },
+      );
     }
     const config: Record<string, unknown> = {
       token_policies: row.policy.name,
@@ -165,8 +189,10 @@ export class VaultAppRoleService {
 
 function validateName(name: string): void {
   if (!NAME_PATTERN.test(name)) {
-    throw new Error(
+    throw new ValidationError(
+      ErrorCode.VAULT_APPROLE_INVALID_NAME,
       "Vault AppRole name must be 3–64 lowercase alphanumeric or hyphen characters",
+      { resource: { type: "vaultAppRole", name } },
     );
   }
 }

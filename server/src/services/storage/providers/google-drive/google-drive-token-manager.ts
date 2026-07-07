@@ -22,7 +22,9 @@ import {
   GoogleDriveOAuthClient,
   type GoogleDriveTokenSet,
 } from "./google-drive-oauth-client";
+import { ErrorCode } from "@mini-infra/types";
 import type { ValidationResult, ServiceHealthStatus } from "@mini-infra/types";
+import { ValidationError } from "../../../../lib/errors";
 
 const log = () => getLogger("integrations", "google-drive-token-manager");
 
@@ -127,10 +129,18 @@ export class GoogleDriveTokenManager extends ConfigurationService {
     userId: string,
   ): Promise<void> {
     if (!credentials.clientId.trim()) {
-      throw new Error("Google OAuth client_id is required");
+      throw new ValidationError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED,
+        "Google OAuth client_id is required",
+        { resource: { type: "storageProvider", id: "google-drive" } },
+      );
     }
     if (!credentials.clientSecret.trim()) {
-      throw new Error("Google OAuth client_secret is required");
+      throw new ValidationError(
+        ErrorCode.STORAGE_GOOGLE_DRIVE_OAUTH_NOT_CONFIGURED,
+        "Google OAuth client_secret is required",
+        { resource: { type: "storageProvider", id: "google-drive" } },
+      );
     }
     await this.set(DRIVE_SETTING_KEYS.CLIENT_ID, credentials.clientId, userId);
     await this.setSecure(

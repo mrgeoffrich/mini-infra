@@ -17,12 +17,13 @@ import {
   UNSEAL_STEP_NAMES,
 } from "../../services/vault/vault-admin-service";
 import { emitToChannel } from "../../lib/socket";
-import { Channel, ServerEvent, Permission } from "@mini-infra/types";
+import { Channel, ServerEvent, Permission, ErrorCode } from "@mini-infra/types";
 import type {
   VaultStatus,
   VaultBootstrapResult,
   OperationStep,
 } from "@mini-infra/types";
+import { ConflictError } from "../../lib/errors";
 
 const logger = getLogger("platform", "vault-routes");
 
@@ -54,16 +55,11 @@ const passphraseSchema = z.object({
 router.post(
   "/passphrase/unlock",
   requirePermission(Permission.VaultAdmin) as RequestHandler,
-  (async (req: Request, res: Response, _next: NextFunction) => {
+  (async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const parsed = passphraseSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res
-          .status(400)
-          .json({ success: false, message: "Invalid passphrase payload" });
-      }
+      const parsed = passphraseSchema.parse(req.body);
       const services = getVaultServices();
-      await services.passphrase.unlock(parsed.data.passphrase);
+      await services.passphrase.unlock(parsed.passphrase);
       try {
         emitToChannel(Channel.VAULT, ServerEvent.VAULT_PASSPHRASE_UNLOCKED, {
           state: "unlocked",
@@ -85,8 +81,7 @@ router.post(
 
       res.json({ success: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      res.status(401).json({ success: false, message: msg });
+      next(err);
     }
   }) as RequestHandler,
 );
@@ -116,21 +111,29 @@ router.post(
 router.post(
   "/admin/reauthenticate",
   requirePermission(Permission.VaultAdmin) as RequestHandler,
-  (async (_req: Request, res: Response) => {
-    const services = getVaultServices();
-    if (!services.passphrase.isUnlocked()) {
-      return res.status(400).json({
-        success: false,
-        message: "Operator passphrase must be unlocked",
-      });
-    }
+  (async (_req: Request, res: Response, next: NextFunction) => {
     try {
+      const services = getVaultServices();
+      if (!services.passphrase.isUnlocked()) {
+        throw new ConflictError(
+          ErrorCode.VAULT_LOCKED,
+          "Operator passphrase must be unlocked",
+          {
+            resource: { type: "vault" },
+            action: "Unlock the Vault operator passphrase, then retry.",
+          },
+        );
+      }
       await services.admin.authenticateAsAdmin();
       res.json({ success: true });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg }, "Admin re-authentication failed");
-      res.status(500).json({ success: false, message: msg });
+      if (err instanceof Error && !(err instanceof ConflictError)) {
+        logger.error(
+          { err: err.message },
+          "Admin re-authentication failed",
+        );
+      }
+      next(err);
     }
   }) as RequestHandler,
 );
@@ -146,14 +149,13 @@ const bootstrapSchema = z.object({
 router.post(
   "/bootstrap",
   requirePermission(Permission.VaultAdmin) as RequestHandler,
-  (async (req: Request, res: Response) => {
-    const parsed = bootstrapSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid bootstrap payload",
-        details: parsed.error.issues,
-      });
+  (async (req: Request, res: Response, next: NextFunction) => {
+    let parsed: z.infer<typeof bootstrapSchema>;
+    try {
+      parsed = bootstrapSchema.parse(req.body);
+    } catch (err) {
+      next(err);
+      return;
     }
     const services = getVaultServices();
     const user = getAuthenticatedUser(req);
@@ -179,11 +181,12 @@ router.post(
     let result: VaultBootstrapResult | null = null;
     let success = false;
     const errors: string[] = [];
+    let bootstrapError: unknown = null;
     try {
       result = await services.admin.bootstrap({
-        passphrase: parsed.data.passphrase,
-        address: parsed.data.address,
-        stackId: parsed.data.stackId,
+        passphrase: parsed.passphrase,
+        address: parsed.address,
+        stackId: parsed.stackId,
         onStep: (step, completedCount, totalSteps) => {
           steps.push(step);
           try {
@@ -200,10 +203,11 @@ router.post(
       });
       success = true;
     } catch (err) {
-      const bootstrapError = err instanceof Error ? err : new Error(String(err));
-      errors.push(bootstrapError.message);
+      bootstrapError = err;
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push(message);
       logger.error(
-        { err: bootstrapError.message, operationId, userId: user?.id },
+        { err: message, operationId, userId: user?.id },
         "Vault bootstrap failed",
       );
     }
@@ -220,13 +224,10 @@ router.post(
     }
 
     if (!success || !result) {
-      return res.status(500).json({
-        success: false,
-        message: "Bootstrap failed",
-        data: { operationId, errors },
-      });
+      next(bootstrapError);
+      return;
     }
-    return res.json({
+    res.json({
       success: true,
       data: { operationId, result },
     });
@@ -238,13 +239,20 @@ router.post(
 router.post(
   "/unseal",
   requirePermission(Permission.VaultAdmin) as RequestHandler,
-  (async (req: Request, res: Response) => {
+  (async (req: Request, res: Response, next: NextFunction) => {
     const services = getVaultServices();
     if (!services.passphrase.isUnlocked()) {
-      return res.status(400).json({
-        success: false,
-        message: "Operator passphrase must be unlocked before unseal",
-      });
+      next(
+        new ConflictError(
+          ErrorCode.VAULT_LOCKED,
+          "Operator passphrase must be unlocked before unseal",
+          {
+            resource: { type: "vault" },
+            action: "Unlock the Vault operator passphrase, then retry.",
+          },
+        ),
+      );
+      return;
     }
     const operationId = `vault-unseal-${crypto.randomUUID()}`;
     const total = UNSEAL_STEP_NAMES.length;
@@ -308,10 +316,14 @@ router.get(
     try {
       const services = getVaultServices();
       if (!services.passphrase.isUnlocked()) {
-        return res.status(400).json({
-          success: false,
-          message: "Operator passphrase must be unlocked",
-        });
+        throw new ConflictError(
+          ErrorCode.VAULT_LOCKED,
+          "Operator passphrase must be unlocked",
+          {
+            resource: { type: "vault" },
+            action: "Unlock the Vault operator passphrase, then retry.",
+          },
+        );
       }
       const password = await services.stateService.readOperatorPassword();
       res.json({

@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../../lib/prisma";
+import { ErrorCode } from "@mini-infra/types";
 import type {
   CreateVaultPolicyRequest,
   UpdateVaultPolicyRequest,
@@ -6,17 +7,29 @@ import type {
 } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { VaultAdminService } from "./vault-admin-service";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-policy-service");
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/;
 
-/** Thrown when the caller tries to remove a policy still referenced. */
-export class PolicyInUseError extends Error {
+/**
+ * Thrown when the caller tries to remove a policy still referenced by one or
+ * more AppRoles. Folded into the taxonomy (§4.2) as a 409 `ConflictError`;
+ * `appRoleNames` is preserved as an instance field (routes/vault/policies.ts
+ * reads it directly) and also surfaced via `details.appRoles`.
+ */
+export class PolicyInUseError extends ConflictError {
   readonly appRoleNames: string[];
   constructor(appRoleNames: string[]) {
     super(
+      ErrorCode.VAULT_POLICY_IN_USE,
       `Cannot delete policy: referenced by ${appRoleNames.length} AppRole(s): ${appRoleNames.join(", ")}`,
+      {
+        resource: { type: "vaultPolicy" },
+        action: "Unbind or delete the referencing AppRole(s) first.",
+        details: { appRoles: appRoleNames },
+      },
     );
     this.name = "PolicyInUseError";
     this.appRoleNames = appRoleNames;
@@ -24,9 +37,13 @@ export class PolicyInUseError extends Error {
 }
 
 /** Thrown when a caller tries to mutate a system-managed policy. */
-export class SystemPolicyError extends Error {
+export class SystemPolicyError extends ConflictError {
   constructor(action: string) {
-    super(`Cannot ${action} a system-managed Vault policy`);
+    super(
+      ErrorCode.VAULT_SYSTEM_POLICY_IMMUTABLE,
+      `Cannot ${action} a system-managed Vault policy`,
+      { resource: { type: "vaultPolicy" } },
+    );
     this.name = "SystemPolicyError";
   }
 }
@@ -131,9 +148,21 @@ export class VaultPolicyService {
    */
   async publish(id: string): Promise<VaultPolicyInfo> {
     const row = await this.prisma.vaultPolicy.findUnique({ where: { id } });
-    if (!row) throw new Error(`Vault policy ${id} not found`);
+    if (!row)
+      throw new NotFoundError(
+        ErrorCode.VAULT_POLICY_NOT_FOUND,
+        `Vault policy ${id} not found`,
+        { resource: { type: "vaultPolicy", id } },
+      );
     if (!row.draftHclBody) {
-      throw new Error("Policy has no draft HCL to publish");
+      throw new ValidationError(
+        ErrorCode.VAULT_POLICY_DRAFT_EMPTY,
+        "Policy has no draft HCL to publish",
+        {
+          resource: { type: "vaultPolicy", id, name: row.name },
+          action: "Add a draft HCL body to the policy before publishing.",
+        },
+      );
     }
     // Use getAuthenticatedClient so we lazily re-login via the AppRole if the
     // cached admin token has been dropped — otherwise renewal-window glitches
@@ -160,8 +189,10 @@ export class VaultPolicyService {
 
 function validateName(name: string): void {
   if (!NAME_PATTERN.test(name)) {
-    throw new Error(
+    throw new ValidationError(
+      ErrorCode.VAULT_POLICY_INVALID_NAME,
       "Vault policy name must be 3–64 lowercase alphanumeric or hyphen characters",
+      { resource: { type: "vaultPolicy", name } },
     );
   }
 }

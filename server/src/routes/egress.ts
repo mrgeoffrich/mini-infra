@@ -11,7 +11,8 @@ import {
   emitEgressPolicyUpdated,
   emitEgressRuleMutation,
 } from '../services/egress/egress-socket-emitter';
-import { Permission } from '@mini-infra/types';
+import { Permission, ErrorCode } from '@mini-infra/types';
+import { ConflictError, NotFoundError } from '../lib/errors';
 
 const logger = getLogger('stacks', 'egress-routes');
 
@@ -203,18 +204,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const { environmentId, stackId, archived } = req.query;
 
-    const pagination = paginationSchema.safeParse({
+    const { page, limit } = paginationSchema.parse({
       page: req.query.page,
       limit: req.query.limit,
     });
-    if (!pagination.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Invalid pagination parameters',
-        details: pagination.error.issues,
-      });
-    }
-    const { page, limit } = pagination.data;
 
     const showArchived = archived === 'true';
 
@@ -253,7 +246,11 @@ router.get(
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress policy not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_POLICY_NOT_FOUND,
+        'Egress policy not found',
+        { resource: { type: 'egressPolicy', id: String(req.params.policyId) } },
+      );
     }
 
     return res.json({
@@ -270,36 +267,37 @@ router.patch(
   '/policies/:policyId',
   requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
-    const parsed = patchPolicySchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Validation failed',
-        details: parsed.error.issues,
-      });
-    }
+    const parsed = patchPolicySchema.parse(req.body);
 
     const policy = await prisma.egressPolicy.findUnique({
       where: { id: String(req.params.policyId) },
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress policy not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_POLICY_NOT_FOUND,
+        'Egress policy not found',
+        { resource: { type: 'egressPolicy', id: String(req.params.policyId) } },
+      );
     }
 
     if (policy.archivedAt !== null) {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: 'Cannot modify an archived egress policy',
-      });
+      throw new ConflictError(
+        ErrorCode.EGRESS_POLICY_ARCHIVED,
+        'Cannot modify an archived egress policy',
+        {
+          resource: { type: 'egressPolicy', id: policy.id },
+          action: 'Unarchive the policy before modifying it.',
+        },
+      );
     }
 
     const userId = getUserId(req) ?? null;
     const updated = await prisma.egressPolicy.update({
       where: { id: policy.id },
       data: {
-        ...(parsed.data.mode !== undefined ? { mode: parsed.data.mode } : {}),
-        ...(parsed.data.defaultAction !== undefined ? { defaultAction: parsed.data.defaultAction } : {}),
+        ...(parsed.mode !== undefined ? { mode: parsed.mode } : {}),
+        ...(parsed.defaultAction !== undefined ? { defaultAction: parsed.defaultAction } : {}),
         version: policy.version + 1,
         updatedBy: userId,
       },
@@ -328,7 +326,11 @@ router.get(
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress policy not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_POLICY_NOT_FOUND,
+        'Egress policy not found',
+        { resource: { type: 'egressPolicy', id: String(req.params.policyId) } },
+      );
     }
 
     const rules = await prisma.egressRule.findMany({
@@ -347,32 +349,33 @@ router.post(
   '/policies/:policyId/rules',
   requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
-    const parsed = createRuleSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Validation failed',
-        details: parsed.error.issues,
-      });
-    }
+    const parsed = createRuleSchema.parse(req.body);
 
     const policy = await prisma.egressPolicy.findUnique({
       where: { id: String(req.params.policyId) },
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress policy not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_POLICY_NOT_FOUND,
+        'Egress policy not found',
+        { resource: { type: 'egressPolicy', id: String(req.params.policyId) } },
+      );
     }
 
     if (policy.archivedAt !== null) {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: 'Cannot add rules to an archived egress policy',
-      });
+      throw new ConflictError(
+        ErrorCode.EGRESS_POLICY_ARCHIVED,
+        'Cannot add rules to an archived egress policy',
+        {
+          resource: { type: 'egressPolicy', id: policy.id },
+          action: 'Unarchive the policy before adding rules.',
+        },
+      );
     }
 
     const userId = getUserId(req) ?? null;
-    const { pattern, action, targets } = parsed.data;
+    const { pattern, action, targets } = parsed;
 
     const [rule, updatedPolicyAfterCreate] = await prisma.$transaction([
       prisma.egressRule.create({
@@ -419,14 +422,7 @@ router.patch(
   '/rules/:ruleId',
   requirePermission(Permission.EgressWrite),
   asyncHandler(async (req, res) => {
-    const parsed = patchRuleSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Validation failed',
-        details: parsed.error.issues,
-      });
-    }
+    const parsed = patchRuleSchema.parse(req.body);
 
     const ruleWithPolicy = await prisma.egressRule.findUnique({
       where: { id: String(req.params.ruleId) },
@@ -434,20 +430,28 @@ router.patch(
     });
 
     if (!ruleWithPolicy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress rule not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_RULE_NOT_FOUND,
+        'Egress rule not found',
+        { resource: { type: 'egressRule', id: String(req.params.ruleId) } },
+      );
     }
 
     const { policy } = ruleWithPolicy;
 
     if (policy.archivedAt !== null) {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: 'Cannot modify a rule belonging to an archived egress policy',
-      });
+      throw new ConflictError(
+        ErrorCode.EGRESS_POLICY_ARCHIVED,
+        'Cannot modify a rule belonging to an archived egress policy',
+        {
+          resource: { type: 'egressPolicy', id: policy.id },
+          action: 'Unarchive the policy before modifying its rules.',
+        },
+      );
     }
 
     const userId = getUserId(req) ?? null;
-    const { pattern, action, targets } = parsed.data;
+    const { pattern, action, targets } = parsed;
 
     const [updated, updatedPolicyAfterPatch] = await prisma.$transaction([
       prisma.egressRule.update({
@@ -493,16 +497,24 @@ router.delete(
     });
 
     if (!ruleWithPolicy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress rule not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_RULE_NOT_FOUND,
+        'Egress rule not found',
+        { resource: { type: 'egressRule', id: String(req.params.ruleId) } },
+      );
     }
 
     const { policy } = ruleWithPolicy;
 
     if (policy.archivedAt !== null) {
-      return res.status(409).json({
-        error: 'Conflict',
-        message: 'Cannot delete a rule belonging to an archived egress policy',
-      });
+      throw new ConflictError(
+        ErrorCode.EGRESS_POLICY_ARCHIVED,
+        'Cannot delete a rule belonging to an archived egress policy',
+        {
+          resource: { type: 'egressPolicy', id: policy.id },
+          action: 'Unarchive the policy before deleting its rules.',
+        },
+      );
     }
 
     const userId = getUserId(req) ?? null;
@@ -558,19 +570,16 @@ router.get(
     });
 
     if (!policy) {
-      return res.status(404).json({ error: 'Not Found', message: 'Egress policy not found' });
+      throw new NotFoundError(
+        ErrorCode.EGRESS_POLICY_NOT_FOUND,
+        'Egress policy not found',
+        { resource: { type: 'egressPolicy', id: String(req.params.policyId) } },
+      );
     }
 
-    const parsed = eventQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Invalid query parameters',
-        details: parsed.error.issues,
-      });
-    }
-
-    const { action, since, until, sourceServiceName, page, limit } = parsed.data;
+    const { action, since, until, sourceServiceName, page, limit } = eventQuerySchema.parse(
+      req.query,
+    );
 
     const where = {
       policyId: policy.id,
@@ -615,17 +624,8 @@ router.get(
   '/events',
   requirePermission(Permission.EgressRead),
   asyncHandler(async (req, res) => {
-    const parsed = eventQuerySchema.safeParse(req.query);
-    if (!parsed.success) {
-      return res.status(400).json({
-        error: 'Bad Request',
-        message: 'Invalid query parameters',
-        details: parsed.error.issues,
-      });
-    }
-
     const { action, since, until, environmentId, stackId, sourceServiceName, page, limit } =
-      parsed.data;
+      eventQuerySchema.parse(req.query);
 
     // If filtering by environmentId or stackId, filter via the nested policy
     const hasPolicyFilter = !!(environmentId || stackId);

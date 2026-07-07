@@ -1,8 +1,10 @@
 import type { PrismaClient } from "../../lib/prisma";
+import { ErrorCode } from "@mini-infra/types";
 import type { StackContainerConfig, DynamicEnvSource } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { getVaultServices } from "./vault-services";
 import { getVaultKVService, VaultKVError } from "./vault-kv-service";
+import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 
 const log = getLogger("platform", "vault-credential-injector");
 
@@ -70,7 +72,11 @@ export class VaultCredentialInjector {
     const meta = await services.stateService.getMeta();
     const vaultAddress = meta?.address ?? "";
     if (!vaultAddress) {
-      throw new Error("Vault address is not configured");
+      throw new ConflictError(
+        ErrorCode.VAULT_NOT_CONFIGURED,
+        "Vault address is not configured",
+        { resource: { type: "vault" }, action: "Configure the Vault address and bootstrap Vault." },
+      );
     }
 
     const needsMint = Object.values(dynamicEnv).some(
@@ -85,15 +91,24 @@ export class VaultCredentialInjector {
     let approle: { id: string; name: string; cachedRoleId: string | null } | null = null;
     if (needsAppRole) {
       if (!args.appRoleId) {
-        throw new Error(
+        throw new ValidationError(
+          ErrorCode.VAULT_APPROLE_BINDING_MISSING,
           "dynamicEnv contains vault-role-id or vault-wrapped-secret-id but no AppRole is bound to this service or stack",
+          {
+            resource: { type: "vaultAppRole" },
+            action: "Bind an AppRole to this service or stack before applying.",
+          },
         );
       }
       approle = await this.prisma.vaultAppRole.findUnique({
         where: { id: args.appRoleId },
       });
       if (!approle) {
-        throw new Error(`Vault AppRole ${args.appRoleId} not found`);
+        throw new NotFoundError(
+          ErrorCode.VAULT_APPROLE_NOT_FOUND,
+          `Vault AppRole ${args.appRoleId} not found`,
+          { resource: { type: "vaultAppRole", id: args.appRoleId } },
+        );
       }
     }
 
@@ -142,7 +157,11 @@ export class VaultCredentialInjector {
           { err: err.message, code: err.code },
           "Vault KV resolution failed",
         );
-        throw new Error(`Vault KV resolution failed: ${err.message}`, { cause: err });
+        throw new ConflictError(
+          ErrorCode.VAULT_UNREACHABLE_FOR_APPLY,
+          `Vault KV resolution failed: ${err.message}`,
+          { resource: { type: "vault" }, action: "Check Vault connectivity and retry the apply." },
+        );
       }
       log.warn(
         {
@@ -200,8 +219,10 @@ export class VaultCredentialInjector {
     // present and we're in this branch (Vault unreachable), apply must fail.
     const hasKv = Object.values(dynamicEnv).some((s) => s.kind === "vault-kv");
     if (hasKv) {
-      throw new Error(
+      throw new ConflictError(
+        ErrorCode.VAULT_UNREACHABLE_FOR_APPLY,
         "Vault is unreachable and dynamicEnv contains vault-kv entries; cannot apply",
+        { resource: { type: "vault" }, action: "Restore Vault connectivity, then retry the apply." },
       );
     }
     // Services without any AppRole-needing entry (e.g. only vault-addr) can
@@ -237,8 +258,10 @@ export class VaultCredentialInjector {
         degraded: true,
       };
     }
-    throw new Error(
+    throw new ConflictError(
+      ErrorCode.VAULT_UNREACHABLE_FOR_APPLY,
       "Vault is unreachable and this stack either has a new binding or no cached role_id; cannot apply in fail-closed mode",
+      { resource: { type: "vault" }, action: "Restore Vault connectivity, then retry the apply." },
     );
   }
 }

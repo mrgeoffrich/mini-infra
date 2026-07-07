@@ -22,6 +22,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { ErrorCode } from '@mini-infra/types';
 import { testPrisma } from '../../../__tests__/integration-test-helpers';
 import { VaultKVError } from '../../vault/vault-kv-paths';
 import { internalSecrets } from '../../../lib/security-config';
@@ -34,11 +35,15 @@ class FakeVaultKV {
   async readField(path: string, field: string): Promise<string> {
     const rec = this.store.get(path);
     if (!rec) {
-      throw new VaultKVError(`KV path '${path}' not found`, 'path_not_found', 404);
+      throw new VaultKVError(`KV path '${path}' not found`, ErrorCode.VAULT_KV_PATH_NOT_FOUND, 404);
     }
     const value = rec[field];
     if (value === null || value === undefined) {
-      throw new VaultKVError(`KV path '${path}' has no field '${field}'`, 'field_not_found', 404);
+      throw new VaultKVError(
+        `KV path '${path}' has no field '${field}'`,
+        ErrorCode.VAULT_KV_FIELD_NOT_FOUND,
+        404,
+      );
     }
     return typeof value === 'string' ? value : JSON.stringify(value);
   }

@@ -7,8 +7,10 @@ import {
   BackupOperationInfo,
   BackupOperationType,
   BackupOperationStatus,
+  ErrorCode,
 } from "@mini-infra/types";
 import type { BackupOperation } from "../../generated/prisma/client";
+import { ConflictError, NotFoundError } from "../../lib/errors";
 
 const log = getLogger("backup", "backup-executor");
 
@@ -103,8 +105,13 @@ export class BackupExecutorService {
   ): Promise<BackupOperationInfo> {
     const stack = await this.findPgBackupStackForDatabase(databaseId);
     if (!stack) {
-      throw new Error(
+      throw new NotFoundError(
+        ErrorCode.BACKUP_STACK_NOT_DEPLOYED,
         "No pg-az-backup stack is currently applied. Deploy the pg-az-backup template from the template catalog before triggering a manual backup.",
+        {
+          resource: { type: "stack", name: "pg-az-backup" },
+          action: "Deploy the pg-az-backup template from the template catalog.",
+        },
       );
     }
 
@@ -119,8 +126,13 @@ export class BackupExecutorService {
 
     if (!result.ok) {
       if (result.reason === "concurrency_cap") {
-        throw new Error(
+        throw new ConflictError(
+          ErrorCode.BACKUP_CONCURRENCY_CAP_REACHED,
           `Backup request rejected — max concurrent backups (${result.maxConcurrent}) already running`,
+          {
+            resource: { type: "backupOperation" },
+            action: "Wait for a running backup to finish, then retry.",
+          },
         );
       }
       throw new Error(
@@ -206,7 +218,11 @@ export class BackupExecutorService {
       select: { environmentId: true },
     });
     if (!database) {
-      throw new Error(`Database ${databaseId} not found`);
+      throw new NotFoundError(
+        ErrorCode.BACKUP_DATABASE_NOT_FOUND,
+        `Database ${databaseId} not found`,
+        { resource: { type: "postgresDatabase", id: databaseId } },
+      );
     }
 
     const service = await this.prisma.stackService.findFirst({
