@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -47,13 +47,13 @@ import {
 } from "../../components/config-sections";
 import { RoutingSection } from "../../components/routing-section";
 import type { ApplicationDetailContext } from "../layout";
+import { useConfigNav } from "../config-nav";
 import {
   EDIT_SECTIONS,
   computeSectionErrors,
   firstErroredSectionId,
   sectionAnchorId,
 } from "./section-meta";
-import { SectionRail } from "./section-rail";
 import { useActiveSection } from "./use-active-section";
 
 type ApplicationData = ApplicationDetailContext["template"];
@@ -300,19 +300,42 @@ export default function ApplicationConfigurationTab() {
 
   const showRouting = serviceType === "StatelessWeb" || enableRouting;
 
+  const { setState: setConfigNav } = useConfigNav();
   const activeId = useActiveSection(SECTION_IDS);
-  const errorKeys = Object.keys(form.formState.errors);
-  const erroredIds = computeSectionErrors(errorKeys);
-  const badges: Record<string, number | undefined> = {
-    environment: envVars?.length,
-    storage: volumeMounts?.length,
-  };
+
+  // Memoise the published values so the effect below only fires on real
+  // changes — an unmemoised Set/object would be a fresh reference every render
+  // and loop against the provider it updates.
+  const errorKey = Object.keys(form.formState.errors).sort().join(",");
+  const erroredIds = useMemo(
+    () => computeSectionErrors(errorKey ? errorKey.split(",") : []),
+    [errorKey],
+  );
+  const envCount = envVars?.length ?? 0;
+  const volCount = volumeMounts?.length ?? 0;
+  const badges = useMemo<Record<string, number | undefined>>(
+    () => ({ environment: envCount, storage: volCount }),
+    [envCount, volCount],
+  );
 
   const scrollToSection = useCallback((id: string) => {
     document
       .getElementById(sectionAnchorId(id))
       ?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
+
+  // Publish this page's live section state to the shared page nav (rendered by
+  // the detail layout) so it can show the Configuration sub-sections with the
+  // same active highlight, error dots, and badges.
+  useEffect(() => {
+    setConfigNav({
+      activeId,
+      erroredIds,
+      badges,
+      onNavigate: scrollToSection,
+    });
+  }, [activeId, erroredIds, badges, scrollToSection, setConfigNav]);
+  useEffect(() => () => setConfigNav(null), [setConfigNav]);
 
   const onInvalid = useCallback(() => {
     const firstId = firstErroredSectionId(Object.keys(form.formState.errors));
@@ -452,13 +475,11 @@ export default function ApplicationConfigurationTab() {
   };
 
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-3xl">
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
-          <div className="bg-background sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 border-b py-3">
-            <p className="text-muted-foreground text-sm">
-              Changes are saved as a new draft version.
-            </p>
+          <div className="bg-background sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 py-2">
+            <h2 className="text-lg font-medium">Configuration</h2>
             <div className="flex gap-3">
               <Button
                 type="button"
@@ -476,73 +497,62 @@ export default function ApplicationConfigurationTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-[190px_minmax(0,1fr)] md:items-start">
-            <SectionRail
-              activeId={activeId}
-              erroredIds={erroredIds}
-              badges={badges}
-              onNavigate={scrollToSection}
-            />
+          <div className="space-y-4">
+            <SectionCard id="image" title="Image & version">
+              <ImageFields />
+            </SectionCard>
 
-            <div className="space-y-4">
-              <SectionCard id="image" title="Image & version">
-                <ImageFields />
-              </SectionCard>
+            <SectionCard id="environment" title="Environment variables">
+              <EnvVarsSection />
+            </SectionCard>
 
-              <SectionCard id="environment" title="Environment variables">
-                <EnvVarsSection />
-              </SectionCard>
-
-              <SectionCard id="networking" title="Networking">
-                <div className="space-y-4">
-                  {showRouting && (
-                    <>
-                      <FormField
-                        control={form.control}
-                        name="enableRouting"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center gap-3">
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0">
-                              Enable public routing
-                            </FormLabel>
-                          </FormItem>
-                        )}
-                      />
-                      {enableRouting && (
-                        <RoutingSection networkType={networkType} />
+            <SectionCard id="networking" title="Networking">
+              <div className="space-y-4">
+                {showRouting && (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="enableRouting"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center gap-3">
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                            />
+                          </FormControl>
+                          <FormLabel className="!mt-0">
+                            Enable public routing
+                          </FormLabel>
+                        </FormItem>
                       )}
-                      <Separator />
-                    </>
-                  )}
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Host port mappings</p>
-                    <PortsSection />
-                  </div>
+                    />
+                    {enableRouting && <RoutingSection networkType={networkType} />}
+                    <Separator />
+                  </>
+                )}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Host port mappings</p>
+                  <PortsSection />
                 </div>
-              </SectionCard>
+              </div>
+            </SectionCard>
 
-              <SectionCard id="storage" title="Storage">
-                <VolumesSection />
-              </SectionCard>
+            <SectionCard id="storage" title="Storage">
+              <VolumesSection />
+            </SectionCard>
 
-              <SectionCard id="runtime" title="Runtime & advanced">
-                <div className="space-y-6">
-                  <ServiceTypeField />
-                  <RestartPolicySection />
-                  <HealthCheckSection />
-                </div>
-              </SectionCard>
+            <SectionCard id="runtime" title="Runtime & advanced">
+              <div className="space-y-6">
+                <ServiceTypeField />
+                <RestartPolicySection />
+                <HealthCheckSection />
+              </div>
+            </SectionCard>
 
-              <SectionCard id="identity" title="Identity">
-                <IdentityFields />
-              </SectionCard>
-            </div>
+            <SectionCard id="identity" title="Identity">
+              <IdentityFields />
+            </SectionCard>
           </div>
         </form>
       </Form>

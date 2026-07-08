@@ -1,10 +1,5 @@
 import { useMemo, useState } from "react";
-import {
-  NavLink,
-  Outlet,
-  useNavigate,
-  useParams,
-} from "react-router-dom";
+import { Outlet, useNavigate, useParams } from "react-router-dom";
 import {
   IconAlertCircle,
   IconArrowLeft,
@@ -39,13 +34,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { cn } from "@/lib/utils";
 import type {
   Environment,
   StackContainerStatus,
   StackInfo,
   StackTemplateInfo,
 } from "@mini-infra/types";
+import { ConfigNavProvider } from "./config-nav-context";
+import { PageNav } from "./page-nav";
 
 export interface ApplicationDetailContext {
   templateId: string;
@@ -57,13 +53,6 @@ export interface ApplicationDetailContext {
   environment: Environment | undefined;
   url: string | null;
 }
-
-const TABS = [
-  { value: "overview", label: "Overview" },
-  { value: "services", label: "Services" },
-  { value: "configuration", label: "Configuration" },
-  { value: "activity", label: "Activity" },
-] as const;
 
 function pickPrimaryStack(stacks: StackInfo[]): StackInfo | null {
   return (
@@ -307,34 +296,16 @@ export default function ApplicationDetailLayout() {
         </div>
       </div>
 
-      <div className="px-4 lg:px-6">
-        <nav
-          aria-label="Application detail tabs"
-          className="bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]"
-        >
-          {TABS.map((t) => (
-            <NavLink
-              key={t.value}
-              to={`/applications/${id}/${t.value}`}
-              end
-              className={({ isActive }) =>
-                cn(
-                  "inline-flex h-[calc(100%-1px)] items-center justify-center rounded-md border border-transparent px-3 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none",
-                  isActive
-                    ? "bg-background text-foreground shadow-sm dark:bg-input/30 dark:border-input dark:text-foreground"
-                    : "text-foreground hover:text-foreground dark:text-muted-foreground",
-                )
-              }
-            >
-              {t.label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
-
-      <div className="px-4 lg:px-6">
-        <Outlet context={context} />
-      </div>
+      <ConfigNavProvider>
+        <div className="px-4 lg:px-6">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-[200px_minmax(0,1fr)] md:items-start">
+            <PageNav basePath={`/applications/${id}`} />
+            <div className="min-w-0">
+              <Outlet context={context} />
+            </div>
+          </div>
+        </div>
+      </ConfigNavProvider>
 
       <AlertDialog
         open={confirmDelete}
