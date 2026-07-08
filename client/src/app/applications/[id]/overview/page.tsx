@@ -1,23 +1,6 @@
-import { useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import {
-  IconAlertTriangle,
-  IconExternalLink,
-  IconLoader2,
-  IconPlayerPlay,
-  IconPlayerStop,
-  IconPencil,
-  IconTrash,
-} from "@tabler/icons-react";
-import {
-  useDeleteApplication,
-  useDeployApplication,
-  useStopApplication,
-} from "@/hooks/use-applications";
+import { IconAlertTriangle, IconExternalLink } from "@tabler/icons-react";
 import { useStackHistory } from "@/hooks/use-stacks";
-import { useTaskTracker } from "@/hooks/use-task-tracker";
-import { Channel } from "@mini-infra/types";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -25,17 +8,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import type { StackDeploymentRecord } from "@mini-infra/types";
 import { StatusStrip } from "../_components/status-strip";
 import { ConnectCard } from "../_components/connect-card";
@@ -87,67 +61,12 @@ export default function ApplicationOverviewTab() {
   const navigate = useNavigate();
   const { template, primaryStack, containerStatus, environment, url, stacks } =
     useOutletContext<ApplicationDetailContext>();
-  const { registerTask } = useTaskTracker();
-  const deployApplication = useDeployApplication();
-  const stopApplication = useStopApplication();
-  const deleteApplication = useDeleteApplication();
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: historyData } = useStackHistory(primaryStack?.id ?? "");
   const recent = (historyData?.data ?? []).slice(0, 5);
 
   const hasStacks = stacks.length > 0;
-  const isDeploying = primaryStack?.status === "pending";
   const lastFailure = primaryStack?.lastFailureReason ?? null;
-
-  const handleDeploy = async () => {
-    if (!template.environmentId) return;
-    try {
-      await deployApplication.mutateAsync({
-        templateId: template.id,
-        name: template.name,
-        environmentId: template.environmentId,
-        onStackCreated: (stackId) => {
-          registerTask({
-            id: stackId,
-            type: "stack-apply",
-            label: `Deploying ${template.displayName ?? template.name}`,
-            channel: Channel.STACKS,
-          });
-        },
-      });
-    } catch {
-      // toast handled by mutation
-    }
-  };
-
-  const handleStop = async () => {
-    if (!hasStacks) return;
-    try {
-      for (const stack of stacks) {
-        registerTask({
-          id: stack.id,
-          type: "stack-destroy",
-          label: `Stopping ${template.displayName ?? template.name}`,
-          channel: Channel.STACKS,
-        });
-      }
-      await Promise.all(
-        stacks.map((s) => stopApplication.mutateAsync(s.id)),
-      );
-    } catch {
-      // toast handled by mutation
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      await deleteApplication.mutateAsync({ templateId: template.id });
-      navigate("/applications");
-    } finally {
-      setConfirmDelete(false);
-    }
-  };
 
   return (
     <div className="grid gap-6 max-w-4xl">
@@ -185,25 +104,12 @@ export default function ApplicationOverviewTab() {
           <CardHeader>
             <CardTitle>Not deployed</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             <p className="text-sm text-muted-foreground">
               {template.environmentId
-                ? "This application is configured but has not been deployed yet."
+                ? "This application is configured but has not been deployed yet. Use Deploy above to bring it up."
                 : "Bind this application to an environment before deploying."}
             </p>
-            {template.environmentId && (
-              <Button
-                onClick={handleDeploy}
-                disabled={deployApplication.isPending}
-              >
-                {deployApplication.isPending ? (
-                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <IconPlayerPlay className="h-4 w-4 mr-2" />
-                )}
-                Deploy
-              </Button>
-            )}
           </CardContent>
         </Card>
       )}
@@ -292,7 +198,7 @@ export default function ApplicationOverviewTab() {
                     variant="ghost"
                     size="sm"
                     onClick={() =>
-                      navigate(`/applications/${template.id}/history`)
+                      navigate(`/applications/${template.id}/activity`)
                     }
                   >
                     View full history
@@ -303,86 +209,6 @@ export default function ApplicationOverviewTab() {
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {!hasStacks && template.environmentId && (
-            <Button
-              onClick={handleDeploy}
-              disabled={deployApplication.isPending}
-            >
-              {deployApplication.isPending ? (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <IconPlayerPlay className="h-4 w-4 mr-2" />
-              )}
-              Deploy
-            </Button>
-          )}
-          {hasStacks && (
-            <Button
-              variant="outline"
-              onClick={handleStop}
-              disabled={stopApplication.isPending || isDeploying}
-            >
-              {stopApplication.isPending ? (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <IconPlayerStop className="h-4 w-4 mr-2" />
-              )}
-              Stop
-            </Button>
-          )}
-          <Button
-            variant="outline"
-            onClick={() =>
-              navigate(`/applications/${template.id}/configuration`)
-            }
-          >
-            <IconPencil className="h-4 w-4 mr-2" />
-            Edit configuration
-          </Button>
-          <Button
-            variant="outline"
-            className="text-destructive hover:text-destructive"
-            onClick={() => setConfirmDelete(true)}
-          >
-            <IconTrash className="h-4 w-4 mr-2" />
-            Delete
-          </Button>
-        </CardContent>
-      </Card>
-
-      <AlertDialog
-        open={confirmDelete}
-        onOpenChange={(open) => !open && setConfirmDelete(false)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Application</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete &quot;
-              {template.displayName}&quot;? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              disabled={deleteApplication.isPending}
-            >
-              {deleteApplication.isPending && (
-                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
-              )}
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

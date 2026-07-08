@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   IconCloud,
   IconExternalLink,
@@ -18,27 +18,22 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type {
-  StackInfo,
-  StackServiceRouting,
-} from "@mini-infra/types";
-import type { ApplicationDetailContext } from "../layout";
+import type { StackInfo, StackServiceRouting } from "@mini-infra/types";
 
 interface ServiceWithRouting {
   serviceName: string;
   routing: StackServiceRouting;
 }
 
-function pickRoutedServices(
-  stack: StackInfo | null,
-): ServiceWithRouting[] {
+function pickRoutedServices(stack: StackInfo | null): ServiceWithRouting[] {
   // Prefer the last-applied snapshot since it reflects what's actually running.
-  // Fall back to the stack's current services so the tab is still useful when
+  // Fall back to the stack's current services so the view is still useful when
   // the first apply failed (no snapshot yet) or services have been edited but
   // not yet applied.
   const fromSnapshot = stack?.lastAppliedSnapshot?.services;
   const fromStack = stack?.services;
-  const source = fromSnapshot && fromSnapshot.length > 0 ? fromSnapshot : fromStack;
+  const source =
+    fromSnapshot && fromSnapshot.length > 0 ? fromSnapshot : fromStack;
   if (!source) return [];
   const result: ServiceWithRouting[] = [];
   for (const s of source) {
@@ -76,7 +71,7 @@ function ChipLink({
   );
 }
 
-function RoutingCard({
+function RoutedServiceCard({
   serviceName,
   routing,
   stack,
@@ -161,55 +156,36 @@ function RoutingCard({
   );
 }
 
-export default function ApplicationRoutingTab() {
-  const { primaryStack } = useOutletContext<ApplicationDetailContext>();
-  const routedServices = useMemo(
-    () => pickRoutedServices(primaryStack),
-    [primaryStack],
-  );
+/**
+ * Read-only routing + networks/volumes view for a deployed stack. Extracted
+ * from the former standalone Routing tab so it can live inside the merged
+ * Services tab. Renders nothing when the stack exposes no hostnames and has no
+ * networks or volumes, so it stays out of the way for simple apps.
+ */
+export function RoutingEndpoints({ stack }: { stack: StackInfo }) {
+  const routedServices = useMemo(() => pickRoutedServices(stack), [stack]);
+  const networks = stack.networks ?? [];
+  const volumes = stack.volumes ?? [];
 
-  if (!primaryStack) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Routing</CardTitle>
-          <CardDescription>
-            Routing will appear here once this application is deployed.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
+  if (routedServices.length === 0 && networks.length === 0 && volumes.length === 0) {
+    return null;
   }
 
-  const networks = primaryStack.networks ?? [];
-  const volumes = primaryStack.volumes ?? [];
-
   return (
-    <div className="grid gap-6 max-w-4xl">
-      {routedServices.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Routing</CardTitle>
-            <CardDescription>
-              No services in this application expose a public hostname.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      ) : (
-        routedServices.map(({ serviceName, routing }) => (
-          <RoutingCard
-            key={serviceName}
-            serviceName={serviceName}
-            routing={routing}
-            stack={primaryStack}
-          />
-        ))
-      )}
+    <>
+      {routedServices.map(({ serviceName, routing }) => (
+        <RoutedServiceCard
+          key={serviceName}
+          serviceName={serviceName}
+          routing={routing}
+          stack={stack}
+        />
+      ))}
 
       {(networks.length > 0 || volumes.length > 0) && (
         <Card>
           <CardHeader>
-            <CardTitle>Networks &amp; volumes</CardTitle>
+            <CardTitle>Networks and volumes</CardTitle>
             <CardDescription>
               Docker networks and volumes provisioned by this stack.
             </CardDescription>
@@ -255,6 +231,6 @@ export default function ApplicationRoutingTab() {
           </CardContent>
         </Card>
       )}
-    </div>
+    </>
   );
 }

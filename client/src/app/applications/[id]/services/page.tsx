@@ -19,6 +19,8 @@ import type {
   StackServiceDefinition,
 } from "@mini-infra/types";
 import { ServiceRow } from "../_components/service-row";
+import { RoutingEndpoints } from "../_components/routing-endpoints";
+import { PoolSection } from "../_components/pool-section";
 import type { ApplicationDetailContext } from "../layout";
 
 function groupContainersByService(
@@ -33,9 +35,7 @@ function groupContainersByService(
   return map;
 }
 
-function getServices(
-  ctx: ApplicationDetailContext,
-): StackServiceDefinition[] {
+function getServices(ctx: ApplicationDetailContext): StackServiceDefinition[] {
   const fromSnapshot = ctx.primaryStack?.lastAppliedSnapshot?.services;
   if (fromSnapshot && fromSnapshot.length > 0) return fromSnapshot;
 
@@ -67,51 +67,60 @@ export default function ApplicationServicesTab() {
     [ctx.containerStatus],
   );
 
-  if (services.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Services</CardTitle>
-          <CardDescription>
-            This application has no services defined.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Services</CardTitle>
-        <CardDescription>
-          Services declared by this application. Expand a row for runtime
-          details.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-8" />
-              <TableHead>Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Image</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Ports</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {services.map((service) => (
-              <ServiceRow
-                key={service.serviceName}
-                service={service}
-                containers={containersByService.get(service.serviceName) ?? []}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <div className="grid gap-6 max-w-4xl">
+      {services.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Services</CardTitle>
+            <CardDescription>
+              This application has no services defined.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Services</CardTitle>
+            <CardDescription>
+              Services declared by this application. Expand a row for runtime
+              details.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Ports</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {services.map((service) => (
+                  <ServiceRow
+                    key={service.serviceName}
+                    service={service}
+                    containers={
+                      containersByService.get(service.serviceName) ?? []
+                    }
+                  />
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      {ctx.primaryStack && (
+        <>
+          <RoutingEndpoints stack={ctx.primaryStack} />
+          <PoolSection stack={ctx.primaryStack} environment={ctx.environment} />
+        </>
+      )}
+    </div>
   );
 }

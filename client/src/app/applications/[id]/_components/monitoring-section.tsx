@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link, useOutletContext } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   IconActivity,
   IconCpu,
@@ -23,7 +23,7 @@ import {
 import { useLokiLogs } from "@/hooks/use-loki-logs";
 import { formatCpu, formatBytes } from "@/lib/format-metrics";
 import { MetricsChart } from "@/app/monitoring/MetricsChart";
-import type { ApplicationDetailContext } from "../layout";
+import type { StackContainerStatus, StackInfo } from "@mini-infra/types";
 
 interface RangeOption {
   value: string;
@@ -53,12 +53,20 @@ function formatLogTime(ts: number): string {
   });
 }
 
-export default function ApplicationMonitoringTab() {
-  const { primaryStack, containerStatus } =
-    useOutletContext<ApplicationDetailContext>();
+/**
+ * Live metrics + logs for a deployed application, extracted from the former
+ * standalone Monitoring tab so it can sit alongside deployment history on the
+ * merged Activity tab.
+ */
+export function MonitoringSection({
+  primaryStack,
+  containerStatus,
+}: {
+  primaryStack: StackInfo | null;
+  containerStatus: StackContainerStatus[];
+}) {
   const [rangeValue, setRangeValue] = useState<string>("1h");
-  const range =
-    RANGES.find((r) => r.value === rangeValue) ?? RANGES[1];
+  const range = RANGES.find((r) => r.value === rangeValue) ?? RANGES[1];
 
   const { data: monitoringStatus, isLoading: monitoringLoading } =
     useMonitoringStatus();
@@ -233,7 +241,8 @@ export default function ApplicationMonitoringTab() {
                 Recent logs
               </CardTitle>
               <CardDescription>
-                Last 200 lines from the application&apos;s containers (auto-refreshes every 15s).
+                Last 200 lines from the application&apos;s containers
+                (auto-refreshes every 15s).
               </CardDescription>
             </div>
             <Button asChild variant="ghost" size="sm">

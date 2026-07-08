@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   NavLink,
   Outlet,
@@ -9,17 +9,36 @@ import {
   IconAlertCircle,
   IconArrowLeft,
   IconExternalLink,
+  IconLoader2,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconTrash,
 } from "@tabler/icons-react";
 import {
   useApplication,
+  useDeleteApplication,
+  useDeployApplication,
+  useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
 import { useStackStatus } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
+import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { Channel } from "@mini-infra/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import type {
   Environment,
@@ -42,11 +61,8 @@ export interface ApplicationDetailContext {
 const TABS = [
   { value: "overview", label: "Overview" },
   { value: "services", label: "Services" },
-  { value: "routing", label: "Routing" },
-  { value: "pool", label: "Pool" },
-  { value: "monitoring", label: "Monitoring" },
-  { value: "history", label: "History" },
   { value: "configuration", label: "Configuration" },
+  { value: "activity", label: "Activity" },
 ] as const;
 
 function pickPrimaryStack(stacks: StackInfo[]): StackInfo | null {
@@ -67,10 +83,16 @@ function getAppUrl(stack: StackInfo | null): string | null {
 export default function ApplicationDetailLayout() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+  const { registerTask } = useTaskTracker();
 
   const { data: appData, isLoading, error } = useApplication(id ?? "");
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
+
+  const deployApplication = useDeployApplication();
+  const stopApplication = useStopApplication();
+  const deleteApplication = useDeleteApplication();
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const template = appData?.data ?? null;
   const stacks = useMemo(() => {
@@ -87,6 +109,57 @@ export default function ApplicationDetailLayout() {
       : undefined;
   }, [envData, template]);
   const url = useMemo(() => getAppUrl(primaryStack), [primaryStack]);
+
+  const hasStacks = stacks.length > 0;
+  const isDeploying = primaryStack?.status === "pending";
+
+  const handleDeploy = async () => {
+    if (!template?.environmentId) return;
+    try {
+      await deployApplication.mutateAsync({
+        templateId: template.id,
+        name: template.name,
+        environmentId: template.environmentId,
+        onStackCreated: (stackId) => {
+          registerTask({
+            id: stackId,
+            type: "stack-apply",
+            label: `Deploying ${template.displayName ?? template.name}`,
+            channel: Channel.STACKS,
+          });
+        },
+      });
+    } catch {
+      // toast handled by mutation
+    }
+  };
+
+  const handleStop = async () => {
+    if (!hasStacks || !template) return;
+    try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-destroy",
+          label: `Stopping ${template.displayName ?? template.name}`,
+          channel: Channel.STACKS,
+        });
+      }
+      await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
+    } catch {
+      // toast handled by mutation
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!template) return;
+    try {
+      await deleteApplication.mutateAsync({ templateId: template.id });
+      navigate("/applications");
+    } finally {
+      setConfirmDelete(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -196,6 +269,41 @@ export default function ApplicationDetailLayout() {
               </p>
             )}
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {!hasStacks && template.environmentId && (
+              <Button onClick={handleDeploy} disabled={deployApplication.isPending}>
+                {deployApplication.isPending ? (
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <IconPlayerPlay className="h-4 w-4 mr-2" />
+                )}
+                Deploy
+              </Button>
+            )}
+            {hasStacks && (
+              <Button
+                variant="outline"
+                onClick={handleStop}
+                disabled={stopApplication.isPending || isDeploying}
+              >
+                {stopApplication.isPending ? (
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <IconPlayerStop className="h-4 w-4 mr-2" />
+                )}
+                Stop
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <IconTrash className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -227,6 +335,34 @@ export default function ApplicationDetailLayout() {
       <div className="px-4 lg:px-6">
         <Outlet context={context} />
       </div>
+
+      <AlertDialog
+        open={confirmDelete}
+        onOpenChange={(open) => !open && setConfirmDelete(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete application</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete &quot;{template.displayName}&quot;?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteApplication.isPending}
+            >
+              {deleteApplication.isPending && (
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
