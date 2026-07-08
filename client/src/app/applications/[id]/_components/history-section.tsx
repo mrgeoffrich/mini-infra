@@ -1,5 +1,4 @@
 import { Fragment, useState } from "react";
-import { useOutletContext } from "react-router-dom";
 import {
   IconCheck,
   IconChevronDown,
@@ -26,8 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStackHistory } from "@/hooks/use-stacks";
-import type { StackDeploymentRecord } from "@mini-infra/types";
-import type { ApplicationDetailContext } from "../layout";
+import type { StackDeploymentRecord, StackInfo } from "@mini-infra/types";
 
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
@@ -53,9 +51,7 @@ function HistoryRow({ entry }: { entry: StackDeploymentRecord }) {
   const serviceResults = entry.serviceResults ?? [];
   const resourceResults = entry.resourceResults ?? [];
   const hasDetails =
-    serviceResults.length > 0 ||
-    resourceResults.length > 0 ||
-    !!entry.error;
+    serviceResults.length > 0 || resourceResults.length > 0 || !!entry.error;
 
   return (
     <Fragment>
@@ -190,8 +186,15 @@ function HistoryRow({ entry }: { entry: StackDeploymentRecord }) {
   );
 }
 
-export default function ApplicationHistoryTab() {
-  const { primaryStack } = useOutletContext<ApplicationDetailContext>();
+/**
+ * Deployment history table for a stack, extracted from the former standalone
+ * History tab so it can sit under live metrics on the merged Activity tab.
+ */
+export function HistorySection({
+  primaryStack,
+}: {
+  primaryStack: StackInfo | null;
+}) {
   const stackId = primaryStack?.id ?? "";
   const { data, isLoading } = useStackHistory(stackId);
   const entries = data?.data ?? [];
@@ -200,7 +203,7 @@ export default function ApplicationHistoryTab() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>History</CardTitle>
+          <CardTitle>Deployment history</CardTitle>
           <CardDescription>
             No deployment history yet. Deploy this application to see entries
             here.

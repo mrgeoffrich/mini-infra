@@ -37,11 +37,8 @@ import ApplicationDetailLayout from "@/app/applications/[id]/layout";
 import ApplicationDetailIndex from "@/app/applications/[id]/page";
 import ApplicationOverviewTab from "@/app/applications/[id]/overview/page";
 import ApplicationServicesTab from "@/app/applications/[id]/services/page";
-import ApplicationRoutingTab from "@/app/applications/[id]/routing/page";
-import ApplicationPoolTab from "@/app/applications/[id]/pool/page";
-import ApplicationMonitoringTab from "@/app/applications/[id]/monitoring/page";
-import ApplicationHistoryTab from "@/app/applications/[id]/history/page";
 import ApplicationConfigurationTab from "@/app/applications/[id]/configuration/page";
+import ApplicationActivityTab from "@/app/applications/[id]/activity/page";
 import AdoptContainerPage from "@/app/applications/adopt/page";
 import { ApiKeysPage } from "@/app/api-keys/page";
 import { CreateApiKeyPage } from "@/app/api-keys/new/page";
@@ -214,11 +211,14 @@ export const router = createBrowserRouter([
           { index: true, element: <ApplicationDetailIndex /> },
           { path: "overview", element: <ApplicationOverviewTab /> },
           { path: "services", element: <ApplicationServicesTab /> },
-          { path: "routing", element: <ApplicationRoutingTab /> },
-          { path: "pool", element: <ApplicationPoolTab /> },
-          { path: "monitoring", element: <ApplicationMonitoringTab /> },
-          { path: "history", element: <ApplicationHistoryTab /> },
           { path: "configuration", element: <ApplicationConfigurationTab /> },
+          { path: "activity", element: <ApplicationActivityTab /> },
+          // Legacy tab paths folded into the four above — redirect old
+          // bookmarks/links so they still resolve.
+          { path: "routing", element: <Navigate to="../services" replace /> },
+          { path: "pool", element: <Navigate to="../services" replace /> },
+          { path: "monitoring", element: <Navigate to="../activity" replace /> },
+          { path: "history", element: <Navigate to="../activity" replace /> },
         ],
       },
       {
