@@ -76,13 +76,24 @@ export function buildDraftFromVersion(
 /**
  * Map a persisted service (`StackTemplateServiceInfo`) back into the authoring
  * shape (`StackServiceDefinition`). DB-only fields (`id`, `versionId`) are
- * dropped; `null` on optional-non-nullable fields is normalized to `undefined`
- * so the draft matches what the create/draft schema expects.
+ * dropped, EVERY authoring field is carried through (`addons`, `poolConfig`,
+ * `jobPoolConfig`, and the vault/nats binding refs), and the whole result is
+ * run through `stripNull` so read-model `null`s on optional-non-nullable fields
+ * become absent — matching what the create/draft schema's `.optional()` fields
+ * accept.
+ *
+ * This is the single canonical service mapper. It is write-safe standalone
+ * (the `stripNull` pass means a caller can drop its output straight into a
+ * `DraftVersionInput.services[]` without re-stripping), so the stack-templates
+ * draft editor reuses it directly rather than hand-rolling a partial map that
+ * silently drops per-service `addons`/`poolConfig`/`nats*`/`vault*` whenever any
+ * service is edited. `buildDraftFromVersion` above also re-strips the whole
+ * draft, but that outer pass is now redundant for services (idempotent).
  */
-function mapServiceInfoToDefinition(
+export function mapServiceInfoToDefinition(
   svc: StackTemplateServiceInfo,
 ): StackServiceDefinition {
-  return {
+  return stripNull({
     serviceName: svc.serviceName,
     serviceType: svc.serviceType,
     dockerImage: svc.dockerImage,
@@ -102,7 +113,7 @@ function mapServiceInfoToDefinition(
     natsRole: svc.natsRole,
     natsSigner: svc.natsSigner,
     addons: svc.addons ?? undefined,
-  };
+  });
 }
 
 function mapConfigFileInfoToInput(

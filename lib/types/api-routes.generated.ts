@@ -8,6 +8,7 @@
 export type ApiRouteEntry = { method: string; path: string };
 
 export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
+  { method: "GET", path: "/api/addons" },
   { method: "GET", path: "/api/agent-sidecar/config" },
   { method: "PUT", path: "/api/agent-sidecar/config" },
   { method: "POST", path: "/api/agent-sidecar/restart" },

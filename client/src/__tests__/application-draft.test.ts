@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import type { StackTemplateVersionInfo } from "@mini-infra/types";
-import { buildDraftFromVersion } from "@/lib/application-draft";
+import type {
+  StackTemplateServiceInfo,
+  StackTemplateVersionInfo,
+} from "@mini-infra/types";
+import {
+  buildDraftFromVersion,
+  mapServiceInfoToDefinition,
+} from "@/lib/application-draft";
 
 function makeVersion(): StackTemplateVersionInfo {
   return {
@@ -160,5 +166,116 @@ describe("buildDraftFromVersion", () => {
       { type: "docker-network", purpose: "applications" },
     ]);
     expect(draft.services[0].containerConfig.env).toEqual({ FOO: "bar" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mapServiceInfoToDefinition — the canonical, write-safe per-service mapper the
+// stack-templates draft editor reuses (Phase 4, Part A). It must carry EVERY
+// authoring field (`addons`, `poolConfig`, vault/nats refs) AND strip
+// read-model nulls so its output is a valid `DraftVersionInput.services[]`
+// entry standalone.
+// ---------------------------------------------------------------------------
+
+function makeServiceInfo(
+  overrides: Partial<StackTemplateServiceInfo> = {},
+): StackTemplateServiceInfo {
+  return {
+    id: "svc-x",
+    versionId: "ver-1",
+    serviceName: "web",
+    serviceType: "Stateful",
+    dockerImage: "nginx",
+    dockerTag: "latest",
+    containerConfig: {},
+    initCommands: null,
+    dependsOn: [],
+    order: 1,
+    routing: null,
+    poolConfig: null,
+    jobPoolConfig: null,
+    vaultAppRoleId: null,
+    vaultAppRoleRef: null,
+    natsCredentialId: null,
+    natsCredentialRef: null,
+    natsRole: null,
+    natsSigner: null,
+    addons: null,
+    ...overrides,
+  };
+}
+
+describe("mapServiceInfoToDefinition", () => {
+  it("carries the addons block and non-null per-service binding fields through", () => {
+    const svc = makeServiceInfo({
+      addons: { "tailscale-ssh": { authKey: "tskey-abc" } },
+      natsRole: "worker",
+      vaultAppRoleRef: "my-approle",
+    });
+
+    const def = mapServiceInfoToDefinition(svc);
+
+    expect(def.addons).toEqual({ "tailscale-ssh": { authKey: "tskey-abc" } });
+    expect(def.natsRole).toBe("worker");
+    expect(def.vaultAppRoleRef).toBe("my-approle");
+  });
+
+  it("strips read-model nulls so its output is a valid draft service standalone", () => {
+    const def = mapServiceInfoToDefinition(makeServiceInfo());
+
+    // Deep scan: no property may be null (the draft schema rejects null on the
+    // .optional() service fields).
+    const findNullPath = (value: unknown, path = "$"): string | null => {
+      if (value === null) return path;
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          const hit = findNullPath(value[i], `${path}[${i}]`);
+          if (hit) return hit;
+        }
+        return null;
+      }
+      if (typeof value === "object") {
+        for (const [k, v] of Object.entries(value)) {
+          const hit = findNullPath(v, `${path}.${k}`);
+          if (hit) return hit;
+        }
+      }
+      return null;
+    };
+
+    expect(findNullPath(def)).toBeNull();
+    expect(def.jobPoolConfig).toBeUndefined();
+    expect(def.natsRole).toBeUndefined();
+    expect(def.addons).toBeUndefined();
+    // DB-only fields are dropped.
+    expect(def).not.toHaveProperty("id");
+    expect(def).not.toHaveProperty("versionId");
+  });
+
+  it("editing one service does not strip a sibling service's addons (Part A regression)", () => {
+    // The exact footgun the fix closes: the editor rebuilds the WHOLE services
+    // list via the mapper on any edit. Before the fix the map was partial and
+    // dropped `addons` off every service. Service B carries an addon; the map
+    // pass (as run by `buildDraftInput` / `toServiceDefinition`) must keep it.
+    const serviceA = makeServiceInfo({
+      id: "svc-a",
+      serviceName: "api",
+      order: 1,
+    });
+    const serviceB = makeServiceInfo({
+      id: "svc-b",
+      serviceName: "web",
+      order: 2,
+      addons: { "tailscale-web": { port: 443 } },
+    });
+
+    // Simulate editing service A: remap every service, replace index 0.
+    const rebuilt = [serviceA, serviceB].map(mapServiceInfoToDefinition);
+    rebuilt[0] = { ...rebuilt[0], dockerTag: "1.29" };
+
+    expect(rebuilt[0].serviceName).toBe("api");
+    expect(rebuilt[0].dockerTag).toBe("1.29");
+    // Service B's addon survives the edit to A.
+    expect(rebuilt[1].addons).toEqual({ "tailscale-web": { port: 443 } });
   });
 });

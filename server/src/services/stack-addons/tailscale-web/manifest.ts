@@ -53,6 +53,39 @@ export const tailscaleWebManifest = {
     'Expose the target service over HTTPS on the tailnet with auto-provisioned TLS. Materialises a tailscaled sidecar running `tailscale serve` against ${TS_CERT_DOMAIN}:443 → http://<target>:<port>.',
   appliesTo: ['Stateful', 'StatelessWeb', 'Pool'],
   requiresConnectedService: 'tailscale',
+  // Mirrors `tailscaleWebConfigSchema` above — the drift test in
+  // `addon-catalog-schema-drift.test.ts` pins these field names to the
+  // schema's keys.
+  configFields: [
+    {
+      name: 'port',
+      label: 'Target Port',
+      type: 'number',
+      required: true,
+      placeholder: '8080',
+      help: 'Local port on the target service the sidecar proxies to over the shared Docker network.',
+      min: 1,
+      max: 65535,
+    },
+    {
+      name: 'path',
+      label: 'Path',
+      type: 'string',
+      required: false,
+      placeholder: '/',
+      help: 'Optional sub-path to expose (defaults to /). Must begin with "/".',
+      pattern: '^/',
+    },
+    {
+      name: 'extraTags',
+      label: 'Extra Tags',
+      type: 'string[]',
+      required: false,
+      placeholder: 'tag:dev-team',
+      help: 'Additional Tailscale tags to apply to the device. Each must match tag:[a-z0-9-]+ and already exist in your ACL tagOwners.',
+      pattern: '^tag:[a-z0-9-]+$',
+    },
+  ],
 } as const satisfies AddonManifest;
 
 export const tailscaleWebTargetIntegration: TargetIntegration = {

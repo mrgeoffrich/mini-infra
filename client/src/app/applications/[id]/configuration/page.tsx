@@ -31,7 +31,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { StackServiceType } from "@mini-infra/types";
+import type {
+  DraftVersionInput,
+  StackServiceDefinition,
+  StackServiceType,
+} from "@mini-infra/types";
 import {
   editApplicationFormSchema,
   editApplicationDefaults,
@@ -46,6 +50,7 @@ import {
   VolumesSection,
 } from "../../components/config-sections";
 import { RoutingSection } from "../../components/routing-section";
+import { buildDraftFromVersion } from "@/lib/application-draft";
 import type { ApplicationDetailContext } from "../layout";
 import { useConfigNav } from "../config-nav";
 import {
@@ -435,6 +440,61 @@ export default function ApplicationConfigurationTab() {
       formData.serviceType as StackServiceType,
     );
 
+    // Rebuild the draft LOSSLESSLY from the existing version (mirroring the
+    // Connected Networks card's `persistJoinNetworks`) so fields this form
+    // doesn't model survive the save: a service's `addons` block,
+    // `vault`/`nats`/`requires`, config files, parameters, etc. We overlay
+    // only what the Configuration form edits — services[0] plus the
+    // version-level networks/volumes/resourceInputs. Building `services` from
+    // scratch here (the old behaviour) silently dropped all of the above.
+    const baseDraft = existingVersion
+      ? buildDraftFromVersion(existingVersion)
+      : undefined;
+    // Applications are single-service (services[0]); if a version somehow
+    // carries more than one service, the extras are preserved untouched — the
+    // form only edits the first.
+    const baseService = baseDraft?.services[0];
+
+    const editedService: StackServiceDefinition = {
+      ...baseService,
+      serviceName: formData.serviceName,
+      serviceType: formData.serviceType as StackServiceType,
+      dockerImage: formData.dockerImage,
+      dockerTag: formData.dockerTag,
+      containerConfig: {
+        // Preserve container-config fields the form doesn't model (command,
+        // entrypoint, capAdd, devices, user, labels, dynamicEnv, networkMode,
+        // ...) — several are authored by addons — and override only the ones
+        // it edits.
+        ...baseService?.containerConfig,
+        env: Object.keys(env).length > 0 ? env : undefined,
+        ports: ports.length > 0 ? ports : undefined,
+        mounts: mounts.length > 0 ? mounts : undefined,
+        joinNetworks,
+        joinResourceNetworks,
+        restartPolicy: formData.restartPolicy,
+        healthcheck,
+      },
+      dependsOn: baseService?.dependsOn ?? [],
+      order: baseService?.order ?? 0,
+      routing,
+    };
+
+    const draft: DraftVersionInput = baseDraft
+      ? {
+          ...baseDraft,
+          networks,
+          resourceInputs,
+          volumes,
+          services: [editedService, ...baseDraft.services.slice(1)],
+        }
+      : {
+          networks,
+          resourceInputs,
+          volumes,
+          services: [editedService],
+        };
+
     try {
       await updateApplication.mutateAsync({
         templateId,
@@ -442,31 +502,7 @@ export default function ApplicationConfigurationTab() {
           displayName: formData.displayName,
           description: formData.description || undefined,
         },
-        draft: {
-          networks,
-          resourceInputs,
-          volumes,
-          services: [
-            {
-              serviceName: formData.serviceName,
-              serviceType: formData.serviceType as StackServiceType,
-              dockerImage: formData.dockerImage,
-              dockerTag: formData.dockerTag,
-              containerConfig: {
-                env: Object.keys(env).length > 0 ? env : undefined,
-                ports: ports.length > 0 ? ports : undefined,
-                mounts: mounts.length > 0 ? mounts : undefined,
-                joinNetworks,
-                joinResourceNetworks,
-                restartPolicy: formData.restartPolicy,
-                healthcheck,
-              },
-              dependsOn: [],
-              order: 0,
-              routing,
-            },
-          ],
-        },
+        draft,
       });
       navigate("/applications");
     } catch {

@@ -48,6 +48,20 @@ export const tailscaleSshManifest = {
     'Operator SSH into the target service via Tailscale identity. Materialises a tailscaled sidecar joined to the target container, gated by the tailnet ACL ssh check policy.',
   appliesTo: ['Stateful', 'StatelessWeb', 'Pool'],
   requiresConnectedService: 'tailscale',
+  // Mirrors `tailscaleSshConfigSchema` above — the drift test in
+  // `addon-catalog-schema-drift.test.ts` pins these field names to the
+  // schema's keys.
+  configFields: [
+    {
+      name: 'extraTags',
+      label: 'Extra Tags',
+      type: 'string[]',
+      required: false,
+      placeholder: 'tag:dev-team',
+      help: 'Additional Tailscale tags to apply to the device. Each must match tag:[a-z0-9-]+ and already exist in your ACL tagOwners.',
+      pattern: '^tag:[a-z0-9-]+$',
+    },
+  ],
 } as const satisfies AddonManifest;
 
 export const tailscaleSshTargetIntegration: TargetIntegration = {
