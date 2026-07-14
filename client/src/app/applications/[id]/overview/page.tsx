@@ -1,4 +1,4 @@
-import { useNavigate, useOutletContext } from "react-router-dom";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { IconAlertTriangle, IconExternalLink } from "@tabler/icons-react";
 import { useStackHistory } from "@/hooks/use-stacks";
 import {
@@ -157,6 +157,20 @@ export default function ApplicationOverviewTab() {
                   )}
                 </dd>
               </div>
+              {primaryStack && (
+                <div>
+                  <dt className="text-muted-foreground">Installed as stack</dt>
+                  <dd className="font-medium">
+                    <Link
+                      to={`/stacks/${primaryStack.id}`}
+                      className="inline-flex items-center gap-1 text-primary hover:underline"
+                    >
+                      {primaryStack.name}
+                      <IconExternalLink className="h-3.5 w-3.5" />
+                    </Link>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-muted-foreground">Last applied</dt>
                 <dd className="font-medium">

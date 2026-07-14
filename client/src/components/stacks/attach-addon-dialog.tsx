@@ -57,6 +57,12 @@ interface AttachAddonDialogProps {
   onRemove: (addonId: string) => void;
   /** Republish in flight — disables the action buttons. */
   isPending?: boolean;
+  /**
+   * Which surface hosts the dialog — drives copy so it says "application" on an
+   * application screen and "template" in the template authoring editor (where
+   * there's no deployed stack to redeploy). Defaults to "application".
+   */
+  context?: "application" | "template";
 }
 
 export function AttachAddonDialog({
@@ -68,6 +74,7 @@ export function AttachAddonDialog({
   onAttach,
   onRemove,
   isPending = false,
+  context = "application",
 }: AttachAddonDialogProps) {
   const catalogQuery = useAddonCatalog(open);
   const { data: tailscaleConnectivity } = useServiceConnectivity("tailscale", {
@@ -149,8 +156,9 @@ export function AttachAddonDialog({
         <DialogHeader>
           <DialogTitle>Add-ons for {serviceName}</DialogTitle>
           <DialogDescription>
-            Attach a capability to this service. Changes are saved to the
-            application and take effect on its next redeploy.
+            {context === "template"
+              ? "Attach a capability to this service. Changes are saved to the template draft and apply to stacks installed from it."
+              : "Attach a capability to this service. Changes are saved to the application and take effect on its next redeploy."}
           </DialogDescription>
         </DialogHeader>
 

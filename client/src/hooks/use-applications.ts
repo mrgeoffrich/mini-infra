@@ -380,6 +380,7 @@ export function useDeployApplication() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    meta: { errorContext: "application" },
     mutationFn: async ({
       templateId,
       name,
@@ -419,6 +420,8 @@ export function useDeployApplication() {
  */
 export function useStopApplication() {
   return useMutation({
+    // Application screen: render stack-vocabulary server errors with "application" copy.
+    meta: { errorContext: "application" },
     mutationFn: async (stackId: string) => {
       await stopStackKeep(stackId);
     },
@@ -433,6 +436,7 @@ export function useStopApplication() {
  */
 export function useRemoveApplicationStack() {
   return useMutation({
+    meta: { errorContext: "application" },
     mutationFn: async (stackId: string) => {
       await destroyStack(stackId);
     },
@@ -444,6 +448,7 @@ export function useRedeployApplication() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    meta: { errorContext: "application" },
     mutationFn: async (args: { stackId: string; stackStatus: StackStatus }) => {
       // A no-op-tag redeploy of a synced/drifted stack is a pull-latest via
       // /update; any other status must recover through /apply (which has no
@@ -474,6 +479,7 @@ export function useApplyApplicationStack() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    meta: { errorContext: "application" },
     mutationFn: async (stackId: string) => {
       await applyStack(stackId);
     },
@@ -490,6 +496,7 @@ export function useDeployApplicationUpdate() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    meta: { errorContext: "application" },
     mutationFn: async (args: {
       stackId: string;
       templateId: string;
