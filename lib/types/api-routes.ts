@@ -710,6 +710,9 @@ export const ApiRoute = {
     /** POST /api/stack-templates/:templateId/rollback — re-point currentVersion to an older published version */
     rollback: (templateId: string): string =>
       `${ApiBase.stackTemplates}/${templateId}/rollback`,
+    /** POST /api/stack-templates/:templateId/versions/:versionId/archive — retire (or restore) an old published version */
+    archiveVersion: (templateId: string, versionId: string): string =>
+      `${ApiBase.stackTemplates}/${templateId}/versions/${versionId}/archive`,
   },
 
   stacks: {
@@ -730,6 +733,9 @@ export const ApiRoute = {
     /** GET /api/stacks/:stackId/history/:deploymentId */
     historyEntry: (stackId: string, deploymentId: string): string =>
       `${ApiBase.stacks}/${stackId}/history/${deploymentId}`,
+    /** POST /api/stacks/:stackId/history/:deploymentId/restore — restore the definition this deployment applied */
+    historyRestore: (stackId: string, deploymentId: string): string =>
+      `${ApiBase.stacks}/${stackId}/history/${deploymentId}/restore`,
     /** POST /api/stacks/:stackId/job-pools/:serviceName/run */
     jobPoolRun: (stackId: string, serviceName: string): string =>
       `${ApiBase.stacks}/${stackId}/job-pools/${serviceName}/run`,

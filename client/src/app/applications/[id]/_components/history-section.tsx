@@ -3,9 +3,20 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
+  IconHistory,
   IconLoader2,
   IconX,
 } from "@tabler/icons-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Card,
   CardContent,
@@ -24,7 +35,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useStackHistory } from "@/hooks/use-stacks";
+import { useStackHistory, useRestoreStackDeployment } from "@/hooks/use-stacks";
 import type { StackDeploymentRecord, StackInfo } from "@mini-infra/types";
 
 function formatDateTime(value: string | null): string {
@@ -46,12 +57,24 @@ function formatDuration(ms: number | null): string {
   return `${min}m ${remSec}s`;
 }
 
-function HistoryRow({ entry }: { entry: StackDeploymentRecord }) {
+function HistoryRow({
+  entry,
+  stackId,
+}: {
+  entry: StackDeploymentRecord;
+  stackId: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
+  const restore = useRestoreStackDeployment();
   const serviceResults = entry.serviceResults ?? [];
   const resourceResults = entry.resourceResults ?? [];
+  const canRestore = entry.hasSnapshot === true;
   const hasDetails =
-    serviceResults.length > 0 || resourceResults.length > 0 || !!entry.error;
+    serviceResults.length > 0 ||
+    resourceResults.length > 0 ||
+    !!entry.error ||
+    canRestore;
 
   return (
     <Fragment>
@@ -178,10 +201,65 @@ function HistoryRow({ entry }: { entry: StackDeploymentRecord }) {
                   </ul>
                 </div>
               )}
+              {canRestore && (
+                <div className="md:col-span-2 flex items-center justify-between gap-4 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">
+                    The definition this deployment applied was saved. Restoring it
+                    replaces the current definition — nothing is deployed until you
+                    Apply.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={restore.isPending}
+                    onClick={() => setConfirmRestore(true)}
+                    data-tour="stack-history-restore-button"
+                  >
+                    {restore.isPending ? (
+                      <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
+                    ) : (
+                      <IconHistory className="mr-1 h-4 w-4" />
+                    )}
+                    Restore this definition
+                  </Button>
+                </div>
+              )}
             </div>
           </TableCell>
         </TableRow>
       )}
+
+      <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Restore the definition from{" "}
+              {entry.version != null ? `v${entry.version}` : "this deployment"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The stack&apos;s current definition is replaced with the one this
+              deployment applied on {formatDateTime(entry.createdAt)}. No containers
+              are touched — the stack becomes <strong>Pending</strong> and you Apply
+              when ready. Any unapplied edits you have now will be lost.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={restore.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={restore.isPending}
+              onClick={() =>
+                restore.mutate(
+                  { stackId, deploymentId: entry.id },
+                  { onSuccess: () => setConfirmRestore(false) },
+                )
+              }
+            >
+              {restore.isPending && <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />}
+              Restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Fragment>
   );
 }
@@ -247,7 +325,7 @@ export function HistorySection({
             </TableHeader>
             <TableBody>
               {entries.map((entry) => (
-                <HistoryRow key={entry.id} entry={entry} />
+                <HistoryRow key={entry.id} entry={entry} stackId={stackId} />
               ))}
             </TableBody>
           </Table>

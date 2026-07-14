@@ -293,6 +293,37 @@ router.post('/:templateId/rollback', requirePermission(Permission.StacksWrite), 
   res.json({ success: true, data: template });
 }));
 
+// POST /:templateId/versions/:versionId/archive — Retire an old published
+// version so it can no longer be instantiated, upgraded to, or made current.
+// Body: { archived: boolean } — false un-archives. 404 if the version doesn't
+// belong to the template, 400 for a draft or for the template's current
+// version, 403 for system templates.
+router.post(
+  '/:templateId/versions/:versionId/archive',
+  requirePermission(Permission.StacksWrite),
+  asyncHandler(async (req, res) => {
+    const archived = req.body?.archived;
+    if (typeof archived !== 'boolean') {
+      throw new ValidationError(ErrorCode.VALIDATION_FAILED, 'archived must be a boolean', {
+        action: 'Pass { "archived": true } to archive, or false to restore.',
+      });
+    }
+
+    const service = getTemplateService();
+    const version = await service.setVersionArchived(
+      String(req.params.templateId),
+      String(req.params.versionId),
+      archived,
+    );
+
+    logger.info(
+      { templateId: req.params.templateId, versionId: req.params.versionId, archived },
+      archived ? 'Template version archived' : 'Template version restored',
+    );
+    res.json({ success: true, data: version });
+  }),
+);
+
 // DELETE /:templateId/draft — Discard draft
 router.delete('/:templateId/draft', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
   const service = getTemplateService();

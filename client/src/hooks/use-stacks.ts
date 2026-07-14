@@ -400,6 +400,37 @@ export function useRevertPendingStack() {
 }
 
 /**
+ * Restore the stack's definition from what a past deployment applied —
+ * POST /stacks/:id/history/:deploymentId/restore.
+ *
+ * Definition only: nothing is deployed, so the stack lands `pending` and the
+ * operator applies when ready. Distinct from revert-pending, which restores the
+ * LAST applied state (an undo of unapplied edits); this goes back to an older
+ * deployment on purpose.
+ */
+export function useRestoreStackDeployment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stackId, deploymentId }: { stackId: string; deploymentId: string }) =>
+      apiFetch<StackInfo>(ApiRoute.stacks.historyRestore(stackId, deploymentId), {
+        method: "POST",
+        body: {},
+        correlationIdPrefix: "stacks",
+      }),
+    onSuccess: (_data, variables) => {
+      toast.success("Definition restored", {
+        description: "The stack is now Pending — Apply to deploy it.",
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.history(variables.stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
  * Raw upgrade mutation — POST /stacks/:id/upgrade. Re-materializes the stack
  * from a published template version (`targetVersionId`, else current) and flips
  * it to `pending`. Does NOT apply. Most call sites want

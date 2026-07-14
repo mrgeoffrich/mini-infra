@@ -1205,6 +1205,14 @@ export interface StackDeploymentRecord {
   error: string | null;
   triggeredBy: string | null;
   createdAt: string;
+  /**
+   * Whether this deployment stored the definition it applied, and can therefore
+   * be restored from. False for `stop` deployments (nothing was applied), for
+   * rows predating snapshots, and for rows whose snapshot has aged out of
+   * retention. The snapshot itself is deliberately NOT on the list payload — it
+   * is a whole stack definition; the restore route reads it by id.
+   */
+  hasSnapshot?: boolean;
 }
 
 // API request types
