@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   Select,
   SelectContent,
@@ -199,7 +200,20 @@ function FromScratch({ onDone, onBack }: { onDone: () => void; onBack: () => voi
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<StackServiceDefinition | null>(null);
 
-  const canSubmit = name.trim().length > 0 && services.length > 0 && !createStack.isPending;
+  // A StatelessWeb service is load-balanced by HAProxy, so the server refuses one
+  // with no routing. The drawer defaults new services to StatelessWeb, which means
+  // the straight-line path through this dialog produced an invalid stack and a bare
+  // "Validation failed" toast — the server's actual complaint never reached the
+  // person who could act on it. Say it here, next to the service, before they submit.
+  const unroutedServices = services.filter(
+    (s) => s.serviceType === "StatelessWeb" && !s.routing,
+  );
+
+  const canSubmit =
+    name.trim().length > 0 &&
+    services.length > 0 &&
+    unroutedServices.length === 0 &&
+    !createStack.isPending;
 
   function handleSaveService(service: StackServiceDefinition) {
     setServices((prev) => {
@@ -297,40 +311,57 @@ function FromScratch({ onDone, onBack }: { onDone: () => void; onBack: () => voi
             </p>
           ) : (
             <ul className="space-y-1">
-              {services.map((s) => (
-                <li
-                  key={s.serviceName}
-                  className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                >
-                  <button
-                    type="button"
-                    className="flex-1 text-left hover:underline"
-                    onClick={() => {
-                      setEditing(s);
-                      setDrawerOpen(true);
-                    }}
+              {services.map((s) => {
+                const unrouted = s.serviceType === "StatelessWeb" && !s.routing;
+                return (
+                  <li
+                    key={s.serviceName}
+                    className={cn(
+                      "rounded-md border px-3 py-2 text-sm",
+                      unrouted && "border-destructive/50",
+                    )}
                   >
-                    <span className="font-medium">{s.serviceName}</span>
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {s.dockerImage}:{s.dockerTag}
-                    </span>
-                  </button>
-                  <Badge variant="secondary" className="text-xs">
-                    {s.serviceType}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() =>
-                      setServices((prev) => prev.filter((x) => x.serviceName !== s.serviceName))
-                    }
-                    aria-label={`Remove ${s.serviceName}`}
-                  >
-                    <IconTrash className="h-4 w-4" />
-                  </Button>
-                </li>
-              ))}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="flex-1 text-left hover:underline"
+                        onClick={() => {
+                          setEditing(s);
+                          setDrawerOpen(true);
+                        }}
+                      >
+                        <span className="font-medium">{s.serviceName}</span>
+                        <span className="ml-2 font-mono text-xs text-muted-foreground">
+                          {s.dockerImage}:{s.dockerTag}
+                        </span>
+                      </button>
+                      <Badge variant="secondary" className="text-xs">
+                        {s.serviceType}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() =>
+                          setServices((prev) =>
+                            prev.filter((x) => x.serviceName !== s.serviceName),
+                          )
+                        }
+                        aria-label={`Remove ${s.serviceName}`}
+                      >
+                        <IconTrash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {unrouted && (
+                      <p className="mt-1 text-xs text-destructive">
+                        A StatelessWeb service is load-balanced, so it needs routing.
+                        Open it and set a hostname or path on the Routing tab — or
+                        change its type to Stateful.
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

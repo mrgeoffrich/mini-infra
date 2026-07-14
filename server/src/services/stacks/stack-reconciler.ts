@@ -95,7 +95,7 @@ export class StackReconciler {
     try {
       await pruneDeploymentSnapshots(this.prisma, stackId);
     } catch (error) {
-      logger.warn(
+      getLogger('stacks', 'stack-reconciler').warn(
         { error: error instanceof Error ? error.message : String(error), stackId },
         'Pruning old deployment snapshots failed (non-fatal)',
       );
