@@ -384,6 +384,10 @@ export const updateTemplateMetaSchema = z.object({
   displayName: z.string().min(1).max(200).optional(),
   description: z.string().max(500).optional(),
   category: z.string().max(100).optional(),
+  // Soft-archive toggle. Archived templates are hidden from the default list
+  // (surfaced only when `includeArchived` is set) but their linked stacks are
+  // left completely untouched — distinct from DELETE, which tears them down.
+  isArchived: z.boolean().optional(),
 });
 
 export const draftVersionSchema = z.object({

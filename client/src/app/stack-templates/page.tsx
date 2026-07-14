@@ -27,6 +27,8 @@ export default function StackTemplatesPage() {
     source,
     scope,
     includeArchived,
+    // Populate `linkedStacks` so the delete confirm can show the blast radius.
+    includeLinkedStacks: true,
   });
 
   return (
