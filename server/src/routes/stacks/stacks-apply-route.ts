@@ -21,6 +21,7 @@ import { dryRunJobPoolCredentials } from '../../services/stacks/job-pool-credent
 import { materialiseTriggersForStack } from '../../services/backup/backup-job-pool-materialiser';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { pruneOrphanedInputValues as doPruneOrphanedInputValues } from '../../services/stacks/orphan-input-pruner';
+import { markStackErrored } from '../../services/stacks/stack-deployment-logger';
 import {
   emitStackApplyStarted,
   emitStackApplyServiceResult,
@@ -492,25 +493,34 @@ export async function runApplyInBackground(args: RunApplyArgs): Promise<void> {
       await finalizeApplyEvent(userEvent, result);
       emitStackApplyCompleted({ ...result, postApply });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error(
         {
-          error: error instanceof Error ? error.message : String(error),
+          error: message,
           stackId,
         },
         'Background stack apply failed',
       );
+      // Persist a terminal `error` status + reason. Without this a stack that
+      // was flipped to `pending` by a definition edit (PUT /:id or
+      // PUT /services/:name) would stay `pending` forever on any pre-reconciler
+      // failure (Vault / NATS / JobPool-dry-run), because the socket emit below
+      // does no DB write and the reconciler's own status write is never reached.
+      await markStackErrored(prisma, stackId, message, logger);
       await userEvent.fail(error);
       emitStackApplyFailed(stackId, error);
     }
   } catch (error) {
     // Failure during service init / plan (before reconciler.apply was called)
+    const message = error instanceof Error ? error.message : String(error);
     logger.error(
       {
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         stackId,
       },
       'Stack apply setup failed',
     );
+    await markStackErrored(prisma, stackId, message, logger);
     await userEvent.fail(error);
     emitStackApplyFailed(stackId, error);
   } finally {
