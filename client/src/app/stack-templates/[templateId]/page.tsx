@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { IconArrowLeft, IconLoader2 } from "@tabler/icons-react";
+import { IconArrowLeft, IconLoader2, IconGitCompare, IconRocket } from "@tabler/icons-react";
 import {
   useStackTemplate,
   useStackTemplateVersions,
@@ -23,6 +23,8 @@ import {
   usePublishDraft,
   useDiscardDraft,
 } from "@/hooks/use-stack-templates";
+import { TemplateVersionDiff } from "@/components/stack-templates/template-version-diff";
+import { InstantiateTemplateDialog } from "@/components/stack-templates/instantiate-template-dialog";
 import { TemplateMetadataCard } from "@/components/stack-templates/template-metadata-card";
 import { TemplateServicesSection } from "@/components/stack-templates/template-services-section";
 import { TemplateParametersSection } from "@/components/stack-templates/template-parameters-section";
@@ -48,7 +50,9 @@ import type {
 
 export default function StackTemplateDetailPage() {
   const { templateId } = useParams<{ templateId: string }>();
-  const { data: template, isLoading, error } = useStackTemplate(templateId ?? "");
+  const { data: template, isLoading, error } = useStackTemplate(templateId ?? "", {
+    includeLinkedStacks: true,
+  });
   const { data: versions } = useStackTemplateVersions(templateId ?? "");
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
@@ -57,6 +61,8 @@ export default function StackTemplateDetailPage() {
   const [confirmReplaceDraft, setConfirmReplaceDraft] = useState(false);
   const [publishNotes, setPublishNotes] = useState("");
   const [viewMode, setViewMode] = useState<"graphical" | "code">("graphical");
+  const [showDiff, setShowDiff] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
 
   const saveDraftMutation = useSaveDraft();
   const publishDraftMutation = usePublishDraft();
@@ -75,6 +81,22 @@ export default function StackTemplateDetailPage() {
     !!displayVersion &&
     displayVersion.status !== "draft";
   const readOnly = !isViewingDraft;
+
+  // System templates are managed by Mini Infra and immutable via the API —
+  // render explicitly read-only rather than offering draft/publish affordances
+  // that fail server-side (STACK_TEMPLATE_SYSTEM_IMMUTABLE).
+  const isSystem = template?.source === "system";
+
+  // Predecessor of the displayed version, for the "compare with previous" diff.
+  const historyVersions = [...allVersions]
+    .filter((v) => v.status !== "draft")
+    .sort((a, b) => b.version - a.version);
+  const previousVersion =
+    displayVersion && displayVersion.status !== "draft"
+      ? historyVersions.find((v) => v.version < displayVersion.version)
+      : undefined;
+  const currentPublishedVersion = template?.currentVersion ?? undefined;
+  const canInstall = !!currentPublishedVersion;
 
   // Build draft input from displayVersion with optional overrides. Delegates to
   // the canonical LOSSLESS mapper (`buildDraftFromVersion`) so saving one
@@ -342,7 +364,27 @@ export default function StackTemplateDetailPage() {
               Code
             </ToggleGroupItem>
           </ToggleGroup>
-          {isViewingHistorical && displayVersion ? (
+          {previousVersion && (
+            <Button
+              variant={showDiff ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setShowDiff((v) => !v)}
+            >
+              <IconGitCompare className="h-4 w-4 mr-1" />
+              {showDiff ? "Hide changes" : "Compare"}
+            </Button>
+          )}
+          {canInstall && (
+            <Button variant="outline" size="sm" onClick={() => setShowInstall(true)}>
+              <IconRocket className="h-4 w-4 mr-1" />
+              Install
+            </Button>
+          )}
+          {isSystem ? (
+            <span className="text-xs text-muted-foreground max-w-[16rem]">
+              System template — updated with Mini Infra releases
+            </span>
+          ) : isViewingHistorical && displayVersion ? (
             <>
               {draftVersion && (
                 <Button
@@ -409,7 +451,16 @@ export default function StackTemplateDetailPage() {
         <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
           {viewMode === "graphical" ? (
             <div className="flex-1 overflow-y-auto p-4 lg:p-6 space-y-6">
-              {isViewingHistorical && displayVersion && (
+              {isSystem && (
+                <Alert className="bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800">
+                  <AlertDescription>
+                    This is a <span className="font-medium">system template</span> — it&apos;s
+                    managed by Mini Infra and updated with releases, so it can&apos;t be
+                    edited here.
+                  </AlertDescription>
+                </Alert>
+              )}
+              {!isSystem && isViewingHistorical && displayVersion && (
                 <Alert className="bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800">
                   <AlertDescription>
                     Viewing <span className="font-mono">v{displayVersion.version}</span>{" "}
@@ -417,11 +468,22 @@ export default function StackTemplateDetailPage() {
                     <span className="font-medium">
                       Create Draft from v{displayVersion.version}
                     </span>{" "}
-                    to edit or roll back.
+                    to edit, or <span className="font-medium">Make current</span> in the
+                    version list to roll back to it.
                   </AlertDescription>
                 </Alert>
               )}
-              <TemplateMetadataCard template={template} readOnly={readOnly} />
+              {showDiff && previousVersion && displayVersion && (
+                <div className="rounded-md border p-4">
+                  <div className="mb-3 text-sm font-medium">
+                    Changes from v{previousVersion.version} → v{displayVersion.version}
+                  </div>
+                  <TemplateVersionDiff from={previousVersion} to={displayVersion} />
+                </div>
+              )}
+              {/* Metadata (name/description/category) is version-independent and
+                  editable without a draft — only system templates are locked. */}
+              <TemplateMetadataCard template={template} readOnly={isSystem} />
 
               {displayVersion ? (
                 <>
@@ -493,6 +555,7 @@ export default function StackTemplateDetailPage() {
             versions={allVersions}
             selectedVersionId={selectedVersionId}
             onSelectVersion={setSelectedVersionId}
+            canManageVersions={!isSystem}
           />
         </div>
       </div>
@@ -503,10 +566,32 @@ export default function StackTemplateDetailPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Publish Draft</AlertDialogTitle>
             <AlertDialogDescription>
-              This will publish the current draft as the new active version of this
-              template. All future deployments will use this version.
+              This publishes the draft as the template&apos;s new current version.
+              New installs use it, and existing stacks show an update they can
+              upgrade to — they aren&apos;t changed automatically.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {draftVersion && (
+            <div className="max-h-64 overflow-y-auto rounded-md border p-3">
+              <div className="mb-2 text-sm font-medium">
+                What you&apos;re shipping
+                {currentPublishedVersion
+                  ? ` (v${currentPublishedVersion.version} → new version)`
+                  : " (first version)"}
+              </div>
+              {currentPublishedVersion ? (
+                <TemplateVersionDiff
+                  from={currentPublishedVersion}
+                  to={draftVersion}
+                  emptyLabel="No changes from the current published version."
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  This is the template&apos;s first published version.
+                </p>
+              )}
+            </div>
+          )}
           <div className="py-2">
             <Textarea
               placeholder="Release notes (optional)"
@@ -581,6 +666,13 @@ export default function StackTemplateDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Install dialog — reachable from the top-bar "Install" button. */}
+      <InstantiateTemplateDialog
+        open={showInstall}
+        onOpenChange={setShowInstall}
+        template={template}
+      />
     </div>
   );
 }

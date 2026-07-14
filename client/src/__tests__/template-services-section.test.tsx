@@ -171,6 +171,8 @@ describe("TemplateServicesSection — per-service add-ons", () => {
     renderSection({ onServicesChange });
 
     fireEvent.click(screen.getByLabelText("Delete api"));
+    // Delete is now gated behind a confirm dialog (auto-save makes it instant).
+    fireEvent.click(screen.getByRole("button", { name: "Delete service" }));
 
     const next = onServicesChange.mock.calls[0]![0];
     expect(next).toHaveLength(1);

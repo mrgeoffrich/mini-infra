@@ -185,6 +185,7 @@ export function CreateTemplateDialog({
                       <SelectContent>
                         <SelectItem value="environment">Environment</SelectItem>
                         <SelectItem value="host">Host</SelectItem>
+                        <SelectItem value="any">Any</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />

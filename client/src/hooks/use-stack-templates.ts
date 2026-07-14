@@ -46,8 +46,24 @@ async function fetchStackTemplates(
   })) ?? [];
 }
 
-async function fetchStackTemplate(templateId: string): Promise<StackTemplateInfo> {
-  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.get(templateId), {
+async function fetchStackTemplate(
+  templateId: string,
+  includeLinkedStacks?: boolean,
+): Promise<StackTemplateInfo> {
+  const url = new URL(ApiRoute.stackTemplates.get(templateId), window.location.origin);
+  if (includeLinkedStacks) url.searchParams.set("includeLinkedStacks", "true");
+  return apiFetch<StackTemplateInfo>(url.toString(), {
+    correlationIdPrefix: "stack-templates",
+  });
+}
+
+async function rollbackTemplateVersion(args: {
+  templateId: string;
+  versionId: string;
+}): Promise<StackTemplateInfo> {
+  return apiFetch<StackTemplateInfo>(ApiRoute.stackTemplates.rollback(args.templateId), {
+    method: "POST",
+    body: { versionId: args.versionId },
     correlationIdPrefix: "stack-templates",
   });
 }
@@ -128,10 +144,19 @@ export function useStackTemplates(params?: StackTemplateFilterParams) {
   });
 }
 
-export function useStackTemplate(templateId: string | undefined) {
+export function useStackTemplate(
+  templateId: string | undefined,
+  opts?: { includeLinkedStacks?: boolean },
+) {
+  const includeLinkedStacks = opts?.includeLinkedStacks ?? false;
   return useQuery({
-    queryKey: queryKeys.stackTemplates.detail(templateId ?? ""),
-    queryFn: () => fetchStackTemplate(templateId!),
+    // Distinct key when linked stacks are requested so the richer payload
+    // doesn't clobber (or get clobbered by) a plain detail fetch. `detail(id)`
+    // still prefix-matches this key, so existing invalidations cover both.
+    queryKey: includeLinkedStacks
+      ? [...queryKeys.stackTemplates.detail(templateId ?? ""), "linked"]
+      : queryKeys.stackTemplates.detail(templateId ?? ""),
+    queryFn: () => fetchStackTemplate(templateId!, includeLinkedStacks),
     enabled: !!templateId,
     retry: 1,
   });
@@ -281,6 +306,7 @@ export function useInstantiateTemplate() {
       name?: string;
       environmentId?: string;
       parameterValues?: Record<string, unknown>;
+      inputValues?: Record<string, string>;
     }) => {
       return apiFetch<StackInfo>(ApiRoute.stackTemplates.instantiate(args.templateId), {
         method: "POST",
@@ -288,12 +314,36 @@ export function useInstantiateTemplate() {
           name: args.name,
           environmentId: args.environmentId,
           parameterValues: args.parameterValues,
+          inputValues: args.inputValues,
         },
         correlationIdPrefix: "stack-templates",
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+    },
+  });
+}
+
+/**
+ * Re-point a template's current version to an older published version
+ * (POST /:id/rollback). Stacks on a newer version stop showing the update
+ * badge; stacks on an older version start showing it.
+ */
+export function useRollbackTemplateVersion() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: rollbackTemplateVersion,
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.stackTemplates.detail(variables.templateId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.stackTemplates.versions(variables.templateId),
+      });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
     },
   });

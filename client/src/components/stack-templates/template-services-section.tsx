@@ -11,6 +11,16 @@ import { ServiceEditDrawer } from "./service-drawer/service-edit-drawer";
 import { mapServiceInfoToDefinition } from "@/lib/application-draft";
 import { AddonBadge } from "@/components/stacks/addon-badge";
 import { AttachAddonDialog } from "@/components/stacks/attach-addon-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface TemplateServicesSectionProps {
   services: StackTemplateServiceInfo[];
@@ -48,6 +58,10 @@ export function TemplateServicesSection({
   const [addonServiceIndex, setAddonServiceIndex] = useState<number | null>(
     null,
   );
+  // The service pending delete confirmation (index into `sortedServices`), or
+  // null when no confirm is open. Auto-save persists a delete immediately, so
+  // it's gated behind a confirm rather than firing on the first click.
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
 
   const sortedServices = [...services].sort((a, b) => a.order - b.order);
 
@@ -233,7 +247,7 @@ export function TemplateServicesSection({
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => handleDelete(index)}
+                        onClick={() => setDeleteIndex(index)}
                         aria-label={`Delete ${svc.serviceName}`}
                       >
                         <IconTrash className="h-4 w-4" />
@@ -313,8 +327,40 @@ export function TemplateServicesSection({
           attachedAddonIds={addonServiceAttachedIds}
           onAttach={handleAddonAttach}
           onRemove={handleAddonRemove}
+          context="template"
         />
       )}
+
+      <AlertDialog
+        open={deleteIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteIndex(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete service {deleteIndex !== null ? sortedServices[deleteIndex]?.serviceName : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the service from the draft and saves immediately. You can
+              still discard the draft to undo everything before publishing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteIndex !== null) handleDelete(deleteIndex);
+                setDeleteIndex(null);
+              }}
+            >
+              Delete service
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

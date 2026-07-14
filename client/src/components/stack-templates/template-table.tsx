@@ -149,6 +149,7 @@ export function TemplateTable({ templates }: TemplateTableProps) {
             <TableHead>Scope</TableHead>
             <TableHead>Version</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Used by</TableHead>
             <TableHead className="w-12" />
           </TableRow>
         </TableHeader>
@@ -183,6 +184,11 @@ export function TemplateTable({ templates }: TemplateTableProps) {
                 {getVersionDisplay(template)}
               </TableCell>
               <TableCell>{getStatusBadge(template)}</TableCell>
+              <TableCell className="text-muted-foreground">
+                {template.linkedStacks && template.linkedStacks.length > 0
+                  ? `${template.linkedStacks.length} stack${template.linkedStacks.length !== 1 ? "s" : ""}`
+                  : "—"}
+              </TableCell>
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
