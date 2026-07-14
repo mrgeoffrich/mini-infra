@@ -6,14 +6,48 @@ import {
   type ApplyResult,
   type DestroyResult,
   type StackStopResult,
+  type StackStatus,
 } from '@mini-infra/types';
 import { emitToChannel } from '../../lib/socket';
+import prisma from '../../lib/prisma';
 
 /**
  * Typed wrappers around `emitToChannel` for stack operation lifecycle events.
  * Every emit is wrapped in try/catch — a socket failure must never break the
  * underlying operation.
  */
+
+/**
+ * Push a stack's persisted status change to the `stacks` channel so every open
+ * list/detail view can invalidate its query without polling. Fire-and-forget:
+ * it resolves the stack's scope hints (environment / template / source) with a
+ * best-effort read so listeners can target the right query keys, and swallows
+ * any failure — a socket or DB hiccup must never break the status write that
+ * triggered it. Call it *after* the `Stack.status` write commits.
+ */
+export function emitStackStatusChanged(stackId: string, status: StackStatus): void {
+  void (async () => {
+    try {
+      const stack = await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: {
+          environmentId: true,
+          templateId: true,
+          template: { select: { source: true } },
+        },
+      });
+      emitToChannel(Channel.STACKS, ServerEvent.STACK_STATUS, {
+        stackId,
+        status,
+        environmentId: stack?.environmentId ?? null,
+        templateId: stack?.templateId ?? null,
+        templateSource: (stack?.template?.source as 'system' | 'user' | undefined) ?? null,
+      });
+    } catch {
+      /* never break the caller */
+    }
+  })();
+}
 
 export type StackApplyStartedPayload = {
   stackId: string;

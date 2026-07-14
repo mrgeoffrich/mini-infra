@@ -36,6 +36,7 @@ import {
 import { runPostInstallActions } from './post-install-actions';
 import { buildAppliedSnapshot } from './stack-applied-snapshot';
 import { recordDeploymentFailure } from './stack-deployment-logger';
+import { emitStackStatusChanged } from './stack-socket-emitter';
 import { summariseServiceFailures } from './stack-failure-summary';
 import { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { StackPlanComputer } from './stack-plan-computer';
@@ -468,6 +469,7 @@ export class StackReconciler {
           removedAt: null,
         },
       });
+      emitStackStatusChanged(stackId, resultStatus);
 
       // 8b. Record per-service AppRole bindings that were just applied so
       // the next apply's stable-binding check can degrade gracefully when
@@ -569,6 +571,10 @@ export class StackReconciler {
         serviceResults: [],
         resourceResults: [],
         duration: Date.now() - startTime,
+        // Distinguish "every image already current, nothing pulled" from a real
+        // update that happened to touch zero services, so the client can say
+        // "Already up to date" instead of a generic success toast.
+        upToDate: true,
       };
     }
 
@@ -728,6 +734,7 @@ export class StackReconciler {
             : { lastFailureReason: summariseServiceFailures(serviceResults) }),
         },
       });
+      emitStackStatusChanged(stackId, resultStatus);
 
       if (allSucceeded && serviceBindingsToRecordUpdate.size > 0) {
         const successfulServiceNames = new Set(
@@ -1152,6 +1159,7 @@ export class StackReconciler {
       where: { id: stackId },
       data: { status: 'undeployed' },
     });
+    emitStackStatusChanged(stackId, 'undeployed');
 
     // Record deployment history
     await this.prisma.stackDeployment.create({

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../../generated/prisma/client";
 import type { Logger } from 'pino';
+import { emitStackStatusChanged } from './stack-socket-emitter';
 
 /**
  * Flip a stack to `error` and record a human-readable failure reason on the
@@ -23,6 +24,7 @@ export async function markStackErrored(
       where: { id: stackId },
       data: { status: 'error', lastFailureReason: reason },
     });
+    emitStackStatusChanged(stackId, 'error');
   } catch (dbErr) {
     log.error({ error: dbErr, stackId }, 'Failed to persist stack error status');
   }

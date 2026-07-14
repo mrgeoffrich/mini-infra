@@ -5,6 +5,7 @@ import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { updateStackServiceSchema } from '../../services/stacks/schemas';
 import { serializeStack, assertStackFound } from '../../services/stacks/utils';
+import { emitStackStatusChanged } from '../../services/stacks/stack-socket-emitter';
 import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { ErrorCode, Permission } from '@mini-infra/types';
 import { ConflictError, NotFoundError } from '../../lib/errors';
@@ -100,6 +101,7 @@ router.put(
         data: { version: { increment: 1 }, status: 'pending' },
       }),
     ]);
+    emitStackStatusChanged(stackId, 'pending');
 
     const stack = assertStackFound(
       await prisma.stack.findUnique({

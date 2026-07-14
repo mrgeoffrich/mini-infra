@@ -9,6 +9,7 @@ import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { upgradeStackToCurrentTemplateVersion } from '../../services/stacks/stack-upgrade-service';
 import { assertStackFound } from '../../services/stacks/utils';
 import { ErrorCode, Permission } from '@mini-infra/types';
+import type { TemplateInputDeclaration } from '@mini-infra/types';
 import { ConflictError, ValidationError } from '../../lib/errors';
 
 const logger = getLogger('stacks', 'stacks-upgrade-route');
@@ -71,6 +72,38 @@ router.post(
       'Stack upgraded to current template version',
     );
     res.json({ success: true, data: updated });
+  }),
+);
+
+// GET /:stackId/upgrade-inputs — the input declarations the operator must
+// supply to upgrade this stack to its template's current published version.
+// These are the `rotateOnUpgrade` inputs (POST /upgrade 400s with
+// STACK_INPUT_ROTATION_REQUIRED without them). Lets the client collect the
+// values up front instead of dead-ending on the error. Returns an empty list
+// when the stack has no template, no published version, or no such inputs.
+router.get(
+  '/:stackId/upgrade-inputs',
+  requirePermission(Permission.StacksRead),
+  asyncHandler(async (req, res) => {
+    const stackId = String(req.params.stackId);
+    const stack = assertStackFound(
+      await prisma.stack.findUnique({
+        where: { id: stackId },
+        select: {
+          id: true,
+          template: {
+            select: { currentVersion: { select: { inputs: true } } },
+          },
+        },
+      }),
+      stackId,
+    );
+
+    const declarations =
+      (stack.template?.currentVersion?.inputs as unknown as TemplateInputDeclaration[] | null) ?? [];
+    const inputs = declarations.filter((d) => d.rotateOnUpgrade);
+
+    res.json({ success: true, data: { inputs } });
   }),
 );
 
