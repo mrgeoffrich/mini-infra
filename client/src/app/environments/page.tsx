@@ -29,8 +29,8 @@ export function EnvironmentsPage() {
       <div className="px-4 lg:px-6 max-w-full">
         <div className="space-y-6">
           <div>
-            <h2 className="text-xl font-semibold">Host Infrastructure</h2>
-            <p className="text-muted-foreground text-sm">Host-level infrastructure templates and their deployments</p>
+            <h2 className="text-xl font-semibold">Host infrastructure</h2>
+            <p className="text-muted-foreground text-sm">Built-in infrastructure you can install on this Docker host</p>
           </div>
           <HostTemplatesList />
         </div>

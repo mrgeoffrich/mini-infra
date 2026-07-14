@@ -137,6 +137,7 @@ interface SerializableTemplate {
     lastAppliedVersion: number | null;
     lastAppliedAt: Date | null;
     environmentId: string | null;
+    templateVersion: number | null;
   }>;
 }
 
@@ -224,6 +225,7 @@ export class StackTemplateService {
               lastAppliedVersion: true,
               lastAppliedAt: true,
               environmentId: true,
+              templateVersion: true,
             },
           },
         } : {}),
@@ -236,7 +238,7 @@ export class StackTemplateService {
 
   async getTemplate(
     templateId: string,
-    opts?: { includeVersions?: boolean }
+    opts?: { includeVersions?: boolean; includeLinkedStacks?: boolean }
   ): Promise<StackTemplateInfo | null> {
     const template = await this.prisma.stackTemplate.findUnique({
       where: { id: templateId },
@@ -252,6 +254,22 @@ export class StackTemplateService {
               versions: {
                 orderBy: { version: "desc" as const },
                 select: versionSummary,
+              },
+            }
+          : {}),
+        ...(opts?.includeLinkedStacks
+          ? {
+              stacks: {
+                select: {
+                  id: true,
+                  name: true,
+                  status: true,
+                  version: true,
+                  lastAppliedVersion: true,
+                  lastAppliedAt: true,
+                  environmentId: true,
+                  templateVersion: true,
+                },
               },
             }
           : {}),
@@ -696,6 +714,57 @@ export class StackTemplateService {
     });
 
     return this.serializeVersion(result);
+  }
+
+  /**
+   * Re-point `currentVersionId` to an older *published* version (a rollback).
+   * Existing stacks on a newer version simply stop showing the update badge;
+   * stacks on an older version see it appear. Idempotent when the target is
+   * already current. System templates are immutable.
+   */
+  async rollbackToVersion(
+    templateId: string,
+    versionId: string,
+  ): Promise<StackTemplateInfo> {
+    const template = this.assertTemplateFound(
+      await this.prisma.stackTemplate.findUnique({ where: { id: templateId } }),
+      templateId,
+    );
+    this.assertUserTemplate(template, "modify");
+
+    const version = await this.prisma.stackTemplateVersion.findUnique({
+      where: { id: versionId },
+      select: { id: true, templateId: true, status: true },
+    });
+    if (!version || version.templateId !== templateId) {
+      throw new NotFoundError(
+        ErrorCode.STACK_TEMPLATE_VERSION_NOT_FOUND,
+        "Template version not found",
+        {
+          resource: { type: "stackTemplateVersion", id: versionId },
+          action: "Pick a published version that belongs to this template.",
+        },
+      );
+    }
+    if (version.status !== "published") {
+      throw new ValidationError(
+        ErrorCode.STACK_TEMPLATE_VERSION_NOT_PUBLISHED,
+        `Cannot roll back to a ${version.status} version — only published versions can be made current`,
+        {
+          resource: { type: "stackTemplateVersion", id: versionId },
+          action: "Choose a published version to make current.",
+        },
+      );
+    }
+
+    if (template.currentVersionId !== version.id) {
+      await this.prisma.stackTemplate.update({
+        where: { id: templateId },
+        data: { currentVersionId: version.id },
+      });
+    }
+
+    return this.assertTemplateFound(await this.getTemplate(templateId), templateId);
   }
 
   async discardDraft(templateId: string): Promise<void> {
@@ -1191,15 +1260,25 @@ export class StackTemplateService {
           ? null
           : undefined,
       ...(template.stacks ? {
-        linkedStacks: template.stacks.map((s) => ({
-          id: s.id,
-          name: s.name,
-          status: s.status,
-          version: s.version,
-          lastAppliedVersion: s.lastAppliedVersion,
-          lastAppliedAt: s.lastAppliedAt?.toISOString() ?? null,
-          environmentId: s.environmentId,
-        })),
+        linkedStacks: template.stacks.map((s) => {
+          const stackVersion = s.templateVersion ?? null;
+          const currentVersion = (template.currentVersion?.version as number | undefined) ?? null;
+          return {
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            version: s.version,
+            lastAppliedVersion: s.lastAppliedVersion,
+            lastAppliedAt: s.lastAppliedAt?.toISOString() ?? null,
+            environmentId: s.environmentId,
+            templateVersion: stackVersion,
+            templateCurrentVersion: currentVersion,
+            // Mirror utils.computeTemplateUpdateAvailable: the template has a
+            // newer published version than the one this stack is pinned to.
+            templateUpdateAvailable:
+              stackVersion !== null && currentVersion !== null && currentVersion > stackVersion,
+          };
+        }),
       } : {}),
     };
   }

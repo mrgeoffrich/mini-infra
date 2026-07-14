@@ -25,6 +25,7 @@ import { ErrorCode } from "@mini-infra/types";
 import { ConflictError, NotFoundError, ValidationError } from "../../lib/errors";
 import { getLogger } from "../../lib/logger-factory";
 import { toServiceCreateInput, serializeStack, mergeParameterValues } from "./utils";
+import { emitStackStatusChanged } from "./stack-socket-emitter";
 import { buildServiceDefinitionsFromVersion } from "./stack-template-service";
 import {
   encryptInputValues,
@@ -210,6 +211,7 @@ export async function upgradeStackToCurrentTemplateVersion(
       },
     });
   });
+  emitStackStatusChanged(existing.id, "pending");
 
   // Reconcile template-declared egress rules now that services have changed.
   try {

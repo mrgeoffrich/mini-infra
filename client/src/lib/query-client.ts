@@ -143,7 +143,12 @@ export function createQueryClient(): QueryClient {
         if (mutation.meta?.skipErrorToast === true) {
           return;
         }
-        toastApiError(error);
+        // Opt-in application-context wording: a mutation fired from an
+        // application screen sets `meta: { errorContext: 'application' }` so
+        // stack-vocabulary server errors render with "application" copy.
+        const context =
+          mutation.meta?.errorContext === "application" ? "application" : undefined;
+        toastApiError(error, { context });
       },
     }),
     defaultOptions: {

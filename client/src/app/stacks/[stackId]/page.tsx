@@ -5,7 +5,7 @@ import {
   IconExternalLink,
   IconPlayerStop,
 } from "@tabler/icons-react";
-import { useStack, useStackStop } from "@/hooks/use-stacks";
+import { useStack, useStackStop, useStackStatusEvents } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
 import { StackPlanView } from "@/components/stacks/StackPlanView";
 import { StackStatusBadge } from "@/components/stacks/StackStatusBadge";
@@ -26,6 +26,7 @@ export default function StackDetailPage() {
   const { data, isLoading, error } = useStack(stackId ?? "");
   const { data: envData } = useEnvironments();
   const stopStack = useStackStop();
+  useStackStatusEvents();
 
   const stack = data?.data ?? null;
 

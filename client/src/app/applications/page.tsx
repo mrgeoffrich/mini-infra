@@ -18,6 +18,7 @@ import {
   useUserStacks,
 } from "@/hooks/use-applications";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { useStackStatusEvents } from "@/hooks/use-stacks";
 import { Channel } from "@mini-infra/types";
 import { useEnvironments } from "@/hooks/use-environments";
 import { Button } from "@/components/ui/button";
@@ -74,6 +75,8 @@ export default function ApplicationsPage() {
   const { registerTask } = useTaskTracker();
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
+  // Live status pushes keep the cards' state current without polling.
+  useStackStatusEvents();
 
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
   const [removeTarget, setRemoveTarget] = useState<StackTemplateInfo | null>(null);
@@ -278,6 +281,9 @@ export default function ApplicationsPage() {
             </div>
             <div>
               <h1 className="text-3xl font-bold">Applications</h1>
+              <p className="text-sm text-muted-foreground">
+                Deploy and manage your applications
+              </p>
             </div>
           </div>
 
@@ -305,7 +311,7 @@ export default function ApplicationsPage() {
               <IconPackage className="h-12 w-12 text-muted-foreground/50 mb-4" />
               <h3 className="text-lg font-medium mb-1">No applications yet</h3>
               <p className="text-sm text-muted-foreground mb-6 text-center max-w-md">
-                Create a new application template to get started.
+                Create a new application to get started.
               </p>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => navigate("/applications/adopt")}>

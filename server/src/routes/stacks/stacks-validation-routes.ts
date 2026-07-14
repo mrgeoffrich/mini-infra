@@ -9,6 +9,7 @@ import { findEmptyStackParameters } from '../../services/stacks/parameter-valida
 import { checkStackConfigurationRequirements } from '../../services/stacks/stack-config-requirements';
 import type { StackValidationResult, StackValidationWarning, StackNetwork } from '@mini-infra/types';
 import { DEFAULT_STACK_NETWORK_NAME, assertStackFound } from '../../services/stacks/utils';
+import { emitStackStatusChanged } from '../../services/stacks/stack-socket-emitter';
 import { Permission } from '@mini-infra/types';
 
 const router = Router();
@@ -52,8 +53,10 @@ router.get(
       });
       if (current?.status === 'synced' && plan.hasChanges) {
         await prisma.stack.update({ where: { id: stackId }, data: { status: 'drifted' } });
+        emitStackStatusChanged(stackId, 'drifted');
       } else if (current?.status === 'drifted' && !plan.hasChanges) {
         await prisma.stack.update({ where: { id: stackId }, data: { status: 'synced' } });
+        emitStackStatusChanged(stackId, 'synced');
       }
     } catch {
       // Non-fatal — plan display must not fail if the status write races with

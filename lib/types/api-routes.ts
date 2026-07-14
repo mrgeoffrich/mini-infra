@@ -707,6 +707,9 @@ export const ApiRoute = {
     /** GET /api/stack-templates/:templateId/versions/:versionId */
     version: (templateId: string, versionId: string): string =>
       `${ApiBase.stackTemplates}/${templateId}/versions/${versionId}`,
+    /** POST /api/stack-templates/:templateId/rollback — re-point currentVersion to an older published version */
+    rollback: (templateId: string): string =>
+      `${ApiBase.stackTemplates}/${templateId}/rollback`,
   },
 
   stacks: {
@@ -757,6 +760,10 @@ export const ApiRoute = {
     update: (stackId: string): string => `${ApiBase.stacks}/${stackId}/update`,
     /** POST /api/stacks/:stackId/upgrade — re-materialize from the template's current version */
     upgrade: (stackId: string): string => `${ApiBase.stacks}/${stackId}/upgrade`,
+    /** GET /api/stacks/:stackId/upgrade-inputs — rotateOnUpgrade inputs required to upgrade */
+    upgradeInputs: (stackId: string): string => `${ApiBase.stacks}/${stackId}/upgrade-inputs`,
+    /** POST /api/stacks/:stackId/revert-pending — restore definition from last applied snapshot */
+    revertPending: (stackId: string): string => `${ApiBase.stacks}/${stackId}/revert-pending`,
     /** GET /api/stacks/:stackId/validate */
     validate: (stackId: string): string => `${ApiBase.stacks}/${stackId}/validate`,
   },

@@ -84,7 +84,9 @@ router.get('/', requirePermission(Permission.StacksRead), asyncHandler(async (re
 router.get('/:templateId', requirePermission(Permission.StacksRead), asyncHandler(async (req, res) => {
   const service = getTemplateService();
   const templateId = String(req.params.templateId);
-  const template = await service.getTemplate(templateId);
+  const template = await service.getTemplate(templateId, {
+    includeLinkedStacks: req.query.includeLinkedStacks === 'true',
+  });
 
   if (!template) {
     throw new NotFoundError(ErrorCode.STACK_TEMPLATE_NOT_FOUND, 'Template not found', {
@@ -268,6 +270,27 @@ router.post('/:templateId/publish', requirePermission(Permission.StacksWrite), a
     'Template version published'
   );
   res.json({ success: true, data: version });
+}));
+
+// POST /:templateId/rollback — Re-point currentVersion to an older published
+// version. Body: { versionId }. 404 if the version doesn't belong to the
+// template, 400 if it isn't published, 403 for system templates.
+router.post('/:templateId/rollback', requirePermission(Permission.StacksWrite), asyncHandler(async (req, res) => {
+  const versionId = typeof req.body?.versionId === 'string' ? req.body.versionId : '';
+  if (!versionId) {
+    throw new ValidationError(ErrorCode.VALIDATION_FAILED, 'versionId is required', {
+      action: 'Pass the id of the published version to make current.',
+    });
+  }
+
+  const service = getTemplateService();
+  const template = await service.rollbackToVersion(String(req.params.templateId), versionId);
+
+  logger.info(
+    { templateId: req.params.templateId, versionId },
+    'Template rolled back to earlier published version'
+  );
+  res.json({ success: true, data: template });
 }));
 
 // DELETE /:templateId/draft — Discard draft

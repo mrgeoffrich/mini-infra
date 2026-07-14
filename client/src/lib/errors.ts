@@ -245,6 +245,57 @@ const CODE_TITLES: Partial<Record<string, string>> = {
   [ErrorCode.SELF_BACKUP_INVALID_CRON]: "Invalid backup schedule",
 };
 
+/**
+ * The screen an error is being presented on. Some server error codes speak in
+ * stack vocabulary ("Stack must be deployed…") that reads wrong on an
+ * application screen, where the same object is an "application". A context lets
+ * the presentation layer swap in application-worded copy at the boundary
+ * without forking the whole helper.
+ */
+export type ErrorContext = "application";
+
+/**
+ * Per-context copy overrides for a small set of stack-vocabulary codes. Kept
+ * deliberately small and data-driven (mirrors CODE_TITLES): only the codes an
+ * application user can actually hit, and only where the stack-worded server
+ * message would confuse them. Any field left out falls back to the normal
+ * computed title/description/action.
+ */
+const CONTEXT_OVERRIDES: Record<
+  ErrorContext,
+  Partial<Record<string, { title?: string; description?: string; action?: string }>>
+> = {
+  application: {
+    [ErrorCode.STACK_NOT_DEPLOYED]: {
+      title: "Application not deployed",
+      description: "This application isn't deployed yet.",
+      action: "Deploy it first, then retry.",
+    },
+    [ErrorCode.STACK_OPERATION_IN_PROGRESS]: {
+      title: "Operation in progress",
+      description: "Another operation is already running for this application.",
+      action: "Wait for it to finish, then retry.",
+    },
+    [ErrorCode.STACK_PREREQUISITES_NOT_MET]: {
+      title: "Prerequisites not met",
+      description: "This application can't deploy until its prerequisites are met.",
+    },
+    [ErrorCode.STACK_PARAMETERS_NOT_CONFIGURED]: {
+      title: "Configuration required",
+      description: "Set this application's configuration values before deploying.",
+    },
+    [ErrorCode.STACK_NO_APPLIED_SNAPSHOT]: {
+      title: "Nothing to discard",
+      description:
+        "This application has never been deployed, so there are no changes to discard.",
+    },
+    [ErrorCode.STACK_INPUT_ROTATION_REQUIRED]: {
+      title: "Input required",
+      description: "This upgrade needs a fresh value for a rotate-on-upgrade input.",
+    },
+  },
+};
+
 function statusClassFallback(status: number): string {
   if (status === 409) return "Already exists";
   if (status === 403) return "Not allowed";
@@ -339,12 +390,23 @@ function describeApiRequestError(err: ApiRequestError): ApiRequestErrorDetails {
  * Handles `ApiRequestError` (the common case), plain `Error`s, and
  * completely unknown thrown values gracefully.
  */
-export function getUserFacingError(err: unknown): UserFacingError {
+export function getUserFacingError(
+  err: unknown,
+  opts?: { context?: ErrorContext },
+): UserFacingError {
   if (err instanceof ApiRequestError) {
     const { description, action, resource } = describeApiRequestError(err);
+    const override = opts?.context ? CONTEXT_OVERRIDES[opts.context]?.[err.code] : undefined;
     const title =
-      CODE_TITLES[err.code] ?? resourceTitle(resource, err.status) ?? statusClassFallback(err.status);
-    return action ? { title, description, action } : { title, description };
+      override?.title ??
+      CODE_TITLES[err.code] ??
+      resourceTitle(resource, err.status) ??
+      statusClassFallback(err.status);
+    const finalDescription = override?.description ?? description;
+    const finalAction = override?.action ?? action;
+    return finalAction
+      ? { title, description: finalDescription, action: finalAction }
+      : { title, description: finalDescription };
   }
 
   if (err instanceof Error && err.message.length > 0) {
@@ -360,8 +422,11 @@ export function getUserFacingError(err: unknown): UserFacingError {
  * `MutationCache.onError` wiring in `client/src/lib/query-client.ts`) — most
  * call sites never need to call this directly.
  */
-export function toastApiError(err: unknown, opts?: { title?: string }): void {
-  const { title, description, action } = getUserFacingError(err);
+export function toastApiError(
+  err: unknown,
+  opts?: { title?: string; context?: ErrorContext },
+): void {
+  const { title, description, action } = getUserFacingError(err, { context: opts?.context });
 
   // The server doesn't yet expose a structured navigation target for
   // `action` (e.g. a route or id to jump to) — until a later domain phase

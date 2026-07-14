@@ -25,6 +25,7 @@ import type {
   StackStatusResponseData,
   StackDeploymentRecord,
   PrerequisiteEvaluation,
+  TemplateInputDeclaration,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
 import { useTaskTracker } from "./use-task-tracker";
@@ -71,6 +72,21 @@ async function fetchStack(stackId: string): Promise<StackResponse> {
     throw new Error(data.message || "Failed to fetch stack");
   }
   return data;
+}
+
+/**
+ * The `rotateOnUpgrade` input declarations the operator must supply to upgrade
+ * this stack to its template's current version. Empty when the template has no
+ * such inputs — the caller can then upgrade without a dialog.
+ */
+export async function fetchStackUpgradeInputs(
+  stackId: string,
+): Promise<TemplateInputDeclaration[]> {
+  const data = await apiFetch<{ inputs: TemplateInputDeclaration[] }>(
+    ApiRoute.stacks.upgradeInputs(stackId),
+    { correlationIdPrefix: "stacks" },
+  );
+  return data.inputs ?? [];
 }
 
 async function fetchStackPlan(stackId: string): Promise<StackPlan> {
@@ -343,6 +359,30 @@ export function useStackStop() {
 }
 
 /**
+ * Discard unapplied definition edits — POST /stacks/:id/revert-pending.
+ * Restores the definition from the last applied snapshot and flips status back
+ * to `synced`. 400s (STACK_NO_APPLIED_SNAPSHOT) for never-applied stacks.
+ */
+export function useRevertPendingStack() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (stackId: string) =>
+      apiFetch<StackInfo>(ApiRoute.stacks.revertPending(stackId), {
+        method: "POST",
+        body: {},
+        correlationIdPrefix: "stacks",
+      }),
+    onSuccess: () => {
+      toast.success("Pending changes discarded");
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
  * Raw upgrade mutation — POST /stacks/:id/upgrade. Re-materializes the stack
  * from its template's current version and flips it to `pending`. Does NOT
  * apply. Most call sites want {@link useUpgradeAndApplyStack} instead.
@@ -484,8 +524,9 @@ export function useStackApplyProgress(stackId: string) {
       // Toast notification
       if (data.error) {
         toast.error(`Stack apply failed: ${data.error}`);
-      } else if (data.success && data.serviceResults.length === 0 && applyState.forcePull) {
-        toast.success('All images are up to date');
+      } else if (data.upToDate) {
+        // Zero-work update: every image was already current, nothing pulled.
+        toast.success('Already up to date — nothing to pull');
       } else if (data.success) {
         toast.success(`Stack applied successfully (v${data.appliedVersion})`);
       } else {
@@ -502,6 +543,36 @@ export function useStackApplyProgress(stackId: string) {
   );
 
   return { ...applyState, connected, reset };
+}
+
+/**
+ * Subscribe to server-pushed `STACK_STATUS` events and invalidate the affected
+ * list/detail queries so any open view updates live without polling. Mount this
+ * on pages that render stack status outside a tracked-operation flow — the
+ * global /stacks list, the stack detail page, the applications list/detail, and
+ * the environment/host stack lists — so post-plan drift flips, edits that set
+ * `pending`, reverts, and apply/upgrade/stop results all surface immediately.
+ */
+export function useStackStatusEvents() {
+  const queryClient = useQueryClient();
+
+  useSocketChannel(Channel.STACKS, true);
+  useSocketEvent(
+    ServerEvent.STACK_STATUS,
+    (data) => {
+      // `stacks.all` (["stacks"]) prefix-matches every scoped list variant too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.detail(data.stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.plan(data.stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.status(data.stackId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.detailAll });
+      // Linked-stack status (and the update badge) rides on the template list.
+      queryClient.invalidateQueries({ queryKey: queryKeys.stackTemplates.all });
+    },
+    true,
+  );
 }
 
 export function useStackStatus(stackId: string) {

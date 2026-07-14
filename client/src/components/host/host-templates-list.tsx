@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useStackTemplates, useInstantiateTemplate, useTemplatePrerequisites } from "@/hooks/use-stack-templates";
+import { useStackStatusEvents } from "@/hooks/use-stacks";
 import type { StackTemplateInfo, StackTemplateLinkedStack } from "@mini-infra/types";
 import { StackPlanView, StackStatusBadge } from "@/components/stacks";
+import { UpdateAvailableBadge, UpgradeButton } from "@/components/stacks/stack-indicators";
 import { PrerequisitesBanner } from "@/components/stacks/PrerequisitesBanner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +30,7 @@ interface HostTemplatesListProps {
 export function HostTemplatesList({ className }: HostTemplatesListProps) {
   const [expandedTemplateId, setExpandedTemplateId] = useState<string | null>(null);
   const instantiate = useInstantiateTemplate();
+  useStackStatusEvents();
 
   const {
     data: templates,
@@ -87,9 +90,10 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                 <IconStack2 className="h-5 w-5" />
               </div>
               <div>
-                <CardTitle>Infrastructure Stacks</CardTitle>
+                <CardTitle>Host infrastructure</CardTitle>
                 <p className="text-sm text-muted-foreground">
-                  Host-level infrastructure templates and their deployments
+                  Built-in infrastructure you can install on this host — each row is a
+                  template, shown as installed or available.
                 </p>
               </div>
             </div>
@@ -144,8 +148,9 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                             {stack ? (
                               <StackStatusBadge status={stack.status} />
                             ) : (
-                              <Badge variant="secondary">Not deployed</Badge>
+                              <Badge variant="secondary">Available</Badge>
                             )}
+                            {stack?.templateUpdateAvailable && <UpdateAvailableBadge />}
                           </div>
                           {template.description && (
                             <p className="text-sm text-muted-foreground mt-1">
@@ -187,6 +192,14 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
                             )}
                             {stack ? "Redeploy" : "Deploy"}
                           </Button>
+                        )}
+                        {stack && !deployable && stack.templateUpdateAvailable && (
+                          <UpgradeButton
+                            stackId={stack.id}
+                            label={`Upgrading ${template.displayName}`}
+                            size="sm"
+                            variant="outline"
+                          />
                         )}
                         {stack && !deployable && (
                           <button onClick={() => toggleExpanded(template.id)}>

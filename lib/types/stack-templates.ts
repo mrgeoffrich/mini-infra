@@ -112,6 +112,12 @@ export interface StackTemplateLinkedStack {
   lastAppliedVersion: number | null;
   lastAppliedAt: string | null;
   environmentId: string | null;
+  /** The template version this stack was born from / last upgraded to. */
+  templateVersion: number | null;
+  /** The template's current published version number (for installed-vs-latest). */
+  templateCurrentVersion: number | null;
+  /** True when the template's current published version is newer than the stack's. */
+  templateUpdateAvailable: boolean;
 }
 
 export interface StackTemplateInfo {

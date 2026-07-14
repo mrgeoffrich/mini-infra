@@ -31,6 +31,7 @@ import type {
   StackResourceInput,
 } from '@mini-infra/types';
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
+import { emitStackStatusChanged } from '../../services/stacks/stack-socket-emitter';
 import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { getUserId } from '../../lib/get-user-id';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
@@ -480,6 +481,7 @@ router.put(
       const updateUserId = getUserId(req);
       await egressPolicyLifecycle.reconcileTemplateRules(stackId, updateUserId ?? null);
 
+      emitStackStatusChanged(stackId, 'pending');
       res.json({ success: true, data: serializeStack(stack) });
     } else {
       const stack = await prisma.stack.update({
@@ -493,6 +495,7 @@ router.put(
         await egressPolicyLifecycle.refreshStackNameSnapshot(stackId);
       }
 
+      emitStackStatusChanged(stackId, 'pending');
       res.json({ success: true, data: serializeStack(stack) });
     }
   }),

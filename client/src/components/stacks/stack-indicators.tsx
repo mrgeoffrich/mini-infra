@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { IconAlertTriangle, IconArrowUp, IconLoader2 } from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,9 +9,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useUpgradeAndApplyStack } from "@/hooks/use-stacks";
+import { useUpgradeAndApplyStack, fetchStackUpgradeInputs } from "@/hooks/use-stacks";
 import { getStackAttention } from "@/lib/stack-attention";
-import type { StackInfo } from "@mini-infra/types";
+import { RotateInputsDialog } from "@/components/stacks/RotateInputsDialog";
+import type { StackInfo, TemplateInputDeclaration } from "@mini-infra/types";
 
 /**
  * "Update available" badge shown when a stack's template has a newer published
@@ -107,20 +109,63 @@ export function UpgradeButton({
   children?: React.ReactNode;
 }) {
   const upgrade = useUpgradeAndApplyStack();
+  // While we look up whether the target version requires rotateOnUpgrade inputs.
+  const [checking, setChecking] = useState(false);
+  // Non-null once we know the upgrade needs input values → opens the dialog.
+  const [rotateInputs, setRotateInputs] = useState<TemplateInputDeclaration[] | null>(null);
+
+  const busy = upgrade.isPending || checking;
+
+  async function handleClick() {
+    setChecking(true);
+    try {
+      const inputs = await fetchStackUpgradeInputs(stackId);
+      if (inputs.length > 0) {
+        // Collect the required values first, then upgrade with them.
+        setRotateInputs(inputs);
+        return;
+      }
+      upgrade.mutate({ stackId, label });
+    } catch {
+      // Couldn't pre-fetch the required inputs — fall back to a plain upgrade.
+      // If inputs are actually needed the server 400s with
+      // STACK_INPUT_ROTATION_REQUIRED, surfaced by the global error toast.
+      upgrade.mutate({ stackId, label });
+    } finally {
+      setChecking(false);
+    }
+  }
+
   return (
-    <Button
-      size={size}
-      variant={variant}
-      className={className}
-      disabled={disabled || upgrade.isPending}
-      onClick={() => upgrade.mutate({ stackId, label })}
-    >
-      {upgrade.isPending ? (
-        <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
-      ) : (
-        <IconArrowUp className="mr-1 h-4 w-4" />
-      )}
-      {children ?? "Upgrade & deploy"}
-    </Button>
+    <>
+      <Button
+        size={size}
+        variant={variant}
+        className={className}
+        disabled={disabled || busy}
+        onClick={handleClick}
+      >
+        {busy ? (
+          <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
+        ) : (
+          <IconArrowUp className="mr-1 h-4 w-4" />
+        )}
+        {children ?? "Upgrade & deploy"}
+      </Button>
+      <RotateInputsDialog
+        open={rotateInputs !== null}
+        onOpenChange={(open) => {
+          if (!open) setRotateInputs(null);
+        }}
+        inputs={rotateInputs ?? []}
+        isSaving={upgrade.isPending}
+        onConfirm={(inputValues) => {
+          upgrade.mutate(
+            { stackId, label, inputValues },
+            { onSuccess: () => setRotateInputs(null) },
+          );
+        }}
+      />
+    </>
   );
 }

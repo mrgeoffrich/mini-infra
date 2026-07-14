@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Channel } from "@mini-infra/types";
 import type { StackParameterValue } from "@mini-infra/types";
-import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues, useStackPrerequisites } from "@/hooks/use-stacks";
+import { useStackPlan, useStackApply, useStackApplyProgress, useStackDestroy, useStackDestroyProgress, useStackValidation, useStack, useUpdateStackParameterValues, useStackPrerequisites, useRevertPendingStack } from "@/hooks/use-stacks";
 import { ApiRequestError } from "@/lib/api-client";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import { ServiceActionRow } from "./ServiceActionRow";
@@ -71,6 +71,11 @@ export const StackPlanView = React.memo(function StackPlanView({
   const { data: stackResponse } = useStack(stackId);
   const stackInfo = stackResponse?.data;
   const updateParamsMutation = useUpdateStackParameterValues();
+  const revertMutation = useRevertPendingStack();
+  // A `pending` stack with a prior applied snapshot can discard its unapplied
+  // edits and return to `synced`. Never-applied stacks have nothing to revert.
+  const canRevertPending =
+    stackInfo?.status === "pending" && !!stackInfo?.lastAppliedSnapshot;
   const [showParamsDialog, setShowParamsDialog] = useState(false);
 
   useEffect(() => {
@@ -679,6 +684,39 @@ export const StackPlanView = React.memo(function StackPlanView({
           >
             Apply Selected ({selectedServices.size})
           </Button>
+        )}
+        {canRevertPending && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={applyMutation.isPending || destroyMutation.isPending || revertMutation.isPending}
+              >
+                {revertMutation.isPending ? (
+                  <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <IconRefresh className="h-4 w-4 mr-2" />
+                )}
+                Discard pending changes
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Discard pending changes?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This restores the definition to the last applied version and
+                  drops the edits you haven&apos;t applied. Running containers
+                  aren&apos;t touched. This can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                <AlertDialogAction onClick={() => revertMutation.mutate(stackId)}>
+                  Discard changes
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
         <div className="ml-auto">
           <AlertDialog>

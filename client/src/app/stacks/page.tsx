@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { IconRefresh, IconStack2 } from "@tabler/icons-react";
-import { useAllStacks } from "@/hooks/use-stacks";
+import { useAllStacks, useStackStatusEvents } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useFormattedDate } from "@/hooks/use-formatted-date";
 import { getStackAttention } from "@/lib/stack-attention";
@@ -55,6 +55,8 @@ export default function StacksPage() {
   const { formatDateTime } = useFormattedDate();
   const { data, isLoading, isError, error, refetch, isRefetching } = useAllStacks();
   const { data: envData } = useEnvironments();
+  // Live status pushes keep the list current without polling.
+  useStackStatusEvents();
 
   const envNameById = useMemo(() => {
     const map = new Map<string, string>();
