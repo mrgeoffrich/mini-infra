@@ -10,7 +10,9 @@ import { useEnvironments } from "@/hooks/use-environments";
 import { StackPlanView } from "@/components/stacks/StackPlanView";
 import { StackStatusBadge } from "@/components/stacks/StackStatusBadge";
 import {
+  ChangeVersionButton,
   NeedsAttentionBadge,
+  StrandedAheadBadge,
   UpdateAvailableBadge,
   UpgradeButton,
 } from "@/components/stacks/stack-indicators";
@@ -103,6 +105,7 @@ export default function StackDetailPage() {
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StackStatusBadge status={stack.status} />
               {stack.templateUpdateAvailable && <UpdateAvailableBadge />}
+              <StrandedAheadBadge stack={stack} />
               <NeedsAttentionBadge stack={stack} />
               <Badge variant="outline">
                 {stack.environmentId ? envName : "Host"}
@@ -120,9 +123,14 @@ export default function StackDetailPage() {
                 <span>
                   Template version{" "}
                   <span className="font-mono">v{stack.templateVersion}</span>
-                  {stack.templateCurrentVersion != null &&
-                    stack.templateCurrentVersion !== stack.templateVersion &&
+                  {/* "latest" is only true when the stack is behind. After a
+                      template rollback the current version is OLDER than the
+                      installed one, and calling it "latest" told the operator
+                      the opposite of what happened. */}
+                  {stack.templateVersionRelation === "behind" &&
                     ` (latest v${stack.templateCurrentVersion})`}
+                  {stack.templateVersionRelation === "ahead" &&
+                    ` (template's current is v${stack.templateCurrentVersion})`}
                 </span>
               )}
               {templateHref && (
@@ -141,6 +149,10 @@ export default function StackDetailPage() {
             {stack.templateUpdateAvailable && (
               <UpgradeButton stackId={stack.id} label={`Upgrading ${stack.name}`} />
             )}
+            <ChangeVersionButton
+              stack={stack}
+              label={`Changing version of ${stack.name}`}
+            />
             {canStop && (
               <Button
                 variant="outline"

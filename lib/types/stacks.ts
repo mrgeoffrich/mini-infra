@@ -548,7 +548,15 @@ export interface StackInfo {
   templateSource?: 'system' | 'user' | null;
   /** The template's current published version number — for showing installed-vs-latest. Present when the query includes the template relation. */
   templateCurrentVersion?: number | null;
+  /**
+   * True only when the template has a *newer* published version than the one
+   * installed. Deliberately narrower than `templateVersionRelation`: a stack
+   * sitting ahead of current (stranded by a template rollback) has no update to
+   * adopt, so this stays false and the attention rollup does not cry "info".
+   */
   templateUpdateAvailable?: boolean;
+  /** How the installed version relates to the template's current one, with direction. */
+  templateVersionRelation?: TemplateVersionRelation;
   parameters: StackParameterDefinition[];
   parameterValues: Record<string, StackParameterValue>;
   resourceOutputs: StackResourceOutput[];
@@ -588,6 +596,35 @@ export interface StackInfo {
    * same answer instead of each reimplementing it.
    */
   needsAttention?: StackAttention;
+}
+
+/**
+ * How a stack's installed template version relates to the template's current
+ * published version.
+ *
+ * - `behind`  — a newer published version exists; the stack can be upgraded.
+ * - `current` — the stack tracks the template's current version.
+ * - `ahead`   — the stack is on a version NEWER than current. This is not a
+ *   corruption: it is what a template rollback leaves behind, since rollback
+ *   only re-points `currentVersionId` and never touches installed stacks.
+ * - `unknown` — templateless stack, or the template has no published version.
+ */
+export type TemplateVersionRelation = 'behind' | 'current' | 'ahead' | 'unknown';
+
+/**
+ * The one implementation of installed-vs-current. Server serialisers, the plan
+ * computer and the template's linked-stacks panel all call this, so the three
+ * surfaces cannot drift apart again (they had three hand-rolled copies of the
+ * `current > installed` comparison, one of which said so in a comment).
+ */
+export function computeTemplateVersionRelation(
+  installedVersion?: number | null,
+  currentVersion?: number | null,
+): TemplateVersionRelation {
+  if (installedVersion == null || currentVersion == null) return 'unknown';
+  if (currentVersion > installedVersion) return 'behind';
+  if (currentVersion < installedVersion) return 'ahead';
+  return 'current';
 }
 
 /** A specific thing the status monitor found wrong with a stack's live containers. */
@@ -1012,6 +1049,7 @@ export interface StackPlan {
   networkActions: NetworkDriftItem[];
   hasChanges: boolean;
   templateUpdateAvailable?: boolean;
+  templateVersionRelation?: TemplateVersionRelation;
   warnings?: PlanWarning[];
 }
 

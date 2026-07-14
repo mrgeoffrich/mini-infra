@@ -41,6 +41,8 @@ interface SeedVersionInput {
   parameters: Array<{ name: string; default: string }>;
   services: Array<{ serviceName: string; dockerTag: string }>;
   inputs?: Array<{ name: string; rotateOnUpgrade: boolean }>;
+  /** Defaults to `published`. `draft`/`archived` exercise the target-version guard. */
+  status?: "draft" | "published" | "archived";
 }
 
 async function seedTemplateVersion(templateId: string, v: SeedVersionInput): Promise<string> {
@@ -52,7 +54,7 @@ async function seedTemplateVersion(templateId: string, v: SeedVersionInput): Pro
       id: versionId,
       templateId,
       version: v.version,
-      status: "published",
+      status: v.status ?? "published",
       parameters: v.parameters.map((p) => ({
         name: p.name,
         type: "string",
@@ -285,10 +287,11 @@ describe("POST /api/stacks/:stackId/upgrade", () => {
 
   it("tells a stack stranded ahead by a rollback the truth, not 'already on latest'", async () => {
     // After a template rollback the stack can sit on a version NEWER than the
-    // template's current one. Upgrade only ever targets `currentVersion`, so it
-    // is refused — but telling a stack on v3 that it is "already on the latest
+    // template's current one. An UNtargeted upgrade is still refused — silently
+    // downgrading a stack because the template moved under it would be a nasty
+    // surprise — but telling a stack on v3 that it is "already on the latest
     // version (v2)" is simply false, and hides the fact that a rollback stranded
-    // it. See P4 4.2 for the real fix (upgrade/downgrade to a chosen version).
+    // it. The way out is naming a version explicitly (see the targeted tests).
     const { templateId, v2Id } = await seedTemplateWithTwoVersions();
     const stackId = await seedStackOnVersion({
       templateId,
@@ -330,5 +333,201 @@ describe("POST /api/stacks/:stackId/upgrade", () => {
       .post(`/api/stacks/${createId()}/upgrade`)
       .send({});
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/stacks/:stackId/upgrade — targetVersionId (P4 4.2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("downgrades to an older published version, re-materializing its services", async () => {
+    const { templateId, v1Id, v2Id } = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 2, // on current
+      templateVersionId: v2Id,
+      parameterValues: { replicas: "3" },
+      inputValues: { apiKey: "stored-key" },
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: v1Id });
+    expect(res.status).toBe(200);
+    expect(res.body.data.templateVersion).toBe(1);
+    expect(res.body.data.status).toBe("pending");
+
+    const stack = await testPrisma.stack.findUnique({
+      where: { id: stackId },
+      include: { services: true },
+    });
+    expect(stack?.templateVersionId).toBe(v1Id);
+    // v1 has only `web` at 1.0 — v2's `worker` must be gone, not left behind.
+    expect(stack?.services.map((s) => s.serviceName)).toEqual(["web"]);
+    expect(stack?.services[0]?.dockerTag).toBe("1.0");
+    // Operator's parameter override survives a downgrade too.
+    expect((stack?.parameterValues as Record<string, string>).replicas).toBe("3");
+  });
+
+  it("lets a stack stranded ahead by a rollback move back to the current version", async () => {
+    // The scenario the untargeted path can only complain about: template rolled
+    // back to v1, stack still on v2. Naming v1 explicitly is the way out.
+    const { templateId, v1Id, v2Id } = await seedTemplateWithTwoVersions();
+    await testPrisma.stackTemplate.update({
+      where: { id: templateId },
+      data: { currentVersionId: v1Id }, // the rollback
+    });
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 2,
+      templateVersionId: v2Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: v1Id });
+    expect(res.status).toBe(200);
+    expect(res.body.data.templateVersion).toBe(1);
+  });
+
+  it("rejects a draft target with 400 STACK_TEMPLATE_VERSION_NOT_PUBLISHED", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const draftId = await seedTemplateVersion(templateId, {
+      version: 3,
+      status: "draft",
+      parameters: [],
+      services: [{ serviceName: "web", dockerTag: "3.0" }],
+    });
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: draftId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("STACK_TEMPLATE_VERSION_NOT_PUBLISHED");
+  });
+
+  it("rejects an archived target with 400 STACK_TEMPLATE_VERSION_NOT_PUBLISHED", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const archivedId = await seedTemplateVersion(templateId, {
+      version: 4,
+      status: "archived",
+      parameters: [],
+      services: [{ serviceName: "web", dockerTag: "4.0" }],
+    });
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: archivedId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("STACK_TEMPLATE_VERSION_NOT_PUBLISHED");
+  });
+
+  it("rejects a version belonging to another template with 404", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const other = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      // A real, published version — but of a DIFFERENT template.
+      .send({ targetVersionId: other.v2Id });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("STACK_TEMPLATE_VERSION_NOT_FOUND");
+  });
+
+  it("returns 404 for an unknown targetVersionId", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: createId() });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("STACK_TEMPLATE_VERSION_NOT_FOUND");
+  });
+
+  it("409s when the target is the version already installed", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .post(`/api/stacks/${stackId}/upgrade`)
+      .send({ targetVersionId: v1Id });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("STACK_ALREADY_ON_LATEST");
+    // "already on the LATEST" would be a lie: v1 is not the latest, it is just
+    // the one they asked for and already have.
+    expect(res.body.message).toContain("already on template version v1");
+    expect(res.body.message).not.toContain("latest");
+  });
+});
+
+describe("GET /api/stacks/:stackId/upgrade-inputs — targetVersionId (P4 4.2)", () => {
+  it("reads rotateOnUpgrade inputs off the TARGET version, not the current one", async () => {
+    const { templateId, v1Id, v2Id } = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    // No target → the current version (v2), which declares a rotating `token`.
+    const current = await supertest(buildApp()).get(`/api/stacks/${stackId}/upgrade-inputs`);
+    expect(current.status).toBe(200);
+    expect(current.body.data.inputs.map((i: { name: string }) => i.name)).toEqual(["token"]);
+
+    // Targeting v1 — whose only input does NOT rotate — must return nothing.
+    // Resolving against currentVersion regardless would prompt the operator to
+    // rotate a secret the version they are deploying doesn't even declare.
+    const targeted = await supertest(buildApp())
+      .get(`/api/stacks/${stackId}/upgrade-inputs`)
+      .query({ targetVersionId: v1Id });
+    expect(targeted.status).toBe(200);
+    expect(targeted.body.data.inputs).toEqual([]);
+
+    // Sanity: explicitly targeting v2 matches the untargeted answer.
+    const targetedV2 = await supertest(buildApp())
+      .get(`/api/stacks/${stackId}/upgrade-inputs`)
+      .query({ targetVersionId: v2Id });
+    expect(targetedV2.body.data.inputs.map((i: { name: string }) => i.name)).toEqual(["token"]);
+  });
+
+  it("404s when the target version belongs to another template", async () => {
+    const { templateId, v1Id } = await seedTemplateWithTwoVersions();
+    const other = await seedTemplateWithTwoVersions();
+    const stackId = await seedStackOnVersion({
+      templateId,
+      templateVersion: 1,
+      templateVersionId: v1Id,
+    });
+
+    const res = await supertest(buildApp())
+      .get(`/api/stacks/${stackId}/upgrade-inputs`)
+      .query({ targetVersionId: other.v2Id });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("STACK_TEMPLATE_VERSION_NOT_FOUND");
   });
 });

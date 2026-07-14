@@ -1,18 +1,26 @@
 /**
- * Re-materialize an existing Stack from the current published version of its
+ * Re-materialize an existing Stack from a published version of its
  * StackTemplate — the "upgrade" primitive.
  *
  * This is the shared core behind BOTH:
  *   - the user-facing `POST /api/stacks/:stackId/upgrade` route (user templates), and
  *   - boot-time built-in stack sync (`builtin-stack-sync.ts`, system templates).
  *
- * It loads `template.currentVersion` (which must be published), re-materializes
- * the stack's services / networks / volumes / config-files / resource-IO from
- * that version, merges the operator's existing parameter values over the new
- * defaults, merges input values via `mergeForUpgrade` (honouring
- * `rotateOnUpgrade`), bumps `Stack.version`, updates `templateVersion` +
- * `templateVersionId` (and `builtinVersion` for system templates), and flips
- * status to `pending`. It does NOT apply — the caller chains `POST /apply`.
+ * The target defaults to `template.currentVersion`, but the caller may name any
+ * published version via `targetVersionId` — which is what makes a *downgrade*
+ * possible. That matters because template rollback only re-points
+ * `currentVersionId` and never touches installed stacks, so a rollback strands
+ * every stack that had already adopted the newer version: they sit AHEAD of
+ * current, with nothing to upgrade to and no way back. Naming a version
+ * explicitly is the way out.
+ *
+ * It re-materializes the stack's services / networks / volumes / config-files /
+ * resource-IO from the target version, merges the operator's existing parameter
+ * values over the target's defaults, merges input values via `mergeForUpgrade`
+ * (honouring `rotateOnUpgrade`), bumps `Stack.version`, updates
+ * `templateVersion` + `templateVersionId` (and `builtinVersion` for system
+ * templates), and flips status to `pending`. It does NOT apply — the caller
+ * chains `POST /apply`.
  */
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import type {
@@ -36,6 +44,61 @@ import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle"
 
 const log = getLogger("stacks", "stack-upgrade-service");
 
+/**
+ * Load an explicitly-named target version, refusing anything that isn't a
+ * published version of *this* template.
+ *
+ * The status check is load-bearing and new: nothing in the codebase previously
+ * guarded `StackTemplateVersionStatus`. `createStackFromTemplate` and the old
+ * upgrade path both went through `template.currentVersion`, which is published
+ * by construction, so the gap never showed. Accepting an arbitrary version id
+ * opens it — a draft (the author's unpublished work-in-progress) or an archived
+ * version would otherwise be deployable by id.
+ */
+async function loadTargetVersion(
+  prisma: PrismaClient,
+  templateId: string,
+  templateName: string,
+  targetVersionId: string,
+) {
+  const version = await prisma.stackTemplateVersion.findUnique({
+    where: { id: targetVersionId },
+    include: {
+      services: { orderBy: { order: "asc" } },
+      configFiles: true,
+    },
+  });
+
+  // Belonging to another template is reported as not-found, not as a mismatch —
+  // the caller has no business knowing that some other template's version exists.
+  if (!version || version.templateId !== templateId) {
+    throw new NotFoundError(
+      ErrorCode.STACK_TEMPLATE_VERSION_NOT_FOUND,
+      "Template version not found",
+      {
+        resource: { type: "stackTemplateVersion", id: targetVersionId },
+        action: `Choose a published version of '${templateName}'.`,
+      },
+    );
+  }
+
+  if (version.status !== "published") {
+    throw new ValidationError(
+      ErrorCode.STACK_TEMPLATE_VERSION_NOT_PUBLISHED,
+      `Template version v${version.version} is ${version.status}, not published`,
+      {
+        resource: { type: "stackTemplateVersion", id: targetVersionId },
+        action:
+          version.status === "draft"
+            ? "Publish the draft before deploying a stack from it."
+            : "Choose a published version — archived versions cannot be deployed.",
+      },
+    );
+  }
+
+  return version;
+}
+
 export interface UpgradeStackOptions {
   /**
    * Parameter overrides applied with the highest precedence (e.g. environment
@@ -49,25 +112,40 @@ export interface UpgradeStackOptions {
    * `rotateOnUpgrade` input declaration on the target version.
    */
   suppliedInputValues?: Record<string, string>;
+  /**
+   * Move the stack to this specific template version instead of the template's
+   * current one. Must be a published version of the stack's own template.
+   * May be OLDER than the installed version — that is a deliberate downgrade,
+   * and the only way to recover a stack stranded ahead of current by a rollback.
+   */
+  targetVersionId?: string;
   /** Audit user id (egress reconcile + future audit). */
   userId?: string | null;
 }
 
 /**
- * Upgrade `stackId` to its template's current published version. Returns the
- * updated, serialized stack. Throws typed taxonomy errors:
+ * Move `stackId` to a published version of its template — `targetVersionId` if
+ * given, otherwise the template's current version. Returns the updated,
+ * serialized stack. Throws typed taxonomy errors:
  *   - 404 STACK_NOT_FOUND — unknown stack
  *   - 400 STACK_NO_TEMPLATE — stack was created without a template
  *   - 400 STACK_TEMPLATE_NOT_PUBLISHED — template has no published version
- *   - 409 STACK_ALREADY_ON_LATEST — stack is already on the current version
+ *   - 404 STACK_TEMPLATE_VERSION_NOT_FOUND — targetVersionId is unknown, or belongs to another template
+ *   - 400 STACK_TEMPLATE_VERSION_NOT_PUBLISHED — targetVersionId is a draft or archived version
+ *   - 409 STACK_ALREADY_ON_LATEST — the stack is already on the target version
  *   - 400 STACK_INPUT_ROTATION_REQUIRED — a rotateOnUpgrade input wasn't supplied
  */
-export async function upgradeStackToCurrentTemplateVersion(
+export async function upgradeStackToTemplateVersion(
   prisma: PrismaClient,
   stackId: string,
   options: UpgradeStackOptions = {},
 ): Promise<StackInfo> {
-  const { parameterOverrides = {}, suppliedInputValues = {}, userId = null } = options;
+  const {
+    parameterOverrides = {},
+    suppliedInputValues = {},
+    targetVersionId,
+    userId = null,
+  } = options;
 
   const existing = await prisma.stack.findUnique({
     where: { id: stackId },
@@ -115,7 +193,9 @@ export async function upgradeStackToCurrentTemplateVersion(
       action: "The template backing this stack no longer exists.",
     });
   }
-  const version = template.currentVersion;
+  const version = targetVersionId
+    ? await loadTargetVersion(prisma, template.id, template.name, targetVersionId)
+    : template.currentVersion;
   if (!version) {
     throw new ValidationError(
       ErrorCode.STACK_TEMPLATE_NOT_PUBLISHED,
@@ -127,24 +207,38 @@ export async function upgradeStackToCurrentTemplateVersion(
     );
   }
 
-  if (existing.templateVersion != null && version.version <= existing.templateVersion) {
-    // Two very different situations reach here, and saying "already on the
-    // latest version (v3)" to a stack sitting on v4 is simply false. The second
-    // case happens after a template rollback: the stack is now AHEAD of the
-    // template's current version, and since upgrade only ever targets
-    // `currentVersion` there is no way to move it. Say so, rather than
-    // pretending nothing is wrong.
-    const isAhead = version.version < existing.templateVersion;
+  if (version.version === existing.templateVersion) {
+    // A no-op either way, but say which no-op it is: "already on the latest"
+    // is a lie when the operator explicitly asked for v2 and is already there.
     throw new ConflictError(
       ErrorCode.STACK_ALREADY_ON_LATEST,
-      isAhead
-        ? `Stack is on template version v${existing.templateVersion}, which is newer than the template's current version (v${version.version}) — the template was rolled back.`
+      targetVersionId
+        ? `Stack is already on template version v${version.version}`
         : `Stack is already on the latest template version (v${version.version})`,
       {
         resource: { type: "stack", id: stackId },
-        action: isAhead
-          ? "Publish a newer template version to move this stack forward. Rolling a stack back to an older template version is not supported yet."
+        action: targetVersionId
+          ? "Choose a different version to move this stack to."
           : "No upgrade is needed — this stack already tracks the current version.",
+      },
+    );
+  }
+
+  // Only an EXPLICIT target may move a stack backwards. An implicit upgrade that
+  // silently downgraded — because the template had been rolled back under it —
+  // would be a nasty surprise, so the stranded-ahead stack is still refused here
+  // and pointed at the version picker instead.
+  if (
+    !targetVersionId &&
+    existing.templateVersion != null &&
+    version.version < existing.templateVersion
+  ) {
+    throw new ConflictError(
+      ErrorCode.STACK_ALREADY_ON_LATEST,
+      `Stack is on template version v${existing.templateVersion}, which is newer than the template's current version (v${version.version}) — the template was rolled back.`,
+      {
+        resource: { type: "stack", id: stackId },
+        action: `Choose a specific version to move this stack to (v${version.version} is the template's current one), or publish a newer version to move it forward.`,
       },
     );
   }
@@ -236,8 +330,15 @@ export async function upgradeStackToCurrentTemplateVersion(
   }
 
   log.info(
-    { stackId, templateId: template.id, toVersion: version.version, isSystem },
-    "Stack upgraded to current template version",
+    {
+      stackId,
+      templateId: template.id,
+      fromVersion: existing.templateVersion,
+      toVersion: version.version,
+      explicitTarget: targetVersionId != null,
+      isSystem,
+    },
+    "Stack moved to template version",
   );
 
   const updated = await prisma.stack.findUnique({

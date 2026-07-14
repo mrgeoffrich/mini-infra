@@ -34,7 +34,7 @@ import {
   validateTemplateSubstitutions,
 } from "./template-substitution-validator";
 import { encryptInputValues } from "./stack-input-values-service";
-import { ErrorCode } from "@mini-infra/types";
+import { ErrorCode, computeTemplateVersionRelation } from "@mini-infra/types";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../lib/errors";
 
 // Input shape for upserting system templates from builtin definitions
@@ -1260,6 +1260,7 @@ export class StackTemplateService {
         linkedStacks: template.stacks.map((s) => {
           const stackVersion = s.templateVersion ?? null;
           const currentVersion = (template.currentVersion?.version as number | undefined) ?? null;
+          const relation = computeTemplateVersionRelation(stackVersion, currentVersion);
           return {
             id: s.id,
             name: s.name,
@@ -1270,10 +1271,8 @@ export class StackTemplateService {
             environmentId: s.environmentId,
             templateVersion: stackVersion,
             templateCurrentVersion: currentVersion,
-            // Mirror utils.computeTemplateUpdateAvailable: the template has a
-            // newer published version than the one this stack is pinned to.
-            templateUpdateAvailable:
-              stackVersion !== null && currentVersion !== null && currentVersion > stackVersion,
+            templateUpdateAvailable: relation === 'behind',
+            templateVersionRelation: relation,
           };
         }),
       } : {}),

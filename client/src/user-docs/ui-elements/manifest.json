@@ -758,6 +758,12 @@
       "file": "client/src/components/stack-templates/template-version-diff.tsx"
     },
     {
+      "id": "stack-version-picker",
+      "label": "Stack Version Picker",
+      "elementType": "ul",
+      "file": "client/src/components/stacks/ChangeVersionDialog.tsx"
+    },
+    {
       "id": "rotate-inputs-dialog",
       "label": "Rotate Inputs Dialog",
       "elementType": "DialogContent",
@@ -800,6 +806,12 @@
       "file": "client/src/components/stacks/stack-indicators.tsx"
     },
     {
+      "id": "stack-ahead-of-current-badge",
+      "label": "Stack Ahead Of Current Badge",
+      "elementType": "Badge",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
       "id": "stack-needs-attention-badge",
       "label": "Stack Needs Attention Badge",
       "elementType": "Badge",
@@ -808,6 +820,12 @@
     {
       "id": "stack-upgrade-button",
       "label": "Stack Upgrade Button",
+      "elementType": "Button",
+      "file": "client/src/components/stacks/stack-indicators.tsx"
+    },
+    {
+      "id": "stack-change-version-button",
+      "label": "Stack Change Version Button",
       "elementType": "Button",
       "file": "client/src/components/stacks/stack-indicators.tsx"
     },

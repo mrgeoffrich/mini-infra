@@ -10,6 +10,7 @@ import type {
   StackTlsCertificate,
   StackTunnelIngress,
 } from '@mini-infra/types';
+import { computeTemplateVersionRelation } from '@mini-infra/types';
 import type { DockerExecutorService } from '../docker-executor';
 import { computeDefinitionHash } from './definition-hash';
 import { getLogger } from '../../lib/logger-factory';
@@ -289,10 +290,11 @@ export class StackPlanComputer {
     }
 
     const templateRef = stack as { template?: { currentVersion?: { version: number } | null } | null };
-    const templateUpdateAvailable =
-      stack.templateVersion != null &&
-      templateRef.template?.currentVersion?.version != null &&
-      templateRef.template.currentVersion.version > stack.templateVersion;
+    const templateVersionRelation = computeTemplateVersionRelation(
+      stack.templateVersion,
+      templateRef.template?.currentVersion?.version,
+    );
+    const templateUpdateAvailable = templateVersionRelation === 'behind';
 
     const resourceActions = this.resourceReconciler
       ? this.resourceReconciler.planResources(
@@ -355,6 +357,7 @@ export class StackPlanComputer {
         resourceActions.some((a) => a.action !== 'no-op') ||
         networkActions.length > 0,
       templateUpdateAvailable,
+      templateVersionRelation,
       warnings: planWarnings.length > 0 ? planWarnings : undefined,
     };
 

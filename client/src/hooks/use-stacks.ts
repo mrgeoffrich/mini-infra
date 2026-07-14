@@ -75,17 +75,29 @@ async function fetchStack(stackId: string): Promise<StackResponse> {
 }
 
 /**
- * The `rotateOnUpgrade` input declarations the operator must supply to upgrade
- * this stack to its template's current version. Empty when the template has no
- * such inputs — the caller can then upgrade without a dialog.
+ * The `rotateOnUpgrade` input declarations the operator must supply to move this
+ * stack to `targetVersionId` (or the template's current version when omitted).
+ * Empty when that version has no such inputs — the caller can then upgrade
+ * without a dialog.
+ *
+ * The target matters: inputs belong to the version being deployed, so asking
+ * the current version what a *different* version needs would prompt for the
+ * wrong secrets.
  */
 export async function fetchStackUpgradeInputs(
   stackId: string,
+  targetVersionId?: string,
 ): Promise<TemplateInputDeclaration[]> {
-  const data = await apiFetch<{ inputs: TemplateInputDeclaration[] }>(
-    ApiRoute.stacks.upgradeInputs(stackId),
-    { correlationIdPrefix: "stacks" },
-  );
+  // Query string is appended here rather than baked into the ApiRoute builder:
+  // ALL_API_ROUTES is a registry of paths, and a builder that emitted `?…` broke
+  // the route-drift check that matches builders against Express routes.
+  const path = ApiRoute.stacks.upgradeInputs(stackId);
+  const url = targetVersionId
+    ? `${path}?targetVersionId=${encodeURIComponent(targetVersionId)}`
+    : path;
+  const data = await apiFetch<{ inputs: TemplateInputDeclaration[] }>(url, {
+    correlationIdPrefix: "stacks",
+  });
   return data.inputs ?? [];
 }
 
@@ -132,14 +144,19 @@ async function applyStack(
 async function upgradeStack(
   stackId: string,
   inputValues?: Record<string, string>,
+  targetVersionId?: string,
 ): Promise<StackInfo> {
-  // POST /upgrade re-materializes the stack from its template's current
-  // published version. It does NOT apply — callers chain applyStack afterwards.
-  // No catch-and-flatten so the real ApiRequestError (e.g. rotation-required)
-  // reaches the global MutationCache.onError.
+  // POST /upgrade re-materializes the stack from a published version of its
+  // template — `targetVersionId` when given, else the current version. It does
+  // NOT apply — callers chain applyStack afterwards. No catch-and-flatten so the
+  // real ApiRequestError (e.g. rotation-required) reaches the global
+  // MutationCache.onError.
   return apiFetch<StackInfo>(ApiRoute.stacks.upgrade(stackId), {
     method: "POST",
-    body: inputValues ? { inputValues } : {},
+    body: {
+      ...(inputValues ? { inputValues } : {}),
+      ...(targetVersionId ? { targetVersionId } : {}),
+    },
     correlationIdPrefix: "stacks",
   });
 }
@@ -384,8 +401,9 @@ export function useRevertPendingStack() {
 
 /**
  * Raw upgrade mutation — POST /stacks/:id/upgrade. Re-materializes the stack
- * from its template's current version and flips it to `pending`. Does NOT
- * apply. Most call sites want {@link useUpgradeAndApplyStack} instead.
+ * from a published template version (`targetVersionId`, else current) and flips
+ * it to `pending`. Does NOT apply. Most call sites want
+ * {@link useUpgradeAndApplyStack} instead.
  */
 export function useStackUpgrade() {
   const queryClient = useQueryClient();
@@ -393,10 +411,12 @@ export function useStackUpgrade() {
     mutationFn: ({
       stackId,
       inputValues,
+      targetVersionId,
     }: {
       stackId: string;
       inputValues?: Record<string, string>;
-    }) => upgradeStack(stackId, inputValues),
+      targetVersionId?: string;
+    }) => upgradeStack(stackId, inputValues, targetVersionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
@@ -427,12 +447,14 @@ export function useUpgradeAndApplyStack() {
       stackId,
       label,
       inputValues,
+      targetVersionId,
     }: {
       stackId: string;
       label: string;
       inputValues?: Record<string, string>;
+      targetVersionId?: string;
     }) => {
-      await upgradeStack(stackId, inputValues);
+      await upgradeStack(stackId, inputValues, targetVersionId);
       registerTask({ id: stackId, type: "stack-apply", label, channel: Channel.STACKS });
       await applyStack(stackId, {});
     },

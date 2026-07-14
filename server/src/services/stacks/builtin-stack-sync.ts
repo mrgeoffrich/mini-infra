@@ -4,7 +4,7 @@ import { PrismaClient, Prisma } from "../../generated/prisma/client";
 import { StackParameterValue, StackDefinition } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
 import { StackTemplateService } from "./stack-template-service";
-import { upgradeStackToCurrentTemplateVersion } from "./stack-upgrade-service";
+import { upgradeStackToTemplateVersion } from "./stack-upgrade-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
 import { seedSystemPrefixAllowlist } from "../nats/seed-system-prefix-allowlist";
@@ -217,7 +217,7 @@ async function upgradeStackFromTemplate(
   // and reconciles template egress rules. Network-type parameter overrides are
   // passed through with top precedence. System upgrades run in the background
   // with no userId.
-  await upgradeStackToCurrentTemplateVersion(prisma, stackId, {
+  await upgradeStackToTemplateVersion(prisma, stackId, {
     parameterOverrides,
   });
 }

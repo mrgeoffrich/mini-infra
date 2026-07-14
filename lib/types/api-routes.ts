@@ -758,9 +758,9 @@ export const ApiRoute = {
     stop: (stackId: string): string => `${ApiBase.stacks}/${stackId}/stop`,
     /** POST /api/stacks/:stackId/update */
     update: (stackId: string): string => `${ApiBase.stacks}/${stackId}/update`,
-    /** POST /api/stacks/:stackId/upgrade — re-materialize from the template's current version */
+    /** POST /api/stacks/:stackId/upgrade — re-materialize from a published template version (body `targetVersionId` picks one; defaults to current) */
     upgrade: (stackId: string): string => `${ApiBase.stacks}/${stackId}/upgrade`,
-    /** GET /api/stacks/:stackId/upgrade-inputs — rotateOnUpgrade inputs required to upgrade */
+    /** GET /api/stacks/:stackId/upgrade-inputs — rotateOnUpgrade inputs required to upgrade. Optional `?targetVersionId=` selects the version to read them from (defaults to the template's current). */
     upgradeInputs: (stackId: string): string => `${ApiBase.stacks}/${stackId}/upgrade-inputs`,
     /** POST /api/stacks/:stackId/revert-pending — restore definition from last applied snapshot */
     revertPending: (stackId: string): string => `${ApiBase.stacks}/${stackId}/revert-pending`,

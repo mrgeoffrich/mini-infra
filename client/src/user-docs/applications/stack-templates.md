@@ -90,7 +90,9 @@ You can also diff any two versions from the detail page by selecting a version â
 
 Select an older published version in the sidebar and click **Make current**. That version becomes the template's current published version.
 
-Rollback does not touch any running stack. It changes what "current" means, so stacks running a *newer* version will now show as having an update available pointing *back* at the older one. To actually revert a stack, roll the template back and then **Upgrade & deploy** the stack.
+Rollback does not touch any running stack â€” it only changes what "current" means.
+
+A stack already running the newer version therefore stays on it, and is now *ahead* of the template's current version. It does not show **Update available** (there is nothing newer than what it runs) and **Upgrade & deploy** is refused. Instead it shows an **Ahead of current** badge, and you move it with **Change version** on the stack detail page, choosing the version you want. See [Stacks](/help/applications/host-stacks).
 
 ## Installing a template
 

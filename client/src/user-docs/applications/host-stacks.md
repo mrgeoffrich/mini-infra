@@ -111,6 +111,20 @@ When a stack's template has a newer published version than the one the stack is 
 
 If the target version declares **rotate on upgrade** inputs, a **Supply upgrade inputs** dialog collects fresh values first — the upgrade won't proceed without them.
 
+**Upgrade & deploy** always targets the template's *current* version. To move a stack to some other version — including an older one — use **Change version**.
+
+## Change version
+
+**Change version** on the stack detail page opens a picker listing every published version of the stack's template, and deploys the stack from the one you choose. Choosing an older version rolls the stack back; the version you're already on is marked **Installed** and can't be selected.
+
+Drafts and archived versions aren't offered, and won't be accepted if requested directly.
+
+### "Ahead of current"
+
+A stack can end up running a template version *newer* than the template's current one. This is what a template [rollback](/help/applications/stack-templates) leaves behind: rolling a template back changes which version is "current" but does not touch stacks already running a newer one.
+
+Such a stack shows an **Ahead of current** badge. It has no update to adopt — there is nothing newer than what it already runs — so **Upgrade & deploy** does not appear, and requesting one is refused. **Change version** is how you move it: pick the version you actually want.
+
 ## Stop, Remove, and Delete
 
 These are three different operations with three different blast radii.

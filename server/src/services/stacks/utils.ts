@@ -14,7 +14,11 @@ import type {
   StackRuntimeIssue,
   NatsDriftInfo,
 } from '@mini-infra/types';
-import { ErrorCode, computeStackAttention } from '@mini-infra/types';
+import {
+  ErrorCode,
+  computeStackAttention,
+  computeTemplateVersionRelation,
+} from '@mini-infra/types';
 import { NotFoundError } from '../../lib/errors';
 import { buildTemplateContext, resolveStackConfigFiles, resolveServiceDefinition } from './template-engine';
 import { computeDefinitionHash, computeSyntheticDefinitionHash } from './definition-hash';
@@ -121,7 +125,11 @@ export function serializeStack(
   void _strippedEncrypted;
   void _strippedSnapshot;
 
-  const templateUpdateAvailable = computeTemplateUpdateAvailable(stack);
+  const templateVersionRelation = computeTemplateVersionRelation(
+    stack.templateVersion,
+    stack.template?.currentVersion?.version,
+  );
+  const templateUpdateAvailable = templateVersionRelation === 'behind';
   const runtimeIssues = normaliseRuntimeIssues(
     (stack as { runtimeIssues?: unknown }).runtimeIssues,
   );
@@ -137,6 +145,7 @@ export function serializeStack(
     templateSource: (stack.template?.source as 'system' | 'user' | undefined) ?? null,
     templateCurrentVersion: stack.template?.currentVersion?.version ?? null,
     templateUpdateAvailable,
+    templateVersionRelation,
     tlsCertificates: stack.tlsCertificates ?? [],
     dnsRecords: stack.dnsRecords ?? [],
     tunnelIngress: stack.tunnelIngress ?? [],
@@ -170,11 +179,6 @@ function normaliseRuntimeIssues(value: unknown): StackRuntimeIssue[] {
       typeof (issue as { kind?: unknown }).kind === 'string' &&
       typeof (issue as { serviceName?: unknown }).serviceName === 'string',
   );
-}
-
-function computeTemplateUpdateAvailable(stack: SerializableStack): boolean {
-  if (!stack.templateVersion || !stack.template?.currentVersion) return false;
-  return stack.template.currentVersion.version > stack.templateVersion;
 }
 
 export function serializeService(svc: SerializableService): StackServiceInfo {
