@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { IconAlertTriangle, IconArrowUp, IconLoader2 } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconAlertTriangle,
+  IconArrowUp,
+  IconArrowUpCircle,
+  IconLoader2,
+} from "@tabler/icons-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,7 +18,11 @@ import { cn } from "@/lib/utils";
 import { useUpgradeAndApplyStack, fetchStackUpgradeInputs } from "@/hooks/use-stacks";
 import { getStackAttention } from "@/lib/stack-attention";
 import { RotateInputsDialog } from "@/components/stacks/RotateInputsDialog";
-import type { StackInfo, TemplateInputDeclaration } from "@mini-infra/types";
+import type {
+  StackAttentionLevel,
+  StackInfo,
+  TemplateInputDeclaration,
+} from "@mini-infra/types";
 
 /**
  * "Update available" badge shown when a stack's template has a newer published
@@ -45,8 +55,45 @@ export function UpdateAvailableBadge({ className }: { className?: string }) {
 }
 
 /**
- * Single "needs attention" indicator rolling up drift, NATS drift, error
- * status, and update-available into one affordance with the reasons listed.
+ * Presentation per attention level. A stack whose service has crashed is an
+ * outage and must not look like "a newer template version exists" — before
+ * these levels existed, every reason rendered in the same amber and the badge
+ * could not tell the two apart.
+ */
+const ATTENTION_STYLES: Record<
+  StackAttentionLevel,
+  { label: string; className: string; icon: typeof IconAlertTriangle }
+> = {
+  critical: {
+    label: "Needs attention",
+    className:
+      "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-300",
+    icon: IconAlertCircle,
+  },
+  warning: {
+    label: "Needs attention",
+    className:
+      "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    icon: IconAlertTriangle,
+  },
+  info: {
+    label: "Update available",
+    className:
+      "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
+    icon: IconArrowUpCircle,
+  },
+  none: {
+    label: "Needs attention",
+    className:
+      "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+    icon: IconAlertTriangle,
+  },
+};
+
+/**
+ * Single "needs attention" indicator rolling up live runtime issues, drift,
+ * NATS drift, error status, and update-available into one affordance with the
+ * reasons listed. Severity comes from the server-computed level.
  * Renders nothing when the stack is healthy and nothing is pending.
  */
 export function NeedsAttentionBadge({
@@ -58,20 +105,21 @@ export function NeedsAttentionBadge({
 }) {
   const attention = getStackAttention(stack);
   if (!attention.needsAttention) return null;
+
+  const style = ATTENTION_STYLES[attention.level] ?? ATTENTION_STYLES.warning;
+  const Icon = style.icon;
+
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Badge
             variant="outline"
-            className={cn(
-              "cursor-help border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
-              className,
-            )}
+            className={cn("cursor-help", style.className, className)}
             data-tour="stack-needs-attention-badge"
           >
-            <IconAlertTriangle className="mr-1 h-3 w-3" />
-            Needs attention
+            <Icon className="mr-1 h-3 w-3" />
+            {style.label}
           </Badge>
         </TooltipTrigger>
         <TooltipContent className="max-w-sm">
