@@ -5,8 +5,8 @@
  * linked Stack records) with no teardown of the real Docker containers,
  * networks, or volumes a deployed stack owns — orphaning them with no UI
  * path left to find or clean up. The route now blocks the delete while any
- * linked stack is still deployed (not `undeployed` and not yet `removed`),
- * pointing the caller at the existing stack-destroy flow (the "Stop" button)
+ * linked stack is still deployed (i.e. not `undeployed`), pointing the
+ * caller at the existing stack-destroy flow (the "Stop" button)
  * instead of silently leaking resources.
  */
 
@@ -40,7 +40,6 @@ function buildApp() {
 
 async function createTemplateWithStack(opts: {
   stackStatus: string;
-  removedAt?: Date | null;
 }): Promise<{ templateId: string; stackId: string }> {
   const templateId = createId();
   await testPrisma.stackTemplate.create({
@@ -63,7 +62,6 @@ async function createTemplateWithStack(opts: {
       templateId,
       templateVersion: 1,
       status: opts.stackStatus as never,
-      removedAt: opts.removedAt ?? null,
     },
   });
 
@@ -84,11 +82,11 @@ describe('DELETE /api/stack-templates/:templateId — deployed-stack guard', () 
     expect(stillThere).not.toBeNull();
   });
 
-  it('allows delete once the linked stack has been destroyed (removedAt set)', async () => {
-    const { templateId, stackId } = await createTemplateWithStack({
-      stackStatus: 'synced',
-      removedAt: new Date(0),
-    });
+  it('allows delete once the linked stack has been destroyed (row hard-deleted)', async () => {
+    const { templateId, stackId } = await createTemplateWithStack({ stackStatus: 'synced' });
+    // Stack destroy hard-deletes the row — there is no soft-delete tombstone,
+    // so a destroyed stack simply leaves the template with no linked stacks.
+    await testPrisma.stack.delete({ where: { id: stackId } });
 
     const res = await supertest(buildApp()).delete(`/api/stack-templates/${templateId}`);
 

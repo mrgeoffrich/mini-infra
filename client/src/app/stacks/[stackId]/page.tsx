@@ -79,7 +79,7 @@ export default function StackDetailPage() {
       ? `/applications/${stack.templateId}`
       : `/stack-templates/${stack.templateId}`
     : null;
-  const canStop = stack.status !== "undeployed" && stack.status !== "removed";
+  const canStop = stack.status !== "undeployed";
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">

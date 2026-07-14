@@ -39,7 +39,7 @@ export function createManagedTunnelsRouter(
       const tunnelsMap = await cloudflareConfigService.getAllManagedTunnels();
 
       const stacks = await prisma.stack.findMany({
-        where: { name: "cloudflare-tunnel", status: { not: "removed" } },
+        where: { name: "cloudflare-tunnel" },
         select: { id: true, environmentId: true, status: true },
       });
       const stackByEnv = new Map(stacks.map((s) => [s.environmentId, s]));
@@ -75,7 +75,6 @@ export function createManagedTunnelsRouter(
         where: {
           name: "cloudflare-tunnel",
           environmentId,
-          status: { not: "removed" },
         },
         select: { id: true, status: true },
       });
@@ -154,7 +153,6 @@ export function createManagedTunnelsRouter(
         where: {
           name: "cloudflare-tunnel",
           environmentId,
-          status: { not: "removed" },
         },
         select: { id: true, status: true },
       });
@@ -224,7 +222,6 @@ export function createManagedTunnelsRouter(
         where: {
           name: "cloudflare-tunnel",
           environmentId,
-          status: { not: "removed" },
         },
         select: { id: true, status: true },
       });

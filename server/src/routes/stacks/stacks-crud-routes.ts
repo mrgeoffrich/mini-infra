@@ -268,7 +268,7 @@ router.post(
       }
 
       const existing = await prisma.stack.findFirst({
-        where: { name, environmentId, status: { not: 'removed' } },
+        where: { name, environmentId },
       });
       if (existing) {
         throw new ConflictError(
@@ -282,7 +282,7 @@ router.post(
       }
     } else {
       const existing = await prisma.stack.findFirst({
-        where: { name, environmentId: null, status: { not: 'removed' } },
+        where: { name, environmentId: null },
       });
       if (existing) {
         throw new ConflictError(

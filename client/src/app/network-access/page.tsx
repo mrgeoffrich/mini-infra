@@ -232,7 +232,7 @@ export default function NetworkAccessPage() {
   const deviceOnline = ingressStatus?.deviceOnline ?? false;
   const ingressUrl = ingressStatus?.ingressUrl ?? null;
   const stackStatus = hostStack?.status;
-  const isDeployed = !!hostStack && stackStatus !== "undeployed" && stackStatus !== "removed";
+  const isDeployed = !!hostStack && stackStatus !== "undeployed";
   const deploying =
     instantiate.isPending ||
     applyMutation.isPending ||

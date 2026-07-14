@@ -86,7 +86,7 @@ async function getHAProxyClient(environmentId: string): Promise<HAProxyDataPlane
   }
 
   const haproxyStack = await prisma.stack.findFirst({
-    where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+    where: { environmentId, name: 'haproxy' },
   });
 
   if (!haproxyStack) {

@@ -122,54 +122,50 @@ describe("evaluatePrerequisites — stack requirements (DB-backed)", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("error/removed never satisfy a minState requirement", async () => {
-    for (const status of ["error", "removed"]) {
-      const { templateId: vaultTpl } = await createTemplate({
-        name: `vault-${status}-${createId().slice(0, 6)}`,
-        scope: "host",
-      });
-      await createVersion({ templateId: vaultTpl, version: 1 });
-      await createStack({
-        name: `vault-${status}`,
-        templateId: vaultTpl,
-        templateVersion: 1,
-        status,
-      });
+  it("error never satisfies a minState requirement", async () => {
+    const status = "error";
+    const { templateId: vaultTpl } = await createTemplate({
+      name: `vault-${status}-${createId().slice(0, 6)}`,
+      scope: "host",
+    });
+    await createVersion({ templateId: vaultTpl, version: 1 });
+    await createStack({
+      name: `vault-${status}`,
+      templateId: vaultTpl,
+      templateVersion: 1,
+      status,
+    });
 
-      const { templateId: consumerTpl } = await createTemplate({
-        name: `consumer-${status}-${createId().slice(0, 6)}`,
-        scope: "host",
-      });
-      await createVersion({
-        templateId: consumerTpl,
-        version: 1,
-        requires: [
-          {
-            kind: "stack",
-            templateName: (await testPrisma.stackTemplate.findUnique({ where: { id: vaultTpl } }))!.name,
-            minState: "pending",
-            scopeMatch: "host",
-          },
-        ],
-      });
-      const consumerStack = await createStack({
-        name: `consumer-${status}`,
-        templateId: consumerTpl,
-        templateVersion: 1,
-        status: "pending",
-      });
+    const { templateId: consumerTpl } = await createTemplate({
+      name: `consumer-${status}-${createId().slice(0, 6)}`,
+      scope: "host",
+    });
+    await createVersion({
+      templateId: consumerTpl,
+      version: 1,
+      requires: [
+        {
+          kind: "stack",
+          templateName: (await testPrisma.stackTemplate.findUnique({ where: { id: vaultTpl } }))!.name,
+          minState: "pending",
+          scopeMatch: "host",
+        },
+      ],
+    });
+    const consumerStack = await createStack({
+      name: `consumer-${status}`,
+      templateId: consumerTpl,
+      templateVersion: 1,
+      status: "pending",
+    });
 
-      const result = await evaluatePrerequisites(testPrisma, consumerStack);
-      // 'removed' stacks are filtered out at the SQL level — surfaces as
-      // "no matching stack" (instantiate-stack action). 'error' makes it
-      // through but fails the minState comparison (apply-stack action).
-      expect(result.ok).toBe(false);
-      if (status === "removed") {
-        expect(result.failures[0].helpAction?.type).toBe("instantiate-stack");
-      } else {
-        expect(result.failures[0].helpAction?.type).toBe("apply-stack");
-      }
-    }
+    const result = await evaluatePrerequisites(testPrisma, consumerStack);
+    // 'error' makes it through the candidate query but fails the minState
+    // comparison, so the fix is to re-apply the stack (apply-stack action).
+    // The "no matching stack" → instantiate-stack path is covered in
+    // evaluator.test.ts.
+    expect(result.ok).toBe(false);
+    expect(result.failures[0].helpAction?.type).toBe("apply-stack");
   });
 
   it("scopeMatch=same-environment matches only same-env candidates", async () => {

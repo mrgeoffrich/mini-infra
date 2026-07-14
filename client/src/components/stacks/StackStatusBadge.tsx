@@ -48,11 +48,6 @@ const STACK_STATUS_BADGE: Record<StackStatus, StatusMeta> = {
     label: "Undeployed",
     tooltip: "Not deployed — its containers don't exist yet. Deploy or Apply to create them.",
   },
-  removed: {
-    className: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300",
-    label: "Removed",
-    tooltip: "Marked removed.",
-  },
 };
 
 interface StackStatusBadgeProps {

@@ -1027,7 +1027,6 @@ enum StackStatus {
   pending
   error
   undeployed
-  removed
 }
 
 enum StackServiceType {
@@ -1101,7 +1100,6 @@ model Stack {
   tunnelIngress        Json?       // Array of StackTunnelIngress
   resourceOutputs      Json?       // Array of StackResourceOutput
   resourceInputs       Json?       // Array of StackResourceInput
-  removedAt            DateTime?
   createdAt            DateTime    @default(now())
   updatedAt            DateTime    @updatedAt
 

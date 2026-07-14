@@ -1333,7 +1333,6 @@ async function resolveImport(args: {
   const producer = await args.prisma.stack.findFirst({
     where: {
       name: args.imp.fromStack,
-      removedAt: null,
       environmentId: args.consumerEnvironmentId,
     },
     select: {
@@ -1487,7 +1486,6 @@ async function detectImportCycle(args: {
     const stackRow = await args.prisma.stack.findFirst({
       where: {
         name,
-        removedAt: null,
         environmentId: args.environmentId,
       },
       select: { lastAppliedNatsSnapshot: true },

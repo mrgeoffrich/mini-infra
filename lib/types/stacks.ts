@@ -5,7 +5,7 @@
 import type { NetworkDriftItem } from './docker';
 
 // Status and service type unions (mirror Prisma enums)
-export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed' | 'removed';
+export type StackStatus = 'synced' | 'drifted' | 'pending' | 'error' | 'undeployed';
 export const STACK_SERVICE_TYPES = ['Stateful', 'StatelessWeb', 'AdoptedWeb', 'Pool', 'JobPool'] as const;
 export type StackServiceType = typeof STACK_SERVICE_TYPES[number];
 export type ServiceActionType = 'create' | 'recreate' | 'remove' | 'no-op';

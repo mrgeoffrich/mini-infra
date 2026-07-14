@@ -171,7 +171,7 @@ router.get('/:id/delete-check', requirePermission(Permission.EnvironmentsRead), 
 
     const [stacks, haproxyFrontends, haproxyBackends] = await Promise.all([
       prisma.stack.findMany({
-        where: { environmentId: id, status: { notIn: ['removed', 'undeployed'] } },
+        where: { environmentId: id, status: { not: 'undeployed' } },
         select: { id: true, name: true },
       }),
       prisma.hAProxyFrontend.findMany({
@@ -254,7 +254,7 @@ async function getHAProxyClientForEnvironment(environmentId: string): Promise<HA
   }
 
   const haproxyStack = await prisma.stack.findFirst({
-    where: { environmentId, name: 'haproxy', status: { not: 'removed' } },
+    where: { environmentId, name: 'haproxy' },
   });
 
   if (!haproxyStack) {
@@ -312,7 +312,7 @@ router.post('/:id/remediate-haproxy', requirePermission(Permission.EnvironmentsW
 
     // Check if environment has HAProxy stack
     const haproxyStack = await prisma.stack.findFirst({
-      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+      where: { environmentId: id, name: 'haproxy' },
     });
     if (!haproxyStack) {
       return res.status(400).json({
@@ -367,7 +367,7 @@ router.get('/:id/haproxy-status', requirePermission(Permission.EnvironmentsRead)
 
     // Check if environment has HAProxy stack
     const haproxyStack = await prisma.stack.findFirst({
-      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+      where: { environmentId: id, name: 'haproxy' },
     });
     if (!haproxyStack) {
       return res.status(200).json({
@@ -440,7 +440,7 @@ router.get('/:id/remediation-preview', requirePermission(Permission.Environments
 
     // Check if environment has HAProxy stack
     const haproxyStackCheck = await prisma.stack.findFirst({
-      where: { environmentId: id, name: 'haproxy', status: { not: 'removed' } },
+      where: { environmentId: id, name: 'haproxy' },
     });
     if (!haproxyStackCheck) {
       return res.status(400).json({

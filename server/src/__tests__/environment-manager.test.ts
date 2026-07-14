@@ -432,7 +432,7 @@ describe('EnvironmentManager', () => {
             },
           },
           stacks: {
-            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            where: { template: { source: 'system' }, status: { not: 'undeployed' } },
             select: { id: true },
           },
         }
@@ -559,7 +559,7 @@ describe('EnvironmentManager', () => {
             },
           },
           stacks: {
-            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            where: { template: { source: 'system' }, status: { not: 'undeployed' } },
             select: { id: true },
           },
         },
@@ -650,7 +650,7 @@ describe('EnvironmentManager', () => {
             },
           },
           stacks: {
-            where: { template: { source: 'system' }, status: { notIn: ['removed', 'undeployed'] } },
+            where: { template: { source: 'system' }, status: { not: 'undeployed' } },
             select: { id: true },
           },
         }

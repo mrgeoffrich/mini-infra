@@ -121,7 +121,7 @@ describe("StackStatusMonitor", () => {
   it("does not touch a stack whose last apply failed", async () => {
     // `error` is a recoverable state a human action owns. The monitor must never
     // clobber it — nor `pending` (unapplied edits) or `undeployed`.
-    for (const status of ["error", "pending", "undeployed", "removed"]) {
+    for (const status of ["error", "pending", "undeployed"]) {
       const { monitor, update } = buildHarness({
         stack: stackRow(status),
         containers: [container("api", "sha256:aaa", "exited")],

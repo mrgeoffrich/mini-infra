@@ -511,20 +511,20 @@ describe('EgressContainerMapPusher', () => {
     pusher.stop();
   });
 
-  it('excludes removed stacks from the container map query', async () => {
+  it('scopes the container map query to the environment', async () => {
     const prisma = makePrisma({
       environments: [{ id: 'env-1', name: 'staging', egressGatewayIp: '172.30.0.2' }],
-      stacks: [], // Prisma returns empty (simulates status:removed filtered out)
+      stacks: [],
     });
 
     const pusher = new EgressContainerMapPusher(prisma);
     pusher.start();
     await vi.runAllTimersAsync();
 
-    // Confirm query sent the right WHERE clause
+    // Confirm query sent the right WHERE clause. Destroyed stacks are
+    // hard-deleted, so environment scoping is the only filter needed.
     const stackFindMany = (prisma.stack.findMany as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-    expect(stackFindMany?.where?.status).toEqual({ not: 'removed' });
-    expect(stackFindMany?.where?.removedAt).toBeNull();
+    expect(stackFindMany?.where).toEqual({ environmentId: 'env-1' });
 
     pusher.stop();
   });

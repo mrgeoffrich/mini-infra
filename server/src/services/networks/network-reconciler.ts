@@ -680,7 +680,7 @@ export async function reconcileAll(deps: NetworkReconcilerDeps): Promise<Network
   const ranAt = new Date().toISOString();
 
   const [stacks, environments, hostNetworks] = await Promise.all([
-    prisma.stack.findMany({ where: { removedAt: null }, select: { id: true } }),
+    prisma.stack.findMany({ select: { id: true } }),
     prisma.environment.findMany({ select: { id: true } }),
     prisma.managedNetwork.findMany({ where: { scope: 'host' } }),
   ]);

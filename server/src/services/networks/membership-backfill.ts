@@ -121,8 +121,7 @@ export async function backfillNetworkMemberships(
   // available"). Seed the row here from the producing stack's declared outputs
   // so the self-heal works for already-applied infra without a re-apply.
   const producingStacks = await prisma.stack.findMany({
-    where: { removedAt: null },
-    select: { id: true, resourceOutputs: true },
+        select: { id: true, resourceOutputs: true },
   });
   const resourceOutputsByStackId = new Map<string, StackResourceOutput[]>(
     producingStacks.map((s) => [s.id, (s.resourceOutputs as unknown as StackResourceOutput[]) ?? []]),
@@ -211,8 +210,7 @@ export async function backfillNetworkMemberships(
   // 2. Stack-owned networks + per-service memberships, from every
   // non-removed stack's *current* definition.
   const stacks = await prisma.stack.findMany({
-    where: { removedAt: null },
-    include: {
+        include: {
       services: true,
       environment: { select: { name: true } },
       template: { select: { source: true, createdById: true } },

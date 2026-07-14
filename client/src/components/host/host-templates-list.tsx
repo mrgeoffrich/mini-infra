@@ -64,7 +64,7 @@ export function HostTemplatesList({ className }: HostTemplatesListProps) {
   };
 
   const isDeployable = (stack: StackTemplateLinkedStack | undefined): boolean => {
-    return !stack || stack.status === "removed" || stack.status === "undeployed";
+    return !stack || stack.status === "undeployed";
   };
 
   if (isError) {

@@ -474,7 +474,6 @@ export class StackReconciler {
             // healthcheck timeout) silently left the field stale or null.
             : { lastFailureReason: summariseServiceFailures(serviceResults) }),
           status: resultStatus,
-          removedAt: null,
         },
       });
       emitStackStatusChanged(stackId, resultStatus);

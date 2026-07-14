@@ -73,7 +73,7 @@ function getVersionDisplay(template: StackTemplateInfo): string {
  * removed (see stack-template-service.deleteTemplate).
  */
 function isDeployed(stack: StackTemplateLinkedStack): boolean {
-  return stack.status !== "undeployed" && stack.status !== "removed";
+  return stack.status !== "undeployed";
 }
 
 export function TemplateTable({ templates }: TemplateTableProps) {

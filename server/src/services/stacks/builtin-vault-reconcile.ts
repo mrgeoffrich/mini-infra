@@ -25,7 +25,7 @@ export async function runBuiltinVaultReconcile(
   }
 
   const builtinStacks = await prisma.stack.findMany({
-    where: { builtinVersion: { not: null }, status: { not: "removed" } },
+    where: { builtinVersion: { not: null } },
     select: { id: true, name: true },
   });
 
