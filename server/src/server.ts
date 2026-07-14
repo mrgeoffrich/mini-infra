@@ -59,6 +59,7 @@ import {
 } from "./services/tailscale";
 import { CertificateRenewalScheduler } from "./services/tls/certificate-renewal-scheduler";
 import { PoolInstanceReaper } from "./services/stacks/pool-instance-reaper";
+import { StackStatusMonitor } from "./services/stacks/stack-status-monitor";
 import {
   NetworkGcScheduler,
   NetworkConvergenceScheduler,
@@ -125,6 +126,7 @@ let dnsCacheScheduler: DnsCacheScheduler | null = null;
 // which both startup and the settings route call to keep it aligned with the
 // current credentials. Read via `TailscaleDeviceStatusScheduler.getInstance()`.
 let poolInstanceReaper: PoolInstanceReaper | null = null;
+let stackStatusMonitor: StackStatusMonitor | null = null;
 let networkGcScheduler: NetworkGcScheduler | null = null;
 let networkConvergenceScheduler: NetworkConvergenceScheduler | null = null;
 let jobPoolExitWatcher: JobPoolExitWatcher | null = null;
@@ -388,6 +390,21 @@ const initializeServices = async () => {
     poolInstanceReaper = new PoolInstanceReaper(prisma);
     poolInstanceReaper.start();
     console.log("[STARTUP] ✓ Pool instance reaper initialized");
+
+    // P3 3.1/3.2 — background stack-status monitor. Docker `die`/`destroy`
+    // events flip a `synced` stack whose service crashed to `drifted` (the badge
+    // used to say everything was fine while the app was down), and a periodic
+    // sweep catches out-of-band drift that previously only surfaced when a human
+    // opened the plan view. The sweep also backstops the Docker event stream,
+    // which has no end/close recovery and can go silently deaf.
+    console.log("[STARTUP] Initializing stack status monitor...");
+    stackStatusMonitor = new StackStatusMonitor(
+      prisma,
+      DockerService.getInstance(),
+      getLogger("stacks", "stack-status-monitor"),
+    );
+    stackStatusMonitor.start();
+    console.log("[STARTUP] ✓ Stack status monitor initialized");
 
     // Initialize network GC scheduler (network overhaul Phase 4): a 15-minute
     // dry-run-only sweep for orphaned `mini-infra.managed=true` networks —
@@ -1026,6 +1043,12 @@ startServer()
       if (poolInstanceReaper) {
         poolInstanceReaper.stop();
         logger.info("Pool instance reaper stopped");
+      }
+
+      // Stop stack status monitor
+      if (stackStatusMonitor) {
+        stackStatusMonitor.stop();
+        logger.info("Stack status monitor stopped");
       }
 
       // Stop network GC scheduler

@@ -1067,6 +1067,22 @@ model Stack {
   lastAppliedVersion   Int?
   lastAppliedAt        DateTime?
   lastAppliedSnapshot  Json?
+  // Record<serviceName, definitionHash> — the exact `mini-infra.definition-hash`
+  // label values stamped onto the containers at the last apply. The background
+  // status monitor compares a container's live label against this map to detect
+  // out-of-band drift with one Docker call and no template re-render, which is
+  // what makes a fleet-wide sweep cheap enough to run on a timer. Comparing
+  // against a stored copy of what we stamped (rather than re-deriving the
+  // desired hash) also means the sweep cannot raise false-positive drift from a
+  // benign render difference. Null for stacks last applied before this existed —
+  // the sweep degrades to liveness-only for those until their next apply.
+  lastAppliedHashes    Json?
+  // RuntimeIssue[] — what the background status monitor last found wrong with
+  // this stack's live containers (a service that died, vanished, or no longer
+  // matches the applied definition). Persisted so `serializeStack()` can tell an
+  // API consumer *why* a stack needs attention without re-running a Docker
+  // sweep per request. Empty/null means the last check was clean.
+  runtimeIssues        Json?
   builtinVersion       Int?
   templateId           String?
   template             StackTemplate? @relation(fields: [templateId], references: [id])

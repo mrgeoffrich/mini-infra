@@ -455,6 +455,14 @@ export class StackReconciler {
           // `applications` join is derived at apply time and must not enter the
           // definition hash, or drift detection would perpetually recreate.
           lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
+          // The definition hashes we just stamped onto the containers as
+          // `mini-infra.definition-hash` labels. The background status monitor
+          // diffs a container's live label against this map to spot out-of-band
+          // drift without re-rendering the template. See stack-status-monitor.ts.
+          lastAppliedHashes: Object.fromEntries(serviceHashes),
+          // We just reconciled reality to the definition, so whatever the status
+          // monitor last found wrong is now stale by construction.
+          runtimeIssues: Prisma.DbNull,
           // Track the AppRole binding that was in effect on this apply so the
           // credential injector can detect binding changes on future re-applies.
           ...(allSucceeded
@@ -728,6 +736,10 @@ export class StackReconciler {
           // `applications` join is derived at apply time and must not enter the
           // definition hash, or drift detection would perpetually recreate.
           lastAppliedSnapshot: buildAppliedSnapshot(stack, resolvedServiceDefinitions),
+          // See the `apply` branch above — the stamped definition hashes the
+          // background status monitor diffs live container labels against.
+          lastAppliedHashes: Object.fromEntries(serviceHashes),
+          runtimeIssues: Prisma.DbNull,
           ...(allSucceeded
             ? { lastAppliedVaultAppRoleId: stack.vaultAppRoleId ?? null, lastFailureReason: null }
             // Same surfacing as in `apply` above — see that branch for context.
