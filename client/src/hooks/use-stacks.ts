@@ -27,6 +27,7 @@ import type {
   PrerequisiteEvaluation,
 } from "@mini-infra/types";
 import { useSocket, useSocketChannel, useSocketEvent } from "./use-socket";
+import { useTaskTracker } from "./use-task-tracker";
 import { apiFetch } from "@/lib/api-client";
 
 // ====================
@@ -36,10 +37,14 @@ import { apiFetch } from "@/lib/api-client";
 async function fetchStacks(
   environmentId?: string,
   scope?: string,
+  source?: string,
 ): Promise<StackListResponse> {
   const url = new URL(ApiRoute.stacks.list(), window.location.origin);
   if (scope) url.searchParams.set("scope", scope);
   else if (environmentId) url.searchParams.set("environmentId", environmentId);
+  // Source is now an explicit filter: without it a scoped query returns ALL
+  // sources. Infra lists pass `source=system`, application lists `source=user`.
+  if (source) url.searchParams.set("source", source);
 
   // Enveloped response — kept as-is (not unwrapped) because several
   // out-of-batch consumers (e.g. applications/new/page.tsx,
@@ -106,6 +111,21 @@ async function applyStack(
     ApiRoute.stacks.apply(stackId),
     { method: "POST", body: options, correlationIdPrefix: "stacks" },
   );
+}
+
+async function upgradeStack(
+  stackId: string,
+  inputValues?: Record<string, string>,
+): Promise<StackInfo> {
+  // POST /upgrade re-materializes the stack from its template's current
+  // published version. It does NOT apply — callers chain applyStack afterwards.
+  // No catch-and-flatten so the real ApiRequestError (e.g. rotation-required)
+  // reaches the global MutationCache.onError.
+  return apiFetch<StackInfo>(ApiRoute.stacks.upgrade(stackId), {
+    method: "POST",
+    body: inputValues ? { inputValues } : {},
+    correlationIdPrefix: "stacks",
+  });
 }
 
 async function fetchStackStatus(
@@ -197,12 +217,31 @@ export function useStackValidation(stackId: string, enabled = true) {
   });
 }
 
-export function useStacks(environmentId?: string, options?: { scope?: string }) {
+export function useStacks(
+  environmentId?: string,
+  options?: { scope?: string; source?: string },
+) {
   const scope = options?.scope;
+  const source = options?.source;
 
   return useQuery({
-    queryKey: queryKeys.stacks.list(environmentId, scope),
-    queryFn: () => fetchStacks(environmentId, scope),
+    queryKey: queryKeys.stacks.list(environmentId, scope, source),
+    queryFn: () => fetchStacks(environmentId, scope, source),
+    staleTime: 10000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Global list of EVERY stack across all scopes and sources — the data source
+ * for the top-level /stacks page. No scope/environment/source filter is passed,
+ * so the server returns all sources for every scope.
+ */
+export function useAllStacks() {
+  return useQuery({
+    queryKey: queryKeys.stacks.list(undefined, undefined, undefined),
+    queryFn: () => fetchStacks(),
     staleTime: 10000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,
@@ -267,6 +306,95 @@ export function useStackApply() {
     },
     // No onError — the global MutationCache.onError (query-client.ts)
     // toasts the real ApiRequestError (code/resource/action) by default.
+  });
+}
+
+async function stopStackKeep(
+  stackId: string,
+): Promise<{ started: true; stackId: string }> {
+  // POST /stop — undeploy but keep the definition + DB row (status becomes
+  // `undeployed`). Distinct from destroy, which deletes the stack.
+  return apiFetch<{ started: true; stackId: string }>(ApiRoute.stacks.stop(stackId), {
+    method: "POST",
+    body: {},
+    correlationIdPrefix: "stacks",
+  });
+}
+
+/**
+ * Stop a stack (undeploy-but-keep) with tracked progress. Registers a
+ * "stack-stop" task so progress surfaces in the global tracker.
+ */
+export function useStackStop() {
+  const queryClient = useQueryClient();
+  const { registerTask } = useTaskTracker();
+  return useMutation({
+    mutationFn: async ({ stackId, label }: { stackId: string; label: string }) => {
+      registerTask({ id: stackId, type: "stack-stop", label, channel: Channel.STACKS });
+      await stopStackKeep(stackId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * Raw upgrade mutation — POST /stacks/:id/upgrade. Re-materializes the stack
+ * from its template's current version and flips it to `pending`. Does NOT
+ * apply. Most call sites want {@link useUpgradeAndApplyStack} instead.
+ */
+export function useStackUpgrade() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      stackId,
+      inputValues,
+    }: {
+      stackId: string;
+      inputValues?: Record<string, string>;
+    }) => upgradeStack(stackId, inputValues),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * "Upgrade & deploy" as one user action: re-materialize the stack from its
+ * template's current published version (POST /upgrade), then run the tracked
+ * apply (POST /apply). The apply is fire-and-forget — progress streams via
+ * Socket.IO and is surfaced by the global task tracker under "stack-apply".
+ */
+export function useUpgradeAndApplyStack() {
+  const queryClient = useQueryClient();
+  const { registerTask } = useTaskTracker();
+  return useMutation({
+    mutationFn: async ({
+      stackId,
+      label,
+      inputValues,
+    }: {
+      stackId: string;
+      label: string;
+      inputValues?: Record<string, string>;
+    }) => {
+      await upgradeStack(stackId, inputValues);
+      registerTask({ id: stackId, type: "stack-apply", label, channel: Channel.STACKS });
+      await applyStack(stackId, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
   });
 }
 

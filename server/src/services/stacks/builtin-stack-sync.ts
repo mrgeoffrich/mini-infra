@@ -1,10 +1,10 @@
 import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient, Prisma } from "../../generated/prisma/client";
-import { StackParameterDefinition, StackParameterValue, StackServiceDefinition, StackDefinition } from "@mini-infra/types";
+import { StackParameterValue, StackDefinition } from "@mini-infra/types";
 import { getLogger } from "../../lib/logger-factory";
-import { toServiceCreateInput, mergeParameterValues } from "./utils";
 import { StackTemplateService } from "./stack-template-service";
+import { upgradeStackToCurrentTemplateVersion } from "./stack-upgrade-service";
 import { discoverTemplates, LoadedTemplate } from "./template-file-loader";
 import { EgressPolicyLifecycleService } from "../egress/egress-policy-lifecycle";
 import { seedSystemPrefixAllowlist } from "../nats/seed-system-prefix-allowlist";
@@ -210,42 +210,14 @@ async function upgradeStackFromTemplate(
     "Upgrading built-in stack to newer template version"
   );
 
-  const paramDefs = (definition.parameters ?? []) as StackParameterDefinition[];
-  const existingValues = (existing.parameterValues as unknown as Record<string, StackParameterValue>) ?? {};
-  const mergedValues = mergeParameterValues(paramDefs, { ...existingValues, ...parameterOverrides });
-
-  await prisma.$transaction(async (tx) => {
-    await tx.stackService.deleteMany({
-      where: { stackId: existing.id },
-    });
-
-    const serviceCreates: Prisma.StackServiceCreateWithoutStackInput[] =
-      (definition.services as StackServiceDefinition[]).map(toServiceCreateInput) as unknown as Prisma.StackServiceCreateWithoutStackInput[];
-
-    await tx.stack.update({
-      where: { id: existing.id },
-      data: {
-        description: definition.description ?? null,
-        version: existing.version + 1,
-        status: "pending",
-        builtinVersion: template.builtinVersion,
-        templateId,
-        templateVersion: template.builtinVersion,
-        parameters: paramDefs.length > 0 ? (paramDefs as unknown as Prisma.InputJsonValue) : undefined,
-        parameterValues: Object.keys(mergedValues).length > 0 ? (mergedValues as unknown as Prisma.InputJsonValue) : undefined,
-        resourceOutputs: definition.resourceOutputs ? (definition.resourceOutputs as unknown as Prisma.InputJsonValue) : undefined,
-        resourceInputs: definition.resourceInputs ? (definition.resourceInputs as unknown as Prisma.InputJsonValue) : undefined,
-        networks: definition.networks as unknown as Prisma.InputJsonValue,
-        volumes: definition.volumes as unknown as Prisma.InputJsonValue,
-        services: {
-          create: serviceCreates,
-        },
-      },
-    });
+  // Delegate the actual re-materialization to the shared upgrade service. It
+  // loads the template's current published version from the DB (which
+  // upsertSystemTemplate just refreshed to this builtinVersion) and
+  // re-materializes services/params/inputs, bumps the version, sets `pending`,
+  // and reconciles template egress rules. Network-type parameter overrides are
+  // passed through with top precedence. System upgrades run in the background
+  // with no userId.
+  await upgradeStackToCurrentTemplateVersion(prisma, stackId, {
+    parameterOverrides,
   });
-
-  // Reconcile template-declared egress rules now that services have been updated.
-  // system upgrades run as a background process — no userId available.
-  const egressLifecycle = new EgressPolicyLifecycleService(prisma);
-  await egressLifecycle.reconcileTemplateRules(existing.id, null);
 }

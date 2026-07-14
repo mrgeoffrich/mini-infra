@@ -80,13 +80,13 @@ function helpActionHref(action: HelpAction): string | null {
       return "/vault";
     case "instantiate-stack":
     case "apply-stack":
-      // Catalog page filtered by template name. The catalog page's URL
-      // does not yet support a per-template deep-link; sending the
-      // user to the host catalog with a query param is a graceful
-      // best-effort and is the right place to find the missing stack.
-      return action.scopeMatch === "host"
-        ? `/?template=${encodeURIComponent(action.templateName)}`
-        : `/environments?template=${encodeURIComponent(action.templateName)}`;
+      // Point at the canonical /stacks page (P1 item 10) rather than the old
+      // guess-the-page query-param URLs (which the target pages ignored). The
+      // HelpAction carries only a template name — not a stack id — so we can't
+      // deep-link to a specific /stacks/:id; the global list, filterable by
+      // name and source, is the honest destination for finding/deploying the
+      // referenced stack.
+      return `/stacks?q=${encodeURIComponent(action.templateName)}`;
     default:
       return null;
   }

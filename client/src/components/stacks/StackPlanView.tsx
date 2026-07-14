@@ -36,6 +36,7 @@ import { StackApplyProgress } from "./StackApplyProgress";
 import { StackParametersDialog } from "./StackParametersDialog";
 import { PoolServiceRow } from "./PoolServiceRow";
 import { PrerequisitesBanner } from "./PrerequisitesBanner";
+import { UpgradeButton } from "./stack-indicators";
 
 interface StackPlanViewProps {
   stackId: string;
@@ -355,6 +356,26 @@ export const StackPlanView = React.memo(function StackPlanView({
   // No plan data
   if (!plan) return null;
 
+  // Template-upgrade banner (P1 item 8) — the stack's template has a newer
+  // published version than the one it's running. Rendered in both the
+  // no-changes and has-changes branches below.
+  const upgradeBanner = plan.templateUpdateAvailable ? (
+    <Alert className="flex flex-col gap-3 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <AlertTitle>Template update available</AlertTitle>
+        <AlertDescription>
+          A newer version of this stack&apos;s template has been published.
+          Upgrade to re-materialize from it, then apply.
+        </AlertDescription>
+      </div>
+      <UpgradeButton
+        stackId={stackId}
+        label={`Upgrading ${stackName}`}
+        className="shrink-0"
+      />
+    </Alert>
+  ) : null;
+
   // No changes needed
   if (!plan.hasChanges) {
     const poolServices = stackInfo?.services?.filter((s) => s.serviceType === 'Pool') ?? [];
@@ -392,6 +413,7 @@ export const StackPlanView = React.memo(function StackPlanView({
             className="mb-4"
           />
         )}
+        {upgradeBanner && <div className="mb-4">{upgradeBanner}</div>}
         <Card className={className}>
         <CardContent className="flex items-center gap-3 py-8 justify-center">
           <IconCheck className="h-6 w-6 text-green-500" />
@@ -509,6 +531,7 @@ export const StackPlanView = React.memo(function StackPlanView({
       {prereqs && !prereqs.ok && (
         <PrerequisitesBanner evaluation={prereqs} severity="blocked" />
       )}
+      {upgradeBanner}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

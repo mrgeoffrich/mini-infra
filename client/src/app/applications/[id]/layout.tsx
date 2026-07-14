@@ -26,6 +26,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { StackStatusBadge } from "@/components/stacks/StackStatusBadge";
+import {
+  UpdateAvailableBadge,
+  UpgradeButton,
+} from "@/components/stacks/stack-indicators";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -227,15 +232,18 @@ export default function ApplicationDetailLayout() {
     );
   }
 
+  // One badge everywhere a stack status renders (P1 item 11). The application
+  // header keeps a friendly "Running" label for synced, but every other status
+  // (pending/undeployed/drifted/error) now gets a proper label + tooltip via
+  // the shared StackStatusBadge rather than a raw string.
   const statusBadge = !primaryStack ? (
     <Badge variant="outline">Not deployed</Badge>
-  ) : stackStatus === "synced" ? (
-    <Badge>Running</Badge>
-  ) : stackStatus === "error" ? (
-    <Badge variant="destructive">Error</Badge>
   ) : (
-    <Badge variant="outline">{stackStatus}</Badge>
+    <StackStatusBadge status={primaryStack.status} labelOverrides={{ synced: "Running" }} />
   );
+
+  const updateAvailable = primaryStack?.templateUpdateAvailable === true;
+  const upgradeLabel = `Upgrading ${template.displayName ?? template.name}`;
 
   const context: ApplicationDetailContext = {
     templateId: id,
@@ -267,6 +275,7 @@ export default function ApplicationDetailLayout() {
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {statusBadge}
+              {updateAvailable && <UpdateAvailableBadge />}
               {environment && (
                 <Badge variant="outline">
                   {environment.name}
@@ -343,6 +352,23 @@ export default function ApplicationDetailLayout() {
           </div>
         </div>
       </div>
+
+      {updateAvailable && primaryStack && (
+        <div className="px-4 lg:px-6">
+          <Alert className="flex flex-col gap-3 border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/40 sm:flex-row sm:items-center sm:justify-between">
+            <AlertDescription className="text-blue-900 dark:text-blue-200">
+              The deployed stack is running an older version of this
+              application&apos;s configuration. Upgrade to re-materialize it from
+              the latest published template version and deploy.
+            </AlertDescription>
+            <UpgradeButton
+              stackId={primaryStack.id}
+              label={upgradeLabel}
+              className="shrink-0"
+            />
+          </Alert>
+        </div>
+      )}
 
       <ConfigNavProvider>
         <div className="px-4 lg:px-6">

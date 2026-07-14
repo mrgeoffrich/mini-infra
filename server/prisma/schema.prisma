@@ -1071,6 +1071,11 @@ model Stack {
   templateId           String?
   template             StackTemplate? @relation(fields: [templateId], references: [id])
   templateVersion      Int?        // Version number of the template used to create/sync this stack
+  // Real FK to the exact StackTemplateVersion this stack was materialized from.
+  // Nullable for host/manual stacks and legacy rows. `templateVersion` (Int) is
+  // retained for code that still resolves by number; new code sets both.
+  templateVersionId    String?
+  templateVersionRef   StackTemplateVersion? @relation("StackFromTemplateVersion", fields: [templateVersionId], references: [id], onDelete: SetNull)
   parameters           Json?       // Array of StackParameterDefinition
   parameterValues      Json?       // Record<string, string | number | boolean>
   networks             Json        // Array of { name, driver?, options? }
@@ -1124,6 +1129,7 @@ model Stack {
   @@index([environmentId])
   @@index([status])
   @@index([templateId])
+  @@index([templateVersionId])
   @@index([vaultAppRoleId])
   @@map("stacks")
 }
@@ -1678,6 +1684,9 @@ model StackTemplateVersion {
   // Relations
   services               StackTemplateService[]
   configFiles            StackTemplateConfigFile[]
+
+  // Stacks materialized from (and pinned to) this exact version.
+  stacksFromVersion      Stack[]                     @relation("StackFromTemplateVersion")
 
   // Back-relations for self-referential FKs on StackTemplate
   currentForTemplate     StackTemplate?              @relation("CurrentVersion")

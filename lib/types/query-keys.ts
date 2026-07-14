@@ -429,8 +429,8 @@ export const queryKeys = {
   stacks: {
     /** Root key for the stack *list* — does not prefix-match the singular keys below (see file header). */
     all: ["stacks"] as const,
-    list: (environmentId?: string, scope?: string) =>
-      ["stacks", environmentId, scope] as const,
+    list: (environmentId?: string, scope?: string, source?: string) =>
+      ["stacks", environmentId, scope, source] as const,
     /** Parameterized by `environmentId` to avoid cross-environment cache collisions (GET /api/stacks/eligible-containers?environmentId=...). */
     eligibleContainers: (environmentId?: string) =>
       ["eligible-containers", environmentId] as const,

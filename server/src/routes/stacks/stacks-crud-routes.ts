@@ -100,14 +100,15 @@ router.get(
       where.environmentId = environmentId;
     }
 
+    // Source filtering is now *explicit only*. A scoped query (scope=host or
+    // environmentId) returns ALL sources unless a `source` filter is passed —
+    // the old behaviour silently excluded user (application) stacks from
+    // scoped queries, which surprised callers. Infra lists that want only
+    // system/templateless stacks now pass `source=system` at the call site;
+    // application lists pass `source=user`.
     if (source === 'user') {
       where.template = { source: 'user' };
     } else if (source === 'system') {
-      where.OR = [
-        { template: { source: 'system' } },
-        { templateId: null },
-      ];
-    } else if (scope === 'host' || environmentId) {
       where.OR = [
         { template: { source: 'system' } },
         { templateId: null },
@@ -205,7 +206,7 @@ router.get(
         where: { id: stackId },
         include: {
           services: { orderBy: { order: 'asc' } },
-          template: { select: { currentVersion: { select: { version: true } } } },
+          template: { select: { source: true, currentVersion: { select: { version: true } } } },
         },
       }),
       stackId,

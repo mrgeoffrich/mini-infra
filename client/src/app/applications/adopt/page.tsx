@@ -104,7 +104,7 @@ export default function AdoptContainerPage() {
   );
 
   // Check if HAProxy stack with applications network exists
-  const { data: stacksData } = useStacks(selectedEnvId || undefined);
+  const { data: stacksData } = useStacks(selectedEnvId || undefined, { source: "system" });
   const hasHaproxyApplicationsNetwork = (stacksData?.data ?? []).some(
     (stack) =>
       stack.status === "synced" &&

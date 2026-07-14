@@ -1,0 +1,126 @@
+import { IconAlertTriangle, IconArrowUp, IconLoader2 } from "@tabler/icons-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
+import { useUpgradeAndApplyStack } from "@/hooks/use-stacks";
+import { getStackAttention } from "@/lib/stack-attention";
+import type { StackInfo } from "@mini-infra/types";
+
+/**
+ * "Update available" badge shown when a stack's template has a newer published
+ * version than the one the stack is running (`templateUpdateAvailable`).
+ */
+export function UpdateAvailableBadge({ className }: { className?: string }) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-help border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-300",
+              className,
+            )}
+          >
+            <IconArrowUp className="mr-1 h-3 w-3" />
+            Update available
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-xs">
+          A newer version of this stack&apos;s template has been published. Upgrade
+          &amp; deploy to adopt it.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * Single "needs attention" indicator rolling up drift, NATS drift, error
+ * status, and update-available into one affordance with the reasons listed.
+ * Renders nothing when the stack is healthy and nothing is pending.
+ */
+export function NeedsAttentionBadge({
+  stack,
+  className,
+}: {
+  stack: StackInfo;
+  className?: string;
+}) {
+  const attention = getStackAttention(stack);
+  if (!attention.needsAttention) return null;
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            className={cn(
+              "cursor-help border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+              className,
+            )}
+          >
+            <IconAlertTriangle className="mr-1 h-3 w-3" />
+            Needs attention
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-sm">
+          <ul className="list-disc space-y-1 pl-4 text-xs">
+            {attention.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * "Upgrade & deploy" button — chains POST /upgrade then the tracked apply as a
+ * single user action. Used on the application card/header, infra stack rows,
+ * the plan view, and the stack detail page so the affordance is identical
+ * everywhere.
+ */
+export function UpgradeButton({
+  stackId,
+  label,
+  size = "sm",
+  variant = "default",
+  disabled,
+  className,
+  children,
+}: {
+  stackId: string;
+  /** Task-tracker label, e.g. `Upgrading ${app.name}`. */
+  label: string;
+  size?: "sm" | "default" | "lg" | "icon";
+  variant?: "default" | "outline" | "secondary" | "ghost";
+  disabled?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const upgrade = useUpgradeAndApplyStack();
+  return (
+    <Button
+      size={size}
+      variant={variant}
+      className={className}
+      disabled={disabled || upgrade.isPending}
+      onClick={() => upgrade.mutate({ stackId, label })}
+    >
+      {upgrade.isPending ? (
+        <IconLoader2 className="mr-1 h-4 w-4 animate-spin" />
+      ) : (
+        <IconArrowUp className="mr-1 h-4 w-4" />
+      )}
+      {children ?? "Upgrade & deploy"}
+    </Button>
+  );
+}

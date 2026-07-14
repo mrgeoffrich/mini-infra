@@ -52,7 +52,7 @@ type SerializableStack = {
   resourceInputs?: unknown;
   templateId?: string | null;
   templateVersion?: number | null;
-  template?: { currentVersion?: { version: number } | null } | null;
+  template?: { source?: string; currentVersion?: { version: number } | null } | null;
   tlsCertificates?: unknown;
   dnsRecords?: unknown;
   tunnelIngress?: unknown;
@@ -110,6 +110,8 @@ export function serializeStack(stack: SerializableStack): StackInfo {
     resourceInputs: stack.resourceInputs ?? [],
     templateId: stack.templateId ?? null,
     templateVersion: stack.templateVersion ?? null,
+    templateSource: (stack.template?.source as 'system' | 'user' | undefined) ?? null,
+    templateCurrentVersion: stack.template?.currentVersion?.version ?? null,
     templateUpdateAvailable: computeTemplateUpdateAvailable(stack),
     tlsCertificates: stack.tlsCertificates ?? [],
     dnsRecords: stack.dnsRecords ?? [],

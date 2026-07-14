@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { useForm, useFormContext, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { IconLoader2 } from "@tabler/icons-react";
+import { IconLoader2, IconRocket } from "@tabler/icons-react";
 import { useUpdateApplication } from "@/hooks/use-applications";
+import { useUpgradeAndApplyStack } from "@/hooks/use-stacks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -285,10 +286,12 @@ const SECTION_IDS = EDIT_SECTIONS.map((s) => s.id);
 
 export default function ApplicationConfigurationTab() {
   const navigate = useNavigate();
-  const { templateId, template, environment } =
+  const { templateId, template, environment, primaryStack } =
     useOutletContext<ApplicationDetailContext>();
   const updateApplication = useUpdateApplication();
+  const upgradeAndApply = useUpgradeAndApplyStack();
   const networkType = environment?.networkType;
+  const saving = updateApplication.isPending || upgradeAndApply.isPending;
 
   const form = useForm<EditApplicationFormData>({
     resolver: zodResolver(editApplicationFormSchema),
@@ -347,7 +350,7 @@ export default function ApplicationConfigurationTab() {
     if (firstId) scrollToSection(firstId);
   }, [form, scrollToSection]);
 
-  const onSubmit = async (formData: EditApplicationFormData) => {
+  const onSubmit = async (formData: EditApplicationFormData, deploy: boolean) => {
     const templateName = template.name;
 
     const env: Record<string, string> = {};
@@ -496,6 +499,7 @@ export default function ApplicationConfigurationTab() {
         };
 
     try {
+      // Save = publish a new template version.
       await updateApplication.mutateAsync({
         templateId,
         metadata: {
@@ -504,7 +508,23 @@ export default function ApplicationConfigurationTab() {
         },
         draft,
       });
-      navigate("/applications");
+
+      if (deploy && primaryStack) {
+        // Save & deploy = publish, then upgrade the deployed stack to the new
+        // version and apply, as one tracked flow (reuses the "stack-apply"
+        // task type). Progress streams via the global task tracker.
+        await upgradeAndApply.mutateAsync({
+          stackId: primaryStack.id,
+          label: "Deploying configuration",
+        });
+        navigate(`/applications/${templateId}/activity`);
+        return;
+      }
+
+      // Plain Save: do NOT navigate away silently. Stay on the application
+      // detail — the layout renders a persistent "deployed stack is running an
+      // older version — Upgrade & deploy" banner (driven by
+      // templateUpdateAvailable) so the undeployed change is visible.
     } catch {
       // Error handled by the mutation hook via toast
     }
@@ -513,7 +533,7 @@ export default function ApplicationConfigurationTab() {
   return (
     <div className="max-w-3xl">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
+        <form onSubmit={form.handleSubmit((data) => onSubmit(data, false), onInvalid)}>
           <div className="bg-background sticky top-0 z-10 mb-4 flex items-center justify-between gap-3 py-2">
             <h2 className="text-lg font-medium">Configuration</h2>
             <div className="flex gap-3">
@@ -524,12 +544,29 @@ export default function ApplicationConfigurationTab() {
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={updateApplication.isPending}>
-                {updateApplication.isPending && (
+              <Button type="submit" variant="outline" disabled={saving}>
+                {saving && !upgradeAndApply.isPending && (
                   <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Save changes
+                Save
               </Button>
+              {primaryStack && (
+                <Button
+                  type="button"
+                  disabled={saving}
+                  onClick={form.handleSubmit(
+                    (data) => onSubmit(data, true),
+                    onInvalid,
+                  )}
+                >
+                  {upgradeAndApply.isPending ? (
+                    <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <IconRocket className="mr-2 h-4 w-4" />
+                  )}
+                  Save &amp; deploy
+                </Button>
+              )}
             </div>
           </div>
 
