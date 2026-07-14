@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { useStacks } from "@/hooks/use-stacks";
+import { useStacks, useStackStatusEvents } from "@/hooks/use-stacks";
 import { useStackTemplates, useInstantiateTemplate } from "@/hooks/use-stack-templates";
 import type { StackInfo, StackTemplateInfo } from "@mini-infra/types";
 import { StackPlanView, StackStatusBadge } from "@/components/stacks";
@@ -79,6 +79,7 @@ function NatsDriftBadge({ reasons }: { reasons: readonly string[] }) {
 export function StacksList({ environmentId, scope, className }: StacksListProps) {
   const [expandedStackId, setExpandedStackId] = useState<string | null>(null);
   const { formatDateTime } = useFormattedDate();
+  useStackStatusEvents();
 
   const {
     data: stacksData,

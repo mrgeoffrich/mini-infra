@@ -38,8 +38,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { useDeployApplicationUpdate } from "@/hooks/use-applications";
+import { useRevertPendingStack } from "@/hooks/use-stacks";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
 import {
   UpdateAvailableBadge,
@@ -127,6 +139,7 @@ export function ApplicationCard({
 
   const { registerTask, getTask } = useTaskTracker();
   const deployUpdate = useDeployApplicationUpdate();
+  const revertPending = useRevertPendingStack();
 
   // An in-flight tracked task for this stack is the authoritative "deploy is
   // running" signal: it's registered synchronously when the user hits Redeploy
@@ -149,6 +162,11 @@ export function ApplicationCard({
   // it isn't busy, it's waiting for an apply. Surface an "Apply changes" CTA
   // instead of a dead Update button.
   const pendingUnapplied = primaryStack?.status === "pending" && !taskExecuting;
+
+  // A `pending` stack that has been applied before can discard its unapplied
+  // edits and return to the last applied definition. Never-applied stacks have
+  // no snapshot to revert to.
+  const canRevertPending = pendingUnapplied && !!primaryStack?.lastAppliedSnapshot;
 
   // A newer template version is available (P1 item 8) — the right action is to
   // upgrade + deploy, which supersedes a manual image-tag update.
@@ -337,19 +355,64 @@ export function ApplicationCard({
               {hasStacks && (
                 <>
                   {pendingUnapplied ? (
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      disabled={effectivelyBusy}
-                      onClick={() => onApply(app)}
-                    >
-                      {isApplying ? (
-                        <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
-                      ) : (
-                        <IconRefresh className="h-4 w-4 mr-1" />
+                    <>
+                      <Button
+                        size="sm"
+                        className="flex-1"
+                        disabled={effectivelyBusy}
+                        onClick={() => onApply(app)}
+                      >
+                        {isApplying ? (
+                          <IconLoader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <IconRefresh className="h-4 w-4 mr-1" />
+                        )}
+                        Apply changes
+                      </Button>
+                      {canRevertPending && primaryStack && (
+                        <AlertDialog>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    size="icon"
+                                    variant="outline"
+                                    disabled={effectivelyBusy || revertPending.isPending}
+                                    aria-label="Discard pending changes"
+                                  >
+                                    {revertPending.isPending ? (
+                                      <IconLoader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <IconArrowBackUp className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                </AlertDialogTrigger>
+                              </TooltipTrigger>
+                              <TooltipContent>Discard pending changes</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Discard pending changes?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This restores the last applied configuration and drops the
+                                edits you haven&apos;t deployed. Running containers
+                                aren&apos;t touched. This can&apos;t be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Keep editing</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => revertPending.mutate(primaryStack.id)}
+                              >
+                                Discard changes
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       )}
-                      Apply changes
-                    </Button>
+                    </>
                   ) : updateAvailable && !adopted && primaryStack ? (
                     <UpgradeButton
                       stackId={primaryStack.id}
@@ -357,32 +420,50 @@ export function ApplicationCard({
                       className="flex-1"
                       disabled={effectivelyBusy}
                     />
+                  ) : !adopted ? (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          {/* span wrapper: a disabled button emits no pointer
+                              events, so the tooltip needs a live element. */}
+                          <span className="flex-1">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              disabled={effectivelyBusy}
+                              onClick={openUpdateForm}
+                            >
+                              <IconRefresh className="h-4 w-4 mr-1" />
+                              Update
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        {effectivelyBusy && busyReason && (
+                          <TooltipContent>{busyReason}</TooltipContent>
+                        )}
+                      </Tooltip>
+                    </TooltipProvider>
                   ) : (
-                    !adopted && (
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            {/* span wrapper: a disabled button emits no pointer
-                                events, so the tooltip needs a live element. */}
-                            <span className="flex-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="w-full"
-                                disabled={effectivelyBusy}
-                                onClick={openUpdateForm}
-                              >
-                                <IconRefresh className="h-4 w-4 mr-1" />
-                                Update
-                              </Button>
-                            </span>
-                          </TooltipTrigger>
-                          {effectivelyBusy && busyReason && (
-                            <TooltipContent>{busyReason}</TooltipContent>
-                          )}
-                        </Tooltip>
-                      </TooltipProvider>
-                    )
+                    // Adopted container: Mini Infra connected to a container it
+                    // didn't create, so it doesn't manage the image — explain
+                    // why there's no Update/Upgrade action instead of hiding it
+                    // with no reason.
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="flex-1 inline-flex items-center justify-center gap-1 text-xs text-muted-foreground cursor-help">
+                            <IconPlugConnected className="h-3.5 w-3.5" />
+                            Adopted container
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-xs">
+                          Mini Infra connected to an existing container it didn&apos;t
+                          create, so it doesn&apos;t manage the image — there&apos;s no
+                          update to deploy.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   )}
                   <Button
                     size="sm"

@@ -21,6 +21,7 @@ import {
 import { useStackStatus } from "@/hooks/use-stacks";
 import { useEnvironments } from "@/hooks/use-environments";
 import { useTaskTracker } from "@/hooks/use-task-tracker";
+import { useStackStatusEvents } from "@/hooks/use-stacks";
 import { Channel } from "@mini-infra/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +85,7 @@ export default function ApplicationDetailLayout() {
   const { data: appData, isLoading, error } = useApplication(id ?? "");
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
+  useStackStatusEvents();
 
   const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
