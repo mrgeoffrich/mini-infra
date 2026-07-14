@@ -85,7 +85,13 @@ router.post(
             dnsRecords: (snapshot.dnsRecords ?? []) as unknown as Prisma.InputJsonValue,
             tunnelIngress: (snapshot.tunnelIngress ?? []) as unknown as Prisma.InputJsonValue,
             services: {
-              create: snapshot.services.map(toServiceCreateInput),
+              // The applied snapshot holds the RENDERED service list, which
+              // includes synthetic addon sidecars. Only authored services may
+              // be restored as StackService rows — restoring synthetics would
+              // duplicate the sidecars when the next apply re-expands addons.
+              create: snapshot.services
+                .filter((s) => !s.synthetic)
+                .map(toServiceCreateInput),
             },
           },
         });

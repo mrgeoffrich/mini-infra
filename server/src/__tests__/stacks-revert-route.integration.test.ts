@@ -115,6 +115,56 @@ describe("POST /api/stacks/:stackId/revert-pending", () => {
     expect(stack?.services.find((s) => s.serviceName === "web")?.dockerTag).toBe("1.0");
   });
 
+  it("does not restore synthetic addon sidecars as authored services", async () => {
+    const stackId = await seedPendingStackWithSnapshot();
+    // The applied snapshot holds the RENDERED service list — replace it with one
+    // that includes a synthetic sidecar, as a successful apply of an
+    // addon-bearing stack produces.
+    await testPrisma.stack.update({
+      where: { id: stackId },
+      data: {
+        lastAppliedSnapshot: {
+          name: "revert-stack-" + stackId.slice(0, 6),
+          networks: [],
+          volumes: [],
+          services: [
+            {
+              serviceName: "web",
+              serviceType: "Stateful",
+              dockerImage: "nginx",
+              dockerTag: "1.0",
+              containerConfig: {},
+              dependsOn: [],
+              order: 0,
+              addons: { "tailscale-web": {} },
+            },
+            {
+              serviceName: "web-tailscale",
+              serviceType: "Stateful",
+              dockerImage: "tailscale/tailscale",
+              dockerTag: "stable",
+              containerConfig: {},
+              dependsOn: [],
+              order: 1,
+              synthetic: { addon: "tailscale-web", parentService: "web" },
+            },
+          ],
+        },
+      },
+    });
+
+    const res = await supertest(buildApp()).post(`/api/stacks/${stackId}/revert-pending`).send({});
+    expect(res.status).toBe(200);
+
+    const stack = await testPrisma.stack.findUnique({
+      where: { id: stackId },
+      include: { services: true },
+    });
+    // Only the authored service is restored; the sidecar must not become an
+    // authored row (the next apply re-expands addons and would duplicate it).
+    expect(stack?.services.map((s) => s.serviceName)).toEqual(["web"]);
+  });
+
   it("returns 400 STACK_NO_APPLIED_SNAPSHOT for a never-applied stack", async () => {
     const stackId = createId();
     await testPrisma.stack.create({
