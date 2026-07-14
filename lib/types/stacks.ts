@@ -315,11 +315,27 @@ export interface StackContainerConfig {
    */
   networkMode?: 'bridge' | 'host';
   restartPolicy?: typeof RESTART_POLICIES[number];
+  /**
+   * Container healthcheck. **All durations are in milliseconds.**
+   *
+   * This is the canonical unit for the whole stack surface — the authoring UIs,
+   * the built-in template JSONs, the DB columns, and the deploy-wait path all
+   * agree on it. Docker's API wants nanoseconds; that conversion happens in
+   * exactly one place, `healthcheckToDocker()` in
+   * `server/src/services/stacks/healthcheck-config.ts`. Do not convert units
+   * anywhere else.
+   *
+   * `retries` is a count, not a duration.
+   */
   healthcheck?: {
     test: string[];
+    /** Milliseconds between checks. */
     interval: NumOrTemplate;
+    /** Milliseconds before a single check is considered failed. */
     timeout: NumOrTemplate;
+    /** Consecutive failures before the container is marked unhealthy. */
     retries: NumOrTemplate;
+    /** Milliseconds of boot grace before failures start counting. */
     startPeriod: NumOrTemplate;
   };
   logConfig?: {

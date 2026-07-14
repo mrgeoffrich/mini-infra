@@ -3,6 +3,7 @@ import type { PrismaClient } from '../../generated/prisma/client';
 import type { DockerExecutorService } from '../docker-executor';
 import { getLogger } from '../../lib/logger-factory';
 import { getStackProjectName } from './template-engine';
+import { healthcheckToDocker } from './healthcheck-config';
 import { StackContainerManager } from './stack-container-manager';
 import { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { attachServiceNetworks, createNetworkManager, type NetworkManager } from '../networks';
@@ -156,15 +157,7 @@ async function spawnOne(
     ReadOnly: m.readOnly,
   }));
 
-  const healthcheck = cfg.healthcheck
-    ? {
-        Test: cfg.healthcheck.test,
-        Interval: Number(cfg.healthcheck.interval) * 1_000_000_000,
-        Timeout: Number(cfg.healthcheck.timeout) * 1_000_000_000,
-        Retries: Number(cfg.healthcheck.retries),
-        StartPeriod: Number(cfg.healthcheck.startPeriod) * 1_000_000_000,
-      }
-    : undefined;
+  const healthcheck = healthcheckToDocker(cfg.healthcheck);
 
   const logConfig = cfg.logConfig
     ? {

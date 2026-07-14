@@ -81,6 +81,7 @@ import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
+import { backfillHealthcheckUnits } from "./services/stacks/healthcheck-unit-backfill";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
 import { MonitoringService } from "./services/monitoring";
 import { cleanupOrphanedSidecars, finalizeLastUpdate } from "./services/self-update";
@@ -204,6 +205,19 @@ const initializeServices = async () => {
       }
     };
     await runBackfill();
+
+    // P3 3.3 — normalise stored healthcheck durations to milliseconds, the
+    // canonical unit now declared on StackContainerConfig. Writers used to
+    // disagree (authoring UIs stored ms, built-in templates stored seconds)
+    // while every container-create path multiplied by 1e9 as though it were all
+    // seconds, so UI-authored healthchecks got ~8.3h intervals and never ran.
+    // Idempotent via a magnitude heuristic, so it is safe on every boot; runs
+    // BEFORE the built-in template sync below re-seeds the system templates.
+    try {
+      await backfillHealthcheckUnits(prisma, logger);
+    } catch (err) {
+      logger.warn({ err }, "Healthcheck unit backfill failed (non-fatal)");
+    }
 
     // Network overhaul Phase 8 — general boot convergence. Replaces the old
     // self-network-reattach.ts boot workaround (which only ever re-derived

@@ -24,6 +24,7 @@ import { resolveEgressEnv } from './egress-injection';
 import { TailscaleService } from '../tailscale/tailscale-service';
 import { spawnPoolAddonSidecars } from './pool-addon-sidecar';
 import { getStackProjectName } from './template-engine';
+import { healthcheckToDocker } from './healthcheck-config';
 import { StackContainerManager } from './stack-container-manager';
 import { StackInfraResourceManager } from './stack-infra-resource-manager';
 import { attachServiceNetworks, createNetworkManager } from '../networks';
@@ -343,16 +344,7 @@ export async function spawnPoolInstance(
     ReadOnly: m.readOnly,
   }));
 
-  // Healthcheck: seconds → nanoseconds.
-  const healthcheck = containerConfig.healthcheck
-    ? {
-        Test: containerConfig.healthcheck.test,
-        Interval: Number(containerConfig.healthcheck.interval) * 1_000_000_000,
-        Timeout: Number(containerConfig.healthcheck.timeout) * 1_000_000_000,
-        Retries: Number(containerConfig.healthcheck.retries),
-        StartPeriod: Number(containerConfig.healthcheck.startPeriod) * 1_000_000_000,
-      }
-    : undefined;
+  const healthcheck = healthcheckToDocker(containerConfig.healthcheck);
 
   const logConfig = containerConfig.logConfig
     ? {

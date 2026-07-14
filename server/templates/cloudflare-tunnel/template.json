@@ -1,7 +1,7 @@
 {
   "name": "cloudflare-tunnel",
   "displayName": "Cloudflare Tunnel",
-  "builtinVersion": 9,
+  "builtinVersion": 10,
   "scope": "environment",
   "networkType": "internet",
   "category": "infrastructure",
@@ -31,10 +31,10 @@
         "restartPolicy": "unless-stopped",
         "healthcheck": {
           "test": ["CMD", "cloudflared", "tunnel", "ready"],
-          "interval": 30,
-          "timeout": 5,
+          "interval": 30000,
+          "timeout": 5000,
           "retries": 3,
-          "startPeriod": 15
+          "startPeriod": 15000
         },
         "logConfig": { "type": "json-file", "maxSize": "10m", "maxFile": "3" }
       },

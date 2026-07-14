@@ -144,8 +144,14 @@ export async function buildStateMachineContext(
     tlsCertificateId,
     certificateStatus: enableSsl && tlsCertificateId ? 'ACTIVE' : undefined,
     healthCheckEndpoint: routing.healthCheckEndpoint ?? '/',
+    // HAProxy's `inter` (ms). `healthcheck.interval` is already milliseconds —
+    // the canonical unit for the whole stack surface (see StackContainerConfig).
+    // This previously divided by 1e6 as though the stored value were nanoseconds,
+    // which floored every real interval to 0 and — because 0 is not nullish —
+    // slipped past the `?? 2000` fallback in add-container-to-lb.ts, configuring
+    // HAProxy with `inter: 0`.
     healthCheckInterval: serviceDef.containerConfig.healthcheck?.interval
-      ? Math.round(Number(serviceDef.containerConfig.healthcheck.interval) / 1_000_000)
+      ? Number(serviceDef.containerConfig.healthcheck.interval)
       : 2000,
     healthCheckRetries: Number(serviceDef.containerConfig.healthcheck?.retries ?? 2),
     // Blue-green health-check timeout (ms): how long the deploy waits for the
