@@ -342,6 +342,7 @@ export const ALL_API_ROUTES: readonly ApiRouteEntry[] = [
   { method: "GET", path: "/api/stacks/:stackId/services/:serviceName/git-deploy-key" },
   { method: "PUT", path: "/api/stacks/:stackId/services/:serviceName/git-deploy-key" },
   { method: "GET", path: "/api/stacks/:stackId/status" },
+  { method: "POST", path: "/api/stacks/:stackId/stop" },
   { method: "POST", path: "/api/stacks/:stackId/update" },
   { method: "GET", path: "/api/stacks/:stackId/validate" },
   { method: "GET", path: "/api/stacks/eligible-containers" },

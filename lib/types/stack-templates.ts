@@ -481,6 +481,8 @@ export interface UpdateStackTemplateRequest {
   displayName?: string;
   description?: string;
   category?: string;
+  /** Soft-archive toggle. Hides the template from the default list; linked stacks are untouched. */
+  isArchived?: boolean;
 }
 
 export interface DraftVersionInput {

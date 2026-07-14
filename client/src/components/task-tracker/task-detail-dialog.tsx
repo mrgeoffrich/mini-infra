@@ -24,6 +24,7 @@ import {
   IconPlug,
   IconStack2,
   IconTrash,
+  IconPlayerStop,
   IconArrowsShuffle,
   IconRocket,
   IconRefresh,
@@ -107,6 +108,8 @@ function getTaskTitle(type: TaskType): string {
       return "Stack Apply";
     case "stack-destroy":
       return "Stack Destroy";
+    case "stack-stop":
+      return "Stack Stop";
     case "stack-update":
       return "Stack Update";
     case "migration":
@@ -136,6 +139,8 @@ function getTaskIcon(type: TaskType) {
       return <IconStack2 className="h-5 w-5" />;
     case "stack-destroy":
       return <IconTrash className="h-5 w-5" />;
+    case "stack-stop":
+      return <IconPlayerStop className="h-5 w-5" />;
     case "stack-update":
       return <IconRefresh className="h-5 w-5" />;
     case "migration":

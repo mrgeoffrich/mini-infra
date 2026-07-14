@@ -31,6 +31,7 @@ import type {
   StackResourceInput,
 } from '@mini-infra/types';
 import { runStackVaultDeleter } from '../../services/stacks/stack-vault-deleter';
+import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { getUserId } from '../../lib/get-user-id';
 import { EgressPolicyLifecycleService } from '../../services/egress/egress-policy-lifecycle';
 import { ErrorCode, Permission } from '@mini-infra/types';
@@ -348,6 +349,21 @@ router.put(
     const translatedData = translateStackNetworks(parsed.data);
 
     const stackId = String(req.params.stackId);
+
+    // A definition edit bumps the stack version and flips status to `pending`;
+    // running it against a stack with an apply/update/destroy in flight would
+    // desync the reconciler snapshot. Match the guard on apply/update/destroy.
+    if (stackOperationLock.has(stackId)) {
+      throw new ConflictError(
+        ErrorCode.STACK_OPERATION_IN_PROGRESS,
+        'An operation is already in progress for this stack',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Wait for the in-flight operation to finish before editing the stack.',
+        },
+      );
+    }
+
     const existing = assertStackFound(
       await prisma.stack.findUnique({
         where: { id: stackId },

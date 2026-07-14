@@ -20,6 +20,7 @@ import {
 import { ErrorCode, Permission } from '@mini-infra/types';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { assertStackFound } from '../../services/stacks/utils';
+import { markStackErrored } from '../../services/stacks/stack-deployment-logger';
 
 const logger = getLogger("stacks", "stacks-update-route");
 const router = Router();
@@ -151,18 +152,16 @@ async function runUpdateInBackground(
 
       emitStackApplyCompleted({ ...result });
     } catch (error) {
-      logger.error(
-        { error: error instanceof Error ? error.message : String(error), stackId },
-        'Background stack update failed',
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error({ error: message, stackId }, 'Background stack update failed');
+      await markStackErrored(prisma, stackId, message, logger);
       await userEvent.fail(error);
       emitStackApplyFailed(stackId, error);
     }
   } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : String(error), stackId },
-      'Stack update setup failed',
-    );
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error({ error: message, stackId }, 'Stack update setup failed');
+    await markStackErrored(prisma, stackId, message, logger);
     await userEvent.fail(error);
     emitStackApplyFailed(stackId, error);
   } finally {

@@ -11,6 +11,7 @@ import type {
   StackInfo,
   StackListResponse,
   StackResponse,
+  StackStatus,
 } from "@mini-infra/types";
 import { apiFetch } from "@/lib/api-client";
 import { toastApiError } from "@/lib/errors";
@@ -136,6 +137,33 @@ async function destroyStack(
     correlationIdPrefix: "applications",
   });
 }
+
+/**
+ * Stop a stack's containers but KEEP its definition + DB row (status becomes
+ * `undeployed`). This is the honest "Stop" — the stack can be deployed again
+ * without re-instantiating, and Stateful volumes are preserved. Distinct from
+ * {@link destroyStack}, which deletes the stack record.
+ */
+async function stopStackKeep(
+  stackId: string,
+): Promise<{ started: true; stackId: string }> {
+  return apiFetch<{ started: true; stackId: string }>(ApiRoute.stacks.stop(stackId), {
+    method: "POST",
+    body: {},
+    correlationIdPrefix: "applications",
+  });
+}
+
+/**
+ * Statuses on which POST /stacks/:id/update (pull-latest-and-recreate) is a
+ * valid no-op-tag redeploy. Anything else must go through POST /apply, which
+ * has no status guard and is the correct recovery for error/undeployed/pending
+ * stacks (the /update route 400s with STACK_NOT_DEPLOYED for those).
+ */
+const UPDATABLE_STATUSES: ReadonlySet<StackStatus> = new Set<StackStatus>([
+  "synced",
+  "drifted",
+]);
 
 async function updateStack(
   stackId: string,
@@ -378,7 +406,26 @@ export function useDeployApplication() {
   });
 }
 
+/**
+ * The honest "Stop": undeploy-but-keep. Stops the stack's containers via
+ * POST /stacks/:id/stop; the stack definition + row are preserved so the app
+ * can be deployed again without re-instantiating.
+ */
 export function useStopApplication() {
+  return useMutation({
+    mutationFn: async (stackId: string) => {
+      await stopStackKeep(stackId);
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * The destructive "Remove"/"Uninstall": tears down the deployed stack —
+ * containers, volumes, and the stack DB record are deleted. The application
+ * template is kept, so the app can be redeployed from scratch afterwards.
+ */
+export function useRemoveApplicationStack() {
   return useMutation({
     mutationFn: async (stackId: string) => {
       await destroyStack(stackId);
@@ -391,11 +438,40 @@ export function useRedeployApplication() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (stackId: string) => {
-      await updateStack(stackId);
+    mutationFn: async (args: { stackId: string; stackStatus: StackStatus }) => {
+      // A no-op-tag redeploy of a synced/drifted stack is a pull-latest via
+      // /update; any other status must recover through /apply (which has no
+      // status guard) or /update would 400 with STACK_NOT_DEPLOYED.
+      if (UPDATABLE_STATUSES.has(args.stackStatus)) {
+        await updateStack(args.stackId);
+      } else {
+        await applyStack(args.stackId);
+      }
     },
     onSuccess: () => {
       toast.success("Application update started");
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
+      queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
+    },
+    // No onError — the global MutationCache.onError toasts by default.
+  });
+}
+
+/**
+ * Apply/Retry a stack directly — the recovery path for a stack in
+ * `error`/`pending`/`undeployed`. POST /apply has no status guard, so it is
+ * the correct action wherever those non-synced states surface (the detail
+ * header retry button, the overview failure alert).
+ */
+export function useApplyApplicationStack() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (stackId: string) => {
+      await applyStack(stackId);
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.applications.userStacks });
       queryClient.invalidateQueries({ queryKey: queryKeys.stacks.all });
@@ -413,6 +489,7 @@ export function useDeployApplicationUpdate() {
       serviceName: string;
       newTag: string;
       currentTag: string;
+      stackStatus: StackStatus;
     }) => {
       if (args.newTag !== args.currentTag) {
         await updateStackService(
@@ -421,8 +498,13 @@ export function useDeployApplicationUpdate() {
           { dockerTag: args.newTag },
         );
         await applyStack(args.stackId);
-      } else {
+      } else if (UPDATABLE_STATUSES.has(args.stackStatus)) {
+        // Unchanged tag on a deployed stack → pull-latest-and-recreate.
         await updateStack(args.stackId);
+      } else {
+        // Unchanged tag on a non-synced stack (error/undeployed/pending):
+        // /update would 400, so recover through /apply instead.
+        await applyStack(args.stackId);
       }
     },
     onSuccess: () => {

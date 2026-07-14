@@ -14,6 +14,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -27,8 +28,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { IconDotsVertical } from "@tabler/icons-react";
-import type { StackTemplateInfo } from "@mini-infra/types";
-import { useDeleteTemplate } from "@/hooks/use-stack-templates";
+import type { StackTemplateInfo, StackTemplateLinkedStack } from "@mini-infra/types";
+import {
+  useDeleteTemplate,
+  useUpdateStackTemplate,
+} from "@/hooks/use-stack-templates";
 import { toast } from "sonner";
 
 interface TemplateTableProps {
@@ -63,10 +67,20 @@ function getVersionDisplay(template: StackTemplateInfo): string {
   return "—";
 }
 
+/**
+ * A linked stack blocks template deletion when it's still deployed. The server
+ * rejects the delete unless every linked stack is `undeployed` or already
+ * removed (see stack-template-service.deleteTemplate).
+ */
+function isDeployed(stack: StackTemplateLinkedStack): boolean {
+  return stack.status !== "undeployed" && stack.status !== "removed";
+}
+
 export function TemplateTable({ templates }: TemplateTableProps) {
   const navigate = useNavigate();
   const deleteMutation = useDeleteTemplate();
-  const [archiveTarget, setArchiveTarget] = useState<StackTemplateInfo | null>(null);
+  const updateMutation = useUpdateStackTemplate();
+  const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
 
   function handleRowClick(template: StackTemplateInfo) {
     navigate(`/stack-templates/${template.id}`);
@@ -77,24 +91,45 @@ export function TemplateTable({ templates }: TemplateTableProps) {
     navigate(`/stack-templates/${template.id}`);
   }
 
-  function handleArchiveClick(e: React.MouseEvent, template: StackTemplateInfo) {
+  async function handleArchiveToggle(e: React.MouseEvent, template: StackTemplateInfo) {
     e.stopPropagation();
-    setArchiveTarget(template);
-  }
-
-  async function handleArchiveConfirm() {
-    if (!archiveTarget) return;
+    const nextArchived = !template.isArchived;
     try {
-      await deleteMutation.mutateAsync(archiveTarget.id);
-      toast.success(`Template "${archiveTarget.displayName}" deleted`);
+      await updateMutation.mutateAsync({
+        templateId: template.id,
+        request: { isArchived: nextArchived },
+      });
+      toast.success(
+        nextArchived
+          ? `Template "${template.displayName}" archived`
+          : `Template "${template.displayName}" unarchived`,
+      );
     } catch {
-      // Swallow: the global MutationCache.onError (query-client.ts)
-      // already shows an actionable toast for this mutation's real
-      // ApiRequestError.
-    } finally {
-      setArchiveTarget(null);
+      // Swallow: the global MutationCache.onError already toasts the real error.
     }
   }
+
+  function handleDeleteClick(e: React.MouseEvent, template: StackTemplateInfo) {
+    e.stopPropagation();
+    setDeleteTarget(template);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    try {
+      await deleteMutation.mutateAsync(deleteTarget.id);
+      toast.success(`Template "${deleteTarget.displayName}" deleted`);
+    } catch {
+      // Swallow: the global MutationCache.onError already toasts the real error.
+    } finally {
+      setDeleteTarget(null);
+    }
+  }
+
+  const linkedStacks = deleteTarget?.linkedStacks ?? [];
+  const blockingStacks = linkedStacks.filter(isDeployed);
+  const deletableStacks = linkedStacks.filter((s) => !isDeployed(s));
+  const deleteBlocked = blockingStacks.length > 0;
 
   if (templates.length === 0) {
     return (
@@ -167,13 +202,21 @@ export function TemplateTable({ templates }: TemplateTableProps) {
                     >
                       Edit
                     </DropdownMenuItem>
-                    {!template.isArchived && (
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={(e) => handleArchiveClick(e, template)}
-                      >
-                        Archive
-                      </DropdownMenuItem>
+                    {template.source !== "system" && (
+                      <>
+                        <DropdownMenuItem
+                          onClick={(e) => handleArchiveToggle(e, template)}
+                        >
+                          {template.isArchived ? "Unarchive" : "Archive"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={(e) => handleDeleteClick(e, template)}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -184,24 +227,65 @@ export function TemplateTable({ templates }: TemplateTableProps) {
       </Table>
 
       <AlertDialog
-        open={!!archiveTarget}
+        open={!!deleteTarget}
         onOpenChange={(open) => {
-          if (!open) setArchiveTarget(null);
+          if (!open) setDeleteTarget(null);
         }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive Template</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to archive{" "}
-              <span className="font-medium">{archiveTarget?.displayName}</span>?
-              Archived templates will no longer appear in the default list.
+            <AlertDialogTitle>Delete Template</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>
+                  Permanently delete{" "}
+                  <span className="font-medium">{deleteTarget?.displayName}</span>?
+                  This can&apos;t be undone. To simply hide it from the list,
+                  use Archive instead.
+                </p>
+                {linkedStacks.length === 0 ? (
+                  <p>This template has no linked stacks.</p>
+                ) : deleteBlocked ? (
+                  <div className="space-y-1">
+                    <p className="text-destructive font-medium">
+                      Deployed stacks block deletion. Stop or remove these
+                      first:
+                    </p>
+                    <ul className="list-disc pl-5">
+                      {blockingStacks.map((s) => (
+                        <li key={s.id}>
+                          {s.name} ({s.status})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p>
+                      {deletableStacks.length} linked stack
+                      {deletableStacks.length === 1 ? "" : "s"} (not deployed)
+                      will also be deleted:
+                    </p>
+                    <ul className="list-disc pl-5">
+                      {deletableStacks.map((s) => (
+                        <li key={s.id}>
+                          {s.name} ({s.status})
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleArchiveConfirm}>
-              Archive
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleteBlocked || deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

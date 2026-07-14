@@ -12,7 +12,7 @@ import type {
 import type { ConnectivityStatusInfo } from "./settings";
 import type { BackupHealthStatus } from "./self-backup";
 import type { UserEventInfo } from "./user-events";
-import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult } from "./stacks";
+import type { ServiceApplyResult, ResourceResult, ApplyResult, DestroyResult, StackStopResult } from "./stacks";
 import type { CertIssuanceStep, CertIssuanceResult } from "./tls";
 import type { OperationStep } from "./operations";
 import type {
@@ -204,6 +204,8 @@ export const ServerEvent = {
   STACK_APPLY_COMPLETED: "stack:apply:completed",
   STACK_DESTROY_STARTED: "stack:destroy:started",
   STACK_DESTROY_COMPLETED: "stack:destroy:completed",
+  STACK_STOP_STARTED: "stack:stop:started",
+  STACK_STOP_COMPLETED: "stack:stop:completed",
   // Stack Addon provisioning (Phase 1: defined; emitted from Phase 3 onward)
   STACK_ADDON_PROVISIONED: "stack:addon:provisioned",
   STACK_ADDON_FAILED: "stack:addon:failed",
@@ -372,6 +374,10 @@ export interface ServerToClientEvents {
   "stack:destroy:started": (data: { stackId: string; stackName: string }) => void;
   /** Stack destroy completed */
   "stack:destroy:completed": (data: DestroyResult) => void;
+  /** Stack stop (undeploy-but-keep) started */
+  "stack:stop:started": (data: { stackId: string; stackName: string }) => void;
+  /** Stack stop (undeploy-but-keep) completed */
+  "stack:stop:completed": (data: StackStopResult) => void;
   /**
    * One addon application provisioned successfully during stack apply.
    * Defined in Phase 1; emitted from the render pipeline starting Phase 3.

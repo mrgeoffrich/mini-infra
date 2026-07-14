@@ -319,6 +319,41 @@ export const TASK_TYPE_REGISTRY: Record<TaskType, RuntimeTaskTypeConfig> = {
     ],
   }),
 
+  "stack-stop": defineTaskTypeConfig({
+    channel: Channel.STACKS,
+    startedEvent: ServerEvent.STACK_STOP_STARTED,
+    stepEvent: null,
+    completedEvent: ServerEvent.STACK_STOP_COMPLETED,
+    getId: (p) => p.stackId,
+    normalizeStarted: () => ({
+      totalSteps: 1,
+      plannedStepNames: ["Stop stack"],
+    }),
+    normalizeStep: null,
+    normalizeCompleted: (p) => ({
+      success: p.success,
+      steps: [
+        {
+          step: "Stop stack",
+          status: p.success ? "completed" : "failed",
+          detail: p.success
+            ? `Stopped ${p.stoppedContainers} container(s); definition kept`
+            : p.error ?? undefined,
+        },
+      ],
+      errors: p.error ? [p.error] : [],
+    }),
+    invalidateKeys: (taskId) => [
+      [...queryKeys.stacks.all],
+      [...queryKeys.stacks.detail(taskId)],
+      [...queryKeys.stacks.plan(taskId)],
+      [...queryKeys.stacks.status(taskId)],
+      [...queryKeys.stacks.history(taskId)],
+      [...queryKeys.applications.all],
+      [...queryKeys.applications.userStacks],
+    ],
+  }),
+
   migration: defineTaskTypeConfig({
     channel: Channel.STACKS,
     startedEvent: ServerEvent.MIGRATION_STARTED,

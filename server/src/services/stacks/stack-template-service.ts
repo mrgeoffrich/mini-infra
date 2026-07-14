@@ -457,6 +457,10 @@ export class StackTemplateService {
         displayName: input.displayName,
         description: input.description,
         category: input.category,
+        // `isArchived` is the real soft-archive toggle (undefined = leave as-is).
+        // This is what the template list's "Archive"/"Unarchive" action drives —
+        // distinct from DELETE, which tears down the template and its stacks.
+        isArchived: input.isArchived,
       },
       include: {
         currentVersion: { select: versionSummary },

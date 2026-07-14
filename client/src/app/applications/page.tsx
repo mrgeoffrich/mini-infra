@@ -10,8 +10,10 @@ import {
 } from "@tabler/icons-react";
 import {
   useApplications,
+  useApplyApplicationStack,
   useDeleteApplication,
   useDeployApplication,
+  useRemoveApplicationStack,
   useStopApplication,
   useUserStacks,
 } from "@/hooks/use-applications";
@@ -67,12 +69,16 @@ export default function ApplicationsPage() {
   const deleteApplication = useDeleteApplication();
   const deployApplication = useDeployApplication();
   const stopApplication = useStopApplication();
+  const removeApplicationStack = useRemoveApplicationStack();
+  const applyApplicationStack = useApplyApplicationStack();
   const { registerTask } = useTaskTracker();
   const { data: stacksData } = useUserStacks();
   const { data: envData } = useEnvironments();
 
   const [deleteTarget, setDeleteTarget] = useState<StackTemplateInfo | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<StackTemplateInfo | null>(null);
   const [stoppingId, setStoppingId] = useState<string | null>(null);
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const applications = data?.data ?? [];
   const userStacks = useMemo(() => stacksData?.data ?? [], [stacksData]);
@@ -131,6 +137,7 @@ export default function ApplicationsPage() {
     }
   };
 
+  // Honest Stop: undeploy-but-keep (containers stopped, definition + row kept).
   const handleStop = async (app: StackTemplateInfo) => {
     const stacks = stacksByTemplateId.get(app.id);
     if (!stacks || stacks.length === 0) {
@@ -141,7 +148,7 @@ export default function ApplicationsPage() {
       for (const stack of stacks) {
         registerTask({
           id: stack.id,
-          type: "stack-destroy",
+          type: "stack-stop",
           label: `Stopping ${app.displayName ?? app.name}`,
           channel: Channel.STACKS,
         });
@@ -149,6 +156,53 @@ export default function ApplicationsPage() {
       await Promise.all(stacks.map((s) => stopApplication.mutateAsync(s.id)));
     } finally {
       setStoppingId(null);
+    }
+  };
+
+  // Apply/retry: push pending changes (or recover an error/undeployed stack) to
+  // running containers. Apply has no status guard, so it's the safe recovery.
+  const handleApply = async (app: StackTemplateInfo) => {
+    const stacks = stacksByTemplateId.get(app.id);
+    if (!stacks || stacks.length === 0) {
+      return;
+    }
+    setApplyingId(app.id);
+    try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-apply",
+          label: `Applying ${app.displayName ?? app.name}`,
+          channel: Channel.STACKS,
+        });
+      }
+      await Promise.all(stacks.map((s) => applyApplicationStack.mutateAsync(s.id)));
+    } finally {
+      setApplyingId(null);
+    }
+  };
+
+  // Destructive Remove/Uninstall: tears down the deployed stack (containers,
+  // volumes, stack record) but keeps the application template.
+  const handleRemove = async () => {
+    if (!removeTarget) return;
+    const stacks = stacksByTemplateId.get(removeTarget.id);
+    if (!stacks || stacks.length === 0) {
+      setRemoveTarget(null);
+      return;
+    }
+    try {
+      for (const stack of stacks) {
+        registerTask({
+          id: stack.id,
+          type: "stack-destroy",
+          label: `Removing ${removeTarget.displayName ?? removeTarget.name}`,
+          channel: Channel.STACKS,
+        });
+      }
+      await Promise.all(stacks.map((s) => removeApplicationStack.mutateAsync(s.id)));
+    } finally {
+      setRemoveTarget(null);
     }
   };
 
@@ -271,8 +325,10 @@ export default function ApplicationsPage() {
               const appStacks = stacksByTemplateId.get(app.id);
               const adopted = isAdoptedWeb(app, appStacks);
               const serviceType = getAppServiceType(app, appStacks);
-              const isBusy = stoppingId === app.id
-                || !!appStacks?.some((s) => s.status === "pending");
+              // Genuine in-flight work only. A `pending` stack with no tracked
+              // task is NOT busy — it has unapplied changes and the card
+              // surfaces an "Apply changes" CTA rather than a dead button.
+              const isBusy = stoppingId === app.id || applyingId === app.id;
               return (
                 <ApplicationCard
                   key={app.id}
@@ -288,8 +344,11 @@ export default function ApplicationsPage() {
                   serviceType={serviceType}
                   isBusy={isBusy}
                   isStopping={stoppingId === app.id}
+                  isApplying={applyingId === app.id}
                   onDeploy={handleDeploy}
                   onStop={handleStop}
+                  onApply={handleApply}
+                  onRemove={setRemoveTarget}
                   onDelete={setDeleteTarget}
                   onEdit={(a) => navigate(`/applications/${a.id}`)}
                 />
@@ -298,6 +357,40 @@ export default function ApplicationsPage() {
           </div>
         )}
       </div>
+
+      {/* Remove-deployment (destroy stack) confirmation dialog */}
+      <AlertDialog
+        open={!!removeTarget}
+        onOpenChange={(open) => {
+          if (!open) setRemoveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove deployment</AlertDialogTitle>
+            <AlertDialogDescription>
+              This tears down the running deployment of &quot;
+              {removeTarget?.displayName}&quot;: its containers are removed, its
+              volumes and their data are deleted, and the stack record is
+              removed. The application itself is kept, so you can deploy it again
+              from scratch. To stop without losing data, use Stop instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleRemove}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removeApplicationStack.isPending}
+            >
+              {removeApplicationStack.isPending && (
+                <IconLoader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete confirmation dialog */}
       <AlertDialog

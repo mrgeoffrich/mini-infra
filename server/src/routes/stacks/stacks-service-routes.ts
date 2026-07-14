@@ -5,8 +5,9 @@ import { asyncHandler } from '../../lib/async-handler';
 import { requirePermission } from '../../middleware/auth';
 import { updateStackServiceSchema } from '../../services/stacks/schemas';
 import { serializeStack, assertStackFound } from '../../services/stacks/utils';
+import { stackOperationLock } from '../../services/stacks/operation-lock';
 import { ErrorCode, Permission } from '@mini-infra/types';
-import { NotFoundError } from '../../lib/errors';
+import { ConflictError, NotFoundError } from '../../lib/errors';
 
 const router = Router();
 
@@ -26,6 +27,20 @@ router.put(
 
     const stackId = String(req.params.stackId);
     const serviceName = String(req.params.serviceName);
+
+    // Don't let a definition edit race a mid-flight apply/update/destroy: this
+    // handler bumps the stack version and flips status to `pending`, which a
+    // concurrent apply's reconciler snapshot would then disagree with.
+    if (stackOperationLock.has(stackId)) {
+      throw new ConflictError(
+        ErrorCode.STACK_OPERATION_IN_PROGRESS,
+        'An operation is already in progress for this stack',
+        {
+          resource: { type: 'stack', id: stackId },
+          action: 'Wait for the in-flight operation to finish before editing the service.',
+        },
+      );
+    }
 
     const service = await prisma.stackService.findFirst({
       where: { stackId, serviceName },
