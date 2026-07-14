@@ -139,7 +139,7 @@ describe('Pool service schema validation', () => {
     const result = stackDefinitionSchema.safeParse(
       wrap([
         baseStateful({
-          natsCredentialRef: 'manager-creds',
+          natsRole: 'manager',
           containerConfig: {
             env: {},
             dynamicEnv: {

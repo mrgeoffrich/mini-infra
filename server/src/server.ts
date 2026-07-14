@@ -82,6 +82,7 @@ import { HAProxyService } from "./services/haproxy/haproxy-service";
 import { DockerExecutorService } from "./services/docker-executor";
 import { loadOrCreateInternalAuthSecret } from "./lib/security-config";
 import { syncBuiltinStacks } from "./services/stacks/builtin-stack-sync";
+import { auditLegacyNatsTemplateData } from "./services/nats/legacy-nats-template-audit";
 import { backfillHealthcheckUnits } from "./services/stacks/healthcheck-unit-backfill";
 import { runBuiltinVaultReconcile, BUNDLES_DRIVE_BUILTIN } from "./services/stacks/builtin-vault-reconcile";
 import { MonitoringService } from "./services/monitoring";
@@ -537,6 +538,18 @@ const initializeServices = async () => {
     console.log("[STARTUP] Syncing built-in stack definitions...");
     const templateByName = await syncBuiltinStacks(prisma);
     console.log("[STARTUP] ✓ Built-in stack definitions synced");
+
+    // Report any template data quarantined by the legacy-NATS drop migration.
+    // Silent on the expected install; loud when an operator has a template the
+    // product can no longer apply. Diagnostic only — never blocks boot.
+    try {
+      await auditLegacyNatsTemplateData(prisma);
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        "Legacy NATS template audit failed (non-fatal)",
+      );
+    }
 
     // Seed system-owned NATS rows (prefix allowlist entries for the
     // `mini-infra.>` namespace, JetStream streams + consumers shared across

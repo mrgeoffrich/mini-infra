@@ -66,11 +66,17 @@ const COMMON_FIELDS = [
   'order',
   'routing',
   'vaultAppRoleRef',
-  'natsCredentialRef',
   'natsRole',
   'natsSigner',
   'addons',
 ] as const;
+
+// Fields removed from the authoring surface. These must stay *declared* on the
+// base — Zod strips unknown keys, so deleting them outright would silently drop
+// the field from a template still carrying it instead of failing. They are
+// pinned separately from the live fields so nobody "tidies them away", and so a
+// reader can't mistake them for part of the surface.
+const REMOVED_FIELDS = ['natsCredentialRef'] as const;
 
 // Every key in COMMON_FIELDS must also be a key of the shared base. If
 // someone adds a key to the array without adding it to the schema (or vice
@@ -80,6 +86,16 @@ describe('stackServiceCommonFieldsSchema — pinned key set', () => {
     const shapeKeys = new Set(Object.keys(stackServiceCommonFieldsSchema.shape));
     for (const field of COMMON_FIELDS) {
       expect(shapeKeys.has(field), `common base missing field "${field}"`).toBe(true);
+    }
+  });
+
+  it('still declares removed fields, and rejects rather than strips them', () => {
+    const shapeKeys = new Set(Object.keys(stackServiceCommonFieldsSchema.shape));
+    for (const field of REMOVED_FIELDS) {
+      expect(shapeKeys.has(field), `removed field "${field}" must stay declared so it rejects`).toBe(true);
+
+      const result = stackServiceCommonFieldsSchema.safeParse({ ...commonFieldFixture, [field]: 'anything' });
+      expect(result.success, `removed field "${field}" was accepted (silently stripped?)`).toBe(false);
     }
   });
 

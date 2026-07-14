@@ -188,50 +188,6 @@ export interface TemplateVaultSection {
   kv?: TemplateVaultKv[];
 }
 
-export interface TemplateNatsAccount {
-  name: string;
-  displayName?: string;
-  description?: string;
-  scope: 'host' | 'environment' | 'stack';
-}
-
-export interface TemplateNatsCredential {
-  name: string;
-  account: string;
-  displayName?: string;
-  description?: string;
-  publishAllow: string[];
-  subscribeAllow: string[];
-  ttlSeconds?: number;
-  scope: 'host' | 'environment' | 'stack';
-}
-
-export interface TemplateNatsStream {
-  name: string;
-  account: string;
-  description?: string;
-  subjects: string[];
-  retention?: 'limits' | 'interest' | 'workqueue';
-  storage?: 'file' | 'memory';
-  maxMsgs?: number | null;
-  maxBytes?: number | null;
-  maxAgeSeconds?: number | null;
-  scope: 'host' | 'environment' | 'stack';
-}
-
-export interface TemplateNatsConsumer {
-  name: string;
-  stream: string;
-  durableName?: string;
-  description?: string;
-  filterSubject?: string;
-  deliverPolicy?: 'all' | 'last' | 'new' | 'by_start_sequence' | 'by_start_time' | 'last_per_subject';
-  ackPolicy?: 'none' | 'all' | 'explicit';
-  maxDeliver?: number | null;
-  ackWaitSeconds?: number | null;
-  scope: 'host' | 'environment' | 'stack';
-}
-
 /**
  * App-author-facing role declaration. Materializes into a NatsCredentialProfile
  * row at apply time, with the stack's resolved subjectPrefix prepended to every
@@ -354,8 +310,23 @@ export interface TemplateNatsImport {
   forRoles: string[];
 }
 
+/**
+ * The NATS section of a stack template.
+ *
+ * This is the *only* NATS authoring surface. An earlier low-level surface
+ * (`accounts` / `credentials` / `streams` / `consumers`, plus a per-service
+ * `natsCredentialRef`) declared absolute subjects against an explicitly-named
+ * account; it was replaced by the prefix-isolated role model and removed once
+ * every system template had migrated. Templates still carrying those keys are
+ * now rejected at validation with a migration message rather than being
+ * silently stripped — see `REMOVED_NATS_TEMPLATE_FIELDS` on the server.
+ *
+ * Note this says nothing about NATS accounts/streams/consumers as *runtime*
+ * entities: those still exist, are managed via `/api/nats`, and are created by
+ * the control plane and system bootstrap. What went away is a template's
+ * ability to declare them directly.
+ */
 export interface TemplateNatsSection {
-  // App-author surface (safe-by-default; auto-prefixed; validated at publish).
   /** Defaults to `app.{{stack.id}}`. Non-default values require an admin allowlist entry. */
   subjectPrefix?: string;
   roles?: TemplateNatsRole[];
@@ -363,14 +334,6 @@ export interface TemplateNatsSection {
   /** Subjects relative to subjectPrefix that this stack publishes for cross-app consumption. */
   exports?: string[];
   imports?: TemplateNatsImport[];
-
-  // Low-level surface (system templates and advanced/internal use).
-  // App templates use the role/signer surface above; mixing the two within
-  // one template is rejected at validation time.
-  accounts?: TemplateNatsAccount[];
-  credentials?: TemplateNatsCredential[];
-  streams?: TemplateNatsStream[];
-  consumers?: TemplateNatsConsumer[];
 }
 
 export interface StackTemplateVersionInfo {
@@ -420,8 +383,6 @@ export interface StackTemplateServiceInfo {
   /** Symbolic AppRole name from vault.appRoles[]; resolved to vaultAppRoleId at apply time (PR 2). */
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
-  /** Symbolic credential name from nats.credentials[]; resolved to natsCredentialId at apply time. */
-  natsCredentialRef?: string | null;
   /** Symbolic role name from nats.roles[]; resolved to a materialized NatsCredentialProfile at apply time. */
   natsRole?: string | null;
   /** Symbolic signer name from nats.signers[]; auto-injects NATS_SIGNER_SEED dynamicEnv at apply time. */

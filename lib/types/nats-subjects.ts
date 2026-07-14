@@ -166,6 +166,18 @@ function shortHashHex(input: string): string {
 }
 
 /**
+ * Name prefix identifying a JetStream stream as JobPool history.
+ *
+ * This is load-bearing as an *ownership* marker, not just a naming nicety.
+ * `NatsStream` rows carry a `stackId` but no "who manages this" discriminator,
+ * and two independent reconcilers write stack-owned stream rows: the NATS apply
+ * orchestrator (role-derived streams) and the JobPool stream reconciler (these).
+ * Each prunes rows it considers orphaned, so each must be able to recognise the
+ * other's rows and leave them alone — keyed off this prefix.
+ */
+export const JOB_HISTORY_STREAM_PREFIX = "JobHistory-";
+
+/**
  * Derive the JetStream stream name for a JobPool's history stream. Stable for
  * a given (stackId, serviceName) pair — both the operator-path stream creator
  * and any future client-side history reader must call this so the two sides
@@ -182,7 +194,7 @@ export function jobHistoryStreamName(stackId: string, serviceName: string): stri
   // ID scheme ever changes.
   const safeStack = stackId.replace(/[^A-Za-z0-9_-]/g, "");
   const safeService = serviceName.replace(/[^A-Za-z0-9_-]/g, "");
-  const candidate = `JobHistory-${safeStack}-${safeService}`;
+  const candidate = `${JOB_HISTORY_STREAM_PREFIX}${safeStack}-${safeService}`;
   if (candidate.length <= JOB_HISTORY_STREAM_NAME_MAX) return candidate;
   // Hash the unsanitised inputs together so collisions are vanishingly
   // unlikely even on stack-IDs that share a sanitised prefix.
@@ -190,7 +202,7 @@ export function jobHistoryStreamName(stackId: string, serviceName: string): stri
   // Keep a short readable service prefix so operators can still spot which
   // pool a stream belongs to from `nats stream ls`.
   const readable = safeService.slice(0, 12);
-  return `JobHistory-${hash}-${readable}`.slice(0, JOB_HISTORY_STREAM_NAME_MAX);
+  return `${JOB_HISTORY_STREAM_PREFIX}${hash}-${readable}`.slice(0, JOB_HISTORY_STREAM_NAME_MAX);
 }
 
 /** Phase 5 (optional): self-update sidecar subjects. Reserved. */

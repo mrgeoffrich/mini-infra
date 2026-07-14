@@ -521,7 +521,6 @@ export interface StackService {
   vaultAppRoleId: string | null;
   lastAppliedVaultAppRoleId: string | null;
   natsCredentialId: string | null;
-  natsCredentialRef: string | null;
   poolManagementTokenHash: string | null;
   /** Service Addons authoring block; null when no addons declared. */
   addons: Record<string, unknown> | null;
@@ -833,9 +832,6 @@ export interface StackServiceDefinition {
    *  Resolved to a concrete vaultAppRoleId at apply time. */
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
-  /** Symbolic reference to a nats.credentials[].name in the owning template draft.
-   *  Resolved to a concrete natsCredentialId at apply time. */
-  natsCredentialRef?: string | null;
   /** Symbolic reference to a nats.roles[].name. Resolved at apply time to a
    *  materialized NatsCredentialProfile (auto-prefixed permissions). */
   natsRole?: string | null;

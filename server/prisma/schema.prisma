@@ -1439,7 +1439,6 @@ model StackService {
   lastAppliedVaultAppRoleId   String?
   natsCredentialId            String?
   natsCredential              NatsCredentialProfile? @relation("ServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
-  natsCredentialRef           String?
   // Service Addons authoring block (Phase 1, ALT-56). Map of addon-id →
   // addon-config; expanded into synthetic sidecars by the render pipeline
   // in `server/src/services/stack-addons/expand-addons.ts`.
@@ -1686,14 +1685,15 @@ model StackTemplateVersion {
   vaultPolicies          Json?                       // TemplateVaultPolicy[]
   vaultAppRoles          Json?                       // TemplateVaultAppRole[]
   vaultKv                Json?                       // TemplateVaultKv[]
-  natsAccounts           Json?                       // TemplateNatsAccount[]
-  natsCredentials        Json?                       // TemplateNatsCredential[]
-  natsStreams            Json?                       // TemplateNatsStream[]
-  natsConsumers          Json?                       // TemplateNatsConsumer[]
 
-  // Phase 1 — NATS app-author surface (roles/signers/imports/exports + prefix).
+  // NATS authoring surface (roles/signers/imports/exports + prefix).
   // Persisted on the version row so apply-time orchestrator and cross-stack
   // consumers can resolve against the latest applied snapshot.
+  //
+  // The earlier low-level surface (natsAccounts/natsCredentials/natsStreams/
+  // natsConsumers, plus StackService.natsCredentialRef) was dropped once every
+  // template had migrated to roles — see the drop-legacy-nats-template-surface
+  // migration, which refuses to run while any row still carries that data.
   natsSubjectPrefix      String?                     // e.g. "app.{{stack.id}}" or allowlisted "navi"
   natsRoles              Json?                       // TemplateNatsRole[]
   natsSigners            Json?                       // TemplateNatsSigner[]
@@ -1746,11 +1746,10 @@ model StackTemplateService {
   vaultAppRoleRef String?
   natsCredentialId  String?
   natsCredential    NatsCredentialProfile? @relation("TemplateServiceNatsCredential", fields: [natsCredentialId], references: [id], onDelete: SetNull)
-  natsCredentialRef String?
-  // Phase 1 — symbolic refs into nats.roles[] and nats.signers[] declared on
-  // the same StackTemplateVersion. Resolved at apply time: natsRole → bound
+  // Symbolic refs into nats.roles[] and nats.signers[] declared on the same
+  // StackTemplateVersion. Resolved at apply time: natsRole → bound
   // NatsCredentialProfile (auto-prefixed); natsSigner → auto-injected
-  // NATS_SIGNER_SEED dynamicEnv. Mutually exclusive with natsCredentialRef.
+  // NATS_SIGNER_SEED dynamicEnv.
   natsRole          String?
   natsSigner        String?
   // Service Addons authoring block (Phase 1, ALT-56). Map of addon-id →

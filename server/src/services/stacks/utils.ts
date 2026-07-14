@@ -212,7 +212,6 @@ export function toServiceCreateInput(s: StackServiceDefinition) {
     jobPoolConfig: s.jobPoolConfig ? (s.jobPoolConfig as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
-    natsCredentialRef: s.natsCredentialRef ?? null,
     addons: s.addons ? (s.addons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
   };
 }
@@ -405,7 +404,6 @@ export async function resolveServiceConfigs(
     vaultAppRoleId?: string | null;
     vaultAppRoleRef?: string | null;
     natsCredentialId?: string | null;
-    natsCredentialRef?: string | null;
     addons?: unknown;
   }>,
   templateContext: ReturnType<typeof buildTemplateContext>,
@@ -537,7 +535,6 @@ export function toServiceDefinition(svc: {
   vaultAppRoleId?: string | null;
   vaultAppRoleRef?: string | null;
   natsCredentialId?: string | null;
-  natsCredentialRef?: string | null;
   addons?: unknown;
 }): StackServiceDefinition {
   return {
@@ -557,7 +554,6 @@ export function toServiceDefinition(svc: {
     vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
     vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
     natsCredentialId: svc.natsCredentialId ?? undefined,
-    natsCredentialRef: svc.natsCredentialRef ?? undefined,
     addons:
       svc.addons && typeof svc.addons === 'object'
         ? (svc.addons as Record<string, unknown>)

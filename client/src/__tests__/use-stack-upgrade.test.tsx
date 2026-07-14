@@ -109,7 +109,6 @@ describe("useDeployApplicationUpdate — tag change unifies through the template
         vaultAppRoleId: null,
         vaultAppRoleRef: null,
         natsCredentialId: null,
-        natsCredentialRef: null,
         natsRole: null,
         natsSigner: null,
         addons: null,

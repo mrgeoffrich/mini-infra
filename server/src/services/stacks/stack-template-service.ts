@@ -77,10 +77,6 @@ const versionSummary = {
   vaultPolicies: true,
   vaultAppRoles: true,
   vaultKv: true,
-  natsAccounts: true,
-  natsCredentials: true,
-  natsStreams: true,
-  natsConsumers: true,
   natsSubjectPrefix: true,
   natsRoles: true,
   natsSigners: true,
@@ -1441,7 +1437,6 @@ function serializeTemplateService(svc: Prisma.StackTemplateServiceGetPayload<tru
     vaultAppRoleId: svc.vaultAppRoleId ?? null,
     vaultAppRoleRef: svc.vaultAppRoleRef ?? null,
     natsCredentialId: svc.natsCredentialId ?? null,
-    natsCredentialRef: svc.natsCredentialRef ?? null,
     natsRole: svc.natsRole ?? null,
     natsSigner: svc.natsSigner ?? null,
     addons: (svc.addons as unknown as Record<string, unknown> | null) ?? null,
@@ -1485,7 +1480,6 @@ function toTemplateServiceCreate(
     vaultAppRoleId: s.vaultAppRoleId ?? null,
     vaultAppRoleRef: s.vaultAppRoleRef ?? null,
     natsCredentialId: s.natsCredentialId ?? null,
-    natsCredentialRef: s.natsCredentialRef ?? null,
     natsRole: s.natsRole ?? null,
     natsSigner: s.natsSigner ?? null,
     addons: s.addons ? (s.addons as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
@@ -1509,14 +1503,9 @@ function buildVaultSection(version: Record<string, unknown>): StackTemplateVersi
 /**
  * Map a `TemplateNatsSection` (or undefined) to the NATS-shaped Prisma write
  * fields on `StackTemplateVersion`. Centralised so create/update/builtin
- * write paths can't drift on individual columns. Phase 1 added the
- * subjectPrefix/roles/signers/exports/imports columns.
+ * write paths can't drift on individual columns.
  */
 function natsSectionToVersionWrite(nats: TemplateNatsSection | undefined): {
-  natsAccounts: Prisma.InputJsonValue | typeof Prisma.DbNull;
-  natsCredentials: Prisma.InputJsonValue | typeof Prisma.DbNull;
-  natsStreams: Prisma.InputJsonValue | typeof Prisma.DbNull;
-  natsConsumers: Prisma.InputJsonValue | typeof Prisma.DbNull;
   natsSubjectPrefix: string | null;
   natsRoles: Prisma.InputJsonValue | typeof Prisma.DbNull;
   natsSigners: Prisma.InputJsonValue | typeof Prisma.DbNull;
@@ -1524,10 +1513,6 @@ function natsSectionToVersionWrite(nats: TemplateNatsSection | undefined): {
   natsImports: Prisma.InputJsonValue | typeof Prisma.DbNull;
 } {
   return {
-    natsAccounts: nats?.accounts ? (nats.accounts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-    natsCredentials: nats?.credentials ? (nats.credentials as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-    natsStreams: nats?.streams ? (nats.streams as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-    natsConsumers: nats?.consumers ? (nats.consumers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     natsSubjectPrefix: nats?.subjectPrefix ?? null,
     natsRoles: nats?.roles ? (nats.roles as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     natsSigners: nats?.signers ? (nats.signers as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
@@ -1550,13 +1535,7 @@ function requiresToVersionWrite(
 }
 
 function buildNatsSection(version: Record<string, unknown>): StackTemplateVersionInfo['nats'] {
-  // Phase 1 fields are checked alongside the legacy fields so a pure-roles
-  // template returns a non-undefined nats section.
   if (
-    !version['natsAccounts'] &&
-    !version['natsCredentials'] &&
-    !version['natsStreams'] &&
-    !version['natsConsumers'] &&
     !version['natsSubjectPrefix'] &&
     !version['natsRoles'] &&
     !version['natsSigners'] &&
@@ -1567,10 +1546,6 @@ function buildNatsSection(version: Record<string, unknown>): StackTemplateVersio
   }
   type NatsSection = NonNullable<StackTemplateVersionInfo['nats']>;
   return {
-    accounts: (version['natsAccounts'] as unknown as NatsSection['accounts']) ?? undefined,
-    credentials: (version['natsCredentials'] as unknown as NatsSection['credentials']) ?? undefined,
-    streams: (version['natsStreams'] as unknown as NatsSection['streams']) ?? undefined,
-    consumers: (version['natsConsumers'] as unknown as NatsSection['consumers']) ?? undefined,
     subjectPrefix: (version['natsSubjectPrefix'] as string | undefined) ?? undefined,
     roles: (version['natsRoles'] as unknown as NatsSection['roles']) ?? undefined,
     signers: (version['natsSigners'] as unknown as NatsSection['signers']) ?? undefined,
@@ -1703,7 +1678,6 @@ export function buildServiceDefinitionsFromVersion(version: {
       vaultAppRoleId: svc.vaultAppRoleId ?? undefined,
       vaultAppRoleRef: svc.vaultAppRoleRef ?? undefined,
       natsCredentialId: svc.natsCredentialId ?? undefined,
-      natsCredentialRef: svc.natsCredentialRef ?? undefined,
       natsRole: svc.natsRole ?? undefined,
       natsSigner: svc.natsSigner ?? undefined,
       addons:
